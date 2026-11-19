@@ -137,6 +137,8 @@ export interface ThreadDTO {
   archivedAt?: string | null;
   settleWhenDone?: boolean;
   settleWhenMerged?: boolean;
+  /** V0.settle-request: the agent said its work is done, on a project that asks the owner; a Settle chip shows */
+  settleAsk?: { at: string; why?: string } | null;
   /** V0.59 (7): settles when the change (an id or a key) reaches the phase */
   settleWhen?: { change: string; phase: string };
   source?: "fyr" | "t3" | string;
@@ -257,6 +259,8 @@ export interface Project {
   quiet?: QuietHours[] | QuietHours;
   /** V0.project-priority: how much of the host its threads get (the slot queue, CPU); absent is normal */
   priority?: "high" | "low";
+  /** V0.settle-request: what an agent's settle_request does; absent is ask (a Settle chip) */
+  agentSettle?: "auto";
   /** V0.46: the end of the quiet hours the project is in now (RFC 3339); absent when not quiet */
   quietUntil?: string;
   /** V0.58: only on the stream, `{id, deleted: true}` after project.delete */

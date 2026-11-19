@@ -1840,5 +1840,6 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .nstep{display:inline-flex;align-items:center;max-width:100%;min-height:30px;padding:4px 12px;border-radius:999px;border:1px solid var(--line-strong);background:var(--raised);font:500 13px/18px var(--ui);color:var(--ink);text-align:left;overflow-wrap:anywhere;cursor:pointer}
 .nstep:hover{border-color:var(--harbour);color:var(--harbour)}
 .nstep.run{font-family:var(--ui)}
+.nstep.settle{border-color:var(--harbour);color:var(--harbour)}
 .nstep.on{border-color:var(--harbour);background:var(--sunken)}
 .dockrun.chiprun{margin:0;max-height:none}

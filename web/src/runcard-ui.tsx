@@ -8,7 +8,7 @@ import { useContext, useState } from "preact/hooks";
 import type { Offer, Thread } from "./types.ts";
 import { pressArgs } from "./offers.ts";
 import { copyToClipboard } from "./copy.ts";
-import { cardDomId, cardLook, cardShows, chips, copyText, dismissArgs, dockRun, firstLine, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
+import { cardDomId, cardLook, cardShows, chips, settleChip, copyText, dismissArgs, dockRun, firstLine, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
@@ -203,11 +203,18 @@ export function NextSteps() {
   const [open, setOpen] = useState<string | null>(null);
   if (!c) return null;
   const { prompts, runs } = chips(c.t);
-  if (!prompts.length && !runs.length) return null;
+  const done = settleChip(c.t); // V0.settle-request
+  if (!prompts.length && !runs.length && !done) return null;
   const opened = runs.find((o) => o.id === open);
   return (
     <div class="nsteps" role="group" aria-label="Next steps">
       <div class="nsteps-b">
+        {done && (
+          <button type="button" class="nstep settle" title="The agent says the work is done. Settle takes the thread out of the inbox." onClick={() => void c.onRun("thread.settle")}>
+            <span aria-hidden="true">✓ </span>
+            {done.label}
+          </button>
+        )}
         {prompts.map((o) => (
           <button key={o.id} type="button" class="nstep" title={o.prompt ?? o.label} onClick={() => void press("thread", o, c.t.cwd, ask, c.onRun as (a: string, args?: Record<string, unknown>) => void)}>
             {o.label}

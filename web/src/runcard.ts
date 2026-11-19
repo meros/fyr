@@ -59,6 +59,14 @@ export function chips(t: Pick<Thread, "runs"> & { offers?: Offer[] }): { prompts
   };
 }
 
+/** V0.settle-request: the agent's word that its work is done, as a Settle chip under the newest message, once the run
+ *  has ended and while the thread is not settled; null otherwise. */
+export function settleChip(t: Pick<Thread, "settleAsk" | "running" | "settledAt">): { label: string; why: string } | null {
+  if (!t.settleAsk || t.running || t.settledAt) return null;
+  const why = t.settleAsk.why?.trim() ?? "";
+  return { label: why ? `Settle: ${why}` : "Settle: the agent is done", why };
+}
+
 /** V0.next-step-chips (4): an optional request's card stands in the conversation only once it ran; before, it is a chip. */
 export function cardShows(o: Offer, runs: OfferRun[] | undefined): boolean {
   return !o.optional || !!lastRun(runs, o.id);

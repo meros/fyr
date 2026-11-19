@@ -149,6 +149,7 @@ func revive(t *Thread, v *View, now time.Time) {
 	t.Failure = nil
 	t.Settle.At = nil
 	dropSettleDone(t) // a new run: "when done" was for the last one
+	t.SettleAsk = nil // V0.settle-request: so was the agent's word
 	Unsnooze(v)
 	v.SeenAt = now
 }
@@ -521,6 +522,7 @@ func init() {
 		// #33: clears the settle and every settle Rule, the agent's too.
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
 			t.Settle = Settle{}
+			t.SettleAsk = nil
 			DropSettleRules(t)
 			return nil, nil
 		}})

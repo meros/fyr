@@ -987,7 +987,8 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           now={p.now}
           onAtEnd={p.open.onAtEnd}
           onEarlier={p.open.onEarlier}
-          run={(a, args) => p.commands.run(a, [t.id], args)}
+          // V0.settle-request: the Settle chip settles as the phone's Settle does (U8: back to the list)
+          run={(a, args) => (a === "thread.settle" ? p.actions.settle([t.id]) : p.commands.run(a, [t.id], args))}
           send={(args) => p.commands.send(t.id, args)}
         />
       )}

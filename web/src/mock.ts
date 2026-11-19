@@ -1225,7 +1225,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: "No such project" };
       const patch: Partial<Project> = {};
-      for (const k of ["name", "color", "icon", "profile", "model", "quiet", "priority"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
+      for (const k of ["name", "color", "icon", "profile", "model", "quiet", "priority", "agentSettle"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
       // V0.116: a changed value is the owner's; the image's upload or remove too.
       const by = { ...p.by };
       for (const k of ["name", "color"] as const) if (k in args && args[k] !== p[k]) by[k] = "owner";

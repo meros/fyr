@@ -392,8 +392,9 @@ export interface ProjectFields {
   model: string;
   quiet: QuietHours[];
   priority: ProjectPriority;
+  agentSettle: AgentSettle;
 }
-export type ProjectFieldPatch = { name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
+export type ProjectFieldPatch = { agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
 
 /** V0.project-priority: a project's priority as the page shows it; normal is stored as none. */
 export type ProjectPriority = "high" | "normal" | "low";
@@ -405,6 +406,16 @@ export function priorityLine(v: ProjectPriority): string {
   if (v === "high") return "Its threads get a free slot for a test or build before normal and low projects, and more CPU.";
   if (v === "low") return "Normal and high projects' tests and builds go ahead of its threads' for up to 20 minutes, and it gets less CPU.";
   return "When threads from several projects need the host, high goes first and low last.";
+}
+
+/** V0.settle-request: what an agent's settle_request does on the project; ask is stored as none. */
+export type AgentSettle = "ask" | "auto";
+export const agentSettleOf = (p: { agentSettle?: string } | undefined): AgentSettle => (p?.agentSettle === "auto" ? "auto" : "ask");
+/** V0.settle-request: what the "Agent says done" row says the choice does. */
+export function agentSettleLine(v: AgentSettle): string {
+  return v === "auto"
+    ? "When the agent says its work is done, Fyr settles the thread once the run ends and nothing waits for you."
+    : "When the agent says its work is done, a Settle chip shows under its newest message.";
 }
 
 /** project.update's args for one field, and only that field, so an untouched field never becomes the owner's
@@ -421,6 +432,8 @@ export function patchFor<K extends keyof ProjectFields>(field: K, value: Project
     }
     case "priority":
       return { priority: value === "normal" ? null : (value as "high" | "low") };
+    case "agentSettle":
+      return { agentSettle: value === "auto" ? "auto" : null };
   }
   return { [field]: value } as ProjectFieldPatch;
 }

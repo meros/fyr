@@ -28,8 +28,12 @@ type Project struct {
 	// the host (V0.project-priority): PriorityHigh, PriorityLow, or "" for
 	// normal. It orders new waiters in the slot queue and sets the threads'
 	// CPU weight; it changes no list and no notification.
-	Priority  string    `json:"priority,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	Priority string `json:"priority,omitempty"`
+	// AgentSettle is what an agent's settle_request does on the project's
+	// threads (V0.settle-request): AgentSettleAuto settles the thread once
+	// nothing waits; "" (ask) shows the owner a Settle chip.
+	AgentSettle string    `json:"agentSettle,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
 	// Image is the version of the project's image icon (V0.116), served at
 	// /api/projects/<id>/icon; "" draws Icon, the glyph, in Color.
 	Image string `json:"image,omitempty"`
@@ -62,6 +66,16 @@ const (
 func ValidPriority(s string) bool {
 	return s == "" || s == "normal" || s == PriorityHigh || s == PriorityLow
 }
+
+// What an agent's settle_request does (V0.settle-request); "" is ask.
+const (
+	AgentSettleAsk  = "ask"
+	AgentSettleAuto = "auto"
+)
+
+// SettlesOnRequest reports that the project settles a thread when its agent
+// asks (V0.settle-request): a nil project asks the owner.
+func (p *Project) SettlesOnRequest() bool { return p != nil && p.AgentSettle == AgentSettleAuto }
 
 // Rank is the priority as a number: 1 high, 0 normal, -1 low.
 func (p *Project) Rank() int {
@@ -375,6 +389,16 @@ func reduceProjectUpdate(r Rec, in Input, now time.Time) (Result, error) {
 			v = ""
 		}
 		p.Priority = v
+	}
+	if raw, ok := a["agentSettle"]; ok { // V0.settle-request; null is ask
+		v, _ := raw.(string)
+		if raw != nil && v != AgentSettleAsk && v != AgentSettleAuto {
+			return Result{}, reject(RejectBadArgs, "agentSettle must be ask or auto")
+		}
+		if v == AgentSettleAsk {
+			v = ""
+		}
+		p.AgentSettle = v
 	}
 	p.Edited = true
 	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}, nil

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"slices"
 	"time"
 )
@@ -89,6 +90,7 @@ func SettleWhenMerged(t *Thread, by string, now time.Time) bool {
 func settleNow(t *Thread, now time.Time) {
 	t.Settle.At = &now
 	t.PinnedAt = nil
+	t.SettleAsk = nil
 	DropSettleRules(t)
 }
 
@@ -168,4 +170,37 @@ func SettleWhenChange(t *Thread) *SettleOn {
 		}
 	}
 	return first
+}
+
+// SettleAsk is the agent's word that its work is done (V0.settle-request):
+// when it said so and why.
+type SettleAsk struct {
+	At  time.Time `json:"at"`
+	Why string    `json:"why,omitempty"`
+}
+
+// SettleAskAuto and SettleAskShown are reduceSettleRequest's replies.
+const (
+	SettleAskAuto  = "auto"
+	SettleAskShown = "shown"
+)
+
+// reduceSettleRequest is the agent's settle_request (V0.settle-request):
+// its work is done and nothing it asked waits. On a project that settles on
+// request (args.auto, which the engine reads from the project) it arms
+// "settle when done" as the agent's, so the thread settles once the run ends
+// and nothing waits for the owner; otherwise the owner sees a Settle chip.
+func reduceSettleRequest(r Rec, in Input, now time.Time) (Result, error) {
+	a := mapArgs(in)
+	t := r.T
+	if t.Settle.At != nil {
+		return Result{}, errors.New("the thread is already settled")
+	}
+	if auto, _ := a["auto"].(bool); auto {
+		t.SettleAsk = nil
+		SettleWhenDone(t, ByAgent, now)
+		return Result{Reply: SettleAskAuto}, nil
+	}
+	t.SettleAsk = &SettleAsk{At: now, Why: TruncHead(a.trimmed("why"), 200)}
+	return Result{Reply: SettleAskShown}, nil
 }
