@@ -60,8 +60,11 @@ func under(kids map[int][]int, root int) []int {
 }
 
 // roots are the job roots under cli for work that began at cut or later: the
-// processes started since whose parent is older (ReadRoots without a cgroup).
-func (t procTable) roots(cli int, cut time.Time) []Root {
+// processes started since whose parent is older (ReadRoots without a cgroup),
+// and a Bash shell of the CLI started before that holds at least minOld bytes
+// (V0.freeze-old-work; 0 takes none). A detached job left the tree under the
+// CLI and is not seen here.
+func (t procTable) roots(cli int, cut time.Time, minOld uint64) []Root {
 	if _, ok := t[cli]; !ok {
 		return nil
 	}
@@ -72,17 +75,42 @@ func (t procTable) roots(cli int, cut time.Time) []Root {
 			here[p] = true
 		}
 	}
+	sum := func(p int) uint64 {
+		var rss uint64
+		for _, q := range under(kids, p) {
+			rss += t[q].rss
+		}
+		return rss
+	}
 	var out []Root
+	elder := map[int]bool{}
+	if minOld > 0 {
+		for _, p := range kids[cli] {
+			r := t[p]
+			if r.at.Before(cut) && agentShell(r.args) {
+				if rss := sum(p); rss >= minOld {
+					elder[p] = true
+					out = append(out, Root{PID: p, Cmdline: r.args, RSS: rss})
+				}
+			}
+		}
+	}
 	for p := range here {
 		r := t[p]
 		if r.at.Before(cut) || (here[r.ppid] && !t[r.ppid].at.Before(cut)) {
 			continue
 		}
-		var rss uint64
-		for _, q := range under(kids, p) {
-			rss += t[q].rss
+		inElder := false
+		for q, n := r.ppid, 0; here[q] && n < len(here); q, n = t[q].ppid, n+1 {
+			if elder[q] {
+				inElder = true
+				break
+			}
 		}
-		out = append(out, Root{PID: p, Cmdline: r.args, RSS: rss})
+		if inElder {
+			continue
+		}
+		out = append(out, Root{PID: p, Cmdline: r.args, RSS: sum(p)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PID < out[j].PID })
 	return out

@@ -1,8 +1,6 @@
 package cgroup
 
 import (
-	"time"
-
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -43,28 +41,38 @@ func (s *Sampler) detect(l Load) {
 		if s.Project != nil {
 			names[f.Thread] = s.Project(f.Thread)
 		}
-		if root, ok := Heaviest(s.Roots(f.Thread, f.FirstOver)); ok {
+		if root, ok := Heaviest(s.Roots(f)); ok {
 			s.Detect.SetCommand(f.Thread, CommandOf(root, s.Groups.Bashes(f.Thread)))
 		}
 	}
 	s.names.Store(&names)
 }
 
-// Roots are the job roots of thread's episode whose first over reading was at
-// after: from its cgroup, else from the process tree under its CLI (V0.process-tree-hosts).
-func (s *Sampler) Roots(thread string, after time.Time) []Root {
-	if s.Tree != nil {
-		return ReadRoots(s.Tree, s.Proc, thread, after)
+// Roots are the job roots of flag f's episode: from its cgroup, else from the
+// process tree under its CLI (V0.process-tree-hosts). An episode over its
+// memory threshold also takes the older work that holds a quarter of its
+// memory or more (V0.freeze-old-work), so a long job is what is named and
+// frozen, not the newest small process.
+func (s *Sampler) Roots(f Flag) []Root {
+	var minOld uint64
+	if f.MemOver {
+		minOld = max(f.Mem/4, 1)
 	}
-	if s.Trees == nil || s.CLIs == nil {
+	cli := 0
+	if s.CLIs != nil {
+		cli = s.CLIs()[f.Thread]
+	}
+	if s.Tree != nil {
+		return ReadRootsWith(s.Tree, s.Proc, f.Thread, f.FirstOver, Elders{CLI: cli, Min: minOld})
+	}
+	if s.Trees == nil {
 		return nil
 	}
-	cli := s.CLIs()[thread]
 	t, ok := s.Trees.Table(s.now())
 	if cli <= 0 || !ok {
 		return nil
 	}
-	return t.roots(cli, after.Add(-rootGrace))
+	return t.roots(cli, f.FirstOver.Add(-rootGrace), minOld)
 }
 
 // Undeclared lists the threads that run heavy work Fyr did not admit, for the
