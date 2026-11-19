@@ -1,0 +1,19 @@
+# V0.psi-trigger-slice: the module hands the agents' slice's memory.pressure to the service user, so fyrd's PSI trigger is set in the scope layout, and fyrd tries again each minute while it is refused
+
+→ V0.guard-wake (decision 0036 E5), V0.agents-unit (8).
+
+(1) **The cause.** On meros-laptop daemon.log said at start: `guard: no PSI trigger on the agents' memory.pressure (permission denied); the guard reads every 10 s`. In the scope layout of V0.agents-unit the agents' cgroup is `/sys/fs/cgroup/fyr.slice/fyr-agents.slice`, and its `memory.pressure` is `root:root 0644`. fyrd runs as the service user (`User=` in `fyr.service`, no root launcher), the unit is no longer delegated, and fyrd opens the file `O_RDWR` to write the trigger. So the guard only ever had its 10 s tick, plus oomd's 20 s, which V0.guard-wake's trigger was there to shorten.
+
+(2) **The module hands over that one file.** With `cgroups.agentsUnit`, `fyr.service` gets `ExecStartPre=+<script>`; `+` runs it as root. The script asks systemd for the slice's cgroup (`systemctl show -P ControlGroup fyr-agents.slice`) and chowns `/sys/fs/cgroup<that>/memory.pressure` to the service user. If it cannot (no cgroup, chown refused), it says so on stderr and exits 0: the unit starts anyway and fyrd keeps the tick.
+
+(3) **The slice first.** `fyr.service` now `Wants=` and `After=` `fyr-agents.slice`. A slice that no unit asks for is not started and has no cgroup; before this, the slice started only with the first agent's scope, after fyrd. Starting a slice makes its cgroup at once, empty or not, and it stays until the slice is stopped.
+
+(4) **Granted, and not granted.** The only thing a write to `memory.pressure` does is set a PSI trigger, and the kernel lets an opener without `CAP_SYS_RESOURCE` set only a window that is a multiple of 2 s (fyrd's is `full 150000 2000000`). Each trigger is per open file and goes when the file is closed. Nothing else changes owner: the slice's directory, `memory.high`, `memory.max`, `cpu.max`, `cgroup.procs` and the rest stay root's, so the user still cannot move processes or change the budget.
+
+(5) **When the slice is made anew.** Only a `systemctl stop` or `restart` of `fyr-agents.slice` does that; `nixos-rebuild switch` does not restart slices, and a restart of `fyr.service` leaves the slice alone. A stopped slice takes its scopes with it, and fyrd's open file then reports `POLLERR`: fyrd's watch ends and the guard has its tick. The new `memory.pressure` is root's again, so the trigger comes back at the next start of `fyr.service`, which runs the script again (a reload does not: it restarts fyrd under the launcher without `ExecStartPre`).
+
+(6) **fyrd tries again.** Where the open is refused or the file is missing (`EACCES`, `EPERM`, `ENOENT`), fyrd tries again once a minute and logs `guard: PSI trigger "full 150000 2000000" on the agents' memory.pressure, set on a later try` once it takes. That covers a chown or a slice that comes after fyrd. A refusal that will not change (the kernel takes no trigger) is not tried again. The start log names the file: `guard: no PSI trigger yet (/sys/fs/cgroup/fyr.slice/fyr-agents.slice/memory.pressure: permission denied); the guard reads every 10 s and tries the trigger again every 1m0s`. fyrd does not re-arm after a `POLLERR` of (5): the new file would be root's anyway.
+
+To apply on a host: `nixos-rebuild switch`, then restart `fyr.service` once (a switch does not restart it, V0.180); `ls -l /sys/fs/cgroup/fyr.slice/fyr-agents.slice/memory.pressure` shows the service user, and `grep 'guard: PSI trigger' ~/.local/share/fyr/daemon.log` shows the trigger.
+
+Tests: `flake.nix` `checks.x86_64-linux.module` (the `ExecStartPre` with `+`, the script's `systemctl show -P ControlGroup fyr-agents.slice` and `chown u`, `fyr-agents.slice` in `wants` and `after`, and none of it with `agentsUnit` off), `internal/cgroup/psitrigger_test.go` (TestPressureTriggerRetriesARefusedOpen).
