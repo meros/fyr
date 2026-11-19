@@ -154,8 +154,45 @@ var (
 	wrap = regexp.MustCompile(`^(?:\w+=\S*\s+|timeout\s+(?:-\S+\s+)*\S+\s+|time\s+|nice\s+(?:-n\s*-?\d+\s+)?|env\s+|exec\s+|command\s+|npx\s+|nix\s+develop\s+(?:\S+\s+)*?-c\s+|(?:ba)?sh\s+-l?c\s+|['"])`)
 )
 
+// script is the "-c " (sh -c, bash -lc, nix develop -c) that makes the
+// single-quoted text after it a command line of its own.
+var script = regexp.MustCompile(`(?:^|\s)-l?c\s*$`)
+
+// blankQuoted replaces the text inside single quotes with spaces, except a
+// script after -c: the shell runs nothing in single quotes, so a `|` or a
+// backtick there starts no command (V0.heavy-quoted-args). On 2026-11-19 a sed edit of a PR body,
+// 's/- `make check SHELL_RUN=`: …/', was queued as a heavy job.
+func blankQuoted(cmd string) string {
+	b := []byte(cmd)
+	double := false
+	for i := 0; i < len(b); i++ {
+		switch {
+		case b[i] == '\\':
+			i++ // an escaped character is no quote
+		case b[i] == '"':
+			double = !double
+		case b[i] == '\'' && !double:
+			end := strings.IndexByte(cmd[i+1:], '\'')
+			if end < 0 {
+				return string(b)
+			}
+			end += i + 1
+			if !script.MatchString(cmd[:i]) {
+				for j := i + 1; j < end; j++ {
+					if b[j] != '\n' {
+						b[j] = ' '
+					}
+				}
+			}
+			i = end
+		}
+	}
+	return string(b)
+}
+
 // segments are the commands a shell line runs: heredoc bodies dropped,
-// split at && || ; | ( ) $( ` and newlines, each without its wrappers.
+// single-quoted arguments blanked (blankQuoted), split at && || ; | ( ) $(
+// ` and newlines, each without its wrappers.
 func segments(cmd string) []string {
 	var keep []string
 	end := ""
@@ -172,7 +209,7 @@ func segments(cmd string) []string {
 		keep = append(keep, ln)
 	}
 	var out []string
-	for _, seg := range split.Split(strings.Join(keep, "\n"), -1) {
+	for _, seg := range split.Split(blankQuoted(strings.Join(keep, "\n")), -1) {
 		seg = strings.TrimSpace(seg)
 		for {
 			t := strings.TrimLeft(wrap.ReplaceAllString(seg, ""), " \t")

@@ -22,6 +22,16 @@ func TestS1ClassOfACommand(t *testing.T) {
 		`gh pr create --title "make check green"`:     "",
 		`git commit --message="run make test"`:        "",
 		"echo hi":                                     "",
+		// Single-quoted text is an argument: the shell runs nothing in it,
+		// so its | and backticks start no command (the edit of a PR body
+		// that cites the gate was queued as one).
+		"sed -i 's/- `make check SHELL_RUN=`: RESULT/passes/' body.md": "",
+		"sed -i 's|<summary>the full make check passed|x|' body.md":    "",
+		"grep -c 'make test' log && make test":                         "make test",
+		"bash -lc 'cd x && make check'":                                "make check",
+		"sh -c 'go test ./...' | tail":                                 "go test ./...",
+		`echo "it's" && make test`:                                     "make test",
+		"cat <<'EOF' > f\nmake check\nEOF\nmake test":                  "make test",
 	} {
 		if got := m.Class(cmd); got != want {
 			t.Errorf("%q: got %q, want %q", cmd, got, want)

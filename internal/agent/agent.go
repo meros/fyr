@@ -319,10 +319,12 @@ func writeMCPConfig(dir string, cfg []byte) (string, error) {
 
 // ThreadForToken maps an MCP bearer token to its thread (16.2 MCP binding).
 // BashCall is a Bash command at the gate hook. ToolUse is its call's id ("" if
-// the CLI gave none); Background: it was started with run_in_background.
+// the CLI gave none); Background: it was started with run_in_background;
+// Subagent: a subagent of the thread's agent made it (the hook input names an
+// agent_id), and no [Fyr] message reaches a subagent.
 type BashCall struct {
 	Thread, Command, ToolUse string
-	Background               bool
+	Background, Subagent     bool
 }
 
 // SetOnBash sets Config.OnBash and Config.OnToolDone after New (the slots come

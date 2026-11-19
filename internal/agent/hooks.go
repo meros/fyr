@@ -80,7 +80,8 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 	if c, _ := ti["command"].(string); name == "Bash" && c != "" && onBash != nil && s != nil {
 		u, _ := in["tool_use_id"].(string)
 		bg, _ := ti["run_in_background"].(bool)
-		if r := onBash(BashCall{Thread: s.thread, Command: c, ToolUse: u, Background: bg}); r != "" {
+		sub, _ := in["agent_id"].(string)
+		if r := onBash(BashCall{Thread: s.thread, Command: c, ToolUse: u, Background: bg, Subagent: sub != ""}); r != "" {
 			return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
 				"permissionDecision": "deny", "permissionDecisionReason": r}}
 		}

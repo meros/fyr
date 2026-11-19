@@ -30,6 +30,9 @@ const HeavyCallStale = 15 * time.Minute
 type HeavyCall struct {
 	Thread, Class, ToolUse string
 	Background             bool
+	// Subagent: a subagent made the call. The admission notice goes to the
+	// thread's own agent, so the refusal tells a subagent not to wait for it.
+	Subagent bool
 }
 
 // UseSlots gives the engine the host's pool of slots for heavy jobs
@@ -779,7 +782,14 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 			if i == 0 && s.Why != "" {
 				why = " Waiting: " + s.Why + "."
 			}
-			return fmt.Sprintf("Heavy job (%s): %s has no room for it yet, so it is queued (%d ahead; it needs %s).%s Do not work around this. Fyr tells you in a [Fyr] message when it is admitted; run the command again then. Do other work meanwhile or end your turn.", c.Class, e.hostName(), i, strings.TrimPrefix(jobShare(s, w.Owner), "≈ "), why)
+			head := fmt.Sprintf("Heavy job (%s): %s has no room for it yet, so it is queued (%d ahead; it needs %s).%s Do not work around this.", c.Class, e.hostName(), i, strings.TrimPrefix(jobShare(s, w.Owner), "≈ "), why)
+			if c.Subagent {
+				// A subagent never gets the [Fyr] admission and ends its run
+				// by handing back: on 2026-11-19 one sent the same queued
+				// check four times.
+				return head + " You are a subagent: the admission message goes to the main session, not to you. Do not run this command again; say in your report that it is queued and did not run, and hand back when the rest is done."
+			}
+			return head + " Fyr tells you in a [Fyr] message when it is admitted; run the command again then. Do other work meanwhile or end your turn."
 		}
 	}
 	return "" // neither held nor queued: the pool changed under us, let it run
