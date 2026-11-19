@@ -219,7 +219,7 @@ func (d *Deployer) install(ctx context.Context, run Runner, prog *Progress, gen 
 	}
 	d.report(prog, "smoke", "", nil)
 	if err := d.smoke(ctx, run, out, id); err != nil {
-		if !errors.Is(err, context.Canceled) {
+		if ctx.Err() == nil { // not a newer deploy that cancelled this one
 			d.markBad(sha, "failed its smoke test") // #154: a bad build fails the same way again
 		}
 		return failed(firstErr(fail(fmt.Errorf("the smoke test of %s failed, nothing was switched: %w", id, err))))
