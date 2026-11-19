@@ -54,7 +54,8 @@ test("upsert places threads into sections by attention.section", () => {
   assert.deepEqual(sec2.settled.map((t) => t.id), ["a"]);
 });
 
-test("needs you sorts by state precedence asking, failed, blocked, done, then newest activity", () => {
+// V0.stable-groups: by group (Answer before Unblock), then oldest first inside a group, whatever the state.
+test("needs you sorts by group, then oldest first inside the group", () => {
   const ts = [
     thread("done-new", "done", "needs", { activityAt: at(50) }),
     thread("blocked", "blocked", "needs", { activityAt: at(40) }),
@@ -64,7 +65,7 @@ test("needs you sorts by state precedence asking, failed, blocked, done, then ne
     thread("done-old", "done", "needs", { activityAt: at(2) }),
   ];
   const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
-  assert.deepEqual(sec.needs.map((t) => t.id), ["ask-new", "ask-old", "failed", "blocked", "done-new", "done-old"]);
+  assert.deepEqual(sec.needs.map((t) => t.id), ["ask-old", "ask-new", "done-old", "failed", "blocked", "done-new"]);
 });
 
 // SPEC V0.205 (4): a thread whose asks are all merge asks sorts below questions, above failures.
@@ -78,11 +79,11 @@ test("needs you puts merge asks after questions and before failures", () => {
     thread("both", "asking", "needs", { activityAt: at(2), decisions: [merge, ask] }),
   ];
   const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
-  assert.deepEqual(sec.needs.map((t) => t.id), ["both", "question-old", "merge-new", "failed"]);
+  assert.deepEqual(sec.needs.map((t) => t.id), ["question-old", "both", "merge-new", "failed"]);
 });
 
-// SPEC 0.5 V0.26: Working sorts by run start, newest first; seen, snoozed, settled by newest activity
-test("working sorts by runStartedAt (newest started first); seen, snoozed, settled by newest activity", () => {
+// SPEC 0.5 V0.26, V0.stable-groups: Working sorts by run start, oldest first; seen, snoozed, settled by newest activity
+test("working sorts by runStartedAt (oldest started first); seen, snoozed, settled by newest activity", () => {
   const ts = [
     thread("w-late", "working", "working", { runStartedAt: at(30), activityAt: at(59) }),
     thread("w-early", "working", "working", { runStartedAt: at(5), activityAt: at(10) }),
@@ -92,11 +93,11 @@ test("working sorts by runStartedAt (newest started first); seen, snoozed, settl
     thread("x-new", "settled", "settled", { activityAt: at(8) }),
   ];
   const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
-  assert.deepEqual(sec.working.map((t) => t.id), ["w-late", "w-early"]);
+  assert.deepEqual(sec.working.map((t) => t.id), ["w-early", "w-late"]);
   assert.deepEqual(sec.seen.map((t) => t.id), ["s-new", "s-old"]);
   assert.deepEqual(sec.settled.map((t) => t.id), ["x-new", "x-old"]);
-  assert.deepEqual(flatOrder(sec), ["s-new", "s-old", "w-late", "w-early", "x-new", "x-old"]);
-  assert.deepEqual(flatOrder(sec, { seen: 1 }), ["s-new", "w-late", "w-early", "x-new", "x-old"]);
+  assert.deepEqual(flatOrder(sec), ["s-new", "s-old", "w-early", "w-late", "x-new", "x-old"]);
+  assert.deepEqual(flatOrder(sec, { seen: 1 }), ["s-new", "w-early", "w-late", "x-new", "x-old"]);
 });
 
 // V0.104: pinned threads sort above every other thread, in the normal order among themselves (section order, then the
@@ -114,13 +115,13 @@ test("pinned threads come first in the flat order and show once", () => {
   ];
   const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
   assert.deepEqual(sec.pinned.map((t) => t.id), ["ask-pin", "s-pin-new", "s-pin-old", "w-pin"]);
-  assert.deepEqual(sec.needs.map((t) => t.id), ["ask", "ask-pin"], "a pinned thread still counts in its section");
+  assert.deepEqual(sec.needs.map((t) => t.id), ["ask-pin", "ask"], "a pinned thread still counts in its section");
   assert.deepEqual(unpinned(sec.needs).map((t) => t.id), ["ask"]);
   assert.deepEqual(flatOrder(sec), ["ask-pin", "s-pin-new", "s-pin-old", "w-pin", "ask", "s", "w"]);
   assert.deepEqual(flatOrder(sec, { seen: 0 }), ["ask-pin", "s-pin-new", "s-pin-old", "w-pin", "ask", "w"], "a closed section keeps its pinned rows on top");
 });
 
-// SPEC 0.5 V0.26: the Working order is stable; activity never moves a row, a waiting thread sorts by its agents' start
+// SPEC 0.5 V0.26, V0.stable-groups: the Working order is stable, oldest started first; activity never moves a row, a waiting thread sorts by its agents' start
 test("working order does not follow activity; waiting threads use the earliest running agent start; id breaks ties", () => {
   const task = (id: string, startedAt: string, status: "running" | "completed" = "running") => ({ id, description: id, status, startedAt });
   const ts = [
@@ -130,10 +131,10 @@ test("working order does not follow activity; waiting threads use the earliest r
     thread("wait", "waiting", "working", { runStartedAt: null, activityAt: at(59), tasks: [task("t1", at(30)), task("t2", at(15)), task("t0", at(1), "completed")] }),
   ];
   let s = applySnapshot(initialStore(), snap(ts), 0);
-  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-new", "wait", "w-a", "w-b"]);
+  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-a", "w-b", "wait", "w-new"]);
   // New activity on w-b (a later update) leaves the order as it was.
   s = upsertThread(s, { ...s.threads["w-b"], activityAt: at(59), updatedAt: at(59), activity: "Reading app.tsx" });
-  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-new", "wait", "w-a", "w-b"]);
+  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-a", "w-b", "wait", "w-new"]);
 });
 
 test("an older upsert never overwrites a newer thread; an equal one does (time-driven attention)", () => {

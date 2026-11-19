@@ -1,16 +1,28 @@
 // V0.207, V0.open-row-only: the list keeps its place. Two things keep a row from moving under the owner: a stable order
-// (`trackUnread` and the order in store.ts), and the open row staying where it was until the owner opens another. Every
+// (`trackArrivals` and the order in store.ts), and the open row staying where it was until the owner opens another. Every
 // other row moves the moment its state changes: nothing waits. One implementation for both fronts.
-import { SECTIONS, isPinned, sectionOf, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, isPinned, naturalAt, sectionOf, type Arrival, type SectionKey, type Sections } from "./store.ts";
+import { needsGroupRank } from "./rows.ts";
 import type { Thread } from "./types.ts";
 
-/** The time of each unread thread's becoming unread. A thread that stays unread keeps its time, so later activity does
- *  not move it. On the first sight (a reload) the time is its last activity. */
-export function trackUnread(prev: Readonly<Record<string, number>>, threads: Record<string, Thread>): Record<string, number> {
-  const out: Record<string, number> = {};
+/** The group whose order is arrival, or null (Seen, Snoozed and Settled keep their own order, the queue its own). */
+export function arrivalKey(t: Thread): string | null {
+  const k = sectionOf(t);
+  if (k === "needs") return `needs:${needsGroupRank(t)}`;
+  return k === "working" || k === "unread" ? k : null;
+}
+
+/** V0.stable-groups (V0.207 kept the Unread time the same way): when each thread came into its group. A thread that
+ *  stays in its group keeps its time, so nothing it does moves it; one that comes in later gets `now`, so it goes last.
+ *  On the first sight (an empty map: a reload) the time is the thread's own time. */
+export function trackArrivals(prev: Readonly<Record<string, Arrival>>, threads: Record<string, Thread>, now: number): Record<string, Arrival> {
+  const first = Object.keys(prev).length === 0;
+  const out: Record<string, Arrival> = {};
   for (const t of Object.values(threads)) {
-    if (sectionOf(t) !== "unread") continue;
-    out[t.id] = prev[t.id] ?? (Date.parse(t.activityAt ?? t.updatedAt) || 0);
+    const key = arrivalKey(t);
+    if (!key) continue;
+    const p = prev[t.id];
+    out[t.id] = p && p.key === key ? p : { key, at: first ? naturalAt(t) : Math.max(naturalAt(t), now) };
   }
   return out;
 }
