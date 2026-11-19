@@ -240,29 +240,6 @@ export function railMeter(h: HostLoad): RailMeter {
   return { text: h.cores > 0 ? `${Math.round(Math.max(0, h.load[0]) / h.cores * 100)}%` : f.text, share, level };
 }
 
-/** The rail's tooltip lines. */
-export function loadDetail(h: HostLoad): string[] {
-  const out = [`${h.host}: load ${h.load.map(one).join(" · ")} (1, 5, 15 min) on ${h.cores} cores`];
-  if (h.slowdown !== undefined) out.push(`Slowdown ${one(h.slowdown)}× (a new job runs ${one(h.slowdown)}× slower than on an idle host)`);
-  if (h.cpuPressure !== undefined) out.push(`CPU pressure ${Math.round(h.cpuPressure)} % (10 s)`);
-  if (h.agentsCpuPressure !== undefined) out.push(`Agents' CPU pressure ${Math.round(h.agentsCpuPressure)} % (10 s)`);
-  if (h.headroom !== undefined && h.capacity) {
-    const stall = h.memoryStall ? ` · stall ${h.memoryStall}${h.memoryPressure !== undefined ? ` (${one(h.memoryPressure)} %)` : ""}` : "";
-    out.push(`Memory ${Math.round(h.headroom * 100)} % free of ${gb(h.capacity.memory)} GB for agents${stall}`);
-  }
-  if (h.provider) out.push(`Signals: ${h.provider}`);
-  const a = h.agents;
-  if (!a) {
-    out.push("Agents share the daemon's cgroup (no per-thread figures)");
-    return out.concat(slotDetail(h));
-  }
-  const cpu = a.cpu === undefined ? "" : a.cpuMax ? `${one(a.cpu)} of ${a.cpuMax} cores` : `${one(a.cpu)} cores, no cap`;
-  const mem = a.memoryMax ? `${gb(a.memory)} of ${gb(a.memoryMax)} GB` : `${gb(a.memory)} GB`;
-  // V0.process-tree-hosts: without cgroups the figures are each thread's process tree.
-  out.push(`Agents ${[cpu, mem].filter(Boolean).join(" · ")}${h.cgroups ? "" : " (process trees)"}`);
-  return out.concat(slotDetail(h));
-}
-
 /** "0.4 cores", "1.0 core", "12 cores". */
 export function cpuText(c: number): string {
   if (c >= 10) return `${Math.round(c)} cores`;
@@ -280,28 +257,6 @@ export function threadCPU(list: HostLoad[], id: string): LoadPart | null {
 }
 
 // SPEC 0.5 V0.86: the slots for heavy jobs.
-
-/** V0.163: what heavy jobs use of the host, in words: CPU and memory in use and the budget; each running job's share;
- *  who waits and why. A host that counts jobs says that instead. */
-export function heavyDetail(h: HostLoad): string[] {
-  const s = h.slots;
-  if (!s) return [];
-  if (s.cpuPct === undefined || s.memPct === undefined) {
-    const used = s.usedPct ?? Math.round((s.held.length / Math.max(1, s.n)) * 100);
-    return [`Heavy jobs: ${used} % of this host's count in use (${s.held.length} of ${s.n} jobs; no load measures)${s.waiting.length ? `, ${s.waiting.length} waiting` : ""}`];
-  }
-  // V0.164: the undeclared share of each resource, inside the used one
-  const ucpu = s.undeclaredCpuPct ? ` (undeclared ${s.undeclaredCpuPct} %)` : "";
-  const umem = s.undeclaredMemPct ? ` (undeclared ${s.undeclaredMemPct} %)` : "";
-  const out = [`Heavy jobs: CPU ${s.cpuPct} %${ucpu} · memory ${s.memPct} %${umem} of this host in use; the budget is CPU ${s.cpuBudgetPct ?? 100} % · memory ${s.memBudgetPct ?? 100} %${s.budgetWhy ? ` (${s.budgetWhy})` : ""}`];
-  if (s.held.length) out.push(`Running: ${s.held.map((x) => `${x.kind} ≈ ${x.cpuPct ?? x.pct ?? 0} % CPU · ${x.memPct ?? 0} % memory`).join("; ")}`);
-  if (s.waiting.length) out.push(`${s.waiting.length} waiting${s.why ? `; the next ${s.why}` : ""}`);
-  return out;
-}
-
-function slotDetail(h: HostLoad): string[] {
-  return heavyDetail(h);
-}
 
 export interface RailBudget {
   text: string;
@@ -329,14 +284,6 @@ export function railBudget(h: HostLoad): RailBudget | null {
   const u = s.tight === "memory" ? s.undeclaredMemPct : s.undeclaredCpuPct;
   const und = u ? Math.min(whole, Math.round(Math.max(0, u)) / 100) : 0;
   return { text: `${Math.round(used)} %`, note, share: und ? Math.round((whole - und) * 100) / 100 : whole, ...(und ? { und } : {}), hot: waiting > 0, waiting };
-}
-
-/** V0.152, V0.163: the heavy-job meter's own tooltip: what it is, CPU and memory in use, each job's share, who waits
- *  and why. */
-export function slotTip(h: HostLoad, names?: { lookup: Lookup; now: number }): string {
-  const out = heavyDetail(h);
-  const und = names ? undeclaredTip(h, names.lookup, names.now) : "";
-  return (und ? [...out, und] : out).join("\n");
 }
 
 /** V0.163: Settings → Heavy jobs: the budget as percentages of what the host gives its agents. */
@@ -457,3 +404,124 @@ export function stripHosts(load: HostLoad[], hosts: { name: string; online: bool
 
 /** V0.166: the strip shows this many hosts; the rest are "+n" and in the sheet. */
 export const STRIP_MAX = 2;
+
+// ---- V0.load-card: the host's load as a card (the rail's hover card, the phone's sheet) ----
+
+export interface CardRow {
+  label: string;
+  value: string;
+  /** quieter words after the value */
+  note?: string;
+  hot?: boolean;
+}
+export interface CardSection {
+  title: string;
+  rows: CardRow[];
+}
+export interface LoadCard {
+  host: string;
+  level: LoadLevel;
+  /** "Calm", "Busy" or "Overloaded" */
+  verdict: string;
+  /** one sentence: what the level means for new work */
+  summary: string;
+  sections: CardSection[];
+  /** where the figures come from */
+  source?: string;
+}
+
+const VERDICT: Record<LoadLevel, string> = { calm: "Calm", warm: "Busy", hot: "Overloaded" };
+const pct = (n: number) => `${Math.round(n)} %`;
+
+/** V0.load-card: one host's load in plain words, grouped: a verdict and what it means, the machine, the heavy jobs.
+ *  Every figure of the old tooltip lines is here; the measure names (PSI, load average) give way to what they mean. */
+export function loadCard(h: HostLoad, names?: { lookup: Lookup; now: number }): LoadCard {
+  const m = railMeter(h);
+  const out: LoadCard = { host: h.host, level: m.level, verdict: VERDICT[m.level], summary: summary(h, m), sections: [] };
+  if (h.provider) out.source = `Measured by ${h.provider}`;
+
+  const mach: CardRow[] = [];
+  mach.push({
+    label: "Load",
+    value: h.cores > 0 ? `${m.text.replace("%", " %")} of ${h.cores} cores` : `${one(h.load[0])} on ${h.cores} cores`,
+    note: `${loadNum(h.load[0])} now · ${loadNum(h.load[1])} over 5 min · ${loadNum(h.load[2])} over 15 min`,
+    hot: railLoad(h).hot,
+  });
+  if (h.slowdown !== undefined) mach.push({ label: "Speed", value: h.slowdown < 1.05 ? "full speed" : `${one(h.slowdown)}× slower than idle`, note: "for a new job", hot: h.slowdown >= HOT_SLOWDOWN });
+  if (h.cpuPressure !== undefined || h.agentsCpuPressure !== undefined) {
+    const p = h.cpuPressure ?? h.agentsCpuPressure!;
+    mach.push({
+      label: "CPU waits",
+      value: `${pct(p)} of the time`,
+      note: h.cpuPressure !== undefined && h.agentsCpuPressure !== undefined ? `agents ${pct(h.agentsCpuPressure)}` : h.cpuPressure === undefined ? "agents" : undefined,
+      hot: p >= HOT_PRESSURE,
+    });
+  }
+  if (h.headroom !== undefined && h.capacity) {
+    const st = h.memoryStall;
+    const stall = st === undefined ? undefined : st === "ok" ? "no stalls" : `${st === "critical" ? "stalling hard" : "stalling"}${h.memoryPressure !== undefined ? ` ${one(h.memoryPressure)} %` : ""}`;
+    mach.push({ label: "Memory", value: `${pct(h.headroom * 100)} free of ${gb(h.capacity.memory)} GB`, note: stall, hot: st === "critical" });
+  }
+  const a = h.agents;
+  if (!a) mach.push({ label: "Agents", value: "share the daemon's cgroup", note: "no per-thread figures" });
+  else {
+    const cpu = a.cpu === undefined ? "" : a.cpuMax ? `${one(a.cpu)} of ${a.cpuMax} cores` : `${one(a.cpu)} cores`;
+    const mem = a.memoryMax ? `${gb(a.memory)} of ${gb(a.memoryMax)} GB` : `${gb(a.memory)} GB`;
+    // V0.process-tree-hosts: without cgroups the figures are each thread's process tree.
+    const note = [a.cpu !== undefined && !a.cpuMax && "no cap", !h.cgroups && "process trees"].filter(Boolean).join(" · ");
+    mach.push({ label: "Agents use", value: [cpu, mem].filter(Boolean).join(" · "), note: note || undefined });
+  }
+  out.sections.push({ title: "Machine", rows: mach });
+
+  const heavy = heavyRows(h, names);
+  if (heavy.length) out.sections.push({ title: "Heavy jobs", rows: heavy });
+  return out;
+}
+
+const loadNum = (l: number) => (l >= 10 ? String(Math.round(l)) : one(l));
+
+function summary(h: HostLoad, m: RailMeter): string {
+  const mem = h.memoryStall === "critical" ? " Memory is short." : h.memoryStall === "elevated" ? " Memory is getting tight." : "";
+  if (h.slowdown !== undefined) return (h.slowdown < 1.05 ? "New jobs run at full speed." : `New jobs run ${one(h.slowdown)}× slower than on an idle machine.`) + mem;
+  return (h.cores > 0 ? `The load is ${m.text.replace("%", " %")} of the cores.` : "") + mem;
+}
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The heavy jobs: CPU and memory in use against their budget (V0.163; V0.164's undeclared share), why the budget moved,
+ *  each running job, who waits and why, and the threads that run heavy work undeclared. A host that counts jobs says that. */
+function heavyRows(h: HostLoad, names?: { lookup: Lookup; now: number }): CardRow[] {
+  const s = h.slots;
+  if (!s) return [];
+  const rows: CardRow[] = [];
+  if (s.cpuPct === undefined || s.memPct === undefined) {
+    rows.push({ label: "In use", value: `${s.held.length} of ${s.n} jobs`, note: "counted, not measured" });
+  } else {
+    const res = (label: string, used: number, budget: number | undefined, und: number | undefined): CardRow => ({
+      label,
+      value: `${used} % of the host`,
+      note: [`budget ${budget ?? 100} %`, und ? `${und} % undeclared` : ""].filter(Boolean).join(" · "),
+      hot: used > (budget ?? 100),
+    });
+    rows.push(res("CPU", s.cpuPct, s.cpuBudgetPct, s.undeclaredCpuPct));
+    rows.push(res("Memory", s.memPct, s.memBudgetPct, s.undeclaredMemPct));
+    if (s.budgetWhy) rows.push({ label: "Budget", value: cap(s.budgetWhy) });
+  }
+  s.held.forEach((x, i) =>
+    rows.push({ label: i ? "" : "Running", value: x.kind, note: x.cpuPct !== undefined || x.memPct !== undefined ? `≈ ${x.cpuPct ?? x.pct ?? 0} % CPU · ${x.memPct ?? 0} % memory` : x.pct !== undefined ? `≈ ${x.pct} %` : undefined }),
+  );
+  if (s.waiting.length) rows.push({ label: "Waiting", value: `${s.waiting.length} ${s.waiting.length === 1 ? "job" : "jobs"}`, note: s.why ? `the next ${s.why}` : undefined, hot: true });
+  if (names)
+    (s.undeclared ?? []).forEach((u, i) => {
+      const mm = usedMeasures(u);
+      const l = names.lookup(u.thread);
+      const what = [mm.mem && gbText(u.mem), mm.cpu && cpuText(u.cpu)].filter(Boolean).join(" · ");
+      rows.push({ label: i ? "" : "Undeclared", value: `${l.title}${l.project ? ` (${l.project})` : ""}`, note: `${what} for ${spanText((names.now - Date.parse(u.since)) / 1000)}` });
+    });
+  return rows;
+}
+
+/** The card as plain lines, "Label: value · note" (a row without a label continues the one above); for tests and logs. */
+export function cardLines(c: LoadCard): string[] {
+  return [`${c.verdict}: ${c.summary}`, ...c.sections.flatMap((s) => s.rows.map((r) => `${r.label || "…"}: ${r.value}${r.note ? ` · ${r.note}` : ""}`))];
+}

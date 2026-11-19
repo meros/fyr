@@ -3,7 +3,7 @@
 // row says why.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadDetail, railBudget, railLabel, slotTip, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
+import { cardLines, loadCard, railBudget, railLabel, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
 
 const host: HostLoad = {
   host: "desk",
@@ -44,11 +44,13 @@ test("the rail shows the tighter resource's use in percent, hot while anyone wai
 });
 
 test("the tooltip lists each job's CPU and memory and why the next job waits", () => {
-  const d = loadDetail(host);
-  assert.ok(d.includes("Running: test ≈ 50 % CPU · 10 % memory; e2e ≈ 5 % CPU · 6 % memory"), d.join("\n"));
-  assert.ok(d.includes("2 waiting; the next CPU: new jobs run 2.1× slower"), d.join("\n"));
+  const d = cardLines(loadCard(host));
+  assert.ok(d.includes("Running: test · ≈ 50 % CPU · 10 % memory"), d.join("\n"));
+  assert.ok(d.includes("…: e2e · ≈ 5 % CPU · 6 % memory"), d.join("\n"));
+  assert.ok(d.includes("Waiting: 2 jobs · the next CPU: new jobs run 2.1× slower"), d.join("\n"));
   assert.match(railLabel(host, false), /heavy jobs use 55 % of their CPU budget, 2 waiting/);
-  assert.ok(slotTip(host).startsWith("Heavy jobs: CPU 55 % · memory 16 % of this host in use"));
+  assert.ok(d.includes("CPU: 55 % of the host · budget 100 %"), d.join("\n"));
+  assert.ok(d.includes("Memory: 16 % of the host · budget 100 %"), d.join("\n"));
 });
 
 test("the first waiting thread's row says why it waits; the others their place and need", () => {
@@ -64,5 +66,7 @@ test("S5: a frozen job's row says so first, with or without its command", () => 
 
 test("S4: the tooltip shows the adapted budget per resource and why", () => {
   const h: HostLoad = { ...host, slots: { ...host.slots!, cpuBudgetPct: 125, budgetWhy: "the host is calm and a job waits for CPU: the CPU budget grows" } };
-  assert.ok(loadDetail(h).some((l) => l.includes("the budget is CPU 125 % · memory 100 % (the host is calm and a job waits for CPU: the CPU budget grows)")), loadDetail(h).join("\n"));
+  const d = cardLines(loadCard(h));
+  assert.ok(d.includes("CPU: 55 % of the host · budget 125 %"), d.join("\n"));
+  assert.ok(d.includes("Budget: The host is calm and a job waits for CPU: the CPU budget grows"), d.join("\n"));
 });

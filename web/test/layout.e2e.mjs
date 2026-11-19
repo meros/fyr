@@ -1980,6 +1980,15 @@ section('V0.80', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rld .rldr') && !!document.querySelector('.one .tcpu')");
+  // V0.load-card: the host's card opens on hover, beside the rail, inside the window
+  await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseenter'))`);
+  await waitFor(`!!document.querySelector('.lcpop')`, { what: "the host's load card" });
+  const card = await evaluate(`(() => { const p = document.querySelector('.lcpop'), b = p.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
+    return { text: p.innerText, inside: b.left >= rail.right && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight, verdict: p.querySelector('.lcl').textContent }; })()`);
+  await shot("load-card-desktop.png");
+  await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseleave'))`);
+  await waitFor(`!document.querySelector('.lcpop')`, { what: "the load card to close" });
+  check(card.inside && card.verdict === "Overloaded", `V0.load-card desktop: the card leaves the window or has no verdict (${JSON.stringify(card)})`);
   const r = await evaluate(`(() => {
     const rail = document.querySelector('.rail').getBoundingClientRect();
     const ld = document.querySelector('.rail .rld'), b = ld.getBoundingClientRect();
@@ -1991,7 +2000,7 @@ try {
     const tc = [...document.querySelectorAll('.one')].find((x) => x.dataset.id === 't_mapperf');
     const jr = tc, js = jr?.querySelector('.tslot'), jb = js?.getBoundingClientRect(), jrr = jr?.getBoundingClientRect();
     const c = tc?.querySelector('.tcpu'), cr = c?.getBoundingClientRect(), rr = tc?.getBoundingClientRect();
-    return { text: fig.textContent, hot: row.classList.contains('hot'), tip: row.title,
+    return { text: fig.textContent, hot: row.classList.contains('hot'), tip: ${JSON.stringify(card.text)},
       pips: pips ? pips.querySelectorAll('i').length : 0, held: pips ? pips.querySelectorAll('i.on').length : 0, wait: (pips ?? bar)?.querySelector('em')?.textContent ?? '',
       bar: bar?.querySelector('.hmv')?.textContent ?? '', barHot: !!bar?.classList.contains('hot'), barFill: bar ? Math.round(bar.querySelector('.hmb i').getBoundingClientRect().width / bar.querySelector('.hmb').getBoundingClientRect().width * 100) : -1,
       barIn: !!bb && bb.left >= rb.left - 0.5 && bb.right <= rb.right + 0.5 && bb.bottom <= rb.bottom + 0.5,
@@ -2000,7 +2009,7 @@ try {
       cpu: c?.textContent ?? '', cpuHot: !!c?.classList.contains('hot'), inRow: !!cr && cr.top >= rr.top - 0.5 && cr.bottom <= rr.bottom + 0.5,
       job: js?.textContent ?? '', jobIn: !!jb && jb.top >= jrr.top - 0.5 && jb.bottom <= jrr.bottom + 0.5 && jb.right <= Math.min(jrr.right, js.closest('.ell').getBoundingClientRect().right) + 0.5 };
   })()`);
-  check(r.text === "130%" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
+  check(r.text === "130%" && r.hot && /10 now/.test(r.tip) && /CPU waits\s+46 % of the time/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
   // Decision 0029 S2, V0.152: a host that admits by a budget shows it as a bar (full, hot, "1 waits" under it) in place of
   // the pips.
   const why = await evaluate(`(() => { const w = document.querySelector('#sec-slots .sqwhy'), s = document.querySelector('.list')?.getBoundingClientRect(), b = w?.getBoundingClientRect(); return { text: w?.textContent ?? '', inside: !!b && !!s && b.left >= s.left - 0.5 && b.right <= s.right + 0.5 }; })()`);
@@ -2009,7 +2018,7 @@ try {
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
   // Decision 0029 S1 (V0.142): the ring is hot from the 3.4× slowdown; the tooltip names it; a holder's row names its job, first on its line and not cut.
-  check(/Slowdown 3\.4×/.test(r.tip) && /Signals: cgroups/.test(r.tip), `V0.142 desktop: the tooltip lacks the slowdown or the provider (${JSON.stringify(r)})`);
+  check(/New jobs run 3\.4× slower/.test(r.tip) && /Measured by cgroups/.test(r.tip), `V0.142 desktop: the tooltip lacks the slowdown or the provider (${JSON.stringify(r)})`);
   check(r.job === "yarn build ≈ 45 %" && r.jobIn, `V0.142 desktop: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.80 desktop: ${e.message}`);
@@ -2193,17 +2202,22 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
     check(r.t.find((x) => x.id === "t_mapperf").text === "undeclared · 2.8 GB · 2.1 cores" && r.t.find((x) => x.id === "t_babysit").text === "undeclared · 1.6 GB · 1.2 cores", `${ctx}: the rows' words are wrong (${JSON.stringify(r.t)})`);
     check(r.h === base, `${ctx}: the flagged row is ${r.h} px, the plain one ${base} px`);
     check(r.why, `${ctx}: the wait reason does not name the undeclared use`);
-    // The meter and the rail's button.
+    // The meter and the rail's button; the host's card (V0.load-card) names the undeclared share and the threads.
+    await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseenter'))`);
+    await waitFor(`!!document.querySelector('.lcpop')`, { what: "the host's load card" });
+    const tip = await evaluate(`document.querySelector('.lcpop').innerText`);
+    await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseleave'))`);
+    await waitFor(`!document.querySelector('.lcpop')`, { what: "the load card to close" });
     const m = await evaluate(`(() => {
       const bar = document.querySelector('.rail .hmr.job'), parts = [...bar.querySelectorAll('.hmb i')], und = bar.querySelector('.hmb i.und');
       const trk = bar.querySelector('.hmb').getBoundingClientRect();
       const b = document.querySelector('.rail .rund'), br = b?.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
       return { parts: parts.length, hatch: und ? getComputedStyle(und).backgroundImage.startsWith('repeating-linear-gradient') : false, fits: parts.every((p) => p.getBoundingClientRect().right <= trk.right + 0.5),
-        tip: bar.title, btn: b?.textContent ?? '', aria: b?.getAttribute('aria-label') ?? '', bright: br ? br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 : false,
+        btn: b?.textContent ?? '', aria: b?.getAttribute('aria-label') ?? '', bright: br ? br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 : false,
         color: b ? getComputedStyle(b).color : '', ink: ${UND_INK}, outside: !!b && !!b.closest('[role=img]') };
     })()`);
     check(m.parts === 2 && m.hatch && m.fits, `${ctx}: the meter has no hatched undeclared part (${JSON.stringify(m)})`);
-    check(/undeclared 82 %/.test(m.tip) && /\nUndeclared: Map perf \(acme\/web\), 2\.8 GB and 2\.1 cores for \d+ min; Babysit PR #4170 \(acme\/web\), 1\.6 GB and 1\.2 cores for \d+ s/.test(m.tip), `${ctx}: the meter's tooltip is wrong (${JSON.stringify(m.tip)})`);
+    check(/82 % undeclared/.test(tip) && /Undeclared\s+Map perf \(acme\/web\)\s*2\.8 GB · 2\.1 cores for \d+ min/.test(tip) && /Babysit PR #4170 \(acme\/web\)\s*1\.6 GB · 1\.2 cores for \d+ s/.test(tip), `${ctx}: the host's card does not name the undeclared work (${JSON.stringify(tip)})`);
     check(m.btn === "2" && m.aria === "2 threads run undeclared heavy work" && m.bright && m.color === m.ink && !m.outside, `${ctx}: the rail's button is wrong (${JSON.stringify(m)})`);
     await shot(`undeclared-row-${tag}-desktop.png`);
     // The button's menu, then the thread.
@@ -2407,11 +2421,11 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
       const sh = document.querySelector('.m-sheet[aria-label="Host load"]'), secs = [...sh.querySelectorAll('.mls[aria-label]')];
       const b = sh.getBoundingClientRect();
       return { hosts: secs.map((x) => x.getAttribute('aria-label')), off: secs.filter((x) => x.classList.contains('off')).map((x) => x.querySelector('.mlsn small').textContent),
-        lines: sh.querySelector('.mlsl')?.textContent ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .hmr.ld .hmv')?.textContent ?? '',
+        lines: sh.querySelector('.lcard')?.innerText ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .hmr.ld .hmv')?.textContent ?? '',
         inside: b.left >= 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5 };
     })()`);
     check(s.hosts.join() === "desk,host-b,lab,Quota" && s.off.length === 1 && /^Offline/.test(s.off[0]), `${ctx}: the sheet does not list every host with the offline one marked (${JSON.stringify(s)})`);
-    check(/Heavy jobs: CPU \d+ %/.test(s.lines) && /Running: /.test(s.lines) && /waiting/.test(s.lines) && s.fig === desk[0].fig, `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
+    check(/Heavy jobs/i.test(s.lines) && /CPU\s+\d+ % of the host/.test(s.lines) && /Running\s/.test(s.lines) && /Waiting\s/.test(s.lines) && s.fig === desk[0].fig, `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
     check(s.quotas >= 4 && s.inside, `${ctx}: the sheet has no provider quotas or leaves the screen (${JSON.stringify(s)})`);
     await evaluate(`history.back()`);
     await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
@@ -2530,13 +2544,13 @@ for (const dark of [false, true]) section(`V0.167 desktop 1280x900${dark ? " dar
     const r = await evaluate(`(() => {
       const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid'), cs = getComputedStyle(mid);
       const out = [...mid.querySelectorAll('*')].filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.left < rail.left - 0.5 || b.right > rail.right + 0.5 || e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow === 'visible'); }).map((e) => e.className);
-      const hosts = [...mid.querySelectorAll('.rldr')].map((c) => ({ keys: [...c.querySelectorAll('.hmk')].map((k) => k.textContent).join(), tip: c.title.split('\\n')[0] }));
+      const hosts = [...mid.querySelectorAll('.rldr')].map((c) => ({ keys: [...c.querySelectorAll('.hmk')].map((k) => k.textContent).join(), aria: c.getAttribute('aria-label') ?? '' }));
             return { out, hosts, bar: mid.offsetWidth - mid.clientWidth, sw: cs.scrollbarWidth, scroll: mid.scrollHeight - mid.clientHeight, quota: !!document.querySelector('.rail .rq, .rail .rqr'),
         borders: [mid.querySelector('.rld')].map((e) => getComputedStyle(e).borderTopWidth) };
     })()`);
     check(r.out.length === 0, `${ctx}: part of the rail's middle sticks out of the rail (${JSON.stringify(r.out)})`);
     check(r.bar === 0 && r.sw === "none" && r.scroll <= 0, `${ctx}: the rail's middle shows a scrollbar or scrolls (${JSON.stringify(r)})`);
-    check(r.hosts.length === 2 && r.hosts[0].keys === "ld,job" && r.hosts.every((x) => x.keys.startsWith("ld") && x.tip.startsWith("ld: the load")), `${ctx}: a host is not its two labelled meters with the legend (${JSON.stringify(r.hosts)})`);
+    check(r.hosts.length === 2 && r.hosts[0].keys === "ld,job" && r.hosts.every((x) => x.keys.startsWith("ld") && /^\w+: load /.test(x.aria)), `${ctx}: a host is not its two labelled meters with the legend (${JSON.stringify(r.hosts)})`);
     // V0.quota-in-thread: the quota left the rail for the thread's header
     check(!r.quota && r.borders.every((b) => b === "0px"), `${ctx}: the rail still shows a quota, or a rule is drawn (${JSON.stringify(r)})`);
   } catch (e) {
@@ -2564,7 +2578,7 @@ section('V0.152', async (h) => {
         const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid');
         const cx = (e) => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
         const cards = [...mid.querySelectorAll('.rldr')].map((c) => ({ fig: c.querySelector('.hmr.ld .hmv').textContent, name: c.querySelector('.hmn')?.textContent ?? '', full: c.querySelector('.hmn')?.title ?? '',
-          meter: !!c.querySelector('.hmr.job'), meterTip: c.querySelector('.hmr.job')?.title ?? '', note: c.querySelector('.hmr.job .hmv')?.textContent ?? '', noteHot: !!c.querySelector('.hmr.job.hot') }));
+          meter: !!c.querySelector('.hmr.job'), aria: c.getAttribute('aria-label') ?? '', note: c.querySelector('.hmr.job .hmv')?.textContent ?? '', noteHot: !!c.querySelector('.hmr.job.hot') }));
         const ld = mid.querySelector('.rld');
         const qs = [...mid.querySelectorAll('.rqr')].map((q) => ({ ini: q.querySelector('i').textContent, v: q.querySelector('span').textContent, hot: q.querySelector('span').classList.contains('hot'), tip: q.title.split('\\n')[0],
           left: Math.round(q.getBoundingClientRect().left), top: Math.round(q.getBoundingClientRect().top), right: q.getBoundingClientRect().right }));
@@ -2576,7 +2590,7 @@ section('V0.152', async (h) => {
       const [desk, lab] = r.cards;
       check(desk.fig === "130%" && /^\d+%$/.test(lab.fig), `${ctx}: a ring's figure is not a share of the cores (${JSON.stringify(r.cards)})`);
       check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
-      check(desk.meter && r.cards.every((c) => !c.meter || /^Heavy jobs: /.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
+      check(desk.meter && r.cards.every((c) => !c.meter || /heavy jobs use \d+ %/.test(c.aria)), `${ctx}: a slot meter's host does not say what it is (${JSON.stringify(r.cards)})`);
       check(desk.note === "95%+1" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
       check(r.qs.length === 0, `${ctx}: the rail still holds a quota grid (V0.quota-in-thread moved it to the thread's header) (${JSON.stringify(r.qs)})`);
       check(r.centred && r.wide.length === 0, `${ctx}: the rail's middle is off-centre or wider than the rail (${JSON.stringify({ centred: r.centred, wide: r.wide })})`);

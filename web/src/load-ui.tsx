@@ -3,7 +3,8 @@
 
 import { HostMark } from "./host-mark-ui.tsx";
 import type { ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { createPortal } from "preact/compat";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
 import { clockTime } from "./format.ts";
@@ -11,7 +12,7 @@ import { ContextMenu } from "./menu-ui.tsx";
 import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
 import { railUndeclared } from "./undeclared.ts";
 import { hostLeftovers } from "./leftovers.ts";
-import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, STRIP_MAX, undeclaredTip, type StripHost, threadCPU, threadJob, threadSlot, type HostLoad, type Slots } from "./load.ts";
+import { loadCard, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, STRIP_MAX, type LoadCard, type StripHost, threadCPU, threadJob, threadSlot, type HostLoad, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -66,14 +67,14 @@ export function useLoad(): HostLoad[] {
   return l;
 }
 
-/** V0.167: what the two meters are, first in every host's tooltip. */
-export const METERS_LEGEND = "ld: the load, % of the cores (1 min) · job: heavy jobs' use of their budget (the tighter of CPU and memory)";
+/** V0.167: what the two meters are; the foot of every host's card. */
+export const METERS_LEGEND = "ld: the load as a share of the cores · job: heavy jobs' use of their budget";
 
 /** V0.167: one host's load and heavy jobs as two labelled meters, the same on the desktop rail, the phone's strip and
  *  its sheet: the host's name (when given), "ld" with a bar in the load colour (V0.99's and decision 0029's rule) and
  *  the load as a share of the cores (V0.152), "job" with a blue bar and the heavy jobs' use (V0.163; V0.164's
  *  undeclared part hatched; red with "+n" while jobs wait). An offline host: its name and "offline". */
-export function HostMeters({ h, name, full, jobsTip, offline }: { h?: HostLoad; name?: string; full?: string; jobsTip?: string; offline?: boolean }) {
+export function HostMeters({ h, name, full, offline }: { h?: HostLoad; name?: string; full?: string; offline?: boolean }) {
   const m = h && railMeter(h);
   const bud = h && railBudget(h);
   return (
@@ -97,7 +98,7 @@ export function HostMeters({ h, name, full, jobsTip, offline }: { h?: HostLoad; 
             <span class="hmv">{m.text}</span>
           </span>
           {bud && (
-            <span class={`hmr job${bud.hot ? " hot" : ""}`} title={jobsTip}>
+            <span class={`hmr job${bud.hot ? " hot" : ""}`}>
               <span class="hmk">job</span>
               <span class="hmb">
                 <i style={{ width: `${Math.round(bud.share * 100)}%` }} />
@@ -115,24 +116,79 @@ export function HostMeters({ h, name, full, jobsTip, offline }: { h?: HostLoad; 
   );
 }
 
-/** The rail (desktop), V0.99, V0.167: per host its two meters (HostMeters), stacked; the exact values on hover. */
+/** V0.load-card: one host's load as a card: the verdict and what it means, then the machine and the heavy jobs as
+ *  label, value and a quieter note. The same on the rail's hover card (with the host's name) and the phone's sheet. */
+export function LoadCardView({ c, head }: { c: LoadCard; head?: boolean }) {
+  return (
+    <div class={`lcard ${c.level}`}>
+      <div class="lcv">
+        {head && <b class="mono ell">{c.host}</b>}
+        <span class="lcl">{c.verdict}</span>
+      </div>
+      <p class="lcs">{c.summary}</p>
+      {c.sections.map((sec) => (
+        <section class="lcsec">
+          <h4>{sec.title}</h4>
+          <dl>
+            {sec.rows.map((r) => (
+              <>
+                <dt>{r.label}</dt>
+                <dd class={r.hot ? "hot" : undefined}>
+                  <span class="lcval">{r.value}</span>
+                  {r.note && <span class="lcn">{r.note}</span>}
+                </dd>
+              </>
+            ))}
+          </dl>
+        </section>
+      ))}
+      {c.source && <p class="lcsrc">{c.source}</p>}
+    </div>
+  );
+}
+
+/** The rail's hover card beside a host's meters (desktop; the phone shows the same card in its sheet: no hover there).
+ *  On document.body, since the rail's containment would clip it; kept inside the window. */
+function RailCard({ c, at }: { c: LoadCard; at: DOMRect }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState(at.top);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) setTop(Math.max(8, Math.min(at.top, window.innerHeight - el.offsetHeight - 8)));
+  }, [at.top, c]);
+  return createPortal(
+    <div ref={ref} class="lcpop" role="tooltip" style={{ left: `${at.right + 10}px`, top: `${top}px` }}>
+      <LoadCardView c={c} head />
+      <p class="lcf">{METERS_LEGEND}</p>
+    </div>,
+    document.body,
+  );
+}
+
+/** The rail (desktop), V0.99, V0.167: per host its two meters (HostMeters), stacked; the card (V0.load-card) on hover or
+ *  keyboard focus. */
 export function LoadRail() {
   const list = useLoad();
+  const und = useUnd();
+  const [open, setOpen] = useState<{ host: string; at: DOMRect } | null>(null);
   if (!list.length) return null;
   const several = list.length > 1;
   const short = shortHostNames(list.map((h) => h.host));
-  const und = useUnd();
+  const shown = open && list.find((h) => h.host === open.host);
+  const show = (host: string) => (e: Event) => setOpen({ host, at: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+  const hide = () => setOpen(null);
   return (
     <div class="rld">
       {list.map((h) => (
         <div class="rldw">
-          <div class={`rldr ${railMeter(h).level}`} title={[METERS_LEGEND, ...loadDetail(h)].join("\n")} role="img" aria-label={railLabel(h, several)}>
-            <HostMeters h={h} name={several ? short.get(h.host) : undefined} full={h.host} jobsTip={slotTip(h, { lookup: und.lookup, now: und.now() })} />
+          <div class={`rldr ${railMeter(h).level}`} tabIndex={0} role="img" aria-label={railLabel(h, several)} onMouseEnter={show(h.host)} onMouseLeave={hide} onFocus={show(h.host)} onBlur={hide}>
+            <HostMeters h={h} name={several ? short.get(h.host) : undefined} full={h.host} />
           </div>
           <RailUndeclared h={h} />
           <RailLeftovers h={h} />
         </div>
       ))}
+      {open && shown && <RailCard c={loadCard(shown, { lookup: und.lookup, now: und.now() })} at={open.at} />}
     </div>
   );
 }
@@ -158,17 +214,14 @@ export function LoadStrip({ hosts, onOpen }: { hosts: StripHost[]; onOpen(): voi
   );
 }
 
-/** V0.166, V0.167: the phone's load sheet: per host its full name and state, its two meters, and the rail's tooltip
- *  lines as text (the load, the signals, CPU and memory in use and their budget, the running jobs with their share,
- *  who waits and why, undeclared work); then the provider quotas. */
+/** V0.166, V0.167, V0.load-card: the phone's load sheet: per host its full name and state, its two meters, and the
+ *  rail's hover card as text (no hover on a phone), then the leftovers; then the provider quotas. */
 export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: ComponentChildren }) {
   const und = useUnd();
   return (
     <div class="m-lsheet">
-      <p class="mlsk">{METERS_LEGEND}</p>
       {hosts.map((h) => {
-        const lines = h.load ? loadDetail(h.load) : [];
-        const ut = h.load ? undeclaredTip(h.load, und.lookup, und.now()) : "";
+        const c = h.load && loadCard(h.load, { lookup: und.lookup, now: und.now() });
         return (
           <section class={`mls${h.load ? "" : " off"}`} aria-label={h.name}>
             <div class="mlsh">
@@ -178,18 +231,16 @@ export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: C
               </span>
               {h.load && <HostMeters h={h.load} />}
             </div>
-            {lines.length > 0 && (
+            {c && <LoadCardView c={c} />}
+            {h.load && (
               <ul class="mlsl">
-                {lines.slice(1).map((l) => (
-                  <li>{l}</li>
-                ))}
-                {ut && <li class="und">{ut}</li>}
-                {h.load && <SheetLeftovers h={h.load} />}
+                <SheetLeftovers h={h.load} />
               </ul>
             )}
           </section>
         );
       })}
+      <p class="mlsk">{METERS_LEGEND}</p>
       <section class="mls" aria-label="Quota">
         <div class="mlsq">Provider quotas</div>
         {quotas}

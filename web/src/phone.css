@@ -480,3 +480,7 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 
 /* V0.210: a touch target; the desktop keeps the small button, which a pointer can hit. */
 .m-thread .chneed.textask .btn{min-height:44px}
+/* V0.load-card: the card in the sheet reads at phone size (no hover on a phone; the rail shows it as a hover card). */
+.m-lsheet .lcs{font-size:14px;line-height:20px}
+.m-lsheet .lcsec dt,.m-lsheet .lcsec dd{font-size:13px;line-height:19px}
+.m-lsheet .mlsl:empty{display:none}

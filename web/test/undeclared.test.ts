@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildConversation } from "../src/conversation.ts";
 import { mockLoad, mockUndeclaredCommand, withUndeclared } from "../src/mock.ts";
-import { railBudget, slotTip, threadSlot, type HostLoad, type UndeclaredUse } from "../src/load.ts";
+import { cardLines, loadCard, railBudget, threadSlot, type HostLoad, type UndeclaredUse } from "../src/load.ts";
 import {
   addedRows,
   findUndeclared,
@@ -91,12 +91,14 @@ test("the meter has two parts, admitted and undeclared, and its tooltip names bo
   const mem = host([map], { slots: { ...h.slots!, tight: "memory", usedPct: 60, memPct: 60 } });
   assert.equal(railBudget(mem)?.und, 0.2);
   assert.equal(railBudget(mem)?.share, 0.4);
-  const tip = slotTip(h, { lookup, now: NOW }).split("\n");
-  assert.match(tip[0], /CPU 95 % \(undeclared 52 %\) · memory 41 % \(undeclared 20 %\)/);
-  assert.equal(tip[tip.length - 1], "Undeclared: Map perf (acme/web), 2.8 GB and 2.1 cores for 3 min; Babysit PR #4170 (acme/web), 1.6 GB and 1.2 cores for 50 s");
+  const tip = cardLines(loadCard(h, { lookup, now: NOW }));
+  assert.ok(tip.includes("CPU: 95 % of the host · budget 100 % · 52 % undeclared"), tip.join("\n"));
+  assert.ok(tip.some((l) => /^Memory: 41 % of the host · budget \d+ % · 20 % undeclared$/.test(l)), tip.join("\n"));
+  assert.ok(tip.includes("Undeclared: Map perf (acme/web) · 2.8 GB · 2.1 cores for 3 min"), tip.join("\n"));
+  assert.ok(tip.includes("…: Babysit PR #4170 (acme/web) · 1.6 GB · 1.2 cores for 50 s"), tip.join("\n"));
   assert.equal(undeclaredTip(none, lookup, NOW), "");
-  // the plain tooltip (no names) still says the shares
-  assert.match(slotTip(h), /undeclared 52 %/);
+  // without names the card still says the shares
+  assert.ok(cardLines(loadCard(h)).some((l) => l.includes("52 % undeclared")));
 });
 
 test("the rail button counts the flagged threads; one opens the thread, several a menu", () => {
@@ -176,7 +178,7 @@ test("Settings: learned commands, added patterns and the thresholds", () => {
 
 test("Settings words: undeclared, never slot or reservation", () => {
   const h = host([map, nix], { heavyAdded: [], undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 } });
-  const text = [JSON.stringify(undeclaredRows(h, NOW, lookup)), JSON.stringify(thresholdRows(h)), slotTip(h, { lookup, now: NOW }), railUndeclared(h, lookup)?.title, stripView(h, { ...map, paused: true })?.note].join(" ");
+  const text = [JSON.stringify(undeclaredRows(h, NOW, lookup)), JSON.stringify(thresholdRows(h)), cardLines(loadCard(h, { lookup, now: NOW })).join(" "), railUndeclared(h, lookup)?.title, stripView(h, { ...map, paused: true })?.note].join(" ");
   assert.ok(!/slot|reservation/i.test(text), text);
 });
 

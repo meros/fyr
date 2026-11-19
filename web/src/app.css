@@ -1782,3 +1782,27 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .home.phone .st-ev{min-height:44px;align-items:center}
 .home.phone .st-sys{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
 .m-status .m-nbody{padding:0;gap:0}
+
+/* ---- V0.load-card: a host's load as a card (LoadCardView, web/src/load-ui.tsx): the rail's hover card on desktop,
+   the same card in the phone's load sheet. A verdict and its sentence, then label · value · quiet note rows. ---- */
+.lcard{display:flex;flex-direction:column;gap:8px;min-width:0;--lv:var(--calm)}
+.lcard.warm{--lv:var(--beam-mark)}
+.lcard.hot{--lv:var(--signal-ink)}
+.lcv{display:flex;align-items:center;gap:8px;min-width:0}
+.lcv b{font:600 13px/18px var(--mono);color:var(--ink);min-width:0}
+.lcl{display:inline-flex;align-items:center;gap:5px;font:600 12px/16px var(--ui);color:var(--lv);white-space:nowrap}
+.lcl::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--lv)}
+.lcv b+.lcl{margin-left:auto}
+.lcs{margin:0;font:400 13px/18px var(--ui);color:var(--ink)}
+.lcsec{display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--line)}
+.lcsec h4{margin:0;font:600 11px/14px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint)}
+.lcsec dl{margin:0;display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:12px;row-gap:3px}
+.lcsec dt{font:400 12px/17px var(--ui);color:var(--ink-muted);white-space:nowrap}
+.lcsec dd{margin:0;display:flex;flex-wrap:wrap;column-gap:8px;min-width:0;font:400 12px/17px var(--ui)}
+.lcval{color:var(--ink);font-variant-numeric:tabular-nums}
+.lcn{color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.lcsec dd.hot .lcval{color:var(--signal-ink);font-weight:600}
+.lcsrc{margin:0;font:400 11px/14px var(--ui);color:var(--ink-faint)}
+.lcpop{position:fixed;z-index:60;width:340px;max-width:calc(100vw - 24px);padding:12px 14px;background:var(--raised);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--lift-2);pointer-events:none}
+.lcpop .lcf{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);font:400 11px/14px var(--ui);color:var(--ink-faint)}
+.rail .rldr:focus-visible{outline:2px solid var(--harbour);outline-offset:2px;border-radius:4px}

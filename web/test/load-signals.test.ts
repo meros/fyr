@@ -2,7 +2,7 @@
 // provider; the tooltip names them; a slot holder's row names its job; Settings lists the measured job classes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { jobLines, loadDetail, railMeter, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
+import { cardLines, jobLines, loadCard, railMeter, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
 
 const host: HostLoad = {
   host: "desk",
@@ -43,12 +43,17 @@ test("without a provider (macOS for now) the ring follows the load as before", (
 });
 
 test("the tooltip names the slowdown, the memory and the provider", () => {
-  const d = loadDetail(host);
-  assert.ok(d.includes("Slowdown 1.2× (a new job runs 1.2× slower than on an idle host)"), d.join("\n"));
-  assert.ok(d.includes("Memory 46 % free of 14.0 GB for agents · stall ok (0.4 %)"), d.join("\n"));
-  assert.ok(d.includes("Agents' CPU pressure 35 % (10 s)"), d.join("\n"));
-  assert.ok(d.includes("Signals: cgroups"), d.join("\n"));
-  assert.ok(!loadDetail({ ...host, slowdown: undefined }).some((l) => l.startsWith("Slowdown")));
+  const c = loadCard(host);
+  const d = cardLines(c);
+  assert.equal(d[0], "Calm: New jobs run 1.2× slower than on an idle machine.");
+  assert.ok(d.includes("Speed: 1.2× slower than idle · for a new job"), d.join("\n"));
+  assert.ok(d.includes("Memory: 46 % free of 14.0 GB · no stalls"), d.join("\n"));
+  assert.ok(d.includes("CPU waits: 30 % of the time · agents 35 %"), d.join("\n"));
+  assert.equal(c.source, "Measured by cgroups");
+  assert.ok(!cardLines(loadCard({ ...host, slowdown: undefined })).some((l) => l.startsWith("Speed")));
+  const short = cardLines(loadCard({ ...host, slowdown: 3.1, memoryStall: "critical", memoryPressure: 12 }));
+  assert.equal(short[0], "Overloaded: New jobs run 3.1× slower than on an idle machine. Memory is short.");
+  assert.ok(short.includes("Memory: 46 % free of 14.0 GB · stalling hard 12.0 %"), short.join("\n"));
 });
 
 test("a holder's row names its job (V0.163: its share without a host's percentages); without a matched command its kind", () => {
