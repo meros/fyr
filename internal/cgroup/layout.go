@@ -48,6 +48,9 @@ const (
 	scopePrefix  = "fyr-agent-"
 	deployPrefix = "fyr-deploy-"
 	scopeSuffix  = ".scope"
+	// probePrefix follows scopePrefix in a scope that is no thread: the
+	// layout's probe at setup and the slowdown probe (V0.probe-scope).
+	probePrefix = "probe-"
 )
 
 // scopes starts processes in transient scopes of the system manager.
@@ -83,7 +86,7 @@ func scopeThread(base string) (string, int, bool) {
 		return DeployDir, 0, true
 	}
 	s, ok := strings.CutPrefix(s, scopePrefix)
-	if !ok || s == "" {
+	if !ok || s == "" || strings.HasPrefix(s, probePrefix) {
 		return "", 0, false
 	}
 	gen := 0
@@ -331,7 +334,7 @@ func setupScopes(o Options, legacy *Tree, self string) (*Tree, error) {
 			sc.resetOOM = true
 		}
 	}
-	unit := fmt.Sprintf("%sprobe-%d%s", scopePrefix, o.PID, scopeSuffix)
+	unit := fmt.Sprintf("%s%s%d%s", scopePrefix, probePrefix, o.PID, scopeSuffix)
 	path, oomGroup, err := o.ScopeProbe(sc.prefix(unit, ""))
 	if err != nil {
 		return nil, err

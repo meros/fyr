@@ -95,7 +95,7 @@ The tooltip names the provider ("signals: PSI + cgroups", "probe + processes"), 
 **The probe** is what makes this portable. It is the same measurement section 1 used as ground truth:
 - fyrd times a fixed CPU burst of about 5 ms every 5 s, about 0.1 % of one core;
 - the slowdown is wall time ÷ CPU time, the median of the last 3 probes;
-- on Linux with cgroups it runs as a small child in `agents/probe/`, a name `load.go` already skips, with the default agent weight, so it feels what a new job would feel. Elsewhere it runs at the agents' nice level.
+- on Linux with cgroups it runs as a small child in `agents/probe/`, a name `load.go` already skips, with the default agent weight, so it feels what a new job would feel. Elsewhere it runs at the agents' nice level. *V0.probe-scope: in the scope layout of V0.agents-unit it runs in a scope of its own under the agents' slice, `fyr-agent-probe-<pid>-<n>.scope`, and while that child cannot start, the burst runs in fyrd.*
 
 PSI is better where it exists: smoother, and it sees stalls between probes. Where it exists, both are recorded and s is the larger of the probe and PSI mapped through the host's own fit. S1 records both, so each Linux host learns its PSI-to-slowdown relation instead of taking this desktop's. Unlike PSI, s does not saturate; this window saw up to 25×. That makes the run queue unnecessary as a magnitude signal: it is Linux-only and was the second choice in Q1.
 
