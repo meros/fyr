@@ -169,3 +169,60 @@ func TestWorktreeSweepWithoutAutoOrCwdsRemovesNothing(t *testing.T) {
 		}
 	}
 }
+
+// V0.change-worktree-cleanup: a worktree Fyr made for a change that landed
+// or ended goes DoneGrace after the end and after its HEAD last moved, also
+// while its thread is awake with a live CLI; not before, never with
+// uncommitted work, and not while another awake thread is on its branch or
+// a process works in it.
+func TestWorktreeSweepRemovesFyrsWorktreeOfAnEndedChange(t *testing.T) {
+	_, _, repo, wt, commit := sweepRepo(t)
+	landed, recent, dirty, shared, busy, open := wt("landed"), wt("recent"), wt("dirty"), wt("shared"), wt("busy"), wt("open")
+	for _, p := range []string{landed, recent, dirty, shared, busy, open} {
+		commit(p, filepath.Base(p))
+		git(t, p, "push", "-q", "origin", filepath.Base(p))
+	}
+	write(t, filepath.Join(dirty, "f"), "changed")
+	now := time.Now().Add(3 * time.Hour) // every HEAD moved 3 h ago
+	var lines []string
+	tp := &Temps{Dir: t.TempDir(), Now: func() time.Time { return now }, Auto: true, NoFetch: true, KV: &memKV{},
+		Threads: func() []TempThread {
+			return []TempThread{
+				{ID: "t_me", Cwd: repo, LiveCLI: true, Branches: []string{"open"}, Done: map[string]time.Time{
+					landed: now.Add(-2 * time.Hour), recent: now.Add(-10 * time.Minute), dirty: now.Add(-2 * time.Hour),
+					shared: now.Add(-2 * time.Hour), busy: now.Add(-2 * time.Hour),
+				}},
+				{ID: "t_other", Cwd: "/elsewhere", Branches: []string{"shared"}},
+			}
+		},
+		Cwds:      func() []string { return []string{filepath.Join(busy, "sub")} },
+		OnRemoved: func(th, line string) { lines = append(lines, th+": "+line) },
+	}
+	tp.SweepWorktrees()
+	if exists(landed) {
+		t.Fatal("the landed change's worktree stays")
+	}
+	for _, p := range []string{recent, dirty, shared, busy, open} {
+		if !exists(p) {
+			t.Fatalf("%s went", p)
+		}
+	}
+	got := byPath(tp.View())
+	if x := got[recent]; x.RemoveAt == nil || !x.RemoveAt.Equal(now.Add(50*time.Minute)) || x.Thread != "t_me" {
+		t.Fatalf("recent: %+v", x)
+	}
+	if x := got[dirty]; !strings.Contains(x.Why, "uncommitted") {
+		t.Fatalf("dirty: %+v", x)
+	}
+	if x := got[busy]; x.Why != "in use" {
+		t.Fatalf("busy: %+v", x)
+	}
+	for _, p := range []string{shared, open} {
+		if _, ok := got[p]; ok {
+			t.Fatalf("%s is listed: an awake thread is on its branch", p)
+		}
+	}
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "t_me: Fyr removed the worktree "+landed) {
+		t.Fatalf("lines %q", lines)
+	}
+}

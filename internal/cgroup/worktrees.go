@@ -15,6 +15,10 @@ package cgroup
 //     also after the branch is deleted or history is rewritten);
 //   - nothing moved its HEAD for WorktreeIdle.
 //
+// V0.change-worktree-cleanup: a worktree Fyr made for a change that landed
+// or ended (TempThread.Done) is not in use by that change's branch, and goes
+// DoneGrace after the end and after its HEAD last moved.
+//
 // Before it goes, its HEAD is pinned at refs/fyr/worktrees/<name>-<commit> and its
 // branch is kept, so `git worktree add` gives it back; Restore does that when
 // a thread starts in a folder that was removed.
@@ -34,6 +38,11 @@ import (
 
 // WorktreeIdle: a worktree whose HEAD moved more recently stays.
 const WorktreeIdle = 24 * time.Hour
+
+// DoneGrace: a worktree Fyr made for a change that landed or ended stays
+// this long after the end and after its HEAD last moved
+// (V0.change-worktree-cleanup).
+const DoneGrace = time.Hour
 
 // pullFetchEvery: how often a repository's PR heads are fetched.
 const pullFetchEvery = time.Hour
