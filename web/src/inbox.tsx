@@ -8,7 +8,7 @@ import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { DESKTOP_LOOK, HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
+import { DESKTOP_LOOK, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { drawnRows, type Guest, type GuestWhy } from "./selection.ts";
@@ -160,9 +160,6 @@ interface InboxProps {
   rows: Sections;
   /** V0.192: the row that is drawn only because it is the current thread */
   guest: Guest | null;
-  /** V0.your-move: the moves the hold keeps back, and the press that shows them */
-  updates: number;
-  onShowUpdates(): void;
   now: number;
   selected: string | null;
   picked: Set<string>;
@@ -222,7 +219,6 @@ export function Inbox(p: InboxProps) {
       <FilterRow f={p.filter} now={p.now} unlock={p.unlock} />
       {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
       <div class="list" role="listbox" aria-label="Threads">
-        <HeldUpdates n={p.updates} show={p.onShowUpdates} />
         <AiSearchPanel ai={ai} onOpen={p.onClick} />
         {!p.query.trim() && <FilterEmpty f={p.filter} cls="fempty" />}
         {p.rows.pinned.length > 0 && (

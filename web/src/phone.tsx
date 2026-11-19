@@ -54,7 +54,7 @@ import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { AgentStatus } from "./agent-status.tsx";
 import { FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
-import { HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
+import { HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
 import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
 import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
@@ -215,7 +215,7 @@ export interface PhoneProps {
   /** the inbox's sections; what search finds: the project filter's threads, quiet ones only while the unlock runs
    *  (V0.114); all: the same with quiet ones, to count the hits the lock hides; the one unlock of quiet projects;
    *  V0.192: rows is what the list draws (sec, with the current thread when the filters hide it), guest that row */
-  inbox: { sec: Sections; rows: Sections; guest: Guest | null; /** V0.your-move */ updates: number; showUpdates(): void; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
+  inbox: { sec: Sections; rows: Sections; guest: Guest | null; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
   now: number;
   /** #41: the same thread commands, undo and toasts as the desktop */
   commands: ThreadCommands;
@@ -498,7 +498,6 @@ function MInbox(p: PhoneProps) {
         </div>
       )}
       <div class="m-list" ref={listRef} onScroll={onScroll}>
-        <HeldUpdates n={p.inbox.updates} show={p.inbox.showUpdates} />
         {!p.list.selecting && <FilterEmpty f={p.filters} cls="m-fempty" />}
         {p.inbox.rows.pinned.length > 0 && (
           // V0.104: the desktop's pinned block, above every section and always open.
