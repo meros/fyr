@@ -1943,7 +1943,7 @@ try {
   await shot("models-search-desktop.png");
   // A thread on a model that is off: its chip and Hand over say "(off)".
   await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b')");
-  const chip = await evaluate(`[...document.querySelectorAll('.chip.m span')].map(e => e.textContent).join('|')`);
+  const chip = await evaluate(`[...document.querySelectorAll('.thh .agp .ags.agm .agt')].map(e => e.textContent).join('|')`);
   await evaluate(`document.querySelector('.thh .tmenu-b')?.click()`);
   await waitFor(`!!document.querySelector('.thh [role=menuitem]')`, { soft: true });
   await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].find(b => /Hand over/.test(b.textContent))?.click()`);
