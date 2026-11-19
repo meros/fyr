@@ -353,7 +353,19 @@ func (g *JobGroups) JobEmpty(thread string) bool {
 // agents/<thread>/undeclared/ and freezes it (V0.164 section 7); the CLI, its
 // MCP servers and any resident stay. A process that ends during the move is
 // skipped. False without a tree, without roots, or when nothing could be moved.
+//
+// V0.guard-tidy: like a rotation, a freeze of a thread whose episode ended
+// (Live false) does nothing, under umu, which EndUndeclared also takes: the
+// caller read the flags before the end may have thawed and removed the work.
 func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
+	if g == nil {
+		return false
+	}
+	g.umu.Lock()
+	defer g.umu.Unlock()
+	if g.Live != nil && !g.Live(thread) {
+		return false
+	}
 	if g.canStop() && g.stopRoots(thread, roots) {
 		g.mu.Lock()
 		if g.ufrozen == nil {

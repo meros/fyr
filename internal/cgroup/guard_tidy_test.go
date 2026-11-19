@@ -130,3 +130,22 @@ func TestGuardTidyNoRotationAfterTheEpisodeEnded(t *testing.T) {
 		t.Fatal("the thread reads as paused after its episode ended")
 	}
 }
+
+// The same race for a freeze: the engine read the flags, the episode ended
+// and EndUndeclared ran, then the freeze would move and freeze the work again.
+func TestGuardTidyNoFreezeAfterTheEpisodeEnded(t *testing.T) {
+	g, td := turboTree(t)
+	live := false // the detector ended the episode
+	g.Live = func(string) bool { return live }
+	g.EndUndeclared("t_a")
+	if g.FreezeUndeclared("t_a", []Root{{PID: 20}}) {
+		t.Fatal("a freeze after the episode's end froze the work")
+	}
+	if exists(filepath.Join(td, undeclaredDir)) || g.Frozen("t_a") {
+		t.Fatal("undeclared/ made or the thread reads as paused after its episode ended")
+	}
+	live = true // a live episode is frozen as before
+	if !g.FreezeUndeclared("t_a", []Root{{PID: 20}}) || read(t, filepath.Join(td, undeclaredDir, "cgroup.freeze")) != "1" {
+		t.Fatal("a live episode was not frozen")
+	}
+}
