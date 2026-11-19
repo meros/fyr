@@ -224,9 +224,8 @@
     {
       "activityAt": "2026-01-01T00:00:00Z",
       "attention": {
-        "reason": "Starting",
-        "section": "working",
-        "state": "working"
+        "section": "seen",
+        "state": "seen"
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/work",
@@ -241,7 +240,6 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
-      "starting": "2026-01-01T00:00:00Z",
       "stopped": true,
       "title": "a thread in a quiet project",
       "unavailable": {
@@ -278,9 +276,8 @@
     {
       "activityAt": "2026-01-01T00:00:00Z",
       "attention": {
-        "reason": "Starting",
-        "section": "working",
-        "state": "working"
+        "section": "seen",
+        "state": "seen"
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/app",
@@ -312,7 +309,6 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
-      "starting": "2026-01-01T00:00:00Z",
       "stopped": true,
       "title": "a thread with a live view",
       "unavailable": {
@@ -349,9 +345,8 @@
     {
       "activityAt": "2026-01-01T00:00:00Z",
       "attention": {
-        "reason": "Starting",
-        "section": "working",
-        "state": "working"
+        "section": "seen",
+        "state": "seen"
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/lib",
@@ -368,7 +363,6 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
-      "starting": "2026-01-01T00:00:00Z",
       "stopped": true,
       "title": "a thread in a clone",
       "unavailable": {
@@ -405,9 +399,8 @@
     {
       "activityAt": "2026-01-01T00:00:00Z",
       "attention": {
-        "reason": "Starting",
-        "section": "working",
-        "state": "working"
+        "section": "seen",
+        "state": "seen"
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner",
@@ -420,7 +413,6 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
-      "starting": "2026-01-01T00:00:00Z",
       "stopped": true,
       "title": "a thread in the home folder",
       "unavailable": {
@@ -457,9 +449,8 @@
     {
       "activityAt": "2026-01-01T00:00:00Z",
       "attention": {
-        "reason": "Starting",
-        "section": "working",
-        "state": "working"
+        "section": "seen",
+        "state": "seen"
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/app",
@@ -476,7 +467,6 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
-      "starting": "2026-01-01T00:00:00Z",
       "stopped": true,
       "title": "a thread in a folder",
       "unavailable": {

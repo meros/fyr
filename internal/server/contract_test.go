@@ -51,6 +51,16 @@ func TestStateContractFixture(t *testing.T) {
 			b, _ := io.ReadAll(r.Body)
 			t.Fatalf("%s: %d %s", body, r.StatusCode, b)
 		}
+		// V0.starting-moves: no agent runs here, so no start ends by
+		// itself; the fixture shows each thread as it is after its run.
+		for _, d := range e.Snapshot() {
+			if d.Starting != nil {
+				coretest.Patch(e, d.ID, func(t *core.Thread, _ time.Time) []core.Event {
+					t.Starting = nil
+					return nil
+				})
+			}
+		}
 	}
 	src := filepath.Join(home, "src", "app")
 	os.MkdirAll(src, 0o755)

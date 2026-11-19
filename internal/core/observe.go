@@ -41,9 +41,9 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 func ProcessLost(t *Thread, class, msg string, now time.Time) {
 	t.Unresponsive = nil // V0.143: the process is gone
 	t.MachineWait = nil  // V0.153
-	t.Starting = nil     // V0.starting-moves: the start died with it
 	var keep []Decision
-	live := t.Running
+	live := t.Running || t.Starting != nil // V0.starting-moves: the start died with it
+	t.Starting = nil
 	for _, d := range t.Decisions {
 		if !d.NeedsProcess() {
 			keep = append(keep, d)
