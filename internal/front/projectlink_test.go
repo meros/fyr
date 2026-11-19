@@ -259,3 +259,45 @@ func TestProjectAdd(t *testing.T) {
 		t.Fatalf("a second member: %d %v", code, rep)
 	}
 }
+
+// V0.project-priority: a linked project's priority is shared: an edit reaches
+// every member, normal clears it on each, and a bad value reaches none.
+func TestProjectSharedPriority(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	f := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, f.URL, 2)
+	onA, onB := projectOn(t, f.URL, a, "TEST-A", "Fyr"), projectOn(t, f.URL, b, "TEST-B", "fyr-mac")
+	code, rep := linkCmd(t, f.URL, "l", onA, onB)
+	if code != 200 {
+		t.Fatalf("link: %d %v", code, rep)
+	}
+	link, _ := rep["result"].(map[string]any)["link"].(string)
+	eventually(t, "front sees both", func() bool { return frontSees(t, f.URL, onA, link) && frontSees(t, f.URL, onB, link) })
+	prio := func(h *settingsHost, ref string) string {
+		for _, p := range h.eng.Projects() {
+			if strings.HasSuffix(ref, "/"+p.ID) {
+				return p.Priority
+			}
+		}
+		return "?"
+	}
+	shared := func(id, args string) (int, map[string]any) {
+		return post(t, f.URL+"/api/front/command", fmt.Sprintf(`{"commandId":%q,"action":"front.projectShared","args":{"link":%q,%s}}`, id, link, args))
+	}
+	if code, rep := shared("bad", `"priority":"urgent"`); code != 400 {
+		t.Fatalf("a bad priority: %d %v", code, rep)
+	}
+	if code, rep := shared("hi", `"priority":"high"`); code != 200 {
+		t.Fatalf("high: %d %v", code, rep)
+	}
+	if prio(a, onA) != "high" || prio(b, onB) != "high" {
+		t.Fatalf("high: a=%q b=%q", prio(a, onA), prio(b, onB))
+	}
+	// Another shared edit keeps it; null (normal) clears it on each.
+	if code, _ := shared("name", `"name":"Fyr 2"`); code != 200 || prio(b, onB) != "high" {
+		t.Fatalf("a rename dropped it: %q", prio(b, onB))
+	}
+	if code, _ := shared("normal", `"priority":null`); code != 200 || prio(a, onA) != "" || prio(b, onB) != "" {
+		t.Fatalf("normal: a=%q b=%q", prio(a, onA), prio(b, onB))
+	}
+}

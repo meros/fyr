@@ -47,7 +47,8 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.heavyCalls, e.heavyBg = map[string]map[string]bool{}, map[string]bool{}
 	e.heavyMu.Unlock()
 	p.OnGrant = e.slotGranted
-	p.Fill() // a pool loaded from the store may have free slots for its queue
+	p.Rank = e.ProjectRank // V0.project-priority
+	p.Fill()               // a pool loaded from the store may have free slots for its queue
 }
 
 // slotGranted tells a queued thread's agent that the slot is its own.

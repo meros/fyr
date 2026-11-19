@@ -63,6 +63,10 @@ const (
 	threadWeight = "100"
 	// focusWeight is the cpu.weight of a thread a device shows (V0.85).
 	focusWeight = "300"
+	// The weights of a thread of a high and a low project
+	// (V0.project-priority); a focused thread has focusWeight either way.
+	highWeight  = "200"
+	lowWeight   = "50"
 	controllers = "+cpu +memory"
 )
 
@@ -76,6 +80,10 @@ type Tree struct {
 	// beat (V0.85); raised: the cgroups written at focusWeight.
 	focus  map[string]focusBeat
 	raised map[string]bool
+	// rank is a thread's project priority (V0.project-priority), set by
+	// SetRank; weights: what each cgroup was last written.
+	rank    func(thread string) int
+	weights map[string]string
 	// Decision 0032 slice 3: the thread share, and whether a nearly full swap
 	// has lifted it (budgetLifted under mu).
 	threadPercent int
@@ -173,7 +181,7 @@ func setup(o Options) (*Tree, error) {
 	if err := put(root, "cgroup.subtree_control", controllers); err != nil {
 		return nil, fmt.Errorf("enable controllers: %w", err)
 	}
-	t := &Tree{root: root, logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}, threadPercent: min(max(o.ThreadMemoryHighPercent, 0), 100)}
+	t := &Tree{root: root, logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}, weights: map[string]string{}, threadPercent: min(max(o.ThreadMemoryHighPercent, 0), 100)}
 	var bad []string
 	set := func(dir, file, v string) {
 		if v == "" {
@@ -278,6 +286,7 @@ func (t *Tree) Release(id string) {
 		return
 	}
 	delete(t.refs, name)
+	delete(t.weights, name)
 	// Decision 0029 S5: its job's cgroup first (the kernel keeps a parent
 	// with a child); a job still running keeps both until the next Release.
 	job := filepath.Join(t.root, "agents", name, jobDir)
@@ -312,13 +321,11 @@ func (t *Tree) make(name string) (string, error) {
 	if err := os.Mkdir(d, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return "", err
 	}
-	w := threadWeight
-	if t.raised[name] {
-		w = focusWeight
-	}
+	w := t.weightOf(name, t.raised[name])
 	if err := put(d, "cpu.weight", w); err != nil {
 		return "", err
 	}
+	t.weights[name] = w
 	return d, nil
 }
 
@@ -367,8 +374,40 @@ func (t *Tree) Expire(now time.Time) {
 	t.reweight(now)
 }
 
-// reweight writes cpu.weight for each thread whose focus changed; a thread
-// without a cgroup gets its weight when Thread makes one. Holds t.mu.
+// SetRank gives the tree each thread's project priority (V0.project-priority):
+// 1 high, 0 normal, -1 low. rank runs under the tree's lock, so it must read a
+// published value. The weights follow at once and then on every Expire.
+func (t *Tree) SetRank(rank func(thread string) int) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rank = rank
+	t.reweight(time.Now())
+}
+
+// weightOf is a thread cgroup's cpu.weight: focusWeight while a device shows
+// it (V0.85), else its project's (V0.project-priority). Holds t.mu.
+func (t *Tree) weightOf(name string, focused bool) string {
+	if focused {
+		return focusWeight
+	}
+	if t.rank == nil || name == DeployDir {
+		return threadWeight
+	}
+	switch r := t.rank(name); {
+	case r > 0:
+		return highWeight
+	case r < 0:
+		return lowWeight
+	}
+	return threadWeight
+}
+
+// reweight writes cpu.weight for each thread cgroup whose weight changed: a
+// focus that came or went, or its project's priority. A thread without a
+// cgroup gets its weight when Thread makes one. Holds t.mu.
 func (t *Tree) reweight(now time.Time) {
 	want := map[string]bool{}
 	for dev, b := range t.focus {
@@ -378,24 +417,20 @@ func (t *Tree) reweight(now time.Time) {
 		}
 		want[b.name] = true
 	}
-	set := func(name, w string) {
+	for name, was := range t.weights {
+		w := t.weightOf(name, want[name])
+		if w == was {
+			continue
+		}
 		d := filepath.Join(t.root, "agents", name)
 		if _, err := os.Stat(d); err != nil {
-			return
+			continue
 		}
 		if err := put(d, "cpu.weight", w); err != nil {
 			t.logf("cgroups: weight of %s: %v", name, err)
+			continue
 		}
-	}
-	for name := range t.raised {
-		if !want[name] {
-			set(name, threadWeight)
-		}
-	}
-	for name := range want {
-		if !t.raised[name] {
-			set(name, focusWeight)
-		}
+		t.weights[name] = w
 	}
 	t.raised = want
 }

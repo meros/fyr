@@ -1,7 +1,8 @@
 // Package slots runs at most N heavy jobs (test suites, builds, e2e runs)
 // at once across a host's threads (SPEC 0.5 V0.86). The others wait in a
-// queue: first come, first served, a priority waiter (the self-deploy's
-// tests) ahead of the rest. Nobody takes a slot from its holder. N 0 is
+// queue: first come, first served within a project priority (a new waiter
+// goes ahead of the lower ones, V0.project-priority), a priority waiter (the
+// self-deploy's tests) ahead of the rest. Nobody takes a slot from its holder. N 0 is
 // off: every acquire holds at once and nothing is kept. The holders and
 // the queue live in the store's KV table, so they survive a restart.
 package slots
@@ -151,6 +152,10 @@ type Pool struct {
 	// start now without delaying it (decision 0029 S3, EASY); nil never.
 	// Under the pool's lock, like Admit.
 	Backfill func(head, c Holder, held []Holder) bool
+	// Rank is an owner's project priority (V0.project-priority): 1 high, 0
+	// normal, -1 low; nil ranks all alike. It places a new waiter, under the
+	// pool's lock, so it must read a published value and not call the pool.
+	Rank func(owner string) int
 
 	mu   lockwatch.Mutex
 	pub  atomic.Pointer[Snapshot] // the last snapshot, for View
@@ -260,7 +265,7 @@ func (p *Pool) Acquire(owner, kind string) (held bool, ahead int) {
 		p.lastGrant = h.Since
 		return true, 0
 	}
-	p.wait = append(p.wait, h)
+	p.wait = slices.Insert(p.wait, p.placeLocked(owner), h)
 	// Decision 0029 S3: it may start at once behind a head that does not fit
 	// (the head was just asked; only backfill runs here, Admit once per call).
 	granted := p.backfillLocked(nil)
@@ -285,6 +290,31 @@ func (p *Pool) Acquire(owner, kind string) (held bool, ahead int) {
 		return true, 0
 	}
 	return false, index(p.wait, owner)
+}
+
+// RankAfter is how long a waiter waits before a later one of a higher
+// project priority may no longer go ahead of it (V0.project-priority): a low
+// project's job is late, never starved.
+const RankAfter = 20 * time.Minute
+
+// placeLocked is where a new waiter of owner goes in the queue
+// (V0.project-priority): behind the priority waits, every waiter of its own
+// project priority or higher, and every waiter that has waited RankAfter;
+// ahead of the rest. Without Rank, or with every waiter ranked alike, that
+// is the end. The waiters already queued keep their order, so the owner's
+// order (V0.137) stands. Call it with p.mu held.
+func (p *Pool) placeLocked(owner string) int {
+	if p.Rank == nil {
+		return len(p.wait)
+	}
+	mine, now := p.Rank(owner), p.now()
+	at := 0
+	for i, w := range p.wait {
+		if w.Priority || p.Rank(w.Owner) >= mine || now.Sub(w.Since) >= RankAfter {
+			at = i + 1
+		}
+	}
+	return at
 }
 
 // TryAcquire takes a slot for owner only if one is free for it now, and never

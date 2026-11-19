@@ -150,6 +150,7 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
         color: newest.color,
         icon: newest.icon,
         quiet: newest.quiet,
+        priority: newest.priority,
         image: pic?.image,
         ...(pic ? { imageFrom: { id: pic.id!, hostId: pic.hostId! } } : {}),
         members,
@@ -185,7 +186,7 @@ export function memberOn(p: Project | undefined, hostId: string | undefined): Pr
 export function splitSharedPatch<T extends Record<string, unknown>>(patch: T): { shared: Partial<T>; own: Partial<T> } {
   const shared: Partial<T> = {};
   const own: Partial<T> = {};
-  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet"].includes(String(k)) ? shared : own)[k] = patch[k];
+  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet", "priority"].includes(String(k)) ? shared : own)[k] = patch[k];
   return { shared, own };
 }
 
@@ -390,8 +391,21 @@ export interface ProjectFields {
   profile: string;
   model: string;
   quiet: QuietHours[];
+  priority: ProjectPriority;
 }
-export type ProjectFieldPatch = { name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; quiet?: QuietHours[] | null };
+export type ProjectFieldPatch = { name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
+
+/** V0.project-priority: a project's priority as the page shows it; normal is stored as none. */
+export type ProjectPriority = "high" | "normal" | "low";
+export function priorityOf(p: { priority?: string } | undefined): ProjectPriority {
+  return p?.priority === "high" || p?.priority === "low" ? p.priority : "normal";
+}
+/** V0.project-priority: what the Priority row says the choice does. */
+export function priorityLine(v: ProjectPriority): string {
+  if (v === "high") return "Its threads get a free slot for a test or build before normal and low projects, and more CPU.";
+  if (v === "low") return "Normal and high projects' tests and builds go ahead of its threads' for up to 20 minutes, and it gets less CPU.";
+  return "When threads from several projects need the host, high goes first and low last.";
+}
 
 /** project.update's args for one field, and only that field, so an untouched field never becomes the owner's
  *  (V0.116 (2)). A new provider clears the model; no quiet windows turns quiet hours off. */
@@ -405,6 +419,8 @@ export function patchFor<K extends keyof ProjectFields>(field: K, value: Project
       const q = value as QuietHours[];
       return { quiet: q.length ? q.map(cleanWindow) : null };
     }
+    case "priority":
+      return { priority: value === "normal" ? null : (value as "high" | "low") };
   }
   return { [field]: value } as ProjectFieldPatch;
 }

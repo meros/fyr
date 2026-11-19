@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -506,6 +506,8 @@ export interface ProjectPatch {
   model?: string;
   /** V0.46: quiet hours, a list of windows (decision 0014 addendum); null turns them off */
   quiet?: QuietHours[] | null;
+  /** V0.project-priority: null is normal */
+  priority?: "high" | "low" | null;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
@@ -761,8 +763,8 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
 }
 
 function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked, shown, imageTargets }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0034: the records an image goes to: every online member */ imageTargets: Project[] }) {
-  // Decision 0034: name, colour, icon and quiet hours are the link's; the rest of the page is this host's record.
-  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, image: shown.image, imageFrom: shown.imageFrom };
+  // Decision 0034: name, colour, icon, quiet hours and priority are the link's; the rest of the page is this host's record.
+  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -782,6 +784,10 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
   const icon0 = resolveIcon(project.icon, project.name);
   const [tab, setTab] = useState<IconTab>(project.image ? "image" : icon0.kind);
   const [quiet, setQuiet] = useState<QuietHours[]>(quietList(project.quiet));
+  // V0.project-priority: the pick shows at once; the host's answer replaces it.
+  const [prio, setPrio] = useState<ProjectPriority | null>(null);
+  useEffect(() => setPrio(null), [project.priority]);
+  const shownPrio = prio ?? priorityOf(project);
   const saver = useRef(quietSaver<QuietHours[]>((q) => void save("quiet", patchFor("quiet", q))));
   useEffect(() => () => saver.current.flush(), []);
   const [busy, setBusy] = useState(false);
@@ -998,6 +1004,28 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
                 ))}
               </select>
             </>
+          }
+        />
+        <Row
+          title="Priority"
+          desc={priorityLine(shownPrio)}
+          error={errs.priority}
+          stack
+          end={
+            <Seg
+              label="Priority"
+              value={shownPrio}
+              disabled={env.readOnly}
+              options={[
+                { value: "low", label: "Low" },
+                { value: "normal", label: "Normal" },
+                { value: "high", label: "High" },
+              ]}
+              onChange={async (v) => {
+                setPrio(v);
+                if (await save("priority", patchFor("priority", v))) setPrio(null);
+              }}
+            />
           }
         />
       </Group>

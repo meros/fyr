@@ -32,7 +32,7 @@ const (
 )
 
 // sharedKeys are the values a link's members share.
-var sharedKeys = []string{"name", "color", "icon", "quiet"}
+var sharedKeys = []string{"name", "color", "icon", "quiet", "priority"}
 
 // linkTarget is one project record a link command writes.
 type linkTarget struct {
@@ -249,9 +249,10 @@ func sharedAtOf(p map[string]any) time.Time {
 	return at
 }
 
-// sharedOf is a record's shared values; a cleared quiet list is sent as null.
+// sharedOf is a record's shared values; a cleared quiet list and a normal
+// priority (V0.project-priority) are sent as null.
 func sharedOf(p map[string]any) map[string]any {
-	out := map[string]any{"quiet": p["quiet"]}
+	out := map[string]any{"quiet": p["quiet"], "priority": p["priority"]}
 	for _, k := range sharedKeys[:3] {
 		if v, ok := p[k]; ok {
 			out[k] = v
@@ -346,6 +347,11 @@ func checkShared(args map[string]any) error {
 			return fmt.Errorf("icon kind must be monogram, emoji or line")
 		}
 	}
+	if v, ok := args["priority"]; ok && v != nil {
+		if s, _ := v.(string); !core.ValidPriority(s) {
+			return fmt.Errorf("priority must be high, normal or low")
+		}
+	}
 	if v, ok := args["quiet"]; ok && v != nil {
 		var q core.QuietHours
 		b, _ := json.Marshal(v)
@@ -358,7 +364,7 @@ func checkShared(args map[string]any) error {
 }
 
 // projectSharedCommand runs front.projectShared {link, name?, color?, icon?,
-// quiet?}: the link's newest values with these changed, stamped later than
+// quiet?, priority?}: the link's newest values with these changed, stamped later than
 // anything this front has seen and written to every online member. An offline
 // member catches up when it is back.
 func (f *Front) projectSharedCommand(w http.ResponseWriter, commandID string, args map[string]any) {

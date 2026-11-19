@@ -487,6 +487,7 @@ func (e *Engine) applyProject(in core.Input) api.Reply {
 		staged[s.threadID] = true
 		frames[s.cur.ProjectID], frames[s.t.ProjectID] = true, true
 	}
+	e.publishRanksLocked() // V0.project-priority
 	if after != nil {
 		e.quietSent[after.ID] = quietKey(e.quietUntil(after.ID, now))
 	} else {
