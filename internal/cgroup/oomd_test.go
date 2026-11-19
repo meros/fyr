@@ -92,3 +92,28 @@ func countNear(lines []string) int {
 	}
 	return n
 }
+
+// In the scope layout (V0.agents-unit) fyrd's unit is root-owned with ManagedOOMPreference=omit and oomd's rule is on
+// the agents' slice: the guard reads that slice's limit and stall, and does not mark server/.
+func TestOomdGuardReadsTheAgentsSliceInTheScopeLayout(t *testing.T) {
+	o, l, _ := scopeFS(t, false)
+	var asked string
+	o.OomdLimit = func(u string) float64 { asked = u; return 80 }
+	tr := Setup(o)
+	if tr == nil || tr.Layout() != LayoutScope {
+		t.Fatalf("layout: %v", l.lines)
+	}
+	if asked != "fyr-agents.slice" {
+		t.Fatalf("asked oomd's limit of %q", asked)
+	}
+	if strings.Contains(strings.Join(l.lines, "\n"), "oomd_omit") {
+		t.Fatalf("server/ marked in the scope layout: %v", l.lines)
+	}
+	write(t, filepath.Join(o.FS, slice, "memory.pressure"), memPSI(75))
+	proc := t.TempDir()
+	write(t, filepath.Join(proc, "meminfo"), "MemTotal:       32000000 kB\nMemAvailable:   20000000 kB\n")
+	lr := (&Sampler{Tree: tr, Proc: proc, Cores: 4}).Get()
+	if lr.UnitMemoryStall == nil || *lr.UnitMemoryStall != 75 || lr.OomdLimit != 80 || countNear(l.lines) != 1 {
+		t.Fatalf("stall %v limit %v lines %v", lr.UnitMemoryStall, lr.OomdLimit, l.lines)
+	}
+}
