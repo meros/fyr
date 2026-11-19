@@ -21,6 +21,7 @@ package cgroup
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -44,9 +45,9 @@ type Budget struct {
 	AgentsMemoryHigh    string `json:"agentsMemoryHigh"`
 	AgentsMemoryMax     string `json:"agentsMemoryMax"`
 	AgentsMemorySwapMax string `json:"agentsMemorySwapMax"`
-	// ThreadMemoryHighPercent: each thread's memory.high as a share of the
-	// agents' budget, 0 for none (decision 0032 slice 3).
-	ThreadMemoryHighPercent int `json:"threadMemoryHighPercent"`
+	// ThreadMemoryHighPercent is the thread share of decision 0032 slice 3,
+	// removed by V0.share-shadow: read only to log that it is ignored.
+	ThreadMemoryHighPercent json.RawMessage `json:"threadMemoryHighPercent,omitempty"`
 	// AgentsSlice: the slice the module made for the agents, with their
 	// budget and oomd rule (V0.agents-unit); each thread runs in a scope
 	// under it. Empty keeps the V0.80 layout.
@@ -121,10 +122,7 @@ type Tree struct {
 	// SetRank; weights: what each cgroup was last written.
 	rank    func(thread string) int
 	weights map[string]string
-	// Decision 0032 slice 3: the thread share, and whether a nearly full swap
-	// has lifted it (budgetLifted under mu).
-	threadPercent int
-	budgetLifted  bool
+	// Decision 0032 slice 3, V0.share-shadow: the shadow share's log.
 	budgetSeen    map[string]budgetSeen // under mu: what the guard's log remembers
 	budgetSummary time.Time             // under mu: the last summary line
 	budgetNow     func() time.Time      // tests; nil is time.Now
@@ -161,6 +159,9 @@ func Setup(o Options) *Tree {
 	}
 	if o.Probe == nil {
 		o.Probe = probe
+	}
+	if o.ThreadMemoryHighPercent != nil {
+		o.Logf("cgroups: threadMemoryHighPercent is ignored: a thread's memory.high is no longer set (V0.share-shadow)")
 	}
 	if o.move == nil {
 		o.move = func(file, pid string) error { return os.WriteFile(file, []byte(pid), 0o644) }
@@ -224,7 +225,7 @@ func selfPath(o Options) (string, error) {
 
 func newTree(root string, o Options) *Tree {
 	return &Tree{root: root, layout: LayoutUnit, agents: filepath.Join(root, "agents"), logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}, weights: map[string]string{},
-		cur: map[string]string{}, pending: map[string]time.Time{}, threadPercent: min(max(o.ThreadMemoryHighPercent, 0), 100)}
+		cur: map[string]string{}, pending: map[string]time.Time{}}
 }
 
 func setup(o Options, path string, err error) (*Tree, error) {

@@ -26,7 +26,7 @@ let
     # host where the scopes do not work and fyrd falls back to the split.
     cgroups = {
       enable = true;
-      inherit (cfg.cgroups) serverMemoryLow agentsMemoryHigh agentsMemoryMax agentsMemorySwapMax threadMemoryHighPercent;
+      inherit (cfg.cgroups) serverMemoryLow agentsMemoryHigh agentsMemoryMax agentsMemorySwapMax;
       agentsCpuMax = "${toString (cfg.cgroups.agentsCpuCores * 100000)} 100000";
     } // lib.optionalAttrs cfg.cgroups.agentsUnit {
       agentsSlice = agentsSlice;
@@ -336,13 +336,13 @@ in
         default = "14G";
         description = "memory.max of the agents (the slice, or agents/): the kernel OOM-kills past it (a whole thread with agentsUnit). Keep the gap to memoryHigh narrow.";
       };
+      # V0.share-shadow: the thread share is gone; the option stays so a
+      # host config that sets it still evaluates, and does nothing.
       threadMemoryHighPercent = lib.mkOption {
         type = lib.types.ints.between 0 100;
         default = 0;
-        description = ''
-          memory.high of each thread as a share of agentsMemoryHigh, 0 for none.
-          A slot raises it by what the job is known to need (decision 0032).
-        '';
+        visible = false;
+        description = "Removed (V0.share-shadow): ignored. A thread's memory.high is no longer set; the per-job limits bound a job.";
       };
       agentsMemorySwapMax = lib.mkOption {
         type = lib.types.str;
@@ -361,6 +361,8 @@ in
       { assertion = !(cfg.tailnet.enable && cfg.role == "host"); message = "services.fyr: tailnet publishes the front; role host serves no page."; }
       { assertion = hostListen == null || cfg.role != "front"; message = "services.fyr: hostListen and hostPort need the host role (host or both)."; }
     ];
+    warnings = lib.optional (cfg.cgroups.threadMemoryHighPercent != 0)
+      "services.fyr.cgroups.threadMemoryHighPercent is ignored: Fyr no longer sets a thread's memory.high (V0.share-shadow).";
     networking.firewall.allowedTCPPorts = lib.mkIf (cfg.openFirewall && cfg.peerPort != null) [ cfg.peerPort ];
     networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkIf (cfg.hostPort != null && cfg.hostListen == null) [ cfg.hostPort ];
     environment.systemPackages = [ cfg.package ];

@@ -68,7 +68,7 @@ With agentsUnit off the module writes V0.80's delegated unit (fyrd in `fyr.servi
 | `agentsMemoryMax` | `agentsMemoryHigh` + about 6 % of RAM | Keep the gap narrow. Past it the kernel OOM-kills a whole thread. |
 | `agentsMemorySwapMax` | about 20–35 % of RAM, below the swap device | Keeps the agents' cold pages from filling the disk swap. |
 | `agentsCpuCores` | cores − 1 or more | The rest is for the desktop. |
-| `threadMemoryHighPercent` | 0 (off) | Each thread's own `memory.high` (decision 0032 slice 3). A throttled thread stalls and becomes the first one oomd's rule takes (decision 0036 (B)); with agentsUnit that is the whole thread, never fyrd. |
+| `threadMemoryHighPercent` | 0 (off) | Each thread's own `memory.high` (decision 0032 slice 3). A throttled thread stalls and becomes the first one oomd's rule takes (decision 0036 (B)); with agentsUnit that is the whole thread, never fyrd. *Removed by V0.share-shadow: fyrd ignores it (one log line) and the module only warns when it is not 0; the `guard: budget over … mode=shadow` lines measure a 12 % share instead.* |
 
 ## macOS
 
