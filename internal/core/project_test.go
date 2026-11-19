@@ -47,14 +47,16 @@ func TestMatchFolder(t *testing.T) {
 		{ID: "p_label"},
 	}
 	cases := map[string]string{
-		"/home/me/git/fyr":         "p_fyr",
-		"/home/me/git/fyr/":        "p_fyr",
-		"/home/me/git/fyr/cmd":     "p_fyr",
-		"/home/me/git/fyr/web/src": "p_a",
-		"/home/me/git/fyr-projcut": "p_home",
-		"/home/me":                 "p_home",
-		"/tmp/x":                   "",
-		"":                         "",
+		"/home/me/git/fyr":     "p_fyr",
+		"/home/me/git/fyr/":    "p_fyr",
+		"/home/me/git/fyr/cmd": "p_fyr",
+		// V0.change-worktree (4): a worktree Fyr made is under the main checkout.
+		"/home/me/git/fyr/.claude/worktrees/feat-x": "p_fyr",
+		"/home/me/git/fyr/web/src":                  "p_a",
+		"/home/me/git/fyr-projcut":                  "p_home",
+		"/home/me":                                  "p_home",
+		"/tmp/x":                                    "",
+		"":                                          "",
 	}
 	for dir, want := range cases {
 		if got := MatchFolder(ps, dir); got != want {
