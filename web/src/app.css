@@ -129,6 +129,10 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .sti.none .ic{color:var(--ink-faint)}
 .sti.none .n{min-width:0;padding:0;background:none;color:var(--ink-faint)}
 @media (prefers-reduced-motion: reduce){.stc{transition:none}}
+/* V0.section-bands: a header whose section has rows is a band across the list, with air above it: a band is not a row,
+   so what follows it reads as its rows. An empty section has no rows to hold and stays a plain line. */
+.sec:has(>.sti:not(.none)){height:28px;margin-top:10px;padding:0 8px;border-radius:8px;background:var(--sunken)}
+.sec.tog:has(>.sti:not(.none)):hover{background:var(--line)}
 .ngh{padding:6px 8px 2px;font:500 11px/14px var(--ui);color:var(--ink-faint)}
 .sec .n{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums}
 .sec .h{margin-left:auto;font-size:11px;min-width:0;max-width:62%}

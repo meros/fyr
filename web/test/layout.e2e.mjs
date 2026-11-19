@@ -4066,6 +4066,18 @@ try {
   check(b.chevron && b.open && b.expanded === "true", `${ctx}: an open section's chevron points down (${JSON.stringify(b)})`);
   const lefts = await evaluate(`[...new Set([...document.querySelectorAll('${head} .sticon')].map((e) => Math.round(e.getBoundingClientRect().left)))]`);
   check(lefts.length === 1, `${ctx}: the headers' icons line up (${JSON.stringify(lefts)})`);
+  // V0.section-bands: a header with rows is a band (a background the rows do not have), closer to its rows than to the rows before it
+  const band = `(() => { const bg = (e, pe) => getComputedStyle(e, pe).backgroundColor, clear = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent';
+    const heads = [...document.querySelectorAll('${head}')].map((e) => ({ e, none: !!e.querySelector('.sti.none'), band: !clear(bg(e)) || !clear(bg(e, '::before')) }));
+    const rows = [...document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-settled [data-id]" : "#sec-settled [data-id]")})];
+    const h = document.querySelector(${JSON.stringify(settled)}), prev = h.parentElement.previousElementSibling;
+    const top = h.getBoundingClientRect().top + parseFloat(getComputedStyle(h).paddingTop);
+    return { withRows: heads.filter((x) => !x.none).length, banded: heads.filter((x) => !x.none && x.band).length, emptyBanded: heads.filter((x) => x.none && x.band).length,
+      rowBg: rows.filter((r) => !clear(bg(r)) && !r.matches('.sel,.sel *')).length, rows: rows.length,
+      above: prev ? Math.round(top - prev.getBoundingClientRect().bottom) : -1, below: rows[0] ? Math.round(rows[0].getBoundingClientRect().top - h.getBoundingClientRect().bottom) : -1 }; })()`;
+  const bd = await evaluate(band);
+  check(bd.withRows > 0 && bd.banded === bd.withRows && bd.emptyBanded === 0, `${ctx}: every header with rows is a band and no empty one is (${JSON.stringify(bd)})`);
+  check(bd.rows > 0 && bd.above > bd.below, `${ctx}: a band has more air above it than below it (${JSON.stringify(bd)})`);
   await shot(`section-heads-${phone ? "phone" : "desktop"}.png`);
   await load("?mock=2");
   const none = await evaluate(`(() => { const e = [...document.querySelectorAll('${head} .sti.none')]; return { n: e.length, chevrons: e.filter((x) => x.querySelector('.stc svg')).length, icons: e.filter((x) => x.querySelector('.sticon svg')).length }; })()`);
