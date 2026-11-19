@@ -32,6 +32,9 @@ type procMeta struct {
 	ViewTools   bool   `json:"viewTools,omitempty"`
 	ChangeTools bool   `json:"changeTools,omitempty"`
 	Cgroup      bool   `json:"cgroup,omitempty"`
+	// Tools: the hash of the MCP tool list it started with
+	// (V0.tool-reload); "" for a process from before.
+	Tools string `json:"tools,omitempty"`
 }
 
 // threadOf is the thread a runner process belongs to: its key, else the
@@ -118,6 +121,9 @@ func (m *Manager) Adopt(procs []runner.Proc) {
 		if !s.live {
 			m.armIdle(s)
 		}
+		if m.cfg.Tools != nil && s.token != "" && s.toolsHash != m.cfg.Tools() {
+			time.AfterFunc(m.cfg.ToolsGrace, func() { m.reloadTools(s) })
+		}
 		log.Printf("runner: adopted %s for thread %s (pid %d, running %v)", p.ID, t, p.Pid, s.live)
 	}
 }
@@ -181,7 +187,7 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 		return drop("no adapter can reattach " + id)
 	}
 	s := &session{thread: t.ID, proc: p.ID, cwd: t.Cwd, token: meta.Token, asks: map[string]chan core.Effect{}, reqs: map[string]string{},
-		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort,
+		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort, toolsHash: meta.Tools,
 		viewTools: meta.ViewTools, changeTools: meta.ChangeTools, live: t.Running, lifecycle: true,
 		bg: t.RunningTasks(), // V0.133: until the CLI reports its tasks again
 		// V0.143: a process whose input an earlier fyrd closed reads
@@ -296,5 +302,44 @@ func (m *Manager) dropAdopted(s *session) {
 	m.mu.Unlock()
 	for _, id := range gone {
 		m.observe(s.thread, core.KindDecisionGone, id)
+	}
+}
+
+// reloadTools ends an adopted process that still has an older build's MCP
+// tools (V0.tool-reload): at once when it is idle, else when its turn ends;
+// never in a turn. The next message resumes the session with the new
+// tools. A process that read this build's tools, or holds the server
+// stream open, is left alone: its CLI took the new list itself.
+func (m *Manager) reloadTools(s *session) {
+	if m.cfg.Tools == nil || m.cfg.ToolsCurrent == nil || s.token == "" {
+		return
+	}
+	h := m.cfg.Tools()
+	m.mu.Lock()
+	mine := m.sessions[s.thread] == s && !s.inputClosed
+	m.mu.Unlock()
+	if !mine || s.toolsHash == h || m.cfg.ToolsCurrent(s.token) {
+		return
+	}
+	why := "Fyr restarted this agent's process to load the new tools"
+	if m.cfg.Build != "" {
+		why += " (build " + m.cfg.Build + ")"
+	}
+	log.Printf("thread %s: %s", s.thread, why)
+	m.mu.Lock()
+	s.reloadWhy = why
+	m.mu.Unlock()
+	m.refreshView(s.thread)
+}
+
+// refreshed reports a refresh that loaded the new tools, once its process
+// ended (V0.tool-reload).
+func (m *Manager) refreshed(s *session) {
+	m.mu.Lock()
+	why := s.reloadWhy
+	s.reloadWhy = ""
+	m.mu.Unlock()
+	if why != "" {
+		m.observe(s.thread, core.KindRestarted, core.RestartedArgs{Why: why})
 	}
 }

@@ -205,6 +205,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		Cgroups: tree, Runner: rn.client(),
 		// V0.115: the system agents run on this host, on the owner's setting.
 		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
+		// V0.tool-reload: a process from an older build that has not read
+		// this build's tools ends at its next idle point.
+		Tools: mcpSrv.Hash, ToolsCurrent: mcpSrv.Current, Build: BuildID(),
 	})
 	eng.AgentDeps = engine.AgentDeps{
 		Agents:           mgr,
@@ -640,6 +643,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	<-ctx.Done()
 	log.Printf("shutting down")
 	groups.ResumeStopped()
+	mcpSrv.Close() // V0.tool-reload: each CLI connects again to the next fyrd
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	srvs.shutdown(sctx)

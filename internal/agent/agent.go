@@ -121,6 +121,17 @@ type Config struct {
 	InitTimeout     time.Duration
 	PressureMaxWait time.Duration
 	Pressure        func() (bool, string)
+	// V0.tool-reload: Tools is this build's MCP tool hash and ToolsCurrent
+	// whether the process with a token has read this build's tools
+	// (mcp.Server). Build names the build in the thread's line. An adopted
+	// process that started with other tools and has not read the new ones
+	// after ToolsGrace (default 5 min: the CLI reconnects with backoff)
+	// ends at its next idle point; the next message resumes the session.
+	// Nil Tools: no check.
+	Tools        func() string
+	ToolsCurrent func(token string) bool
+	ToolsGrace   time.Duration
+	Build        string
 }
 
 // Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):
@@ -187,8 +198,12 @@ type session struct {
 	inForced    bool
 	forcedWork  bool
 	// refresh: end the process after this run, so the next one starts
-	// with the current flag.
-	refresh bool
+	// with the current flag. reloadWhy: the refresh loads the new tools
+	// (V0.tool-reload); the thread gets this line when the process ends.
+	refresh   bool
+	reloadWhy string
+	// toolsHash: the MCP tool list of the build that started the process.
+	toolsHash string
 	// bg: the background tasks (Bash, Monitor, agents) the CLI reports
 	// running (background_tasks_changed). V0.133: Fyr never closes the
 	// input while bg > 0; the CLI would live on for them and refuse every
@@ -238,6 +253,9 @@ type waiter struct {
 }
 
 func New(host Host, cfg Config) *Manager {
+	if cfg.ToolsGrace == 0 {
+		cfg.ToolsGrace = 5 * time.Minute
+	}
 	if cfg.IdleStop == 0 {
 		cfg.IdleStop = 10 * time.Minute
 	}
@@ -524,6 +542,9 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		}
 		defer os.Remove(path)
 		l.MCPConfigFile, l.AllowedTools = path, []string{"mcp__fyr__*"}
+		if m.cfg.Tools != nil {
+			s.toolsHash = m.cfg.Tools()
+		}
 	}
 	prompt := m.cfg.Prompt
 	if prompt == "-" {
@@ -567,7 +588,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		// adopt it.
 		l.Runner, l.ProcID, l.RunnerKey = m.cfg.Runner, s.proc, threadID
 		l.Meta, _ = json.Marshal(procMeta{Thread: threadID, CLI: ad.ID(), Token: s.token, Effort: l.Effort,
-			ViewTools: s.viewTools, ChangeTools: s.changeTools, Cgroup: s.cgroup})
+			ViewTools: s.viewTools, ChangeTools: s.changeTools, Cgroup: s.cgroup, Tools: s.toolsHash})
 	}
 	c, err := ad.Start(l, cli.Handlers{
 		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },

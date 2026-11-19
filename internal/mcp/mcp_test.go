@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func newServer() *Server {
@@ -99,5 +101,84 @@ func TestOriginRefused(t *testing.T) {
 	}
 	if w, _ := rpc(t, newServer(), "tok", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}); w.Code != 200 {
 		t.Fatalf("no Origin: code %d", w.Code)
+	}
+}
+
+// V0.tool-reload: a GET opens the server stream with one
+// tools/list_changed; while it is open the token counts as current, and
+// Close ends it.
+func TestStreamSendsListChanged(t *testing.T) {
+	s := newServer()
+	hs := httptest.NewServer(s)
+	defer hs.Close()
+	_, out := rpc(t, s, "tok", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+	caps := out["result"].(map[string]any)["capabilities"].(map[string]any)["tools"].(map[string]any)
+	if caps["listChanged"] != true {
+		t.Fatalf("initialize does not offer listChanged: %v", out)
+	}
+	if s.Current("tok") {
+		t.Fatal("current before it read the tools")
+	}
+
+	req, _ := http.NewRequest("GET", hs.URL+"/mcp", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("GET: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	buf := make([]byte, 512)
+	n, _ := resp.Body.Read(buf)
+	if !bytes.Contains(buf[:n], []byte(`"method":"notifications/tools/list_changed"`)) {
+		t.Fatalf("first event %q", buf[:n])
+	}
+	wait := func(want bool) {
+		t.Helper()
+		for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if s.Current("tok") == want {
+				return
+			}
+		}
+		t.Fatalf("Current = %v, want %v", !want, want)
+	}
+	wait(true)
+	s.Close()
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		t.Fatalf("stream did not end cleanly: %v", err)
+	}
+	wait(false)
+
+	// An unknown token gets no stream.
+	req, _ = http.NewRequest("GET", hs.URL+"/mcp", nil)
+	req.Header.Set("Authorization", "Bearer bad")
+	req.Header.Set("Accept", "text/event-stream")
+	if r, err := http.DefaultClient.Do(req); err != nil || r.StatusCode != 401 {
+		t.Fatalf("bad token: %v %v", r, err)
+	}
+}
+
+// V0.tool-reload: the hash names the listed tools; a token that read the
+// list is current until the list changes.
+func TestToolHash(t *testing.T) {
+	s := newServer()
+	h := s.Hash()
+	if h == "" || h != newServer().Hash() {
+		t.Fatal("the same tools hash differently")
+	}
+	rpc(t, s, "tok", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	if !s.Current("tok") {
+		t.Fatal("not current after tools/list")
+	}
+	s.Add(Tool{Name: "hidden", Hidden: true, Schema: map[string]any{"type": "object"}})
+	if s.Hash() != h {
+		t.Fatal("a hidden alias changed the hash")
+	}
+	s.Add(Tool{Name: "echo", Description: "Echo, changed", Schema: map[string]any{"type": "object"}})
+	if s.Hash() == h || s.Current("tok") {
+		t.Fatal("a changed description kept the hash")
 	}
 }
