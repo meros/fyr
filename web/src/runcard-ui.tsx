@@ -9,7 +9,7 @@ import type { Offer, Thread } from "./types.ts";
 import { pressArgs } from "./offers.ts";
 import { copyToClipboard } from "./copy.ts";
 import { useHosts } from "./host-pick-ui.tsx";
-import { cardLook, copyText, dismissArgs, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
+import { cardDomId, cardLook, copyText, dismissArgs, dockRun, firstLine, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
 
 type Run = (action: string, args?: Record<string, unknown>) => unknown;
 
@@ -56,13 +56,14 @@ function CopyCmd({ text }: { text: string }) {
   );
 }
 
-/** One run request: what runs, where, why, its run's output and the owner's buttons. */
-export function RunCard({ o, t, host, onRun }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; onRun: Run }) {
+/** One run request: what runs, where, why, its run's output and the owner's buttons. `docked`: it waits in the dock
+ *  (V0.next-step-dock (5)), so the buttons are there and this card points to them: one place to press. */
+export function RunCard({ o, t, host, onRun, docked }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; onRun: Run; docked?: boolean }) {
   const l = cardLook(o, t.runs, { host, rootPrompt: t.rootPrompt });
   const [all, setAll] = useState(false);
   const out = all ? { text: l.output.replace(/\n$/, ""), hidden: 0 } : foldOutput(l.output);
   return (
-    <article class={`runc ${l.state}${o.root ? " root" : ""}`} aria-label={`${l.title}: ${l.why}`}>
+    <article id={cardDomId(o.id)} class={`runc ${l.state}${o.root ? " root" : ""}`} aria-label={`${l.title}: ${l.why}`}>
       <header class="runc-h">
         <span class="runc-t">{l.title}</span>
         <span class="runc-why">{l.why}</span>
@@ -83,6 +84,9 @@ export function RunCard({ o, t, host, onRun }: { o: Offer; t: Pick<Thread, "runs
         </div>
       )}
       {l.result && <div class={`runc-res ${l.state}`}>{l.result}</div>}
+      {docked ? (
+        <div class="runc-dock">Waiting in the dock below</div>
+      ) : (
       <div class="runc-b">
         {l.state === "running" ? (
           <button type="button" class="btn sm bad" onClick={() => onRun("action.stop", stopArgs(o))}>
@@ -100,8 +104,61 @@ export function RunCard({ o, t, host, onRun }: { o: Offer; t: Pick<Thread, "runs
           </button>
         )}
       </div>
+      )}
     </article>
   );
+}
+
+/** V0.next-step-dock (3), (4): a run request in the dock above the composer, short: why, the command's first line, the
+ *  host, and Run, Copy, Not now and Show in conversation. Run scrolls to the full card, which streams the output.
+ *  Desktop and phone share it; the phone's buttons are 44 px (phone.css, touch size). */
+export function DockRun({ o, t, host, more, onRun, onShow }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; more: number; onRun: Run; onShow(id: string): void }) {
+  const l = cardLook(o, t.runs, { host, rootPrompt: t.rootPrompt });
+  return (
+    <section class={`ask dockrun${o.root ? " root" : ""}`} aria-label={`${l.title}: ${l.why}`}>
+      <div class="ah">
+        <b>{l.title}</b>
+        <span class="ell">{l.folder}</span>
+        {more > 0 && <span class="ml">+{more} more</span>}
+      </div>
+      <div class="ab">
+        <div class="q">{l.why}</div>
+        <pre class="runc-cmd">{shortStore(firstLine(o.command ?? ""))}</pre>
+        {l.rootLine && <div class={`runc-root${t.rootPrompt ? " no" : ""}`}>{l.rootLine}</div>}
+        <div class="runc-b">
+          <button
+            type="button"
+            class="btn sm p"
+            disabled={!!l.runOff}
+            title={l.runOff ?? undefined}
+            onClick={() => {
+              onRun("action.run", pressArgs("thread", o));
+              onShow(o.id);
+            }}
+          >
+            {l.run}
+          </button>
+          <CopyCmd text={copyText(o)} />
+          <button type="button" class="btn sm" onClick={() => onRun("action.dismiss", dismissArgs(o))}>
+            {l.close}
+          </button>
+          <button type="button" class="btn sm ghost dockrun-show" onClick={() => onShow(o.id)}>
+            Show in conversation
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** V0.next-step-dock (3): scroll the conversation to a request's full card; on another tab, open the conversation first. */
+export function showCard(id: string, tab: string, setTab: (tab: string) => void) {
+  const go = () => document.getElementById(cardDomId(id))?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (tab === "conv") go();
+  else {
+    setTab("conv");
+    setTimeout(go, 50);
+  }
 }
 
 /** What a card in the conversation needs: the thread and its commands. */
@@ -113,7 +170,7 @@ export function RunCardAt({ id }: { id: string }) {
   const hs = useHosts();
   const o = c && requests(c.t).find((x) => x.id === id);
   if (!c || !o) return null;
-  return <RunCard o={o} t={c.t} host={c.t.host || hs.self || undefined} onRun={c.onRun} />;
+  return <RunCard o={o} t={c.t} host={c.t.host || hs.self || undefined} onRun={c.onRun} docked={dockRun(c.t)?.o.id === id} />;
 }
 
 /** A command in an agent's message (V0.149 (8)): Copy only, since the agent did not declare it. */

@@ -1829,3 +1829,8 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .lcpop{position:fixed;z-index:60;width:340px;max-width:calc(100vw - 24px);padding:12px 14px;background:var(--raised);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--lift-2);pointer-events:none}
 .lcpop .lcf{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);font:400 11px/14px var(--ui);color:var(--ink-faint)}
 .rail .rldr:focus-visible{outline:2px solid var(--harbour);outline-offset:2px;border-radius:4px}
+/* V0.next-step-dock: a Run card in the dock above the composer, short; the full card points to it while it waits */
+.dockrun .ab{gap:8px}
+.dockrun .runc-cmd{max-height:2.5em}
+.dockrun-show{margin-left:auto}
+.runc-dock{font:500 12px/16px var(--ui);color:var(--beam-ink)}
