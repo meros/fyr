@@ -220,8 +220,6 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .chip.pr.merged{background:var(--sunken)}
 .chip.peek{flex:none;background:var(--harbour-wash);color:var(--harbour)}
 .chip .dot{width:8px;height:8px;border-radius:50%;flex:none}
-.chip.msel{position:relative;cursor:pointer}
-.chip.msel select{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}
 .spin{animation:spin 1.2s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.spin{animation:none}}
@@ -1727,7 +1725,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 
 /* A desktop app: the arrow on controls (links keep the hand), and its chrome is not text to select. */
 @media (hover:hover) and (pointer:fine){
-  :where(button,summary,[role=button],[role=tab],.rw,.one,.tl,.al.click,.sec.tog,.cand,.m-ah,.chip.msel,.chip.msel select,.chip.pj,.chip.proj){cursor:default!important}
+  :where(button,summary,[role=button],[role=tab],.rw,.one,.tl,.al.click,.sec.tog,.cand,.m-ah,.ags.pick,.ags.pick select,.chip.pj,.chip.proj){cursor:default!important}
   :where(button,[role=tab],.rw,.one,.sec,.dh,.tabs,.rail,.top,.kh,.ctxm){user-select:none;-webkit-user-select:none}
   :where(input,textarea){user-select:text;-webkit-user-select:text}
   :is(.ibtn,.btn,.mi,.more,.rw,.one,.dh .x):hover{transition-duration:.08s}
@@ -1854,3 +1852,42 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .nstep.settle{border-color:var(--harbour);color:var(--harbour)}
 .nstep.on{border-color:var(--harbour);background:var(--sunken)}
 .dockrun.chiprun{margin:0;max-height:none}
+/* V0.agent-pill: provider · model · effort in one pill (agent-ui.tsx), on both fronts. Hairlines part the segments; a
+   segment that picks lights on hover and holds its select laid over it. */
+.agp{display:inline-flex;align-items:stretch;min-width:0;flex:0 1 auto;overflow:hidden;border-radius:12px;background:var(--sunken);color:var(--ink-muted);white-space:nowrap;--knock:var(--sunken)}
+.agp.chip{height:24px;padding:0;gap:0;font:500 12px/16px var(--ui)}
+.ags{position:relative;display:inline-flex;align-items:center;gap:6px;padding:0 8px;min-width:0;flex:0 1 auto}
+.ags+.ags{box-shadow:inset 1px 0 0 var(--line)}
+.ags.agv{flex-shrink:2}
+.ags.agm{font-family:var(--mono);font-weight:400;color:var(--ink)}
+.ags.age{flex:none;gap:5px}
+.ags .agt{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ags.pick{cursor:pointer}
+.ags.pick:hover{background:var(--select)}
+.ags.pick select{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}
+.agb{display:inline-flex;align-items:flex-end;gap:1.5px;height:10px;flex:none}
+.agb i{width:3px;border-radius:1px;background:var(--line-strong)}
+.agb i.on{background:currentColor}
+.ags.age .agb{color:var(--ink)}
+.agp.field{display:flex;width:100%;height:34px;border-radius:8px;border:1px solid var(--line-strong);background:var(--raised);font:400 14px/20px var(--ui);color:var(--ink);--knock:var(--raised)}
+.agp.field .ags{flex:1 1 0;padding:0 10px}
+.agp.field .ags.age{flex:0 0 auto;min-width:96px}
+.agp.field .ags.pick::after{content:"";margin-left:auto;flex:none;width:5px;height:5px;border:solid var(--ink-faint);border-width:0 1.5px 1.5px 0;transform:translateY(-2px) rotate(45deg)}
+.agp.field .ags.agm{font-size:13px}
+/* The phone: a 28 px chip in the header row, and a 48 px control (a finger's size) in its forms. */
+.agp.ph.chip{height:28px;border-radius:14px;font-size:13px;min-width:36px}
+.agp.ph.chip .ags.agm{font-size:12px}
+.agp.ph.field{height:48px;border-radius:12px;border-color:var(--line);font-size:15px}
+.agp.ph.field .ags{padding:0 12px}
+@media (hover:none){.ags.pick:hover{background:none}}
+.agp.ph select{font-size:16px}
+/* The phone header is narrow: the model keeps its width, the provider shrinks to its dot (its name is in the title
+   and in Details), and the effort is its meter alone (the level's name is in Details). */
+.agp.ph.chip .ags.agm{flex-shrink:0}
+.agp.ph.chip .ags.agv{min-width:24px}
+.agp.ph.chip .ags.age .agt{display:none}
+/* V0.agent-pill on V0.model-choice: New thread's provider · model is one part over one choice; a hairline inside it
+   keeps the header's look (provider, then the model in mono). */
+.agsep{flex:none;align-self:stretch;width:1px;margin:0 2px;background:var(--line)}
+.ags .agmn{font-family:var(--mono);font-weight:400;font-size:13px}
+.agp.field .ags.agv{flex:1 1 auto}

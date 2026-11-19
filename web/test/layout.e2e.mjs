@@ -3255,10 +3255,10 @@ for (const [label, w, ht] of [
     await open(phone ? "?mock=rail&hosts=2&hostOrder=lab,desk&new" : "?mock=rail&hosts=2&hostOrder=lab,desk&dialog=new", `!!document.querySelector('${root} .hostf select')`);
     const s = await evaluate(`(() => { const host = document.querySelector('${root} .hostf'); const pick = document.querySelector('${root} .ppick, ${root} .m-ppick');
       return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('select').value, proj: ${chipName},
-        provs: [...document.querySelectorAll('${root} .row2 select')][0] ? [...[...document.querySelectorAll('${root} .row2 select')][0].options].map(o => o.value) : null }; })()`);
+        provs: document.querySelector('${root} .agp .ags.agv select') ? [...document.querySelector('${root} .agp .ags.agv select').options].map(o => o.value) : null }; })()`);
     check(s.first && s.v === "lab" && s.proj === "Robot arm", `${ctx}: host first, lab, lab's project ${JSON.stringify(s)}`);
-    // V0.model-choice: the choice is provider and model; its providers are the part before the NUL
-    if (!phone) check([...new Set((s.provs ?? []).map((v) => v.split("\u0000")[0]))].join() === "claude,zai", `${ctx}: lab's providers ${JSON.stringify(s.provs)}`);
+    // V0.model-choice: the choice is provider and model; its providers are the part before the NUL (both fronts: one pill)
+    check([...new Set((s.provs ?? []).map((v) => v.split("\u0000")[0]))].join() === "claude,zai", `${ctx}: lab's providers ${JSON.stringify(s.provs)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
     await settle();
     const list = await evaluate(`[...document.querySelectorAll('${root} .plist .pln, ${root} .m-pickpanel .pln')].map(e => e.textContent)`);
@@ -3267,9 +3267,9 @@ for (const [label, w, ht] of [
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
     await setHost("desk");
     await settle();
-    const d = await evaluate(`({ proj: ${chipName}, provs: [...document.querySelectorAll('${root} .row2 select')][0] ? [...[...document.querySelectorAll('${root} .row2 select')][0].options].map(o => o.value) : null })`);
+    const d = await evaluate(`({ proj: ${chipName}, provs: document.querySelector('${root} .agp .ags.agv select') ? [...document.querySelector('${root} .agp .ags.agv select').options].map(o => o.value) : null })`);
     check(d.proj !== "Robot arm" && d.proj !== "", `${ctx}: desk's project after the switch ${JSON.stringify(d)}`);
-    if (!phone) check(!d.provs?.includes("zai"), `${ctx}: desk's providers after the switch ${JSON.stringify(d.provs)}`);
+    check(!(d.provs ?? []).some((v) => v.startsWith("zai\u0000")), `${ctx}: desk's providers after the switch ${JSON.stringify(d.provs)}`);
   });
   // 2. A project's screen: its host, its providers, its folders.
   await step("project editor", async () => {
