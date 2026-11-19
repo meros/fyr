@@ -193,7 +193,7 @@ test("V0.host-updates: a host's row says how far behind it is and how its last u
     },
   ]);
   assert.deepEqual(updateLine(h), { text: "3 commits behind · last update failed", bad: true });
-  assert.match(hostLine(h, now), /online · 3 commits behind · last update failed · no id/);
+  assert.match(hostLine(h, now), /online · 3 commits behind · last update failed · needs an update/);
   const rows = updateRows(h.update!, now);
   assert.deepEqual(
     rows.map((r) => r.title),

@@ -280,7 +280,6 @@ export function hostLine(h: HostInfo, now: number): string {
   if (changed) return changed;
   const route = hostRoute(h);
   // V0.host-ids: a host with no install id cannot be named by any call until it updates.
-  // V0.host-ids: a host with no install id cannot be named by any call until it updates.
   return [hostState(h, now), updateLine(h).text, route, h.id ? `id ${shortID(h.id)}` : "needs an update"].filter(Boolean).join(" · ");
 }
 
