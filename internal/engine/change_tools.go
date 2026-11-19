@@ -384,6 +384,9 @@ func (e *Engine) openWorkspace(ctx context.Context, th, repo string, o *core.Cha
 	if o.Branch == "" {
 		return errors.New("workspace needs the branch to make, for example \"feat/retry\"")
 	}
+	if o.Kind != "" && o.Kind != core.KindCode {
+		return errors.New("workspace is for a code change")
+	}
 	if o.Key == "" {
 		o.Key = o.Branch
 	}
@@ -428,7 +431,7 @@ func (e *Engine) openWorkspace(ctx context.Context, th, repo string, o *core.Cha
 // workspaceText tells the agent where to work.
 func workspaceText(w *core.Workspace) string {
 	if !w.MadeByFyr {
-		return fmt.Sprintf("The branch %s is checked out at %s: work there. Fyr did not make that worktree and never removes it.", w.Branch, w.Path)
+		return fmt.Sprintf("The branch %s is already checked out at %s: work there.", w.Branch, w.Path)
 	}
 	from := ""
 	if w.Base != "" {

@@ -75,3 +75,47 @@ func TestChangeOpenMakesAWorktreePerChange(t *testing.T) {
 		t.Fatalf("after an unknown change: %s", out)
 	}
 }
+
+// V0.change-worktree (3): a worktree that went (V0.worktree-sweep) is made
+// again on the same key, and the change points at it; a kind that is not
+// code makes no worktree.
+func TestChangeOpenMakesAGoneWorktreeAgain(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	repo := filepath.Join(t.TempDir(), "repo")
+	git := func(d string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = d
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git %v: %v %s", args, err, out)
+		}
+	}
+	os.MkdirAll(repo, 0o755)
+	git(repo, "init", "-q", "-b", "main")
+	git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+	r := h.cmd("thread.create", "", core.Args{"cwd": repo, "text": "x"})
+	id := r.ThreadID
+	h.wait(id, "done", state(core.Done))
+	call := func(a map[string]any) (string, bool) { return callAs(t, h.e, id, "change_open", a) }
+	if out, isErr := call(map[string]any{"title": "I", "kind": "infra", "branch": "feat/i", "workspace": true}); !isErr {
+		t.Fatalf("infra: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".claude", "worktrees", "feat-i")); err == nil {
+		t.Fatal("a refused change made a worktree")
+	}
+	path := filepath.Join(repo, ".claude", "worktrees", "feat-a")
+	if out, isErr := call(map[string]any{"title": "A", "branch": "feat/a", "workspace": true}); isErr {
+		t.Fatalf("open: %s", out)
+	}
+	git(repo, "worktree", "remove", path)
+	if out, isErr := call(map[string]any{"title": "A", "branch": "feat/a", "workspace": true}); isErr || !strings.Contains(out, "Fyr made its worktree at "+path) {
+		t.Fatalf("again: %s", out)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("not made again")
+	}
+	if c := changeOf(h, id, "feat/a"); c.Workspace == nil || c.Workspace.Path != path || !c.Workspace.MadeByFyr {
+		t.Fatalf("change: %+v", c.Workspace)
+	}
+}

@@ -240,7 +240,7 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 		}
 		c.Targets = union(c.Targets, o.Targets)
 		c.After = union(c.After, o.After)
-		if c.Workspace == nil && o.Workspace != nil {
+		if o.Workspace != nil { // a worktree made again replaces the one that went
 			w := *o.Workspace
 			c.Workspace = &w
 		}

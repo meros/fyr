@@ -10,10 +10,10 @@
 - A branch that exists and is not checked out gets a worktree on it as it is.
 - A branch already checked out somewhere (the main checkout or another worktree) is not made again: Fyr answers with that path, and that workspace is not Fyr's.
 
-(3) **The record.** The change carries `workspace {repo, path, branch, base, madeByFyr}` and the target `repo:<origin>`. `madeByFyr` is true only for a worktree Fyr made; it stays true when the change follows the record the git observer reads from that worktree. The observer reads the worktree after each run (decision 0019, What Fyr observes). The same key again finds the change and its worktree and makes nothing. A bad branch name, a folder that is not in a git repo, a path that exists and is not that worktree, and an unknown `after` are refused with the reason.
+(3) **The record.** The change carries `workspace {repo, path, branch, base, madeByFyr}` and the target `repo:<origin>`. `madeByFyr` is true only for a worktree Fyr made; it stays true when the change follows the record the git observer reads from that worktree. The observer reads the worktree after each run (decision 0019, What Fyr observes). The same key again finds the change and its worktree and makes nothing; when that worktree went (V0.worktree-sweep), Fyr makes it again and the change points at it. A kind that is not code makes no worktree. A bad branch name, a folder that is not in a git repo, a path that exists and is not that worktree, and an unknown `after` are refused with the reason.
 
 (4) **The prompt** says to start a code change with `change_open {workspace: true}` and to work in the worktree it returns.
 
 Not yet: removing a worktree Fyr made when its change lands or ends (V0.worktree-sweep removes it once it is kept elsewhere and idle), the thread's project for a worktree Fyr made (#25), and the header line (#26).
 
-*Tests:* `internal/agent`: `TestMakeWorktree`. `internal/engine`: `TestChangeOpenMakesAWorktreePerChange`. `internal/core`: `TestFyrWorktreeStaysFyrsWhenItFollowsARecord`.
+*Tests:* `internal/agent`: `TestMakeWorktree`. `internal/engine`: `TestChangeOpenMakesAWorktreePerChange`, `TestChangeOpenMakesAGoneWorktreeAgain`. `internal/core`: `TestFyrWorktreeStaysFyrsWhenItFollowsARecord`.
