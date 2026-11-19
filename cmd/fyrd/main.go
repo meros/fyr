@@ -356,6 +356,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: sampler.TreeCPUTime, ThreadFrozen: groups.Frozen}
 	} else {
 		sampler.CLIs = mgr.CLIs // V0.freeze-old-work: the roots never take the CLI
+		groups.ThawLeftFrozen() // V0.thaw-at-start: what the last fyrd left frozen
 		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: tree.CPUTime, ThreadFrozen: groups.Frozen}
 	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
