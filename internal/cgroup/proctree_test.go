@@ -181,7 +181,7 @@ func TestV207BUndeclaredWorkIsNamedFromTheProcessTree(t *testing.T) {
 	if u := s.Undeclared(); len(u) != 1 || u[0].Name != "Fyr" {
 		t.Fatalf("%+v", u)
 	}
-	if r := s.Roots("t_a", fl[0].FirstOver); len(r) != 1 || r[0].PID != 20 || r[0].RSS != (4000+3<<20)*1024 {
+	if r := s.Roots(fl[0]); len(r) != 1 || r[0].PID != 20 || r[0].RSS != (4000+3<<20)*1024 {
 		t.Fatalf("roots %+v", r)
 	}
 }

@@ -317,6 +317,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		groups.ResumeStopped() // what the last fyrd left stopped
 		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: sampler.TreeCPUTime, ThreadFrozen: groups.Frozen}
 	} else {
+		sampler.CLIs = mgr.CLIs // V0.freeze-old-work: the roots never take the CLI
 		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: tree.CPUTime, ThreadFrozen: groups.Frozen}
 	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
@@ -324,7 +325,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
-				if f.Thread == thread && groups.FreezeUndeclared(thread, sampler.Roots(thread, f.FirstOver)) {
+				if f.Thread == thread && groups.FreezeUndeclared(thread, sampler.Roots(f)) {
 					detector.MarkPaused(thread)
 					return true
 				}
@@ -338,7 +339,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 					continue
 				}
 				var out []slots.WorkUnit
-				for _, u := range groups.Units(thread, sampler.Roots(thread, f.FirstOver)) {
+				for _, u := range groups.Units(thread, sampler.Roots(f)) {
 					out = append(out, slots.WorkUnit{PID: u.PID, RSS: u.RSS, Command: cgroup.CommandOf(cgroup.Root{PID: u.PID, Cmdline: u.Cmdline}, groups.Bashes(thread))})
 				}
 				return out

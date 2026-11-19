@@ -90,11 +90,33 @@ func bootTime(proc string) (time.Time, bool) {
 // and still be the episode's.
 const rootGrace = 15 * time.Second
 
+// Elders are the older work an episode's roots also take (V0.freeze-old-work):
+// a job that started before the episode's window but holds its memory, such
+// as a long build whose memory grew slowly. An older process is a root when
+// its subtree holds at least Min bytes and it is either a Bash shell the CLI
+// started or a process whose parent is outside the thread's cgroup and is not
+// the CLI (a job detached with setsid or nohup &). MCP servers and other
+// children of the CLI stay residents. A zero CLI or Min takes no elder.
+type Elders struct {
+	CLI int
+	Min uint64
+}
+
+// agentShell reports the CLI's wrapper around one Bash command.
+func agentShell(cmdline string) bool {
+	return strings.Contains(cmdline, "/shell-snapshots/snapshot-")
+}
+
 // ReadRoots are the job roots of thread's cgroup for an episode whose first
 // over reading was at after, in pid order, each with its subtree's memory.
 // The processes moved into undeclared/ still count, so the command is known
 // after a freeze.
 func ReadRoots(tr *Tree, proc, thread string, after time.Time) []Root {
+	return ReadRootsWith(tr, proc, thread, after, Elders{})
+}
+
+// ReadRootsWith is ReadRoots that also takes the elders el allows.
+func ReadRootsWith(tr *Tree, proc, thread string, after time.Time, el Elders) []Root {
 	if tr == nil {
 		return nil
 	}
@@ -124,7 +146,39 @@ func ReadRoots(tr *Tree, proc, thread string, after time.Time) []Root {
 	for p, pp := range parent {
 		children[pp] = append(children[pp], p)
 	}
+	var sum func(int) uint64
+	sum = func(q int) uint64 {
+		t := readRSS(proc, q)
+		for _, c := range children[q] {
+			t += sum(c)
+		}
+		return t
+	}
 	var roots []Root
+	elder := map[int]bool{}
+	if el.CLI > 0 && el.Min > 0 {
+		for p := range here {
+			pp := parent[p]
+			if p == el.CLI || !start[p].Before(cut) {
+				continue
+			}
+			line := readCmdline(proc, p)
+			if (pp == el.CLI && agentShell(line)) || !here[pp] {
+				if rss := sum(p); rss >= el.Min {
+					elder[p] = true
+					roots = append(roots, Root{PID: p, Cmdline: line, RSS: rss})
+				}
+			}
+		}
+	}
+	inElder := func(p int) bool { // p is in an elder's subtree; a pid reused mid-read cannot loop it
+		for q, n := parent[p], 0; here[q] && n < len(here); q, n = parent[q], n+1 {
+			if elder[q] {
+				return true
+			}
+		}
+		return false
+	}
 	for p := range here {
 		if start[p].Before(cut) {
 			continue
@@ -132,13 +186,8 @@ func ReadRoots(tr *Tree, proc, thread string, after time.Time) []Root {
 		if pp := parent[p]; here[pp] && !start[pp].Before(cut) {
 			continue
 		}
-		var sum func(int) uint64
-		sum = func(q int) uint64 {
-			t := readRSS(proc, q)
-			for _, c := range children[q] {
-				t += sum(c)
-			}
-			return t
+		if inElder(p) {
+			continue
 		}
 		roots = append(roots, Root{PID: p, Cmdline: readCmdline(proc, p), RSS: sum(p)})
 	}
