@@ -196,6 +196,9 @@ type ChangeOpen struct {
 	Targets, After            []string
 	Revision                  *Revision
 	Evidence                  []Evidence
+	// Workspace is the worktree Fyr made for the change
+	// (V0.change-worktree), or nil.
+	Workspace *Workspace
 }
 
 // ChangeID is a change's id: stable for its key, so a retried call or a
@@ -237,6 +240,10 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 		}
 		c.Targets = union(c.Targets, o.Targets)
 		c.After = union(c.After, o.After)
+		if c.Workspace == nil && o.Workspace != nil {
+			w := *o.Workspace
+			c.Workspace = &w
+		}
 		for _, ev := range o.Evidence {
 			addEvidence(c, ev)
 		}
@@ -255,6 +262,10 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 	}
 	nc := Change{ID: ChangeID(o.Key), Key: o.Key, Kind: o.Kind, Title: strings.TrimSpace(o.Title), Targets: union(nil, o.Targets), Branch: o.Branch,
 		Group: o.Group, After: union(nil, o.After), Phase: PhaseWorking, PhaseBy: by, CreatedAt: now, UpdatedAt: now}
+	if o.Workspace != nil {
+		w := *o.Workspace
+		nc.Workspace = &w
+	}
 	for _, ev := range o.Evidence {
 		addEvidence(&nc, ev)
 	}
