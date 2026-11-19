@@ -43,8 +43,8 @@ import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, useViewAction } from "./offers-ui.tsx";
-import { ProseCommand, RunCardAt, RunCards } from "./runcard-ui.tsx";
-import { cardsKey, placeCards, requests, splitProse } from "./runcard.ts";
+import { DockRun, ProseCommand, RunCardAt, RunCards, showCard } from "./runcard-ui.tsx";
+import { cardsKey, dockRun, placeCards, requests, splitProse, waitingRuns } from "./runcard.ts";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
@@ -117,6 +117,7 @@ export function ThreadPane(p: ThreadPaneProps) {
   const provider = threadProvider(t, hs.hosts, p.profiles);
   const hc = hostChip(t.host, hs.hosts, hs.now);
   const decision = currentDecision(t);
+  const dock = dockRun(t);
   const st = t.attention.state;
   const settleReason = unavailableReason(t, "thread.settle");
   const snoozeReason = unavailableReason(t, "thread.snooze");
@@ -235,7 +236,9 @@ export function ThreadPane(p: ThreadPaneProps) {
       <LeftoverStrip id={t.id} now={p.now} />
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
+      {/* V0.next-step-dock: what waits on the owner stands in one dock; a question or approval first, then a Run card */}
+      {showsDecision(tab) && !decision && dock && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={p.onRun} onShow={(id) => showCard(id, tab, setTab)} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} onRestart={() => p.onRun("thread.restart")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );

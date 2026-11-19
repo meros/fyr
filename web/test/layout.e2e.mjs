@@ -1280,7 +1280,7 @@ section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
 for (const [front, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.149 ${front}`, async ({ send, evaluate, navigate, openScreen, tapCenter, shot }) => {
 try {
   const url = "?mock=rail&runs=1&open=t_run";
-  const ready = "document.querySelectorAll('.convo-in .runc:not(.prose)').length === 2 && !!document.querySelector('.runc.prose')";
+  const ready = "document.querySelectorAll('.convo-in .runc:not(.prose)').length === 2 && !!document.querySelector('.runc.prose') && !!document.querySelector('.dockrun')";
   if (front === "desktop") {
     await send("Emulation.setTouchEmulationEnabled", { enabled: false });
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
@@ -1298,6 +1298,11 @@ try {
       minH: Math.min(...btns.map((b) => b.getBoundingClientRect().height)),
       title: first?.querySelector('.runc-t')?.textContent ?? '', why: first?.querySelector('.runc-why')?.textContent ?? '',
       cmd: first?.querySelector('.runc-cmd')?.textContent ?? '', labels: [...first.querySelectorAll('.runc-b button')].map((b) => b.textContent),
+      docked: first?.querySelector('.runc-dock')?.textContent ?? '',
+      dock: (() => { const d = document.querySelector('.dockrun'); if (!d) return null; const b = d.getBoundingClientRect(), c = document.querySelector('#composer')?.getBoundingClientRect();
+        return { why: d.querySelector('.q')?.textContent ?? '', cmd: d.querySelector('.runc-cmd')?.textContent ?? '', labels: [...d.querySelectorAll('.runc-b button')].map((x) => x.textContent),
+          inside: b.left >= -0.5 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5, aboveComposer: !c || b.bottom <= c.top + 0.5,
+          minH: Math.min(...[...d.querySelectorAll('.runc-b button')].map((x) => x.getBoundingClientRect().height)) }; })(),
       second: [...document.querySelectorAll('.convo-in .runc:not(.prose)')][1]?.querySelector('.runc-res')?.textContent ?? '',
       prose: document.querySelector('.runc.prose .runc-cmd')?.textContent ?? '', proseBtns: [...document.querySelectorAll('.runc.prose button')].map((b) => b.textContent),
       header: [...document.querySelectorAll('.offb button')].map((b) => b.textContent),
@@ -1312,7 +1317,12 @@ try {
   check(!r.wide && r.sideways === 0 && r.outside === 0, `V0.149 ${front}: a command scrolls sideways or a card leaves the screen ${JSON.stringify(r)}`);
   check(r.title === "Run on desk" && r.why === "Mount the SD card and mint the badge onto it", `V0.149 ${front}: the card's title or why ${JSON.stringify(r)}`);
   check(r.cmd.includes("/nix/store/prc4…-nfc-mint") && r.cmd.startsWith("udisksctl mount -b /dev/sdc1"), `V0.149 ${front}: the command is not shortened in the middle: ${r.cmd}`);
-  check(r.labels.join("|") === "Run as root|Copy|Not now", `V0.149 ${front}: the buttons are ${r.labels.join("|")}`);
+  // V0.next-step-dock: the waiting request's buttons are in the dock above the composer; its full card points there.
+  check(r.labels.length === 0 && r.docked === "Waiting in the dock below", `V0.next-step-dock ${front}: the waiting card still has buttons ${JSON.stringify(r.labels)} "${r.docked}"`);
+  check(r.dock && r.dock.why === "Mount the SD card and mint the badge onto it" && r.dock.cmd === "udisksctl mount -b /dev/sdc1 …", `V0.next-step-dock ${front}: the dock ${JSON.stringify(r.dock)}`);
+  check(r.dock && r.dock.labels.join("|") === "Run as root|Copy|Not now|Show in conversation", `V0.next-step-dock ${front}: the dock's buttons are ${JSON.stringify(r.dock?.labels)}`);
+  check(r.dock && r.dock.inside && r.dock.aboveComposer, `V0.next-step-dock ${front}: the dock leaves the screen or covers the composer ${JSON.stringify(r.dock)}`);
+  if (front === "phone") check(r.dock && r.dock.minH >= 44, `V0.next-step-dock phone: a dock button is ${r.dock?.minH} px tall, under 44`);
   check(r.second.startsWith("Failed (exit 1)"), `V0.149 ${front}: the failed run says "${r.second}"`);
   check(r.prose.startsWith("sudo /nix/store/prc4…-") && r.proseBtns.join("|") === "Copy", `V0.149 ${front}: the prose card ${JSON.stringify(r)}`);
   check(!r.header.some((x) => /Run/.test(x)), `V0.149 ${front}: a run request shows as a header button ${JSON.stringify(r.header)}`);
@@ -1324,14 +1334,14 @@ try {
   else await evaluate("document.querySelector('.runc:not(.prose) .runc-cmd').click()");
   const full = await evaluate("({ t: document.querySelector('.runc:not(.prose) .runc-cmd').textContent, side: document.querySelector('.runc:not(.prose) .runc-cmd').scrollWidth > document.querySelector('.runc:not(.prose) .runc-cmd').clientWidth + 1 })");
   check(full.t.includes("prc4lv5v5kppd7rgz3h2fh9wq3n4zj9y") && !full.side, `V0.149 ${front}: the press does not show the full command, or it scrolls ${JSON.stringify(full)}`);
-  // Run sends the press with the digest the card showed.
-  await evaluate("document.querySelector('.runc:not(.prose) .runc-b .btn.p').click()");
+  // Run in the dock sends the press with the digest the card showed.
+  await evaluate("document.querySelector('.dockrun .runc-b .btn.p').click()");
   const sent = await evaluate("(window.__fyrCommands || []).filter((c) => c.action === 'action.run').map((c) => c.args)");
   check(sent.length === 1 && sent[0].on === "thread" && sent[0].action === "run-1" && sent[0].digest === "d-run-1", `V0.149 ${front}: Run sent ${JSON.stringify(sent)}`);
   // No polkit agent: Run as root is off and the card says why.
   if (front === "desktop") await navigate(`${origin}/${url}&rootprompt=no`, ready);
   else await openScreen({ url: `${url}&rootprompt=no`, ready }, w, h);
-  const no = await evaluate("({ off: document.querySelector('.runc:not(.prose) .runc-b button').disabled, line: document.querySelector('.runc:not(.prose) .runc-root')?.textContent ?? '' })");
+  const no = await evaluate("({ off: document.querySelector('.dockrun .runc-b button').disabled, line: document.querySelector('.dockrun .runc-root')?.textContent ?? '' })");
   check(no.off && /^No password prompt can show on desk: no polkit authentication agent/.test(no.line), `V0.149 ${front}: without a polkit agent ${JSON.stringify(no)}`);
   await shot(`runcard-${front}-nopolkit.png`);
 } catch (e) {

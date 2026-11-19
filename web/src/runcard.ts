@@ -30,6 +30,31 @@ export function placeCards(items: Item[], ids: string[]): { items: Item[]; loose
   return { items: items.filter((it) => it.kind !== "runcard" || place.get(it.action) === it.key), loose: ids.filter((id) => !place.has(id)) };
 }
 
+/**
+ * V0.next-step-dock: the run request that stands in the dock above the composer, or null. A question or an approval
+ * comes first (it holds the keys and may hold the agent's turn); then the newest request not yet run. `waiting` is how
+ * many requests wait in all, so the dock can say "+N more".
+ */
+export function dockRun(t: Pick<Thread, "runs" | "decisions"> & { offers?: Offer[] }): { o: Offer; waiting: number } | null {
+  const open = requests(t).filter((o) => !lastRun(t.runs, o.id));
+  if (!open.length || (t.decisions?.length ?? 0) > 0) return null;
+  return { o: open[open.length - 1], waiting: open.length };
+}
+
+/** How many run requests wait behind what the dock shows: counted in a question's or approval's "+N more". */
+export function waitingRuns(t: Pick<Thread, "runs"> & { offers?: Offer[] }): number {
+  return requests(t).filter((o) => !lastRun(t.runs, o.id)).length;
+}
+
+/** The first line of a command, with … when there are more. */
+export function firstLine(cmd: string): string {
+  const lines = cmd.replace(/\n+$/, "").split("\n");
+  return lines.length > 1 ? `${lines[0]} …` : lines[0];
+}
+
+/** The element id of a request's full card in the conversation, for Show in conversation. */
+export const cardDomId = (id: string) => `runc-${id.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+
 /** What changes a card's height: at the bottom of the conversation, the view follows it. */
 export function cardsKey(t: Pick<Thread, "runs"> & { offers?: Offer[] }): string {
   return requests(t)
