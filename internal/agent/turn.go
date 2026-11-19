@@ -275,7 +275,7 @@ func (m *Manager) noteForced(s *session, msg claude.Msg) {
 // turn that only called these did no new work.
 func upkeepTool(name string) bool {
 	switch strings.TrimPrefix(name, "mcp__fyr__") {
-	case "change_update", "change_status", "change_revise", "change_attach", "change_unchanged", "change_list":
+	case "change_update", "change_list":
 		return true
 	}
 	return false

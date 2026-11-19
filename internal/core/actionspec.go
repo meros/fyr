@@ -182,7 +182,7 @@ func (h Holder) declare(a ActionSpec, request bool) error {
 		}
 		if a.Revision == "newest" {
 			if len(h.Change.Revisions) == 0 {
-				return errors.New("the change has no revision to bind to; add one with change_revise")
+				return errors.New("the change has no revision to bind to; add one with change_update {revision}")
 			}
 			a.Revision = h.Change.Revisions[len(h.Change.Revisions)-1].ID
 		}
@@ -364,7 +364,7 @@ var FyrEffects = map[string]*FyrEffect{
 	FyrRerun: {ID: FyrRerun, Label: "Re-run failed checks", OnPR: true, Guard: prGuard(false), Check: needPR, Timeout: 10 * time.Minute},
 	// A deploy installs a release, or builds a checkout, then drains for up
 	// to 30 minutes (V0.13, decision 0027).
-	FyrDeploy: {ID: FyrDeploy, Label: "Deploy Fyr", Ask: AskDeploy, Request: true, Timeout: 60 * time.Minute,
+	FyrDeploy: {ID: FyrDeploy, Label: "Deploy Fyr", Request: true, Timeout: 60 * time.Minute,
 		Guard: func(*Thread, map[string]any) string { return "" },
 		Check: func(a map[string]any) error {
 			if d, ok := a["dir"]; ok {

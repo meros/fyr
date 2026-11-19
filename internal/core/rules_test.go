@@ -143,7 +143,7 @@ func TestWatchSuspendedWhileSettled(t *testing.T) {
 	if r := FindRule(th, "w_state"); r == nil || r.Status != RuleSuspended || r.SuspendedBy[0] != SuspendSettle {
 		t.Fatalf("not suspended: %+v", r)
 	}
-	res := step(t, th, v, Input{Source: FromAgent, Kind: KindChangeStatus, Args: ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Phase: PhaseReview}}}, ct0)
+	res := step(t, th, v, Input{Source: FromAgent, Kind: KindChangeUpdate, Args: ChangeUpdateArgs{Change: c.ID, Update: ChangeUpdate{Phase: PhaseReview}}}, ct0)
 	res2 := step(t, th, v, Input{Source: Observer(ObsProcess), Kind: KindRunEnded, Args: RunEndedArgs{}}, ct0)
 	if fired(res, "w_state")+fired(res2, "w_event") != 0 {
 		t.Fatal("a suspended watch fired")

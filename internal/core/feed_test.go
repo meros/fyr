@@ -309,15 +309,15 @@ func TestNoticeRules(t *testing.T) {
 }
 
 // #47: what the agent's own tool call causes never wakes it (no loop): its
-// watch that its own change_status makes true is taken at the next tool
+// watch that its own change_update makes true is taken at the next tool
 // call, not as a turn of its own; a failure that arrives wakes it, and
 // the idle message carries both, the most urgent first.
 func TestFeedLoopGuard(t *testing.T) {
 	th := feedThread()
-	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeOpen, Args: ChangeOpenArgs{Open: ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Doc"}}}, ct0)
+	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeOpen, Args: ChangeOpenArgs{Open: ChangeOpen{Key: "doc:x", Kind: KindCode, Title: "Doc", Branch: "docs"}}}, ct0)
 	c := FindChange(th, "doc:x")
 	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", When: When{Kind: WhenReached, Change: c.ID, Phase: PhaseReview}, Then: "notify", Note: "ask for review"}}, ct0)
-	th, res := fstep(t, th, Input{Source: FromAgent, Kind: KindChangeStatus, Args: ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Phase: PhaseReview}}}, ct0)
+	th, res := fstep(t, th, Input{Source: FromAgent, Kind: KindChangeUpdate, Args: ChangeUpdateArgs{Change: c.ID, Update: ChangeUpdate{Phase: PhaseReview}}}, ct0)
 	if n := queued(t, th, "rule:w_1"); !n.Self || wakes(res) {
 		t.Fatalf("own watch: %+v wakes=%v", n, wakes(res))
 	}
@@ -354,8 +354,8 @@ func TestFeedLoopGuard(t *testing.T) {
 // and records it touched are silent: nothing is queued.
 func TestFeedSilent(t *testing.T) {
 	th := feedThread()
-	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeOpen, Args: ChangeOpenArgs{Open: ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Doc"}}}, ct0)
-	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeStatus, Args: ChangeStatusArgs{Change: "doc:x", Update: ChangeUpdate{Phase: PhaseLanded, Conditions: []Condition{{Type: "lint", Status: CondFail}}}}}, ct0)
+	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeOpen, Args: ChangeOpenArgs{Open: ChangeOpen{Key: "doc:x", Kind: KindCode, Title: "Doc", Branch: "docs"}}}, ct0)
+	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeUpdate, Args: ChangeUpdateArgs{Change: "doc:x", Update: ChangeUpdate{Phase: PhaseLanded, Conditions: []Condition{{Type: "lint", Status: CondFail}}}}}, ct0)
 	RunStarted(th, ct0)
 	th, _ = fstep(t, th, Input{Source: Observer(ObsProcess), Kind: KindRunEnded, Args: RunEndedArgs{Git: GitFacts{Branch: "feat", Ahead: 2, Unpushed: 2, Dirty: 1, Head: "abc"}}}, ct0)
 	th, _ = observePR(t, th, PR{State: "OPEN", Checks: ChecksPending}, ct0)

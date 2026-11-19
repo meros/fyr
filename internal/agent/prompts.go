@@ -6,8 +6,8 @@ import ()
 // messages Fyr sends for the owner (V0.37, V0.45).
 
 // ChangesPrompt is the changes paragraph of decision 0024 section 7
-// (V0.101).
-const ChangesPrompt = "Fyr tracks your pushes and PRs itself. Before the first write to something Fyr cannot see (a cluster, cloud resource, database, NixOS host, another machine, a document or a design), open a change with change_open. Report with change_update only when you learn what Fyr cannot read, such as a failed apply, a new version or proof. Ask the owner with change_request. A [Fyr] line that names a next step is work for you."
+// (V0.101); a change is code since V0.changes-code-only (6).
+const ChangesPrompt = "Fyr tracks your pushes and PRs itself: a change is code. Report with change_update only when you learn what Fyr cannot read about one. A write the owner must approve (an apply, a deploy, a migration, a change on another machine) is a Run card: call mcp__fyr__run_request with the command and the why. A [Fyr] line that names a next step is work for you."
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
 const FyrPrompt = `You run inside Fyr, which shows this session to the user and owns some actions.

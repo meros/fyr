@@ -109,21 +109,15 @@ func ownerLine(req EffectReq, ok bool, text string) string {
 }
 
 // answerEffect is the owner's answer to an agent's effect request (5.10):
-// a decline and a change ask Fyr does not run (review, approve, apply,
-// revert) are reported at once, and a yes to review or approve marks the
-// change's approval ok (V0.59 (5)); a yes to a Fyr effect runs it.
+// a decline, and an old change ask Fyr does not run (review, approve,
+// apply, revert: gone since V0.changes-code-only, but a stored one may still
+// be open), are reported at once; a yes to a Fyr effect runs it.
 func answerEffect(t *Thread, res *Result, req EffectReq, allow bool, now time.Time) {
 	if ask, ok := strings.CutPrefix(req.Action, "change."); ok {
 		title, _ := req.Args["title"].(string)
 		if !allow {
 			report(res, req, false, false, fmt.Sprintf("The owner said no to %s %q.", ask, title))
 			return
-		}
-		if a := ChangeAsk(ask); a == AskReview || a == AskApprove {
-			id, _ := req.Args["change"].(string)
-			if c := FindChange(t, id); c != nil {
-				UpdateChange(t, c, ChangeUpdate{Conditions: []Condition{{Type: CondApproval, Status: CondOK, Reason: "the owner said yes"}}}, ByOwner, now)
-			}
 		}
 		report(res, req, true, true, fmt.Sprintf("The owner said yes to %s %q.", ask, title))
 		return

@@ -38,12 +38,12 @@ func ocShown(th *Thread, rec *Change) []Change {
 	})
 }
 
-// SPEC 0.5 V0.87 (1), V0.59 (3): a change of any kind on a branch follows the host record of that branch: it is
+// SPEC 0.5 V0.87 (1), V0.59 (3): an agent's code change on a branch (code only since V0.changes-code-only) follows the host record of that branch: it is
 // linked (observed), shows the record's revisions until the agent writes its own, and lands with the branch. The
 // thread shows one card for it.
 func TestDocChangeOnBranchFollowsRecord(t *testing.T) {
 	th := &Thread{ID: "t"}
-	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Doc", Branch: "fix/y", Targets: []string{"repo:" + ocRepo}}, "")
+	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindCode, Title: "Doc", Branch: "fix/y", Targets: []string{"repo:" + ocRepo}}, "")
 	rs, rec := observe(t, nil, GitFacts{Repo: ocRepo, Path: "/w/fyr", Branch: "fix/y", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "h1"}, ct0)
 	th, _ = fstep(t, th, Input{Source: Observer(ObsGit), Kind: KindChangeObserved, Args: ChangeObservedArgs{After: *rec}}, ct0)
 	c := FindChange(th, "doc:x")
@@ -57,12 +57,12 @@ func TestDocChangeOnBranchFollowsRecord(t *testing.T) {
 		t.Fatalf("two cards for one branch: %+v", shown)
 	}
 	// A second change_open on the same key is the same change (guard).
-	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Doc", Branch: "fix/y"}, "")
+	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindCode, Title: "Doc", Branch: "fix/y"}, "")
 	if len(th.Changes) != 1 {
 		t.Fatalf("a second change_open made a second change: %+v", th.Changes)
 	}
 	// The agent writes its own revision; the record's next one is added beside it.
-	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeRevise, Args: ChangeReviseArgs{Change: "doc:x", Revision: Revision{ID: "draft-2"}}}, ct0)
+	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeUpdate, Args: ChangeUpdateArgs{Change: "doc:x", Revision: &Revision{ID: "draft-2"}}}, ct0)
 	t1 := ct0.Add(time.Minute)
 	rs2, rec2 := observe(t, rs, GitFacts{Repo: ocRepo, Path: "/w/fyr", Branch: "fix/y", Base: "origin/main", Ahead: 2, Unpushed: 0, Head: "h2"}, t1)
 	th, _ = fstep(t, th, Input{Source: Observer(ObsGit), Kind: KindChangeObserved, Args: ChangeObservedArgs{Before: rec, After: *rec2}}, t1)
@@ -85,7 +85,7 @@ func TestDocChangeOnBranchFollowsRecord(t *testing.T) {
 // second change keyed by the PR.
 func TestPRForBranchLandsOnFollower(t *testing.T) {
 	th := &Thread{ID: "t"}
-	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Doc", Branch: "fix/y", Targets: []string{"repo:" + ocRepo}}, "")
+	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindCode, Title: "Doc", Branch: "fix/y", Targets: []string{"repo:" + ocRepo}}, "")
 	_, rec := observe(t, nil, GitFacts{Repo: ocRepo, Path: "/w/fyr", Branch: "fix/y", Base: "origin/main", Ahead: 1, Unpushed: 0, Head: "h1"}, ct0)
 	th, _ = fstep(t, th, Input{Source: Observer(ObsGit), Kind: KindChangeObserved, Args: ChangeObservedArgs{After: *rec}}, ct0)
 	th = ocPRSeen(t, th, "OPEN", ct0)
@@ -112,7 +112,7 @@ func TestAgentChangeWithPRFoldsFyrsPRChange(t *testing.T) {
 	if th.Changes[0].Key != "pr:meros/fyr#67" || th.MainChange != fyrs || FindRule(th, "builtins:"+fyrs) == nil {
 		t.Fatalf("setup: %+v main %s", th.Changes, th.MainChange)
 	}
-	th = ocOpen(t, th, ChangeOpen{Key: "fyr:decision-0021", Kind: KindDoc, Title: "Decision 0021"}, ocPR)
+	th = ocOpen(t, th, ChangeOpen{Key: "fyr:decision-0021", Kind: KindCode, Title: "Decision 0021"}, ocPR)
 	if len(th.Changes) != 1 {
 		t.Fatalf("two changes for one PR: %+v", th.Changes)
 	}
@@ -136,26 +136,27 @@ func TestAgentChangeWithPRFoldsFyrsPRChange(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.87 (2): change_attach with the PR on an agent's change folds Fyr's change for that PR into it.
+// SPEC 0.5 V0.87 (2): change_update with the PR as proof on an agent's change folds Fyr's change for that PR into it.
 func TestAttachPRFoldsFyrsPRChange(t *testing.T) {
 	th := &Thread{ID: "t"}
 	th = ocPRSeen(t, th, "OPEN", ct0)
-	th = ocOpen(t, th, ChangeOpen{Key: "fyr:decision-0021", Kind: KindDoc, Title: "Decision 0021"}, "")
+	th = ocOpen(t, th, ChangeOpen{Key: "fyr:decision-0021", Kind: KindCode, Title: "Decision 0021", Branch: "docs/0021"}, "")
 	if len(th.Changes) != 2 {
 		t.Fatalf("setup: %+v", th.Changes)
 	}
-	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeAttach, Args: ChangeAttachArgs{Change: "fyr:decision-0021", Evidence: []Evidence{{Kind: "pr", URL: ocPR}}}}, ct0)
+	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeUpdate, Args: ChangeUpdateArgs{Change: "fyr:decision-0021", Evidence: []Evidence{{Kind: "pr", URL: ocPR}}}}, ct0)
 	if len(th.Changes) != 1 || th.Changes[0].Key != "fyr:decision-0021" || th.Changes[0].Phase != PhaseReview {
 		t.Fatalf("after attach: %+v", th.Changes)
 	}
 }
 
-// SPEC 0.5 V0.87 (2): the agent opens a doc change on the branch of Fyr's PR change: the PR's change folds into it.
+// SPEC 0.5 V0.87 (2): the agent opens a code change on the branch of Fyr's PR change: the PR's change folds into it.
 func TestDocChangeOnPRBranchFoldsFyrsPRChange(t *testing.T) {
 	th := &Thread{ID: "t"}
 	th = ocPRSeen(t, th, "OPEN", ct0)
-	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Doc", Branch: "fix/y"}, "")
-	if len(th.Changes) != 1 || th.Changes[0].Key != "doc:x" || th.Changes[0].PRURL() != ocPR {
+	th = ocOpen(t, th, ChangeOpen{Key: "doc:x", Kind: KindCode, Title: "Doc", Branch: "fix/y"}, "")
+	// A code change joins the one Fyr keeps for that branch (V0.70 (2)): its key is an alias.
+	if len(th.Changes) != 1 || FindChange(th, "doc:x") != &th.Changes[0] || th.Changes[0].PRURL() != ocPR {
 		t.Fatalf("two changes for one branch: %+v", th.Changes)
 	}
 }

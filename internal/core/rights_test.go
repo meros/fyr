@@ -31,17 +31,17 @@ func TestFieldRightsRejectTheAgent(t *testing.T) {
 	// V0.101: a value for an observed field is ignored, not refused; the
 	// reply names what Fyr reads (need_test.go).
 	for what, u := range map[string]ChangeUpdate{"checks ok": {Conditions: []Condition{{Type: CondChecks, Status: CondOK}}}, "phase": {Phase: PhaseLanded}} {
-		nt, _, res, err := Reduce(th, nil, Input{Source: FromAgent, Kind: KindChangeStatus, Thread: "t", Args: ChangeStatusArgs{Change: c.ID, Update: u}}, now)
+		nt, _, res, err := Reduce(th, nil, Input{Source: FromAgent, Kind: KindChangeUpdate, Thread: "t", Args: ChangeUpdateArgs{Change: c.ID, Update: u}}, now)
 		r, _ := res.Reply.(ChangeReply)
 		if err != nil || len(r.Notes) != 1 || nt.Changes[0].Phase != PhaseReview || nt.Changes[0].Conditions[0].Status != CondFail {
 			t.Fatalf("%s: %v %q %+v", what, err, r.Notes, nt.Changes[0])
 		}
 	}
-	rights("approval ok", agent(KindChangeStatus, ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: CondApproval, Status: CondOK}}}}))
-	rights("review ok", agent(KindChangeStatus, ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: CondReview, Status: CondOK}}}}))
+	rights("approval ok", agent(KindChangeUpdate, ChangeUpdateArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: CondApproval, Status: CondOK}}}}))
+	rights("review ok", agent(KindChangeUpdate, ChangeUpdateArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: CondReview, Status: CondOK}}}}))
 	rights("pr.observed", agent(KindPRObserved, PR{URL: "https://github.com/o/r/pull/5", State: "MERGED"}))
 	// A claim the agent may make still applies; the owner may mark approval ok.
-	if err := agent(KindChangeStatus, ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: "lint", Status: CondOK}}}}); err != nil {
+	if err := agent(KindChangeUpdate, ChangeUpdateArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: "lint", Status: CondOK}}}}); err != nil {
 		t.Fatalf("a claim: %v", err)
 	}
 	if err := CanWrite(FieldApprovalOK, ByOwner, "", "approval"); err != nil {

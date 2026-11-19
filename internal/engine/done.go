@@ -59,19 +59,22 @@ func (e *Engine) recordOwner(in core.Input, a core.Args, kind string) (api.Reply
 
 // migrateDone is the load pass of V0.98 (7): in each thread a PR change and
 // its open branch change fold into one, and what landed before is done; a
-// host record that landed or ended is done. Call it with e.mu held, after
-// the records are loaded.
+// host record that landed or ended is done. Before it, V0.changes-code-only
+// (4): a change that is not code ends as abandoned. Call it with e.mu held,
+// after the records are loaded.
 func (e *Engine) migrateDone() error {
 	now := e.Now()
 	var dirty []*core.Thread
 	for _, t := range e.threads {
-		if core.MigrateDone(t, now) {
+		ended := core.MigrateCodeOnly(t, now)
+		if core.MigrateDone(t, now) || ended {
 			dirty = append(dirty, t)
 		}
 	}
 	var recs []*core.Change
 	for _, c := range e.records {
-		if core.MigrateRecordDone(c, now) {
+		ended := core.MigrateRecordCodeOnly(c, now)
+		if core.MigrateRecordDone(c, now) || ended {
 			recs = append(recs, c)
 		}
 	}

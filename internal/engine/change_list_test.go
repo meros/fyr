@@ -26,21 +26,21 @@ func manyChanges(t *testing.T, h *harness, id string) (failing string, open []st
 	}
 	long := strings.Repeat("with a long description of the work ", 5)
 	for i := range 50 {
-		key := fmt.Sprintf("infra:%02d", i)
+		key := fmt.Sprintf("code:%02d", i)
 		title := fmt.Sprintf("Change %02d", i)
 		if i >= 31 {
 			title += " " + long
 		}
-		call("change_open", map[string]any{"key": key, "kind": "infra", "title": title})
+		call("change_open", map[string]any{"key": key, "kind": "code", "title": title, "branch": fmt.Sprintf("b%02d", i)})
 		switch {
 		case i < 15:
-			call("change_status", map[string]any{"change": key, "phase": "landed"})
+			call("change_update", map[string]any{"change": key, "phase": "landed"})
 		case i < 25:
-			call("change_status", map[string]any{"change": key, "phase": "abandoned"})
+			call("change_update", map[string]any{"change": key, "phase": "abandoned"})
 		case i < 30:
-			call("change_status", map[string]any{"change": key, "phase": "live"})
+			call("change_update", map[string]any{"change": key, "phase": "live"})
 		case i == 30:
-			call("change_status", map[string]any{"change": key, "phase": "landed", "conditions": []any{map[string]any{"type": "health", "status": "fail", "reason": "2 of 4 pods crash"}}})
+			call("change_update", map[string]any{"change": key, "phase": "landed", "conditions": []any{map[string]any{"type": "health", "status": "fail", "reason": "2 of 4 pods crash"}}})
 		}
 	}
 	th, _ := h.e.Thread(id)
@@ -48,10 +48,10 @@ func manyChanges(t *testing.T, h *harness, id string) (failing string, open []st
 		t.Fatalf("%d changes, want 50", len(th.Changes))
 	}
 	for _, c := range th.Changes {
-		if c.Key == "infra:30" {
+		if c.Key == "code:30" {
 			failing = c.ID
 		}
-		if c.Key >= "infra:31" {
+		if c.Key >= "code:31" {
 			open = append(open, c.ID)
 		}
 	}
@@ -87,7 +87,7 @@ func TestChangeListOpenOnlyAndCapped(t *testing.T) {
 	}
 	th, _ := h.e.Thread(id)
 	for _, c := range th.Changes {
-		if c.Key < "infra:30" && strings.Contains(out, c.ID) {
+		if c.Key < "code:30" && strings.Contains(out, c.ID) {
 			t.Fatalf("done change %s (%s) is listed", c.Key, c.Phase)
 		}
 	}
@@ -171,9 +171,9 @@ func TestFyrStateChangesCapped(t *testing.T) {
 func TestHandoverFirstMessageListsOpenChanges(t *testing.T) {
 	h := newHandoverHarness(t)
 	th := h.start("hello")
-	callAs(t, h.e, th.ID, "change_open", map[string]any{"key": "k8s:prod/api", "kind": "infra", "title": "Raise api replicas"})
-	callAs(t, h.e, th.ID, "change_open", map[string]any{"key": "dns:old", "kind": "infra", "title": "Old DNS record"})
-	callAs(t, h.e, th.ID, "change_status", map[string]any{"change": "dns:old", "phase": "abandoned"})
+	callAs(t, h.e, th.ID, "change_open", map[string]any{"key": "k8s:prod/api", "title": "Raise api replicas", "branch": "feat/replicas"})
+	callAs(t, h.e, th.ID, "change_open", map[string]any{"key": "dns:old", "title": "Old DNS record", "branch": "feat/dns"})
+	callAs(t, h.e, th.ID, "change_update", map[string]any{"change": "dns:old", "phase": "abandoned"})
 	open := changeOf(h.harness, th.ID, "k8s:prod/api")
 	gone := changeOf(h.harness, th.ID, "dns:old")
 	os.RemoveAll(filepath.Join(h.dirA, "projects"))
