@@ -38,7 +38,7 @@ import {
   applyThreadPatch,
   resolveRef,
 } from "./store.ts";
-import { placeOf, stillRows, trackUnread, type RowPlace } from "./still-list.ts";
+import { placeOf, steadyThreads, stillRows, trackUnread, type FinishHold, type RowPlace } from "./still-list.ts";
 import { useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
@@ -382,8 +382,23 @@ function App() {
     const projectGone = !!findProject(fullStore.projects, projectFilter) && !filterOn;
     return { hostsOff: hostsOff.filter((n) => !gone(n)), project: projectGone ? null : projectFilter || null };
   }, [hostsOff, projectFilter, fullStore.hosts, fullStore.projects, store.hosts, filterOn]);
+  // V0.finish-debounce: a thread that just stopped working stays in Moving a few seconds before the list shows it
+  // finished, so a run that starts again at once does not blink. The thread view reads store.threads, live.
+  const [holdClock, setHoldClock] = useState(0);
+  const holdRef = useRef<{ holds: Record<string, FinishHold>; last: Record<string, Thread> | null }>({ holds: {}, last: null });
+  const steady = useMemo(() => {
+    const r = steadyThreads(holdRef.current.holds, holdRef.current.last, store.threads, Date.now());
+    holdRef.current = { holds: r.holds, last: store.threads };
+    return r;
+  }, [store.threads, holdClock]);
+  useEffect(() => {
+    if (steady.next === null) return;
+    const t = setTimeout(() => setHoldClock((n) => n + 1), Math.max(0, steady.next - Date.now()) + 50);
+    return () => clearTimeout(t);
+  }, [steady.next]);
+  const listThreads = steady.threads;
   // V0.134: host AND project.
-  const filtered = useMemo(() => applyFilters(store.threads, filterSel, store.projects, store.host ?? ""), [store.threads, store.projects, filterSel, store.host]);
+  const filtered = useMemo(() => applyFilters(listThreads, filterSel, store.projects, store.host ?? ""), [listThreads, store.projects, filterSel, store.host]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
   const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset, unlock.showUntil), [filtered, unlock.showUntil, quietClock, store.clockOffset]);
   // V0.ai-search: what AI search reads, in the list's order.
@@ -412,7 +427,7 @@ function App() {
   const queue = useSlotQueue(); // V0.137
   // V0.207: `sec` is the truth, for every count; the list draws `rows` and j/k walks `drawn`, which keep their place.
   const unreadRef = useRef<Record<string, number>>({});
-  const unreadAt = useMemo(() => (unreadRef.current = trackUnread(unreadRef.current, store.threads)), [store.threads]);
+  const unreadAt = useMemo(() => (unreadRef.current = trackUnread(unreadRef.current, listThreads)), [listThreads]);
   const sec = useMemo(() => sections(shown, queue, unreadAt), [shown, queue, unreadAt]);
   // V0.134, V0.169: the two rows (only values with threads in view; a selected one stays) and the empty state, on both
   // fronts.
@@ -445,7 +460,7 @@ function App() {
   const gatedThread = gate.gated && wantId ? store.threads[wantId] : undefined;
   // V0.192: the current thread punches through what hides it: the filters and quiet hours add its row in its own place
   // (`rows`), a folded section draws it alone (`guest`). `sec` stays what the filters let through, for every count.
-  const current = sel ? store.threads[sel] : undefined;
+  const current = sel ? listThreads[sel] : undefined;
   // V0.212: not on the phone. The list and the thread are never on screen together there, so the row marks nothing.
   const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
