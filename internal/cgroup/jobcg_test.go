@@ -20,7 +20,7 @@ func fakeProc(t *testing.T, proc string, pid, ppid int, argv ...string) {
 func TestS5AHeavyJobGetsItsOwnCgroup(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	// The CLI (10), its shell running the job (20) and the job's child (21); an unrelated shell (30).
 	fakeProc(t, proc, 10, 1, "claude", "--output-format", "stream-json")
@@ -60,7 +60,7 @@ func TestS5AHeavyJobGetsItsOwnCgroup(t *testing.T) {
 func TestS5ReleaseRemovesTheJobCgroupFirst(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	os.Mkdir(filepath.Join(td, "job"), 0o755)
 	tr.Release("t_a")
 	// The kernel refuses to remove a cgroup with a child; here, the child is gone before the thread's turn.

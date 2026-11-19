@@ -46,7 +46,7 @@ func TestGuardSwapFullDoublesTheReserve(t *testing.T) {
 func TestGuardSwapReclaimMovesFrozenWorkWithinTheSwapRoom(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	agents := filepath.Dir(td)
 	write(t, filepath.Join(agents, "memory.swap.max"), "10240M")
 	write(t, filepath.Join(agents, "memory.swap.current"), "7168M") // room: 9216M - 7168M = 2048M
@@ -82,7 +82,7 @@ func TestGuardSwapReclaimMovesFrozenWorkWithinTheSwapRoom(t *testing.T) {
 func TestGuardSwapReclaimNeedsTheKernelsFile(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	ud := filepath.Join(td, undeclaredDir)
 	write(t, filepath.Join(ud, "memory.stat"), "anon 3221225472\n")
 	write(t, filepath.Join(ud, "cgroup.freeze"), "1")

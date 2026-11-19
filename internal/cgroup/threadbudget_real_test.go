@@ -112,8 +112,8 @@ func TestRealThreadBudget(t *testing.T) {
 			t.Logf("%s: the small job was not done in %s", name, limit)
 		}
 		rate := float64(touched(dir)-before) / time.Since(start).Seconds()
-		use := readBytes(filepath.Join(noisy, "memory.current"))
-		high := read(t, filepath.Join(noisy, "memory.high"))
+		use := readBytes(filepath.Join(filepath.Dir(noisy), "memory.current"))
+		high := read(t, filepath.Join(filepath.Dir(noisy), "memory.high"))
 		os.WriteFile(filepath.Join(quiet, "cgroup.kill"), []byte("1"), 0o644)
 		os.WriteFile(filepath.Join(noisy, "cgroup.kill"), []byte("1"), 0o644)
 		time.Sleep(3 * time.Second)
@@ -136,7 +136,7 @@ func TestRealThreadBudget(t *testing.T) {
 	t.Logf("the small job took %s with the share, %s without", with.Round(100*time.Millisecond), without.Round(100*time.Millisecond))
 	// A slot raises the running thread's limit, and its release lowers it.
 	tr.threadPercent = 25
-	td := tr.Thread("t_hold")
+	td := threadOf(tr, "t_hold")
 	peak := uint64(400) << 20
 	tr.ApplyThreadBudget(map[string]ThreadHold{"t_hold": {Peak: peak, Known: true}})
 	if got, want := read(t, filepath.Join(td, "memory.high")), strconv.FormatUint(share+peak*5/4, 10); got != want {

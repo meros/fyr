@@ -143,7 +143,7 @@ func TestD7PageCacheIsNotTheWorkingSet(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
 	agents := filepath.Join(o.FS, unit, "agents")
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	write(t, filepath.Join(proc, "meminfo"), "MemTotal:       32000000 kB\nMemAvailable:   20000000 kB\n")
 	write(t, filepath.Join(td, "memory.current"), fmt.Sprint(uint64(4.9*gb)))

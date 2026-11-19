@@ -142,7 +142,7 @@ func TestV080OffRunsAsBeforeAndSaysWhyOnce(t *testing.T) {
 				t.Fatalf("log %v", l.lines)
 			}
 			// A nil tree is the off state: no directory, nothing to release.
-			if d := tr.Thread("t_1"); d != "" {
+			if d := threadOf(tr, "t_1"); d != "" {
 				t.Fatalf("thread dir %q", d)
 			}
 			tr.Release("t_1")
@@ -156,7 +156,7 @@ func TestV080OffRunsAsBeforeAndSaysWhyOnce(t *testing.T) {
 func TestV080ThreadCgroupLivesWhileItsProcessesDo(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	d := tr.Thread("t_abc")
+	d := threadOf(tr, "t_abc")
 	if d != filepath.Join(o.FS, unit, "agents", "t_abc") {
 		t.Fatalf("dir %q", d)
 	}
@@ -164,7 +164,7 @@ func TestV080ThreadCgroupLivesWhileItsProcessesDo(t *testing.T) {
 		t.Fatalf("cpu.weight %q", w)
 	}
 	// A handover starts the new process before the old one's reader ends.
-	if tr.Thread("t_abc") != d {
+	if threadOf(tr, "t_abc") != d {
 		t.Fatal("second start, other dir")
 	}
 	// The fake cgroupfs has files in the dir; the real one removes them with it.
@@ -178,7 +178,7 @@ func TestV080ThreadCgroupLivesWhileItsProcessesDo(t *testing.T) {
 	if _, err := os.Stat(d); !os.IsNotExist(err) {
 		t.Fatal("not removed after the last process")
 	}
-	if got := tr.Thread("../x"); got != filepath.Join(o.FS, unit, "agents", "___x") {
+	if got := tr.Thread("../x"); got != filepath.Join(o.FS, unit, "agents", "___x", CLIDir) {
 		t.Fatalf("unsafe name gave %q", got)
 	}
 	if got := tr.Deploy(); got != filepath.Join(o.FS, unit, "agents", DeployDir) {
@@ -193,7 +193,7 @@ func TestV080LoadSample(t *testing.T) {
 	write(t, filepath.Join(proc, "loadavg"), "10.50 6.00 4.25 3/900 1234\n")
 	write(t, filepath.Join(proc, "pressure", "cpu"), "some avg10=42.50 avg60=30.00 avg300=12.00 total=1\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n")
 	agents := filepath.Join(o.FS, unit, "agents")
-	td := tr.Thread("t_busy")
+	td := threadOf(tr, "t_busy")
 	stat := func(p string, usec int) {
 		write(t, filepath.Join(p, "cpu.stat"), fmt.Sprintf("usage_usec %d\nuser_usec 1\nsystem_usec 1\n", usec))
 	}
@@ -240,4 +240,14 @@ func TestV080LoadWithoutCgroups(t *testing.T) {
 	if l.Cgroups || l.Agents != nil || l.Threads == nil || len(l.Threads) != 0 || l.CPUPressure != nil || l.Load[2] != 3 {
 		t.Fatalf("%+v", l)
 	}
+}
+
+// threadOf is a thread's own cgroup: the parent of the cli/ leaf Thread
+// returns (V0.job-limits).
+func threadOf(tr *Tree, id string) string {
+	d := tr.Thread(id)
+	if d == "" {
+		return ""
+	}
+	return filepath.Dir(d)
 }

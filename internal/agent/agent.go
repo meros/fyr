@@ -95,6 +95,11 @@ type Config struct {
 	OnBash func(BashCall) string
 	// OnToolDone hears that a thread's tool call ended (V0.209). Optional.
 	OnToolDone func(thread, toolUse string)
+	// JobEnv is what a CLI's environment gets so the tools its jobs run size
+	// themselves (V0.job-limits); JobHint is the gate hook's notice for a Bash
+	// command whose runner ignores its cgroup ("" for none). Optional.
+	JobEnv  func() []string
+	JobHint func(command string) string
 	// Runner starts the processes in the launcher's runner, so they outlive
 	// fyrd (V0.90); nil starts them as fyrd's children.
 	Runner *runner.Client
@@ -335,6 +340,13 @@ type BashCall struct {
 func (m *Manager) SetOnBash(f func(BashCall) string, done func(thread, toolUse string)) {
 	m.mu.Lock()
 	m.cfg.OnBash, m.cfg.OnToolDone = f, done
+	m.mu.Unlock()
+}
+
+// SetJobHints sets Config.JobEnv and Config.JobHint after New (V0.job-limits).
+func (m *Manager) SetJobHints(env func() []string, hint func(command string) string) {
+	m.mu.Lock()
+	m.cfg.JobEnv, m.cfg.JobHint = env, hint
 	m.mu.Unlock()
 }
 
@@ -598,6 +610,14 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		m.mu.Lock()
 		delete(m.tokens, s.token)
 		m.mu.Unlock()
+	}
+	// V0.job-limits: shares of the host for the tools that ignore cgroups; the
+	// profile's own variables come after, so they win.
+	m.mu.Lock()
+	jobEnv := m.cfg.JobEnv
+	m.mu.Unlock()
+	if jobEnv != nil {
+		l.Env = append(jobEnv(), l.Env...)
 	}
 	// V0.80: the CLI and everything it starts run in the thread's cgroup.
 	if m.cfg.Cgroups != nil {

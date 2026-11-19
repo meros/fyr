@@ -75,7 +75,7 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 			"permissionDecision": "deny", "permissionDecisionReason": r}}
 	}
 	m.mu.Lock()
-	onBash := m.cfg.OnBash
+	onBash, jobHint := m.cfg.OnBash, m.cfg.JobHint
 	m.mu.Unlock()
 	if c, _ := ti["command"].(string); name == "Bash" && c != "" && onBash != nil && s != nil {
 		u, _ := in["tool_use_id"].(string)
@@ -86,8 +86,17 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 				"permissionDecision": "deny", "permissionDecisionReason": r}}
 		}
 	}
+	var notes []string
 	if n := core.GateNudge(name, ti); n != "" { // V0.143
-		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse", "additionalContext": n}}
+		notes = append(notes, n)
+	}
+	if c, _ := ti["command"].(string); name == "Bash" && c != "" && jobHint != nil {
+		if n := jobHint(c); n != "" { // V0.job-limits
+			notes = append(notes, n)
+		}
+	}
+	if len(notes) > 0 {
+		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse", "additionalContext": strings.Join(notes, "\n")}}
 	}
 	return nil
 }

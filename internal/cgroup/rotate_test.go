@@ -14,7 +14,7 @@ func turboTree(t *testing.T) (*JobGroups, string) {
 	t.Helper()
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	fakeProc2(t, proc, 10, 1, 100, 1000, "claude")
 	fakeProc2(t, proc, 20, 10, 9000, 10, "/bin/zsh", "-c", "turbo run lint")
@@ -53,7 +53,7 @@ func TestR1TheUnitsAreWhereTheMemoryFansOut(t *testing.T) {
 func TestR2AJobWithOneHeavyProcessIsOneUnit(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	fakeProc2(t, proc, 20, 10, 9000, 10, "/bin/zsh", "-c", "tsc")
 	fakeProc2(t, proc, 21, 20, 9001, 3000, "tsc")

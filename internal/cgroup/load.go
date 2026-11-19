@@ -223,6 +223,7 @@ func (s *Sampler) Tick() {
 	}
 	l := s.get()
 	s.detect(l)
+	s.Tree.SplitThreads()                     // V0.job-limits: each thread's CLI in its cli/ leaf
 	s.Tree.ApplyThreadBudget(s.threadHolds()) // decision 0032 slice 3
 	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
 		return

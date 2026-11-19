@@ -273,7 +273,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// V0.209: the gate hook admits a heavy command by itself.
-	groups := &cgroup.JobGroups{Tree: tree} // decision 0029 S5: each holder's job in a cgroup of its own
+	groups := &cgroup.JobGroups{Tree: tree}                 // decision 0029 S5: each holder's job in a cgroup of its own
+	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaisePeak // V0.job-limits: a job sizes itself
 	// V0.164, V0.209: the learned and added patterns; the detector of
 	// work that nobody asked for, its settings and the record of its episodes.
 	book := &heavy.Book{KV: h.st, Matcher: heavyCmds, Base: cfg.HeavyAdded}
@@ -305,6 +306,13 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		groups.EndUndeclared(ep.Thread)
 	}
 	pool.Undeclared = sampler.Undeclared
+	// V0.job-limits: the tools that ignore cgroups get shares of this host.
+	capOf := func() cgroup.Capacity {
+		sig := sampler.Signals()
+		return cgroup.Capacity{CPU: sig.CPU, Memory: sig.Memory}
+	}
+	mgr.SetJobHints(func() []string { return cgroup.JobEnv(capOf()) },
+		func(c string) string { return heavy.WorkerHint(c, cgroup.Workers(capOf())) })
 	pool.Guard = eng.GuardView // decision 0032
 	if tree == nil {
 		// V0.164 section 10, V0.process-tree-hosts: no cgroup tree, so each thread is its

@@ -279,3 +279,31 @@ func KindOf(class string) string {
 	}
 	return "test"
 }
+
+// Runners that start a worker per CPU of the host and read no variable for it
+// (V0.job-limits): Playwright's test runner (`--workers`, `-j`) and turbo
+// (`--concurrency`, default 10).
+var (
+	playwrightRun = regexp.MustCompile(`(^|[\s;&|(])(npx\s+|yarn\s+|pnpm\s+(exec\s+)?|bunx\s+)?playwright\s+test\b`)
+	playwrightSet = regexp.MustCompile(`(\s--workers[=\s]|\s-j\s*\d)`)
+	turboRun      = regexp.MustCompile(`(^|[\s;&|(])(npx\s+|yarn\s+|pnpm\s+(exec\s+)?|bunx\s+)?turbo\s+(run\s+)?[\w:-]`)
+	turboSet      = regexp.MustCompile(`\s--concurrency[=\s]`)
+)
+
+// WorkerHint is the gate hook's notice for a command whose runner sizes its
+// workers from the host's CPUs and ignores the job's cgroup: the flag to add,
+// with workers as its value. "" when the command sets it or runs neither.
+func WorkerHint(command string, workers int) string {
+	var flags []string
+	if playwrightRun.MatchString(command) && !playwrightSet.MatchString(command) {
+		flags = append(flags, fmt.Sprintf("`--workers=%d` to `playwright test`", workers))
+	}
+	if turboRun.MatchString(command) && !turboSet.MatchString(command) {
+		flags = append(flags, fmt.Sprintf("`--concurrency=%d` to `turbo`", workers))
+	}
+	if len(flags) == 0 {
+		return ""
+	}
+	return "[Fyr] This runner starts a worker per CPU of the host and does not see the share this thread's job gets. " +
+		"Next time add " + strings.Join(flags, " and ") + " (the share of this host's agents' cores Fyr gives a job)."
+}

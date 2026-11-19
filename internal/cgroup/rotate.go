@@ -45,11 +45,11 @@ func unitDirs(dir string) []string {
 	return out
 }
 
-// undeclaredPids are the processes of a thread's cgroup directory td: its own,
-// those of undeclared/ and those of the units under it.
+// undeclaredPids are the processes of a thread's cgroup directory td: its own
+// and its cli/ leaf's, those of undeclared/ and those of the units under it.
 func undeclaredPids(td string) []int {
 	ud := filepath.Join(td, undeclaredDir)
-	in := append(pids(filepath.Join(td, "cgroup.procs")), pids(filepath.Join(ud, "cgroup.procs"))...)
+	in := append(threadPids(td), pids(filepath.Join(ud, "cgroup.procs"))...)
 	for _, d := range unitDirs(ud) {
 		in = append(in, pids(filepath.Join(d, "cgroup.procs"))...)
 	}
