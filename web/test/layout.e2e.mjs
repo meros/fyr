@@ -4003,7 +4003,7 @@ section('U15', async (h) => {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await navigate(`${origin}/?mock=1&open=t_lasso`, "!!document.querySelector('.th .ask .askf .btn')");
+  await navigate(`${origin}/?mock=1&open=t_ask`, "!!document.querySelector('.th .ask .askf .btn')");
   const BTN = `(() => { const b = document.querySelector('.th .ask .askf .btn'); return b ? { text: b.textContent.replace('↵', '').trim(), disabled: b.disabled } : null; })()`;
   const btn = () => evaluate(BTN);
   const a = await btn();
