@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -31,7 +32,14 @@ const (
 	onceTTL  = 60 * time.Second
 	idleTTL  = 90 * 24 * time.Hour
 	seenSave = time.Hour // lastSeen is written at most this often
-	kvKey    = "auth.devices"
+	// V0.one-device-per-browser: a tailnet session nobody came back with is
+	// handed to the same node and browser again for as long as it is unused, and
+	// for reuseFor after its making in any case (a page's first requests arrive
+	// together, all without the cookie). One that stays unused for unusedTTL is
+	// removed.
+	reuseFor  = time.Minute
+	unusedTTL = time.Hour
+	kvKey     = "auth.devices"
 )
 
 // Device is one browser that holds a session.
@@ -86,6 +94,16 @@ type Store struct {
 	peerGate    func() (bool, string)
 	peerLinksFn func() int
 	onAdd       []func(d Device)
+
+	enrolMu sync.Mutex        // one tailnet enrolment at a time: two requests of one page get one device
+	handed  map[string]handed // the last session made for a node and browser, in memory only
+}
+
+// handed is a tailnet session as it was given out, kept so that the same
+// browser can get it again while it has not come back with it.
+type handed struct {
+	session, hash string
+	at            time.Time
 }
 
 // Open loads the devices from kv. now is time.Now when nil.
@@ -111,6 +129,7 @@ func Open(kv KV, now func() time.Time) (*Store, error) {
 	if err := s.openState(); err != nil {
 		return nil, err
 	}
+	s.DropUnused()
 	return s, nil
 }
 
@@ -192,6 +211,58 @@ func (s *Store) MintFor(how, name, node, by string) (string, *Device) {
 	return session, d
 }
 
+// mintNode is MintFor for the tailnet door: the node's browser gets the session
+// it was last given while nobody has used that session, or within reuseFor of
+// its making (V0.one-device-per-browser). A client that keeps no cookie (another
+// install's probe, a script) so holds one device, not one for each request.
+func (s *Store) mintNode(agent, node string) (string, *Device) {
+	if node == "" {
+		return s.MintFor(HowTailnet, agent, node, "")
+	}
+	s.enrolMu.Lock()
+	defer s.enrolMu.Unlock()
+	key := node + "\x00" + agent
+	s.mu.Lock()
+	if h, ok := s.handed[key]; ok {
+		if d := s.devices[h.hash]; d != nil && !d.Pending && (d.LastSeen.Equal(d.Created) || s.now().Sub(h.at) < reuseFor) {
+			cp := *d
+			s.mu.Unlock()
+			return h.session, &cp
+		}
+		delete(s.handed, key)
+	}
+	s.mu.Unlock()
+	session, d := s.MintFor(HowTailnet, agent, node, "")
+	s.mu.Lock()
+	if s.handed == nil {
+		s.handed = map[string]handed{}
+	}
+	s.handed[key] = handed{session: session, hash: d.Hash, at: d.Created}
+	s.mu.Unlock()
+	return session, d
+}
+
+// DropUnused removes the tailnet sessions that were made more than unusedTTL
+// ago and never used: no request ever came back with the cookie, so no browser
+// holds them (V0.one-device-per-browser). It returns how many it removed.
+func (s *Store) DropUnused() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now, n := s.now(), 0
+	for h, d := range s.devices {
+		if d.How == HowTailnet && !d.Pending && d.LastSeen.Equal(d.Created) && now.Sub(d.Created) > unusedTTL {
+			delete(s.devices, h)
+			delete(s.saved, h)
+			n++
+		}
+	}
+	if n > 0 {
+		s.saveLocked()
+		s.auditLocked("unused", "auto", fmt.Sprintf("%d tailnet sessions that no browser ever used were removed", n))
+	}
+	return n
+}
+
 // Lookup finds the device of a session and marks it seen. A session unseen
 // for 90 days has ended.
 func (s *Store) Lookup(session string) (*Device, bool) {
@@ -216,8 +287,9 @@ func (s *Store) Lookup(session string) (*Device, bool) {
 		s.saveLocked()
 		return nil, false
 	}
+	first := d.LastSeen.Equal(d.Created) // the first use is written at once: it is what keeps the session (DropUnused)
 	d.LastSeen = now
-	if now.Sub(s.saved[h]) > seenSave {
+	if first || now.Sub(s.saved[h]) > seenSave {
 		s.saveLocked()
 	}
 	c := *d

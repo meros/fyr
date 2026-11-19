@@ -138,7 +138,9 @@ func TestRule3WaitsAfterAWouldRefuse(t *testing.T) {
 func TestRule3NeedsASuccessOfEachWayInUse(t *testing.T) {
 	s, _, c := newTest(t)
 	s.Mint(HowLocal, "laptop")
-	s.Mint(HowTailnet, "phone")
+	phone, _ := s.Mint(HowTailnet, "phone")
+	c.t = c.t.Add(time.Minute)
+	s.Lookup(phone) // a session in use: one never used is removed (V0.one-device-per-browser)
 	s.Success(WayBrowser, HowLocal)
 	c.t = c.t.Add(10 * 24 * time.Hour)
 	if len(s.Tick()) != 0 {
@@ -337,5 +339,92 @@ func TestAnEmptyAuditIsAnEmptyList(t *testing.T) {
 	b, err := json.Marshal(s.Audit())
 	if err != nil || string(b) != "[]" {
 		t.Fatalf("audit of a fresh install = %s, %v; want []", b, err)
+	}
+}
+
+// V0.one-device-per-browser (2): the requests a page sends together, none with
+// the cookie, get one session and one device; so does a client that never keeps
+// the cookie, however long it goes on. Once a browser has used the session, a
+// later arrival without it is another browser and gets its own.
+func TestTailnetEnrolReusesTheUnusedSession(t *testing.T) {
+	s, _, c := newTest(t)
+	first, d, _ := s.EnrolTailnet("nAAA", "a.ts.net", "Chrome on Android", false)
+	for i := 0; i < 20; i++ {
+		c.t = c.t.Add(time.Minute) // a probe each minute, no cookie
+		if sess, d2, res := s.EnrolTailnet("nAAA", "a.ts.net", "Chrome on Android", false); res != EnrolSession || sess != first || d2.ID != d.ID {
+			t.Fatalf("request %d got another session: %v %s", i, res, d2.ID)
+		}
+	}
+	if n := len(s.Devices()); n != 1 {
+		t.Fatalf("%d devices for one browser", n)
+	}
+	if other, d2, _ := s.EnrolTailnet("nAAA", "a.ts.net", "Firefox on Android", false); other == first || d2.ID == d.ID {
+		t.Fatal("another browser of the node got the same session")
+	}
+	if other, _, _ := s.EnrolTailnet("nBBB", "b.ts.net", "Chrome on Android", false); other == first {
+		t.Fatal("another node got the same session")
+	}
+	// A page's first requests: one comes back with the cookie while others
+	// still arrive without it.
+	page, _, _ := s.EnrolTailnet("nCCC", "c.ts.net", "Chrome on Android", false)
+	c.t = c.t.Add(time.Second)
+	if _, ok := s.Lookup(page); !ok {
+		t.Fatal("the session does not work")
+	}
+	if again, _, _ := s.EnrolTailnet("nCCC", "c.ts.net", "Chrome on Android", false); again != page {
+		t.Fatal("a request of the same page, a moment after the first use, got another session")
+	}
+	if _, ok := s.Lookup(first); !ok { // the browser comes back with the cookie
+		t.Fatal("the session does not work")
+	}
+	c.t = c.t.Add(2 * time.Minute)
+	if again, _, _ := s.EnrolTailnet("nAAA", "a.ts.net", "Chrome on Android", false); again == first {
+		t.Fatal("a used session was handed out again after the page's first minute")
+	}
+	// A revoked device's session is not handed out again (its node is blocked).
+	s.Revoke(d.ID, "owner.sock")
+	if sess, _, res := s.EnrolTailnet("nAAA", "a.ts.net", "Chrome on Android", false); res != EnrolRefused || sess != "" {
+		t.Fatalf("after a revoke: %v", res)
+	}
+}
+
+// V0.one-device-per-browser (3): a tailnet session that no request ever came
+// back with is removed after an hour, at the start and on the tick; a used one,
+// one made another way and one that waits for approval stay. The first use is
+// written at once, so a restart does not make a used session look unused.
+func TestUnusedTailnetSessionsAreRemoved(t *testing.T) {
+	s, kv, c := newTest(t)
+	for i := 0; i < 50; i++ {
+		s.Mint(HowTailnet, "A browser") // what every probe made before
+	}
+	used, _ := s.Mint(HowTailnet, "Chrome on Android")
+	s.Mint(HowLocal, "laptop")
+	c.t = c.t.Add(time.Minute)
+	if _, ok := s.Lookup(used); !ok {
+		t.Fatal("lookup")
+	}
+	if s.DropUnused() != 0 {
+		t.Fatal("removed within the hour")
+	}
+	c.t = c.t.Add(2 * time.Hour)
+	s2, err := Open(kv, c.now) // the upgrade
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := s2.Devices()
+	if len(ds) != 2 {
+		t.Fatalf("%d devices left, want the used one and the local one", len(ds))
+	}
+	if _, ok := s2.Lookup(used); !ok {
+		t.Fatal("the used session was removed")
+	}
+	if a := s2.Audit(); len(a) != 1 || a[0].Event != "unused" || !strings.HasPrefix(a[0].Detail, "50 ") {
+		t.Errorf("audit %+v", a)
+	}
+	s2.Mint(HowTailnet, "A browser")
+	c.t = c.t.Add(2 * time.Hour)
+	s2.Tick()
+	if n := len(s2.Devices()); n != 2 {
+		t.Fatalf("the tick left %d devices", n)
 	}
 }

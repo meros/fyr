@@ -1,0 +1,9 @@
+# V0.one-device-per-browser: a browser on the tailnet is one device, not one for each request without a cookie
+
+→ V0.130 (3), V0.157, decision 0030 3.4. (owner, 19 Nov, with Settings → Devices full of "Chrome on Android" rows: "It feels like the devices might be broken? Does it add another one for each version or something?") One install had 689 devices, 680 of them never used after the request that made them: 585 from another install's probe of `/.well-known/fyr`, once a minute, and about 90 from a phone whose page sent its first requests together, each without the cookie.
+
+(1) **A request that needs no session makes no device.** Through Serve's socket the owner's node is enrolled only for a request that would be refused without a session: not for `/.well-known/fyr`, a file of the client or a preview.
+
+(2) **One session for the same browser.** An approved node that arrives without a cookie gets the session that node and browser name were last given, while no request has come back with that session, and for one minute after its making in any case. Requests of one page that arrive together so share a device, and a client that never keeps the cookie holds one device. The session is kept for this in memory only; the store still holds its hash alone. A node that tailscaled could not name (observe, or no tailscaled) is served as before.
+
+(3) **A session nobody used is removed.** A tailnet session made more than an hour ago that no request ever came back with is removed, at the start and every 10 minutes with rule 3's tick, with one audit line ("unused"). This also removes the rows made before this change. The first use of a session is written at once, so a restart does not make a used session look unused. A browser that made one request and no other signs in again on its next visit: in silence when its node is approved, with a code in enforce when it is not. A session that is never used no longer counts as a way in use for rule 3.

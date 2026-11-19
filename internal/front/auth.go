@@ -164,7 +164,10 @@ func (f *Front) withAuth(next http.Handler) http.Handler {
 			ok = false
 		}
 		enforce := st.Mode(auth.WayBrowser) == auth.ModeEnforce || httpguard.IsViaLAN(r) // the LAN is never observed
-		if !ok && httpguard.IsViaServe(r) && f.ownerLogin() != "" && r.Header.Get("Tailscale-User-Login") == f.ownerLogin() {
+		// V0.one-device-per-browser: a request that is served without a session
+		// (another install's probe of /.well-known/fyr, a file of the client) makes
+		// no device.
+		if !ok && !exempt(r) && httpguard.IsViaServe(r) && f.ownerLogin() != "" && r.Header.Get("Tailscale-User-Login") == f.ownerLogin() {
 			if nd, p, refused := f.enrolTailnet(w, r, enforce); refused {
 				return
 			} else if nd != nil {
