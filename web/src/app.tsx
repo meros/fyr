@@ -87,10 +87,20 @@ import { BottomSheet, installPress, PHONE_QUERY, Pop } from "./motion-ui.tsx";
 import { SETTLE_DONE_TOAST, menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
-import { isDeskEntry, popStep, recordOpen, type OpenCause } from "./desk-history.ts";
+import { HomeScreen } from "./home-ui.tsx";
+import { isDeskEntry, leaveDeskThread, popStep, recordOpen, type OpenCause } from "./desk-history.ts";
 
 /** Run when the browser is idle (V0.38: storing never competes with input). */
 const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+
+/** V0.status-home: the keys the status screen names at its foot. */
+const HOME_KEYS: [string, string][] = [
+  ["j/k", "pick"],
+  ["Enter", "open"],
+  ["c", "new thread"],
+  ["?", "keys"],
+];
+
 const sessionStore = () => {
   try {
     return typeof sessionStorage !== "undefined" ? sessionStorage : null;
@@ -545,10 +555,11 @@ function App() {
     if (!store.loaded || didInit.current) return;
     didInit.current = true;
     const want = params.get("open") ? resolveRef(Object.values(store.threads), params.get("open")!) : null;
-    const first = want && store.threads[want] ? want : order[0];
-    // On a phone the inbox comes first; open a thread only when asked (?open=).
-    const phone = typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;
-    if (first && (!phone || want)) {
+    const first = want && store.threads[want] ? want : null;
+    // On a phone the inbox comes first; V0.status-home: the desktop starts on the status screen. Both open a thread only
+    // when asked (?open=).
+    if (first) {
+      const phone = typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;
       if (!phone) recordOpen(first, "auto");
       setLastOpen(first);
       setView({ id: first, mode: "open" });
@@ -751,6 +762,16 @@ function App() {
   const closePeek = () => {
     setView(null);
     setTracker((tr) => closeView(tr));
+  };
+
+  /** V0.status-home: the owner closes the open thread (a second Esc, a click on the list's empty space): no row stays
+   *  marked, the thread pane shows the status screen, and a reload lands there too. */
+  const closeThread = () => {
+    if (!view) return;
+    closePeek();
+    setLastOpen(null);
+    setZone("list");
+    if (!phoneRef.current) leaveDeskThread();
   };
 
   /** The thread an action applies to: the open thread when the thread pane has focus, else the selected row. */
@@ -1421,6 +1442,8 @@ function App() {
           void cmds.run("thread.interrupt", [t.id]);
           return;
         }
+        // V0.status-home: Esc in the list closes the thread; the first Esc brought the focus here.
+        if (zone === "list" && view) return closeThread();
         setZone("list");
         return;
       }
@@ -1754,6 +1777,7 @@ function App() {
           autoHideAt={hideShown}
           onSectionActivity={sectionUsed}
           onClick={(id) => openThread(id, "open")}
+          onBackground={closeThread}
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
           onAdopt={() => setDialog("adopt")}
@@ -1803,9 +1827,16 @@ function App() {
           <section class="th empty-th">
             <QuietGate project={recordOf(store.projects, gatedThread.projectId)} now={Date.now() + store.clockOffset} unlock={unlock} what="thread" />
           </section>
+        ) : store.loaded ? (
+          // V0.status-home: no thread open: the status screen.
+          <section class="th">
+            <Boundary name="Status">
+              <HomeScreen sec={sec} projects={store.projects} profiles={store.profiles} hosts={store.hosts} now={now} loaded={store.loaded} onOpen={(id) => openThread(id, "open")} onAllNeeds={() => jump("needs")} keys={HOME_KEYS} />
+            </Boundary>
+          </section>
         ) : (
           <section class="th empty-th">
-            <div class="sys">{store.loaded ? "Pick a thread with j / k and Enter, or start one with c." : store.conn === "offline" ? "Fyr is not reachable. Retrying…" : "Connecting…"}</div>
+            <div class="sys">{store.conn === "offline" ? "Fyr is not reachable. Retrying…" : "Connecting…"}</div>
           </section>
         )}
       </div>

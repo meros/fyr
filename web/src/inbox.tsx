@@ -174,6 +174,8 @@ interface InboxProps {
   onNew(): void;
   onAdopt(): void;
   onFocusZone(): void;
+  /** V0.status-home: a click on the list's empty space (no row, no header) closes the open thread */
+  onBackground?(): void;
   /** the bell and Install controls (phone layout, where the rail is hidden) */
   extra?: ComponentChildren;
   /** the host and project filters (V0.23, V0.134) */
@@ -218,7 +220,7 @@ export function Inbox(p: InboxProps) {
       </div>
       <FilterRow f={p.filter} now={p.now} unlock={p.unlock} />
       {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
-      <div class="list" role="listbox" aria-label="Threads">
+      <div class="list" role="listbox" aria-label="Threads" onClick={(e) => e.target === e.currentTarget && p.onBackground?.()}>
         <AiSearchPanel ai={ai} onOpen={p.onClick} />
         {!p.query.trim() && <FilterEmpty f={p.filter} cls="fempty" />}
         {p.rows.pinned.length > 0 && (

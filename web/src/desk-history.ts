@@ -82,7 +82,11 @@ export function recordOpen(id: string, cause: OpenCause): void {
   if (typeof history === "undefined") return;
   const cur: unknown = history.state;
   const step = openStep(cur, id, cause);
-  if (step === "none") return;
+  if (step === "none") {
+    // V0.status-home: the thread the owner closed opens again in its own entry; its URL names it again.
+    if (isDeskEntry(cur) && cur.screen.id === id && new URLSearchParams(location.search).get("open") !== id) history.replaceState(cur, "", deskUrl(location.search, id, cur.screen.tab));
+    return;
+  }
   if (step === "push") {
     history.pushState(deskEntry(id, isDeskEntry(cur) ? cur.desk + 1 : 0), "", deskUrl(location.search, id));
     return;
@@ -97,4 +101,21 @@ export function rememberTab(id: string, tab: string): void {
   if (typeof history === "undefined") return;
   const e = tabStep(history.state, id, tab);
   if (e) history.replaceState(e, "", deskUrl(location.search, id, tab));
+}
+
+/** V0.status-home: the URL with no thread open: `open` and `tab` gone, every other parameter (the mock's) kept. */
+export function homeUrl(search: string): string {
+  const p = new URLSearchParams(search);
+  p.delete("open");
+  p.delete("tab");
+  p.delete("dialog");
+  const q = p.toString();
+  return q ? `/?${q}` : "/";
+}
+
+/** V0.status-home: the owner closed the thread. The entry stays (Back and Forward still reach the thread), only its URL
+ *  says no thread, so a reload shows the status screen. */
+export function leaveDeskThread(): void {
+  if (typeof history === "undefined") return;
+  history.replaceState(history.state, "", homeUrl(location.search));
 }

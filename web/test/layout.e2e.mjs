@@ -214,6 +214,7 @@ const SIZES = [
 const PR_LOADED = "!!document.querySelector('.prv .prv-st') && !document.querySelector('.prv .prv-empty')";
 const SCREENS = [
   { name: "inbox", url: "?mock=rail" },
+  { name: "status (V0.status-home)", url: "?mock=rail&status" },
   { name: "update banner (V0.39)", url: "?mock=rail&deploy=drain" },
   { name: "thread", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in" },
   { name: "project screen", url: "?mock=rail&project=p_web" },
@@ -1784,7 +1785,7 @@ try {
   await tapCenter(".m-ih [aria-label=More]", "!!document.querySelector('.m-sheet .m-mi')");
   await waitFor(`/needs a login/.test([...document.querySelectorAll('.m-sheet .m-mi')].find((b) => b.textContent.startsWith('Settings'))?.textContent ?? '')`, { soft: true });
   const more = await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].map((b) => ({ label: b.querySelector('.ell')?.firstChild?.textContent ?? '', right: b.querySelector('.w')?.textContent ?? '' }))`);
-  check(more.map((x) => x.label).join("|") === "Select threads|Changes|Settings|Filter by project…|Adopt from T3|Show tool details" && more.find((x) => x.label === "Settings")?.right === "1 needs a login", `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
+  check(more.map((x) => x.label).join("|") === "Select threads|Status|Changes|Settings|Filter by project…|Adopt from T3|Show tool details" && more.find((x) => x.label === "Settings")?.right === "1 needs a login", `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
 } catch (e) {
   failures.push(`V0.119 phone: ${e.message}`);
 } finally {
@@ -4600,14 +4601,15 @@ section('V0.145 desktop', async (h) => {
   const { send, evaluate, waitFor, settle, navigate } = h;
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.ib .list [data-id]') && !!document.querySelector('.th .tt')");
+  // V0.status-home: the desktop starts on the status screen; the first click opens the first thread in the page's entry.
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.ib .list [data-id]') && !!document.querySelector('.th .home')");
   // The tab is shared with earlier sections, and Chrome caps history.length at 50: start from an empty history so
   // three opened threads always add three entries.
   await send("Page.resetNavigationHistory", {});
   const AT = `(() => ({ marked: document.querySelector('.ib .list [aria-selected="true"]')?.dataset.id ?? null, pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null,
     tab: document.querySelector('.th [role=tab].on')?.textContent ?? null, open: new URLSearchParams(location.search).get('open'), n: history.length }))()`;
   const ids = await evaluate(`[...document.querySelectorAll('.ib .list [data-id]')].map((r) => r.dataset.id)`);
-  const first = (await evaluate(AT)).marked;
+  const first = ids[0];
   const [A, B, C] = ids.filter((x) => x !== first);
   const titleOf = (id) => evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}] .hd .t')?.textContent ?? null`);
   const titles = { [A]: await titleOf(A), [B]: await titleOf(B), [C]: await titleOf(C) };
@@ -4627,6 +4629,7 @@ try {
     await waitFor(`${AT}.marked === ${JSON.stringify(id)}`, { soft: true });
     await settle();
   };
+  await open(first);
   const n0 = (await evaluate(AT)).n;
   await open(A);
   await open(B);
@@ -4669,6 +4672,45 @@ try {
 } catch (e) {
   failures.push(`V0.145 desktop: ${e.message}`);
 }
+});
+
+// V0.status-home: with no thread open the desktop's thread pane is the status screen. It is where the page starts; Esc in
+// the list (after the first Esc brought the focus there) and a click on the list's empty space close the open thread;
+// then no row is marked and the URL names no thread.
+section('V0.status-home desktop', async (h) => {
+  const { send, evaluate, waitFor, navigate, key } = h;
+  const ctx = "V0.status-home desktop";
+  const HOME = `(() => ({ home: !!document.querySelector('.th .home .st-day'), marked: document.querySelector('.ib .list [aria-selected="true"]')?.dataset.id ?? null, open: new URLSearchParams(location.search).get('open') }))()`;
+  const openRow = async (id) => {
+    await evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}]').click()`);
+    await waitFor(`!!document.querySelector('.th .tt') && !document.querySelector('.th .home')`, { what: "the thread" });
+  };
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.ib .list [data-id]') && !!document.querySelector('.th .home .st-day')");
+    const s0 = await evaluate(HOME);
+    check(s0.home && !s0.marked && !s0.open, `${ctx}: the page does not start on the status screen (${JSON.stringify(s0)})`);
+    check(await evaluate(`!!document.querySelector('.th .home .st-sys')`), `${ctx}: the status screen has no hosts and quotas at its foot`);
+    const id = await evaluate(`document.querySelector('.ib .list [data-id]').dataset.id`);
+    await openRow(id);
+    // The focus to the list (as the first Esc does), then Esc closes.
+    await evaluate(`document.activeElement?.blur(); document.querySelector('.ib').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+    await key("Escape");
+    await waitFor(`${HOME}.home`, { soft: true });
+    const s1 = await evaluate(HOME);
+    check(s1.home && !s1.marked && !s1.open, `${ctx}: Esc in the list does not close the thread (${JSON.stringify(s1)})`);
+    await openRow(id);
+    await evaluate(`document.querySelector('.ib .list').dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
+    await waitFor(`${HOME}.home`, { soft: true });
+    const s2 = await evaluate(HOME);
+    check(s2.home && !s2.marked && !s2.open, `${ctx}: a click on the list's empty space does not close the thread (${JSON.stringify(s2)})`);
+    // A click on a row still opens it, and the URL names it again.
+    await openRow(id);
+    check((await evaluate(HOME)).open === id, `${ctx}: the thread opened again is not in the URL`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
 });
 
 // SPEC 0.5 V0.134, V0.169: the filter rows, the same on the desktop and the phone. 1 one host: no host row; every project
