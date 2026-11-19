@@ -240,6 +240,9 @@ export function Inbox(p: InboxProps) {
           if (s.key === "slots")
             return (
               <SlotQueueSection
+                open={isOpen("slots", p.open)}
+                onToggle={() => p.onToggle("slots")}
+                guest={p.guest?.id ?? null}
                 phone={false}
                 queue={queue}
                 threads={p.rows.slots}

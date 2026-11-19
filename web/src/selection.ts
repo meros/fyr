@@ -49,14 +49,14 @@ export function cutSection(sec: Sections, id: string | null, limits: Partial<Rec
   return null;
 }
 
-/** V0.186: the folded section that holds the current thread. null when its section is open, it is pinned or queued
- *  (neither folds), or no section holds it. */
+/** V0.186: the folded section that holds the current thread. null when its section is open, it is pinned (the pinned
+ *  block does not fold), or no section holds it. V0.waiting-folds: Waiting to run folds too. */
 export function foldedRow(sec: Sections, id: string | null, open: Open): { section: SectionKey; thread: Thread } | null {
   if (!id || sec.pinned.some((t) => t.id === id)) return null;
   for (const { key } of SECTIONS) {
     const thread = unpinned(sec[key], key).find((t) => t.id === id);
     if (!thread) continue;
-    return key !== "slots" && !isOpen(key, open) ? { section: key, thread } : null;
+    return !isOpen(key, open) ? { section: key, thread } : null;
   }
   return null;
 }

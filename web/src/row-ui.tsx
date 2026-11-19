@@ -62,7 +62,7 @@ export function HideClock({ at }: { at: number }) {
 }
 
 /** V0.section-heads: what a section header shows, on both fronts: the fold chevron, the section's icon, its name and its
- *  count. `open` is left out for a header that cannot fold (Pinned, Waiting to run), and a section with no rows has nothing
+ *  count. `open` is left out for a header that cannot fold (Pinned), and a section with no rows has nothing
  *  to fold; the chevron's place stays, so the icons line up. The icon is decoration here: the name says the same. */
 export function SectionTitle(p: { label: string; icon: ComponentChildren; n: number; shown: string; open?: boolean; attention?: boolean }) {
   const fold = p.open !== undefined && p.n > 0;

@@ -13,7 +13,7 @@ import { MoveButtons, useReorder } from "./settings-rows.tsx";
 import { priorityLabel, queueParts, reorderOwners, slotQueue, withQueue, type QueueEntry, type QueuePart } from "./slot-queue.ts";
 import { count } from "./format.ts";
 import { StateIcon } from "./icons.tsx";
-import { SectionTitle } from "./row-ui.tsx";
+import { SectionTitle, sectionHead } from "./row-ui.tsx";
 import type { Thread } from "./types.ts";
 
 /** Every host's queue, from the one load poll (5 s; at once after a reorder). */
@@ -38,29 +38,45 @@ interface Props {
   /** the header's count: V0.192 leaves out a current thread the filters hide, which `threads` draws */
   n: number;
   row(t: Thread, a: SlotRowArgs): ComponentChildren;
+  /** V0.waiting-folds: the section is unfolded (isOpen "slots"; open by default) */
+  open: boolean;
+  onToggle(): void;
+  /** V0.192: the current thread, drawn alone in a folded section */
+  guest: string | null;
 }
 
 const HINT = "Heavy jobs (test suites, builds, e2e runs) run when their share of the host fits (CPU and memory); the first in the queue starts next";
 
 export function SlotQueueSection(p: Props) {
-  // The section shows only while a queue has anyone in it (V0.137 (1)); it has no collapse: it is short and passing.
+  // The section shows only while a queue has anyone in it (V0.137 (1)). V0.waiting-folds: its header folds it, like the
+  // other sections; folded, it draws only the current thread's row (V0.192), without the why line and Fyr's own tests.
   const [reordering, setReordering] = useState(false);
   const shown = Object.fromEntries(p.threads.map((t) => [t.id, t]));
   // Nothing to draw when every queued thread is hidden (a filter, a search, Needs you) and no priority wait is queued.
   if (!withQueue(p.queue, shown).length) return null;
   const parts = queueParts(p.queue);
-  const movable = p.threads.length > 1;
   const n = p.n;
-  const body = parts.map((part) => <Part key={part.host} part={part} shown={shown} phone={p.phone} reordering={reordering && movable} row={p.row} />);
+  const open = p.open || !n; // nothing to fold without a thread in it
+  const movable = open && p.threads.length > 1;
+  const drawn = open ? shown : p.guest && shown[p.guest] ? { [p.guest]: shown[p.guest] } : {};
+  const body = parts.map((part) => <Part key={part.host} part={part} shown={drawn} phone={p.phone} reordering={reordering && movable} folded={!open} row={p.row} />);
+  const head = sectionHead({ n, open, toggle: p.onToggle });
   if (p.phone)
     return (
       <section id="m-sec-slots" class="sq">
-        <div class="m-sec hasbtn">
-          <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={16} />} n={n} shown={count(n)} />
+        <div class={`m-sec${movable ? " hasbtn" : ""}`} {...head}>
+          <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={16} />} n={n} shown={count(n)} open={open} />
           {movable && (
             // Phone: touch has no drag handle that fits beside a swipe row and no hover, so the order changes in a
             // Reorder mode with ↑ and ↓ of 44 px (V0.121's control).
-            <button class="m-sbtn" aria-pressed={reordering} onClick={() => setReordering(!reordering)}>
+            <button
+              class="m-sbtn"
+              aria-pressed={reordering}
+              onClick={(e) => {
+                e.stopPropagation(); // the header folds; this button does not
+                setReordering(!reordering);
+              }}
+            >
               {reordering ? "Done" : "Reorder"}
             </button>
           )}
@@ -70,8 +86,8 @@ export function SlotQueueSection(p: Props) {
     );
   return (
     <div id="sec-slots" class="sq">
-      <div class="sec" title={HINT}>
-        <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={14} />} n={n} shown={count(n)} />
+      <div class={`sec${n ? " tog" : ""}`} title={HINT} {...head}>
+        <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={14} />} n={n} shown={count(n)} open={open} />
         {movable && <span class="h ell">drag to reorder</span>}
       </div>
       {body}
@@ -79,10 +95,10 @@ export function SlotQueueSection(p: Props) {
   );
 }
 
-function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown: Record<string, Thread>; phone: boolean; reordering: boolean; row: Props["row"] }) {
+function Part({ part, shown, phone, reordering, folded, row }: { part: QueuePart; shown: Record<string, Thread>; phone: boolean; reordering: boolean; folded: boolean; row: Props["row"] }) {
   const api = useApi();
   const [err, setErr] = useState<string | null>(null);
-  const rows = withQueue(part.entries, shown);
+  const rows = withQueue(part.entries, shown).filter((r) => !folded || r.thread);
   const threads = rows.filter((r) => r.thread);
   const ids = threads.map((r) => r.entry.owner);
   const all = part.entries.filter((e) => !e.priority).map((e) => e.owner);
@@ -103,10 +119,11 @@ function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown:
   // Decision 0029 S2: why the next job of this host waits, on both fronts (a row's line is cut at its end).
   const why = useLoad().find((h) => h.host === part.host)?.slots?.why; // V0.163: in percent of the host
   let i = 0;
+  if (folded && !rows.length) return null;
   return (
     <div class="sqh" data-host={part.host}>
       {part.label && <div class={phone ? "sqhn m" : "sqhn"}>{part.label}</div>}
-      {why && <div class={phone ? "sqwhy m" : "sqwhy"}>The next waits: {why}</div>}
+      {why && !folded && <div class={phone ? "sqwhy m" : "sqwhy"}>The next waits: {why}</div>}
       {err && (
         <div class="sqerr" role="alert">
           {err}
