@@ -393,7 +393,7 @@ func (e *Env) lanCandidates(ctx context.Context) []Candidate {
 // Candidates lists the nodes of the tailnet and the installs of the LAN that are not
 // members.
 func (e *Env) Candidates(ctx context.Context) []Candidate {
-	out := e.tailnetCandidates(ctx)
+	out := append([]Candidate{}, e.tailnetCandidates(ctx)...) // never nil: the client reads a list (V0.forget-front)
 	return append(out, e.lanCandidates(ctx)...)
 }
 

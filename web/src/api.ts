@@ -458,6 +458,20 @@ function createHttpApi(): Api {
         if (stored && !fromNetwork) h.state({ ...stored, now: new Date().toISOString() });
       });
       connect();
+      // A page the browser keeps in its back/forward cache would keep its stream open, and a browser has six connections
+      // per origin over HTTP/1.1 (decision 0031 2.4): a few pages left that way and the next one cannot connect. The
+      // stream closes when the page is hidden for good and opens again if the page comes back.
+      if (typeof window !== "undefined") {
+        window.addEventListener("pagehide", () => {
+          es?.close();
+          es = null;
+          if (timer) clearTimeout(timer);
+          timer = null;
+        });
+        window.addEventListener("pageshow", (e) => {
+          if ((e as PageTransitionEvent).persisted && !es) connect();
+        });
+      }
     },
     async command(host, action, threadId, args) {
       // The host knows its own ids: the refs of its records go out bare, and the ids in the reply come back as refs.
@@ -591,7 +605,8 @@ function createHttpApi(): Api {
     updates: (host) => hostGet<UpdatesView>(host, "/updates"),
     systemAgents: (host) => hostGet<SystemAgentsView>(host, "/systemAgents"),
     authState: () => getJson<AuthState>(frontPath("/auth/state")),
-    peerState: () => getJson<PeerState>(frontPath("/peer/state")),
+    // A front may send null for an empty list (a nil Go slice): the page reads lists.
+    peerState: () => getJson<PeerState>(frontPath("/peer/state")).then((s) => ({ ...s, members: s.members ?? [], candidates: s.candidates ?? [] })),
     peerAct: (action, body) => mutate(frontPath(`/peer/${action}`), body),
     authAct: (action, body) => mutate(frontPath(`/auth/${action}`), body),
     async profiles() {

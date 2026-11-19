@@ -665,3 +665,35 @@ func TestFrontStreamCarriesTheFrontsOwnFrames(t *testing.T) {
 		}
 	}
 }
+
+// V0.forget-front (found by decision 0031 test 1 through the browser): a
+// folder preview's own files are read by its sandboxed frame, which has no
+// origin, so the browser says the request is cross-site and a module
+// script's Origin is "null". The front serves them; any other /api/ call
+// that says so is still refused.
+func TestSandboxedPreviewReadsItsOwnFiles(t *testing.T) {
+	one, two := newFakeHost(t, "one", idOne), newFakeHost(t, "two", idTwo)
+	_, fs := startFakes(t, "", one, two)
+	get := func(path string, hdr map[string]string) int {
+		req, _ := http.NewRequest("GET", fs.URL+path, nil)
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	sandboxed := map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "script", "Origin": "null"}
+	if code := get("/api/h/"+idTwo+"/previews/p1/app.js", sandboxed); code != 200 {
+		t.Errorf("a preview's own file from its sandboxed page: %d", code)
+	}
+	if code := get("/api/h/"+idTwo+"/state", sandboxed); code != 403 {
+		t.Errorf("a cross-site call that is not a preview's: %d", code)
+	}
+	if code := get("/api/h/"+idTwo+"/state", map[string]string{"Sec-Fetch-Site": "cross-site"}); code != 403 {
+		t.Errorf("a cross-site state read: %d", code)
+	}
+}

@@ -20,10 +20,10 @@ export function useHostColors(): Map<string, string> {
 /** A circle with the host's glyph in its colour; an offline host's has a small ring at its corner. `label`: say the
  *  host's name to a screen reader (where no text beside the mark names it). */
 export function HostMark({ name, size = 16, label = false }: { name: string; size?: number; label?: boolean }) {
-  const { hosts, self, machine } = useHosts();
+  const { hosts } = useHosts();
   const marks = useHostMarks();
   const colors = useHostColors();
-  const m = hostMarkOf(name, hosts, colors, { name: self, machine }, marks);
+  const m = hostMarkOf(name, hosts, colors, marks);
   return (
     <span class={`hmark${m.offline ? " off" : ""}${m.emoji ? " emo" : ""}`} style={{ "--hc": `var(--p-${m.color})`, "--hs": `${size}px` }} title={m.title} data-host={name} data-glyph={m.glyph ?? "emoji"} {...(label ? { role: "img", "aria-label": `Host ${m.title}` } : { "aria-hidden": "true" })}>
       {m.glyph ? (

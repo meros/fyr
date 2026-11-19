@@ -27,12 +27,10 @@ export interface Directory {
   openProject(id: string): void;
   /** Open the project picker for a thread (V0.30). */
   pickProject(threadId: string): void;
-  /** this host's name */
-  host: string;
   /** the project filter on the inbox (V0.135: then a row does not name its project) */
   projectFilter?: string | null;
 }
-export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {}, pickProject: () => {}, host: "" });
+export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {}, pickProject: () => {} });
 export const useDirectory = () => useContext(DirectoryContext);
 
 export function ProjectIcon({ project, name, size = 16 }: { project?: Project; name: string; size?: number }) {
@@ -400,7 +398,7 @@ export function FolderField({ folder, title, host, onPick, onClear }: { folder: 
  *  that host's, and a new host drops a folder picked on another. */
 export function NewProjectStep({ initialName, initialFolder, fromThread, host: fixed, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; host?: string; onCreate(name: string, folder: string, host?: string): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
   const hs = useHosts();
-  const [own, setOwn] = useState(() => hostChoices(hs.hosts, hs.self)[0]?.name ?? "");
+  const [own, setOwn] = useState(() => hostChoices(hs.hosts)[0]?.name ?? "");
   const host = fixed ?? own;
   const down = hostOfflineNote(host, hs.hosts, hs.now);
   const [name, setName] = useState(initialName);

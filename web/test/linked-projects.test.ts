@@ -57,8 +57,8 @@ test("the filter and the chips treat both hosts' threads as one project", () => 
   // A filter saved with the member that is not shown still holds.
   const sel = { hostsOff: [], project: fyrB.id! };
   assert.equal(liveProject(sel, ps), fyrA.id);
-  assert.deepEqual(Object.keys(applyFilters(threads, sel, ps, "desk")).sort(), ["a", "b"]);
-  const chips = activeFilters({ threads, projects: ps, hosts: [A, B], self: "desk", sel: { hostsOff: [], project: null }, open: {}, now: 0, showUntil: 0 });
+  assert.deepEqual(Object.keys(applyFilters(threads, sel, ps)).sort(), ["a", "b"]);
+  const chips = activeFilters({ threads, projects: ps, hosts: [A, B], sel: { hostsOff: [], project: null }, open: {}, now: 0, showUntil: 0 });
   assert.deepEqual(chips.projects.map((c) => [c.project.name, c.n]), [["Fyr", 2], ["Stacks", 1]]);
 });
 

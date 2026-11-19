@@ -73,6 +73,12 @@ func exempt(r *http.Request) bool {
 	return false
 }
 
+// previewRead: a GET or HEAD of a preview's page or one of its files.
+func previewRead(r *http.Request) bool {
+	p := r.URL.Path
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && (strings.HasPrefix(p, "/api/previews/") || hostPreviewPath(p))
+}
+
 // staticFile: the path names an asset of the built client, not a page.
 func staticFile(p string) bool {
 	i := strings.LastIndexByte(p, '.')
@@ -120,6 +126,14 @@ func (f *Front) refuseTailscale(next http.Handler) http.Handler {
 // is cross-site. In enforce a call that changes things must carry the Origin.
 func (f *Front) browserRules(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if previewRead(r) {
+			// A preview's page and its files are read by a sandboxed frame,
+			// which has no origin: its requests say cross-site (and a module
+			// script's Origin is "null"). They carry no cookie and change
+			// nothing; the 80-bit id in the URL is the key (V0.19, V0.47).
+			next.ServeHTTP(w, r)
+			return
+		}
 		if o := r.Header.Get("Origin"); o != "" && o != originOf(r) {
 			refuse(w, r, "this request comes from another origin", http.StatusForbidden)
 			return

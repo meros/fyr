@@ -13,7 +13,7 @@ import { needsHeads } from "./rows.ts";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { drawnRows, type Guest, type GuestWhy } from "./selection.ts";
 import { colorVar } from "./projects.ts";
-import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, connLabel, connWords, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
 import { count } from "./format.ts";
 import { snoozedHint } from "./snooze.ts";
@@ -25,7 +25,6 @@ interface RailProps {
   sec: Sections;
   active: SectionKey | null;
   conn: Conn;
-  host: string;
   /** the bell and Install controls (desktop) */
   extra?: ComponentChildren;
   onJump(k: SectionKey): void;
@@ -42,7 +41,9 @@ interface RailProps {
 }
 
 export function Rail(p: RailProps) {
-  const title = p.conn === "live" ? `Connected to ${p.host}` : p.conn === "offline" ? `${p.host} is not reachable, retrying` : "Connecting…";
+  // Decision 0031 2.6: the connection is this browser's link to Fyr, the same words through every front; which front it
+  // is goes in Settings → This device only.
+  const title = connWords(p.conn);
   return (
     <nav class="rail" aria-label="Sections">
       {/* V0.93: the rendered isometric lighthouse (128 px, shown at 32) in place of the name */}
@@ -95,7 +96,7 @@ export function Rail(p: RailProps) {
       )}
       <div class={`foot ${p.conn}`} title={title}>
         <i />
-        <span class="hn">{p.host}</span>
+        <span class="hn">{connLabel(p.conn)}</span>
       </div>
     </nav>
   );

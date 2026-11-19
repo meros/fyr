@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.51: Settings → Hosts lists the front's hosts; an offline host's threads say so and are read-only.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeHosts, hostLabel, hostForProject, hostLine, hostState, hostRows, howIn, idChangedLine, routeOf, shortID, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
+import { decodeHosts, hostForProject, hostLine, hostState, howIn, idChangedLine, routeOf, hostRoute, shortID, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
 import { rowProvider, threadProvider } from "../src/hosts.ts";
 import { attachmentUrl } from "../src/attach.ts";
 import { previewCard, previewUrl } from "../src/previews.ts";
@@ -70,12 +70,6 @@ test("attachments, previews and markdown images load from the thread's host", ()
 });
 
 // review 2026-11-15: the rail and the phone name the host the same way when the state has none.
-test("hostLabel falls back to mock or local", () => {
-  assert.equal(hostLabel("front", false), "front");
-  assert.equal(hostLabel("", true), "mock");
-  assert.equal(hostLabel("", false), "local");
-});
-
 test("V0.123: a host the front found on the tailnet is flagged", () => {
   const hs = decodeHosts([
     { name: "laptop", online: true },
@@ -107,7 +101,6 @@ test("V0.125: routeOf names the network that carries a link", () => {
   assert.equal(routeOf("http://127.4.5.6:7777"), "this machine");
   assert.equal(routeOf("http://localhost:7777"), "this machine");
   assert.equal(routeOf("http://[::1]:7777"), "this machine");
-  assert.equal(routeOf("http://100.64.0.9:7778", true), "this machine", "this install is this machine whatever its URL");
   assert.equal(routeOf("http://100.64.0.9:7778"), "tailnet");
   assert.equal(routeOf("http://100.127.255.1:7778"), "tailnet");
   assert.equal(routeOf("http://100.128.0.1:7778"), "by address", "outside 100.64/10");
@@ -126,7 +119,7 @@ test("V0.125: routeOf names the network that carries a link", () => {
   assert.equal(routeOf("https://fyr.example.net"), "by address");
   assert.equal(routeOf("http://203.0.113.5:7778"), "by address");
   assert.equal(routeOf(undefined), "", "a front older than V0.125 sends no url");
-  assert.equal(routeOf(undefined, false, true), "tailnet", "a found host without a url");
+  assert.equal(routeOf(undefined, true), "tailnet", "a found host without a url");
   assert.equal(routeOf("not a url"), "");
 });
 
@@ -143,24 +136,24 @@ test("V0.125: a host row's line: state since, route, short id", () => {
     { name: "older", online: true },
   ]);
   assert.equal(hs[0].url, "http://127.0.0.1:7777");
-  assert.equal(hostLine(hs[0], "desk", now), `online since ${clockTime(at(16, 8, 12))} · this machine · id F7QK`);
-  assert.equal(hostLine(hs[1], "desk", now), `offline since ${clockTime(at(16, 19, 40))} · tailnet · id M3RS`);
-  assert.equal(hostLine(hs[2], "desk", now), `online since ${clockTime(at(16, 8, 31))} · updating Fyr · LAN · id K2VD`);
-  assert.equal(hostLine(hs[3], "desk", now), `online since ${clockTime(at(16, 9, 0))} · LAN · no id`);
-  assert.equal(hostLine(hs[4], "desk", now), "Another install answers as lab: id B7LA, it was AX2C.");
+  assert.equal(hostLine(hs[0], now), `online since ${clockTime(at(16, 8, 12))} · this machine · id F7QK`);
+  assert.equal(hostLine(hs[1], now), `offline since ${clockTime(at(16, 19, 40))} · tailnet · id M3RS`);
+  assert.equal(hostLine(hs[2], now), `online since ${clockTime(at(16, 8, 31))} · updating Fyr · LAN · id K2VD`);
+  assert.equal(hostLine(hs[3], now), `online since ${clockTime(at(16, 9, 0))} · LAN · no id`);
+  assert.equal(hostLine(hs[4], now), "Another install answers as lab: id B7LA, it was AX2C.");
   const day = new Date(2026, 10, 9, 6, 0).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  assert.equal(hostLine(hs[5], "desk", now), `online since ${day} ${clockTime(at(9, 6, 0))} · by address · id V9PS`);
+  assert.equal(hostLine(hs[5], now), `online since ${day} ${clockTime(at(9, 6, 0))} · by address · id V9PS`);
   const mon = new Date(2026, 10, 16, 6, 0).toLocaleDateString(undefined, { weekday: "short" });
   assert.equal(hostState({ name: "x", online: true, since: at(16, 6, 0) }, new Date(2026, 10, 17, 9, 0).getTime()), `online since ${mon} ${clockTime(at(16, 6, 0))}`);
-  assert.equal(hostLine(hs[6], "desk", now), "online · no id", "an older front: no since, no url, no id");
+  assert.equal(hostLine(hs[6], now), "online · no id", "an older front: no since, no url, no id");
   assert.equal(decodeHosts([{ name: "a", online: true, url: 3 }])[0].url, undefined);
 });
 
-test("V0.125, V0.132: the Hosts page lists the hosts in the owner's order (the front's), and this install alone when the front lists no hosts", () => {
-  const hs = decodeHosts([{ name: "lab", online: true }, { name: "desk", online: true, id: "F7QK-2M9X-AB34-CD56" }]);
-  assert.deepEqual(hostRows(hs, "desk", "F7QK-2M9X-AB34-CD56").map((h) => h.name), ["lab", "desk"]);
-  assert.deepEqual(hostRows([], "desk", "F7QK-2M9X-AB34-CD56"), [{ name: "desk", online: true, id: "F7QK-2M9X-AB34-CD56" }]);
-  assert.deepEqual(hostRows(undefined, "desk", ""), [{ name: "desk", online: true }], "a front older than V0.124 sends no id");
+test("decision 0031 2.6: the route says \"this machine\" for the host the front's link is the pipe to, whatever its URL; no host is the front's by name", () => {
+  assert.equal(hostRoute({ url: "http://100.64.0.3:7778", link: { state: "up", via: "pipe" } }), "this machine");
+  assert.equal(hostRoute({ url: "http://100.64.0.3:7778", link: { state: "up", via: "peer" } }), "tailnet");
+  assert.equal(hostRoute({ found: true }), "tailnet");
+  assert.deepEqual(decodeHosts([{ name: "desk", online: true, link: { state: "up", via: "pipe" } }, { name: "x", online: true, link: "up" }]).map((h) => h.link), [{ state: "up", via: "pipe" }, undefined]);
 });
 
 test("V0.125: how this browser gets in, from the page's host and the state's user", () => {

@@ -29,6 +29,15 @@ export const SECTIONS: { key: SectionKey; label: string; short: string; state: A
 
 export type Conn = "connecting" | "live" | "offline";
 
+/** Decision 0031 2.4, 2.6: the connection is the browser's link to Fyr, the same words through every front: the rail's
+ *  foot and the phone's header (short) and their tooltips. Whether a host is reachable is its own line. */
+export function connLabel(c: Conn): string {
+  return c === "live" ? "Connected" : c === "offline" ? "Offline" : "Connecting…";
+}
+export function connWords(c: Conn): string {
+  return c === "live" ? "Connected to Fyr" : c === "offline" ? "Fyr is not reachable, retrying" : "Connecting…";
+}
+
 export interface Store {
   loaded: boolean;
   conn: Conn;
@@ -514,7 +523,7 @@ export function applyThreadPatch(s: Store, p: ThreadPatch): { store: Store; need
 
 /** V0.147: a stall from the stream. */
 export function setStall(s: Store, raw: unknown): Store {
-  const st = decodeStall(raw, s.host || undefined);
+  const st = decodeStall(raw); // decision 0031 2.6: a stall names its host (api.ts); none is not the front's own
   return st ? { ...s, stalls: upsertStall(s.stalls, st) } : s;
 }
 

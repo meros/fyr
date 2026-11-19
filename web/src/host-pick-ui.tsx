@@ -7,8 +7,8 @@ import { useContext } from "preact/hooks";
 import { hostChoices, hostOfflineNote, type HostInfo } from "./hosts.ts";
 import type { Profile } from "./types.ts";
 
-/** V0.170: machine is what this install runs on, for its own mark when hosts[] does not name it (one host). */
-export const HostsContext = createContext<{ hosts: HostInfo[]; self: string; now: number; machine?: string }>({ hosts: [], self: "", now: 0 });
+/** The front's hosts, its own among them (decision 0031 2.6: nothing here says which one is the front's). */
+export const HostsContext = createContext<{ hosts: HostInfo[]; now: number }>({ hosts: [], now: 0 });
 export const useHosts = () => useContext(HostsContext);
 
 /** The providers of every host, merged: the handover divider's names (V0.45), the inbox rows' provider (V0.206). */
@@ -17,8 +17,8 @@ export const ProfilesContext = createContext<Profile[]>([]);
 /** The Host field, where the host is a choice (New project, New thread: host first, V0.139): nothing with one host;
  *  an offline host's note says why nothing can be made there. */
 export function HostField({ value, onPick, what = "It lives there: its folders and providers are that host's." }: { value: string; onPick(h: string): void; what?: string }) {
-  const { hosts, self, now } = useHosts();
-  const choices = hostChoices(hosts, self);
+  const { hosts, now } = useHosts();
+  const choices = hostChoices(hosts);
   if (!choices.length) return null;
   const note = hostOfflineNote(value, hosts, now);
   return (

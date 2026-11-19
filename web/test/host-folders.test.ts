@@ -23,14 +23,14 @@ const projects: Project[] = [
 ];
 const ctx: FormCtx = { projects, profiles: [claude, zai], hosts };
 
-test("V0.132: the hosts to pick from, in the owner's order, this install and offline ones named; none with one host", () => {
-  assert.deepEqual(hostChoices(hosts, "lab"), [
+test("V0.132: the hosts to pick from, in the owner's order, offline ones named; none with one host; decision 0031 2.6: no \"(this install)\"", () => {
+  assert.deepEqual(hostChoices(hosts), [
     { name: "desk", label: "desk", online: true },
-    { name: "lab", label: "lab (this install)", online: true },
+    { name: "lab", label: "lab", online: true },
     { name: "host-b", label: "host-b (offline)", online: false },
   ]);
-  assert.deepEqual(hostChoices([{ name: "desk", online: true }], "desk"), []);
-  assert.deepEqual(hostChoices(undefined, "desk"), []);
+  assert.deepEqual(hostChoices([{ name: "desk", online: true }]), []);
+  assert.deepEqual(hostChoices(undefined), []);
 });
 
 test("V0.132: an offline host says so plainly; an online or unknown one says nothing", () => {

@@ -69,11 +69,6 @@ export function linkLine(l: HostLink | undefined, now: number): string {
   return `Link down${l.error ? `: ${linkWhy(l)}` : ""}`;
 }
 
-/** The host's name for the rail and the phone; without one in the state, "mock" or "local". */
-export function hostLabel(host: string, mock: boolean): string {
-  return host || (mock ? "mock" : "local");
-}
-
 export function decodeHosts(raw: unknown): HostInfo[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -91,6 +86,8 @@ export function decodeHosts(raw: unknown): HostInfo[] {
       ...(typeof h.url === "string" && h.url ? { url: h.url } : {}),
       ...(typeof h.machine === "string" && h.machine ? { machine: h.machine } : {}),
       ...(typeof h.os === "string" && h.os ? { os: h.os } : {}),
+      // decision 0030 Amendment 1, 0031 2.6: how the front reaches it; the pipe is the host in the front's own process
+      ...(h.link && typeof h.link === "object" && typeof (h.link as { state?: unknown }).state === "string" ? { link: h.link as HostLink } : {}),
     }));
 }
 
@@ -159,10 +156,9 @@ function ipv4(host: string): number[] | null {
   return b.every((x) => x <= 255) ? b : null;
 }
 
-/** V0.125: the network that carries a link, from the URL the front dials. self: this install, whatever its URL. A
- *  host without a URL (a front older than V0.125) has a route only when the front found it, on the tailnet. */
-export function routeOf(url: string | undefined, self = false, found = false): Route {
-  if (self) return "this machine";
+/** V0.125: the network that carries a link, from the URL the front dials. A host without a URL (a front older than
+ *  V0.125) has a route only when the front found it, on the tailnet. */
+export function routeOf(url: string | undefined, found = false): Route {
   if (!url) return found ? "tailnet" : "";
   let host: string;
   try {
@@ -203,19 +199,17 @@ export function idChangedLine(h: HostInfo): string {
 }
 
 /** V0.125: a host row's line in Settings → Hosts: "online since 08:12 · tailnet · id F7QK"; a changed id replaces it. */
-export function hostLine(h: HostInfo, self: string, now: number): string {
+export function hostLine(h: HostInfo, now: number): string {
   const changed = idChangedLine(h);
   if (changed) return changed;
-  const route = routeOf(h.url, h.name === self, h.found);
+  const route = hostRoute(h);
   return [hostState(h, now), route, h.id ? `id ${shortID(h.id)}` : "no id"].filter(Boolean).join(" · ");
 }
 
-/** V0.125, V0.132: the Hosts page's rows, in the owner's host order (the front sends hosts[] in it). A front that lists
- *  no hosts (one install) still shows this install, with the id from the state. */
-export function hostRows(hosts: HostInfo[] | undefined, self: string, selfId: string): HostInfo[] {
-  const hs = hosts ?? [];
-  if (!hs.length) return [{ name: self, online: true, ...(selfId ? { id: selfId } : {}) }];
-  return hs;
+/** V0.125: the network a host's link runs over. Decision 0031 2.6: the host in the front's own process is the one whose
+ *  link is the pipe, a fact about the link; no host is "this install". */
+export function hostRoute(h: Pick<HostInfo, "url" | "found" | "link">): Route {
+  return h.link?.via === "pipe" ? "this machine" : routeOf(h.url, h.found);
 }
 
 /** V0.125: how this browser reaches this Fyr, from the page's host name and the state's user (This device). */
@@ -226,12 +220,12 @@ export function howIn(hostname: string, user: string): string {
   return `At ${hostname}${user ? `, as ${user}` : ""}. What stands in front of Fyr there decides who gets in.`;
 }
 
-/** V0.132: the hosts New project and New thread offer, in the owner's order (the first is the default); this install
- *  and an offline one are named so. None when the front has one host (nothing to pick). */
-export function hostChoices(hosts: Pick<HostInfo, "name" | "online">[] | undefined, self: string): { name: string; label: string; online: boolean }[] {
+/** V0.132: the hosts New project and New thread offer, in the owner's order (the first is the default); an offline one
+ *  is named so. None when the front has one host (nothing to pick). Decision 0031 2.6: the same through every front. */
+export function hostChoices(hosts: Pick<HostInfo, "name" | "online">[] | undefined): { name: string; label: string; online: boolean }[] {
   const hs = hosts ?? [];
   if (hs.length <= 1) return [];
-  return hs.map((h) => ({ name: h.name, label: h.name === self ? `${h.name} (this install)` : h.online ? h.name : `${h.name} (offline)`, online: h.online }));
+  return hs.map((h) => ({ name: h.name, label: h.online ? h.name : `${h.name} (offline)`, online: h.online }));
 }
 
 /** V0.132: why nothing can be made on a picked host now; "" when it is online (or none is picked). Nothing falls back
