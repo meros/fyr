@@ -334,7 +334,7 @@ func (s *Services) Tick(tr *Tree, threads []string) {
 // read finds thread's service processes: the topmost process of each
 // subtree whose command is a service, with the subtree's memory.
 func (s *Services) read(tr *Tree, thread string) []Service {
-	td := filepath.Join(tr.root, "agents", unsafe.ReplaceAllString(thread, "_"))
+	td := tr.threadDir(unsafe.ReplaceAllString(thread, "_")) // its scope, or agents/<thread> (V0.agents-unit)
 	proc := s.proc()
 	table := map[int]procEntry{}
 	for _, p := range undeclaredPids(td) {
