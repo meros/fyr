@@ -61,6 +61,7 @@ func endRun(e *Engine, id string, now time.Time) {
 type fz struct {
 	free    float64
 	stall   slots.Stall
+	agents  slots.Stall // the agents' own stall (V0.oomd-guard)
 	slow    *float64
 	frozen  map[string]bool // undeclared
 	slotted map[string]bool // admitted jobs
@@ -73,7 +74,7 @@ func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 	z := &fz{free: 0.30, stall: slots.StallOK, frozen: map[string]bool{}, slotted: map[string]bool{}, empty: map[string]bool{}}
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: z.stall, Slowdown: z.slow}
+		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: z.stall, AgentsStall: z.agents, Slowdown: z.slow}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	e.SlotFreeze = func(o string) bool { z.slotted[o] = true; return true }
@@ -113,7 +114,7 @@ func TestF3UnderPressureTheUndeclaredWorkIsFrozenNotTheJobThatAsked(t *testing.T
 		t.Fatalf("frozen %v %v", z.frozen, z.slotted)
 	}
 	ns := notices(e, a, "slot.pause")
-	if len(ns) != 1 || !strings.Contains(ns[0].What, "Fyr paused your undeclared heavy work (`node test/layout.e2e.mjs`): memory is short on this host (memory: 6 % free). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, within 10 min at most. A timeout inside the job may fire after it resumes; check its result. Ask with mcp__fyr__slot_acquire before a heavy job.") {
+	if len(ns) != 1 || !strings.Contains(ns[0].What, "Fyr paused your undeclared heavy work (`node test/layout.e2e.mjs`): memory is short on this host (memory: 6 % free). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, or after 10 min unless memory still stalls critically then. A timeout inside the job may fire after it resumes; check its result. Ask with mcp__fyr__slot_acquire before a heavy job.") {
 		t.Fatalf("%+v", ns)
 	}
 }
@@ -314,6 +315,62 @@ func TestF8TenMinutesAtMost(t *testing.T) {
 	e.Tick()
 	if len(z.frozen) != 0 {
 		t.Fatal("frozen again")
+	}
+}
+
+// V0.oomd-guard (decision 0036 E2): the 10 min limit does not thaw into a critical stall, the host's or the agents';
+// the thread is told once that its work waits, and it thaws at the limit once the stall is below critical.
+func TestF8NoTimedThawIntoACriticalStall(t *testing.T) {
+	for _, which := range []string{"host", "agents"} {
+		t.Run(which, func(t *testing.T) {
+			e, u, now, z, th := fzEngine(t)
+			a, b := th[0], th[1]
+			e.Slots.Acquire(b, slots.Test)
+			u.flags = []slots.Undeclared{flagFor(a, *now)}
+			z.free = 0.04
+			var out bytes.Buffer
+			log.SetOutput(&out)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
+			e.Tick()
+			if !z.frozen[a] {
+				t.Fatal("not frozen")
+			}
+			if which == "host" {
+				z.stall = slots.StallCritical
+			} else {
+				z.agents = slots.StallCritical
+			}
+			*now = now.Add(10*time.Minute + time.Second)
+			e.Tick()
+			if !z.frozen[a] {
+				t.Fatal("thawed at the 10 min limit into a critical stall")
+			}
+			*now = now.Add(5 * time.Minute)
+			e.Tick()
+			if !z.frozen[a] {
+				t.Fatal("thawed while the stall stays critical")
+			}
+			waits := 0
+			for _, n := range notices(e, a, "slot.pause") {
+				if strings.Contains(n.What, "Your heavy work stays frozen past 10 min: memory still stalls critically") {
+					waits++
+				}
+			}
+			if waits != 1 {
+				t.Fatalf("told %d times that it waits", waits)
+			}
+			if !strings.Contains(out.String(), "guard: keeping thread="+a+" frozen past the 10m0s limit: memory stalls critically") {
+				t.Fatalf("no log line for the kept freeze:\n%s", out.String())
+			}
+			z.stall, z.agents = slots.StallElevated, slots.StallOK
+			e.Tick()
+			if z.frozen[a] {
+				t.Fatal("still frozen past the limit with the stall below critical")
+			}
+			if !strings.Contains(out.String(), `reason="10 min limit, stall no longer critical"`) {
+				t.Fatalf("no thaw line:\n%s", out.String())
+			}
+		})
 	}
 }
 

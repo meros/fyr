@@ -130,7 +130,7 @@ test("V0.209: the strip shows only paused work, in the harbour words, with nothi
   const p = { ...map, paused: true };
   const s = stripView(host([p]), p)!;
   assert.equal(s.head, "Paused by Fyr: memory is short on desk (6 % free).");
-  assert.equal(s.body, "Frozen, not killed; it resumes when memory has recovered for 30 s, within 10 min at most.");
+  assert.equal(s.body, "Frozen, not killed; it resumes when memory has recovered for 30 s, or after 10 min unless memory stalls.");
   assert.equal(s.command, "node test/layout.e2e.mjs");
   assert.equal(s.note, "2.8 GB · undeclared");
   // without a headroom reading the words do not invent a number

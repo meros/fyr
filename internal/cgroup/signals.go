@@ -263,6 +263,13 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 		if p, ok := readPSI(filepath.Join(s.Tree.agentsDir(), "memory.pressure")); ok && p.hasFull {
 			l.AgentsMemoryStall = stallLevel(p.full)
 		}
+		// V0.oomd-guard: what oomd reads on the unit, and a warning near its
+		// limit.
+		if st, ok := s.Tree.unitStall(); ok {
+			l.UnitMemoryStall = &st
+			s.Tree.noteOomd(s.now(), st)
+		}
+		l.OomdLimit = s.Tree.OomdLimit()
 	}
 	psiNow := l.AgentsPressure
 	if psiNow == nil {

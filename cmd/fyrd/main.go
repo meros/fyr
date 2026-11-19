@@ -144,7 +144,7 @@ func main() {
 		if cfg.Cgroups != nil {
 			budget = *cfg.Cgroups
 		}
-		tree = cgroup.Setup(cgroup.Options{Budget: budget, Logf: log.Printf})
+		tree = cgroup.Setup(cgroup.Options{Budget: budget, Logf: log.Printf, OomdLimit: cgroup.UnitOomdLimit})
 	}
 	// V0.90: the launcher's runner holds the agent processes. Its list
 	// comes before the restart repair, which leaves their runs live.

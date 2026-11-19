@@ -1,5 +1,5 @@
 // Decision 0029 slice S5 (#189), V0.load-tuning: under the memory guard the slotted job that grew most is frozen (the
-// newest without a reading, and then never the oldest: one job always runs), one at a time; it thaws when memory has recovered for 30 s, after 10 min at most, or when its slot
+// newest without a reading, and then never the oldest: one job always runs), one at a time; it thaws when memory has recovered for 30 s, after 10 min unless memory stalls critically (V0.oomd-guard), or when its slot
 // goes back; its thread is told both times.
 package engine
 
@@ -88,7 +88,15 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 	if !frozen[b] {
 		t.Fatal("the newest of two was not frozen")
 	}
+	// V0.oomd-guard (decision 0036 E2): not while memory stalls critically.
+	stall := slots.StallCritical
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: stall} }
 	*now = now.Add(10*time.Minute + time.Second)
+	e.Tick()
+	if !frozen[b] || !told(e, b, "Your heavy job stays frozen past 10 min") {
+		t.Fatal("thawed at 10 min into a critical stall")
+	}
+	stall = slots.StallElevated
 	e.Tick()
 	if frozen[b] {
 		t.Fatal("still frozen after 10 min")
