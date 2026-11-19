@@ -110,6 +110,7 @@ sw.addEventListener("push", (e: PushEvt) => {
 
 sw.addEventListener("notificationclick", (e: NotificationEvt) => {
   e.notification.close();
+  // V0.client-refs: the thread's ref (`<hostId>/<threadId>`); a notification from an older build has the id alone.
   const threadId = e.notification.data?.threadId;
   e.waitUntil(
     (async () => {

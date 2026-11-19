@@ -109,13 +109,22 @@ export interface PushPayload {
   title: string;
   body?: string;
   threadId?: string;
+  /** V0.client-refs (decision 0031 F15): the thread's host by install id; missing from a front before it */
+  host?: string;
   state?: string;
+}
+
+/** V0.client-refs: the thread a push is about, as the client names it: `<host>/<threadId>`, or the id alone from an
+ *  older front (the app then opens the one thread that has it, decision 0031 C12). */
+export function payloadRef(p: Pick<PushPayload, "host" | "threadId">): string | undefined {
+  if (!p.threadId) return undefined;
+  return p.host ? `${p.host}/${p.threadId}` : p.threadId;
 }
 
 export function parsePayload(text: string | null | undefined): PushPayload {
   try {
     const j = JSON.parse(text ?? "");
-    if (j && typeof j === "object") return { title: String(j.title || "Fyr"), body: j.body ? String(j.body) : undefined, threadId: j.threadId ? String(j.threadId) : undefined, state: j.state ? String(j.state) : undefined };
+    if (j && typeof j === "object") return { title: String(j.title || "Fyr"), body: j.body ? String(j.body) : undefined, threadId: j.threadId ? String(j.threadId) : undefined, ...(j.host ? { host: String(j.host) } : {}), state: j.state ? String(j.state) : undefined };
   } catch {
     /* plain text */
   }
@@ -124,20 +133,22 @@ export function parsePayload(text: string | null | undefined): PushPayload {
 
 /** The options for showNotification (SPEC 0.5 V0.15, design/mobile rule 12). A question stays on screen until handled. */
 export function notificationOptions(p: PushPayload, now: number): Record<string, unknown> {
+  const id = payloadRef(p);
   const opts: Record<string, unknown> = {
     body: p.body ?? "",
     icon: iconUrl("any192"),
     badge: iconUrl("badge96"),
     // V0.notification-polish: the state it was shown for, so it closes when the thread leaves that state.
-    data: { threadId: p.threadId, state: p.state },
+    // V0.client-refs: the ref, so the tap opens this host's thread and the app closes it by the id it keeps.
+    data: { threadId: id, state: p.state },
     timestamp: now,
     vibrate: [60, 40, 60],
     requireInteraction: p.state === "asking",
     actions: [] as { action: string; title: string }[],
   };
-  if (p.threadId) {
+  if (id) {
     // One notification per thread: a newer push replaces the older one and alerts again.
-    opts.tag = p.threadId;
+    opts.tag = id;
     opts.renotify = true;
     opts.actions = [{ action: "open", title: p.state === "asking" ? "Answer" : "Open" }];
   }

@@ -4813,7 +4813,7 @@ try {
   if (phone) check(two.hosts.every((c) => c.h >= 36) && two.projects.every((c) => c.h >= 32), `${ctx}: a host segment under 36 px or a chip under 32 px on the phone`);
   await shot(`host-rows-${phone ? "phone" : "desktop"}.png`);
   // 3. host-b off: its threads go, its projects fall out of row 2, remembered; desk is the last one on.
-  await click(seg("host-b"), `localStorage.getItem('fyr.hostsOff') === '["host-b"]'`);
+  await click(seg("host-b"), `localStorage.getItem('fyr.hostsOff') === '["M3RS-QX7P-5LKA-2WNE"]'`);
   const off = await evaluate(STATE);
   check(off.hosts[0]?.on === false && off.hosts[0]?.n === two.hosts[0]?.n && off.hosts[0]?.struck === "line-through" && off.hosts[1]?.on && off.hosts[1]?.struck === "none", `${ctx}: host-b off (${JSON.stringify(off.hosts)})`);
   check(off.rows >= 1 && off.rows < two.rows && off.rowHosts.every((x) => (phone ? x === "desk" : !["t_lasso", "t_triage"].includes(x))), `${ctx}: a host-b thread with host-b off (${JSON.stringify({ rowHosts: off.rowHosts, rows: off.rows, before: two.rows })})`);
@@ -4826,12 +4826,12 @@ try {
   await click(seg("host-b"), `!localStorage.getItem('fyr.hostsOff')`);
   check((await evaluate(STATE)).hosts.every((c) => c.on), `${ctx}: host-b back on`);
   // V0.204: a click on the only host on ends the host filter.
-  await click(seg("host-b"), `localStorage.getItem('fyr.hostsOff') === '["host-b"]'`);
+  await click(seg("host-b"), `localStorage.getItem('fyr.hostsOff') === '["M3RS-QX7P-5LKA-2WNE"]'`);
   await click(seg("desk"), `!localStorage.getItem('fyr.hostsOff')`);
   const ended = await evaluate(STATE);
   check(ended.stored === null && ended.hosts.every((c) => c.on) && ended.rows === two.rows, `${ctx}: the only host on did not end the host filter (${JSON.stringify({ stored: ended.stored, hosts: ended.hosts, rows: ended.rows })})`);
   // 4. desk off, then fold Needs and Unread (host-b's threads are there, V0.189): desk stays off; the empty state; Clear filter.
-  await click(seg("desk"), `localStorage.getItem('fyr.hostsOff') === '["desk"]'`);
+  await click(seg("desk"), `localStorage.getItem('fyr.hostsOff') === '["F7QK-2M9X-AB34-CD56"]'`);
   await click(secHead("needs"), "true");
   await click(secHead("unread"), `!!document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})`);
   const folded = await evaluate(STATE);
@@ -5223,14 +5223,16 @@ try {
   const G = `(() => { const g = [...document.querySelectorAll('${phone ? ".m-list" : ".ib .list"} .guest')]; return { n: g.length, text: g[0]?.textContent ?? '', tag: g[0]?.querySelector('.gst')?.textContent ?? null, sel: g[0]?.getAttribute('aria-selected') ?? null, section: g[0]?.closest('[id^="sec-"],[id^="m-sec-"]')?.id ?? null, id: g[0]?.dataset.id ?? null }; })()`;
   const threadReady = phone ? "!!document.querySelector('.m-thread, .qgate')" : "!!document.querySelector('.th .tt, .qgate')";
   const project = "F7QK-2M9X-AB34-CD56/p_web";
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": project }, threadReady);
+  // V0.client-refs (decision 0031 4.2): a device that kept the host turned off by its name, before fyr.storage = 2,
+  // keeps it off: the name becomes the host's install id once.
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.storage": "1", "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": project }, threadReady);
   if (phone) {
     await evaluate(`history.back()`);
     await waitFor("!!document.querySelector('.m-list')", { soft: true });
   } else await waitFor(`${G}.n === 1`, { soft: true });
   await settle();
   const a = await evaluate(`({ g: ${G}, f: ${F} })`);
-  check(a.f.off === '["host-b"]' && a.f.project === project, `${ctx}: opening the thread changed the filters (${JSON.stringify(a.f)})`);
+  check(a.f.off === '["M3RS-QX7P-5LKA-2WNE"]' && a.f.project === project, `${ctx}: opening the thread changed the filters (${JSON.stringify(a.f)})`);
   // V0.212: the phone never shows the list beside the thread, so the filter holds there.
   if (phone) check(a.g.n === 0 && !(await evaluate(`[...document.querySelectorAll('.m-list [data-id]')].some((r) => r.textContent.includes('Fix map lasso'))`)), `${ctx}: the filtered thread is in the list (${JSON.stringify(a.g)})`);
   else check(a.g.n === 1 && a.g.tag === "Outside filter" && a.g.text.includes("Fix map lasso") && !!a.g.section, `${ctx}: the row does not punch through (${JSON.stringify(a.g)})`);
@@ -5246,10 +5248,10 @@ try {
     check((await evaluate(G)).n === 0, `${ctx}: the row stayed after the next thread opened`);
   }
   // A quiet thread: the gate, no row, and the filter stays.
-  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
+  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["F7QK-2M9X-AB34-CD56"]', "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
   await settle();
   const c = await evaluate(`({ f: ${F}, g: ${G} })`);
-  check(c.f.off === '["desk"]' && c.g.n === 0, `${ctx}: a link to a quiet thread before the hold (${JSON.stringify(c)})`);
+  check(c.f.off === '["F7QK-2M9X-AB34-CD56"]' && c.g.n === 0, `${ctx}: a link to a quiet thread before the hold (${JSON.stringify(c)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }

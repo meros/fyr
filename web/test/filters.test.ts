@@ -107,10 +107,23 @@ test("toggleHost: off and on again; the list stays in no order but without repea
 });
 
 test("V0.204: a click on the only host on ends the host filter; any other click toggles", () => {
-  const hosts = [{ name: "desk", last: true }, { name: "lab", last: false }, { name: "old", last: false }];
+  const hosts = [{ key: "desk", last: true }, { key: "lab", last: false }, { key: "old", last: false }];
   assert.deepEqual(clickHost(["lab", "old"], hosts, "desk"), []);
   assert.deepEqual(clickHost(["lab", "old"], hosts, "lab"), ["old"]);
-  assert.deepEqual(clickHost([], [{ name: "desk", last: false }, { name: "lab", last: false }], "lab"), ["lab"]);
+  assert.deepEqual(clickHost([], [{ key: "desk", last: false }, { key: "lab", last: false }], "lab"), ["lab"]);
+});
+
+test("V0.client-refs: a host is filtered by its install id; two hosts with one name stay two chips; a host with no id by its name", () => {
+  const hs: HostInfo[] = [{ name: "box", online: true, id: "AAAA-1111-AAAA-1111" }, { name: "box", online: true, id: "BBBB-2222-BBBB-2222" }, { name: "nuc", online: true }];
+  const threads = byId(
+    T("AAAA-1111-AAAA-1111/t_1", "needs", "p_web", "box", { hostId: "AAAA-1111-AAAA-1111" }),
+    T("BBBB-2222-BBBB-2222/t_1", "needs", "p_web", "box", { hostId: "BBBB-2222-BBBB-2222" }),
+    T("t_2", "needs", "p_web", "nuc"),
+  );
+  const f = activeFilters({ ...base, hosts: hs, threads, sel: S() });
+  assert.deepEqual(f.hosts.map((h) => [h.key, h.name, h.n]), [["AAAA-1111-AAAA-1111", "box", 1], ["BBBB-2222-BBBB-2222", "box", 1], ["nuc", "nuc", 1]]);
+  assert.deepEqual(Object.keys(applyFilters(threads, S(["AAAA-1111-AAAA-1111"]), projects, "desk")).sort(), ["BBBB-2222-BBBB-2222/t_1", "t_2"]);
+  assert.deepEqual(Object.keys(applyFilters(threads, S(["nuc"]), projects, "desk")).length, 2);
 });
 
 test("parseHostsOff: what the device stored, else none off", () => {

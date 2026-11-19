@@ -36,8 +36,10 @@ import {
   type Sections,
   type Store,
   applyThreadPatch,
+  moveHostInStore,
   resolveRef,
 } from "./store.ts";
+import { migrateStorage, moveHostKeys, moveRef, rotations } from "./storage-migrate.ts";
 import { placeOf, steadyThreads, stillRows, trackUnread, type FinishHold, type RowPlace } from "./still-list.ts";
 import { useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
@@ -67,7 +69,7 @@ import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf, splitSharedPatch } from "./projects.ts";
 import { HIDDEN_KEY, NOTHING_HIDDEN, applyHidden, hiddenCount, parseHidden, pushHiddenOf, type Hidden, type PushHidden } from "./hidden.ts";
-import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, parseHostsOff, type FilterSel } from "./filters.ts";
+import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -340,10 +342,10 @@ function App() {
       return [];
     }
   });
-  const setHostsOff = (names: string[]) => {
-    setHostsOffState(names);
+  const setHostsOff = (keys: string[]) => {
+    setHostsOffState(keys);
     try {
-      if (names.length) localStorage.setItem(HOSTS_OFF_KEY, JSON.stringify(names));
+      if (keys.length) localStorage.setItem(HOSTS_OFF_KEY, JSON.stringify(keys));
       else localStorage.removeItem(HOSTS_OFF_KEY);
     } catch {
       /* storage blocked */
@@ -378,7 +380,7 @@ function App() {
   const unlock = useQuietUnlock(store.clockOffset);
   // V0.207: a hidden host or project is no filter value: it would leave a chip behind.
   const filterSel = useMemo<FilterSel>(() => {
-    const gone = (name: string) => fullStore.hosts.some((h) => h.name === name) && !store.hosts.some((h) => h.name === name);
+    const gone = (key: string) => fullStore.hosts.some((h) => hostKey(h) === key) && !store.hosts.some((h) => hostKey(h) === key);
     const projectGone = !!findProject(fullStore.projects, projectFilter) && !filterOn;
     return { hostsOff: hostsOff.filter((n) => !gone(n)), project: projectGone ? null : projectFilter || null };
   }, [hostsOff, projectFilter, fullStore.hosts, fullStore.projects, store.hosts, filterOn]);
@@ -437,7 +439,7 @@ function App() {
     return {
       ...chips,
       sel: filterSel,
-      toggleHost: (name) => setHostsOff(clickHost(filterSel.hostsOff, chips.hosts, name)),
+      toggleHost: (key) => setHostsOff(clickHost(filterSel.hostsOff, chips.hosts, key)),
       setProject: setProjectFilter,
       clear: () => (setHostsOff([]), setProjectFilter(null)),
       // V0.114: a locked quiet project shows its gate instead.
@@ -563,6 +565,48 @@ function App() {
       if (r !== s.id) navReplace({ ...nav, screen: { ...s, id: r } });
     }
   }, [store.loaded, nav.screen.name, "id" in nav.screen ? nav.screen.id : ""]);
+
+  // V0.client-refs (decision 0031 4.2): what this device kept by the hosts' own ids and names moves to refs and install
+  // ids, once, when the first state lists the hosts and their records. The filters read again what moved.
+  const rereadFilters = () => {
+    try {
+      setProjectFilterState(localStorage.getItem(FILTER_KEY));
+      setHostsOffState(parseHostsOff(localStorage.getItem(HOSTS_OFF_KEY)));
+    } catch {
+      /* storage blocked */
+    }
+  };
+  useEffect(() => {
+    if (!fullStore.loaded) return;
+    let kv: Storage | null = null;
+    try {
+      kv = localStorage;
+    } catch {
+      return;
+    }
+    if (migrateStorage(kv, { hosts: fullStore.hosts, threads: Object.values(fullStore.threads), projects: projectRecords(fullStore.projects) })) rereadFilters();
+  }, [fullStore.loaded]);
+  // Decision 0031 2.1, 2.5: a host listed with a new id and the one it had (idWas): what the device keeps under the old
+  // id moves to the new one (the keys, the stored timelines, the store, the thread on screen).
+  const rotationKey = rotations(fullStore.hosts).map((r) => `${r.was}>${r.now}`).join(",");
+  useEffect(() => {
+    if (!rotationKey) return;
+    for (const { was, now } of rotations(fullStore.hosts)) {
+      let kv: Storage | null = null;
+      try {
+        kv = localStorage;
+      } catch {
+        /* storage blocked */
+      }
+      if (moveHostKeys(kv, was, now)) rereadFilters();
+      void cache.moveHost(was, now);
+      setStore((s) => moveHostInStore(s, was, now));
+      setView((v) => (v && moveRef(v.id, was, now) !== v.id ? { ...v, id: moveRef(v.id, was, now) } : v));
+      setLastOpen((id) => (id ? moveRef(id, was, now) : id));
+      const sc = nav.screen;
+      if ((sc.name === "thread" || sc.name === "project") && moveRef(sc.id, was, now) !== sc.id) navReplace({ ...nav, screen: { ...sc, id: moveRef(sc.id, was, now) } });
+    }
+  }, [rotationKey]);
 
   // Initial selection and ?open= for screenshots.
   const didInit = useRef(false);
@@ -1472,9 +1516,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!pendingOpen || !store.threads[pendingOpen]) return;
-    if (phone) navGo({ screen: { name: "thread", id: pendingOpen }, sheet: null });
-    else openThread(pendingOpen, "open");
+    // V0.client-refs: a tap names the ref; one from an older build names the id alone (decision 0031 C12).
+    const want = pendingOpen && resolveRef(Object.values(store.threads), pendingOpen);
+    if (!want || !store.threads[want]) return;
+    if (phone) navGo({ screen: { name: "thread", id: want }, sheet: null });
+    else openThread(want, "open");
     takeOpen(sessionStore()); // on screen now: done
     setPendingOpen(null);
   }, [pendingOpen, store.threads]);

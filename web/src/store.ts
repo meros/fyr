@@ -544,6 +544,29 @@ export function decodeHostMarks(raw: unknown): OwnerMarks {
   return out;
 }
 
+/** V0.client-refs (decision 0031 2.5): a host's install id rotated from `was` to `now`: the records the store keeps under
+ *  the old id's refs, and the timelines loaded for them, move to the new id. The next state names them by it too. */
+export function moveHostInStore(s: Store, was: string, now: string): Store {
+  const pre = `${was}/`;
+  if (!was || !now || was === now) return s;
+  const mv = (id: string) => (id.startsWith(pre) ? `${now}/${id.slice(pre.length)}` : id);
+  const keys = <T,>(m: Record<string, T>, f: (v: T, k: string) => T = (v) => v): Record<string, T> => {
+    let hit = false;
+    const out: Record<string, T> = {};
+    for (const [k, v] of Object.entries(m)) {
+      const k2 = mv(k);
+      if (k2 !== k) hit = true;
+      out[k2] = k2 !== k ? f(v, k2) : v;
+    }
+    return hit ? out : m;
+  };
+  const threads = keys(s.threads, (t, k) => ({ ...t, id: k, hostId: now }));
+  const events = keys(s.events, (evs, k) => evs.map((e) => ({ ...e, subject: k })));
+  const resumeFrom = keys(s.resumeFrom);
+  if (threads === s.threads && events === s.events && resumeFrom === s.resumeFrom) return s;
+  return { ...s, threads, events, resumeFrom };
+}
+
 /** A link names a record by the host's own id (`?open=t_12`, an old push tap, a stored selection): the ref of the one
  *  record that has it. An id that is already a ref, or that two hosts have, or that none has, comes back as it is
  *  (decision 0031 C12: a link without a host opens the one thread that has the id, and is refused when two have it). */

@@ -73,7 +73,9 @@ func (f *Front) idOfLocked(l *link) string {
 }
 
 // byID is the host with that install id; nil for an id the front does not
-// follow (never another host, decision 0031 2.2).
+// follow (never another host, decision 0031 2.2). V0.client-refs (0031 2.1,
+// test 6): while a host is listed with idWas, its old id still names it, so
+// a call the client made before it saw the new id reaches the same host.
 func (f *Front) byID(id string) *link {
 	if id == "" {
 		return nil
@@ -82,6 +84,11 @@ func (f *Front) byID(id string) *link {
 	defer f.mu.Unlock()
 	for _, l := range f.all() {
 		if f.idOfLocked(l) == id {
+			return l
+		}
+	}
+	for _, l := range f.all() {
+		if l.idWas == id {
 			return l
 		}
 	}

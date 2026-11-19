@@ -83,7 +83,12 @@ type Payload struct {
 	Title    string `json:"title"`
 	Body     string `json:"body"`
 	ThreadID string `json:"threadId"`
-	State    string `json:"state"`
+	// Host is the install id of the thread's host (decision 0031 F15,
+	// V0.client-refs): with it the tap opens <host>/<threadId>, the one
+	// thread of that host, though another host has a thread with the id.
+	// "" from a host that reports no id; the tap then opens by id alone.
+	Host  string `json:"host,omitempty"`
+	State string `json:"state"`
 	// Origin is the thread's host and project; nil for a push about no
 	// thread, which every device gets. It is not sent.
 	Origin *Origin `json:"-"`
@@ -268,7 +273,11 @@ func Topic(pl Payload) string {
 	if pl.ThreadID == "" {
 		return ""
 	}
-	h := sha256.Sum256([]byte(pl.ThreadID))
+	id := pl.ThreadID
+	if pl.Host != "" {
+		id = pl.Host + "/" + id // two hosts' threads with one id are two topics
+	}
+	h := sha256.Sum256([]byte(id))
 	return base64.RawURLEncoding.EncodeToString(h[:])[:32]
 }
 

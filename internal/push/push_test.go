@@ -163,6 +163,10 @@ func TestFinishedIsAChoicePerDevice(t *testing.T) {
 	if a == b || len(a) != 32 || a != Topic(Payload{ThreadID: "t_1", State: "done"}) || Topic(Payload{}) != "" {
 		t.Fatalf("topic: %q %q", a, b)
 	}
+	// V0.client-refs: one id on two hosts is two threads, so two topics.
+	if x, y := Topic(Payload{ThreadID: "t_1", Host: "AAAA"}), Topic(Payload{ThreadID: "t_1", Host: "BBBB"}); x == y || x == a {
+		t.Fatalf("topic by host: %q %q", x, y)
+	}
 }
 
 // V0.207: a device that hides a host or project gets no push about it; a push

@@ -8,7 +8,7 @@ import (
 // SPEC V0.140: with several hosts a push says which host the thread runs on,
 // first in its body; with one host it says nothing more.
 func TestFrontPushNamesTheHost(t *testing.T) {
-	a, b := fullHost(t, "a", "pa"), fullHost(t, "b", "pb")
+	a, b := fullHost(t, "a", "pa"), fullHostID(t, "b", "pb", "IDBB-0000-0000-0000")
 	p := &fakePush{}
 	fs := startFront(t, Options{Push: p, NotifyDelay: 1}, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
@@ -21,6 +21,11 @@ func TestFrontPushNamesTheHost(t *testing.T) {
 	// V0.207: the push names its host, so a device that hides it is left out.
 	if o := p.payloads()[0].Origin; o == nil || o.Host != "b" {
 		t.Fatalf("origin %+v", o)
+	}
+	// V0.client-refs: and its install id, so the tap opens b's thread, not
+	// another host's thread with the same id.
+	if pl := p.payloads()[0]; pl.Host != "IDBB-0000-0000-0000" || pl.ThreadID != id {
+		t.Fatalf("payload host %q thread %q", pl.Host, pl.ThreadID)
 	}
 
 	c := fullHost(t, "c", "pc")
