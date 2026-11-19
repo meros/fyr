@@ -87,7 +87,11 @@ func jobLimits(z JobSize, budget, used uint64, cores float64, lifted bool) (high
 // swap valve is open.
 func (g *JobGroups) agentsNow() (budget, used uint64, cores float64, lifted bool) {
 	agents := filepath.Join(g.Tree.root, "agents")
-	c := capacity(g.Tree, g.proc(), runtime.NumCPU(), 0)
+	n := g.Cores
+	if n <= 0 {
+		n = runtime.NumCPU()
+	}
+	c := capacity(g.Tree, g.proc(), n, 0)
 	return c.Memory, readBytes(filepath.Join(agents, "memory.current")), c.CPU, swapFull(agents)
 }
 

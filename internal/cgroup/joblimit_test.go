@@ -77,7 +77,7 @@ func TestJL3AMovedJobGetsItsLimitsTheValveLiftsThemAndAHitRaisesItsClass(t *test
 	fakeProc(t, proc, 20, 10, "/bin/zsh", "-c", "make test-go")
 	write(t, filepath.Join(td, CLIDir, "cgroup.procs"), "10\n20\n")
 	var raised []string
-	g := &JobGroups{Tree: tr, Proc: proc,
+	g := &JobGroups{Tree: tr, Proc: proc, Cores: 8, // agents/cpu.max gives 4 of them
 		Size: func(thread string, undeclared bool) JobSize {
 			return JobSize{Class: "fyr: make test-go", Peak: 1 << 30, Demand: 2, Known: true}
 		},

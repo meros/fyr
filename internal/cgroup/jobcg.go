@@ -58,6 +58,7 @@ type JobGroups struct {
 	// a job gets no limit. sized: the limits written, per job cgroup.
 	Size  func(thread string, undeclared bool) JobSize
 	Raise func(class string)
+	Cores int // the host's CPUs for the agents' capacity; default runtime.NumCPU()
 	sized map[string]sizedJob
 }
 
