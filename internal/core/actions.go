@@ -202,6 +202,11 @@ func sendAction(name, label string) *Action {
 				}
 			}
 			revive(t, v, now)
+			if !t.Running && t.Starting == nil {
+				// V0.starting-moves: the agent starts for this message;
+				// the thread moves from the press, not from its first turn.
+				t.Starting = &now
+			}
 			from := a.Str("from")
 			if from == OldViewTyped {
 				from = "" // V0.128: a stale client's View-tab message is an ordinary one

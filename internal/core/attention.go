@@ -88,6 +88,11 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	case t.Running:
 		return Attention{Working, WorkingSec, ""}
 	}
+	if t.MachineWait == nil && t.Starting != nil {
+		// V0.starting-moves: the agent is starting; it moves without the
+		// owner already.
+		return Attention{Working, WorkingSec, "Starting"}
+	}
 	if t.MachineWait != nil {
 		// V0.153: Fyr waits for the host before it starts the agent.
 		return Attention{Waiting, WorkingSec, MachineWaitText(t.MachineWait)}

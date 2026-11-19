@@ -877,6 +877,7 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 		t.MachineWait = nil
 		res.Events = append(res.Events, Event{"agent.machineWait", map[string]any{"done": true}})
 	}
+	t.Starting = nil // V0.starting-moves: the start lived in the last host
 	if a.Kept {
 		if t.Handover != nil {
 			t.Handover = nil
