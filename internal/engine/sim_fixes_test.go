@@ -230,7 +230,7 @@ func TestSimFixesTheWakeRuleOfTurnsCountsTheFrozenPartsOnly(t *testing.T) {
 	// Two parts end; the one whose turn it is runs on, nothing else is frozen.
 	r.units = r.units[:1]
 	resident = 1.4e9
-	z.free, z.agents, z.mem = 0.04, slots.StallOK, 9.0e9
+	z.free, z.stall, z.agents, z.mem = 0.04, slots.StallOK, slots.StallOK, 9.0e9
 	tickFor(e, now, ThawAfterOK+10*time.Second)
 	if len(e.frozenOwners()) != 0 {
 		t.Fatalf("not woken with no part frozen: 9.0 GB < cap 10 GB; frozen %+v", e.first())
@@ -270,4 +270,13 @@ func TestSimFixesFrozenWorkLeftAloneWakesAtOnce(t *testing.T) {
 	if z.frozen[a] {
 		t.Fatal("still frozen with no other heavy work running")
 	}
+}
+
+// shortStall is the host's stall a test reports with free headroom: elevated
+// under the 10 % reserve, else ok (V0.sim-fixes: a freeze needs a stall).
+func shortStall(free float64) slots.Stall {
+	if free < slots.DefaultPolicy.MemoryReserve {
+		return slots.StallElevated
+	}
+	return slots.StallOK
 }

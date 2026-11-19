@@ -31,7 +31,7 @@ func TestS5MemoryGuardFreezesTheNewestJob(t *testing.T) {
 	p.Acquire(c, slots.E2E)
 	free := 0.05
 	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK} }
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)} }
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	frozen := map[string]bool{}
 	e.SlotFreeze = func(o string) bool { frozen[o] = true; return true }
@@ -72,7 +72,7 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 	p.Acquire(a, slots.Test)
 	free := 0.02
 	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free} }
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)} }
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	frozen := map[string]bool{}
 	e.SlotFreeze = func(o string) bool { frozen[o] = true; return true }
@@ -122,7 +122,7 @@ func TestGuardFreezesTheJobThatGrewMostButNeverTheOldest(t *testing.T) {
 	p.Acquire(idle, slots.Test)
 	free := 0.05
 	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK} }
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)} }
 	e.SlotGrowth = func(o string) uint64 {
 		switch o {
 		case big:
@@ -161,7 +161,7 @@ func TestGuardNeverFreezesAService(t *testing.T) {
 	p.Acquire(svc, slots.E2E) // the newest: it would be frozen first
 	free := 0.05
 	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK} }
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)} }
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	e.GuardService = func(th string) bool { return th == svc }
 	frozen := map[string]bool{}
