@@ -61,3 +61,40 @@ export function anchorRow(o: { hovered: string | null; open: string | null; firs
   if (o.scrollTop <= 0) return null;
   return o.open && o.visible(o.open) ? o.open : o.firstVisible;
 }
+
+/** V0.finish-debounce: how long a thread that stopped working stays in Moving before it shows as finished. A run that
+ *  ends and starts again within it (a queued message, a Fyr line that wakes the agent) never blinks into Finished. */
+export const FINISH_HOLD_MS = 5_000;
+
+/** A thread held in Moving: when it left, and the attention it had there. */
+export interface FinishHold {
+  at: number;
+  attention: Thread["attention"];
+}
+
+/**
+ * V0.finish-debounce: the threads as the list shows them. A thread whose live section went from working to finished
+ * (seen) within FINISH_HOLD_MS keeps its working attention. Any other move is at once: back to working, to Your move,
+ * Snoozed or Settled. `last` is the previous live map; `next` is when the earliest hold ends, or null.
+ */
+export function steadyThreads(
+  prev: Readonly<Record<string, FinishHold>>,
+  last: Readonly<Record<string, Thread>> | null,
+  threads: Record<string, Thread>,
+  now: number,
+): { threads: Record<string, Thread>; holds: Record<string, FinishHold>; next: number | null } {
+  const holds: Record<string, FinishHold> = {};
+  let out: Record<string, Thread> | null = null;
+  let next: number | null = null;
+  for (const t of Object.values(threads)) {
+    if (t.attention?.section !== "seen") continue;
+    const was = last?.[t.id]?.attention;
+    const h = prev[t.id] ?? (was?.section === "working" ? { at: now, attention: was } : undefined);
+    if (!h || now - h.at >= FINISH_HOLD_MS) continue;
+    holds[t.id] = h;
+    (out ??= { ...threads })[t.id] = { ...t, attention: h.attention };
+    const end = h.at + FINISH_HOLD_MS;
+    if (next === null || end < next) next = end;
+  }
+  return { threads: out ?? threads, holds, next };
+}

@@ -67,3 +67,41 @@ test("V0.207: the anchor is the hovered row, else the open row in view, else the
   assert.equal(anchorRow({ ...o, visible: () => false }), "f");
   assert.equal(anchorRow({ ...o, scrollTop: 0 }), null);
 });
+
+test("V0.finish-debounce: a thread that stops working stays in Moving for the hold, then shows finished", async () => {
+  const { steadyThreads, FINISH_HOLD_MS } = await import("../src/still-list.ts");
+  const working = all([thread("a", "working", "working")]);
+  const done = all([thread("a", "done", "seen")]);
+  let r = steadyThreads({}, null, working, 0);
+  assert.equal(r.next, null);
+  r = steadyThreads(r.holds, working, done, 1000);
+  assert.equal(sectionOfIds(r.threads), "working");
+  assert.equal(r.next, 1000 + FINISH_HOLD_MS);
+  r = steadyThreads(r.holds, done, done, 1000 + FINISH_HOLD_MS - 1);
+  assert.equal(sectionOfIds(r.threads), "working");
+  r = steadyThreads(r.holds, done, done, 1000 + FINISH_HOLD_MS);
+  assert.equal(sectionOfIds(r.threads), "unread");
+  assert.equal(r.next, null);
+});
+
+test("V0.finish-debounce: a run that starts again within the hold never shows finished; other moves are at once", async () => {
+  const { steadyThreads } = await import("../src/still-list.ts");
+  const working = all([thread("a", "working", "working")]);
+  const done = all([thread("a", "done", "seen")]);
+  let r = steadyThreads({}, working, done, 0);
+  r = steadyThreads(r.holds, done, working, 2000);
+  assert.equal(sectionOfIds(r.threads), "working");
+  assert.deepEqual(r.holds, {});
+  // Asking goes to Your move at once.
+  const asking = all([thread("a", "asking", "needs")]);
+  r = steadyThreads({}, working, asking, 0);
+  assert.equal(sectionOfIds(r.threads), "needs");
+  // Finished from anything but working is not held.
+  r = steadyThreads({}, asking, done, 0);
+  assert.equal(sectionOfIds(r.threads), "unread");
+});
+
+function sectionOfIds(ts: Record<string, Thread>): string | undefined {
+  const s = sections(ts);
+  return (["needs", "working", "unread", "seen"] as const).find((k) => s[k].some((t) => t.id === "a"));
+}
