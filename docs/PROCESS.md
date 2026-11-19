@@ -15,7 +15,7 @@ Status is never written by hand in a markdown file. A milestone's progress bar a
 Every change in behaviour follows the same order:
 
 1. **Spec.** Change the spec section, or add one, and add the change as its own file in `docs/changes/` (never a row in the table of SPEC 0.5, which is closed). The PR says which section changed and why. A change that needs a choice between options first gets a decision record.
-2. **Red.** Write a test that names the spec ID and fails against the current code. Commit it (CI may show it red on the branch).
+2. **Red.** Write a test that names the spec ID and fails against the current code. Commit it (the branch's gate may show it red).
 3. **Green.** Change the code until the test passes. Do not change the test to make it pass, unless the spec changed again.
 4. **Close.** The PR closes the issue (`Closes #N`) and lists the spec IDs it covers.
 
@@ -47,7 +47,12 @@ Milestones and their order are in `docs/PLAN.md`; after `M5 Cut-over` come `v1.1
 nix develop            # Go, Node, gh, sqlite
 make test              # go vet, go test, web typecheck
 make e2e               # daemon + fake claude + API flow
+scripts/ci-local.sh    # a PR's gate: make test + gitleaks on the pushed head, posts the status local/test
 ```
+
+GitHub Actions runs on pushes to main only (`.github/workflows/test.yml`: tests, the nix build, the release). A PR
+starts no workflow: its gate is `scripts/ci-local.sh` on the host, run after each push, and Fyr's merge waits for the
+`local/test` status it posts. A break that only the nix build or the layout timing catches shows up on main.
 
 `CGO_ENABLED=0` everywhere: the SQLite driver is pure Go, and NixOS has no global C compiler.
 

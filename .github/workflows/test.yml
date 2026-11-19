@@ -4,19 +4,26 @@
 # web/node_modules are cached between runs.
 name: test
 
+# Actions minutes on a private repo cost money: a PR starts no run here. Its gate is scripts/ci-local.sh on the
+# host, which posts the status `local/test` that Fyr waits for. This workflow runs on main (and v0) only, and not
+# for a push that touches only docs.
 on:
   push:
     branches: [main, v0]
-  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'research/**'
+      - 'design/**'
+      - '**.md'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# A PR's older run is cancelled by its newer push; a push to main always runs to the end, so every merged commit
-# gets a result and a release (#146).
+# A push to main always runs to the end, so every merged commit gets a result and a release (#146).
 concurrency:
-  group: test-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: test-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   go:
@@ -90,7 +97,7 @@ jobs:
   # build-<sha12> and moves the tag `deployable` forward to it. Hosts auto-update only to that.
   release:
     needs: [go, web, nix, secrets]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
