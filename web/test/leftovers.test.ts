@@ -59,18 +59,24 @@ test("Settings lists each leftover with its thread, what holds it and when it en
   assert.equal(rows[0].canKeep, true);
 });
 
-test("Settings lists the settled threads' worktrees; only a safe one can be removed", () => {
+test("Settings lists the worktrees nobody works in; only a safe one can be removed, and says when Fyr removes it", () => {
+  const now = Date.parse("2026-11-19T12:00:00Z");
   const h = host([], {
     temps: [
       { path: "/r/.claude/worktrees/a", kind: "worktree", thread: "t_map", bytes: 120e6, safe: true },
       { path: "/r/.claude/worktrees/b", kind: "worktree", thread: "t_nix", bytes: 3e6, safe: false, why: "2 commits not pushed" },
+      // V0.worktree-sweep: one with no thread, one Fyr removes in 5 h, one in use.
+      { path: "/r/.claude/worktrees/c", kind: "worktree", bytes: 9e6, safe: true, removeAt: "2026-11-19T17:00:00Z" },
+      { path: "/r/.claude/worktrees/d", kind: "worktree", bytes: 9e6, safe: true, why: "in use" },
     ],
   });
   assert.deepEqual(
-    tempRows(h, lookup).map((r) => [r.title, r.desc, r.canRemove]),
+    tempRows(h, lookup, now).map((r) => [r.title, r.desc, r.canRemove]),
     [
       ["/r/.claude/worktrees/a", "Map perf · 120 MB · pushed and clean", true],
       ["/r/.claude/worktrees/b", "t_nix · 3 MB · kept: 2 commits not pushed", false],
+      ["/r/.claude/worktrees/c", "9 MB · pushed and clean · Fyr removes it in 5 h", true],
+      ["/r/.claude/worktrees/d", "9 MB · pushed and clean · in use", true],
     ],
   );
 });

@@ -20,7 +20,10 @@ const leftoverStart = 2 * time.Minute
 // runLeftovers starts V0.176: the leftover tracker (every LeftoverTick, at a
 // run's end and at a settle) and the temp sweep (scratch and layout profiles
 // every 10 min with the worktree list).
-func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sampler, eng *engine.Engine, mgr *agent.Manager, h *host) {
+//
+// V0.worktree-sweep: the sweep also removes the worktrees that may go (unless
+// worktrees is "list"), and a thread that starts in one makes it again.
+func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sampler, eng *engine.Engine, mgr *agent.Manager, h *host, worktrees string) {
 	lt := &cgroup.Leftovers{Tree: tree, CLIs: mgr.LeftoverCLIs, KV: h.st, Logf: log.Printf,
 		Thread: func(name string) cgroup.ThreadState {
 			k, a, r := eng.LeftoverThread(name)
@@ -55,7 +58,10 @@ func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sample
 			out = append(out, cgroup.TempThread{ID: t.ID, SessionID: t.SessionID, Cwd: t.Cwd, Asleep: t.Asleep, LiveCLI: live, Branches: t.Branches})
 		}
 		return out
-	}}
+	},
+		Repos: eng.ProjectFolders, Cwds: func() []string { return cgroup.Cwds("") }, Auto: worktrees != "list",
+		KV: h.st, OnRemoved: eng.WorktreeRemoved}
+	mgr.SetRestoreDir(tp.Restore)
 	sampler.Leftovers, sampler.Temps = lt, tp
 	var started atomic.Bool
 	eng.LeftoverDeps = engine.LeftoverDeps{
@@ -82,7 +88,10 @@ func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sample
 		n := 0
 		for {
 			lt.Tick()
-			tp.Sweep(n%10 == 0)
+			tp.Sweep(false)
+			if n%10 == 0 {
+				go tp.SweepWorktrees() // git for every worktree: off the minute's loop
+			}
 			n++
 			select {
 			case <-ctx.Done():

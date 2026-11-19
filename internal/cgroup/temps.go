@@ -1,6 +1,6 @@
 package cgroup
 
-// V0.176 (3): temporary files threads leave. A layout run's Chrome profile
+// V0.176 (3), amended by V0.worktree-sweep (worktrees.go): temporary files threads leave. A layout run's Chrome profile
 // (<tmp>/fyr-layout-*) whose Chrome is gone, and the CLI's scratch folder of
 // a settled or archived thread with no live CLI (<tmp>/claude-<uid>/<project>/
 // <session>/), are removed by the sweep. A worktree of a settled thread (its
@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -33,6 +32,8 @@ type Temp struct {
 	// Safe: Remove may remove it; Why says what holds it otherwise.
 	Safe bool   `json:"safe"`
 	Why  string `json:"why,omitempty"`
+	// RemoveAt: Fyr removes it then unless someone works in it (V0.worktree-sweep).
+	RemoveAt *time.Time `json:"removeAt,omitempty"`
 }
 
 // TempThread is what the sweep needs of a thread.
@@ -51,8 +52,26 @@ type Temps struct {
 	Cmdlines func() []string     // every process's command line (a profile in use is named there)
 	Logf     func(string, ...any)
 
-	mu  sync.Mutex
-	pub atomic.Pointer[[]Temp]
+	// V0.worktree-sweep. Repos: more folders whose repositories' worktrees
+	// are looked at (the projects'). Auto: remove the ones that may go;
+	// Cwds (every live process's working folder) must be known for it.
+	Repos     func() []string
+	Cwds      func() []string
+	Auto      bool
+	Idle      time.Duration // default WorktreeIdle
+	NoFetch   bool          // tests: no fetch of PR heads
+	OnRemoved func(thread, line string)
+	KV        interface {
+		GetKV(string) (string, error)
+		SetKV(string, string) error
+	}
+
+	mu      sync.Mutex // the scratch and profile sweep
+	wmu     sync.Mutex // the worktree sweep (fetched, sizes, pub)
+	rmu     sync.Mutex // a removal or a restore, and the removed records
+	pub     atomic.Pointer[[]Temp]
+	fetched map[string]time.Time
+	sizes   map[string]sized
 }
 
 // ProfileAge: a layout profile younger than this stays (its Chrome may be starting).
@@ -80,8 +99,15 @@ func (tp *Temps) View() []Temp {
 }
 
 // Sweep removes the safe profiles and scratch folders; with worktrees it
-// lists the settled threads' worktrees again (git runs: call it seldom).
+// then runs SweepWorktrees (git runs: call it seldom).
 func (tp *Temps) Sweep(worktrees bool) {
+	tp.sweepFiles()
+	if worktrees {
+		tp.SweepWorktrees()
+	}
+}
+
+func (tp *Temps) sweepFiles() {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	now := time.Now()
@@ -131,39 +157,168 @@ func (tp *Temps) Sweep(worktrees bool) {
 			}
 		}
 	}
-	if !worktrees {
+}
+
+// SweepWorktrees lists the worktrees nobody works in and removes the ones
+// that may go (V0.worktree-sweep). It runs git for every worktree, so it has
+// its own lock and returns at once when a sweep runs already.
+func (tp *Temps) SweepWorktrees() {
+	if !tp.wmu.TryLock() {
 		return
 	}
-	var out []Temp
-	repos := map[string][]wtree{}
-	tops := map[string]string{} // a folder → its repository, one git call per folder
+	defer tp.wmu.Unlock()
+	now := time.Now()
+	if tp.Now != nil {
+		now = tp.Now()
+	}
+	var threads []TempThread
+	if tp.Threads != nil {
+		threads = tp.Threads()
+	}
+	idle := tp.Idle
+	if idle == 0 {
+		idle = WorktreeIdle
+	}
+	folders := []string{}
 	for _, th := range threads {
-		if !th.Asleep || th.Cwd == "" {
+		if th.Cwd != "" {
+			folders = append(folders, th.Cwd)
+		}
+	}
+	if tp.Repos != nil {
+		folders = append(folders, tp.Repos()...)
+	}
+	var cwds []string
+	auto := tp.Auto && tp.Cwds != nil
+	if auto {
+		cwds = tp.Cwds()
+	}
+	var out []Temp
+	seen := map[string]bool{} // repositories, by git dir
+	for _, f := range folders {
+		common := gitOut(f, "rev-parse", "--path-format=absolute", "--git-common-dir")
+		if common == "" || seen[common] {
 			continue
 		}
-		top, ok := tops[th.Cwd]
-		if !ok {
-			top = gitOut(th.Cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
-			tops[th.Cwd] = top
-		}
-		if top == "" {
+		seen[common] = true
+		wts := worktreesOf(f)
+		if !slices.ContainsFunc(wts, func(w wtree) bool { return !w.main }) {
 			continue
 		}
-		wts, ok := repos[top]
-		if !ok {
-			wts = worktreesOf(th.Cwd)
-			repos[top] = wts
-		}
+		fetched := false
 		for _, w := range wts {
-			if w.main || !(w.path == th.Cwd || (w.branch != "" && slices.Contains(th.Branches, w.branch))) {
+			if w.main {
 				continue
 			}
-			x := Temp{Path: w.path, Kind: "worktree", Thread: th.ID, Bytes: size(w.path)}
+			if _, err := os.Stat(w.path); err != nil {
+				continue // prunable: its folder is gone already
+			}
+			// Whose: a thread working in it, or on its branch; an awake one wins.
+			var owner *TempThread
+			for i := range threads {
+				th := &threads[i]
+				if (th.Cwd != "" && inside(th.Cwd, w.path)) || (w.branch != "" && slices.Contains(th.Branches, w.branch)) {
+					if owner == nil || (owner.Asleep && !th.Asleep) {
+						owner = th
+					}
+				}
+			}
+			if owner != nil && !owner.Asleep {
+				continue // in use: not listed
+			}
+			x := Temp{Path: w.path, Kind: "worktree"}
+			if owner != nil {
+				x.Thread = owner.ID
+			}
+			if auto && !fetched {
+				tp.fetchPulls(common, f, now)
+				fetched = true
+			}
 			x.Safe, x.Why = worktreeSafe(w.path)
+			if x.Safe && w.locked {
+				x.Safe, x.Why = false, "locked"
+			}
+			if x.Safe && auto {
+				busy := slices.ContainsFunc(cwds, func(c string) bool { return inside(c, w.path) })
+				at := lastMove(w.path).Add(idle)
+				switch {
+				case busy || (owner != nil && owner.LiveCLI):
+					x.Why = "in use"
+				case now.Before(at):
+					x.RemoveAt = &at
+				case !tp.stillIdle(w.path, w.branch):
+					x.Why = "in use"
+				default:
+					n := tp.sizeOf(w.path, now)
+					if err := tp.removeWorktree(w, common, x.Thread, now); err != nil {
+						tp.logf("worktrees: kept %s: %v", w.path, err)
+						x.Safe, x.Why = false, err.Error()
+						break
+					}
+					tp.logf("worktrees: removed %s (%s), its HEAD %s is pinned", w.path, mb(n), short(w.head))
+					if tp.OnRemoved != nil && x.Thread != "" {
+						tp.OnRemoved(x.Thread, removedLine(w, n))
+					}
+					continue
+				}
+			}
+			x.Bytes = tp.sizeOf(w.path, now)
 			out = append(out, x)
 		}
 	}
 	tp.pub.Store(&out)
+}
+
+// stillIdle looks again just before a removal: a thread may have started
+// there while the sweep ran.
+func (tp *Temps) stillIdle(path, branch string) bool {
+	if tp.Cwds == nil || slices.ContainsFunc(tp.Cwds(), func(c string) bool { return inside(c, path) }) {
+		return false
+	}
+	if tp.Threads != nil {
+		for _, th := range tp.Threads() {
+			if (th.Cwd != "" && inside(th.Cwd, path)) || (branch != "" && slices.Contains(th.Branches, branch)) {
+				if !th.Asleep || th.LiveCLI {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func short(h string) string {
+	if len(h) > 7 {
+		return h[:7]
+	}
+	return h
+}
+
+// removedLine is the thread's line about a removed worktree.
+func removedLine(w wtree, n uint64) string {
+	on := "its commit is on the remote"
+	if w.branch != "" {
+		on = "the branch " + w.branch + " is kept and on the remote"
+	}
+	return fmt.Sprintf("Fyr removed the worktree %s (%s): nothing was uncommitted and %s. Fyr makes it again when this thread works there; to keep a worktree, run git worktree lock.", w.path, mb(n), on)
+}
+
+// sizeOf caches a worktree's size for an hour: node_modules make a walk slow.
+func (tp *Temps) sizeOf(p string, now time.Time) uint64 {
+	if c, ok := tp.sizes[p]; ok && now.Sub(c.at) < time.Hour {
+		return c.n
+	}
+	if tp.sizes == nil {
+		tp.sizes = map[string]sized{}
+	}
+	n := size(p)
+	tp.sizes[p] = sized{n, now}
+	return n
+}
+
+type sized struct {
+	n  uint64
+	at time.Time
 }
 
 // Remove is the owner's Remove of a listed worktree, when it is still safe.
@@ -181,65 +336,29 @@ func (tp *Temps) Remove(path string) error {
 	if ok, why := worktreeSafe(path); !ok {
 		return fmt.Errorf("kept: %s", why)
 	}
-	cmd := exec.Command("git", "-C", path, "worktree", "remove", path)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git worktree remove: %s", strings.TrimSpace(string(out)))
+	common := gitOut(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	var w *wtree
+	for _, c := range worktreesOf(path) {
+		if c.path == path && !c.main {
+			w = &c
+			break
+		}
+	}
+	if w == nil || common == "" {
+		return errors.New("not a linked worktree")
+	}
+	if w.locked {
+		return errors.New("kept: locked")
+	}
+	if err := tp.removeWorktree(*w, common, x.Thread, time.Now()); err != nil {
+		return err
 	}
 	tp.logf("leftovers: removed the worktree %s of %s", path, x.Thread)
-	tp.mu.Lock()
+	tp.wmu.Lock() // a sweep that runs stores its own list
 	v := slices.DeleteFunc(tp.View(), func(t Temp) bool { return t.Path == path })
 	tp.pub.Store(&v)
-	tp.mu.Unlock()
+	tp.wmu.Unlock()
 	return nil
-}
-
-type wtree struct {
-	path, branch string
-	main         bool
-}
-
-func gitOut(dir string, args ...string) string {
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func worktreesOf(dir string) []wtree {
-	var out []wtree
-	for i, blk := range strings.Split(gitOut(dir, "worktree", "list", "--porcelain"), "\n\n") {
-		var w wtree
-		for _, ln := range strings.Split(blk, "\n") {
-			if p, ok := strings.CutPrefix(ln, "worktree "); ok {
-				w.path = p
-			}
-			if b, ok := strings.CutPrefix(ln, "branch refs/heads/"); ok {
-				w.branch = b
-			}
-		}
-		w.main = i == 0
-		if w.path != "" {
-			out = append(out, w)
-		}
-	}
-	return out
-}
-
-// worktreeSafe: no uncommitted or untracked file, and HEAD on a remote branch.
-func worktreeSafe(path string) (bool, string) {
-	st, err := exec.Command("git", "-C", path, "status", "--porcelain").Output()
-	if err != nil {
-		return false, "not a git worktree"
-	}
-	if strings.TrimSpace(string(st)) != "" {
-		return false, fmt.Sprintf("%d uncommitted files", len(strings.Split(strings.TrimSpace(string(st)), "\n")))
-	}
-	if gitOut(path, "branch", "-r", "--contains", "HEAD") == "" {
-		n := gitOut(path, "rev-list", "--count", "HEAD", "--not", "--remotes")
-		return false, n + " commits not pushed"
-	}
-	return true, ""
 }
 
 func size(p string) uint64 {

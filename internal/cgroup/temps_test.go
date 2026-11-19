@@ -120,8 +120,9 @@ func TestV176CWorktreesOfSettledThreadsAreListedOnlyAPushedCleanOneCanGo(t *test
 	if x := got[ahead]; x.Safe || !strings.Contains(x.Why, "not pushed") {
 		t.Fatalf("ahead: %+v", x)
 	}
-	if _, ok := got[other]; ok {
-		t.Fatal("a worktree of no settled thread listed")
+	// V0.worktree-sweep: a worktree no thread works in is listed too, with no thread.
+	if x, ok := got[other]; !ok || x.Thread != "" || !x.Safe {
+		t.Fatalf("other: %+v", x)
 	}
 	// Never removed by a sweep; the owner's Remove only when it is still safe.
 	for _, p := range []string{pushed, dirty, ahead} {
@@ -132,7 +133,7 @@ func TestV176CWorktreesOfSettledThreadsAreListedOnlyAPushedCleanOneCanGo(t *test
 	if err := tp.Remove(dirty); err == nil {
 		t.Fatal("a dirty worktree removed")
 	}
-	if err := tp.Remove(other); err == nil {
+	if err := tp.Remove(filepath.Join(root, "nowhere")); err == nil {
 		t.Fatal("an unlisted path removed")
 	}
 	if err := tp.Remove(pushed); err != nil {

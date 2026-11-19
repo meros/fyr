@@ -30,7 +30,7 @@ export interface Leftover {
   /** when Fyr ends it, as the policy stands now; absent while it holds (a run, a keep, a timeout) */
   endsAt?: string;
 }
-/** A settled thread's worktree (GET /api/load `temps`). */
+/** A worktree nobody works in (GET /api/load `temps`; V0.176, V0.worktree-sweep). */
 export interface Temp {
   path: string;
   kind: "worktree";
@@ -38,6 +38,8 @@ export interface Temp {
   bytes: number;
   safe: boolean;
   why?: string;
+  /** V0.worktree-sweep: when Fyr removes it, unless someone works in it first */
+  removeAt?: string;
 }
 
 /** "1.9 GB", "60 MB": 1e9 and 1e6, as the rest of the load. */
@@ -141,12 +143,20 @@ export interface TempRow {
   canRemove: boolean;
 }
 
-/** Settings' rows of the settled threads' worktrees: what holds one, or "pushed and clean". */
-export function tempRows(h: HostLoad, lookup: Lookup): TempRow[] {
+/** Settings' rows of the worktrees nobody works in: what holds one, or "pushed and clean" and when Fyr removes it. */
+export function tempRows(h: HostLoad, lookup: Lookup, now: number): TempRow[] {
   return (h.temps ?? []).map((t) => ({
     path: t.path,
     title: t.path,
-    desc: [t.thread ? lookup(t.thread).title : "", sizeText(t.bytes), t.safe ? "pushed and clean" : `kept: ${t.why ?? "not safe to remove"}`].filter(Boolean).join(" · "),
+    desc: [
+      t.thread ? lookup(t.thread).title : "",
+      sizeText(t.bytes),
+      t.safe ? "pushed and clean" : `kept: ${t.why ?? "not safe to remove"}`,
+      t.safe && t.why ? t.why : "",
+      t.safe && t.removeAt ? `Fyr removes it in ${inText(t.removeAt, now)}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
     thread: t.thread ?? null,
     canRemove: t.safe,
   }));

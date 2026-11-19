@@ -100,6 +100,18 @@ func (e *Engine) LeftoversEnded(thread string, items []LeftoverItem, why string)
 	}
 }
 
+// WorktreeRemoved leaves V0.worktree-sweep's line on the thread whose
+// worktree Fyr removed; the agent hears it at its next run.
+func (e *Engine) WorktreeRemoved(thread, line string) {
+	if known, _, _ := e.LeftoverThread(thread); !known {
+		return
+	}
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindLeftoverEnded, Thread: thread,
+		Args: core.LeftoverEndedArgs{Text: line}}); err != nil {
+		log.Printf("worktree removed %s: %v", thread, err)
+	}
+}
+
 // leftoverTools is keep_process: the agent declares a process it started
 // that must outlive its run (a dev server the owner asked for, a tunnel).
 func (e *Engine) leftoverTools(s *mcp.Server) {

@@ -1345,8 +1345,8 @@ function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps
   );
 }
 
-/** V0.176: the processes threads left running on this host (End now, Keep for a day) and the settled threads'
- *  worktrees (Remove when pushed and clean). Absent when there is nothing. The rail's count lands here (sub
+/** V0.176: the processes threads left running on this host (End now, Keep for a day) and the worktrees nobody
+ *  works in (Remove when pushed and clean; V0.worktree-sweep: Fyr removes them by itself). Absent when there is nothing. The rail's count lands here (sub
  *  "leftovers"). Desktop and phone share it. */
 function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; api: SettingsProps["api"]; focus?: string }) {
   const env = useSet();
@@ -1361,7 +1361,7 @@ function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; ap
     if (focus === "leftovers") document.querySelector(".lftg")?.scrollIntoView({ block: "start" });
   }, [focus]);
   const rows = leftoverRows(h, und.lookup, und.now());
-  const temps = tempRows(h, und.lookup);
+  const temps = tempRows(h, und.lookup, und.now());
   return (
     <>
       {rows.length > 0 && (
@@ -1395,7 +1395,7 @@ function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; ap
         </Group>
       )}
       {temps.length > 0 && (
-        <Group label="Worktrees of settled threads" title="Worktrees of settled threads" foot="Fyr removes a settled thread's scratch folder and a layout run's browser profile by itself. A worktree stays (the thread may wake in it): Remove removes one whose work is committed and pushed; one with uncommitted or unpushed work is only shown.">
+        <Group label="Worktrees nobody works in" title="Worktrees nobody works in" foot="Fyr removes a worktree a day after its last commit or checkout when nothing in it is uncommitted and its commit is on the remote (a branch or a pull request), and makes it again when a thread works there; the branch stays. Remove does that now. One with uncommitted or unpushed work, or locked with git worktree lock, stays.">
           {temps.map((t) => (
             <Row
               key={t.path}
