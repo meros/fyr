@@ -1949,10 +1949,29 @@ export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Dat
       memoryStall: mode === "paused" ? "critical" : h.memoryStall,
       undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 },
       heavyAdded: [{ pattern: "python3? build_admin_ny\\.py", kind: "build", at: new Date(now - 24 * 3600_000).toISOString(), refused: 0, learned: true }],
+      rerun: { classes: ["make test"] }, // V0.rerun-classes
     },
     ...rest,
   ];
 }
+/** V0.rerun-classes: host.rerunClasses on the mock host's load, with the host's refusals. */
+export function mockRerunCommand(h: HostLoad, args: Record<string, unknown>): { ok: boolean; error?: string; result?: Record<string, unknown> } {
+  const list = h.rerun?.classes ?? [];
+  const add = typeof args.add === "string" ? args.add.trim().split(/\s+/).join(" ") : "";
+  const remove = typeof args.remove === "string" ? args.remove : "";
+  if (add && !remove) {
+    if (add.length > 200) return { ok: false, error: "a class is a command of 1 to 200 characters, e.g. make test" };
+    h.rerun = { classes: list.includes(add) ? list : [...list, add] };
+    return { ok: true, result: { add } };
+  }
+  if (remove && !add) {
+    if (!list.includes(remove)) return { ok: false, error: "no such rerunnable class" };
+    h.rerun = { classes: list.filter((c) => c !== remove) };
+    return { ok: true, result: { remove } };
+  }
+  return { ok: false, error: "give add or remove: one class of 1 to 200 characters" };
+}
+
 /** V0.164: host.heavyRemove and host.undeclaredSettings on the mock host's load, with the host's refusals (an unknown
  *  pattern, a threshold out of range). */
 export function mockUndeclaredCommand(h: HostLoad, action: string, args: Record<string, unknown>): { ok: boolean; error?: string; result?: Record<string, unknown> } {

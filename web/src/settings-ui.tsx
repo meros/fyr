@@ -22,7 +22,7 @@ import { budgetLine, jobLines, type HostLoad } from "./load.ts";
 import { useUnd } from "./undeclared-ctx.tsx";
 import { UndIcon } from "./undeclared-ctx.tsx";
 import { GuardChart } from "./guard-ui.tsx";
-import { guardLog, guardSummary } from "./guard.ts";
+import { guardLog, guardSummary, rerunRows } from "./guard.ts";
 import { clockTime } from "./format.ts";
 import { leftoverRows, tempRows } from "./leftovers.ts";
 import { addedRows, parseThreshold, thresholdError, thresholdRows, undeclaredRows } from "./undeclared.ts";
@@ -1503,6 +1503,33 @@ function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: Se
               }
             />
           ))}
+        </Group>
+      )}
+      {h.rerun && (
+        <Group
+          label="Kill and rerun"
+          title="Kill and rerun"
+          foot="When memory runs short, Fyr may kill a job of one of these instead of freezing it: when it was frozen for 2 minutes and could not resume, or when it usually ends within 5 minutes. The agent is told to run it again, and Fyr admits the rerun once memory has recovered and the job fits. A command killed 3 times in an hour is frozen instead for the rest of that hour. Nothing is here unless you add it: add only commands that are safe to run twice, such as tests, lint or a type check, never a dev server."
+        >
+          {rerunRows(h, clockTime).map((r) => (
+            <Row
+              key={r.class}
+              title={r.class}
+              mono
+              desc={r.line}
+              error={err?.key === `r:${r.class}` ? err.text : null}
+              end={
+                <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`r:${r.class}`, "host.rerunClasses", { remove: r.class })}>
+                  Remove
+                </button>
+              }
+            />
+          ))}
+          {!env.readOnly && (
+            <Row error={err?.key === "r:add" ? err.text : null} class="fieldrow">
+              <SaveField value="" label="Command to rerun" placeholder="make test" mono clears alwaysButton button="Add" onError={fail("r:add")} check={(v) => (v.trim() ? null : "Write the command, e.g. make test.")} onSave={(v) => run("host.rerunClasses", { add: v.trim() })} />
+            </Row>
+          )}
         </Group>
       )}
       {th && (

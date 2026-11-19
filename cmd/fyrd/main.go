@@ -283,9 +283,15 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	usettings.Load()
 	detector := &cgroup.Detector{}
 	episodes := &cgroup.Episodes{KV: h.st}
+	// V0.rerun-classes: the classes the owner marked rerunnable on this host.
+	rerun := &cgroup.RerunClasses{KV: h.st}
+	rerun.Load()
 	mgr.SetOnBash(func(c agent.BashCall) string {
 		groups.Bash(c.Thread, c.Command)
 		class, text := heavyCmds.Match(c.Command)
+		if class == "" && eng.RerunWaiting(c.Thread) {
+			class = rerun.Match("", c.Command) // a killed undeclared job's rerun is admitted too
+		}
 		jobs.Saw(c.Thread, class)
 		groups.Seen(c.Thread, text)
 		if cfg.HeavyGate == "off" {
@@ -294,7 +300,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return eng.HeavyGate(engine.HeavyCall{Thread: c.Thread, Class: class, ToolUse: c.ToolUse, Background: c.Background || heavy.Detached(c.Command), Subagent: c.Subagent})
 	}, func(thread, toolUse string) { go eng.HeavyDone(thread, toolUse) }) // never on the stream's goroutine: it may grant
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
-		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject} // V0.164
+		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject, // V0.164
+		Rerun: rerun}
 	// V0.164: an ended episode is kept, teaches its command, and ends its frozen group.
 	detector.OnEnd = func(ep cgroup.Episode) {
 		ep.Project = eng.ThreadProject(ep.Thread)
@@ -391,6 +398,25 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		sd.SlotAIMD = &slots.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json")}
 	}
 	eng.SlotDeps = sd
+	// V0.rerun-classes: kill and rerun, for the classes the owner marked.
+	eng.RerunDeps = engine.RerunDeps{RerunMatch: rerun.Match, RerunSet: rerun.Set, JobKill: groups.KillJob,
+		RerunWall: func(thread string) (time.Duration, bool) {
+			hd, ok := pool.Holding(thread)
+			if !ok {
+				return 0, false
+			}
+			l, ok := jobs.Learned(jobs.ClassOf(thread, hd.Kind))
+			if !ok || len(l.Walls) == 0 {
+				return 0, false
+			}
+			return time.Duration(l.WallP90() * float64(time.Second)), true
+		},
+		RerunRaise: func(thread string) {
+			if hd, ok := pool.Holding(thread); ok {
+				jobs.RaisePeak(jobs.ClassOf(thread, hd.Kind), 1.2)
+			}
+		},
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

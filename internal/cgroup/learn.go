@@ -130,6 +130,29 @@ func (j *Jobs) Learned(class string) (Learned, bool) {
 	return l, ok
 }
 
+// RaisePeak multiplies class's learned memory peak by f (V0.rerun-classes,
+// decision 0036 (F): ×1.2 after Fyr killed a job of it to free memory, as
+// VPA raises an estimate after an overrun), so its rerun is admitted only
+// where the larger peak fits. False when the class has no peak yet.
+func (j *Jobs) RaisePeak(class string, f float64) bool {
+	if j == nil {
+		return false
+	}
+	j.mu.Lock()
+	j.load()
+	l, ok := j.table[class]
+	if !ok || l.Peak == 0 {
+		j.mu.Unlock()
+		return false
+	}
+	l.Peak = uint64(float64(l.Peak) * f)
+	j.table[class] = l
+	raw := j.tableRaw()
+	j.mu.Unlock()
+	j.storeTable(raw)
+	return true
+}
+
 // Reset forgets class (the owner's Reset); false when it was not learned.
 func (j *Jobs) Reset(class string) bool {
 	j.mu.Lock()

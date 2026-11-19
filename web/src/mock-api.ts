@@ -4,7 +4,7 @@
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQueueLoad, mockQuota } from "./mock.ts";
-import { mockLeftoverCommand, mockUndeclaredCommand } from "./mock.ts";
+import { mockLeftoverCommand, mockRerunCommand, mockUndeclaredCommand } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { withLongValues } from "./mock-long.ts";
 import { decodeHosts } from "./hosts.ts";
@@ -215,6 +215,12 @@ export function createMockApi(scenario: string): Api {
         const h = load.find((x) => x.host === (hn || load[0]?.host));
         if (!h) return { ok: false, error: `this front follows no host ${hn}` };
         return mockUndeclaredCommand(h, action, { ...(args ?? {}), host: h.host });
+      }
+      if (action === "host.rerunClasses") {
+        // V0.rerun-classes: the owner's rerunnable classes, as the host answers them.
+        const h = load.find((x) => x.host === (hn || load[0]?.host));
+        if (!h) return { ok: false, error: `this front follows no host ${hn}` };
+        return mockRerunCommand(h, args ?? {});
       }
       // V0.176: the owner's End, Keep and Remove of leftovers, as the host answers them.
       if (action === "host.leftoverEnd" || action === "host.leftoverKeep" || action === "host.tempRemove") {
