@@ -1128,11 +1128,14 @@ section("V0.native-feel sheet drag", async ({ send, evaluate, openScreen, tapCen
   await lift();
   await waitFor(`document.querySelector('.m-sheet').getAnimations().length === 0`, { what: "the sheet to return" });
   check(Math.abs(await y()) < 0.5, "V0.native-feel: a short drag does not return the sheet");
+  // The leaving copy lives for one short animation: on a loaded machine it can be gone again between two questions to
+  // the page. So the page itself notes that it came, and the check reads the note.
+  await evaluate(`(() => { window.__ghostSeen = false; new MutationObserver((ms, o) => { if (document.querySelector('.m-scrim[data-ghost]')) { window.__ghostSeen = true; o.disconnect(); } }).observe(document.body, { childList: true, subtree: true }); })()`);
   await drag(box.h * 0.7);
   await new Promise((r) => setTimeout(r, 160));
   await lift();
   await waitFor(`!document.querySelector('.m-scrim:not([data-ghost])')`, { what: "a long drag to close the sheet" });
-  check(await evaluate(`!!document.querySelector('.m-scrim[data-ghost]')`), "V0.native-feel: the sheet vanished without leaving");
+  check(await evaluate(`window.__ghostSeen`), "V0.native-feel: the sheet vanished without leaving");
   await waitFor(`!document.querySelector('.m-scrim')`, { what: "the leaving sheet to go" });
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
 });
