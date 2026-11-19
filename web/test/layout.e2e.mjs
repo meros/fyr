@@ -68,6 +68,8 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}`;
+// V0.automation-folds: unfold the named settings groups (each folds to its header; some start folded).
+const unfold = (...labels) => `(() => { for (const l of ${JSON.stringify(labels)}) document.querySelector('section[aria-label="' + l + '"] .sg-fb[aria-expanded="false"]')?.click(); return true; })()`;
 
 // macOS has no google-chrome on PATH; use the app bundle's binary.
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -271,7 +273,7 @@ const SCREENS = [
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings [role=radiogroup][aria-label=Kind]')" },
-  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 4 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] button').length === 3", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", storage: { "fyr.settingsFold": '{":updates":true,":jobs":true}' }, ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 4 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sg-c button').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
@@ -828,7 +830,8 @@ function harness(t) {
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: true });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     const ready = s.ready ?? "!!document.querySelector('.m-app')";
-    await navigate(`${origin}/${s.url}`, ready);
+    // With storage the first load only has to reach the origin: what it is ready for may need that storage.
+    await navigate(`${origin}/${s.url}`, s.storage ? "!!document.body" : ready);
     if (s.storage) {
       await evaluate(`(() => { const s = ${JSON.stringify(s.storage)}; for (const k in s) localStorage.setItem(k, s[k]); })()`);
       await navigate(`${origin}/${s.url}`, ready);
@@ -2207,6 +2210,11 @@ section('V0.188 guard', async (h) => {
     await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Settings').click()`);
     await waitFor("[...document.querySelectorAll('button')].some((b) => b.textContent.startsWith('Automation'))", { what: "Settings' pages" });
     await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('Automation')).click()`);
+    await waitFor(`!!document.querySelector('section[aria-label="Memory guard"]')`, { what: "the guard group" });
+    // V0.automation-folds: the guard starts folded, its header says what it did.
+    const g = await evaluate(`(() => { const s = document.querySelector('section[aria-label="Memory guard"]'); return { shut: !s.querySelector('.sg-c'), sum: s.querySelector('.sg-sum')?.textContent ?? '' }; })()`);
+    check(g.shut && g.sum.length > 0, `V0.automation-folds desktop: the guard is not folded with a summary (${JSON.stringify(g)})`);
+    await evaluate(unfold("Memory guard"));
     await waitFor("!!document.querySelector('[data-guard-chart]')", { what: "the guard chart" });
     await settle();
     ok(await evaluate(read), "desktop");
@@ -2216,7 +2224,9 @@ section('V0.188 guard', async (h) => {
   try {
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused&settings=automation`, "!!document.querySelector('[data-guard-chart]')");
+    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused&settings=automation`, `!!document.querySelector('section[aria-label="Memory guard"]')`);
+    await evaluate(unfold("Memory guard"));
+    await waitFor("!!document.querySelector('[data-guard-chart]')", { what: "the guard chart" });
     await settle();
     ok(await evaluate(read), "phone");
     await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused`, "!!document.querySelector('.m-seg')");
@@ -2327,6 +2337,7 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
     await waitFor(`!document.querySelector('.chneed.textask')`, { what: "Not a question clears the line" });
     // Settings → Automation: what runs, what Fyr learned, the thresholds; nothing asks for a decision.
     await navigate(`${origin}/?mock=rail&undeclared=1&dialog=settings&page=automation`, `!!document.querySelector('.dlg section[aria-label="Undeclared now"]')`);
+    await evaluate(unfold("Learned heavy jobs", "When a thread counts as heavy"));
     await settle();
     const st = await evaluate(`(() => { const d = document.querySelector('.dlg'); const sec = (l) => d.querySelector('section[aria-label="' + l + '"]');
       const rows = (l) => [...(sec(l)?.querySelectorAll('.sr') ?? [])];
@@ -2531,6 +2542,7 @@ for (const dark of [false, true]) section(`V0.176 desktop${dark ? " dark" : ""}`
     await evaluate(`document.querySelector('.rail .rlft').dispatchEvent(new MouseEvent('mouseleave'))`);
     await evaluate(`document.querySelector('.rail .rlft').click()`);
     await waitFor(`!!document.querySelector('.dlg section[aria-label="Leftover processes"]')`, { what: "Settings at the leftovers" });
+    await evaluate(unfold("Worktrees nobody works in"));
     await settle();
     const st = await evaluate(`(() => { const d = document.querySelector('.dlg'), sec = d.querySelector('section[aria-label="Leftover processes"]'), wt = d.querySelector('section[aria-label="Worktrees nobody works in"]');
       const r = sec.getBoundingClientRect(), dr = d.querySelector('.stp').getBoundingClientRect();

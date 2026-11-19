@@ -1309,7 +1309,7 @@ function AutomationPage({ d, hasDeploy, api, focus }: { d: Data; hasDeploy: bool
       ) : d.repos === null ? (
         <Skeleton rows={2} />
       ) : (
-        <Group title="Merge without asking" label="Auto-merge" foot="In a repo that is on, an agent's merge ask merges once the checks pass on the head it asked for. A repo shows here once a thread has a pull request in it.">
+        <Group title="Merge without asking" label="Auto-merge" fold={{ id: `${d.host.name}:automerge`, open: true, summary: `${repos.filter((r) => r.on).length} of ${repos.length} repos on` }} foot="In a repo that is on, an agent's merge ask merges once the checks pass on the head it asked for. A repo shows here once a thread has a pull request in it.">
           {repos.length > 8 && (
             <div class="sr srch">
               <input class="pq" type="search" placeholder={`Search ${repos.length} repos`} aria-label="Search repos" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
@@ -1363,7 +1363,7 @@ function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; ap
   return (
     <>
       {rows.length > 0 && (
-        <Group class="lftg" label="Leftover processes" title="Leftover processes" foot="What threads left running outside their agent: a browser, a server, a port-forward. Fyr ends a thread's leftovers 30 min after its run ends and all of them when it settles; one the agent kept, or one under timeout, stays until then. End ends one now; Keep holds it for a day, through a settle too. Each end leaves a line on its thread.">
+        <Group class="lftg" label="Leftover processes" title="Leftover processes" fold={{ id: `${host}:leftovers`, open: true, force: focus === "leftovers", summary: `${rows.length} running` }} foot="What threads left running outside their agent: a browser, a server, a port-forward. Fyr ends a thread's leftovers 30 min after its run ends and all of them when it settles; one the agent kept, or one under timeout, stays until then. End ends one now; Keep holds it for a day, through a settle too. Each end leaves a line on its thread.">
           {rows.map((r) => (
             <Row
               key={r.id}
@@ -1393,7 +1393,7 @@ function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; ap
         </Group>
       )}
       {temps.length > 0 && (
-        <Group label="Worktrees nobody works in" title="Worktrees nobody works in" foot="Fyr removes a worktree a day after its last commit or checkout when nothing in it is uncommitted and its commit is on the remote (a branch or a pull request), and makes it again when a thread works there; the branch stays. Remove does that now. One with uncommitted or unpushed work, or locked with git worktree lock, stays.">
+        <Group label="Worktrees nobody works in" title="Worktrees nobody works in" fold={{ id: `${host}:worktrees`, open: false, summary: `${temps.length} · Fyr removes them by itself` }} foot="Fyr removes a worktree a day after its last commit or checkout when nothing in it is uncommitted and its commit is on the remote (a branch or a pull request), and makes it again when a thread works there; the branch stays. Remove does that now. One with uncommitted or unpushed work, or locked with git worktree lock, stays.">
           {temps.map((t) => (
             <Row
               key={t.path}
@@ -1443,7 +1443,7 @@ function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: Se
   return (
     <>
       {rows.length > 0 && (
-        <Group label="Undeclared now" title="Undeclared now" foot="Threads that use clearly more than their idle level in work Fyr did not recognise as a heavy job. There is nothing to do: Fyr counts the use against this host's heavy jobs, so admitted jobs wait instead of overloading it, and learns a command it sees again. Only when memory is short does Fyr pause the newest one; nothing is killed.">
+        <Group label="Undeclared now" title="Undeclared now" fold={{ id: `${host}:undeclared`, open: true, summary: `${rows.length} ${rows.length === 1 ? "thread" : "threads"}` }} foot="Threads that use clearly more than their idle level in work Fyr did not recognise as a heavy job. There is nothing to do: Fyr counts the use against this host's heavy jobs, so admitted jobs wait instead of overloading it, and learns a command it sees again. Only when memory is short does Fyr pause the newest one; nothing is killed.">
           {rows.map((r) => (
             <Row
               key={r.thread}
@@ -1473,6 +1473,7 @@ function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: Se
         <Group
           label="Memory guard"
           title="Memory guard"
+          fold={{ id: `${host}:guard`, open: false, summary: guardSummary(h.slots.guard, now) }}
           foot="What Fyr did when this host's memory ran short: the shaded band is the time memory was short, a hatched stretch is work Fyr held frozen (never killed), and the number is how many times in a row it froze that thread. Frozen work runs again once memory has been fine for 30 s; one long episode is paused at most 8 times, 60 s apart."
         >
           <Row title="Now" desc={guardSummary(h.slots.guard, now)} />
@@ -1485,7 +1486,7 @@ function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: Se
         </Group>
       )}
       {added.length > 0 && (
-        <Group label="Learned heavy jobs" title="Learned heavy jobs" foot="Besides the built-in ones (make test, go test ./..., playwright, nix build and the like). Fyr adds a command here after seeing it run heavy three times, and admits it when there is room. Remove one and Fyr does not learn it again.">
+        <Group label="Learned heavy jobs" title="Learned heavy jobs" fold={{ id: `${host}:learned`, open: false, summary: `${added.length} ${added.length === 1 ? "command" : "commands"}` }} foot="Besides the built-in ones (make test, go test ./..., playwright, nix build and the like). Fyr adds a command here after seeing it run heavy three times, and admits it when there is room. Remove one and Fyr does not learn it again.">
           {added.map((a) => (
             <Row
               key={a.pattern}
@@ -1503,7 +1504,7 @@ function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: Se
         </Group>
       )}
       {th && (
-        <Group label="When a thread counts as heavy" title="When a thread counts as heavy" foot="A thread's idle level is what its agent uses between jobs (the CLI and the servers it keeps running), learned per thread.">
+        <Group label="When a thread counts as heavy" title="When a thread counts as heavy" fold={{ id: `${host}:thresholds`, open: false }} foot="A thread's idle level is what its agent uses between jobs (the CLI and the servers it keeps running), learned per thread.">
           {th.map((r) => (
             <Row
               key={r.key}
@@ -1549,7 +1550,7 @@ function MeasuredJobs({ h, host, api, env }: { h: HostLoad; host: string; api: S
     if (r.ok) refreshLoad();
   };
   return (
-    <Group title="Heavy jobs" label="Heavy jobs" foot="What each kind of heavy job used the last time it ran, measured from its thread: its share of the CPU and the memory this host gives its agents. A job starts when both fit; a CPU-heavy job runs beside a memory-heavy one. Until three runs are learned, a job counts as half the host.">
+    <Group title="Heavy jobs" label="Heavy jobs" fold={{ id: `${host}:jobs`, open: false, summary: budget || `${lines.length} measured` }} foot="What each kind of heavy job used the last time it ran, measured from its thread: its share of the CPU and the memory this host gives its agents. A job starts when both fit; a CPU-heavy job runs beside a memory-heavy one. Until three runs are learned, a job counts as half the host.">
       {budget && <Row title="Budget" desc={`${budget}${h.slots?.budgetWhy ? ` · ${h.slots.budgetWhy}` : ""}`} />}
       {!lines.length && <Empty text="No heavy job measured yet. A job is measured while it is admitted." />}
       {lines.slice(0, 12).map((l) => (
@@ -1583,7 +1584,7 @@ function UpdatesGroup({ d }: { d: Data }) {
   const list = all ? v.updates : v.updates.slice(0, 8);
   const press = v.paused ? "Back to release" : v.bad?.commit ? "Update now · retry" : "Update now"; // V0.host-updates: the press clears the bad mark
   return (
-    <Group title="Updates" label="Updates" foot={v.bad?.commit ? `Release ${v.bad.commit.slice(0, 7)} is held back here (${v.bad.why}); Fyr waits for a newer one. Update now · retry tries it again.` : undefined}>
+    <Group title="Updates" label="Updates" fold={{ id: `${d.host.name}:updates`, open: !!v.bad?.commit, summary: updateState(v) }} foot={v.bad?.commit ? `Release ${v.bad.commit.slice(0, 7)} is held back here (${v.bad.why}); Fyr waits for a newer one. Update now · retry tries it again.` : undefined}>
       <Row
         title={updateState(v)}
         error={err}
@@ -1631,7 +1632,7 @@ function GitHubGroup({ d }: { d: Data }) {
   const s = githubState(v);
   const pause = githubPause(v);
   return (
-    <Group title="GitHub API" label="GitHub API" foot="Every agent, every host's Fyr and your own gh share this limit. Fyr reads it every 10 minutes; a call answered 304 costs nothing.">
+    <Group title="GitHub API" label="GitHub API" fold={{ id: `${d.host.name}:github`, open: false, force: s.low, summary: s.title }} foot="Every agent, every host's Fyr and your own gh share this limit. Fyr reads it every 10 minutes; a call answered 304 costs nothing.">
       <Row title={s.title} desc={s.desc} class={s.low ? "bad" : undefined} />
       {pause && <Row title={pause.title} desc={pause.desc} />}
       {githubRows(v).map((r) => (
