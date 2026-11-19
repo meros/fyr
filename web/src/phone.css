@@ -62,6 +62,9 @@
 .m-sec .n{font:400 13px/16px var(--mono);font-variant-numeric:tabular-nums;flex:none}
 .m-sec .h{margin-left:auto;font-size:12px;max-width:62%}
 .m-sec.hasbtn{height:56px}
+/* V0.section-bands on the phone: the header keeps its 44 px for the finger, and the band is drawn inside it */
+.m-sec:has(>.sti:not(.none)){position:relative;isolation:isolate;padding:10px 10px 0}
+.m-sec:has(>.sti:not(.none))::before{content:"";position:absolute;z-index:-1;inset:10px 0 0;border-radius:10px;background:var(--sunken)}
 .m-sbtn{margin-left:auto;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;font:500 13px/16px var(--ui);color:var(--ink)}
 /* V0.your-move: the phone's type is a step larger, and the press is a finger's size. */
 .m-list .ngh{padding:8px 8px 2px;font-size:12px;line-height:16px}
