@@ -1803,8 +1803,9 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .lclist li .lcval{min-width:0;overflow-wrap:anywhere}
 .lclist li.hot .lcval,.lcsec dd.hot .lcval{color:var(--signal-ink);font-weight:600}
 .lcsec h4{margin:0;font:600 11px/14px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint)}
-.lcsec dl{margin:0;display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:12px;row-gap:3px}
-.lcsec dt{font:400 12px/17px var(--ui);color:var(--ink-muted);white-space:nowrap}
+.lcsec dl{margin:0;display:grid;grid-template-columns:fit-content(45%) minmax(0,1fr);column-gap:12px;row-gap:3px}
+/* a label wraps only past 45 % of the card (a provider's long window name); a short one stays on one line */
+.lcsec dt{font:400 12px/17px var(--ui);color:var(--ink-muted);min-width:0;overflow-wrap:anywhere}
 .lcsec dd{margin:0;display:flex;flex-wrap:wrap;column-gap:8px;min-width:0;font:400 12px/17px var(--ui)}
 .lcval{color:var(--ink);font-variant-numeric:tabular-nums}
 .lcn{color:var(--ink-faint);font-variant-numeric:tabular-nums}
