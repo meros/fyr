@@ -117,6 +117,36 @@ func TestV130ServeSocketMintsATailnetSession(t *testing.T) {
 	}
 }
 
+// V0.one-device-per-browser (1), (2): another install's probe of
+// /.well-known/fyr and a file of the client make no device; the requests a page
+// sends together without a cookie make one.
+func TestServeSocketMakesOneDevicePerBrowser(t *testing.T) {
+	f, st := authFront(t)
+	h := httpguard.ViaServe(f.Handler())
+	get := func(path, agent string) *http.Response {
+		r := httptest.NewRequest("GET", "http://desk.tail.ts.net"+path, nil)
+		r.Host = "desk.tail.ts.net"
+		r.Header.Set("Tailscale-User-Login", "me@example.com")
+		r.Header.Set("User-Agent", agent)
+		return serveOne(h, r)
+	}
+	for i := 0; i < 5; i++ {
+		for _, p := range []string{"/.well-known/fyr", "/assets/app.js"} {
+			if resp := get(p, "Go-http-client/2.0"); sessionCookie(resp) != nil {
+				t.Fatalf("%s set a session", p)
+			}
+		}
+	}
+	if n := len(st.Devices()); n != 0 {
+		t.Fatalf("%d devices from requests that need no session", n)
+	}
+	// Without tailscaled (this front) the node is unknown: each such request
+	// still gets its own session, as before.
+	if resp := get("/api/state", "Go-http-client/2.0"); resp.StatusCode != 200 || sessionCookie(resp) == nil {
+		t.Fatalf("an API request through Serve: %d", resp.StatusCode)
+	}
+}
+
 // SPEC V0.130 (3), (5): the same header over TCP mints nothing; in observe
 // mode the request is still served (and logged).
 func TestV130HeaderOverTCPMintsNothing(t *testing.T) {

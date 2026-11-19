@@ -5071,8 +5071,8 @@ try {
 
 // SPEC 0.5 V0.192: the current thread punches through the filters: they stay as they are, its one row is in the list,
 // tagged, in its section, and it leaves with the next thread. A locked quiet thread stays out, behind its gate.
-// V0.207: the list keeps its place while the owner's hand is on it, a new Needs-you row still comes in at once, the row
-// under the hand stays at its height, and the open row stays where it was until the owner leaves it.
+// V0.207, V0.open-row-only: rows move at once, also with the owner's hand on the list; the row under the hand stays at
+// its height, and the open row stays where it was until the owner opens another.
 for (const phone of [false, true]) section(`V0.207 still list ${phone ? "phone" : "desktop"}`, async (h) => {
   const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
   const ctx = `V0.207 still list ${phone ? "phone" : "desktop"}`;
@@ -5100,10 +5100,11 @@ try {
   else await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
   await settle();
   const before = await evaluate(ROWS), top = await evaluate(TOP);
-  // 1. A row that starts working keeps its place.
+  // 1. V0.open-row-only: a row that starts working moves at once, with the hand on the list.
   await evaluate(`window.__fyrThread(${JSON.stringify(mover)}, { running: true, runStartedAt: new Date().toISOString(), attention: { state: "working", section: "working", reason: "" } })`);
-  await settle();
-  check(JSON.stringify(await evaluate(ROWS)) === JSON.stringify(before), `${ctx}: a row moved during the hold`);
+  await waitFor(`${IN("working")}.includes(${JSON.stringify(mover)})`, { soft: true });
+  check((await evaluate(IN("working"))).includes(mover), `${ctx}: the row waited for the hand to leave`);
+  check(before.includes(mover) && !(await evaluate(IN("seen"))).includes(mover), `${ctx}: the row that started working stayed in Seen`);
   // 2. A new Needs-you row comes in at once, and the row under the hand stays at its height.
   await patch(flag, "asking", "needs");
   await waitFor(`${IN("needs")}.includes(${JSON.stringify(flag)})`, { soft: true });
@@ -5112,19 +5113,9 @@ try {
   check(await evaluate(`[...document.querySelectorAll('.ngh')].some((x) => x.textContent === 'Answer')`), `${ctx}: Your move has no Answer group`);
   const moved = Math.abs((await evaluate(TOP)) - top);
   check(moved <= 1, `${ctx}: the row under the hand moved ${moved} px`);
-  // V0.your-move: the hold says what it keeps back, and Show brings it now while the hand stays.
-  const pill = await evaluate(`document.querySelector('.heldup button')?.textContent ?? ''`);
-  check(/^[1-9]\d* updates? · Show$/.test(pill), `${ctx}: the waiting moves are not offered (${JSON.stringify(pill)})`);
-  check(Math.abs((await evaluate(TOP)) - top) <= 1, `${ctx}: the updates line moved the rows`);
-  await evaluate(`document.querySelector('.heldup button').click()`);
-  await waitFor(`${IN("working")}.includes(${JSON.stringify(mover)})`, { soft: true, timeout: 5000 });
-  check((await evaluate(IN("working"))).includes(mover), `${ctx}: Show did not bring the waiting move`);
-  check(!(await evaluate(`!!document.querySelector('.heldup button')`)), `${ctx}: the updates line stayed after Show`);
-  // 3. The hand leaves: the waiting move happens.
+  check(!(await evaluate(`!!document.querySelector('.heldup')`)), `${ctx}: the list still offers waiting updates`);
   if (phone) await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   else await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 200 });
-  await waitFor(`${IN("working")}.includes(${JSON.stringify(mover)})`, { soft: true, timeout: 5000 });
-  check((await evaluate(IN("working"))).includes(mover), `${ctx}: the row did not move after the hold`);
   // 4. The open row stays in Unread after it is read, until another thread opens.
   await patch(open, "done", "seen");
   await waitFor(`${IN("unread")}.includes(${JSON.stringify(open)})`, { soft: true });

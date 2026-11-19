@@ -68,7 +68,6 @@
 .m-sbtn{margin-left:auto;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;font:500 13px/16px var(--ui);color:var(--ink)}
 /* V0.your-move: the phone's type is a step larger, and the press is a finger's size. */
 .m-list .ngh{padding:8px 8px 2px;font-size:12px;line-height:16px}
-.m-list .heldup button{height:44px;padding:0 16px;border-radius:22px;font-size:13px;line-height:42px}
 .m-more{display:block;width:100%;height:44px;padding:0 8px 0 46px;font:500 13px/44px var(--ui);color:var(--harbour)}
 
 .m-swp{position:relative;border-radius:12px;overflow:hidden;margin:2px 0;touch-action:pan-y}

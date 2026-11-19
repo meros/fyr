@@ -53,6 +53,8 @@ export interface Decision {
   tool?: string;
   input?: Record<string, unknown>;
   effect?: Effect;
+  /** V0.ask-tool: asked with Fyr's ask tool; the agent is not waiting in a tool call. */
+  async?: boolean;
 }
 
 export interface PullRequest {

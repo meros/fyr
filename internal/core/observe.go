@@ -34,14 +34,15 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 
 // ProcessLost is called when the agent process exits or the host restarts
 // while work was live. Open decisions die with the process.
-// Effect Decisions (5.10) do not need the process and stay open.
+// Effect Decisions (5.10) and questions asked with Fyr's tool (V0.ask-tool)
+// do not need the process and stay open.
 func ProcessLost(t *Thread, class, msg string, now time.Time) {
 	t.Unresponsive = nil // V0.143: the process is gone
 	t.MachineWait = nil  // V0.153
 	var keep []Decision
 	live := t.Running
 	for _, d := range t.Decisions {
-		if d.Kind == DecisionEffect {
+		if !d.NeedsProcess() {
 			keep = append(keep, d)
 		} else {
 			live = true
@@ -71,7 +72,7 @@ func Restarted(t *Thread, now time.Time) {
 	}
 	var keep []Decision
 	for _, d := range t.Decisions {
-		if d.Kind == DecisionEffect {
+		if !d.NeedsProcess() {
 			keep = append(keep, d)
 		}
 	}

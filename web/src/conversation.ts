@@ -475,7 +475,7 @@ export function toolRows(calls: ToolCall[]): ToolRow[] {
 // ---- V0.21: calm tool output ----
 
 /** Calls whose result has its own card in the log: the call itself never shows (unless it failed). */
-export const CARD_TOOLS = new Set(["mcp__fyr__view_publish", "mcp__fyr__view_state", "mcp__fyr__view_unchanged", "mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "AskUserQuestion"]);
+export const CARD_TOOLS = new Set(["mcp__fyr__view_publish", "mcp__fyr__view_state", "mcp__fyr__view_unchanged", "mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "mcp__fyr__ask", "AskUserQuestion"]);
 /** Plumbing: tool loading and bookkeeping. Extend here. */
 export const PLUMBING_TOOLS = new Set(["ToolSearch", "TodoWrite", "TodoRead", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
 /** Shell bookkeeping: a Bash call whose whole command is one of these. */
