@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // MemoryShare is the share of the RAM agents may use without a cgroup memory
@@ -206,6 +207,33 @@ func clamp01(v float64) float64 {
 
 func round2(v float64) float64 { return float64(int(v*100+0.5)) / 100 }
 
+// RefaultWindow is how far ahead the read-back rate of the agents' page cache
+// is taken as cache in use (V0.admission-tidy), as PSI's avg10.
+const RefaultWindow = 10 * time.Second
+
+// refaulting is how much of the agents' page cache is read back within
+// RefaultWindow at the rate since the last read (memory.stat's
+// workingset_refault_file, in pages), in bytes; 0 on the first read, after a
+// gap of over a minute, or without the key. V0.admission-tidy: on 19 Nov 16:02
+// the headroom read 48 % while the agents sat at memory.high with a critical
+// full stall, because the inactive_file it took off was refaulted as fast as
+// the kernel dropped it. Call it with s.mu held.
+func (s *Sampler) refaulting(stat string) uint64 {
+	n, ok := readKey(stat, "workingset_refault_file")
+	if !ok {
+		return 0
+	}
+	now := s.now()
+	prev, at := s.refaults, s.refaultAt
+	s.refaults, s.refaultAt = n, now
+	gap := now.Sub(at)
+	if at.IsZero() || gap <= 0 || gap > time.Minute || n < prev {
+		return 0
+	}
+	rate := float64(n-prev) * float64(os.Getpagesize()) / gap.Seconds()
+	return uint64(rate * RefaultWindow.Seconds())
+}
+
 // signals fills l's decision 0029 fields; agentsMem is agents/memory.current
 // (0 without the tree).
 func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
@@ -235,8 +263,9 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 			// (inactive_file) is not used memory; memory.current fills to
 			// memory.high with it.
 			ws := agentsMem
-			if inactive, ok := readKey(filepath.Join(s.Tree.agentsDir(), "memory.stat"), "inactive_file"); ok && inactive <= ws {
-				ws -= inactive
+			stat := filepath.Join(s.Tree.agentsDir(), "memory.stat")
+			if inactive, ok := readKey(stat, "inactive_file"); ok && inactive <= ws {
+				ws -= inactive - min(inactive, s.refaulting(stat))
 			}
 			if ws <= c.Memory {
 				h = min(h, float64(c.Memory-ws)/float64(c.Memory))

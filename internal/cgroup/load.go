@@ -152,6 +152,9 @@ type Sampler struct {
 	last   Load
 	usage  map[string]uint64 // cgroup name ("" is agents/) → usage_usec at `at`
 	cached bool
+	// refaults: the agents' workingset_refault_file at refaultAt (V0.admission-tidy)
+	refaults  uint64
+	refaultAt time.Time
 }
 
 // Get returns the load, read now or at most MinGap ago; the slots and the
@@ -386,6 +389,29 @@ func (s *Sampler) ThreadMemory(thread string) uint64 {
 		}
 	}
 	return 0
+}
+
+// Baseline takes thread's job baseline at the gate's grant (V0.admission-tidy):
+// its cgroup read now and its memory.peak reset now, or on a host without the
+// tree its last reading. The tracker's next tick makes the hold from it.
+func (s *Sampler) Baseline(thread string) {
+	if s.Jobs == nil {
+		return
+	}
+	if s.Tree != nil {
+		dir := s.Tree.threadDir(unsafe.ReplaceAllString(thread, "_"))
+		s.Jobs.Mark(thread, readCgroup(dir), openPeak(dir), s.now())
+		return
+	}
+	p := s.pub.Load()
+	if p == nil {
+		return
+	}
+	for _, t := range p.Threads {
+		if t.ID == thread {
+			s.Jobs.Mark(thread, reading{cpu: uint64(t.Used.Microseconds()), hasCPU: true, mem: t.Working}, nil, p.At)
+		}
+	}
 }
 
 // Run ticks until ctx ends.

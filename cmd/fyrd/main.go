@@ -405,6 +405,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// Decision 0029 S2–S4, V0.163, V0.164: admission by a budget of costs,
 	// gated by the slowdown and memory; the policy is internal/admission.
 	adm := admission.New(pool, n, sampler, jobs, cfg.SlotSlowdownMax, cfg.SlotMemoryReserve)
+	adm.Open = eng.HeavyOpen // V0.admission-tidy: a quiet open call is not idle
 	adm.Install()
 	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
 	// being slow and restarts none into the same thrash.
@@ -425,10 +426,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// V0.guard-wake: the wake rule's memory and the time frozen.
 		SlotMem: sampler.ThreadMemory, FrozenUsec: groups.FrozenUsec,
 		GuardService: guardService, // decision 0036 (D)
+		// V0.admission-tidy: a heavier second command, and the job's baseline at the grant
+		SlotClassNeed: adm.ClassNeed, SlotBaseline: sampler.Baseline,
 	}
 	if !pool.Off() {
 		// decision 0029 S4: the budget adapts; V0.budget-restart: and outlives a deploy
-		sd.SlotAIMD = &slots.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json")}
+		sd.SlotAIMD = &slots.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json"), Policy: adm.Policy} // V0.admission-tidy: the configured reserve
 	}
 	eng.SlotDeps = sd
 	// V0.rerun-classes: kill and rerun, for the classes the owner marked.

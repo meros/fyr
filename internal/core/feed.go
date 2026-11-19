@@ -335,7 +335,8 @@ func slotNotices(r Reduced) []Notice {
 			continue
 		}
 		if why, ok := d["paused"].(string); ok && str(d["work"]) != "" {
-			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr paused your undeclared heavy work (`%s`): memory is short on this host (%s). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, or after 10 min unless memory still stalls critically then. A timeout inside the job may fire after it resumes; check its result. Ask with mcp__fyr__slot_acquire before a heavy job.", str(d["work"]), why)})
+			// V0.admission-tidy: no "ask with slot_acquire": V0.209 admits by itself.
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr paused your undeclared heavy work (`%s`): memory is short on this host (%s). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, or after 10 min unless memory still stalls critically then. A timeout inside the job may fire after it resumes; check its result.", str(d["work"]), why)})
 			continue
 		}
 		if d["waits"] == true { // V0.oomd-guard (decision 0036 E2)

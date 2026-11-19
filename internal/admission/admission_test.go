@@ -34,6 +34,7 @@ type fakeJobs struct {
 
 func (j *fakeJobs) Learned(c string) (cgroup.Learned, bool) { l, ok := j.learned[c]; return l, ok }
 func (j *fakeJobs) ClassOf(thread, kind string) string      { return thread + "/" + kind }
+func (j *fakeJobs) Qualify(thread, class string) string     { return thread + "/" + class }
 func (j *fakeJobs) LiveUse(t string) (float64, uint64, bool) {
 	u, ok := j.live[t]
 	return u.cores, u.grew, ok

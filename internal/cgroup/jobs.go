@@ -115,7 +115,45 @@ type Jobs struct {
 	raise map[string]float64
 	// projects: the pool's owners' project names, cached by RefreshProjects
 	projects map[string]string
-	loaded   bool
+	// marks: per thread, the baseline the gate took at its grant
+	// (V0.admission-tidy), for the hold the next tick makes.
+	marks  map[string]mark
+	loaded bool
+}
+
+// mark is a thread's reading at its grant, and its memory.peak fd reset then.
+type mark struct {
+	r    reading
+	peak *os.File
+	at   time.Time
+}
+
+// markFor is how far a mark may be from its hold's grant and still be its
+// baseline: the gate takes it right after the grant.
+const markFor = 30 * time.Second
+
+// Mark keeps r, read at the gate's grant at at, as thread's job baseline, and
+// peak, its memory.peak fd reset then (nil without one). V0.admission-tidy:
+// the hold was made at the first tick after the grant, up to 5 s late, so a
+// job's first seconds went into its baseline and a job of a few seconds
+// learned about 0 cores.
+func (j *Jobs) Mark(thread string, r reading, peak *os.File, at time.Time) {
+	if j == nil {
+		if peak != nil {
+			peak.Close()
+		}
+		return
+	}
+	j.mu.Lock()
+	if j.marks == nil {
+		j.marks = map[string]mark{}
+	}
+	old := j.marks[thread]
+	j.marks[thread] = mark{r, peak, at.UTC()}
+	j.mu.Unlock()
+	if old.peak != nil {
+		old.peak.Close()
+	}
 }
 
 func (j *Jobs) load() {
@@ -308,7 +346,7 @@ func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rate
 	fresh := map[string]bool{}
 	for _, sh := range snap.Held {
 		if h := j.holds[sh.Owner]; h == nil || !h.since.Equal(sh.Since) {
-			fresh[sh.Owner] = true
+			fresh[sh.Owner] = !j.markedLocked(sh)
 		}
 	}
 	j.mu.Unlock()
@@ -346,15 +384,26 @@ func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rate
 			if r := rates[sh.Owner]; r != nil {
 				h.base = min(*r, baselineMax)
 			}
-			if f := peaks[sh.Owner]; f != nil {
-				h.peak, h.hasPeak = f, true
-				delete(peaks, sh.Owner)
-			}
 			j.holds[sh.Owner] = h
-			if hasDir {
-				h.baseline(r)
+			if m, ok := j.marks[sh.Owner]; ok && j.markedLocked(sh) {
+				// V0.admission-tidy: the baseline the gate took at the grant;
+				// this tick's reading is the job's first.
+				delete(j.marks, sh.Owner)
+				h.baseline(m.r)
+				h.last = m.at
+				if m.peak != nil {
+					h.peak, h.hasPeak = m.peak, true
+				}
+			} else {
+				if f := peaks[sh.Owner]; f != nil {
+					h.peak, h.hasPeak = f, true
+					delete(peaks, sh.Owner)
+				}
+				if hasDir {
+					h.baseline(r)
+				}
+				continue
 			}
-			continue
 		}
 		prevAt, prevCPU := h.last, h.cpu
 		h.last = now
@@ -394,6 +443,14 @@ func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rate
 			delete(j.seenAt, th)
 		}
 	}
+	for th, m := range j.marks {
+		if now.Sub(m.at) >= markFor {
+			delete(j.marks, th)
+			if m.peak != nil {
+				peaks[th+"\x00mark"] = m.peak // closed below, without j.mu
+			}
+		}
+	}
 	j.publishLocked()
 	j.mu.Unlock()
 	for _, f := range peaks {
@@ -402,6 +459,17 @@ func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rate
 		}
 	}
 	j.finish(done)
+}
+
+// markedLocked says thread sh's mark is the baseline of its hold: taken
+// within markFor of the grant. Call it with j.mu held.
+func (j *Jobs) markedLocked(sh slots.Holder) bool {
+	m, ok := j.marks[sh.Owner]
+	if !ok {
+		return false
+	}
+	d := m.at.Sub(sh.Since)
+	return d > -markFor && d < markFor
 }
 
 // baseline takes r as what the thread used before its job.
@@ -481,6 +549,11 @@ func (j *Jobs) record(owner string, h *hold) (JobRecord, bool) {
 	if h.hasStall {
 		stalled := float64(h.stall-h.stall0) / 1e6 / wall
 		demand = cores / max(1-clamp01(stalled), 1/demandMax)
+	} else if h.sN > 0 {
+		// V0.admission-tidy, decision 0029 section 0 (d): without the cgroup's
+		// CPU stall, what it got times the run's mean slowdown s, capped at 4×
+		// (learn takes a factor over 3 at half weight).
+		demand = cores * min(max(1, h.sSum/float64(h.sN)), demandMax)
 	}
 	r := JobRecord{
 		Class: h.class, Thread: owner, Kind: h.kind, Start: h.since.UTC(), End: end,

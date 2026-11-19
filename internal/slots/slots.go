@@ -273,10 +273,18 @@ func (p *Pool) Acquire(owner, kind string) (held bool, ahead int) {
 		p.lastGrant = h.Since
 		return true, 0
 	}
+	asked := len(p.wait) == 0 // h is the head and was just refused
 	p.wait = slices.Insert(p.wait, p.placeLocked(owner), h)
-	// Decision 0029 S3: it may start at once behind a head that does not fit
-	// (the head was just asked; only backfill runs here, Admit once per call).
-	granted := p.backfillLocked(nil)
+	// Decision 0029 S3: it may start at once behind a head that does not fit.
+	// V0.admission-tidy: the head is asked first unless it was just refused, so
+	// a new job never backfills past a head that fits now (and uses one of its
+	// passes).
+	var granted []Holder
+	if asked {
+		granted = p.backfillLocked(nil)
+	} else {
+		granted = p.promoteLocked()
+	}
 	mine := false
 	var others []Holder
 	for _, g := range granted {
@@ -346,6 +354,34 @@ func (p *Pool) TryAcquire(owner, kind string) bool {
 	return true
 }
 
+// Grow admits owner, which holds a slot, again for a heavier job of kind
+// (V0.admission-tidy): a thread that holds one for `go test ./...` and starts
+// `yarn e2e` was let through unchecked. Its need is decided beside the other
+// holders (its own hold left out), which admits the difference. When it does
+// not fit, owner waits in the queue as a new job does and keeps its hold
+// meanwhile; the grant replaces the hold. held: it fits now; else ahead is how
+// many wait before it.
+func (p *Pool) Grow(owner, kind string) (held bool, ahead int) {
+	if p.Off() {
+		return true, 0
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if index(p.held, owner) < 0 {
+		return false, -1
+	}
+	if i := index(p.wait, owner); i >= 0 {
+		return false, i
+	}
+	h := Holder{Owner: owner, Kind: kind, Since: p.now()}
+	if len(p.wait) == 0 && p.admitLocked(h) {
+		return true, 0
+	}
+	defer p.save()
+	p.wait = slices.Insert(p.wait, p.placeLocked(owner), h)
+	return false, index(p.wait, owner)
+}
+
 // Take gives owner's held slot back without handing it on and calls nobody,
 // so it is safe under a caller's lock; the caller then calls Fill.
 func (p *Pool) Take(owner string) bool {
@@ -411,7 +447,9 @@ func (p *Pool) Release(owner string) bool {
 	if i := index(p.held, owner); i >= 0 {
 		p.held = slices.Delete(p.held, i, i+1)
 		found = true
-	} else if i := index(p.wait, owner); i >= 0 {
+	}
+	// V0.admission-tidy: a holder may also wait to Grow.
+	if i := index(p.wait, owner); i >= 0 {
 		p.wait = slices.Delete(p.wait, i, i+1)
 		found = true
 	}
@@ -468,6 +506,10 @@ func (p *Pool) grantLocked(i int, told []Holder) []Holder {
 	} else {
 		told = append(told, h)
 	}
+	if j := index(p.held, h.Owner); j >= 0 {
+		p.held[j] = h // V0.admission-tidy: a Grow's grant replaces the hold
+		return told
+	}
 	p.held = append(p.held, h)
 	return told
 }
@@ -487,7 +529,7 @@ func (p *Pool) backfillLocked(told []Holder) []Holder {
 		if p.passes >= BackfillPasses || p.now().Sub(head.Since) >= BackfillFor {
 			break
 		}
-		if p.Backfill(head, p.wait[i], slices.Clone(p.held)) {
+		if p.Backfill(head, p.wait[i], p.othersLocked(p.wait[i].Owner)) {
 			grant(i)
 			p.passes++
 			continue
@@ -501,16 +543,23 @@ func (p *Pool) backfillLocked(told []Holder) []Holder {
 // waits; call it with p.mu held.
 func (p *Pool) admitLocked(head Holder) bool {
 	if p.Admit == nil {
-		ok := len(p.held) < p.n
+		ok := len(p.othersLocked(head.Owner)) < p.n
 		p.why = ""
 		return ok
 	}
-	ok, why, binding := p.Admit(head, slices.Clone(p.held))
+	ok, why, binding := p.Admit(head, p.othersLocked(head.Owner))
 	p.why, p.binding = why, binding
 	if ok {
 		p.why, p.binding = "", ""
 	}
 	return ok
+}
+
+// othersLocked is a copy of the holders without owner's own hold: a holder
+// that waits to Grow is decided beside the others (V0.admission-tidy). Call it
+// with p.mu held.
+func (p *Pool) othersLocked(owner string) []Holder {
+	return slices.DeleteFunc(slices.Clone(p.held), func(h Holder) bool { return h.Owner == owner })
 }
 
 // Budget is the budget per resource as a share of the host: Full, or what
