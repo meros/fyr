@@ -1881,9 +1881,10 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .agp.ph.chip .ags.agm{font-size:12px}
 .agp.ph.field{height:48px;border-radius:12px;border-color:var(--line);font-size:15px}
 .agp.ph.field .ags{padding:0 12px}
-/* Details: the model is never squeezed to an ellipsis; the provider and effort take what they need and the model the rest */
-.agp.ph.field .ags.agv,.agp.ph.field .ags.age{flex:0 0 auto}
-.agp.ph.field .ags.agm{flex:1 1 auto;min-width:max-content}
+/* Details: each part takes its own width; when the row is short the provider gives way first, then the model, and the effort keeps its meter */
+.agp.ph.field .ags.agv{flex:0 4 auto}
+.agp.ph.field .ags.agm{flex:1 1 auto;min-width:0}
+.agp.ph.field .ags.age{flex:0 0 auto}
 @media (hover:none){.ags.pick:hover{background:none}}
 .agp.ph select{font-size:16px}
 /* The phone header is narrow: the model keeps its width, the provider shrinks to its dot (its name is in the title
