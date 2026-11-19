@@ -3257,7 +3257,8 @@ for (const [label, w, ht] of [
       return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('select').value, proj: ${chipName},
         provs: [...document.querySelectorAll('${root} .row2 select')][0] ? [...[...document.querySelectorAll('${root} .row2 select')][0].options].map(o => o.value) : null }; })()`);
     check(s.first && s.v === "lab" && s.proj === "Robot arm", `${ctx}: host first, lab, lab's project ${JSON.stringify(s)}`);
-    if (!phone) check(s.provs?.join() === "claude,zai", `${ctx}: lab's providers ${JSON.stringify(s.provs)}`);
+    // V0.model-choice: the choice is provider and model; its providers are the part before the NUL
+    if (!phone) check([...new Set((s.provs ?? []).map((v) => v.split("\u0000")[0]))].join() === "claude,zai", `${ctx}: lab's providers ${JSON.stringify(s.provs)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
     await settle();
     const list = await evaluate(`[...document.querySelectorAll('${root} .plist .pln, ${root} .m-pickpanel .pln')].map(e => e.textContent)`);
