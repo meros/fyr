@@ -87,7 +87,7 @@ func TestCancelUnreadMessage(t *testing.T) {
 	// The turn takes its queue in only after "release" below: under load a
 	// fixed delay ran out before the cancel, and B was read (409).
 	id := h.create("hold")
-	h.wait(id, "working", state(core.Working))
+	h.wait(id, "running", runLive)
 	a := messageID(t, h.cmd("thread.send", id, core.Args{"text": "steer A"}))
 	b := messageID(t, h.cmd("thread.send", id, core.Args{"text": "steer B"}))
 	h.wait(id, "both queued", func(th core.Thread, _ core.Attention) bool {
@@ -120,7 +120,7 @@ func TestCancelUnreadMessage(t *testing.T) {
 func TestUnreadMessageLostWithProcess(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hang")
-	h.wait(id, "working", state(core.Working))
+	h.wait(id, "running", runLive)
 	m := messageID(t, h.cmd("thread.send", id, core.Args{"text": "later"}))
 	h.wait(id, "queued", func(th core.Thread, _ core.Attention) bool { return outboxState(th, m) == "queued" })
 	h.m.Stop(id)
@@ -133,7 +133,7 @@ func TestUnreadMessageLostWithProcess(t *testing.T) {
 func TestUnreadMessageLostOnRestart(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hang")
-	h.wait(id, "working", state(core.Working))
+	h.wait(id, "running", runLive)
 	m := messageID(t, h.cmd("thread.send", id, core.Args{"text": "later"}))
 	h.wait(id, "queued", func(th core.Thread, _ core.Attention) bool { return outboxState(th, m) == "queued" })
 	h.e.st.Close() // the host dies first; its processes follow

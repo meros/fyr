@@ -93,7 +93,11 @@ type Thread struct {
 // Conversation is the run state of the thread's agent session (SPEC 3.3),
 // written only by observations from the agent.
 type Conversation struct {
-	Running      bool       `json:"running"`
+	Running bool `json:"running"`
+	// Starting is set while Fyr starts the agent for a message the owner or
+	// another thread sent and the run has not begun yet
+	// (V0.starting-moves): a fresh process can take a minute to start.
+	Starting     *time.Time `json:"starting,omitempty"`
 	RunStartedAt *time.Time `json:"runStartedAt,omitempty"`
 	Activity     string     `json:"activity,omitempty"` // last tool or text, one line
 	Subagents    int        `json:"subagents,omitempty"`

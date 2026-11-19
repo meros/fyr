@@ -877,7 +877,12 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 		t.MachineWait = nil
 		res.Events = append(res.Events, Event{"agent.machineWait", map[string]any{"done": true}})
 	}
+	// V0.starting-moves: the start lived in the last host. Without the
+	// process the message it was to deliver is lost, so the thread fails
+	// (ProcessLost below ends the start).
+	starting := t.Starting != nil
 	if a.Kept {
+		t.Starting = nil
 		if t.Handover != nil {
 			t.Handover = nil
 			res.Events = append(res.Events, Event{"effect.error", map[string]any{"kind": "handover", "error": "Fyr restarted during the handover"}})
@@ -893,7 +898,7 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 		res.Events = append(res.Events, Event{"effect.error", map[string]any{"kind": "handover", "error": "Fyr restarted during the handover"}})
 	}
 	var keep []Decision
-	live := t.Running
+	live := t.Running || starting
 	for _, d := range t.Decisions {
 		if !d.NeedsProcess() {
 			keep = append(keep, d) // effect Decisions and Fyr's own questions do not need the process (5.10, V0.ask-tool)

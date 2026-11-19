@@ -7,6 +7,7 @@ import "time"
 
 func RunStarted(t *Thread, now time.Time) {
 	t.Running = true
+	t.Starting = nil
 	t.RunStartedAt = &now
 	t.Activity = "Starting"
 	t.Subagents = 0
@@ -18,6 +19,7 @@ func RunStarted(t *Thread, now time.Time) {
 // interrupted by the user.
 func RunEnded(t *Thread, f *Failure, now time.Time) {
 	t.Running = false
+	t.Starting = nil
 	if f != nil {
 		t.Unresponsive = nil // V0.143: the process is gone
 	}
@@ -40,7 +42,8 @@ func ProcessLost(t *Thread, class, msg string, now time.Time) {
 	t.Unresponsive = nil // V0.143: the process is gone
 	t.MachineWait = nil  // V0.153
 	var keep []Decision
-	live := t.Running
+	live := t.Running || t.Starting != nil // V0.starting-moves: the start died with it
+	t.Starting = nil
 	for _, d := range t.Decisions {
 		if !d.NeedsProcess() {
 			keep = append(keep, d)

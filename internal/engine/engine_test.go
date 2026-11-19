@@ -162,6 +162,10 @@ func (h *harness) wait(id string, what string, ok func(t core.Thread, a core.Att
 	return t
 }
 
+// runLive: the agent's run is live. A thread whose agent is still starting
+// is Working already (V0.starting-moves), so Working is not enough.
+func runLive(t core.Thread, _ core.Attention) bool { return t.Running }
+
 func state(s core.State) func(core.Thread, core.Attention) bool {
 	return func(_ core.Thread, a core.Attention) bool { return a.State == s }
 }
@@ -309,7 +313,7 @@ func TestIdleStopAndResume(t *testing.T) {
 func TestRestartRecovery(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hang")
-	h.wait(id, "working", state(core.Working))
+	h.wait(id, "running", runLive)
 	h.m.StopAll() // the processes die with the old host…
 	h.e.st.Close()
 	// …and a new host opens the same database. Its Load runs before any

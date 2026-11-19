@@ -23,7 +23,7 @@ func TestFrontSendsNoPushForAnAutoMerge(t *testing.T) {
 			return at["state"] == "asking"
 		})
 		coretest.Patch(a.eng, id, func(th *core.Thread, now time.Time) []core.Event {
-			th.Decisions = nil
+			th.Decisions, th.Starting = nil, nil // no agent here: the start never ends by itself
 			if quiet {
 				c := core.ChangePRObserved(th, core.PR{URL: "https://github.com/acme/app/pull/1", Repo: "acme/app", Number: number, State: "MERGED", Head: head}, now)
 				c.AutoApproved = &core.AutoApproval{Repo: "acme/app", Head: head, At: now}
