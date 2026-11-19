@@ -209,3 +209,93 @@ func TestDecodeBeforeRules(t *testing.T) {
 		t.Fatalf("view stored again with snoozeUntil: %s", vb)
 	}
 }
+
+// #120, V0.checks-follow-head: a watch on checks ok armed right after a
+// push, before the poller has read the new head, does not fire on the
+// previous head's result. It holds only on a PR read after it was armed,
+// and arming it reads the PR at once.
+func TestWatchOnChecksWaitsForNewHead(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	const url = "https://github.com/o/r/pull/12"
+	read := func(checks Checks, head string, at time.Time) Result {
+		return step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved,
+			Args: PR{URL: url, State: "OPEN", Checks: checks, Head: head, CheckedAt: &at}}, at)
+	}
+	read(ChecksPass, "aaaa111", ct0)
+	c := th.Changes[0]
+	// The agent pushes head B and arms the watch before the next poll.
+	res := step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Any: []When{{Kind: WhenCondition, Change: c.Key, Type: CondChecks, Status: CondOK},
+			{Kind: WhenCondition, Change: c.Key, Type: CondChecks, Status: CondFail}}}}}, ct0.Add(time.Minute))
+	if fired(res, "w_1") != 0 {
+		t.Fatal("the watch fired on the old head's checks")
+	}
+	if len(res.Effects) != 1 || res.Effects[0].Kind != EffectChangeRefresh {
+		t.Fatalf("arming a watch on checks did not read the PR: %+v", res.Effects)
+	}
+	if res = read(ChecksPending, "bbbb222", ct0.Add(2*time.Minute)); fired(res, "w_1") != 0 {
+		t.Fatal("the watch fired while the new head's checks ran")
+	}
+	if res = read(ChecksPass, "bbbb222", ct0.Add(3*time.Minute)); fired(res, "w_1") != 1 {
+		t.Fatalf("checks ok on the new head did not fire the watch: %+v", res.Events)
+	}
+}
+
+// A watch on checks armed when nothing is pending fires on the next read
+// of the same head: the anchor waits for a read, not for a new head.
+func TestWatchOnChecksFiresOnTheNextReadOfTheSameHead(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	const url = "https://github.com/o/r/pull/12"
+	at := ct0
+	step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Args: PR{URL: url, State: "OPEN", Checks: ChecksPass, Head: "aaaa111", CheckedAt: &at}}, at)
+	c := th.Changes[0]
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Kind: WhenCondition, Change: c.Key, Type: CondChecks, Status: CondOK}}}, ct0.Add(time.Minute))
+	at2 := ct0.Add(2 * time.Minute)
+	res := step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Args: PR{URL: url, State: "OPEN", Checks: ChecksPass, Head: "aaaa111", CheckedAt: &at2}}, at2)
+	if fired(res, "w_1") != 1 {
+		t.Fatalf("the next read of the same green head did not fire the watch: %+v", res.Events)
+	}
+}
+
+// A read GitHub was asked for before the watch was armed (a poll in flight
+// during the push) does not count as a read after it.
+func TestWatchOnChecksIgnoresAReadAskedBeforeItWasArmed(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	const url = "https://github.com/o/r/pull/12"
+	read := func(checks Checks, head string, asked, at time.Time) Result {
+		return step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved,
+			Args: PR{URL: url, State: "OPEN", Checks: checks, Head: head, CheckedAt: &asked}}, at)
+	}
+	read(ChecksPass, "aaaa111", ct0, ct0)
+	c := th.Changes[0]
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Kind: WhenCondition, Change: c.Key, Type: CondChecks, Status: CondOK}}}, ct0.Add(2*time.Minute))
+	if res := read(ChecksPass, "aaaa111", ct0.Add(time.Minute), ct0.Add(3*time.Minute)); fired(res, "w_1") != 0 {
+		t.Fatal("a read asked for before the watch was armed fired it")
+	}
+	if res := read(ChecksPass, "bbbb222", ct0.Add(4*time.Minute), ct0.Add(4*time.Minute)); fired(res, "w_1") != 1 {
+		t.Fatalf("a read after the arm did not fire the watch: %+v", res.Events)
+	}
+}
+
+// A watch on a PR Fyr no longer polls (the change is done) is not anchored:
+// no read would come, so it reads the stored state as before.
+func TestWatchOnChecksOfAnUnpolledPRIsNotAnchored(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	const url = "https://github.com/o/r/pull/12"
+	at := ct0
+	step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Args: PR{URL: url, State: "OPEN", Checks: ChecksPass, Head: "aaaa111", CheckedAt: &at}}, at)
+	th.Changes[0].Done = &DoneMark{At: ct0, By: ByOwner}
+	c := th.Changes[0]
+	res := step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Kind: WhenCondition, Change: c.Key, Type: CondChecks, Status: CondOK}}}, ct0.Add(time.Minute))
+	if len(res.Effects) != 0 {
+		t.Fatalf("a watch on an unpolled PR asked for a read: %+v", res.Effects)
+	}
+	if r := FindRule(th, "w_1"); r != nil {
+		if _, ok := r.Armed["pr:"+c.ID]; ok {
+			t.Fatal("a watch on an unpolled PR was anchored")
+		}
+	}
+}
