@@ -257,3 +257,45 @@ func TestWatchOnChecksFiresOnTheNextReadOfTheSameHead(t *testing.T) {
 		t.Fatalf("the next read of the same green head did not fire the watch: %+v", res.Events)
 	}
 }
+
+// A read GitHub was asked for before the watch was armed (a poll in flight
+// during the push) does not count as a read after it.
+func TestWatchOnChecksIgnoresAReadAskedBeforeItWasArmed(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	const url = "https://github.com/o/r/pull/12"
+	read := func(checks Checks, head string, asked, at time.Time) Result {
+		return step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved,
+			Args: PR{URL: url, State: "OPEN", Checks: checks, Head: head, CheckedAt: &asked}}, at)
+	}
+	read(ChecksPass, "aaaa111", ct0, ct0)
+	c := th.Changes[0]
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Kind: WhenCondition, Change: c.Key, Type: CondChecks, Status: CondOK}}}, ct0.Add(2*time.Minute))
+	if res := read(ChecksPass, "aaaa111", ct0.Add(time.Minute), ct0.Add(3*time.Minute)); fired(res, "w_1") != 0 {
+		t.Fatal("a read asked for before the watch was armed fired it")
+	}
+	if res := read(ChecksPass, "bbbb222", ct0.Add(4*time.Minute), ct0.Add(4*time.Minute)); fired(res, "w_1") != 1 {
+		t.Fatalf("a read after the arm did not fire the watch: %+v", res.Events)
+	}
+}
+
+// A watch on a PR Fyr no longer polls (the change is done) is not anchored:
+// no read would come, so it reads the stored state as before.
+func TestWatchOnChecksOfAnUnpolledPRIsNotAnchored(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	const url = "https://github.com/o/r/pull/12"
+	at := ct0
+	step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Args: PR{URL: url, State: "OPEN", Checks: ChecksPass, Head: "aaaa111", CheckedAt: &at}}, at)
+	th.Changes[0].Done = &DoneMark{At: ct0, By: ByOwner}
+	c := th.Changes[0]
+	res := step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Kind: WhenCondition, Change: c.Key, Type: CondChecks, Status: CondOK}}}, ct0.Add(time.Minute))
+	if len(res.Effects) != 0 {
+		t.Fatalf("a watch on an unpolled PR asked for a read: %+v", res.Effects)
+	}
+	if r := FindRule(th, "w_1"); r != nil {
+		if _, ok := r.Armed["pr:"+c.ID]; ok {
+			t.Fatal("a watch on an unpolled PR was anchored")
+		}
+	}
+}

@@ -309,25 +309,32 @@ func prFact(typ CondType) bool {
 
 // anchorPR anchors each PR fact the agent's watch reads to the PR read the
 // change holds now (V0.checks-follow-head, #120): the watch holds only on a
-// later read. A watch armed right after a push would otherwise fire on the
-// previous head's checks before the poller has read the new head. It
-// reports whether the watch reads one, so Fyr reads the PR at once.
-func (w When) anchorPR(t *Thread, armed map[string]string) bool {
+// later read: one GitHub was asked for after now, and after the read the
+// change holds. A watch armed right after a push would otherwise fire on
+// the previous head's checks before the poller has read the new head. Only
+// a PR Fyr polls is anchored, so a watch never waits on a read that does
+// not come. It reports whether the watch reads one, so Fyr reads the PR at
+// once.
+func (w When) anchorPR(t *Thread, armed map[string]string, now time.Time) bool {
 	read := false
 	for _, x := range slices.Concat(w.All, w.Any) {
-		read = x.anchorPR(t, armed) || read
+		read = x.anchorPR(t, armed, now) || read
 	}
 	if w.Not != nil {
-		read = w.Not.anchorPR(t, armed) || read
+		read = w.Not.anchorPR(t, armed, now) || read
 	}
 	if w.Kind != WhenCondition || !prFact(w.Type) {
 		return read
 	}
 	c := FindChange(t, w.Change)
-	if c == nil || c.PR == nil || c.PR.State != "OPEN" || c.PR.CheckedAt == nil {
+	if c == nil || c.PR == nil || c.PR.State != "OPEN" || c.PR.CheckedAt == nil || !slices.Contains(PRURLs(t, now), c.PRURL()) {
 		return read
 	}
-	armed["pr:"+c.ID] = c.PR.CheckedAt.UTC().Format(time.RFC3339Nano)
+	at := now
+	if c.PR.CheckedAt.After(at) {
+		at = *c.PR.CheckedAt
+	}
+	armed["pr:"+c.ID] = at.UTC().Format(time.RFC3339Nano)
 	return true
 }
 
@@ -781,7 +788,7 @@ func reduceRuleArm(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	ArmRule(r.T, rule, now)
 	var effects []Effect
-	if x := FindRule(r.T, rule.ID); x != nil && x.When.anchorPR(r.T, x.Armed) {
+	if x := FindRule(r.T, rule.ID); x != nil && x.When.anchorPR(r.T, x.Armed, now) {
 		rule = *x
 		effects = []Effect{{Kind: EffectChangeRefresh}} // read the new head now
 	}

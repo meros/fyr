@@ -44,16 +44,19 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	if !ok {
 		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
+	asked := time.Now()
 	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt,isDraft,mergeStateStatus,autoMergeRequest,baseRefName", "--", canon)
 	if err != nil {
 		return core.PR{}, 0, err
 	}
-	return fromView(ctx, gh, url, repo, n, out)
+	return fromView(ctx, gh, url, repo, n, out, asked)
 }
 
 // fromView makes the PR of gh pr view's JSON, or of one PR of a batched
-// read (V0.178), which has the same shape.
-func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byte) (core.PR, int, error) {
+// read (V0.178), which has the same shape. asked is when GitHub was asked:
+// the PR's CheckedAt, so a read that began before a watch was armed does
+// not count as a read after it (V0.checks-follow-head).
+func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byte, asked time.Time) (core.PR, int, error) {
 	var v struct {
 		State          string `json:"state"`
 		Mergeable      string `json:"mergeable"`
@@ -104,9 +107,8 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 	if v.State == "OPEN" || len(states) > 0 {
 		checks, failed = Summarize(ctx, gh, repo, states)
 	}
-	now := time.Now()
 	p := core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
-		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now, Head: v.HeadRefOid,
+		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &asked, Head: v.HeadRefOid,
 		Draft: v.IsDraft, MergeState: v.MergeState, AutoMerge: len(v.AutoMerge) > 0 && string(v.AutoMerge) != "null",
 		ChecksDone: done, ChecksTotal: len(states), FailedChecks: failedNames}
 	if v.MergeCommit != nil {
@@ -544,6 +546,7 @@ func (p *Poller) pollBatch(ctx context.Context, repo string, ts []PRThread) {
 	for i, t := range ts {
 		urls[i] = t.URL
 	}
+	asked := time.Now()
 	views, err := FetchViews(c, p.Gh, repo, urls)
 	if errors.Is(err, ErrBudget) {
 		return
@@ -555,7 +558,7 @@ func (p *Poller) pollBatch(ctx context.Context, repo string, ts []PRThread) {
 			continue
 		}
 		r, n, _ := core.ParsePR(t.URL)
-		pr, failed, ferr := fromView(c, p.Gh, t.URL, r, n, out)
+		pr, failed, ferr := fromView(c, p.Gh, t.URL, r, n, out, asked)
 		if ferr != nil {
 			if !errors.Is(ferr, ErrBudget) {
 				log.Printf("pr %s: %v", t.URL, ferr)
