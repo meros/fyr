@@ -98,8 +98,8 @@ func TestOwnerEndsAnObservedChange(t *testing.T) {
 	if _, err := end(FromOwner, map[string]any{"change": id}); err == nil {
 		t.Fatal("ended twice")
 	}
-	_, _, _, err = Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeStatus, Thread: "t1",
-		Args: ChangeStatusArgs{Change: id, Update: ChangeUpdate{Phase: PhaseReview}}}, now)
+	_, _, _, err = Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeUpdate, Thread: "t1",
+		Args: ChangeUpdateArgs{Change: id, Update: ChangeUpdate{Phase: PhaseReview}}}, now)
 	if err == nil || !strings.Contains(err.Error(), "owner ended") {
 		t.Fatalf("the agent moved the owner's end: %v", err)
 	}

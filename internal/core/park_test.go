@@ -15,8 +15,8 @@ func parkThread(t *testing.T, now time.Time) *Thread {
 	th := &Thread{ID: "t1"}
 	OpenChange(th, ChangeOpen{Key: "hosting:1463-rulesets", Kind: KindInfra, Title: "Rulesets"}, ByAgent, now)
 	label := "needs a GitHub App with Administration write"
-	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeStatus, Thread: "t1",
-		Args: ChangeStatusArgs{Change: "hosting:1463-rulesets", Update: ChangeUpdate{Label: &label, Conditions: []Condition{{Type: "apply", Status: CondFail, Reason: "no App"}}}}}, now)
+	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeUpdate, Thread: "t1",
+		Args: ChangeUpdateArgs{Change: "hosting:1463-rulesets", Update: ChangeUpdate{Label: &label, Conditions: []Condition{{Type: "apply", Status: CondFail, Reason: "no App"}}}}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,8 +34,8 @@ func park(t *testing.T, th *Thread, src Source, kind string, now time.Time) (*Th
 
 func status(t *testing.T, th *Thread, u ChangeUpdate, now time.Time) *Thread {
 	t.Helper()
-	x, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeStatus, Thread: "t1",
-		Args: ChangeStatusArgs{Change: "hosting:1463-rulesets", Update: u}}, now)
+	x, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeUpdate, Thread: "t1",
+		Args: ChangeUpdateArgs{Change: "hosting:1463-rulesets", Update: u}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,8 +115,8 @@ func TestParkExpiresOnANewHead(t *testing.T) {
 			return status(t, th, ChangeUpdate{Conditions: []Condition{{Type: "health", Status: CondFail, Reason: "403"}}}, later)
 		},
 		"revision": func(th *Thread) *Thread {
-			x, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeRevise, Thread: "t1",
-				Args: ChangeReviseArgs{Change: "hosting:1463-rulesets", Revision: Revision{ID: "abc123"}}}, later)
+			x, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeUpdate, Thread: "t1",
+				Args: ChangeUpdateArgs{Change: "hosting:1463-rulesets", Revision: &Revision{ID: "abc123"}}}, later)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -153,8 +153,8 @@ func TestParkOnlyItsChange(t *testing.T) {
 	now := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
 	th := parkThread(t, now)
 	OpenChange(th, ChangeOpen{Key: "doc:x", Title: "Doc"}, ByAgent, now)
-	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeStatus, Thread: "t1",
-		Args: ChangeStatusArgs{Change: "doc:x", Update: ChangeUpdate{Conditions: []Condition{{Type: "lint", Status: CondFail, Reason: "2 errors"}}}}}, now)
+	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeUpdate, Thread: "t1",
+		Args: ChangeUpdateArgs{Change: "doc:x", Update: ChangeUpdate{Conditions: []Condition{{Type: "lint", Status: CondFail, Reason: "2 errors"}}}}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}

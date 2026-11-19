@@ -66,12 +66,19 @@ func TestNeedReady(t *testing.T) {
 	}
 }
 
+// storedAsk opens an ask on a code change as an old record holds it: the
+// agent can no longer make one (V0.changes-code-only), but it may be open.
+func storedAsk(th *Thread, ask, reason string) {
+	c, _, _ := OpenChange(th, ChangeOpen{Key: "git:x", Kind: KindCode, Title: "Design", Branch: "x"}, ByAgent, nt0)
+	DecisionOpened(th, Decision{ID: "d1", Kind: DecisionEffect, Assignee: Owner, CreatedAt: nt0,
+		Effect: &EffectReq{Action: "change." + ask, Args: map[string]any{"change": c.ID, "title": c.Title}, Reason: reason}})
+}
+
 // SPEC V0.101 (1): an open ask is a cause; answering or declining it (Not
 // now on an ask) ends it.
 func TestNeedAsk(t *testing.T) {
 	th := &Thread{ID: "t"}
-	OpenChange(th, ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Design"}, ByAgent, nt0)
-	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeRequest, Args: ChangeRequest{ID: "d1", Change: "doc:x", Ask: AskApprove, Reason: "Approve the design"}}, nt0)
+	storedAsk(th, "approve", "Approve the design")
 	n := ChangeNeed(th, &th.Changes[0])
 	if n == nil || n.Cause != CauseAsk || n.Ask != "d1" || n.Text != "Approve the design" {
 		t.Fatalf("ask: %+v", n)
@@ -89,8 +96,7 @@ func TestNeedAsk(t *testing.T) {
 // its ask.
 func TestAskVoid(t *testing.T) {
 	th := &Thread{ID: "t"}
-	OpenChange(th, ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Design"}, ByAgent, nt0)
-	th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeRequest, Args: ChangeRequest{ID: "d1", Change: "doc:x", Ask: AskReview, Reason: "look"}}, nt0)
+	storedAsk(th, "review", "look")
 	arch, res := fstep(t, th, Input{Source: FromOwner, Kind: "thread.archive"}, nt0.Add(time.Minute))
 	if len(arch.Decisions) != 0 || !strings.Contains(eventsText(res), "archived") {
 		t.Fatalf("archived thread keeps its ask: %+v", arch.Decisions)

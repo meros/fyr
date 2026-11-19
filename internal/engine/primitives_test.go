@@ -87,7 +87,7 @@ func TestChangeToolIsOneObservation(t *testing.T) {
 	e, st, _ := bare(t)
 	id := bareThread(t, e)
 	ch := e.Hub.Subscribe()
-	if out, isErr := callAs(t, e, id, "change_open", map[string]any{"key": "doc:x", "kind": "doc", "title": "X"}); isErr {
+	if out, isErr := callAs(t, e, id, "change_open", map[string]any{"key": "doc:x", "kind": "code", "title": "X", "branch": "docs/x"}); isErr {
 		t.Fatalf("open: %s", out)
 	}
 	got := frames(ch)
@@ -100,7 +100,7 @@ func TestChangeToolIsOneObservation(t *testing.T) {
 	}
 	// A failing tool writes nothing.
 	n := len(evs)
-	if _, isErr := callAs(t, e, id, "change_status", map[string]any{"change": "nope", "phase": "live"}); !isErr {
+	if _, isErr := callAs(t, e, id, "change_update", map[string]any{"change": "nope", "phase": "live"}); !isErr {
 		t.Fatal("status of a missing change passed")
 	}
 	if evs, _ := st.EventsFor(id, 0, 100, false); len(evs) != n {

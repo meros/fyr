@@ -488,25 +488,18 @@ function fullFixture(now: number): Fixture {
         ],
         createdAt: iso(210), updatedAt: iso(20),
       },
+      // V0.changes-code-only (4): changes that are not code, as an old record holds them: Fyr ended them at load, and
+      // they stand under Done here.
       {
-        id: "c_scale", key: "k8s:prod/api replicas", kind: "infra", title: "Raise api replicas to 4", targets: ["k8s:gke-prod/api"], phase: "landed", phaseBy: "agent", label: "applied to prod; bot run active (claude: working); fix agent restarted the rollout",
+        id: "c_scale", key: "k8s:prod/api replicas", kind: "infra", title: "Raise api replicas to 4", targets: ["k8s:gke-prod/api"], phase: "abandoned", phaseBy: "observed", label: "Fyr no longer tracks changes that are not code",
         revisions: [{ id: "sha256:9f2c41d07aa1", summary: "replicas 2 → 4, readiness probe 5 s", by: "agent", at: iso(70) }],
-        conditions: [{ type: "health", status: "fail", reason: "2 of 4 pods in CrashLoopBackOff", source: "agent", at: iso(62) }],
-        need: { cause: "failure", text: "2 of 4 pods in CrashLoopBackOff", head: "sha256:9f2c41d07aa1" },
         evidence: [{ kind: "log", url: "https://console.cloud.google.com/logs", title: "pod logs" }],
-        offers: [
-          { id: "fix", label: "Investigate the crash loop", run: "agent", in: "this", prompt: "Read the logs of the crashing pods, find the cause, and propose a fix before you change anything.", primary: true, by: "agent", digest: dg("fix") },
-          { id: "rollback", label: "Roll back", run: "script", argv: ["kubectl", "--context", "gke-prod", "rollout", "undo", "deploy/api"], onOk: "reverted", by: "agent", digest: dg("rollback") },
-        ],
-        runs: [{ action: "apply", label: "Apply", by: "owner", at: iso(65), ok: true, output: "deployment.apps/api configured", endedAt: iso(64) }],
-        createdAt: iso(80), updatedAt: iso(62),
+        createdAt: iso(80), updatedAt: iso(62), done: { at: iso(62), by: "observed", reason: "abandoned" },
       },
       {
-        id: "c_runbook", key: "doc:runbook", kind: "doc", title: "Runbook for api scaling", phase: "review", phaseBy: "agent",
-        need: { cause: "ask", ask: "d_runbook", action: "change.approve", text: "Approve the runbook before I publish it" }, // V0.101: the host computes it
+        id: "c_runbook", key: "doc:runbook", kind: "doc", title: "Runbook for api scaling", phase: "abandoned", phaseBy: "observed", label: "Fyr no longer tracks changes that are not code",
         evidence: [{ kind: "doc", url: "https://docs.example/runbook", title: "draft" }],
-        offers: [{ id: "publish", label: "Publish to the wiki", run: "agent", in: "this", prompt: "Publish the runbook to the team wiki and link it here.", by: "agent", digest: dg("publish") }],
-        createdAt: iso(50), updatedAt: iso(40),
+        createdAt: iso(50), updatedAt: iso(40), done: { at: iso(40), by: "observed", reason: "abandoned" },
       },
       // V0.66: a PR whose checks fail, with annotations on the diff lines, and a merged PR that GitHub deployed.
       {

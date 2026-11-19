@@ -45,7 +45,7 @@ func TestDTOCarriesNeed(t *testing.T) {
 
 // SPEC V0.101 (4): the agent's change_update on an observed PR gets the
 // observed value and no error; abandoned on an open PR is taken;
-// change_unchanged is a no-op; the aliases are not listed but still work.
+// the aliases went (V0.changes-code-only (5)).
 func TestChangeUpdateObserved(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("x")
@@ -70,16 +70,6 @@ func TestChangeUpdateObserved(t *testing.T) {
 	if c := changeOf(h, id, open); c.Phase != core.PhaseAbandoned || !c.IsDone() {
 		t.Fatalf("not abandoned: %+v", c)
 	}
-	before := dtoOf(h.e, id).Rev
-	if out, isErr := call("change_unchanged", map[string]any{"reason": "x"}); isErr || out != UnchangedText {
-		t.Fatalf("change_unchanged: %q", out)
-	}
-	if after := dtoOf(h.e, id).Rev; after != before {
-		t.Fatalf("change_unchanged changed the thread: %d -> %d", before, after)
-	}
-	if out, isErr := call("change_status", map[string]any{"change": "#7", "phase": "review"}); isErr || !strings.Contains(out, "Fyr reads #7") {
-		t.Fatalf("the alias: %q", out)
-	}
 	if out, isErr := call("change_update", map[string]any{"change": "#7", "needs": "owner"}); isErr || strings.Contains(out, "needs") {
 		t.Fatalf("needs is not in the tool: %q", out)
 	}
@@ -92,10 +82,8 @@ func TestChangeUpdateObserved(t *testing.T) {
 			t.Errorf("%s is not listed", n)
 		}
 	}
-	for _, n := range []string{"change_status", "change_revise", "change_attach", "change_unchanged", "pr_link"} {
-		if listed[n] {
-			t.Errorf("the alias %s is listed", n)
-		}
+	if listed["pr_link"] {
+		t.Error("the alias pr_link is listed")
 	}
 }
 

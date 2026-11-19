@@ -19,8 +19,9 @@ func changeOf(h *harness, id, ref string) *core.Change {
 	return core.FindChange(&th, ref)
 }
 
-// SPEC 0.5 V0.59 (5): the change tools open, report, revise, attach, ask and
-// list; facts beat claims; settle_when change.
+// SPEC 0.5 V0.59 (5): the change tools open, report, revise, attach and
+// list; facts beat claims; settle_when change. Code only since
+// V0.changes-code-only (TestChangeToolsCodeOnly has the refusals).
 func TestChangeTools(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("x")
@@ -28,43 +29,36 @@ func TestChangeTools(t *testing.T) {
 	idle(h) // V0.101: a failure is the owner's 5 minutes after the run
 	call := func(tool string, a map[string]any) (string, bool) { return callAs(t, h.e, id, tool, a) }
 
-	out, isErr := call("change_open", map[string]any{"key": "k8s:prod/api", "kind": "infra", "title": "Raise api replicas to 4", "targets": []any{"k8s:gke-prod/api"}})
+	out, isErr := call("change_open", map[string]any{"key": "api:replicas", "kind": "code", "branch": "feat/replicas", "title": "Raise api replicas to 4", "targets": []any{"repo:github.com/o/r"}})
 	if isErr || !strings.Contains(out, "Opened change c_") {
 		t.Fatalf("open: %s", out)
 	}
-	if out, _ := call("change_open", map[string]any{"key": "k8s:prod/api", "kind": "infra", "title": "again"}); !strings.Contains(out, "Found") {
+	if out, _ := call("change_open", map[string]any{"key": "api:replicas", "kind": "code", "branch": "feat/replicas", "title": "again"}); !strings.Contains(out, "Found") {
 		t.Fatalf("second open: %s", out)
 	}
-	if out, isErr := call("change_status", map[string]any{"change": "k8s:prod/api", "conditions": []any{map[string]any{"type": "approval", "status": "ok"}}}); !isErr || !strings.Contains(out, "change_request") {
+	if out, isErr := call("change_update", map[string]any{"change": "api:replicas", "conditions": []any{map[string]any{"type": "approval", "status": "ok"}}}); !isErr || !strings.Contains(out, "change_request") {
 		t.Fatalf("agent approved itself: %s", out)
 	}
-	call("change_status", map[string]any{"change": "k8s:prod/api", "phase": "review", "label": "applied to staging", "conditions": []any{map[string]any{"type": "health", "status": "fail", "reason": "2 of 4 pods crash"}}})
-	c := changeOf(h, id, "k8s:prod/api")
-	if c.Phase != core.PhaseReview || c.PhaseBy != core.ByAgent || c.Label != "applied to staging" {
+	call("change_update", map[string]any{"change": "api:replicas", "phase": "review", "label": "waits for the API PR", "conditions": []any{map[string]any{"type": "tests", "status": "fail", "reason": "2 of 4 suites fail"}}})
+	c := changeOf(h, id, "api:replicas")
+	if c.Phase != core.PhaseReview || c.PhaseBy != core.ByAgent || c.Label != "waits for the API PR" {
 		t.Fatalf("status: %+v", c)
 	}
-	if d := dtoOf(h.e, id); d.Attention.State != core.Blocked || !strings.Contains(d.Attention.Reason, "2 of 4 pods crash") {
+	if d := dtoOf(h.e, id); d.Attention.State != core.Blocked || !strings.Contains(d.Attention.Reason, "2 of 4 suites fail") {
 		t.Fatalf("attention: %+v", d.Attention)
 	}
-	call("change_revise", map[string]any{"change": c.ID, "revision": map[string]any{"id": "rev2", "summary": "fix probe"}})
+	call("change_update", map[string]any{"change": c.ID, "revision": map[string]any{"id": "rev2", "summary": "fix probe"}})
 	if c := changeOf(h, id, c.ID); len(c.Revisions) != 1 || c.Conditions[0].Status != "pending" {
 		t.Fatalf("revise: %+v", c)
 	}
-	call("change_attach", map[string]any{"change": c.ID, "evidence": []any{map[string]any{"kind": "log", "url": "https://logs/x"}}})
+	call("change_update", map[string]any{"change": c.ID, "evidence": []any{map[string]any{"kind": "log", "url": "https://logs/x"}}})
 	if out, _ := call("change_list", map[string]any{"id": c.ID}); !strings.Contains(out, "https://logs/x") || !strings.Contains(out, "Raise api replicas") {
 		t.Fatalf("list: %s", out)
-	}
-	if out, isErr := call("change_request", map[string]any{"change": c.ID, "ask": "approve", "reason": "before I scale prod"}); isErr {
-		t.Fatalf("request: %s", out)
-	}
-	th, _ := h.e.Thread(id)
-	if len(th.Decisions) != 1 || th.Decisions[0].Effect.Action != "change.approve" || th.Decisions[0].Effect.Args["change"] != c.ID {
-		t.Fatalf("decision: %+v", th.Decisions)
 	}
 	if out, isErr := call("settle_when", map[string]any{"condition": "change", "change": c.ID, "phase": "live"}); isErr {
 		t.Fatalf("settle_when: %s", out)
 	}
-	if _, isErr := call("change_status", map[string]any{"change": "nope", "phase": "live"}); !isErr {
+	if _, isErr := call("change_update", map[string]any{"change": "nope", "phase": "live"}); !isErr {
 		t.Fatal("an unknown change was accepted")
 	}
 }
@@ -90,7 +84,7 @@ func TestChangeActions(t *testing.T) {
 		}
 		return "applied 3 resources", 0, nil
 	}
-	call("change_open", map[string]any{"key": "tf:prod", "kind": "infra", "title": "Prod network", "revision": map[string]any{"id": "sha256:p1"}})
+	call("change_open", map[string]any{"key": "tf:prod", "kind": "code", "branch": "feat/net", "title": "Prod network", "revision": map[string]any{"id": "sha256:p1"}})
 	if out, isErr := call("offer_action", map[string]any{"on": "tf:prod", "id": "apply", "label": "Apply plan", "run": "script", "argv": []any{"terraform", "apply", "plan.out"}, "bind": true, "onOk": "review", "primary": true}); isErr {
 		t.Fatalf("declare: %s", out)
 	}
@@ -120,7 +114,7 @@ func TestChangeActions(t *testing.T) {
 		t.Fatalf("after run: %+v %v", c, ran)
 	}
 	// A new revision makes the bound action unavailable.
-	call("change_revise", map[string]any{"change": c.ID, "revision": map[string]any{"id": "sha256:p2"}})
+	call("change_update", map[string]any{"change": c.ID, "revision": map[string]any{"id": "sha256:p2"}})
 	if r := press("r2", a.Digest); r.OK || !strings.Contains(r.Error, "newer revision") {
 		t.Fatalf("ran on a newer revision: %+v", r)
 	}

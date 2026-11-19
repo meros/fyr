@@ -15,8 +15,9 @@ const deployCommit = "c0ffee1234567890c0ffee1234567890c0ffee12"
 func askDeploy(t *testing.T, now time.Time) *Thread {
 	t.Helper()
 	th := prThread(t, "https://github.com/acme/app/pull/88", now)
-	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeRequest, Thread: "t1",
-		Args: ChangeRequest{ID: "d_deploy", Change: th.Changes[0].ID, Ask: AskDeploy, Args: map[string]any{"dir": "/src/fyr"}}}, now)
+	// V0.changes-code-only (5): a Fyr deploy is asked with effect_request.
+	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindEffectRequest, Thread: "t1",
+		Args: EffectRequest{ID: "d_deploy", Action: FyrDeploy, Args: map[string]any{"dir": "/src/fyr"}}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,8 +54,10 @@ func TestAutoDeployApprovesTheAskAndBindsTheCommit(t *testing.T) {
 	if a, _ := d["answer"].(string); !strings.Contains(a, "Auto-approved") || !strings.Contains(a, "c0ffee1") {
 		t.Fatalf("answer %q", a)
 	}
-	if c := th.Changes[0]; c.AutoApproved == nil || !c.AutoApproved.Deploy || c.AutoApproved.Head != deployCommit {
-		t.Fatalf("the change does not say it: %+v", c.AutoApproved)
+	// V0.changes-code-only (5): an effect_request deploy names no change,
+	// so no change carries the approval; the answer above says it.
+	if c := th.Changes[0]; c.AutoApproved != nil {
+		t.Fatalf("a change the deploy did not name says it: %+v", c.AutoApproved)
 	}
 	var out Result
 	report(&out, *req, true, false, "tests failed, nothing was switched")

@@ -35,15 +35,13 @@ func (e *Engine) readPRForMergeAsk(ctx context.Context, th string) {
 
 const changeRef = "The change: its id (c_…), its key, its PR URL, owner/repo#N, or #N when one change of this thread has that PR."
 
-// The tool descriptions of decision 0024 section 7 (SPEC V0.101).
+// The tool descriptions of decision 0024 section 7 (SPEC V0.101), code only
+// since V0.changes-code-only.
 const (
-	ChangeOpenDesc    = "Give Fyr a card for work it cannot see: a cluster, cloud, DNS or bucket change, a migration or data fix, a NixOS rebuild, another machine, a document, a design. Call it before the first write. Fyr makes cards for your pushes and PRs itself. The same key, PR or branch returns the same change."
-	ChangeUpdateDesc  = "Tell Fyr what only you know. Send only what changed; send nothing when nothing moved. Fyr reads PR state, checks, reviews, conflicts and the pushed head itself; if you send one of these, Fyr replies with the value it reads. abandoned takes the card off the board."
-	ChangeRequestDesc = "Ask the owner. It returns at once; the answer comes later as a [Fyr] line. merge: ask right after you push; Fyr shows the ask to the owner when CI is green on that head, closes it and tells you when CI fails or GitHub cannot merge, and merges the head the owner saw; never run gh pr merge. approve on a document or design finishes it."
+	ChangeOpenDesc    = "Give Fyr a card for a code change it cannot see by itself: a branch you pushed some other way, or a PR you did not open with gh pr create. Fyr makes cards for your pushes and PRs itself. The same key, PR or branch returns the same change. Only code: a write the owner must approve (an apply, a deploy, a migration) is run_request; a document or a design to approve is ask."
+	ChangeUpdateDesc  = "Tell Fyr what only you know about a code change. Send only what changed; send nothing when nothing moved. Fyr reads PR state, checks, reviews, conflicts and the pushed head itself; if you send one of these, Fyr replies with the value it reads. abandoned takes the card off the board."
+	ChangeRequestDesc = "Ask the owner to merge a PR. It returns at once; the answer comes later as a [Fyr] line. Ask right after you push; Fyr shows the ask to the owner when CI is green on that head, closes it and tells you when CI fails or GitHub cannot merge, and merges the head the owner saw; never run gh pr merge."
 	ChangeListDesc    = "Fyr's facts, one line per change, open changes only by default, at most 4,000 characters. id gives one change of this thread in full."
-	// UnchangedText is the reply of change_unchanged, a no-op for one
-	// release (V0.101).
-	UnchangedText = "Nothing to do: Fyr reads your PRs and pushes itself. Report with change_update only when you learn what Fyr cannot read."
 )
 
 // alias marks a tool kept for one release (V0.101): hidden from the list,
@@ -53,20 +51,14 @@ func alias(of, desc string) string { return "Alias of " + of + " for one release
 func (e *Engine) changeTools(s *mcp.Server) {
 	e.offerTool(s)      // V0.60
 	e.runRequestTool(s) // V0.149
-	s.Add(mcp.Tool{Name: "change_unchanged", Hidden: true,
-		Description: alias("nothing", "Fyr keeps your changes current itself; this does nothing."),
-		Schema:      obj(map[string]any{"reason": str("Ignored.")}),
-		Call: func(context.Context, string, map[string]any) (string, error) {
-			return UnchangedText, nil
-		}})
 	s.Add(mcp.Tool{Name: "change_update",
 		Description: ChangeUpdateDesc,
 		Schema: obj(map[string]any{
 			"change": str(changeRef),
 			"phase":  map[string]any{"type": "string", "enum": core.Phases()},
-			"label":  str("The kind's own word for where it is, for example \"planned\", \"applied to staging\"."),
+			"label":  str("A word for where it is that Fyr cannot read, for example \"waits for the API PR\"."),
 			"conditions": map[string]any{"type": "array", "items": obj(map[string]any{
-				"type":   str("What the fact is about: apply, health, migration, tests, …"),
+				"type":   str("What the fact is about: tests, lint, a local check, …"),
 				"status": map[string]any{"type": "string", "enum": core.CondStatuses()},
 				"reason": str("One line, mainly for fail and pending."),
 			}, "type", "status")},
@@ -83,16 +75,16 @@ func (e *Engine) changeTools(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "change_open",
 		Description: ChangeOpenDesc,
 		Schema: obj(map[string]any{
-			"key":      str("A stable name, unique in this thread, for example \"k8s:prod/api replicas\" or \"doc:design-v2\". The same key returns the same change."),
-			"kind":     map[string]any{"type": "string", "enum": core.ChangeKinds()},
+			"key":      str("A stable name, unique in this thread, for example \"api:retry-backoff\". The same key returns the same change. With pr, the PR names it."),
+			"kind":     map[string]any{"type": "string", "enum": core.OpenKinds(), "description": "code, the default: Fyr tracks no other changes."},
 			"title":    str("One line for the owner: what changes."),
-			"targets":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Where it lands, as kind:name, for example \"k8s:gke-prod/api\", \"host:host-b\", \"repo:github.com/o/r\", \"env:production\"."},
-			"branch":   str("For code: the git branch."),
-			"pr":       str("For code: a GitHub PR URL; Fyr watches its checks and reviews."),
+			"targets":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Where it lands, as kind:name, for example \"repo:github.com/o/r\"."},
+			"branch":   str("The git branch. A branch or a pr is required."),
+			"pr":       str("A GitHub PR URL; Fyr watches its checks and reviews."),
 			"group":    str("A name shared by changes that belong together, for example one feature across several repos."),
 			"after":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Changes this one builds on (a stack), by id or key."},
 			"revision": revisionSchema(),
-		}, "kind", "title"),
+		}, "title"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			o := core.ChangeOpen{Key: sArg(a, "key"), Kind: core.ChangeKind(sArg(a, "kind")), Title: sArg(a, "title"), Branch: sArg(a, "branch"), Group: sArg(a, "group"),
 				Targets: listArg(a, "targets"), After: listArg(a, "after"), Revision: revisionArg(a["revision"])}
@@ -121,61 +113,6 @@ func (e *Engine) changeTools(s *mcp.Server) {
 				verb = "Found"
 			}
 			return fmt.Sprintf("%s change %s %q · %s. Fyr shows it in the thread's Changes tab. Report what only you know with change_update, and ask the owner with change_request.", verb, c.ID, c.Title, phaseText(c)), nil
-		}})
-
-	s.Add(mcp.Tool{Name: "change_revise", Hidden: true,
-		Description: alias("change_update", "Record a new version of a change: a new commit range, a new plan, a new document version, a new design export. Conditions about the old version go back to pending."),
-		Schema:      obj(map[string]any{"change": str(changeRef), "revision": revisionSchema()}, "change", "revision"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			r := revisionArg(a["revision"])
-			if r == nil {
-				return "", errors.New("revision.id is required: a commit SHA, a plan digest or a version")
-			}
-			out, err := e.changeInput(th, core.KindChangeRevise, core.ChangeReviseArgs{Change: sArg(a, "change"), Revision: *r})
-			if err != nil {
-				return "", err
-			}
-			c, added := out.Change, out.New
-			if !added {
-				return fmt.Sprintf("Revision %s of %q was already recorded.", r.ID, c.Title), nil
-			}
-			return fmt.Sprintf("Recorded revision %s of %q (%d revisions).", r.ID, c.Title, len(c.Revisions)), nil
-		}})
-
-	s.Add(mcp.Tool{Name: "change_status", Hidden: true,
-		Description: alias("change_update", "Report how far a change got, or a fact about it. Phases: "+core.PhaseGuide()+"."),
-		Schema: obj(map[string]any{
-			"change": str(changeRef),
-			"phase":  map[string]any{"type": "string", "enum": core.Phases()},
-			"label":  str("The kind's own word for where it is."),
-			"conditions": map[string]any{"type": "array", "items": obj(map[string]any{
-				"type":   str("What the fact is about: apply, health, migration, tests, …"),
-				"status": map[string]any{"type": "string", "enum": core.CondStatuses()},
-				"reason": str("One line, mainly for fail and pending."),
-			}, "type", "status")},
-		}, "change"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			out, err := e.changeInput(th, core.KindChangeStatus, core.ChangeStatusArgs{Change: sArg(a, "change"), Update: updateArg(a)})
-			if err != nil {
-				return "", err
-			}
-			return updateReply(out), nil
-		}})
-
-	s.Add(mcp.Tool{Name: "change_attach", Hidden: true,
-		Description: alias("change_update", "Attach proof to a change: a plan output, a log, a deployment URL, a preview or a design export. For a file, call show first and pass its attachment id."),
-		Schema: obj(map[string]any{
-			"change":   str(changeRef),
-			"evidence": evidenceSchema(),
-		}, "change", "evidence"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			evs := evidenceArg(a)
-			out, err := e.changeInput(th, core.KindChangeAttach, core.ChangeAttachArgs{Change: sArg(a, "change"), Evidence: evs})
-			if err != nil {
-				return "", err
-			}
-			c := out.Change
-			return fmt.Sprintf("Attached %d to %q (%d in all).", len(evs), c.Title, len(c.Evidence)), nil
 		}})
 
 	s.Add(mcp.Tool{Name: "change_request",
@@ -346,7 +283,7 @@ func listOf[T ~string](a map[string]any, k string) []T {
 
 func revisionSchema() map[string]any {
 	return obj(map[string]any{
-		"id":      str("A commit SHA, a plan digest (sha256:…), a document version."),
+		"id":      str("A commit SHA."),
 		"summary": str("One line: what this version changes."),
 		"url":     str("A link to this version."),
 	}, "id")
@@ -354,7 +291,7 @@ func revisionSchema() map[string]any {
 
 func evidenceSchema() map[string]any {
 	return map[string]any{"type": "array", "items": obj(map[string]any{
-		"kind":       str("plan, log, deployment, preview, doc, design, pr, other"),
+		"kind":       str("log, preview, pr, other"),
 		"url":        str("A link."),
 		"attachment": str("A Fyr attachment id (from show)."),
 		"title":      str("A short label."),
@@ -371,7 +308,7 @@ func evidenceArg(a map[string]any) []core.Evidence {
 	return evs
 }
 
-// updateArg reads the report of change_update and change_status.
+// updateArg reads the report of change_update.
 func updateArg(a map[string]any) core.ChangeUpdate {
 	u := core.ChangeUpdate{Phase: core.Phase(sArg(a, "phase"))}
 	if v, ok := a["label"].(string); ok {

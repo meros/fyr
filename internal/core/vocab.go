@@ -136,10 +136,14 @@ const (
 	KindOther  ChangeKind = "other"
 )
 
-// ChangeKinds are the kinds a change may have.
+// ChangeKinds are the kinds a stored change may have. Only code is opened
+// now (V0.changes-code-only); the others stay so old records still load.
 func ChangeKinds() []ChangeKind {
 	return []ChangeKind{KindCode, KindInfra, KindHost, KindData, KindDoc, KindDesign, KindOther}
 }
+
+// OpenKinds are the kinds change_open takes (V0.changes-code-only (3)).
+func OpenKinds() []ChangeKind { return []ChangeKind{KindCode} }
 
 // Valid reports a known kind.
 func (k ChangeKind) Valid() bool {
@@ -149,6 +153,33 @@ func (k ChangeKind) Valid() bool {
 		}
 	}
 	return false
+}
+
+// CodeOnlyReason is why Fyr ended a change that is not code
+// (V0.changes-code-only (4)), and the first half of each refusal.
+const CodeOnlyReason = "Fyr no longer tracks changes that are not code"
+
+// The replacements of a kind or an ask that went (V0.changes-code-only (3)).
+const (
+	runInstead     = CodeOnlyReason + ": for a write the owner must approve (an apply, a deploy, a revert), call run_request with the command and the why."
+	askInstead     = CodeOnlyReason + ": to have the owner approve or review a document or a design, call ask."
+	nothingInstead = CodeOnlyReason + ": the conversation is the record; show proof (a plan, a log, a preview) with show."
+)
+
+// goneKinds are the kinds change_open no longer takes, each with the line
+// that names its replacement.
+var goneKinds = map[ChangeKind]string{
+	KindInfra: runInstead, KindHost: runInstead, KindData: runInstead,
+	KindDoc: askInstead, KindDesign: askInstead, KindOther: nothingInstead,
+}
+
+// goneAsks are the asks change_request no longer takes.
+var goneAsks = map[ChangeAsk]string{
+	"apply":   runInstead,
+	"deploy":  CodeOnlyReason + ": for a deploy the owner must approve, call run_request with the command and the why; to deploy Fyr itself, effect_request fyr.deploy.",
+	"revert":  runInstead,
+	"review":  askInstead,
+	"approve": askInstead,
 }
 
 // DecisionKind is what a decision asks the owner.
@@ -218,23 +249,15 @@ const (
 	FyrDeploy = "fyr.deploy"
 )
 
-// ChangeAsk is what change_request asks the owner (V0.59 (5)). merge and
-// deploy run a FyrEffect; the others report the owner's answer.
+// ChangeAsk is what change_request asks the owner (V0.59 (5)): merge only
+// since V0.changes-code-only. An old record may hold an open change.<ask>
+// of another word; its answer is reported as it was.
 type ChangeAsk string
 
-const (
-	AskReview  ChangeAsk = "review"
-	AskApprove ChangeAsk = "approve"
-	AskMerge   ChangeAsk = "merge"
-	AskApply   ChangeAsk = "apply"
-	AskDeploy  ChangeAsk = "deploy"
-	AskRevert  ChangeAsk = "revert"
-)
+const AskMerge ChangeAsk = "merge"
 
 // ChangeAsks are all asks, in the order the tool lists them.
-func ChangeAsks() []ChangeAsk {
-	return []ChangeAsk{AskReview, AskApprove, AskMerge, AskApply, AskDeploy, AskRevert}
-}
+func ChangeAsks() []ChangeAsk { return []ChangeAsk{AskMerge} }
 
 // TaskStatus is the state of a subagent or background task, as the CLI
 // reports it (V0.16). The CLI may report others; Fyr acts on running only.

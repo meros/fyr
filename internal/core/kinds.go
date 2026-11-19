@@ -24,9 +24,6 @@ const (
 	KindChangeRequest  = "change.request"
 	KindSettleWhen     = "settle.when"
 	KindChangeOpen     = "change.open"
-	KindChangeRevise   = "change.revise"
-	KindChangeStatus   = "change.status"
-	KindChangeAttach   = "change.attach"
 	KindChangeUpdate   = "change.update" // V0.101: status, revision and proof in one
 	KindChangeEnd      = "change.end"    // the owner's command (V0.72)
 	KindChangePark     = "change.park"   // the owner's Not now (V0.84)
@@ -85,18 +82,6 @@ type (
 	ChangeOpenArgs struct {
 		Open ChangeOpen
 		PR   string
-	}
-	ChangeReviseArgs struct {
-		Change   string
-		Revision Revision
-	}
-	ChangeStatusArgs struct {
-		Change string
-		Update ChangeUpdate
-	}
-	ChangeAttachArgs struct {
-		Change   string
-		Evidence []Evidence
 	}
 	// ChangeReply is what a change kind returns: a copy of the change, and
 	// whether the change or the revision is new.
@@ -209,6 +194,9 @@ func init() {
 			if err != nil {
 				return nil, false, err
 			}
+			if err := codeOnly(&a); err != nil {
+				return nil, false, err
+			}
 			c, made, err := OpenChange(t, a.Open, ByAgent, now)
 			if err != nil {
 				return nil, false, err
@@ -220,34 +208,7 @@ func init() {
 			}
 			return c, made, nil
 		})},
-		{Name: KindChangeRevise, From: agentOnly, Reduce: changeKind("revise", func(t *Thread, in Input, now time.Time) (*Change, bool, error) {
-			a, err := argsOf[ChangeReviseArgs](in)
-			if err != nil {
-				return nil, false, err
-			}
-			c, err := findChange(t, a.Change)
-			if err != nil {
-				return nil, false, err
-			}
-			return c, ReviseChange(c, a.Revision, now), nil
-		})},
-		{Name: KindChangeStatus, From: agentOnly, Reduce: changeKindNotes("status", reportChange)},
 		{Name: KindChangeUpdate, From: agentOnly, Reduce: changeKindNotes("update", reportChange)},
-		{Name: KindChangeAttach, From: agentOnly, Reduce: changeKind("attach", func(t *Thread, in Input, now time.Time) (*Change, bool, error) {
-			a, err := argsOf[ChangeAttachArgs](in)
-			if err != nil {
-				return nil, false, err
-			}
-			c, err := findChange(t, a.Change)
-			if err != nil {
-				return nil, false, err
-			}
-			if err := AttachEvidence(c, a.Evidence, now); err != nil {
-				return nil, false, err
-			}
-			// V0.87 (2): a PR that Fyr's own change holds folds that change into this one.
-			return joinPRWork(t, c, now), false, nil
-		})},
 		{Name: KindActionOffer, From: agentOnly, Reduce: reduceOffer},
 		{Name: KindActionPress, From: ownerOnly, Reduce: reducePress},
 		{Name: KindViewPublish, From: agentOnly, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
@@ -574,16 +535,11 @@ func changeKindNotes(op string, fn func(t *Thread, in Input, now time.Time) (*Ch
 	}
 }
 
-// reportChange is change_update (and its alias change_status): the
-// report, then a revision and proof when given (V0.101).
+// reportChange is change_update: the report, then a revision and proof
+// when given (V0.101).
 func reportChange(t *Thread, in Input, now time.Time) (*Change, bool, []string, error) {
-	var a ChangeUpdateArgs
-	switch x := in.Args.(type) {
-	case ChangeUpdateArgs:
-		a = x
-	case ChangeStatusArgs:
-		a = ChangeUpdateArgs{Change: x.Change, Update: x.Update}
-	default:
+	a, ok := in.Args.(ChangeUpdateArgs)
+	if !ok {
 		return nil, false, nil, fmt.Errorf("%w: %s got %T", ErrBadArgs, in.Kind, in.Args)
 	}
 	c, err := findChange(t, a.Change)
@@ -614,6 +570,25 @@ func reportChange(t *Thread, in Input, now time.Time) (*Change, bool, []string, 
 		}
 	}
 	return c, added, notes, nil
+}
+
+// codeOnly refuses a change_open that is not code (V0.changes-code-only
+// (3)) with the line that names its replacement; no kind is code. A code
+// change names its branch or its PR: Fyr reads the rest itself.
+func codeOnly(a *ChangeOpenArgs) error {
+	if a.Open.Kind == "" {
+		a.Open.Kind = KindCode
+	}
+	if line, gone := goneKinds[a.Open.Kind]; gone {
+		return errors.New(line)
+	}
+	if a.Open.Kind != KindCode {
+		return fmt.Errorf("kind must be %s", strings.Join(Names(OpenKinds()), ", "))
+	}
+	if strings.TrimSpace(a.Open.Branch) == "" && a.PR == "" {
+		return errors.New("a code change needs its branch or its pr; Fyr finds pushes and PRs of gh pr create itself")
+	}
+	return nil
 }
 
 // NoChange is the reason for a change ref the thread does not have.
@@ -696,6 +671,9 @@ func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
 	a, err := argsOf[ChangeRequest](in)
 	if err != nil {
 		return Result{}, err
+	}
+	if line, gone := goneAsks[a.Ask]; gone { // V0.changes-code-only (3)
+		return Result{}, errors.New(line)
 	}
 	if !slices.Contains(ChangeAsks(), a.Ask) {
 		return Result{}, fmt.Errorf("ask must be one of %s", strings.Join(Names(ChangeAsks()), ", "))
