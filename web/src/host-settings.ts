@@ -17,6 +17,9 @@ export interface SettingsHost {
   online: boolean;
   /** online: since when; offline: since when it was unreachable */
   since?: string;
+  /** V0.host-ids (decision 0031 2.1): the host reports no install id (older than V0.124). It is listed, says it needs an
+   *  update, and nothing is read from it or sent to it: no call can name it. */
+  noId?: true;
 }
 
 /** The parts of a per-host page: one without a host name when the front has one host or none, else one per host, in
@@ -24,11 +27,12 @@ export interface SettingsHost {
 export function settingsHosts(hosts: Pick<HostInfo, "id" | "name" | "online" | "since">[] | undefined): SettingsHost[] {
   const hs = hosts ?? [];
   if (hs.length <= 1) return [{ id: hs[0]?.id ?? "", name: "", label: hs[0]?.name ?? "", online: true }];
-  return hs.map((h) => ({ id: h.id ?? "", name: h.name, label: h.name, online: h.online, ...(h.since ? { since: h.since } : {}) }));
+  return hs.map((h) => ({ id: h.id ?? "", name: h.name, label: h.name, online: h.online, ...(h.since ? { since: h.since } : {}), ...(h.id ? {} : { noId: true as const }) }));
 }
 
-/** The line under a group's heading: "Online since 08:31", "Offline since 19:40". */
+/** The line under a group's heading: "Online since 08:31", "Offline since 19:40", "Needs an update". */
 export function groupLine(h: SettingsHost, now: number): string {
+  if (h.noId) return "Needs an update";
   const at = dayTime(h.since, now);
   return `${h.online ? "Online" : "Offline"}${at ? ` since ${at}` : ""}`;
 }
@@ -36,6 +40,7 @@ export function groupLine(h: SettingsHost, now: number): string {
 /** The note on an offline host's group: what is shown and that nothing changes; "" for a host that is online. readAt:
  *  when the front read what it shows (X-Fyr-Read-At), null when it has nothing. */
 export function readOnlyNote(h: SettingsHost, readAt: string | null, now: number): string {
+  if (h.noId) return `${h.label} runs a Fyr from before install ids, so its settings cannot be read or changed from here. They show once it has updated.`;
   if (h.online) return "";
   if (!readAt) return `${h.label} is offline, and Fyr has not read its settings yet. They show when it is back.`;
   return `${h.label} is offline. These are its settings as Fyr last read them at ${dayTime(readAt, now)}; nothing here can be changed until it is back.`;

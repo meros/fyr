@@ -15,6 +15,18 @@ export function mergeStateDelta(stored: StateDTO, next: Partial): StateDTO {
   return { ...next, partial: undefined, threads: [...byId.values()] } as StateDTO;
 }
 
+/** V0.host-ids (decision 0031 2.5, C7): the device keeps each host's own state, by install id, as that host last sent
+ *  it. A host's "since" is its own newest rev, and its partial answer merges into its own state before the hosts are
+ *  flattened into one, so one host's clock or records never decide what is asked of another. */
+export function hostSince(stored: StateDTO | null): number {
+  return stored ? sinceRev(stored) : 0;
+}
+
+/** A host's answer on top of its stored state: a partial answer is the threads that changed, a full one is all. */
+export function nextHostState(stored: StateDTO | null, answer: Partial): StateDTO {
+  return stored ? mergeStateDelta(stored, answer) : ({ ...answer, partial: undefined } as StateDTO);
+}
+
 /** Revs are the host's clock in ns. Frames reach a device out of rev order (the stream holds a thread up to
  *  100 ms, a front relays several hosts), so a frame lost when the stream drops can be older than the newest rev the
  *  device holds. Asking a minute early fetches it again; the cost is the threads that changed in that minute. */
@@ -107,6 +119,9 @@ async function moveHost(was: string, now: string): Promise<void> {
         if (k.startsWith(from)) {
           st.put(c.value, `events:${now}/${k.slice(from.length)}`);
           c.delete();
+        } else if (k === `host:${was}`) {
+          st.put(c.value, `host:${now}`); // the host's own state: its records are its own, not stamped
+          c.delete();
         }
         c.continue();
       };
@@ -121,8 +136,12 @@ async function moveHost(was: string, now: string): Promise<void> {
 
 export const cache = {
   moveHost,
+  /** the device's copy of the whole state, drawn at once on start (V0.38) */
   state: () => get<StateDTO>("state2"),
   saveState: (s: StateDTO) => put("state2", s),
+  /** one host's own state as it last sent it, by install id: its "since" (V0.host-ids) */
+  hostState: (hostId: string) => get<StateDTO>(`host:${hostId}`),
+  saveHostState: (hostId: string, s: StateDTO) => put(`host:${hostId}`, s),
   events: (threadId: string) => get<FyrEvent[]>(`events:${threadId}`),
   saveEvents: (threadId: string, evs: FyrEvent[]) => put(`events:${threadId}`, evs),
 };

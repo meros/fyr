@@ -34,9 +34,9 @@ test("V0.127, V0.132: several hosts are one group each, in the owner's host orde
 test("V0.126 (4): a group's line: online, or offline since when; decision 0031 2.6: no group is \"This install\"", () => {
   const [self, lab, off] = settingsHosts(
     [
-      { name: "desk", online: true, since: iso(180) },
-      { name: "lab", online: true, since: iso(40) },
-      { name: "host-b", online: false, since: iso(25) },
+      { id: "AAAA", name: "desk", online: true, since: iso(180) },
+      { id: "BBBB", name: "lab", online: true, since: iso(40) },
+      { id: "CCCC", name: "host-b", online: false, since: iso(25) },
     ],
   );
   assert.equal(groupLine(self, now), `Online since ${dayTime(iso(180), now)}`);
@@ -45,7 +45,7 @@ test("V0.126 (4): a group's line: online, or offline since when; decision 0031 2
 });
 
 test("V0.126 (3): an offline host's settings are what Fyr last read, said with the time, and cannot be changed", () => {
-  const [, off] = settingsHosts([{ name: "desk", online: true }, { name: "host-b", online: false, since: iso(25) }]);
+  const [, off] = settingsHosts([{ id: "AAAA", name: "desk", online: true }, { id: "CCCC", name: "host-b", online: false, since: iso(25) }]);
   assert.equal(
     readOnlyNote(off, iso(26), now),
     `host-b is offline. These are its settings as Fyr last read them at ${dayTime(iso(26), now)}; nothing here can be changed until it is back.`,
@@ -98,4 +98,15 @@ test("V0.126 (4): a provider's quota is its host's; without a host the first hos
   assert.equal(quotaFor(qs, "claude", "old-nuc"), undefined);
   // An older front stamps no host.
   assert.equal(quotaFor([{ profile: "claude", kind: "x" }], "claude", "lab")?.kind, "x");
+});
+
+test("V0.host-ids: a host with no install id is listed, needs an update, and says why nothing of it shows", () => {
+  const [, nuc] = settingsHosts([
+    { id: "F7QK-2M9X-AB34-CD56", name: "desk", online: true, since: iso(180) },
+    { name: "old-nuc", online: true, since: iso(300) },
+  ]);
+  assert.equal(nuc.noId, true);
+  assert.equal(groupLine(nuc, now), "Needs an update");
+  assert.match(readOnlyNote(nuc, null, now), /^old-nuc runs a Fyr from before install ids/);
+  assert.equal(settingsHosts([{ name: "desk", online: true }])[0].noId, undefined, "one host is one part, as before");
 });

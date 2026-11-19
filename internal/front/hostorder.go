@@ -26,9 +26,25 @@ const (
 	hostOrderKey  = "front.hostOrder"
 )
 
+// hostOrder names the hosts by install id (V0.host-ids, decision 0031 F17: a
+// renamed host keeps its place) and by name, which an order set before the ids
+// has alone and a host older than V0.host-ids keeps alone.
 type hostOrder struct {
 	Names []string  `json:"names"`
+	IDs   []string  `json:"ids,omitempty"`
 	At    time.Time `json:"at"`
+}
+
+// stringsOf is the strings of a JSON list.
+func stringsOf(v any) []string {
+	var out []string
+	xs, _ := v.([]any)
+	for _, x := range xs {
+		if s, ok := x.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // hostOrderOf reads a host's copy from its state ({names, at}).
@@ -38,13 +54,8 @@ func hostOrderOf(v any) hostOrder {
 	if m == nil {
 		return o
 	}
-	if ns, ok := m["names"].([]any); ok {
-		for _, x := range ns {
-			if s, ok := x.(string); ok {
-				o.Names = append(o.Names, s)
-			}
-		}
-	}
+	o.Names = stringsOf(m["names"])
+	o.IDs = stringsOf(m["ids"])
 	if s, ok := m["at"].(string); ok {
 		o.At, _ = time.Parse(time.RFC3339Nano, s)
 	}
@@ -71,16 +82,24 @@ func (f *Front) newestLocked() hostOrder {
 	return o
 }
 
-// orderedLocked is the hosts in the owner's order; a host the order does
-// not name keeps its place after them, in the config's order.
+// orderedLocked is the hosts in the owner's order, by id (V0.host-ids), else
+// by name for an order set before the ids or a host with no id yet; a host
+// the order does not name keeps its place after them, in the config's order.
 func (f *Front) orderedLocked() []*link {
 	ls := slices.Clone(f.all())
-	names := f.newestLocked().Names
+	o := f.newestLocked()
+	n := max(len(o.IDs), len(o.Names))
 	rank := func(l *link) int {
-		if i := slices.Index(names, l.name()); i >= 0 {
+		if id := f.idOfLocked(l); id != "" && len(o.IDs) > 0 {
+			if i := slices.Index(o.IDs, id); i >= 0 {
+				return i
+			}
+			return n
+		}
+		if i := slices.Index(o.Names, l.name()); i >= 0 {
 			return i
 		}
-		return len(names)
+		return n
 	}
 	slices.SortStableFunc(ls, func(a, b *link) int { return rank(a) - rank(b) })
 	return ls
@@ -92,7 +111,11 @@ func (f *Front) pushOrder(ctx context.Context, l *link, o hostOrder, commandID s
 	for i, n := range o.Names {
 		names[i] = n
 	}
-	body, _ := json.Marshal(map[string]any{"commandId": commandID, "action": "host.hostOrder", "args": map[string]any{"names": names, "at": o.At.UTC().Format(time.RFC3339Nano)}})
+	args := map[string]any{"names": names, "at": o.At.UTC().Format(time.RFC3339Nano)}
+	if len(o.IDs) > 0 { // V0.host-ids; a host before it ignores them and keeps the names
+		args["ids"] = o.IDs
+	}
+	body, _ := json.Marshal(map[string]any{"commandId": commandID, "action": "host.hostOrder", "args": args})
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/command", bytes.NewReader(body))
@@ -123,22 +146,55 @@ func (f *Front) catchUpLocked(l *link) {
 	}()
 }
 
-// hostOrderCommand runs front.hostOrder {names}: the owner's order, stamped
-// now, written to every online host and kept here.
+// hostOrderCommand runs front.hostOrder: the owner's order, stamped now,
+// written to every online host and kept here. On /api/front/command it is
+// {ids} (decision 0031); the old route sends {names}. Either way the order
+// keeps both: a host's id where the front knows it, and its name.
 func (f *Front) hostOrderCommand(w http.ResponseWriter, commandID string, args map[string]any) {
 	f.frontCommand(w, commandID, func() (int, api.Reply) {
-		raw, ok := args["names"].([]any)
+		key, what := "names", "host names"
+		if _, ok := args["ids"]; ok {
+			key, what = "ids", "host ids"
+		}
+		raw, ok := args[key].([]any)
 		if !ok || len(raw) > 100 {
-			return 400, api.Reply{Error: "names must be a list of at most 100 host names", Status: 400}
+			return 400, api.Reply{Error: key + " must be a list of at most 100 " + what, Status: 400}
 		}
 		o := hostOrder{At: time.Now().UTC()}
+		f.mu.Lock()
 		for _, x := range raw {
 			s, _ := x.(string)
-			if s = strings.TrimSpace(s); s != "" && !slices.Contains(o.Names, s) {
-				o.Names = append(o.Names, s)
+			if s = strings.TrimSpace(s); s == "" {
+				continue
+			}
+			var l *link
+			if key == "ids" {
+				if l = f.byIDLocked(s); l == nil {
+					f.mu.Unlock()
+					return 404, api.Reply{Error: "this front follows no host " + s, Status: 404}
+				}
+			} else {
+				for _, x := range f.all() {
+					if x.name() == s {
+						l = x
+					}
+				}
+			}
+			name, id := s, ""
+			if l != nil { // by its id now, also when the call named the id it had (idWas)
+				name, id = l.name(), f.idOfLocked(l)
+			}
+			if slices.Contains(o.Names, name) || (id != "" && slices.Contains(o.IDs, id)) {
+				continue
+			}
+			o.Names = append(o.Names, name)
+			if id != "" {
+				o.IDs = append(o.IDs, id)
 			}
 		}
-		f.mu.Lock()
+		if len(o.IDs) != len(o.Names) {
+			o.IDs = nil // a host with no id yet: the names alone keep the order whole
+		}
 		var on []*link
 		for _, l := range f.all() {
 			if l.online {
@@ -164,6 +220,6 @@ func (f *Front) hostOrderCommand(w http.ResponseWriter, commandID string, args m
 		f.mu.Lock()
 		f.publishHostsLocked()
 		f.mu.Unlock()
-		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"names": o.Names, "stored": stored}}
+		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"names": o.Names, "ids": o.IDs, "stored": stored}}
 	})
 }

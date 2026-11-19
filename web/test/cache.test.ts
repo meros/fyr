@@ -2,7 +2,7 @@
 // device; at start and on open it fetches only the difference.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeEventLists, mergeStateDelta, sinceRev } from "../src/cache.ts";
+import { hostSince, mergeEventLists, mergeStateDelta, nextHostState, sinceRev } from "../src/cache.ts";
 import { thread } from "./helpers.ts";
 import type { StateDTO } from "../src/types.ts";
 
@@ -39,4 +39,19 @@ test("stored and new events merge by seq; a gap drops the stored copy", () => {
   assert.deepEqual(mergeEventLists(cached, [ev(3), ev(4)], 400, false).map((e) => e.seq), [1, 2, 3, 4]);
   assert.deepEqual(mergeEventLists(cached, [ev(10), ev(11)], 400, true).map((e) => e.seq), [10, 11], "more than one page new: the stored copy is stale");
   assert.deepEqual(mergeEventLists([ev(1), ev(2), ev(3), ev(4)], [ev(5)], 3, false).map((e) => e.seq), [3, 4, 5], "keeps the newest");
+});
+
+// V0.host-ids (decision 0031 2.5, C7): each host's since comes from its own stored state, and its partial answer
+// merges into that state, so a host whose clock runs ahead never makes the device skip another host's threads.
+test("each host is asked since its own newest rev and its delta merges into its own state", () => {
+  const ahead = 1_900_000_000_000_000_000, behind = 1_800_000_000_000_000_000;
+  const a = state([thread("t1", "seen", "seen", { rev: ahead })]);
+  const b = state([thread("t1", "seen", "seen", { rev: behind, title: "B's t1" }), thread("t2", "seen", "seen", { rev: behind - 5 })]);
+  assert.ok(hostSince(b) < behind && hostSince(a) > behind, "B is asked from its own clock, not A's");
+  assert.equal(hostSince(null), 0, "nothing stored: the whole state");
+  const nb = nextHostState(b, state([thread("t2", "done", "needs", { rev: behind + 9, title: "new" })], true));
+  assert.deepEqual(nb.threads.map((t) => `${t.id}:${t.title ?? ""}`).sort(), ["t1:B's t1", "t2:new"], "the delta lands in B's own state; A's t1 is not B's");
+  assert.equal((nb as { partial?: boolean }).partial, undefined);
+  const first = nextHostState(null, state([thread("t9", "seen", "seen", { rev: 3 })]));
+  assert.deepEqual(first.threads.map((t) => t.id), ["t9"]);
 });

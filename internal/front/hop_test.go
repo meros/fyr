@@ -196,6 +196,28 @@ func TestHopCarriesThePrincipalOnEveryRoute(t *testing.T) {
 		}
 	}
 
+	// V0.host-ids: the six settings reads on the prefix, which the front reads
+	// itself to keep the answer, still reach the host as the device.
+	for _, path := range settingsPaths {
+		before := mark()
+		req, _ := http.NewRequest("GET", lo.URL+"/api/h/HOST-0000-0000-0000"+strings.TrimPrefix(path, "/api"), nil)
+		req.AddCookie(&http.Cookie{Name: auth.Cookie, Value: session})
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		got := since(before)
+		if len(got) != 1 {
+			t.Errorf("settings read %s: the host saw %d requests", path, len(got))
+			continue
+		}
+		if p, err := authn.Parse(got[0].h.Get(authn.Header)); err != nil || p.Kind != authn.KindDevice || p.ID != dev.ID {
+			t.Errorf("settings read %s: the host saw %+v (%v), want device %s", path, p, err, dev.ID)
+		}
+	}
+
 	// Whatever the host saw, from any caller, carries nothing of the browser.
 	mu.Lock()
 	defer mu.Unlock()
