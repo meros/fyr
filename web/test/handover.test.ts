@@ -1,7 +1,8 @@
 // SPEC 0.5 V0.45: the handover dialog says which rung runs; the divider says which one ran.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dividerLine, handoverTargets, parsePlan, planGuess, rungDone, rungText, targetModel } from "../src/handover.ts";
+import { dividerLine, handoverTargets, parsePlan, planGuess, rungDone, rungText } from "../src/handover.ts";
+import { modelChoices, nearestModel } from "../src/model-choice.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { threadMenu } from "../src/menu.ts";
 import { thread } from "./helpers.ts";
@@ -22,8 +23,8 @@ test("the dialog names each rung in the owner's words", () => {
 test("the targets are the other profiles, each with its own model", () => {
   const t = thread("t1", "seen", "seen");
   assert.deepEqual(handoverTargets(t, profiles).map((p) => p.id), ["acme", "bare"]);
-  assert.equal(targetModel(profiles[1]), "sonnet");
-  assert.equal(targetModel(profiles[2]), "");
+  assert.equal(nearestModel("opus", profiles[1]), "sonnet");
+  assert.equal(nearestModel("opus", profiles[2]), "");
 });
 
 test("the plan comes from the host; without one, a session means resume", () => {
@@ -61,9 +62,13 @@ test("the thread menu offers Hand over…, disabled with the host's reason", () 
   assert.equal(it.disabled, "Wait for the run to end");
 });
 
-// SPEC 0.5 V0.50 (found live): a provider that cannot run (no token yet) is not a Hand over target.
-test("V0.50 an unavailable provider is no handover target", () => {
+// SPEC 0.5 V0.50 (found live), V0.model-choice: a provider that cannot run (no token yet) is shown in Hand over but
+// cannot be picked; the dialog starts on the first that can run.
+test("V0.50 an unavailable provider is a target that cannot be picked", () => {
   const t = thread("t1", "seen", "seen", { profile: "claude" });
-  const ps: Profile[] = [...profiles, { id: "x", name: "X", color: "", models: [], unavailable: "Paste the token" }];
-  assert.deepEqual(handoverTargets(t, ps).map((p) => p.id), ["acme", "bare"]);
+  const ps: Profile[] = [{ id: "x", name: "X", color: "", models: [], unavailable: "Paste the token" }, ...profiles];
+  assert.deepEqual(handoverTargets(t, ps).map((p) => p.id), ["x", "acme", "bare"]);
+  const c = modelChoices(handoverTargets(t, ps));
+  assert.equal(c[0].label, "X · needs setup");
+  assert.equal(c[0].why, "Paste the token");
 });

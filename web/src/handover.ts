@@ -32,14 +32,9 @@ export function rungDone(r: string): string {
   }
 }
 
-/** The profiles a thread can go to: every other one. */
+/** The profiles a thread can go to: every other one; V0.model-choice: one that cannot run is shown, not pickable. */
 export function handoverTargets(t: Thread, profiles: Profile[]): Profile[] {
-  return profiles.filter((p) => p.id !== t.profile && !p.unavailable);
-}
-
-/** The model a target starts with: its default, else its first, else the CLI's own (""). */
-export function targetModel(p: Profile | undefined): string {
-  return p?.defaultModel ?? p?.models[0] ?? "";
+  return profiles.filter((p) => p.id !== t.profile);
 }
 
 /** The host's answer when it can be asked; a mock or an old host gets the likely rung. */

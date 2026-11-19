@@ -513,6 +513,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .fld input,.fld select{height:34px}
 .fld textarea{resize:vertical;min-height:120px}
 .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.row1{display:grid;grid-template-columns:minmax(0,1fr)} /* V0.model-choice: one field across, as .row2 lays out two */
 .err{color:var(--signal-ink);font:400 13px/18px var(--ui)}
 .lede{margin:0;font:400 13px/19px var(--ui);color:var(--ink-muted)}
 .cands{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -779,6 +780,7 @@ button.ptag{padding:0}
 .srcb{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
 .srct{display:flex;gap:8px;align-items:baseline;min-width:0}
 .srcl{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.srcl.mnote{color:var(--ink)} /* V0.model-choice: the project default that cannot run, said once under Model */
 .fline{display:flex;align-items:center;gap:8px;min-height:34px;padding:0 4px 0 10px;border:1px solid var(--line);border-radius:8px;font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
 .fline .ell{flex:1;min-width:0}
 .ppick{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:48px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:8px;text-align:left;min-width:0}
@@ -1067,9 +1069,12 @@ html.list-resizing iframe{pointer-events:none}
 .ho-rung{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:500 13px/18px var(--ui);color:var(--ink)}
 .ho-rung small{font-weight:400;color:var(--ink-muted)}
 .ho-wait{color:var(--ink-faint);font-weight:400}
-.db.ho-ph{overflow:visible;padding:4px 16px 8px}
+.db.ho-ph{overflow:visible;padding:4px 16px 8px;flex:none} /* the sheet scrolls; the form keeps its height */
 .df.ho-ph{border-top:0;padding:8px 16px 0}
 .df.ho-ph .btn{min-height:44px;flex:1}
+.db.ho-ph .fld select{height:44px;font-size:16px} /* touch size; 16 px keeps iOS from zooming */
+.ho-map{margin:-2px 0 4px;overflow-wrap:anywhere}
+.db.ho-ph .row2{grid-template-columns:minmax(0,1fr)} /* the phone stacks To and Effort: a provider · model name needs the width */
 .hodiv{display:flex;align-items:center;gap:10px;margin:14px 0 6px;color:var(--ink-muted);font:500 12px/16px var(--ui)}
 .hodiv::before,.hodiv::after{content:"";flex:1;height:1px;background:var(--line)}
 .hodiv .hot{display:flex;flex-direction:column;align-items:center;text-align:center;max-width:80%;min-width:0}

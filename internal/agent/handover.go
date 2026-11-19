@@ -119,6 +119,12 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	if model == "" {
 		model = to.DefaultModel
 	}
+	// V0.model-choice: the effort picked for the target, else the thread's; every rung starts with it.
+	asked := t.Effort
+	if e.Effort != nil {
+		asked = *e.Effort
+	}
+	effort := cli.EffortFor(to.ModelCaps, model, asked, to.DefaultEffort)
 	var notes []string
 	fail := func(err error) {
 		log.Printf("thread %s: handover to %s: %v", threadID, e.Profile, err)
@@ -126,13 +132,16 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	}
 	done := func(rung, sid, path string, first string) {
 		data := map[string]any{"from": t.Profile, "to": e.Profile, "model": model, "rung": rung}
+		if effort != "" {
+			data["effort"] = effort
+		}
 		if path != "" {
 			data["path"] = path
 		}
 		if len(notes) > 0 {
 			data["note"] = strings.Join(notes, "; ")
 		}
-		m.observe(threadID, core.KindHandoverDone, core.HandoverDoneArgs{Profile: e.Profile, Model: model, SessionID: sid, Data: data})
+		m.observe(threadID, core.KindHandoverDone, core.HandoverDoneArgs{Profile: e.Profile, Model: model, SessionID: sid, Effort: e.Effort, Data: data})
 		m.mu.Lock()
 		s := m.sessions[threadID]
 		m.mu.Unlock()
@@ -168,7 +177,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 			notes = append(notes, "Could not copy the session: "+cerr.Error())
 		} else {
 			if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: t.SessionID, resume: true,
-				effort: cli.EffortFor(to.ModelCaps, model, t.Effort, to.DefaultEffort)}); err != nil {
+				effort: effort}); err != nil {
 				notes = append(notes, "Resume failed: "+core.TruncHead(firstLine(err.Error()), 300))
 			} else {
 				done(RungResume, t.SessionID, "", "")
@@ -194,7 +203,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	}
 	if err == nil {
 		sid := newUUID()
-		if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: sid, addDirs: []string{filepath.Dir(path)}}); err != nil {
+		if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: sid, effort: effort, addDirs: []string{filepath.Dir(path)}}); err != nil {
 			fail(fmt.Errorf("%s could not start: %v", name(to), err))
 			return
 		}
@@ -211,7 +220,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	}
 	path, perr := m.writeHandoverFile(threadID, "brief", brief)
 	sid := newUUID()
-	o := &as{profile: to, model: model, session: sid}
+	o := &as{profile: to, model: model, session: sid, effort: effort}
 	saved := ""
 	if perr == nil {
 		o.addDirs = []string{filepath.Dir(path)}

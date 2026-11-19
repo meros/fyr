@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -15,8 +15,8 @@ import { HostChip, HostField, useHosts } from "./host-pick-ui.tsx";
 import { hostChip, hostChoices, hostOf, hostOfflineNote, multiHost, profilesOfHost } from "./hosts.ts";
 import { deleteProjectAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
-import { shortModel } from "./format.ts";
-import { offLabel, projectModelOff } from "./providers.ts";
+import { effortsFor, offLabel, projectModelOff } from "./providers.ts";
+import { modelName } from "./model-choice.ts";
 import { useApi } from "./api-context.ts";
 
 /** Threads and projects for labels deep in the tree, and a way to open a thread or a project. */
@@ -799,6 +799,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const prof = profiles.find((p) => p.id === (project.profile ?? ""));
+  const defEfforts = prof ? effortsFor(prof, projectDefaults(project, profiles).model ?? "") : [];
   const preview: Project = { ...project, color: shownColor };
 
   const upload = async (f: File | undefined) => {
@@ -989,7 +990,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
           }
         />
         <Row
-          title="Default provider and model"
+          title="Default provider, model and effort"
           desc="What a new thread here starts with."
           error={errs.defaults ?? projectModelOff(project, profiles)}
           stack
@@ -1006,9 +1007,18 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
                 <option value="">{prof ? "The provider's default" : "None"}</option>
                 {prof && project.model && !prof.models.includes(project.model) && <option value={project.model}>{offLabel(project.model)}</option>}
                 {(prof?.models ?? []).map((m) => (
-                  <option value={m}>{shortModel(m)}</option>
+                  <option value={m}>{modelName(prof, m)}</option>
                 ))}
               </select>
+              {/* V0.model-choice (#23): the default effort, only for a model that takes one */}
+              {defEfforts.length > 0 && (
+                <select aria-label="Default effort" value={project.effort ?? ""} disabled={env.readOnly} onChange={(e) => void save("defaults", patchFor("effort", (e.target as HTMLSelectElement).value))}>
+                  <option value="">The provider's default</option>
+                  {defEfforts.map((x) => (
+                    <option value={x}>{x}</option>
+                  ))}
+                </select>
+              )}
             </>
           }
         />

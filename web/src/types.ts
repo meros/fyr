@@ -250,6 +250,8 @@ export interface Project {
   members?: Project[];
   profile?: string;
   model?: string;
+  /** V0.model-choice: the default effort of a new thread here, when its model takes it */
+  effort?: string;
   threads?: number;
   lastUsed?: string;
   /** when the host made it; V0.121: projects the owner has not placed follow by this */

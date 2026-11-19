@@ -3,6 +3,7 @@
 import { hostUrl } from "./urls.ts";
 import { bare } from "./hostfeed.ts";
 import type { NewProjectDraft, Profile, Project, ProjectIconSpec, QuietHours, SetupField, Thread } from "./types.ts";
+import { effortsFor } from "./providers.ts";
 import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import type { HostInfo } from "./hosts.ts";
@@ -271,9 +272,12 @@ export function messageFrom(fromId: string | undefined, threads: Record<string, 
 export const FILTER_KEY = "fyr.projectFilter";
 
 /** Picking a project fills the folder with its folder here and its default profile and model (V0.23). */
-export function projectDefaults(pr: Project, profiles: Profile[]): { cwd?: string; profile?: string; model?: string } {
+export function projectDefaults(pr: Project, profiles: Profile[]): { cwd?: string; profile?: string; model?: string; effort?: string } {
   const prof = profiles.find((x) => x.id === pr.profile);
-  return { cwd: pr.folder || undefined, profile: prof?.id, model: prof ? (pr.model && prof.models.includes(pr.model) ? pr.model : (prof.defaultModel ?? prof.models[0])) : undefined };
+  const model = prof ? (pr.model && prof.models.includes(pr.model) ? pr.model : (prof.defaultModel ?? prof.models[0])) : undefined;
+  // V0.model-choice: the project's effort, when its model takes it
+  const effort = prof && model && pr.effort && effortsFor(prof, model).includes(pr.effort) ? pr.effort : undefined;
+  return { cwd: pr.folder || undefined, profile: prof?.id, model, ...(effort ? { effort } : {}) };
 }
 
 // ---- V0.30: one picker, one create step ----
@@ -390,11 +394,13 @@ export interface ProjectFields {
   icon: { kind: string; value: string };
   profile: string;
   model: string;
+  /** V0.model-choice */
+  effort: string;
   quiet: QuietHours[];
   priority: ProjectPriority;
   agentSettle: AgentSettle;
 }
-export type ProjectFieldPatch = { agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
+export type ProjectFieldPatch = { agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; effort?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
 
 /** V0.project-priority: a project's priority as the page shows it; normal is stored as none. */
 export type ProjectPriority = "high" | "normal" | "low";
@@ -425,7 +431,7 @@ export function patchFor<K extends keyof ProjectFields>(field: K, value: Project
     case "name":
       return { name: (value as string).trim() };
     case "profile":
-      return { profile: value as string, model: "" };
+      return { profile: value as string, model: "", effort: "" };
     case "quiet": {
       const q = value as QuietHours[];
       return { quiet: q.length ? q.map(cleanWindow) : null };
