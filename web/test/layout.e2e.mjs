@@ -2787,7 +2787,7 @@ for (const [label, w, ht] of [
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
     const foot = await evaluate(`[...document.querySelectorAll('${root} section[aria-label="Hosts"] .sg-f')].map(e => e.textContent).join(' ')`); // V0.159: the installs panel has its own groups
     // V0.132 adds the order's sentence before it.
-    check(foot === "The first host is the default for New project, New thread and the folder picker. This order is kept on your hosts, so every device shows it. Fyr finds your other installs on the tailnet by itself. A host it cannot see goes in fyrd's config (hosts).", `${ctx}: the foot "${foot}"`);
+    check(foot === "The first host is the default for New project, New thread and the folder picker. This order is kept on your hosts, so every device shows it. Your other installs join this list once they are paired; installs of your Tailscale login pair by themselves. A host that is not paired goes in fyrd's config (hosts).", `${ctx}: the foot "${foot}"`);
     await shot(`hosts-${label}.png`);
     if (!phone) {
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
@@ -2844,7 +2844,7 @@ for (const [label, w, ht] of [
     check(pg.id === "id M3RS-QX7P-5LKA-2WNE" && pg.pill === "Offline", `${ctx}: host-b's id ${JSON.stringify(pg)}`);
     check(pg.copy.includes("Copy") || pg.copy.includes("Copied"), `${ctx}: no Copy ${JSON.stringify(pg.copy)}`);
     check(row("Address")?.[1] === "http://100.64.0.9:7778 · tailnet", `${ctx}: the Address row ${JSON.stringify(row("Address"))}`);
-    check(/^Fyr found it by itself\./.test(row("Found on the tailnet")?.[1] ?? ""), `${ctx}: the origin row ${JSON.stringify(pg.rows)}`);
+    check(/^Fyr follows it over its peer link/.test(row("Paired")?.[1] ?? ""), `${ctx}: the origin row ${JSON.stringify(pg.rows)}`);
     check(/^Unreachable\. Its threads show as last read/.test(pg.rows.find((r) => /^Offline since/.test(r[0]))?.[1] ?? ""), `${ctx}: the state row ${JSON.stringify(pg.rows)}`);
     await shot(`host-${label}.png`);
     if (!phone) {

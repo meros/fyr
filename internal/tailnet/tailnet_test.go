@@ -95,39 +95,6 @@ func TestIPv4FromLocalAPI(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.123 (decision 0025): a discovery candidate is a peer that is
-// online, untagged and owned by this node's own Tailscale user.
-func TestCandidatesAreTheOwnersOnlineNodes(t *testing.T) {
-	sock := sockPath(t)
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/localapi/v0/status" || r.Header.Get("Sec-Tailscale") != "localapi" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Write([]byte(`{"Self":{"UserID":42,"DNSName":"me.tail.ts.net."},"Peer":{
-			"k1":{"DNSName":"server.tail.ts.net.","UserID":42,"Online":true},
-			"k2":{"DNSName":"sleeping.tail.ts.net.","UserID":42,"Online":false},
-			"k3":{"DNSName":"tagged.tail.ts.net.","UserID":42,"Online":true,"Tags":["tag:ci"]},
-			"k4":{"DNSName":"friend.tail.ts.net.","UserID":7,"Online":true},
-			"k5":{"DNSName":"","UserID":42,"Online":true}}}`))
-	}))
-	got, err := Candidates(context.Background(), sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0] != "server.tail.ts.net" {
-		t.Fatalf("candidates %v", got)
-	}
-	if _, err := Candidates(context.Background(), filepath.Join(t.TempDir(), "none.sock")); err == nil {
-		t.Fatal("missing socket gave no error")
-	}
-}
-
 // sockPath is a socket path short enough for macOS (104 bytes): t.TempDir()
 // there carries the test's name under /var/folders/….
 func sockPath(t *testing.T) string {

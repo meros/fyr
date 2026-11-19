@@ -14,7 +14,7 @@ import (
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/identity"
-	"github.com/meros/fyr/internal/peers"
+	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
 )
@@ -84,21 +84,20 @@ type frontParts struct {
 // the peer port as it is now; done closes once its cache is written at the end.
 type runningFront struct {
 	fr        *front.Front
-	wellKnown func() peers.WellKnown
+	wellKnown func() peer.WellKnown
 	done      chan struct{}
 }
 
 // startFront makes the front with its peer side (decision 0030 3.6) and runs
-// it, its peer side and discovery (V0.123). srv and old are the host's (role
-// both); nil for a front only. Listen is the main listener's address, where
-// discovery says this front answers. It serves no listener.
-func startFront(ctx context.Context, p frontParts, listen string, srv *server.Server, old *oldListeners) *runningFront {
+// both. srv and old are the host's (role both); nil for a front only. It
+// serves no listener.
+func startFront(ctx context.Context, p frontParts, srv *server.Server, old *oldListeners) *runningFront {
 	id := p.key.ID()
-	// V0.123 (decision 0025): other installs find this one by its
-	// well-known answer, which names where its host protocol is.
+	// V0.123 (decision 0025): the well-known answer, which the pairing reads;
+	// it names where the old host listener is, for an older install's discovery.
 	wk := wellKnown(p.cfg, p.name, p.hostURL, id)
 	ps := newPeerSide(p.cfg, p.data, p.name, p.key)
-	wellKnownNow := func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }
+	wellKnownNow := func() peer.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }
 	var legacy func() int64 // a front only has no host, so it counts none
 	if srv != nil {
 		legacy = srv.LegacyFronts
@@ -117,7 +116,6 @@ func startFront(ctx context.Context, p frontParts, listen string, srv *server.Se
 	rf := &runningFront{fr: fr, wellKnown: wellKnownNow, done: make(chan struct{})}
 	go func() { fr.Run(ctx); close(rf.done) }()
 	ps.start(ctx, srv, fr, p.auth, old)
-	go newDiscovery(p.cfg, wk, listen, fr).Run(ctx, peers.Every)
 	return rf
 }
 

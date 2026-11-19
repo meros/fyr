@@ -1704,12 +1704,12 @@ function HostRow({ h, now, go, still }: { h: HostInfo; now: number; go(r: PageRe
 
 const HOSTS_FOOT = (
   <>
-    Fyr finds your other installs on the tailnet by itself. A host it cannot see goes in fyrd's config (<span class="mono">hosts</span>).
+    Your other installs join this list once they are paired; installs of your Tailscale login pair by themselves. A host that is not paired goes in fyrd's config (<span class="mono">hosts</span>).
   </>
 );
 
-/** The Hosts page: the hosts in the owner's order (V0.132). No buttons: today a host gets on the list
- *  by discovery or by the config, and the foot says so. */
+/** The Hosts page: the hosts in the owner's order (V0.132). No buttons: a host gets on the list
+ *  by pairing or by the config (V0.retire-discovery), and the foot says so. */
 /** V0.132: the owner orders the hosts with the one reorder control (V0.119 (4)): a grip on the desktop, a Reorder mode
  *  with ↑ and ↓ on the phone. The first is the default host. Each move saves at once (front.hostOrder, kept on every
  *  host) and shows on this device first. */
@@ -2017,7 +2017,7 @@ function HostPage({ h, api, now }: { h: HostInfo; api: SettingsProps["api"]; now
         )}
         {!isSelf &&
           (h.found ? (
-            <Row title="Found on the tailnet" desc="Fyr found it by itself. It leaves this list 30 days after its last answer." />
+            <Row title="Paired" desc="Fyr follows it over its peer link, as one of your installs. It leaves this list when it is removed from them." />
           ) : (
             <Row
               title="Set in this front's config"
