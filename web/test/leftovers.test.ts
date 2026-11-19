@@ -32,6 +32,13 @@ test("the thread's strip names its leftovers with their memory, the heavy ones f
   assert.equal(findLeftovers([host([fwd])], "t_map"), null);
 });
 
+test("V0.kept-not-leftover: a process the agent kept stays off its thread's strip; one the owner kept stays on it", () => {
+  assert.equal(findLeftovers([host([kept])], "t_map"), null);
+  assert.deepEqual(findLeftovers([host([kept, http])], "t_map")!.items.map((x) => x.pid), [12]);
+  const owners: Leftover = { ...kept, kept: { ...kept.kept!, by: "owner" } };
+  assert.deepEqual(findLeftovers([host([owners])], "t_map")!.items.map((x) => x.pid), [14]);
+});
+
 test("the rail and the phone's sheet count a host's leftovers and their memory", () => {
   assert.equal(hostLeftovers(host([])), null);
   const r = hostLeftovers(host([chrome, http, fwd]))!;
