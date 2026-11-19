@@ -26,6 +26,7 @@ import { AgentPill, newThreadAgent, showOnly, threadAgent } from "./agent-ui.tsx
 import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { LeftoverStrip } from "./leftovers-ui.tsx";
+import { InvariantCards } from "./invariants-ui.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
@@ -568,6 +569,7 @@ function MInbox(p: PhoneProps) {
                   hint && <span class="h ell">{hint}</span>
                 )}
               </div>
+              {s.key === "needs" && <InvariantCards phone now={p.now} onOpen={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} />}
               {shown.map((t) => (
                 <Fragment key={t.id}>
                   {heads[t.id] && <NeedsGroupHead label={heads[t.id]} />}

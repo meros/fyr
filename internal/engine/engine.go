@@ -195,6 +195,7 @@ type Engine struct {
 	// the threads whose killed job waits for its rerun (thread → entry).
 	rerunKills   map[string][]time.Time // under mu
 	rerunWait    map[string]string      // under mu
+	inv          invariants             // V0.load-invariants: under its own lock
 	titleMu      sync.Mutex
 	titling      map[string]bool
 	textAskSlots chan struct{} // V0.210: the question job's calls at once
@@ -566,6 +567,19 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 		if err := e.UpdateNow(); err != nil {
 			return fail(409, err.Error())
 		}
+	case core.EffectInvariantFix: // V0.load-invariants: the owner's Fix it
+		id, _ := ef.Request.Args["id"].(string)
+		r := e.invariantFix(id)
+		if !r.OK {
+			return r
+		}
+		reply.ThreadID, reply.Result = r.ThreadID, r.Result
+	case core.EffectInvariantDismiss:
+		id, _ := ef.Request.Args["id"].(string)
+		if err := e.invariantDismiss(id); err != nil {
+			return fail(404, err.Error())
+		}
+		reply.Result = map[string]any{"id": id}
 	case core.EffectAutoMergeSet: // V0.102: the owner's setting
 		repo, _ := ef.Request.Args["repo"].(string)
 		on, _ := ef.Request.Args["on"].(bool)

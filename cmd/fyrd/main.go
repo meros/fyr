@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -273,8 +274,13 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// V0.209: the gate hook admits a heavy command by itself.
-	groups := &cgroup.JobGroups{Tree: tree, N: n}              // decision 0029 S5: each holder's job in a cgroup of its own; V0.admission-memory: N sizes a class under three runs
-	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun // V0.job-limits: a job sizes itself
+	groups := &cgroup.JobGroups{Tree: tree, N: n}                                     // decision 0029 S5: each holder's job in a cgroup of its own; V0.admission-memory: N sizes a class under three runs
+	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun                        // V0.job-limits: a job sizes itself
+	groups.Limited = func(thread, class, why, high string, budget uint64, runs int) { // V0.load-invariants: limit-under-prior
+		if h, err := strconv.ParseUint(high, 10, 64); err == nil && n > 0 {
+			eng.JobLimitSet(thread, class, why, h, slots.Prior(slots.Signals{Memory: budget}, n).Mem, why == "learned" && runs >= slots.LearnRuns)
+		}
+	}
 	// V0.164, V0.209: the learned and added patterns; the detector of
 	// work that nobody asked for, its settings and the record of its episodes.
 	book := &heavy.Book{KV: h.st, Matcher: heavyCmds, Base: cfg.HeavyAdded}
@@ -601,12 +607,15 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.psi-trigger-slice: a refused open (the file not yet the user's, or
 	// the slice not there yet) is tried again each minute.
 	guardWake := make(chan struct{}, 1)
+	psiScope := tree.Layout() == cgroup.LayoutScope // V0.load-invariants: psi-trigger-missing
+	eng.PSITrigger(psiScope, false)
 	if err := cgroup.WatchAgentsPressure(ctx, tree, func() {
 		select {
 		case guardWake <- struct{}{}:
 		default:
 		}
 	}, func() {
+		eng.PSITrigger(psiScope, true)
 		log.Printf("guard: PSI trigger %q on the agents' memory.pressure, set on a later try", cgroup.PressureTrigger)
 	}); err != nil {
 		if cgroup.PressureRetrying(err) {
@@ -615,6 +624,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			log.Printf("guard: no PSI trigger (%v); the guard reads every 10 s", err)
 		}
 	} else {
+		eng.PSITrigger(psiScope, true)
 		log.Printf("guard: PSI trigger %q on the agents' memory.pressure", cgroup.PressureTrigger)
 	}
 	go func() {

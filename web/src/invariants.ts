@@ -1,0 +1,61 @@
+// V0.load-invariants: the load guard's invariants as words. A violation is a card in Needs you (the evidence, Fix it,
+// Dismiss) until the owner presses one; Settings → Automation lists each invariant with its last violation and count.
+// Pure: invariants-ui.tsx prints them, on the desktop and the phone alike.
+import type { Guard, InvariantCard } from "./guard.ts";
+import type { HostLoad } from "./load.ts";
+import { relTime, whenLabel } from "./format.ts";
+
+/** One open card and the host it is of. */
+export interface HostCard {
+  host: string;
+  card: InvariantCard;
+  /** the Fyr checkout Fix it starts its thread in; null when the host has none */
+  fixDir: string | null;
+}
+
+const guardOf = (h: HostLoad) => (h.slots as { guard?: Guard } | undefined)?.guard;
+
+/** Every host's open cards, the newest first. */
+export function invariantCards(load: HostLoad[]): HostCard[] {
+  const out: HostCard[] = [];
+  for (const h of load) {
+    const inv = guardOf(h)?.invariants;
+    for (const card of inv?.cards ?? []) out.push({ host: h.host, card, fixDir: inv?.fixDir || null });
+  }
+  return out.sort((a, b) => Date.parse(b.card.at) - Date.parse(a.card.at));
+}
+
+/** The card's head: what broke, and on which host when there are several. */
+export function cardHead(c: HostCard, hosts: number): string {
+  return `Load invariant broken: ${c.card.id}${hosts > 1 ? ` on ${c.host}` : ""}`;
+}
+
+/** "14:05 · 12 min ago". */
+export function cardWhen(c: InvariantCard, now: number): string {
+  return `${whenLabel(c.at, now)} · ${relTime(c.at, now)} ago`;
+}
+
+/** Whether Fix it can start its thread, and what the card says when it cannot. */
+export function fixState(c: HostCard): { can: boolean; note: string } {
+  if (c.fixDir) return { can: true, note: `Fix it starts a thread in ${c.fixDir} with this evidence.` };
+  return { can: false, note: "This host has no project with a Fyr checkout. Add the Fyr repo as a project to fix it from here." };
+}
+
+/** The log lines' fold: "12 guard lines from the 10 minutes before". */
+export function linesLabel(c: InvariantCard): string {
+  const n = c.lines?.length ?? 0;
+  return n ? `${n} guard ${n === 1 ? "line" : "lines"} from the 10 minutes before` : "";
+}
+
+/** Settings → Automation: one row per invariant, its sentence and when it last broke. */
+export function invariantRows(h: HostLoad, now: number): { id: string; text: string; desc: string; open: boolean }[] {
+  const inv = guardOf(h)?.invariants;
+  if (!inv) return [];
+  const open = new Set((inv.cards ?? []).map((c) => c.id));
+  return inv.stats.map((s) => ({
+    id: s.id,
+    text: s.text,
+    open: open.has(s.id),
+    desc: s.count && s.last ? `${s.count === 1 ? "once" : `${s.count} times`} · last ${whenLabel(s.last, now)}, ${relTime(s.last, now)} ago${open.has(s.id) ? " · in Needs you" : ""}` : "never broken",
+  }));
+}
