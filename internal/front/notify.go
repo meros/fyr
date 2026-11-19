@@ -49,6 +49,7 @@ func (f *Front) noticeLocked(l *link, prev, next map[string]any) {
 	}
 	id, _ := next["id"].(string)
 	key := l.name() + "\x00" + id
+	hostID := f.idOfLocked(l)
 	if f.noticed == nil {
 		f.noticed = map[string]uint64{}
 	}
@@ -56,7 +57,7 @@ func (f *Front) noticeLocked(l *link, prev, next map[string]any) {
 	seq := f.noticed[key]
 	switch notify.PlanFor(from, to) {
 	case notify.Now:
-		go f.send(l.name(), next)
+		go f.send(l.name(), hostID, next)
 	case notify.Later:
 		time.AfterFunc(f.opt.NotifyDelay, func() {
 			f.mu.Lock()
@@ -64,14 +65,16 @@ func (f *Front) noticeLocked(l *link, prev, next map[string]any) {
 			newest := f.noticed[key] == seq
 			f.mu.Unlock()
 			if newest && cur != nil && attentionOf(cur) == to {
-				f.send(l.name(), cur)
+				f.send(l.name(), hostID, cur)
 			}
 		})
 	}
 }
 
-// send pushes one thread's state to this front's devices.
-func (f *Front) send(host string, m map[string]any) {
+// send pushes one thread's state to this front's devices. host is the
+// host's name (shown, and what a device hides by); hostID its install id,
+// which the tap opens the thread by (V0.client-refs).
+func (f *Front) send(host, hostID string, m map[string]any) {
 	d, err := dtoOf(m)
 	if err != nil {
 		f.opt.Logf("front: push: %v", err)
@@ -94,6 +97,7 @@ func (f *Front) send(host string, m map[string]any) {
 		}
 	}
 	pl := push.PayloadFor(d.ID, d.Title, string(d.Attention.State), meta, detail)
+	pl.Host = hostID
 	pl.Origin = &push.Origin{Host: host, ProjectID: d.ProjectID} // V0.207: a device may hide either
 	f.opt.Push.Notify(core.Owner, pl)
 }

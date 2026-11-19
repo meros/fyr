@@ -58,12 +58,17 @@ func (p *fakePush) payloads() []push.Payload {
 
 // fullHost is a host with attachments and its own profile, as fyrd runs it.
 func fullHost(t *testing.T, name, profile string) *host {
+	return fullHostID(t, name, profile, "")
+}
+
+// fullHostID is fullHost reporting install id id (V0.124).
+func fullHostID(t *testing.T, name, profile, id string) *host {
 	st, err := store.Open(filepath.Join(t.TempDir(), "db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := &host{eng: engine.New(st)}
-	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name,
+	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, ID: id,
 		Attach:   &attach.Store{Dir: t.TempDir()},
 		Profiles: []provider.Profile{{ID: profile, Name: profile, Binary: "claude"}}}
 	inner := s.Handler()

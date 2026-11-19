@@ -7,15 +7,15 @@
 // A row shows only with more than one value to choose from, or while one of its values is selected (a project
 // picked, a host off); a selected value stays until the owner changes it. V0.114: a quiet project's threads count
 // only while the unlock runs.
-import type { HostInfo } from "./hosts.ts";
+import { shortID, type HostInfo } from "./hosts.ts";
 import { shortHostNames } from "./load.ts";
 import { findProject, projectOf } from "./projects.ts";
 import { hideQuiet, quietLocked, reachable } from "./quiet.ts";
 import { isOpen, sectionOf, type SectionKey } from "./store.ts";
 import type { Project, Thread } from "./types.ts";
 
-/** V0.169: the hosts turned off, remembered per device (a JSON list of names); it replaces V0.134's one host
- *  (`fyr.hostFilter`, dropped). */
+/** V0.169: the hosts turned off, remembered per device; it replaces V0.134's one host (`fyr.hostFilter`, dropped).
+ *  V0.client-refs: a JSON list of install ids (a name only for a host that reports no id); names migrate once. */
 export const HOSTS_OFF_KEY = "fyr.hostsOff";
 export const OLD_HOST_FILTER_KEY = "fyr.hostFilter";
 
@@ -28,6 +28,8 @@ export interface FilterSel {
 export type Open = Partial<Record<SectionKey, boolean>>;
 
 export interface HostChip {
+  /** V0.client-refs: what the filter keeps: the install id, or the name of a host that reports none */
+  key: string;
   name: string;
   /** V0.152: the short name the rail uses ("meros-laptop", "meros-server" → "laptop", "server") */
   short: string;
@@ -46,7 +48,7 @@ export interface ProjectChip {
   selected: boolean;
 }
 
-/** V0.169: what the device stored, as a list of names; anything else is none off. */
+/** V0.169: what the device stored, as a list of host keys; anything else is none off. */
 export function parseHostsOff(raw: string | null): string[] {
   if (!raw) return [];
   try {
@@ -58,13 +60,13 @@ export function parseHostsOff(raw: string | null): string[] {
 }
 
 /** V0.169: a host's toggle: off when it is on, on when it is off. */
-export function toggleHost(off: readonly string[], name: string): string[] {
-  return off.includes(name) ? off.filter((x) => x !== name) : [...off, name];
+export function toggleHost(off: readonly string[], key: string): string[] {
+  return off.includes(key) ? off.filter((x) => x !== key) : [...off, key];
 }
 
 /** V0.204: what a click on a host's toggle leaves off. On the only host still on, nothing: every host comes back. */
-export function clickHost(off: readonly string[], hosts: readonly Pick<HostChip, "name" | "last">[], name: string): string[] {
-  return hosts.some((h) => h.name === name && h.last) ? [] : toggleHost(off, name);
+export function clickHost(off: readonly string[], hosts: readonly Pick<HostChip, "key" | "last">[], key: string): string[] {
+  return hosts.some((h) => h.key === key && h.last) ? [] : toggleHost(off, key);
 }
 
 /** The host a thread runs on: its own, else the front's own host (a host older than V0.51 names none). */
@@ -79,8 +81,18 @@ export function inView(t: Thread, open: Open): boolean {
   return !!t.pinnedAt || isOpen(k, open);
 }
 
+/** V0.client-refs: the key the host filter knows a host by: its install id, else its name (a host older than V0.124). */
+export function hostKey(h: Pick<HostInfo, "id" | "name">): string {
+  return h.id || h.name;
+}
+
+/** The key of the host a thread runs on (hostKey). */
+export function threadHostKey(t: Pick<Thread, "host" | "hostId">, self: string): string {
+  return t.hostId || threadHost(t, self);
+}
+
 function hostOk(t: Thread, off: readonly string[], self: string): boolean {
-  return !off.length || !off.includes(threadHost(t, self));
+  return !off.length || !off.includes(threadHostKey(t, self));
 }
 
 function projectOk(t: Thread, project: string | null, projects: Project[]): boolean {
@@ -125,10 +137,12 @@ export function activeFilters(o: FilterInput): { hosts: HostChip[]; projects: Pr
 
   // Row 1 counts every host's threads in view, whatever the project filter: the rows are separate, and row 1 comes first.
   const perHost = new Map<string, number>();
+  const nameOf = new Map<string, string>();
   for (const t of Object.values(shown)) {
     if (!inView(t, o.open)) continue;
-    const h = threadHost(t, o.self);
-    perHost.set(h, (perHost.get(h) ?? 0) + 1);
+    const k = threadHostKey(t, o.self);
+    perHost.set(k, (perHost.get(k) ?? 0) + 1);
+    nameOf.set(k, threadHost(t, o.self));
   }
   // Row 2 counts only the threads on the hosts that are on.
   const perProject = new Map<string, number>();
@@ -141,14 +155,18 @@ export function activeFilters(o: FilterInput): { hosts: HostChip[]; projects: Pr
   // Hosts in the owner's order; a host the front does not list (yet, or any more) after them, by name. A host that is
   // off stays, as a selected value does.
   const off = new Set(o.sel.hostsOff);
-  const listed = new Set(o.hosts.map((h) => h.name));
-  const extra = [...new Set([...perHost.keys(), ...off])].filter((n) => !listed.has(n)).sort();
-  const shownHosts = [...o.hosts.map((h) => ({ name: h.name, info: h as HostInfo | undefined })), ...extra.map((name) => ({ name, info: undefined }))]
-    .map((h) => ({ ...h, n: perHost.get(h.name) ?? 0, on: !off.has(h.name) }))
+  const listed = new Set(o.hosts.map(hostKey));
+  const extra = [...new Set([...perHost.keys(), ...off])]
+    .filter((k) => !listed.has(k))
+    // A host turned off that the front no longer lists and that has no thread in view: only its id is left; it says so.
+    .map((key) => ({ key, name: nameOf.get(key) ?? (/^[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/.test(key) ? `id ${shortID(key)}` : key), info: undefined as HostInfo | undefined }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const shownHosts = [...o.hosts.map((h) => ({ key: hostKey(h), name: h.name, info: h as HostInfo | undefined })), ...extra]
+    .map((h) => ({ ...h, n: perHost.get(h.key) ?? 0, on: !off.has(h.key) }))
     .filter((h) => h.n > 0 || !h.on);
   const short = shortHostNames(shownHosts.map((h) => h.name));
   const onCount = shownHosts.filter((h) => h.on).length;
-  const hosts: HostChip[] = shownHosts.map((h) => ({ name: h.name, short: short.get(h.name) ?? h.name, ...(h.info ? { info: h.info } : {}), n: h.n, on: h.on, last: h.on && onCount === 1 }));
+  const hosts: HostChip[] = shownHosts.map((h) => ({ key: h.key, name: h.name, short: short.get(h.name) ?? h.name, ...(h.info ? { info: h.info } : {}), n: h.n, on: h.on, last: h.on && onCount === 1 }));
 
   // Projects in the owner's order (the store keeps it, V0.121). A locked quiet project is not offered unless picked.
   const projects: ProjectChip[] = o.projects

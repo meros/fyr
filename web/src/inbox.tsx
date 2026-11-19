@@ -298,7 +298,8 @@ export interface FilterView {
   projects: ProjectChip[];
   sel: FilterSel;
   /** V0.169: turn a host off, or back on; V0.204: on the only host on, turn every host back on */
-  toggleHost(name: string): void;
+  /** V0.client-refs: by the chip's key (the host's install id) */
+  toggleHost(key: string): void;
   setProject(id: string | null): void;
   /** every host on and no project picked */
   clear(): void;
@@ -327,7 +328,7 @@ export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlo
           const state = !h.info ? "is not in the host list" : h.info.idWas ? "has a new id" : h.info.online ? "is online" : "is offline";
           const tip = `${h.name} ${state}, ${n(h.n)}. ${h.on ? (h.last ? "It is the only host shown; click to show every host." : "Click to hide its threads.") : "Hidden; click to show its threads."}`;
           return (
-            <button class={`hft${h.on ? "" : " off"}`} aria-pressed={h.on} title={tip} aria-label={`${h.name}, ${h.on ? "shown" : "hidden"}, ${n(h.n)}`} onClick={() => f.toggleHost(h.name)}>
+            <button class={`hft${h.on ? "" : " off"}`} aria-pressed={h.on} title={tip} aria-label={`${h.name}, ${h.on ? "shown" : "hidden"}, ${n(h.n)}`} onClick={() => f.toggleHost(h.key)}>
               <HostMark name={h.name} size={16} />
               <span class="hn">{h.n.toLocaleString()}</span>
             </button>

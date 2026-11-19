@@ -11,13 +11,24 @@ export interface KV {
 
 const PREFIX = "fyr.draft.";
 
+/** V0.client-refs: a draft is kept under its thread's ref (`<hostId>/<id>`). One written before, under the host's own id,
+ *  that the migration could not place (no single host had the thread then) is read as a fallback for one release, and
+ *  goes once the draft is written under the ref. */
+function oldKey(id: string): string | null {
+  const i = id.indexOf("/");
+  return i > 0 ? PREFIX + id.slice(i + 1) : null;
+}
+
 export function draftStore(storage: KV | null) {
   const mem = new Map<string, string>();
   return {
     get(id: string): string {
       if (mem.has(id)) return mem.get(id)!;
       try {
-        return storage?.getItem(PREFIX + id) ?? "";
+        const v = storage?.getItem(PREFIX + id);
+        if (v !== null && v !== undefined) return v;
+        const old = oldKey(id);
+        return (old && storage?.getItem(old)) || "";
       } catch {
         return "";
       }
@@ -28,6 +39,8 @@ export function draftStore(storage: KV | null) {
       try {
         if (text) storage?.setItem(PREFIX + id, text);
         else storage?.removeItem(PREFIX + id);
+        const old = oldKey(id);
+        if (old) storage?.removeItem(old);
       } catch {
         /* private mode or full: the memory copy still keeps it this session */
       }

@@ -89,7 +89,38 @@ async function put(key: string, value: unknown): Promise<void> {
   });
 }
 
+/** V0.client-refs (decision 0031 2.5): a host's id rotated: its stored timelines move to the new id; the stored state
+ *  is a cache and is read again (the host's records come stamped with the new id). */
+async function moveHost(was: string, now: string): Promise<void> {
+  const d = await db();
+  if (!d || !was || !now || was === now) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = d.transaction(STORE, "readwrite");
+      const st = tx.objectStore(STORE);
+      const from = `events:${was}/`;
+      const r = st.openCursor();
+      r.onsuccess = () => {
+        const c = r.result;
+        if (!c) return;
+        const k = String(c.key);
+        if (k.startsWith(from)) {
+          st.put(c.value, `events:${now}/${k.slice(from.length)}`);
+          c.delete();
+        }
+        c.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 export const cache = {
+  moveHost,
   state: () => get<StateDTO>("state2"),
   saveState: (s: StateDTO) => put("state2", s),
   events: (threadId: string) => get<FyrEvent[]>(`events:${threadId}`),

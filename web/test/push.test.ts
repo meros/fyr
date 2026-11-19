@@ -47,6 +47,7 @@ test("device labels and payload parsing", () => {
   assert.equal(deviceLabel("Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"), "Linux Firefox");
   assert.deepEqual(parsePayload('{"title":"Asking","body":"Which gesture?","threadId":"t_1","state":"asking"}'), { title: "Asking", body: "Which gesture?", threadId: "t_1", state: "asking" });
   assert.deepEqual(parsePayload("hello"), { title: "Fyr", body: "hello" });
+  assert.deepEqual(parsePayload('{"title":"x","threadId":"t_1","host":"AAAA-1111-AAAA-1111","state":"asking"}'), { title: "x", body: undefined, threadId: "t_1", host: "AAAA-1111-AAAA-1111", state: "asking" });
 });
 
 test("push status reconciliation with the host", async () => {
@@ -67,6 +68,11 @@ test("notification options per state", () => {
   assert.equal(ask.timestamp, 1000);
   assert.deepEqual(ask.data, { threadId: "t1", state: "asking" }); // V0.notification-polish: the state it was shown for
   assert.deepEqual(ask.actions, [{ action: "open", title: "Answer" }]);
+  // V0.client-refs: with the host, the tag and the tap name the thread's ref, so one id on two hosts is two threads.
+  const onA = notificationOptions({ title: "x", threadId: "t1", host: "AAAA-1111-AAAA-1111", state: "asking" }, 1);
+  const onB = notificationOptions({ title: "x", threadId: "t1", host: "BBBB-2222-BBBB-2222", state: "asking" }, 1);
+  assert.equal(onA.tag, "AAAA-1111-AAAA-1111/t1");
+  assert.deepEqual(onB.data, { threadId: "BBBB-2222-BBBB-2222/t1", state: "asking" });
   const failed = notificationOptions({ title: "x", body: "Failed · API", threadId: "t2", state: "failed" }, 1);
   assert.equal(failed.requireInteraction, false);
   assert.deepEqual(failed.actions, [{ action: "open", title: "Open" }]);
