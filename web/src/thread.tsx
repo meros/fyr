@@ -592,7 +592,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
         {/* V0.75 (2), #64: the filmstrip scrolls with the conversation, so a thread without previews has no empty band */}
         {strip && <div class="cv-strip">{strip}</div>}
         {events === undefined && <div class="sys">Loading…</div>}
-        {events !== undefined && items.length === 0 && <div class="sys">No messages yet.</div>}
+        {events !== undefined && items.length === 0 && pending.length === 0 && <div class="sys">No messages yet.</div>}
         {onEarlier && events && events.length > 0 && (
           <button class="btn ghost earlier" onClick={onEarlier}>
             Show earlier messages
@@ -616,7 +616,8 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
               </div>
             </Boundary>
           ))}
-          {pending.length > 0 && (
+          {/* V0.message-before-start: a new thread's first message waits alone (the start may wait for the machine); no line above nothing */}
+          {pending.length > 0 && items.length > 0 && (
             <div class="here" role="separator" aria-label="The agent has read everything above this line">
               <span>Agent is here</span>
             </div>
