@@ -530,8 +530,8 @@ const LONG_FIT = `(() => {
       const cs = getComputedStyle(a);
       if (cs.overflowX === 'visible') continue;
       const b = a.getBoundingClientRect();
-      // The project chips and a message's table are sideways scrollers by design.
-      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
+      // The project chips, the header's chips (V0.phone-chips-scroll) and a message's table are sideways scrollers by design.
+      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, .m-chipsd, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
       break;
     }
   }
