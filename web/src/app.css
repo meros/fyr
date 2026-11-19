@@ -130,8 +130,6 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .sti.none .n{min-width:0;padding:0;background:none;color:var(--ink-faint)}
 @media (prefers-reduced-motion: reduce){.stc{transition:none}}
 .ngh{padding:6px 8px 2px;font:500 11px/14px var(--ui);color:var(--ink-faint)}
-.heldup{position:sticky;top:6px;z-index:3;height:0;display:flex;justify-content:center}
-.heldup button{height:26px;padding:0 12px;border:1px solid var(--line-strong);border-radius:13px;background:var(--raised);color:var(--ink);font:500 12px/24px var(--ui);cursor:pointer;white-space:nowrap}
 .sec .n{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums}
 .sec .h{margin-left:auto;font-size:11px;min-width:0;max-width:62%}
 /* V0.186: the folded section that holds the current thread, marked as a selected row is; same 30 px in all */
@@ -1669,8 +1667,8 @@ img{-webkit-user-drag:none}
 :where(button,[role=tab],[role=button],summary,a.btn){transition:opacity .2s ease-out,background-color .2s ease-out,border-color .2s ease-out,color .2s ease-out,filter .2s ease-out,scale .32s var(--spring)}
 :where(button,[role=tab],summary)[data-pressed]{opacity:.55;transition-duration:.05s}
 /* solid buttons sink */
-:is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.heldup button,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
-:is(.btn,.m-bt,.m-sbtn,.heldup button,.m-capb,.m-dchip)[data-pressed]:not(.p){background-color:var(--sunken)}
+:is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
+:is(.btn,.m-bt,.m-sbtn,.m-capb,.m-dchip)[data-pressed]:not(.p){background-color:var(--sunken)}
 :is(.btn.p,.m-bt.p,.m-send,.m-bnew)[data-pressed]{filter:brightness(.86)}
 /* icon buttons get a soft well */
 :is(.b44,.ibtn,.dh .x,.att-b,.att-x,.src-x,.m-load,.m-bi)[data-pressed]{opacity:1;background-color:var(--select);scale:.92;transition-duration:.05s}

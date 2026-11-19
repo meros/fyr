@@ -38,8 +38,8 @@ import {
   applyThreadPatch,
   resolveRef,
 } from "./store.ts";
-import { placeOf, stillRows, trackUnread, waitingMoves, type RowPlace } from "./still-list.ts";
-import { useHand, useListAnchor } from "./still-list-ui.ts";
+import { placeOf, stillRows, trackUnread, type RowPlace } from "./still-list.ts";
+import { useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
@@ -278,7 +278,7 @@ function App() {
   // U8: Undo of a settle or archive that left the open thread on a phone reopens it.
   const reopenRef = useRef<string | null>(null);
   const navGoRef = useRef<(n: Nav) => void>(() => {});
-  // V0.207: the row the owner just marked seen or unseen goes where that puts it, hold or no hold.
+  // V0.207: the row the owner just marked seen or unseen goes where that puts it: it no longer keeps its place.
   const [freed, setFreed] = useState<string | null>(null);
   useEffect(() => setFreed(null), [sel]);
   const cmds = useThreadCommands({
@@ -440,34 +440,18 @@ function App() {
   const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
   const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, unreadAt)), [listed, shown, sec, queue, unreadAt]);
-  // V0.207: the hold starts from what the screen shows. A new search or filter is the owner's own act: it starts afresh.
-  const hand = useHand();
-  const [, redraw] = useState(0);
+  // V0.open-row-only: the open row keeps the place it had on the screen when it was opened, until another thread is
+  // current. Every other row is where the live list has it.
   const drawnRef = useRef<Sections | null>(null);
-  const heldRef = useRef<Sections | null>(null);
   const placeRef = useRef<RowPlace | null>(null);
-  const askedRef = useRef("");
-  const asked = `${query}\n${JSON.stringify(filterSel)}`;
-  if (askedRef.current !== asked) {
-    askedRef.current = asked;
-    drawnRef.current = heldRef.current = null;
-  }
-  heldRef.current = hand.hold ? (heldRef.current ?? drawnRef.current ?? liveRows) : null;
   if (placeRef.current?.id !== sel) placeRef.current = (drawnRef.current && placeOf(drawnRef.current, sel)) ?? placeOf(liveRows, sel);
-  const held = heldRef.current;
   const place = placeRef.current?.id === freed ? null : placeRef.current;
-  const rows = useMemo(() => stillRows(liveRows, held, place, freed), [liveRows, held, place, freed]);
+  const rows = useMemo(() => stillRows(liveRows, place), [liveRows, place]);
   drawnRef.current = rows;
-  // V0.your-move: what the hold keeps back. Show starts the hold again from the live rows, so the list then stays still.
-  const updates = useMemo(() => (held ? waitingMoves(rows, liveRows, place?.id ?? null) : 0), [held, rows, liveRows, place]);
-  const showUpdates = () => {
-    drawnRef.current = heldRef.current = null;
-    redraw((n) => n + 1);
-  };
-  const drawn = useMemo(() => stillRows(sec, held, place, freed), [sec, held, place, freed]);
+  const drawn = useMemo(() => stillRows(sec, place), [sec, place]);
   const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen), [rows, sel, hidden, sectionOpen]);
   const order = useMemo(() => flatOrder(drawn, limits), [drawn, limits]);
-  useListAnchor(useMemo(() => flatOrder(rows, limits).join(" "), [rows, limits]), sel, hand.inside);
+  useListAnchor(useMemo(() => flatOrder(rows, limits).join(" "), [rows, limits]), sel);
   const allRows = useMemo(() => flatOrder(rows), [rows]); // V0.186: with the rows not drawn, for the guest's place
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
@@ -1345,7 +1329,6 @@ function App() {
         e.preventDefault();
         const dir = k === "j" || k === "ArrowDown" ? 1 : -1;
         // V0.186: over the drawn rows only; a folded section is passed and stays folded.
-        hand.keyed(); // V0.207
         const to = stepRow(allRows, order, sel, dir);
         // V0.109: j/k opens the row it marks when a thread is open; with nothing open it only marks it.
         if (to) {
@@ -1653,7 +1636,7 @@ function App() {
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
           store={store}
           allProjects={fullStore.projects}
-          inbox={{ sec, rows, guest, updates, showUpdates, searchable, all: filtered, unlock }}
+          inbox={{ sec, rows, guest, searchable, all: filtered, unlock }}
           now={now}
           commands={cmds}
           open={{
@@ -1758,8 +1741,6 @@ function App() {
           sec={sec}
           rows={rows}
           guest={guest}
-          updates={updates}
-          onShowUpdates={showUpdates}
           now={now}
           selected={sel}
           picked={picked}

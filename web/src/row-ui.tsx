@@ -90,19 +90,6 @@ export function NeedsGroupHead({ label }: { label: string }) {
   return <div class="ngh">{label}</div>;
 }
 
-/** V0.your-move: what the hold keeps back, and the press that shows it now, on both fronts. It floats over the list: a line
- *  in the flow would push the rows down at the moment the list promises to stay still. */
-export function HeldUpdates({ n, show }: { n: number; show(): void }) {
-  if (n === 0) return null;
-  return (
-    <div class="heldup">
-      <button type="button" onClick={show}>
-        {n} {n === 1 ? "update" : "updates"} · Show
-      </button>
-    </div>
-  );
-}
-
 export function sectionHead(o: { n: number; open: boolean; toggle(): void }): Record<string, unknown> {
   if (!o.n) return {};
   return {

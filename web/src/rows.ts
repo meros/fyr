@@ -65,8 +65,8 @@ export function needsGroupRank(t: Thread): number {
 }
 
 /** V0.your-move: the group label each drawn row carries above it, by thread id: on the first row of each group. A row that
- *  left Your move and keeps its place (the open row, a hold) starts no group, and a row whose group changed during a hold
- *  stays where it is, so no label shows twice. */
+ *  left Your move and keeps its place (the open row) starts no group, and the open row whose group changed stays where
+ *  it is, so no label shows twice. */
 export function needsHeads(rows: Thread[]): Record<string, string> {
   const out: Record<string, string> = {};
   const seen = new Set<NeedsGroup>();
