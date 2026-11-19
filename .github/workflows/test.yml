@@ -58,14 +58,13 @@ jobs:
       - name: gitleaks over the full history
         if: steps.skip.outputs.skip != '1'
         run: nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact --log-opts=--all .
-      # make test's parts, with the layout timing budgets on. FYR_LAYOUT_TIMING goes to the layout test's make only:
-      # make exports a command-line variable, and a Go test checks that the environment does not carry it.
+      # make test's parts, with the layout timing budgets on. FYR_CHROME and FYR_LAYOUT_TIMING go to the web tests
+      # only: a Go test (internal/authtest, neutrality) fails when the environment carries any FYR_ variable, and
+      # make exports a command-line variable.
       - name: go vet, go test, typecheck, web unit, layout with timing, auth e2e
         if: steps.skip.outputs.skip != '1'
-        env:
-          FYR_CHROME: /usr/bin/google-chrome
         run: |
-          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j2 --output-sync=target go-vet go-test && make -j3 --output-sync=target web-typecheck web-unit web-layout FYR_LAYOUT_TIMING=1 && make web-auth'
+          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j2 --output-sync=target go-vet go-test && FYR_CHROME=/usr/bin/google-chrome make -j3 --output-sync=target web-typecheck web-unit web-layout FYR_LAYOUT_TIMING=1 && FYR_CHROME=/usr/bin/google-chrome make web-auth'
       # The package NixOS installs runs the Go tests in the Nix sandbox (found live: a test needed git there).
       - name: nix build .#fyr
         if: steps.skip.outputs.skip != '1'
