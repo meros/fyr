@@ -2,7 +2,7 @@
 // tooltip, a job's row, the queue's reason and Settings → Heavy jobs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetLine, heavyDetail, jobLines, normalizeLoad, railBudget, railLabel, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
+import { budgetLine, cardLines, loadCard, jobLines, normalizeLoad, railBudget, railLabel, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
 
 const host: HostLoad = {
   host: "desk",
@@ -44,10 +44,15 @@ test("the rail's bar is the tighter resource's use of its budget, in percent, wi
 });
 
 test("the tooltip names CPU and memory, each job's share, the budget and why the next waits", () => {
-  const d = heavyDetail(host);
-  assert.equal(d[0], "Heavy jobs: CPU 60 % · memory 62 % of this host in use; the budget is CPU 100 % · memory 100 %");
-  assert.equal(d[1], "Running: test ≈ 50 % CPU · 15 % memory; build ≈ 10 % CPU · 46 % memory");
-  assert.equal(d[2], "2 waiting; the next needs ≈ 45 % CPU, 40 % free");
+  const heavy = loadCard(host).sections.find((s) => s.title === "Heavy jobs")!;
+  const d = cardLines({ ...loadCard(host), sections: [heavy] }).slice(1);
+  assert.deepEqual(d, [
+    "CPU: 60 % of the host · budget 100 %",
+    "Memory: 62 % of the host · budget 100 %",
+    "Running: test · ≈ 50 % CPU · 15 % memory",
+    "…: build · ≈ 10 % CPU · 46 % memory",
+    "Waiting: 2 jobs · the next needs ≈ 45 % CPU, 40 % free",
+  ]);
   assert.ok(!d.join(" ").includes("slot"));
 });
 

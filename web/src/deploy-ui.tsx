@@ -70,7 +70,7 @@ export function DeployBanner({
         <span class="dbn-t">{line.text}</span>
       </button>
       {onRestartNow && canRestartNow(p, conn) && (
-        <button class="dbn-b dbn-now" title="Stop waiting: the running turns end and each gets “continue” after the restart" onClick={onRestartNow}>
+        <button class="dbn-b dbn-now" title="Restart now. Running turns stop and pick up again after the restart." onClick={onRestartNow}>
           Restart now
         </button>
       )}

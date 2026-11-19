@@ -1980,6 +1980,15 @@ section('V0.80', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rld .rldr') && !!document.querySelector('.one .tcpu')");
+  // V0.load-card: the host's card opens on hover, beside the rail, inside the window
+  await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseenter'))`);
+  await waitFor(`!!document.querySelector('.lcpop')`, { what: "the host's load card" });
+  const card = await evaluate(`(() => { const p = document.querySelector('.lcpop'), b = p.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
+    return { text: p.innerText, inside: b.left >= rail.right && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight, verdict: p.querySelector('.lcl').textContent }; })()`);
+  await shot("load-card-desktop.png");
+  await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseleave'))`);
+  await waitFor(`!document.querySelector('.lcpop')`, { what: "the load card to close" });
+  check(card.inside && card.verdict === "Overloaded", `V0.load-card desktop: the card leaves the window or has no verdict (${JSON.stringify(card)})`);
   const r = await evaluate(`(() => {
     const rail = document.querySelector('.rail').getBoundingClientRect();
     const ld = document.querySelector('.rail .rld'), b = ld.getBoundingClientRect();
@@ -1991,7 +2000,7 @@ try {
     const tc = [...document.querySelectorAll('.one')].find((x) => x.dataset.id === 't_mapperf');
     const jr = tc, js = jr?.querySelector('.tslot'), jb = js?.getBoundingClientRect(), jrr = jr?.getBoundingClientRect();
     const c = tc?.querySelector('.tcpu'), cr = c?.getBoundingClientRect(), rr = tc?.getBoundingClientRect();
-    return { text: fig.textContent, hot: row.classList.contains('hot'), tip: row.title,
+    return { text: fig.textContent, hot: row.classList.contains('hot'), tip: ${JSON.stringify(card.text)},
       pips: pips ? pips.querySelectorAll('i').length : 0, held: pips ? pips.querySelectorAll('i.on').length : 0, wait: (pips ?? bar)?.querySelector('em')?.textContent ?? '',
       bar: bar?.querySelector('.hmv')?.textContent ?? '', barHot: !!bar?.classList.contains('hot'), barFill: bar ? Math.round(bar.querySelector('.hmb i').getBoundingClientRect().width / bar.querySelector('.hmb').getBoundingClientRect().width * 100) : -1,
       barIn: !!bb && bb.left >= rb.left - 0.5 && bb.right <= rb.right + 0.5 && bb.bottom <= rb.bottom + 0.5,
@@ -2000,7 +2009,7 @@ try {
       cpu: c?.textContent ?? '', cpuHot: !!c?.classList.contains('hot'), inRow: !!cr && cr.top >= rr.top - 0.5 && cr.bottom <= rr.bottom + 0.5,
       job: js?.textContent ?? '', jobIn: !!jb && jb.top >= jrr.top - 0.5 && jb.bottom <= jrr.bottom + 0.5 && jb.right <= Math.min(jrr.right, js.closest('.ell').getBoundingClientRect().right) + 0.5 };
   })()`);
-  check(r.text === "130%" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
+  check(r.text === "130%" && r.hot && /10 now/.test(r.tip) && /CPU waits\s+46 % of the time/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
   // Decision 0029 S2, V0.152: a host that admits by a budget shows it as a bar (full, hot, "1 waits" under it) in place of
   // the pips.
   const why = await evaluate(`(() => { const w = document.querySelector('#sec-slots .sqwhy'), s = document.querySelector('.list')?.getBoundingClientRect(), b = w?.getBoundingClientRect(); return { text: w?.textContent ?? '', inside: !!b && !!s && b.left >= s.left - 0.5 && b.right <= s.right + 0.5 }; })()`);
@@ -2009,7 +2018,7 @@ try {
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
   // Decision 0029 S1 (V0.142): the ring is hot from the 3.4× slowdown; the tooltip names it; a holder's row names its job, first on its line and not cut.
-  check(/Slowdown 3\.4×/.test(r.tip) && /Signals: cgroups/.test(r.tip), `V0.142 desktop: the tooltip lacks the slowdown or the provider (${JSON.stringify(r)})`);
+  check(/New jobs run 3\.4× slower/.test(r.tip) && /Measured by cgroups/.test(r.tip), `V0.142 desktop: the tooltip lacks the slowdown or the provider (${JSON.stringify(r)})`);
   check(r.job === "yarn build ≈ 45 %" && r.jobIn, `V0.142 desktop: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.80 desktop: ${e.message}`);
@@ -2193,19 +2202,32 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
     check(r.t.find((x) => x.id === "t_mapperf").text === "undeclared · 2.8 GB · 2.1 cores" && r.t.find((x) => x.id === "t_babysit").text === "undeclared · 1.6 GB · 1.2 cores", `${ctx}: the rows' words are wrong (${JSON.stringify(r.t)})`);
     check(r.h === base, `${ctx}: the flagged row is ${r.h} px, the plain one ${base} px`);
     check(r.why, `${ctx}: the wait reason does not name the undeclared use`);
-    // The meter and the rail's button.
+    // The meter and the rail's button; the host's card (V0.load-card) names the undeclared share and the threads.
+    await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseenter'))`);
+    await waitFor(`!!document.querySelector('.lcpop')`, { what: "the host's load card" });
+    const tip = await evaluate(`document.querySelector('.lcpop').innerText`);
+    await evaluate(`document.querySelector('.rail .rldr').dispatchEvent(new MouseEvent('mouseleave'))`);
+    await waitFor(`!document.querySelector('.lcpop')`, { what: "the load card to close" });
     const m = await evaluate(`(() => {
       const bar = document.querySelector('.rail .hmr.job'), parts = [...bar.querySelectorAll('.hmb i')], und = bar.querySelector('.hmb i.und');
       const trk = bar.querySelector('.hmb').getBoundingClientRect();
       const b = document.querySelector('.rail .rund'), br = b?.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
       return { parts: parts.length, hatch: und ? getComputedStyle(und).backgroundImage.startsWith('repeating-linear-gradient') : false, fits: parts.every((p) => p.getBoundingClientRect().right <= trk.right + 0.5),
-        tip: bar.title, btn: b?.textContent ?? '', aria: b?.getAttribute('aria-label') ?? '', bright: br ? br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 : false,
+        btn: b?.textContent ?? '', aria: b?.getAttribute('aria-label') ?? '', bright: br ? br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 : false,
         color: b ? getComputedStyle(b).color : '', ink: ${UND_INK}, outside: !!b && !!b.closest('[role=img]') };
     })()`);
     check(m.parts === 2 && m.hatch && m.fits, `${ctx}: the meter has no hatched undeclared part (${JSON.stringify(m)})`);
-    check(/undeclared 82 %/.test(m.tip) && /\nUndeclared: Map perf \(acme\/web\), 2\.8 GB and 2\.1 cores for \d+ min; Babysit PR #4170 \(acme\/web\), 1\.6 GB and 1\.2 cores for \d+ s/.test(m.tip), `${ctx}: the meter's tooltip is wrong (${JSON.stringify(m.tip)})`);
+    check(/82 % undeclared/.test(tip) && /Undeclared\s+Map perf \(acme\/web\)\s*2\.8 GB · 2\.1 cores for \d+ min/.test(tip) && /Babysit PR #4170 \(acme\/web\)\s*1\.6 GB · 1\.2 cores for \d+ s/.test(tip), `${ctx}: the host's card does not name the undeclared work (${JSON.stringify(tip)})`);
     check(m.btn === "2" && m.aria === "2 threads run undeclared heavy work" && m.bright && m.color === m.ink && !m.outside, `${ctx}: the rail's button is wrong (${JSON.stringify(m)})`);
     await shot(`undeclared-row-${tag}-desktop.png`);
+    // V0.hover-cards: the button's hover card names each thread, its project, its use and for how long
+    await evaluate(`document.querySelector('.rail .rund').dispatchEvent(new MouseEvent('mouseenter'))`);
+    await waitFor(`!!document.querySelector('.lcpop')`, { what: "the undeclared card" });
+    const uc = await evaluate(`({ text: document.querySelector('.lcpop').innerText, rows: [...document.querySelectorAll('.lcpop .lclist li')].map((x) => x.textContent) })`);
+    check(/^Heavy work Fyr didn't schedule/.test(uc.text) && /^Map perf\s*acme\/web · 2\.8 GB · 2\.1 cores · for \d+ min$/.test(uc.rows[0]) && /^Babysit PR #4170\s*acme\/web · 1\.6 GB · 1\.2 cores · for \d+ s$/.test(uc.rows[1]) && /Click for the list\./.test(uc.text), `${ctx}: the undeclared card is wrong (${JSON.stringify(uc)})`);
+    await shot(`undeclared-rail-card-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.rail .rund').dispatchEvent(new MouseEvent('mouseleave'))`);
+    await waitFor(`!document.querySelector('.lcpop')`, { what: "the undeclared card to close" });
     // The button's menu, then the thread.
     await evaluate(`document.querySelector('.rail .rund').click()`);
     await waitFor(`document.querySelectorAll('.ctxm [role=menuitem]').length === 2`, { what: "the menu of two threads" });
@@ -2407,11 +2429,11 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
       const sh = document.querySelector('.m-sheet[aria-label="Host load"]'), secs = [...sh.querySelectorAll('.mls[aria-label]')];
       const b = sh.getBoundingClientRect();
       return { hosts: secs.map((x) => x.getAttribute('aria-label')), off: secs.filter((x) => x.classList.contains('off')).map((x) => x.querySelector('.mlsn small').textContent),
-        lines: sh.querySelector('.mlsl')?.textContent ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .hmr.ld .hmv')?.textContent ?? '',
+        lines: sh.querySelector('.lcard')?.innerText ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .hmr.ld .hmv')?.textContent ?? '',
         inside: b.left >= 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5 };
     })()`);
     check(s.hosts.join() === "desk,host-b,lab,Quota" && s.off.length === 1 && /^Offline/.test(s.off[0]), `${ctx}: the sheet does not list every host with the offline one marked (${JSON.stringify(s)})`);
-    check(/Heavy jobs: CPU \d+ %/.test(s.lines) && /Running: /.test(s.lines) && /waiting/.test(s.lines) && s.fig === desk[0].fig, `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
+    check(/Heavy jobs/i.test(s.lines) && /CPU\s+\d+ % of the host/.test(s.lines) && /Running\s/.test(s.lines) && /Waiting\s/.test(s.lines) && s.fig === desk[0].fig, `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
     check(s.quotas >= 4 && s.inside, `${ctx}: the sheet has no provider quotas or leaves the screen (${JSON.stringify(s)})`);
     await evaluate(`history.back()`);
     await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
@@ -2436,8 +2458,15 @@ for (const dark of [false, true]) section(`V0.176 desktop${dark ? " dark" : ""}`
     await navigate(`${origin}/?mock=rail&leftovers=1`, "!!document.querySelector('.rail .rlft')");
     const r = await evaluate(`(() => { const b = document.querySelector('.rail .rlft'), br = b.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
       return { text: b.textContent, aria: b.getAttribute('aria-label'), title: b.title, inside: br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 && br.height > 0 }; })()`);
-    check(r.text === "5 left" && r.aria === "laptop: 5 leftover processes · 2.2 GB. Show them" && r.title.startsWith("Processes threads left running: chromium (1.9 GB), vite (180 MB),") && r.inside, `${ctx}: the rail's count is wrong (${JSON.stringify(r)})`);
+    check(r.text === "5 left" && r.aria === "laptop: 5 leftover processes · 2.2 GB. Show them" && r.title === "" && r.inside, `${ctx}: the rail's count is wrong (${JSON.stringify(r)})`);
+    // V0.hover-cards: hover shows the processes as a card beside the rail, the heaviest first, inside the window
+    await evaluate(`document.querySelector('.rail .rlft').dispatchEvent(new MouseEvent('mouseenter'))`);
+    await waitFor(`!!document.querySelector('.lcpop')`, { what: "the leftovers card" });
+    const lc = await evaluate(`(() => { const p = document.querySelector('.lcpop'), b = p.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
+      return { text: p.innerText, rows: [...p.querySelectorAll('.lclist li')].map((x) => x.textContent), beside: b.left >= rail.right, inside: b.bottom <= innerHeight && b.top >= 0 }; })()`);
+    check(/^Still running after their thread/.test(lc.text) && /5 processes that threads started and left behind, 2\.2 GB in all\./.test(lc.text) && /^chromium/.test(lc.rows[0]) && lc.rows[0].includes("1.9 GB") && lc.rows.length === 5 && /End or keep them in Settings → Automation\./.test(lc.text) && lc.beside && lc.inside, `${ctx}: the leftovers card is wrong (${JSON.stringify(lc)})`);
     await shot(`leftovers-rail-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.rail .rlft').dispatchEvent(new MouseEvent('mouseleave'))`);
     await evaluate(`document.querySelector('.rail .rlft').click()`);
     await waitFor(`!!document.querySelector('.dlg section[aria-label="Leftover processes"]')`, { what: "Settings at the leftovers" });
     await settle();
@@ -2494,8 +2523,9 @@ for (const dark of [false, true]) section(`V0.176 phone${dark ? " dark" : ""}`, 
     await settle();
     await evaluate(`document.querySelector('.m-load').click()`);
     await waitFor(`!!document.querySelector('.m-sheet[aria-label="Host load"] .m-lsheet li.lft')`, { what: "the sheet's leftovers line" });
-    const l = await evaluate(`(() => { const li = document.querySelector('.m-lsheet li.lft'), b = li.getBoundingClientRect(); return { text: li.textContent, inside: b.right <= innerWidth + 0.5 }; })()`);
-    check(/^5 leftover processes · 2\.2 GB: processes threads left running: chromium \(1\.9 GB\), vite \(180 MB\), /.test(l.text) && l.inside, `${ctx}: the sheet's line is wrong (${JSON.stringify(l)})`);
+    const l = await evaluate(`(() => { const li = document.querySelector('.m-lsheet li.lft'), b = li.getBoundingClientRect(); return { text: li.innerText, rows: [...li.querySelectorAll('.lclist li')].map((x) => x.textContent), inside: b.right <= innerWidth + 0.5 }; })()`);
+    // V0.hover-cards: the rail's hover card, as text (no hover on a phone)
+    check(/^Still running after their thread/.test(l.text) && /5 processes that threads started and left behind, 2\.2 GB in all\./.test(l.text) && /^chromium/.test(l.rows[0]) && l.rows.length === 5 && l.inside, `${ctx}: the sheet's leftovers are wrong (${JSON.stringify(l)})`);
     await shot(`leftovers-load-sheet-${tag}-phone.png`);
     await evaluate(`history.back()`);
     await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
@@ -2530,13 +2560,13 @@ for (const dark of [false, true]) section(`V0.167 desktop 1280x900${dark ? " dar
     const r = await evaluate(`(() => {
       const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid'), cs = getComputedStyle(mid);
       const out = [...mid.querySelectorAll('*')].filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.left < rail.left - 0.5 || b.right > rail.right + 0.5 || e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow === 'visible'); }).map((e) => e.className);
-      const hosts = [...mid.querySelectorAll('.rldr')].map((c) => ({ keys: [...c.querySelectorAll('.hmk')].map((k) => k.textContent).join(), tip: c.title.split('\\n')[0] }));
+      const hosts = [...mid.querySelectorAll('.rldr')].map((c) => ({ keys: [...c.querySelectorAll('.hmk')].map((k) => k.textContent).join(), aria: c.getAttribute('aria-label') ?? '' }));
             return { out, hosts, bar: mid.offsetWidth - mid.clientWidth, sw: cs.scrollbarWidth, scroll: mid.scrollHeight - mid.clientHeight, quota: !!document.querySelector('.rail .rq, .rail .rqr'),
         borders: [mid.querySelector('.rld')].map((e) => getComputedStyle(e).borderTopWidth) };
     })()`);
     check(r.out.length === 0, `${ctx}: part of the rail's middle sticks out of the rail (${JSON.stringify(r.out)})`);
     check(r.bar === 0 && r.sw === "none" && r.scroll <= 0, `${ctx}: the rail's middle shows a scrollbar or scrolls (${JSON.stringify(r)})`);
-    check(r.hosts.length === 2 && r.hosts[0].keys === "ld,job" && r.hosts.every((x) => x.keys.startsWith("ld") && x.tip.startsWith("ld: the load")), `${ctx}: a host is not its two labelled meters with the legend (${JSON.stringify(r.hosts)})`);
+    check(r.hosts.length === 2 && r.hosts[0].keys === "ld,job" && r.hosts.every((x) => x.keys.startsWith("ld") && /^\w+: load /.test(x.aria)), `${ctx}: a host is not its two labelled meters with the legend (${JSON.stringify(r.hosts)})`);
     // V0.quota-in-thread: the quota left the rail for the thread's header
     check(!r.quota && r.borders.every((b) => b === "0px"), `${ctx}: the rail still shows a quota, or a rule is drawn (${JSON.stringify(r)})`);
   } catch (e) {
@@ -2564,7 +2594,7 @@ section('V0.152', async (h) => {
         const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid');
         const cx = (e) => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
         const cards = [...mid.querySelectorAll('.rldr')].map((c) => ({ fig: c.querySelector('.hmr.ld .hmv').textContent, name: c.querySelector('.hmn')?.textContent ?? '', full: c.querySelector('.hmn')?.title ?? '',
-          meter: !!c.querySelector('.hmr.job'), meterTip: c.querySelector('.hmr.job')?.title ?? '', note: c.querySelector('.hmr.job .hmv')?.textContent ?? '', noteHot: !!c.querySelector('.hmr.job.hot') }));
+          meter: !!c.querySelector('.hmr.job'), aria: c.getAttribute('aria-label') ?? '', note: c.querySelector('.hmr.job .hmv')?.textContent ?? '', noteHot: !!c.querySelector('.hmr.job.hot') }));
         const ld = mid.querySelector('.rld');
         const qs = [...mid.querySelectorAll('.rqr')].map((q) => ({ ini: q.querySelector('i').textContent, v: q.querySelector('span').textContent, hot: q.querySelector('span').classList.contains('hot'), tip: q.title.split('\\n')[0],
           left: Math.round(q.getBoundingClientRect().left), top: Math.round(q.getBoundingClientRect().top), right: q.getBoundingClientRect().right }));
@@ -2576,7 +2606,7 @@ section('V0.152', async (h) => {
       const [desk, lab] = r.cards;
       check(desk.fig === "130%" && /^\d+%$/.test(lab.fig), `${ctx}: a ring's figure is not a share of the cores (${JSON.stringify(r.cards)})`);
       check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
-      check(desk.meter && r.cards.every((c) => !c.meter || /^Heavy jobs: /.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
+      check(desk.meter && r.cards.every((c) => !c.meter || /heavy jobs use \d+ %/.test(c.aria)), `${ctx}: a slot meter's host does not say what it is (${JSON.stringify(r.cards)})`);
       check(desk.note === "95%+1" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
       check(r.qs.length === 0, `${ctx}: the rail still holds a quota grid (V0.quota-in-thread moved it to the thread's header) (${JSON.stringify(r.qs)})`);
       check(r.centred && r.wide.length === 0, `${ctx}: the rail's middle is off-centre or wider than the rail (${JSON.stringify({ centred: r.centred, wide: r.wide })})`);
@@ -5723,18 +5753,26 @@ for (const url of LONG_DESK) {
 // the rail holds none. Desktop: every window ("5 h 34 % · 7 d 61 %"), the reset times on hover, red only from 80 %,
 // whole inside the header. Phone: one figure, the busiest window's share, in the title bar before the ⋯ button; a tap opens Details with every line. The
 // end of a turn names no cost.
-section("V0.quota-in-thread desktop", async ({ evaluate, navigate, shot }) => {
+section("V0.quota-in-thread desktop", async ({ evaluate, navigate, waitFor, shot }) => {
   const ctx = "V0.quota-in-thread desktop";
   try {
     await navigate(`${origin}/?mock=rail&hosts=2&open=t_mapperf`, "!!document.querySelector('.thh .chips .qchip')");
     const r = await evaluate(`(() => {
       const c = document.querySelector('.thh .chips .qchip'), b = c.getBoundingClientRect(), h = document.querySelector('.thh').getBoundingClientRect();
-      return { text: c.textContent, tip: c.title, hot: [...c.querySelectorAll('.hot')].map((x) => x.textContent), cut: c.scrollWidth > c.clientWidth + 1,
+      return { text: c.textContent, title: c.title, hot: [...c.querySelectorAll('.hot')].map((x) => x.textContent), cut: c.scrollWidth > c.clientWidth + 1,
         inside: b.left >= h.left && b.right <= h.right + 0.5 && b.width > 0, rail: !!document.querySelector('.rail .rq, .rail .rqr'),
         money: [...document.querySelectorAll('.convo .runmark, .convo .sys')].map((x) => x.textContent + ' ' + (x.querySelector('button')?.title ?? '')).filter((x) => x.includes('$')) };
     })()`);
     check(/^5 h \d+ % · 7 d \d+ %$/.test(r.text), `${ctx}: the chip does not read as its windows ("${r.text}")`);
-    check(/5 h: \d+ % used, resets /.test(r.tip) && /Updated .* ago/.test(r.tip), `${ctx}: the hover has no reset time or age (${JSON.stringify(r.tip)})`);
+    // V0.hover-cards: the hover is a card under the chip: the verdict, each window with its reset time, the age
+    check(r.title === "", `${ctx}: the chip still has a browser tooltip (${JSON.stringify(r.title)})`);
+    await evaluate(`document.querySelector('.thh .chips .qchip').dispatchEvent(new MouseEvent('mouseenter'))`);
+    await waitFor(`!!document.querySelector('.lcpop')`, { what: "the quota card" });
+    const qc = await evaluate(`(() => { const p = document.querySelector('.lcpop'), b = p.getBoundingClientRect(), c = document.querySelector('.thh .chips .qchip').getBoundingClientRect();
+      return { text: p.innerText, verdict: p.querySelector('.lcl')?.textContent ?? '', rows: [...p.querySelectorAll('dt')].map((x) => x.textContent + ': ' + x.nextElementSibling.textContent), under: b.top >= c.bottom, inside: b.left >= 0 && b.right <= innerWidth && b.bottom <= innerHeight }; })()`);
+    check(/^(Plenty left|Running low|Used up)$/.test(qc.verdict) && /^5 hours: \d+ % used/.test(qc.rows[0] ?? "") && qc.rows.some((x) => /^7 days: \d+ % used/.test(x)) && /resets /.test(qc.text) && /(Read|From the last run,) .* ago/.test(qc.text) && qc.under && qc.inside, `${ctx}: the quota card is wrong (${JSON.stringify(qc)})`);
+    await shot("quota-card-desktop.png");
+    await evaluate(`document.querySelector('.thh .chips .qchip').dispatchEvent(new MouseEvent('mouseleave'))`);
     check(r.hot.every((x) => parseInt(x.replace(/^\d \w /, "")) >= 80) && r.inside && !r.cut, `${ctx}: the chip is cut, outside the header, or red below 80 % (${JSON.stringify(r)})`);
     check(!r.rail, `${ctx}: the rail still shows a quota`);
     check(r.money.length === 0, `${ctx}: the end of a turn names a cost (${JSON.stringify(r.money)})`);
@@ -5754,8 +5792,9 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.quota-in-thread phon
     check(/^\d+ %$/.test(r.text), `${ctx}: the title bar's figure is not the busiest window's share ("${r.text}")`);
     check(r.inside && !r.cut && r.h >= 44 && r.chips === 44 && !r.wide, `${ctx}: the figure is cut, under 44 px or outside the title bar (${JSON.stringify(r)})`);
     await tapCenter(".m-tr1 .qfig", "!!document.querySelector('.m-sheet .m-qrow')");
-    const d = await evaluate(`[...document.querySelectorAll('.m-sheet .m-qrow .m-ql')].map((x) => x.textContent)`);
-    check(d.length >= 3 && /^5 h: \d+ % used, resets /.test(d[0]) && /^7 d: /.test(d[1]) && d.some((x) => /^Updated .* ago$/.test(x)), `${ctx}: Details does not list the windows, their resets and the age (${JSON.stringify(d)})`);
+    // V0.hover-cards: the desktop chip's hover card, as text in Details (no hover on a phone)
+    const d = await evaluate(`(() => { const c = document.querySelector('.m-sheet .m-qrow .lcard'); return c ? { rows: [...c.querySelectorAll('dt')].map((x) => x.textContent + ': ' + x.nextElementSibling.textContent), age: c.querySelector('.lcsrc')?.textContent ?? '', right: c.getBoundingClientRect().right <= innerWidth + 0.5 } : null; })()`);
+    check(!!d && /^5 hours: \d+ % used/.test(d.rows[0]) && /resets /.test(d.rows[0]) && /^7 days: /.test(d.rows[1]) && /(Read|From the last run,) .* ago/.test(d.age) && d.right, `${ctx}: Details does not list the windows, their resets and the age (${JSON.stringify(d)})`);
     await shot(`quota-in-thread-phone-${w}.png`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);

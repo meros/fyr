@@ -61,7 +61,8 @@ import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
 import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
-import { QuotaList, ThreadQuotaFigure, useThreadQuotaLines } from "./quota-ui.tsx";
+import { QuotaList, ThreadQuotaFigure, useThreadQuotaCard } from "./quota-ui.tsx";
+import { CardView } from "./card-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { hostLabel, hostOf, hostTag, offlineLine, profilesOfHost, threadProvider, type HostInfo } from "./hosts.ts";
 
@@ -959,7 +960,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
         </div>
         <ThreadOffers t={t} onRun={(a, args) => void p.commands.run(a, [t.id], args)} />
         {t.hostOffline && (
-          <div class="m-offl" role="status" title="The front shows this thread from its last copy; commands wait until the host is back">
+          <div class="m-offl" role="status" title="The host is offline. This is the last copy Fyr saw; what you send waits until it is back.">
             {offlineLine(t)}
           </div>
         )}
@@ -1781,15 +1782,13 @@ function MProject(p: PhoneProps & { id: string }) {
 
 /** V0.quota-in-thread: the thread's provider quota in its Details sheet: what the desktop chip's hover says, as text. */
 function ThreadQuotaRow(p: { profile: string; host?: string; name: string }) {
-  const lines = useThreadQuotaLines(p.profile, p.host, p.name);
-  if (!lines) return null;
+  const c = useThreadQuotaCard(p.profile, p.host, p.name);
+  if (!c) return null;
   return (
     <div class="m-kvrow m-qrow">
       <span class="k">Quota</span>
-      <span class="v prose">
-        {lines.map((l) => (
-          <span class="m-ql">{l}</span>
-        ))}
+      <span class="v">
+        <CardView c={c} head={false} />
       </span>
     </div>
   );

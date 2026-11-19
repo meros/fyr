@@ -323,8 +323,9 @@ export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlo
       <div class="hfrow" role="group" aria-label="Hosts">
         {f.hosts.map((h) => {
           // V0.170: the host's mark, as everywhere (an offline host's has a ring at its corner).
-          const state = !h.info ? "not listed" : h.info.idWas ? "its id changed" : h.info.online ? "online" : "offline";
-          const tip = `${h.name}: ${n(h.n)} · ${state} · ${h.on ? (h.last ? "the only host shown; click to show every host" : "shown; click to hide its threads") : "hidden; click to show its threads"}`;
+          // V0.hover-cards: one sentence per fact, not a chain of "·"
+          const state = !h.info ? "is not in the host list" : h.info.idWas ? "has a new id" : h.info.online ? "is online" : "is offline";
+          const tip = `${h.name} ${state}, ${n(h.n)}. ${h.on ? (h.last ? "It is the only host shown; click to show every host." : "Click to hide its threads.") : "Hidden; click to show its threads."}`;
           return (
             <button class={`hft${h.on ? "" : " off"}`} aria-pressed={h.on} title={tip} aria-label={`${h.name}, ${h.on ? "shown" : "hidden"}, ${n(h.n)}`} onClick={() => f.toggleHost(h.name)}>
               <HostMark name={h.name} size={16} />

@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the rail and each working thread's CPU, as words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpuText, loadDetail, railBudget, railLoad, railMeter, shortHostNames, stripHosts, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
+import { cardLines, cpuText, loadCard, railBudget, railLoad, railMeter, shortHostNames, stripHosts, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
 
 const busy: HostLoad = {
   host: "laptop",
@@ -25,17 +25,22 @@ test("the rail figure is the 1-minute load; hot past the cores or at 40 % CPU pr
   assert.deepEqual(railLoad({ ...busy, load: [8.1, 1, 1], cpuPressure: undefined }), { text: "8.1", hot: true });
 });
 
-test("the detail names the averages, the pressure and the agents' budget", () => {
-  assert.deepEqual(loadDetail(busy), [
-    "laptop: load 10.5 · 6.0 · 4.3 (1, 5, 15 min) on 8 cores",
-    "CPU pressure 43 % (10 s)",
-    "Agents 3.9 of 4 cores · 9.1 of 15.0 GB",
+test("the card names the load, how often the CPU makes work wait, and the agents' use", () => {
+  assert.deepEqual(cardLines(loadCard(busy)), [
+    "Overloaded: The load is 131 % of the cores.",
+    "Load: 131 % of 8 cores · 11 now · 6.0 over 5 min · 4.3 over 15 min",
+    "CPU waits: 43 % of the time",
+    "Agents use: 3.9 of 4 cores · 9.1 of 15.0 GB",
   ]);
   const plain: HostLoad = { host: "dev", cores: 4, load: [1, 2, 3], cgroups: false, threads: [] };
-  assert.deepEqual(loadDetail(plain), ["dev: load 1.0 · 2.0 · 3.0 (1, 5, 15 min) on 4 cores", "Agents share the daemon's cgroup (no per-thread figures)"]);
+  assert.deepEqual(cardLines(loadCard(plain)), [
+    "Calm: The load is 25 % of the cores.",
+    "Load: 25 % of 4 cores · 1.0 now · 2.0 over 5 min · 3.0 over 15 min",
+    "Agents: share the daemon's cgroup · no per-thread figures",
+  ]);
   // V0.process-tree-hosts: a host without cgroups reads its agents from the process trees.
   const mac: HostLoad = { ...plain, agents: { cpu: 1.5, cpuMax: 0, memory: 2e9, memoryMax: 0 } };
-  assert.equal(loadDetail(mac)[1], "Agents 1.5 cores, no cap · 2.0 GB (process trees)");
+  assert.equal(cardLines(loadCard(mac))[2], "Agents use: 1.5 cores · 2.0 GB · no cap · process trees");
 });
 
 test("a thread's CPU is in cores, hot from 2, and absent without a second read", () => {
@@ -69,7 +74,9 @@ test("a counted host's heavy jobs read as a share of the count, hot while anyone
   };
   assert.deepEqual(railBudget(full), { text: "100 %", note: "2 wait", share: 1, hot: true, waiting: 2 });
   assert.equal(railBudget({ ...busy, slots: undefined }), null);
-  assert.ok(loadDetail(full).includes("Heavy jobs: 100 % of this host's count in use (2 of 2 jobs; no load measures), 2 waiting"), loadDetail(full).join("\n"));
+  const d = cardLines(loadCard(full));
+  assert.ok(d.includes("In use: 2 of 2 jobs · counted, not measured"), d.join("\n"));
+  assert.ok(d.includes("Waiting: 2 jobs"), d.join("\n"));
   assert.equal(threadSlot([full], "t_new"), "waiting (1 ahead)");
   assert.equal(threadSlot([full], "self-deploy"), "waiting (0 ahead)");
   assert.equal(threadSlot([full], "t_calm"), "build job");

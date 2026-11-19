@@ -1,7 +1,8 @@
 // SPEC 0.5 V0.44: provider quota words: the summary line, colour from 80 %, the busiest part, details.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CARD_WORD, cardState, money, quotaDetail, quotaParts, quotaSummary, busiestFigure, type Quota } from "../src/quota.ts";
+import { cardLines } from "../src/card.ts";
+import { CARD_WORD, cardState, money, quotaCard, windowName, quotaParts, quotaSummary, busiestFigure, type Quota } from "../src/quota.ts";
 
 const now = Date.parse("2026-11-14T10:00:00Z");
 const claude: Quota = {
@@ -40,14 +41,34 @@ test("money and the balance", () => {
   assert.equal(busiestFigure({ profile: "d", kind: "anthropic-oauth", error: "Login expired; run this provider once" }), null);
 });
 
-test("details: resets in local time, freshness, the stale note and the next try", () => {
-  const d = quotaDetail({ ...claude, stale: true, error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:20:00Z" }, "Claude", now);
-  assert.match(d[0], /^Claude 5 h: 34 % used, resets \d\d:\d\d$/);
-  assert.equal(d[1], "Claude 7 d: 61 % used");
-  assert.equal(d[2], "Updated 2 min ago");
-  assert.equal(d[3], "Stale: showing the last data read");
-  assert.equal(d[4], "Rate limited by the provider; trying again later");
-  assert.match(d[5], /^Next try \d\d:\d\d$/);
+// V0.hover-cards: the quota's hover card (and the phone's Details): a verdict, each window with its reset time, the
+// problem and its next try, how old the reading is.
+test("the card: windows by their names, resets in local time, the problem once, the age", () => {
+  const c = quotaCard({ ...claude, stale: true, error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:20:00Z" }, "Claude", now);
+  const d = cardLines(c);
+  assert.equal(c.head, "Claude");
+  assert.equal(d[0], "Plenty left");
+  assert.match(d[1], /^5 hours: 34 % used · resets \d\d:\d\d$/);
+  assert.equal(d[2], "7 days: 61 % used");
+  assert.match(d[3], /^Problem: Rate limited by the provider; trying again later · next try \d\d:\d\d$/);
+  assert.equal(c.source, "Read 2 min ago · may be out of date");
+  assert.equal(windowName("5 h"), "5 hours");
+  assert.equal(windowName("1 d"), "1 day");
+  assert.equal(windowName("Opus week"), "Opus week");
+});
+
+test("the card's verdict: running low from 80 %, used up at 100 %, the error's word without data", () => {
+  const low = quotaCard({ ...claude, windows: [{ name: "5 h", usedPct: 86, resetsAt: "2026-11-14T12:00:00Z" }] }, "Claude", now);
+  assert.equal(low.verdict, "Running low");
+  assert.equal(low.level, "warm");
+  assert.match(low.summary!, /^The 5 hours window is 86 % used; it resets \d\d:\d\d\.$/);
+  const out = quotaCard({ ...claude, windows: [{ name: "7 d", usedPct: 100 }] }, "Claude", now);
+  assert.deepEqual([out.verdict, out.level, out.summary], ["Used up", "hot", "New runs on this account wait until the window resets."]);
+  const bare = quotaCard({ profile: "x", kind: "anthropic-oauth", error: "Login expired; run this provider once" }, "Work", now);
+  assert.deepEqual(cardLines(bare), ["Login expired", "Problem: Login expired; run this provider once"]);
+  const session = quotaCard({ profile: "x", kind: "anthropic-oauth", source: "session" }, "Work", now);
+  assert.deepEqual([session.verdict, session.summary], ["After a run", "Usage shows after the next run on this account."]);
+  assert.equal(quotaCard({ profile: "d", kind: "deepseek", balance: { amount: 12.9, currency: "CNY" } }, "DeepSeek", now).sections[0].rows[0].value, "¥12.90 left");
 });
 
 // SPEC 0.5 V0.77 (1), #65: the card says each thing once. Today it repeated the same sentence three times (the line,
@@ -55,9 +76,9 @@ test("details: resets in local time, freshness, the stale note and the next try"
 test("the card says one error and its next try, once", () => {
   const q: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], stale: true, error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:31:00Z" };
   assert.equal(quotaSummary(q, "Claude (acme)"), "Claude (acme) 5 h 34 %");
-  const d = quotaDetail(q, "Claude (acme)", now);
+  const d = cardLines(quotaCard(q, "Claude (acme)", now));
   assert.deepEqual(d.filter((l) => /Rate limited/.test(l)).length, 1, `one mention: ${d.join(" | ")}`);
-  assert.equal(d.filter((l) => /Next try/.test(l)).length, 1);
+  assert.equal(d.filter((l) => /next try/i.test(l)).length, 1);
   // the same, with no windows: the error is the line, not the name twice plus the error
   const bare: Quota = { profile: "x", kind: "anthropic-oauth", error: "Login expired; run this provider once", retryAt: "2026-11-14T10:31:00Z" };
   assert.equal(quotaSummary(bare, "Work"), "Work: Login expired; run this provider once");
@@ -77,9 +98,7 @@ test("the card's badge says Ready only when nothing is wrong", () => {
 test("a token account shows its last session's windows with their age, or when they will show", () => {
   const q: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", source: "session", windows: [{ name: "7 d", usedPct: 67 }], updatedAt: "2026-11-14T09:48:00Z" };
   assert.equal(quotaSummary(q, "Claude (acme)"), "Claude (acme) 7 d 67 %");
-  const d = quotaDetail(q, "Claude (acme)", now);
-  assert.ok(d.includes("From the last session, 12 min ago"), d.join(" | "));
-  assert.ok(!d.some((l) => l.startsWith("Updated")), d.join(" | "));
+  assert.equal(quotaCard(q, "Claude (acme)", now).source, "From the last run, 12 min ago");
   assert.equal(cardState(q), "ready");
   const none: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", source: "session" };
   assert.equal(quotaSummary(none, "Claude (acme)"), "Claude (acme): usage shows after the next run");

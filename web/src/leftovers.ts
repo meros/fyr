@@ -1,5 +1,6 @@
 // SPEC V0.176: leftover processes (what a thread left running outside its CLI) and the settled threads' worktrees, as
 // words for the open thread's strip, the rail, the phone's load sheet and Settings. Pure texts; the components print them.
+import type { Card } from "./card.ts";
 import type { HostLoad, Lookup } from "./load.ts";
 
 export interface LeftoverKeep {
@@ -54,6 +55,7 @@ function inText(iso: string, now: number): string {
 
 const heavy = (l: Leftover) => l.rss >= 100e6;
 const named = (l: Leftover) => (heavy(l) ? `${l.name} (${sizeText(l.rss)})` : l.name);
+const plural = (n: number) => `${n} ${n === 1 ? "process" : "processes"}`;
 const byMemory = (a: Leftover, b: Leftover) => b.rss - a.rss || a.pid - b.pid;
 
 /** A thread's leftovers on one host, the heaviest first; null without any. */
@@ -93,14 +95,20 @@ export function stripText(items: Leftover[], now: number): string {
 }
 
 /** The rail's and the phone sheet's count of a host's leftovers; null without any. */
-export function hostLeftovers(h: HostLoad): { count: number; text: string; title: string } | null {
+export function hostLeftovers(h: HostLoad): { count: number; text: string; card: Card } | null {
   const ls = h.leftovers ?? [];
   if (!ls.length) return null;
   const mem = ls.reduce((s, l) => s + l.rss, 0);
   return {
     count: ls.length,
     text: `${ls.length} leftover process${ls.length === 1 ? "" : "es"} · ${sizeText(mem)}`,
-    title: `Processes threads left running: ${[...ls].sort(byMemory).map(named).join(", ")}. Settings → Automation lists them with End and Keep.`,
+    // V0.hover-cards: the rail's hover card and the phone sheet's text: each process and its memory, heaviest first
+    card: {
+      head: "Still running after their thread",
+      summary: `${plural(ls.length)} that threads started and left behind, ${sizeText(mem)} in all.`,
+      sections: [{ list: true, rows: [...ls].sort(byMemory).map((l) => ({ label: "", value: l.name, note: [l.procs > 1 ? `${l.procs} processes` : "", l.rss > 0 ? sizeText(l.rss) : ""].filter(Boolean).join(" · ") || undefined })) }],
+      source: "End or keep them in Settings → Automation.",
+    },
   };
 }
 

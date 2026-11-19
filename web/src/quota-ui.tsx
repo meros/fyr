@@ -5,7 +5,9 @@ import { useEffect, useState } from "preact/hooks";
 import type { Profile } from "./types.ts";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { hasData, quotaDetail, quotaFor, quotaParts, quotaSummary, busiestFigure, type Quota } from "./quota.ts";
+import { hasData, quotaCard, quotaFor, quotaParts, quotaSummary, busiestFigure, type Quota } from "./quota.ts";
+import type { Card } from "./card.ts";
+import { CardView, HoverCard, useHover } from "./card-ui.tsx";
 
 const POLL_MS = 60_000;
 
@@ -58,15 +60,17 @@ export function quotaSuffix(list: Quota[], profile: string): string {
   return q && hasData(q) ? quotaParts(q).map((x) => x.text).join(" · ") : "";
 }
 
-/** One calm line; hover shows the details, a tap opens them below. */
+/** One calm line; V0.hover-cards: hover shows its card (quotaCard), a tap opens the same card below (the phone's way:
+ *  no hover there). Bare (inside a Settings row, both fronts): the card on hover only; the phone reaches the same card
+ *  from the new-thread screen's quota list and the load sheet. */
 export function QuotaLine(p: { q: Quota; name: string; color?: string; /** V0.119: the figures alone, no name and no button (inside a row that is a button) */ bare?: boolean }) {
   const [open, setOpen] = useState(false);
-  const now = Date.now();
-  const detail = quotaDetail(p.q, p.name, now);
+  const hv = useHover();
+  const card = quotaCard(p.q, p.name, Date.now());
   const parts = quotaParts(p.q);
   if (p.bare)
     return (
-      <span class={`qline bare${!hasData(p.q) && p.q.error ? " err" : ""}`} title={detail.join("\n")}>
+      <span class={`qline bare${!hasData(p.q) && p.q.error ? " err" : ""}`} onMouseEnter={hv.bind.onMouseEnter} onMouseLeave={hv.bind.onMouseLeave}>
         {parts.length
           ? parts.map((x, i) => (
               <>
@@ -75,11 +79,12 @@ export function QuotaLine(p: { q: Quota; name: string; color?: string; /** V0.11
               </>
             ))
           : (p.q.error ?? "Not read yet")}
+        {hv.at && <QuotaHover c={card} at={hv.at} />}
       </span>
     );
   return (
     <div class={`qline${p.q.stale ? " stale" : ""}${!hasData(p.q) && p.q.error ? " err" : ""}`}>
-      <button type="button" class="qsum" title={detail.join("\n")} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button type="button" class="qsum" aria-expanded={open} {...hv.bind} onClick={() => (hv.close(), setOpen((o) => !o))}>
         {p.color && <i style={{ background: p.color }} />}
         {parts.length ? (
           <span class="ell">
@@ -95,14 +100,22 @@ export function QuotaLine(p: { q: Quota; name: string; color?: string; /** V0.11
           <span class="ell">{quotaSummary(p.q, p.name)}</span>
         )}
       </button>
+      {hv.at && !open && <QuotaHover c={card} at={hv.at} />}
       {open && (
-        <ul class="qdet">
-          {detail.map((l) => (
-            <li>{l}</li>
-          ))}
-        </ul>
+        <div class="qdet">
+          <CardView c={card} head={false} />
+        </div>
       )}
     </div>
+  );
+}
+
+/** The quota's hover card, under the line or chip it belongs to. */
+function QuotaHover({ c, at }: { c: Card; at: DOMRect }) {
+  return (
+    <HoverCard at={at} place="below">
+      <CardView c={c} />
+    </HoverCard>
   );
 }
 
@@ -125,22 +138,16 @@ export function QuotaList(p: { profiles: Profile[] }) {
   );
 }
 
-/** Every line about one quota: the windows with their reset times, the freshness and the notes; an error without data
- *  comes first (quotaDetail names an error only beside data). */
-function quotaLines(q: Quota, name: string): string[] {
-  const d = quotaDetail(q, name, Date.now());
-  return hasData(q) || !q.error ? d : [`${name}: ${q.error}`, ...d];
-}
-
 /** V0.quota-in-thread: the quota of the provider a thread runs on, as a chip in the desktop thread's header, after the
  *  model and the effort: every window, the reset times on hover. Nothing without a reading or an error. */
 export function ThreadQuotaChip(p: { profile: string; host?: string; name: string }) {
   const q = quotaFor(useQuotas(), p.profile, p.host);
+  const hv = useHover();
   if (!q || !(hasData(q) || q.error)) return null;
   const parts = quotaParts(q);
-  const tip = quotaLines(q, p.name).join("\n");
   return (
-    <span class={`chip m qchip${q.stale ? " stale" : ""}`} title={tip} aria-label={`Quota: ${quotaSummary(q, p.name)}`}>
+    <span class={`chip m qchip${q.stale ? " stale" : ""}`} tabIndex={0} aria-label={`Quota: ${quotaSummary(q, p.name)}`} {...hv.bind}>
+      {hv.at && <QuotaHover c={quotaCard(q, p.name, Date.now())} at={hv.at} />}
       {parts.length ? (
         parts.map((x, i) => (
           <>
@@ -171,10 +178,10 @@ export function ThreadQuotaFigure(p: { profile: string; host?: string; name: str
   );
 }
 
-/** V0.quota-in-thread: the same quota as lines (the phone's thread Details, where there is no hover): each window with
- *  its reset time, then the freshness and the notes. null without a reading or an error. */
-export function useThreadQuotaLines(profile: string, host: string | undefined, name: string): string[] | null {
+/** V0.quota-in-thread, V0.hover-cards: the same quota card as the desktop chip's hover (the phone's thread Details,
+ *  where there is no hover). null without a reading or an error. */
+export function useThreadQuotaCard(profile: string, host: string | undefined, name: string): Card | null {
   const q = quotaFor(useQuotas(), profile, host);
   if (!q || !(hasData(q) || q.error)) return null;
-  return quotaLines(q, name).map((l) => (l.startsWith(`${name} `) ? l.slice(name.length + 1) : l.startsWith(`${name}: `) ? l.slice(name.length + 2) : l));
+  return quotaCard(q, name, Date.now());
 }

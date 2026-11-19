@@ -45,7 +45,7 @@ interface Props {
   guest: string | null;
 }
 
-const HINT = "Heavy jobs (test suites, builds, e2e runs) run when their share of the host fits (CPU and memory); the first in the queue starts next";
+const HINT = "Heavy jobs wait here until the host has room. The first in line starts next.";
 
 export function SlotQueueSection(p: Props) {
   // The section shows only while a queue has anyone in it (V0.137 (1)). V0.waiting-folds: its header folds it, like the

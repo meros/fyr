@@ -1,4 +1,5 @@
 // SPEC 0.5 V0.44: provider quota per profile, as words. Pure.
+import type { Card, CardRow } from "./card.ts";
 import { relTime, untilLabel } from "./format.ts";
 
 export interface QuotaWindow {
@@ -77,22 +78,56 @@ export function busiestFigure(q: Quota): QuotaPart | null {
   return { text: pctText(top), hot: top >= HOT };
 }
 
-/** The detail lines on hover or tap: windows with reset times in local time, then freshness and notes. */
-export function quotaDetail(q: Quota, name: string, now: number): string[] {
-  const lines: string[] = [];
-  for (const w of q.windows ?? []) {
-    const r = untilLabel(w.resetsAt, now);
-    lines.push(`${name} ${w.name}: ${pctText(w.usedPct)} used${r ? `, resets ${r}` : ""}`);
+/** "5 h" → "5 hours", "7 d" → "7 days"; any other window name as the provider gives it. */
+export function windowName(n: string): string {
+  const m = /^(\d+) ?(h|d)$/.exec(n.trim());
+  if (!m) return n;
+  const k = Number(m[1]);
+  return `${k} ${m[2] === "h" ? (k === 1 ? "hour" : "hours") : k === 1 ? "day" : "days"}`;
+}
+
+/** V0.hover-cards (amends V0.44's detail lines, V0.77 (1), V0.quota-in-thread): one quota as a card, on hover on the
+ *  desktop and as text on the phone. A verdict (Plenty left, Running low, Used up, or the error's word), then each window
+ *  with its share and reset time, the balance, the problem and its next try once (V0.77 (1)); how old the reading is
+ *  last. */
+export function quotaCard(q: Quota, name: string, now: number): Card {
+  const ws = q.windows ?? [];
+  const top = ws.length ? ws.reduce((a, b) => (b.usedPct > a.usedPct ? b : a)) : null;
+  const card: Card = { head: name, sections: [] };
+  if (!hasData(q)) {
+    const st = cardState(q);
+    card.verdict = CARD_WORD[st];
+    card.level = q.error ? "hot" : "calm";
+    if (!q.error) card.summary = q.source === "session" ? "Usage shows after the next run on this account." : "Fyr has not read this account's usage yet.";
+  } else if (top && top.usedPct >= 100) {
+    card.verdict = "Used up";
+    card.level = "hot";
+    const r = untilLabel(top.resetsAt, now);
+    card.summary = `New runs on this account wait${r ? ` until ${r}` : " until the window resets"}.`;
+  } else if (top && top.usedPct >= HOT) {
+    card.verdict = "Running low";
+    card.level = "warm";
+    const r = untilLabel(top.resetsAt, now);
+    card.summary = `The ${windowName(top.name)} window is ${pctText(top.usedPct)} used${r ? `; it resets ${r}` : ""}.`;
+  } else {
+    card.verdict = ws.length ? "Plenty left" : "Ready";
+    card.level = "calm";
   }
+  const rows: CardRow[] = ws.map((w) => {
+    const r = untilLabel(w.resetsAt, now);
+    return { label: windowName(w.name), value: `${pctText(w.usedPct)} used`, note: r ? `resets ${r}` : undefined, hot: w.usedPct >= HOT };
+  });
   const b = q.balance;
-  if (b?.amount !== undefined) lines.push(`${name}: ${money(b.amount, b.currency)} left`);
-  else if (b?.spent !== undefined) lines.push(`${name}: ${money(b.spent, b.currency)} used (no limit on the key)`);
-  if (q.updatedAt) lines.push(q.source === "session" ? `From the last session, ${relTime(q.updatedAt, now)} ago` : `Updated ${relTime(q.updatedAt, now)} ago`);
-  // V0.77 (1), #65: the error and its next try appear once in the detail, never again in the line above it.
-  if (q.stale) lines.push("Stale: showing the last data read");
-  if (q.error && hasData(q)) lines.push(q.error);
-  if (q.retryAt) lines.push(`Next try ${untilLabel(q.retryAt, now)}`);
-  return lines;
+  if (b?.amount !== undefined) rows.push({ label: "Balance", value: `${money(b.amount, b.currency)} left` });
+  else if (b?.spent !== undefined) rows.push({ label: "Spent", value: money(b.spent, b.currency), note: "the key has no limit" });
+  if (q.error) rows.push({ label: "Problem", value: q.error, note: q.retryAt ? `next try ${untilLabel(q.retryAt, now)}` : undefined, hot: true });
+  else if (q.retryAt) rows.push({ label: "Next try", value: untilLabel(q.retryAt, now) });
+  if (rows.length) card.sections.push({ rows });
+  if (q.updatedAt) {
+    const age = q.source === "session" ? `From the last run, ${relTime(q.updatedAt, now)} ago` : `Read ${relTime(q.updatedAt, now)} ago`;
+    card.source = q.stale ? `${age} · may be out of date` : age;
+  } else if (q.stale) card.source = "May be out of date";
+  return card;
 }
 
 /** V0.77 (1), #65: what the card's badge says. "Ready" means nothing is wrong, so a limited, expired, stale or unread
