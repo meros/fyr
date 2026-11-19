@@ -229,6 +229,7 @@ func (g *JobGroups) RotateUndeclared(thread string, units []Unit, active int) bo
 	}
 	g.ufrozen[thread] = true
 	g.mu.Unlock()
+	g.ReclaimFrozen(thread) // V0.guard-swap: the units that wait give up their RAM
 	return true
 }
 

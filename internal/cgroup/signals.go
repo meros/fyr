@@ -141,6 +141,20 @@ func capacity(t *Tree, proc string, cores int, share float64) Capacity {
 	return c
 }
 
+// SwapFullShare is the share of agents/memory.swap.max at which the agents'
+// swap counts as full (V0.guard-swap).
+const SwapFullShare = 0.9
+
+// swapFull says agents holds SwapFullShare of a set memory.swap.max in swap;
+// false for "max", 0 or unreadable files.
+func swapFull(agents string) bool {
+	limit := readBytes(filepath.Join(agents, "memory.swap.max"))
+	if limit == 0 {
+		return false
+	}
+	return float64(readBytes(filepath.Join(agents, "memory.swap.current"))) >= SwapFullShare*float64(limit)
+}
+
 // cpuMax reads a cpu.max file as cores; 0 for "max" or none.
 func cpuMax(path string) float64 {
 	b, err := os.ReadFile(path)
@@ -232,6 +246,9 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 		}
 		h = round2(clamp01(h)*1000) / 1000
 		l.Headroom = &h
+	}
+	if s.Tree != nil {
+		l.AgentsSwapFull = swapFull(filepath.Join(s.Tree.root, "agents"))
 	}
 	if p, ok := readPSI(filepath.Join(proc, "pressure", "memory")); ok && p.hasFull {
 		f := p.full
