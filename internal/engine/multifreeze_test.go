@@ -33,7 +33,8 @@ func third(t *testing.T, e *Engine) string {
 func TestMultiStillShortAMinuteLaterASecondThreadIsFrozen(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	third(t, e)
+	c := third(t, e)
+	e.Slots.Acquire(c, slots.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
 	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	z.free = 0.04
 	e.Tick()
@@ -88,7 +89,8 @@ func TestMultiAtMostTheRunningThreadsLessOne(t *testing.T) {
 func TestMultiWakeOldestFirstOnePerWakeEvery(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	third(t, e)
+	c := third(t, e)
+	e.Slots.Acquire(c, slots.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
 	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	z.free = 0.04
 	e.Tick() // b, the newest episode, is frozen first

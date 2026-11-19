@@ -107,6 +107,7 @@ func (e *Engine) dropSlot(id string) bool {
 	e.heavyMu.Unlock()
 	e.mu.Lock()
 	delete(e.slotIdle, id)
+	delete(e.jobThawed, id)
 	e.mu.Unlock()
 	return e.Slots.Release(id)
 }
@@ -193,7 +194,25 @@ func (e *Engine) sweepSlots() {
 		if h.Priority {
 			continue // the self-deploy releases its own
 		}
+		// V0.sim-fixes (1): a job the guard holds frozen does not move its
+		// SlotActive, so its hold read as idle: a foreground call went stale at
+		// HeavyCallStale, a background job at SlotIdle, and after a restart any
+		// frozen job at SlotIdle (heavyCalls is empty). The guard then thawed it
+		// as "episode or hold ended" into the critical stall it was frozen for.
+		// A frozen hold is not swept, and its idle time starts at its thaw.
 		t := e.threads[h.Owner]
+		if t != nil && e.frozenJobOf(h.Owner) {
+			delete(e.slotIdle, h.Owner)
+			continue
+		}
+		if at, ok := e.jobThawed[h.Owner]; ok {
+			if a, ok := active[h.Owner]; ok && a.Before(at) {
+				active[h.Owner] = at
+			}
+			if since, ok := e.slotIdle[h.Owner]; ok && since.Before(at) {
+				e.slotIdle[h.Owner] = at
+			}
+		}
 		switch {
 		case t == nil:
 			drop = append(drop, h.Owner)
@@ -329,6 +348,9 @@ type frozenJob struct {
 	turnAt time.Time
 	turn   time.Duration
 	faults uint64
+	// parts is each frozen part's memory when it was last frozen, by pid
+	// (V0.sim-fixes (4)): what comes back if the turns end in a wake.
+	parts map[int]uint64
 	// V0.oomd-guard (decision 0036 E2): past FreezeMax while memory stalls
 	// critically, so it stays frozen; the thread was told once.
 	pastMax bool
@@ -385,6 +407,17 @@ const (
 // critical and the guard may freeze work that grows without waiting the
 // detector's window (V0.freeze-fast-class-name): two ticks.
 const TriggerFresh = slots.TriggerFresh
+
+// frozenJobOf says the guard holds thread's job (not undeclared work) frozen
+// now; under mu.
+func (e *Engine) frozenJobOf(thread string) bool {
+	for _, f := range e.frozen {
+		if f.owner == thread && !f.undeclared {
+			return true
+		}
+	}
+	return false
+}
 
 // isFrozen says the guard holds thread frozen now; under mu.
 func (e *Engine) isFrozen(thread string) bool {
@@ -674,9 +707,9 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		// was killed) holds nothing; release it at once instead of letting it
 		// block every other freeze for ten minutes. V0.guard-tidy: a job's too.
 		emptied := false
-		if holding && f.undeclared {
+		if f.undeclared {
 			emptied = e.UndeclaredEmpty != nil && e.UndeclaredEmpty(f.owner)
-		} else if holding {
+		} else {
 			emptied = e.SlotEmpty != nil && e.SlotEmpty(f.owner)
 		}
 		// V0.guard-tidy: past FreezeMax only the agents' own critical stall
@@ -685,7 +718,28 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		// work is rerunnable: then V0.rerun-classes's kill ends it.
 		overMax := now.Sub(f.at) >= FreezeMax
 		ceiling := now.Sub(f.at) >= FreezeCeiling && e.rerunEntry(f, now) == ""
-		if !holding || emptied || (overMax && !agentsCritical) || ceiling {
+		// V0.sim-fixes (1): a hold or episode that ended while its work is
+		// still there (a call's result came while the job was frozen) ends, but
+		// its work does not thaw into the critical stall it was frozen for: it
+		// thaws when the stall is below critical, or at the ceiling.
+		if !holding && !emptied && (critical || agentsCritical) && !ceiling {
+			e.guardOnce(now, "ended:"+f.owner, fmt.Sprintf("keeping thread=%s frozen: its hold or episode ended but its work is still there, and memory stalls critically (%s)", f.owner, guardSignals(sig)))
+			keep = append(keep, f)
+			continue
+		}
+		// V0.sim-fixes (3): the timed thaw waits while what of the work is out
+		// of RAM would not fit above the reserve: it comes back with the thaw.
+		// Work frozen on headroom saw a calm stall at 10 min because nothing
+		// ran, thawed, and paged its memory back into the same shortage.
+		timed := overMax && !agentsCritical
+		if timed && holding && !emptied && !ceiling {
+			if ok, why := e.roomToThaw(f, sig); !ok {
+				e.guardOnce(now, "pastmax:"+f.owner, fmt.Sprintf("keeping thread=%s frozen past the %s limit: %s; it thaws when it fits, or at %s", f.owner, FreezeMax, why, FreezeCeiling))
+				keep = append(keep, f)
+				continue
+			}
+		}
+		if !holding || emptied || timed || ceiling {
 			thaws = append(thaws, thawing{f: f, holding: holding, emptied: emptied, ceiling: ceiling && agentsCritical})
 			continue
 		}
@@ -717,13 +771,28 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	// V0.guard-wake (decision 0036 E3, Buck2's rule): the oldest freeze wakes
 	// first, at most one each WakeEvery, once the stall has been below
 	// elevated for ThawAfterOK and it fits under the cap.
+	// V0.sim-fixes (3): when the frozen work is all the heavy work left (the
+	// rest ended), the oldest freeze wakes at once unless memory stalls
+	// critically: nothing runs that it could take memory from.
+	alone := len(keep) > 0 && len(thaws) == 0 && !critical && !nearOomd && len(e.runningHeavy(s, e.flags())) == 0
+	if alone && now.Sub(lastWake) >= WakeEvery {
+		thaws = append(thaws, thawing{f: keep[0], holding: true, woke: "no other heavy work runs"})
+		keep = keep[1:]
+		e.mu.Lock()
+		e.guardWake = now
+		e.mu.Unlock()
+	}
 	if len(keep) > 0 && len(thaws) == 0 && !okSince.IsZero() && now.Sub(okSince) >= ThawAfterOK && now.Sub(lastWake) >= WakeEvery {
 		f := keep[0]
 		var resident uint64 // V0.wake-once: what of the agents' memory is the frozen thread's own
 		if e.SlotMem != nil {
 			resident = e.SlotMem(f.owner)
 		}
-		if ok, why := wakeable(f, sig, capNow, resident); ok {
+		w := f
+		if f.active != 0 {
+			w.mem, resident = e.frozenParts(f)
+		}
+		if ok, why := wakeable(w, sig, capNow, resident); ok {
 			keep = keep[1:]
 			thaws = append(thaws, thawing{f: f, holding: true, woke: why})
 			e.mu.Lock()
@@ -738,7 +807,13 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	}
 	e.mu.Lock()
 	e.frozen = keep
+	if e.jobThawed == nil {
+		e.jobThawed = map[string]time.Time{}
+	}
 	for _, t := range thaws {
+		if !t.f.undeclared {
+			e.jobThawed[t.f.owner] = now
+		}
 		if t.f.undeclared {
 			u := e.undFroze[t.f.owner]
 			u.thawedAt = now
@@ -797,18 +872,24 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	if !short || len(thaws) > 0 || killed > 0 {
 		return // a thaw or a kill this tick: the next tick sees what it did
 	}
+	if !critical && !nearOomd && !stalls(sig) {
+		e.guardOnce(now, "nostall", fmt.Sprintf("not freezing on the headroom alone: memory does not stall (%s); new heavy commands wait at the gate", guardSignals(sig)))
+		return
+	}
 	// With one thread running (n is 0) the freezes below say themselves why
 	// they skip it.
 	// V0.guard-agents-stall: near oomd's limit the next freeze does not wait
 	// AddFreezeAfter; oomd kills after its duration (20 s), sooner than that.
 	wait := len(keep) > 0 && now.Sub(keep[len(keep)-1].at) < AddFreezeAfter && !nearOomd
-	if n := e.maxFrozen(); len(keep) >= max(n, 1) || wait {
+	fl := e.flags()
+	if n := e.maxFrozen(s, fl); len(keep) >= max(n, 1) || wait {
 		if len(keep) >= n && n > 0 {
-			e.guardOnce(now, "maxfrozen", fmt.Sprintf("not freezing more: %d frozen, at most %d (running threads less one)", len(keep), n))
+			e.guardOnce(now, "maxfrozen", fmt.Sprintf("not freezing more: %d frozen, at most %d (threads with heavy work less one)", len(keep), n))
 		}
 		return
 	}
-	if e.freezeUndeclared(sig, now, len(s.Held) > 0) {
+	heavy := e.runningHeavy(s, fl)
+	if e.freezeUndeclared(sig, now, len(s.Held) > 0, heavy) {
 		return
 	}
 	// V0.freeze-fast-class-name: on 20 Nov the PSI trigger fired at 07:32:12
@@ -820,7 +901,9 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	if fast && e.UndeclaredFlagNow != nil {
 		if th := e.UndeclaredFlagNow(); th != "" {
 			log.Printf("guard: flagged thread=%s without the window: the PSI trigger fired %s ago %s", th, now.Sub(trig).Round(time.Second), guardSignals(sig))
-			if e.freezeUndeclared(sig, now, len(s.Held) > 0) {
+			// V0.sim-fixes (3): the early flag is heavy work too, and the
+			// only heavy work that runs is still never frozen whole.
+			if e.freezeUndeclared(sig, now, len(s.Held) > 0, e.runningHeavy(s, e.flags())) {
 				return
 			}
 		}
@@ -909,10 +992,100 @@ func wakeable(f frozenJob, sig slots.Signals, cap, resident uint64) (bool, strin
 	return false, fmt.Sprintf(words, ">=")
 }
 
+// stalls says memory stalls at all (V0.sim-fixes (3)): the host's or the
+// agents' stall is elevated or worse. Where the agents' stall cannot be read
+// apart from the host's, the headroom alone counts as before.
+func stalls(sig slots.Signals) bool {
+	return sig.AgentsStall == "" || sig.Stall == slots.StallElevated || sig.Stall == slots.StallCritical ||
+		sig.AgentsStall == slots.StallElevated || sig.AgentsStall == slots.StallCritical
+}
+
+// frozenParts is, for work taking turns, the frozen parts' memory at their
+// freeze and their memory now (V0.sim-fixes (4)). The thread's memory at the
+// freeze (f.mem) counted the part whose turn it is, which runs and is in the
+// agents' memory already, and the parts that ended since: with one part left
+// the work could never wake ("agents=0.8 GB + its 11.2 GB >= cap=12.0 GB").
+func (e *Engine) frozenParts(f frozenJob) (atFreeze, now uint64) {
+	for _, u := range e.workUnits(f.owner) {
+		if u.PID == f.active {
+			continue
+		}
+		at, ok := f.parts[u.PID]
+		if !ok {
+			at = u.RSS // started since: frozen at the last turn's apply
+		}
+		atFreeze += max(at, u.RSS)
+		now += u.RSS
+	}
+	return atFreeze, now
+}
+
 // maxFrozen is how many freezes the guard holds at most (V0.guard-wake,
-// decision 0036 E4): the running threads less one, so one always runs.
-func (e *Engine) maxFrozen() int {
-	return max(len(e.Running())-1, 0)
+// decision 0036 E4): the threads with heavy work (a hold or a flag) less one,
+// so one always runs. V0.sim-fixes (3): it was the running threads less one,
+// and an agent with no heavy work let the last heavy work be frozen for it.
+func (e *Engine) maxFrozen(s slots.Snapshot, fl []slots.Undeclared) int {
+	ths := map[string]bool{}
+	for _, h := range s.Held {
+		if !h.Priority {
+			ths[h.Owner] = true
+		}
+	}
+	for _, f := range fl {
+		ths[f.Thread] = true
+	}
+	return max(len(ths)-1, 0)
+}
+
+// runningHeavy is the heavy work that runs now, by thread, with since when
+// (V0.sim-fixes (3)): the holds and the flagged undeclared work the guard does
+// not hold frozen. Work taking turns runs (one part has the turn).
+func (e *Engine) runningHeavy(s slots.Snapshot, fl []slots.Undeclared) map[string]time.Time {
+	out := map[string]time.Time{}
+	note := func(th string, at time.Time) {
+		if was, ok := out[th]; !ok || at.Before(was) {
+			out[th] = at
+		}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	stopped := map[string]bool{}
+	for _, f := range e.frozen {
+		if f.active == 0 {
+			stopped[f.owner] = true
+		}
+	}
+	for _, h := range s.Held {
+		if !h.Priority && !stopped[h.Owner] {
+			note(h.Owner, h.Since)
+		}
+	}
+	for _, f := range fl {
+		if !stopped[f.Thread] {
+			note(f.Thread, f.Since)
+		}
+	}
+	return out
+}
+
+// roomToThaw says whether f's work fits back above the reserve: what of it is
+// out of RAM now (its memory at the freeze less the thread's memory now) comes
+// back with the thaw (V0.sim-fixes (3)). Without a headroom, a budget or f's
+// memory it fits.
+func (e *Engine) roomToThaw(f frozenJob, sig slots.Signals) (bool, string) {
+	if sig.Headroom == nil || sig.Memory == 0 || f.mem == 0 {
+		return true, ""
+	}
+	var resident uint64
+	if e.SlotMem != nil {
+		resident = e.SlotMem(f.owner)
+	}
+	back := float64(f.mem - min(resident, f.mem))
+	room := (*sig.Headroom - sig.Reserve(e.SlotPolicy)) * float64(sig.Memory)
+	if back <= room {
+		return true, ""
+	}
+	return false, fmt.Sprintf("its %s out of RAM would come back, %s free above the reserve", slots.GB(back), slots.GB(max(0, room)))
 }
 
 // service says thread's heavy work is a service the guard never freezes
@@ -984,7 +1157,7 @@ func (e *Engine) flags() []slots.Undeclared {
 // a job or a second flag exists; and an episode is frozen again after a thaw,
 // RefreezeAfter later and at most MaxFreezes times, so the freezes work as time
 // slices of the long episode. It reports whether it froze one.
-func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted bool) bool {
+func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted bool, heavy map[string]time.Time) bool {
 	if e.UndeclaredFreeze == nil || e.UndeclaredThaw == nil {
 		return false
 	}
@@ -1007,8 +1180,12 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 	var skips [][2]string    // key, line: logged after the lock
 	svc := map[string]bool{} // decision 0036 (D), E4: asked outside e.mu
 	held := map[string]uint64{}
+	turnable := map[string]bool{} // two or more parts: one keeps running
 	for _, f := range fl {
 		svc[f.Thread] = e.service(f.Thread)
+		if f.MemOver {
+			turnable[f.Thread] = len(e.workUnits(f.Thread)) >= 2
+		}
 		// V0.guard-tidy: what the episode's processes hold now. The kernel does
 		// not move memory with a process, so a thread's flagged memory can be
 		// charged where its work no longer is (cli/), and freezing the work
@@ -1047,6 +1224,15 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: nobody else would gain (no job, no other flag, no other thread running)", f.Thread)})
 			continue
 		}
+		// V0.sim-fixes (3): the last heavy work that runs is never frozen
+		// whole (one always runs, decision 0029 section 4, Buck2's rule); work
+		// of two or more parts takes turns, so one of its parts still runs. An
+		// agent with no heavy work is no reason to stop all of it: the frozen
+		// memory stayed charged, and only the 10 min thaw ran the work again.
+		if !turnable[f.Thread] && len(heavy) < 2 {
+			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: its work is the only heavy work that runs; one always runs", f.Thread)})
+			continue
+		}
 		if pick == nil || f.Since.After(pick.Since) {
 			pick, picked = f, prev
 		}
@@ -1073,6 +1259,12 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 	fj := frozenJob{owner: pick.Thread, at: now, undeclared: true, episode: pick.Since, mem: pick.Mem, usec: usec, hasUsec: hasUsec, cmd: pick.Command}
 	if turns {
 		fj.active, fj.turnAt, fj.turn, fj.faults = first.PID, now, TurnMin, faults
+		fj.parts = map[int]uint64{}
+		for _, u := range e.workUnits(pick.Thread) {
+			if u.PID != first.PID {
+				fj.parts[u.PID] = u.RSS
+			}
+		}
 	}
 	e.mu.Lock()
 	e.frozen = append(e.frozen, fj)
