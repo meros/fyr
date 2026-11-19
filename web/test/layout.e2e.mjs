@@ -2897,7 +2897,7 @@ for (const [label, w, ht] of [
     check(rows.every((r) => r.tag === "BUTTON" && r.btns === 0), `${ctx}: a row is not one button or holds a button ${JSON.stringify(rows)}`);
     check(/^online since \d\d:\d\d · up to date · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
     check(/^offline since \d\d:\d\d · 3 commits behind · holds back c705ef5 · tailnet · id M3RS$/.test(by["host-b"]?.line) && by["host-b"]?.bad /* V0.host-updates: it holds a release back */ && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
-    check(/ · LAN · no id$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
+    check(/ · LAN · needs an update$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
     check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /^hmark/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`); // V0.170: the mark; the line and the pill say the id changed
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
     const foot = await evaluate(`[...document.querySelectorAll('${root} section[aria-label="Hosts"] .sg-f')].map(e => e.textContent).join(' ')`); // V0.159: the installs panel has its own groups
@@ -3037,6 +3037,9 @@ for (const [label, w, ht] of [
     check(parts.map((x) => x.host).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the parts ${JSON.stringify(parts.map((x) => x.host))}`);
     check(/^Online since \d\d:\d\d$/.test(by.desk?.line ?? "") && by.desk.rows.join("|") === "Claude|Claude (work account)|DeepSeek" && by.desk.add === false, `${ctx}: desk ${JSON.stringify(by.desk)}`);
     check(/^Online since \d\d:\d\d$/.test(by.lab?.line ?? "") && by.lab.rows.join("|") === "Claude|Z.ai" && !by.lab.note, `${ctx}: lab ${JSON.stringify(by.lab)}`);
+    // V0.host-ids: old-nuc reports no install id: its part says so, and shows nothing of it.
+    const nuc = by["old-nuc"];
+    check(nuc?.line === "Needs an update" && /^old-nuc runs a Fyr from before install ids, so its settings cannot be read or changed from here\./.test(nuc.note) && nuc.rows.length === 0 && nuc.add === null, `${ctx}: the host with no id ${JSON.stringify(nuc)}`);
     const off = by["host-b"];
     check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^host-b is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
     // The old Host picker is gone: each part has its own System agents.

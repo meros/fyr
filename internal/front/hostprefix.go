@@ -82,6 +82,14 @@ func (f *Front) byID(id string) *link {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	return f.byIDLocked(id)
+}
+
+// byIDLocked is byID; the caller holds f.mu.
+func (f *Front) byIDLocked(id string) *link {
+	if id == "" {
+		return nil
+	}
 	for _, l := range f.all() {
 		if f.idOfLocked(l) == id {
 			return l
@@ -363,22 +371,19 @@ func (f *Front) frontCommandRoute(w http.ResponseWriter, r *http.Request) {
 		f.projectSharedCommand(w, c.CommandID, c.Args)
 	case KindProjectAdd:
 		f.projectAddCommand(w, c.CommandID, c.Args)
-	case KindHostOrder:
+	case KindHostOrder: // V0.host-ids: the order is kept by id
 		ids, ok := c.Args["ids"].([]any)
 		if !ok {
 			api.WriteJSON(w, 400, api.Reply{Error: "ids must be a list of host ids", Status: 400})
 			return
 		}
-		names := make([]any, 0, len(ids))
 		for _, x := range ids {
 			id, _ := x.(string)
-			n, ok := nameOf(id)
-			if !ok {
+			if _, ok := nameOf(id); !ok {
 				return
 			}
-			names = append(names, n)
 		}
-		f.hostOrderCommand(w, c.CommandID, map[string]any{"names": names})
+		f.hostOrderCommand(w, c.CommandID, map[string]any{"ids": c.Args["ids"]})
 	case KindHostID:
 		id, _ := c.Args["host"].(string)
 		n, ok := nameOf(id)

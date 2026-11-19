@@ -13,8 +13,11 @@ const hostOrderKey = "hostOrder"
 
 // HostOrder is the owner's host order and when it was set; the newest wins.
 type HostOrder struct {
-	Names []string  `json:"names"`
-	At    time.Time `json:"at"`
+	Names []string `json:"names"`
+	// IDs: the same hosts by install id (V0.host-ids); missing from an order a
+	// front before it set.
+	IDs []string  `json:"ids,omitempty"`
+	At  time.Time `json:"at"`
 }
 
 // loadHostOrder reads the stored order. Call it with e.mu held.
@@ -37,6 +40,10 @@ func (e *Engine) HostOrder() HostOrder {
 	defer e.mu.Unlock()
 	o := e.hostOrder
 	o.Names = append([]string(nil), o.Names...)
+	o.IDs = append([]string(nil), o.IDs...)
+	if len(o.IDs) == 0 {
+		o.IDs = nil
+	}
 	return o
 }
 

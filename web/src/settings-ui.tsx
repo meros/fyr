@@ -237,6 +237,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
   const was = useRef<Record<string, boolean>>({});
   useEffect(() => {
     for (const h of hosts) {
+      if (h.noId) continue; // V0.host-ids: no call can name it
       if (!(h.name in was.current) || (h.online && !was.current[h.name])) loadAll(h.name);
       was.current[h.name] = h.online;
     }
@@ -334,12 +335,12 @@ export function Settings(p: SettingsProps) {
   const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
   // V0.127: the nav's lines count every host; an offline host Fyr has never read is left out.
   // A host with no install id (older than V0.124) cannot be addressed (decision 0031): nothing is read from it.
-  const read = data.all.filter((d) => (d.host.online || d.providers !== null) && !(d.host.name && !d.host.id));
+  const read = data.all.filter((d) => (d.host.online || d.providers !== null) && !d.host.noId);
   const provs = read.some((d) => d.providers === null) ? null : read.flatMap((d) => d.providers!);
   const blocked = data.all.reduce((n, d) => n + (d.sa?.jobs.filter((j) => j.error).length ?? 0), 0);
   const summaries: Record<PageId, string> = {
     providers: providersSummary(provs, blocked),
-    automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: (!d.host.online && d.repos === null) || !!(d.host.name && !d.host.id) }))),
+    automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: (!d.host.online && d.repos === null) || !!d.host.noId }))),
     projects: projectsSummary(settingsProjects(p.projects).length),
     hosts: hostsSummary(p.hosts),
     devices: devicesSummary(auth.s),
@@ -622,9 +623,10 @@ function HostParts({ s, now, part }: { s: AllSettings; now: number; part(d: Data
     <>
       {s.all.map((d) => {
         const note = readOnlyNote(d.host, d.readAt, now);
-        const nothing = !d.host.online && !d.readAt && d.providers === null && d.deploy === null && d.repos === null;
+        // V0.host-ids: a host with no install id is listed with why nothing of it shows.
+        const nothing = !!d.host.noId || (!d.host.online && !d.readAt && d.providers === null && d.deploy === null && d.repos === null);
         return (
-          <section key={d.host.name} class={`hpart${d.host.online ? "" : " off"}`} data-host={d.host.name} aria-label={`Settings on ${d.host.label}`}>
+          <section key={d.host.name} class={`hpart${d.host.online && !d.host.noId ? "" : " off"}`} data-host={d.host.name} aria-label={`Settings on ${d.host.label}`}>
             <h3 class="hpart-h">
               <span class="mono">{d.host.label}</span>
               <span class="hpart-s">{groupLine(d.host, now)}</span>

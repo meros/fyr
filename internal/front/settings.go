@@ -78,6 +78,9 @@ func (f *Front) settingsFor(w http.ResponseWriter, r *http.Request, l *link, pat
 		u += "?" + q.Encode()
 	}
 	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
+	// V0.host-ids (decision 0031 2.7): the read is the browser's, so the host
+	// hears who asks, as for every other forwarded call; not the install's own.
+	setActor(req, principalOf(r), f.opt.ID, originOf(r))
 	resp, err := l.client.Do(req)
 	if err != nil {
 		if stale() {

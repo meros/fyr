@@ -566,6 +566,11 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 		for _, x := range ef.Request.Args["names"].([]any) {
 			o.Names = append(o.Names, x.(string))
 		}
+		if ids, ok := ef.Request.Args["ids"].([]any); ok { // V0.host-ids
+			for _, x := range ids {
+				o.IDs = append(o.IDs, x.(string))
+			}
+		}
 		o.At, _ = time.Parse(time.RFC3339Nano, ef.Request.Args["at"].(string))
 		kept, err := e.setHostOrder(o)
 		if err != nil {

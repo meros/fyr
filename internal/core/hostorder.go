@@ -28,17 +28,32 @@ func init() {
 		if err != nil || at.IsZero() {
 			return Result{}, reject(RejectBadArgs, "at must be the time the owner set the order (RFC 3339)")
 		}
-		names := []any{}
-		seen := map[string]bool{}
-		for _, x := range raw {
-			s, _ := x.(string)
-			s = strings.TrimSpace(s)
-			if s == "" || len(s) > 200 || seen[s] {
-				continue
+		names := cleanList(raw)
+		args := map[string]any{"names": names, "at": at.UTC().Format(time.RFC3339Nano)}
+		// V0.host-ids: the hosts by install id too (decision 0031 F17: the name is
+		// config and can change, the id cannot). A front before it sends names only.
+		if ids, ok := a["ids"].([]any); ok {
+			if len(ids) > maxHostOrder {
+				return Result{}, reject(RejectBadArgs, "ids must be a list of at most %d host ids", maxHostOrder)
 			}
-			seen[s] = true
-			names = append(names, s)
+			args["ids"] = cleanList(ids)
 		}
-		return Result{Effects: []Effect{{Kind: EffectHostOrderSet, Request: &EffectReq{Action: KindHostOrderSet, Args: map[string]any{"names": names, "at": at.UTC().Format(time.RFC3339Nano)}}}}}, nil
+		return Result{Effects: []Effect{{Kind: EffectHostOrderSet, Request: &EffectReq{Action: KindHostOrderSet, Args: args}}}}, nil
 	}})
+}
+
+// cleanList is the strings of raw, trimmed, without empties, long ones or repeats.
+func cleanList(raw []any) []any {
+	out := []any{}
+	seen := map[string]bool{}
+	for _, x := range raw {
+		s, _ := x.(string)
+		s = strings.TrimSpace(s)
+		if s == "" || len(s) > 200 || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }

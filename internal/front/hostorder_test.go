@@ -57,3 +57,45 @@ func TestHostOrderReachesAHostThatWasOffline(t *testing.T) {
 	fc := newFront(t, hosts...)
 	eventually(t, "a new front reads the order", func() bool { s := getState(t, fc.URL); return len(s.Hosts) == 2 && s.Hosts[0]["name"] == "b" })
 }
+
+// V0.host-ids (decision 0031 F17): the order is kept by install id, so a host
+// that is renamed keeps its place; an order set by name before the ids still
+// ranks the hosts.
+func TestHostOrderIsKeptByIDAcrossARename(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "AAAA-0000-0000-0000"), newSettingsHostID(t, "b", "BBBB-0000-0000-0000")
+	hosts := []HostConfig{{Name: "a", URL: a.hs.URL}, {Name: "b", URL: b.hs.URL}}
+	fa := newFront(t, hosts...)
+	online(t, fa.URL, 2)
+	eventually(t, "both ids", func() bool {
+		s := getState(t, fa.URL)
+		return s.Hosts[0]["id"] != nil && s.Hosts[1]["id"] != nil && s.Hosts[0]["id"] != "" && s.Hosts[1]["id"] != ""
+	})
+	if code, rep := post(t, fa.URL+"/api/front/command", `{"commandId":"o1","action":"front.hostOrder","args":{"ids":["BBBB-0000-0000-0000","AAAA-0000-0000-0000"]}}`); code != 200 || rep["ok"] != true {
+		t.Fatalf("front.hostOrder: %d %v", code, rep)
+	}
+	for _, h := range []*settingsHost{a, b} {
+		o := h.eng.HostOrder()
+		if !slices.Equal(o.IDs, []string{"BBBB-0000-0000-0000", "AAAA-0000-0000-0000"}) || !slices.Equal(o.Names, []string{"b", "a"}) {
+			t.Fatalf("a host keeps %+v", o)
+		}
+	}
+	// The owner renames b in a front's config: its id keeps it first there; by
+	// name alone it would fall to the end.
+	fr := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b2", URL: b.hs.URL})
+	eventually(t, "b2 first", func() bool {
+		s := getState(t, fr.URL)
+		return len(s.Hosts) == 2 && s.Hosts[0]["name"] == "b2" && s.Hosts[1]["name"] == "a"
+	})
+}
+
+// V0.host-ids: an order a front before the ids set (names only) still ranks.
+func TestHostOrderByNameStillRanks(t *testing.T) {
+	o := hostOrderOf(map[string]any{"names": []any{"b", "a"}, "at": "2026-11-19T10:00:00Z"})
+	if !slices.Equal(o.Names, []string{"b", "a"}) || o.IDs != nil || o.At.IsZero() {
+		t.Fatalf("names only: %+v", o)
+	}
+	o = hostOrderOf(map[string]any{"names": []any{"b", "a"}, "ids": []any{"B", "A"}, "at": "2026-11-19T10:00:00Z"})
+	if !slices.Equal(o.IDs, []string{"B", "A"}) {
+		t.Fatalf("with ids: %+v", o)
+	}
+}

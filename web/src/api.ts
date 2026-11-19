@@ -7,7 +7,7 @@ import { decodeHostMarks } from "./store.ts";
 import type { OwnerMarks } from "./host-mark.ts";
 import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
-import { cache } from "./cache.ts";
+import { cache, hostSince, nextHostState } from "./cache.ts";
 import type { Conn, ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import { attachmentUrl, type UploadReply } from "./attach.ts";
@@ -15,7 +15,6 @@ import { previewUrl } from "./previews.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
 import { frontPath, hostPath } from "./urls.ts";
 import { addressable, bare, decodeFront, flatten, hostOfFrame, reachabilityChanged, ref, stampDeploy, stampEvent, stampLoad, stampPatch, stampProject, stampSlots, stampThread, unrefDeep, type FrontState, type HostResult } from "./hostfeed.ts";
-import { sinceRev } from "./cache.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
@@ -225,29 +224,23 @@ function createHttpApi(): Api {
     const f = decodeFront(await r.json());
     front = f;
     // V0.38: with a stored copy, ask each host only for the threads changed since it. A rev is its host's own clock, so
-    // "since" is each host's own newest (decision 0031 2.5): one number for all of them would skip a slower clock's threads.
-    const stored = await cache.state();
-    const partial = new Set<string>();
+    // "since" is each host's own newest, from that host's own stored state (V0.host-ids, decision 0031 2.5); its partial
+    // answer merges into that state before the hosts are flattened into one.
     const results = await Promise.all(
       addressable(f.hosts).map(async (host): Promise<HostResult> => {
-        const mine = (stored?.threads ?? []).filter((t) => t.hostId === host.id);
-        const since = mine.length ? sinceRev({ ...stored!, threads: mine }) : 0;
+        const id = host.id!;
+        const stored = await cache.hostState(id);
+        const since = hostSince(stored);
         try {
-          const state = await getJson<StateDTO & { partial?: boolean }>(hostPath(host.id!, since ? `/state?since=${since}` : "/state"));
-          if (state.partial) partial.add(host.id!);
+          const state = nextHostState(stored, await getJson<StateDTO & { partial?: boolean }>(hostPath(id, since ? `/state?since=${since}` : "/state")));
+          void cache.saveHostState(id, state);
           return { host, state };
         } catch {
           return { host, state: { now: f.now, user: f.user, threads: [], actions: [], profiles: [], projects: [] } };
         }
       }),
     );
-    const dto = flatten(f, results);
-    if (partial.size && stored) {
-      // A partial answer is the threads that changed: the others are the stored ones.
-      const fresh = new Set(dto.threads.map((t) => t.id));
-      dto.threads = [...stored.threads.filter((t) => partial.has(t.hostId ?? "") && !fresh.has(t.id)), ...dto.threads];
-    }
-    return dto;
+    return flatten(f, results);
   };
 
   const reload = async (gen: number) => {

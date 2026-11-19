@@ -279,7 +279,8 @@ export function hostLine(h: HostInfo, now: number): string {
   const changed = idChangedLine(h);
   if (changed) return changed;
   const route = hostRoute(h);
-  return [hostState(h, now), updateLine(h).text, route, h.id ? `id ${shortID(h.id)}` : "no id"].filter(Boolean).join(" · ");
+  // V0.host-ids: a host with no install id cannot be named by any call until it updates.
+  return [hostState(h, now), updateLine(h).text, route, h.id ? `id ${shortID(h.id)}` : "needs an update"].filter(Boolean).join(" · ");
 }
 
 /** V0.125: the network a host's link runs over. Decision 0031 2.6: the host in the front's own process is the one whose

@@ -139,13 +139,13 @@ test("V0.125: a host row's line: state since, route, short id", () => {
   assert.equal(hostLine(hs[0], now), `online since ${clockTime(at(16, 8, 12))} · this machine · id F7QK`);
   assert.equal(hostLine(hs[1], now), `offline since ${clockTime(at(16, 19, 40))} · tailnet · id M3RS`);
   assert.equal(hostLine(hs[2], now), `online since ${clockTime(at(16, 8, 31))} · updating Fyr · LAN · id K2VD`);
-  assert.equal(hostLine(hs[3], now), `online since ${clockTime(at(16, 9, 0))} · LAN · no id`);
+  assert.equal(hostLine(hs[3], now), `online since ${clockTime(at(16, 9, 0))} · LAN · needs an update`);
   assert.equal(hostLine(hs[4], now), "Another install answers as lab: id B7LA, it was AX2C.");
   const day = new Date(2026, 10, 9, 6, 0).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   assert.equal(hostLine(hs[5], now), `online since ${day} ${clockTime(at(9, 6, 0))} · by address · id V9PS`);
   const mon = new Date(2026, 10, 16, 6, 0).toLocaleDateString(undefined, { weekday: "short" });
   assert.equal(hostState({ name: "x", online: true, since: at(16, 6, 0) }, new Date(2026, 10, 17, 9, 0).getTime()), `online since ${mon} ${clockTime(at(16, 6, 0))}`);
-  assert.equal(hostLine(hs[6], now), "online · no id", "an older front: no since, no url, no id");
+  assert.equal(hostLine(hs[6], now), "online · needs an update", "an older front: no since, no url, no id");
   assert.equal(decodeHosts([{ name: "a", online: true, url: 3 }])[0].url, undefined);
 });
 
@@ -193,7 +193,7 @@ test("V0.host-updates: a host's row says how far behind it is and how its last u
     },
   ]);
   assert.deepEqual(updateLine(h), { text: "3 commits behind · last update failed", bad: true });
-  assert.match(hostLine(h, now), /online · 3 commits behind · last update failed · no id/);
+  assert.match(hostLine(h, now), /online · 3 commits behind · last update failed · needs an update/);
   const rows = updateRows(h.update!, now);
   assert.deepEqual(
     rows.map((r) => r.title),
