@@ -24,8 +24,8 @@ const settleDoneRule = "settle:done"
 
 // settleRule is a settle Rule: when w holds and the thread is idle, it
 // settles.
-func settleRule(id, about string, w When, by string) Rule {
-	return Rule{ID: id, Purpose: PurposeSettle, About: about, When: All(w, When{Kind: WhenIdle}),
+func settleRule(id, about string, w When, by string, also ...When) Rule {
+	return Rule{ID: id, Purpose: PurposeSettle, About: about, When: All(append([]When{w, {Kind: WhenIdle}}, also...)...),
 		Then: Then{Kind: KindRuleSettle}, After: AfterDisarm, CreatedBy: by}
 }
 
@@ -45,7 +45,13 @@ func WorkDone(t *Thread) bool {
 	if NeedsOwnerNow(t) || workGoing(t, func(r Rule) bool { return r.Purpose != PurposeSettle }) {
 		return false
 	}
-	return !slices.ContainsFunc(t.Changes, func(c Change) bool {
+	return !OpenPR(t)
+}
+
+// OpenPR reports a PR of the thread that is still open and still counts:
+// not dismissed, not done, not ended.
+func OpenPR(t *Thread) bool {
+	return slices.ContainsFunc(t.Changes, func(c Change) bool {
 		return c.PR != nil && c.PR.State == "OPEN" && !c.Dismissed && !c.IsDone() && !c.Phase.Ended()
 	})
 }
@@ -74,14 +80,15 @@ func SettleWhenReached(t *Thread, changeID string, phase Phase, by string, now t
 }
 
 // SettleWhenMerged arms "settle when merged" (SPEC 13.1 `m`, #32): the
-// thread settles when its main change lands. It reports false when the
-// thread has no open main PR.
+// thread settles when its main change lands and no other PR of the thread
+// is open (V0.settle-merge-fixes (2)). It reports false when the thread has
+// no open main PR.
 func SettleWhenMerged(t *Thread, by string, now time.Time) bool {
 	c := OpenMain(t)
 	if c == nil {
 		return false
 	}
-	SettleWhenReached(t, c.ID, PhaseLanded, by, now)
+	ArmRule(t, settleRule("settle:"+c.ID, c.ID, When{Kind: WhenReached, Change: c.ID, Phase: PhaseLanded}, by, When{Kind: WhenNoOpenPR}), now)
 	return true
 }
 

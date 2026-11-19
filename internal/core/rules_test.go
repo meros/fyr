@@ -132,8 +132,9 @@ func TestSnoozeIsARule(t *testing.T) {
 }
 
 // #46, SPEC 7.4: the agent's watches are suspended while the thread is
-// settled; a state that became true during the pause does not fire on
-// resume, an event (an anchored kind) does.
+// settled; on resume an event (an anchored kind) fires once, and so does a
+// state that became true during the pause, as the agent's watches fire once
+// (V0.settle-merge-fixes (3)).
 func TestWatchSuspendedWhileSettled(t *testing.T) {
 	th, v := &Thread{ID: "t_1"}, &View{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "k"}, ByAgent, ct0)
@@ -149,11 +150,11 @@ func TestWatchSuspendedWhileSettled(t *testing.T) {
 		t.Fatal("a suspended watch fired")
 	}
 	res = step(t, th, v, Input{Source: FromOwner, Kind: "thread.unsettle"}, ct0)
-	if fired(res, "w_state") != 0 || fired(res, "w_event") != 1 {
+	if fired(res, "w_state") != 1 || fired(res, "w_event") != 1 {
 		t.Fatalf("resume: %+v", res.Events)
 	}
-	if r := FindRule(th, "w_state"); r == nil || r.Status != RuleArmed {
-		t.Fatalf("not resumed: %+v", r)
+	if len(RulesOf(th, PurposeWatch)) != 0 {
+		t.Fatalf("a watch that fired is still armed: %+v", th.Rules)
 	}
 }
 

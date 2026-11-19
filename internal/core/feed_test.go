@@ -297,6 +297,16 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
 			}
 		},
+		// V0.settle-merge-fixes (1): "merge" in the agent's text, no ask:
+		// it wakes the agent with the call to make.
+		"mergetext": func(t *testing.T) {
+			th := feedThread()
+			th.RunEnds = 1
+			th, res := fstep(t, th, Input{Source: Observer(ObsMergeText), Kind: KindMergeText, Args: MergeTextArgs{Run: 1}}, ct0)
+			if n := queued(t, th, "merge-text"); n.Urgency != Wake || !strings.Contains(n.What, "mcp__fyr__change_request") || !wakes(res) {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+		},
 	}
 	for _, r := range NoticeRules {
 		f := rows[r.Name]

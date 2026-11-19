@@ -147,6 +147,7 @@ const (
 	WhenEnded       = "changeEnded"   // {change}: the change ended (abandoned or reverted)
 	WhenWorkOver    = "workOver"      // V0.185: no work goes on, or the thread needs the owner
 	WhenWorkDone    = "workDone"      // V0.203: no work goes on, nothing waits for the owner, no PR is open
+	WhenNoOpenPR    = "noOpenPR"      // V0.settle-merge-fixes (2): no PR of the thread is open
 )
 
 // AgentWhens are the kinds the agent may use in its own Rules.
@@ -225,6 +226,8 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 		return truth(WorkOver(t))
 	case WhenWorkDone:
 		return truth(WorkDone(t))
+	case WhenNoOpenPR:
+		return truth(!OpenPR(t))
 	}
 	c := FindChange(t, w.Change)
 	if c == nil {
@@ -460,10 +463,22 @@ func suspend(r *Rule, t *Thread, now time.Time) {
 		return
 	}
 	r.Status = RuleArmed
+	if oneShotWatch(*r) {
+		// V0.settle-merge-fixes (3): a watch that fires once fires when it
+		// resumes on a state that came true in the pause. A firing drops it
+		// and a rejection clears the value, so an armed one never keeps a
+		// true value: one stored with it (the old resume) fires now.
+		r.LastValue = false
+		return
+	}
 	if was && !r.When.anchored() {
 		r.LastValue = r.When.eval(t, r.Armed, now) == yes
 	}
 }
+
+// oneShotWatch is the agent's or the owner's watch that is dropped when it
+// fires.
+func oneShotWatch(r Rule) bool { return r.Purpose == PurposeWatch && r.After == AfterDisarm }
 
 // NextCheck is the earliest time a Rule of the thread or the view may fire
 // with time alone, or when the wake budget frees for a held wake, or nil.

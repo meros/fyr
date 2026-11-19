@@ -289,6 +289,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "task.quiet", Urgency: Wake, Budget: true, OnReduce: taskQuietNotices}, // V0.195
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 	{Name: "textquestion", Urgency: Next, OnReduce: textQuestionNotices}, // V0.ask-tool
+	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},       // V0.settle-merge-fixes (1)
 }
 
 // EventSlot is the event of a slot for a heavy job that became the

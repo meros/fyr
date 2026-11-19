@@ -104,6 +104,9 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 	case core.EffectTextAsk:
 		go e.judgeText(threadID, ef.Run) // V0.210: the effects after it do not wait
 		return nil, false
+	case core.EffectMergeText:
+		go e.readMergeText(threadID, ef.Run) // V0.settle-merge-fixes (1): it Applies its reading
+		return nil, false
 	case core.EffectRun:
 		if ef.Request == nil {
 			return nil, false

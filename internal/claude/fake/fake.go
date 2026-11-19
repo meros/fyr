@@ -46,6 +46,7 @@
 //	view H   publishes a live view with headline H over MCP during the turn
 //	launch   replies "launch: base=… token=set-<last 2>|unset effort=… model=…"
 //	recall   replies "recall: <first user message of the session transcript>"
+//	saymerge writes "merge" at the start of its text and calls nothing
 //	other    replies "echo: <text>"
 //
 // When initialize registers a Stop hook (callback "view"), every turn that
@@ -502,6 +503,10 @@ func turn(text string) (took []queued) {
 			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_task", "content": "found it"}}}})
 		assistant(msg{"type": "text", "text": "The subagent found it."})
 		result(false, "success", "done")
+	case "saymerge":
+		// V0.settle-merge-fixes (1): "merge" written in text, no call.
+		assistant(msg{"type": "text", "text": "merge\n\nCI is green on the PR."})
+		result(false, "success", "merge")
 	case "merge":
 		url := strings.TrimSpace(strings.TrimPrefix(text, "merge"))
 		assistant(msg{"type": "tool_use", "id": "tu_m", "name": "mcp__fyr__effect_request",
