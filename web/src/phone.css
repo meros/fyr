@@ -484,3 +484,8 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 .m-lsheet .lcs{font-size:14px;line-height:20px}
 .m-lsheet .lcsec dt,.m-lsheet .lcsec dd{font-size:13px;line-height:19px}
 .m-lsheet .mlsl:empty{display:none}
+/* V0.hover-cards: the quota card in Details and under a tapped quota line, the leftovers list in the load sheet, at phone
+   size (the desktop shows these as hover cards). */
+.m-qrow .lcsec dt,.m-qrow .lcsec dd,.m-new .qdet .lcsec dt,.m-new .qdet .lcsec dd,.m-lsheet .lclist li{font-size:13px;line-height:19px}
+.m-qrow .lcard{width:100%}
+.m-lsheet .mlsl li.lft{margin-top:6px;padding-top:12px;border-top:1px solid var(--line-strong);color:var(--ink)}

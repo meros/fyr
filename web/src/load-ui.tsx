@@ -3,8 +3,8 @@
 
 import { HostMark } from "./host-mark-ui.tsx";
 import type { ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { createPortal } from "preact/compat";
+import { useEffect, useState } from "preact/hooks";
+import { CardView, HoverCard, useHover } from "./card-ui.tsx";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
 import { clockTime } from "./format.ts";
@@ -116,53 +116,9 @@ export function HostMeters({ h, name, full, offline }: { h?: HostLoad; name?: st
   );
 }
 
-/** V0.load-card: one host's load as a card: the verdict and what it means, then the machine and the heavy jobs as
- *  label, value and a quieter note. The same on the rail's hover card (with the host's name) and the phone's sheet. */
+/** V0.load-card: one host's load as a card (CardView): the same on the rail's hover card and the phone's sheet. */
 export function LoadCardView({ c, head }: { c: LoadCard; head?: boolean }) {
-  return (
-    <div class={`lcard ${c.level}`}>
-      <div class="lcv">
-        {head && <b class="mono ell">{c.host}</b>}
-        <span class="lcl">{c.verdict}</span>
-      </div>
-      <p class="lcs">{c.summary}</p>
-      {c.sections.map((sec) => (
-        <section class="lcsec">
-          <h4>{sec.title}</h4>
-          <dl>
-            {sec.rows.map((r) => (
-              <>
-                <dt>{r.label}</dt>
-                <dd class={r.hot ? "hot" : undefined}>
-                  <span class="lcval">{r.value}</span>
-                  {r.note && <span class="lcn">{r.note}</span>}
-                </dd>
-              </>
-            ))}
-          </dl>
-        </section>
-      ))}
-      {c.source && <p class="lcsrc">{c.source}</p>}
-    </div>
-  );
-}
-
-/** The rail's hover card beside a host's meters (desktop; the phone shows the same card in its sheet: no hover there).
- *  On document.body, since the rail's containment would clip it; kept inside the window. */
-function RailCard({ c, at }: { c: LoadCard; at: DOMRect }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [top, setTop] = useState(at.top);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el) setTop(Math.max(8, Math.min(at.top, window.innerHeight - el.offsetHeight - 8)));
-  }, [at.top, c]);
-  return createPortal(
-    <div ref={ref} class="lcpop" role="tooltip" style={{ left: `${at.right + 10}px`, top: `${top}px` }}>
-      <LoadCardView c={c} head />
-      <p class="lcf">{METERS_LEGEND}</p>
-    </div>,
-    document.body,
-  );
+  return <CardView c={c} head={!!head} />;
 }
 
 /** The rail (desktop), V0.99, V0.167: per host its two meters (HostMeters), stacked; the card (V0.load-card) on hover or
@@ -188,7 +144,12 @@ export function LoadRail() {
           <RailLeftovers h={h} />
         </div>
       ))}
-      {open && shown && <RailCard c={loadCard(shown, { lookup: und.lookup, now: und.now() })} at={open.at} />}
+      {open && shown && (
+        <HoverCard at={open.at}>
+          <LoadCardView c={loadCard(shown, { lookup: und.lookup, now: und.now() })} head />
+          <p class="lcf">{METERS_LEGEND}</p>
+        </HoverCard>
+      )}
     </div>
   );
 }
@@ -256,7 +217,7 @@ export function ThreadCPU({ id }: { id: string }) {
   return (
     <>
       {" · "}
-      <span class={`tcpu${c.hot ? " hot" : ""}`} title="CPU of this thread and everything it started, over the last seconds">
+      <span class={`tcpu${c.hot ? " hot" : ""}`} title="CPU this thread and what it started use right now">
         {c.text}
       </span>
     </>
@@ -270,7 +231,7 @@ export function ThreadSlot({ id }: { id: string }) {
   return (
     <>
       {" · "}
-      <span class="tslot" title="Heavy jobs (test suites, builds, e2e runs) run when their share of the host (CPU and memory) fits">
+      <span class="tslot" title="Heavy jobs such as tests and builds wait until the host has room">
         {s}
       </span>
     </>
@@ -284,28 +245,31 @@ export function useThreadJob(id: string): string | null {
 
 export function ThreadJob({ text }: { text: string }) {
   return (
-    <span class="tslot" title="The heavy job this thread runs, and its share of the host (the larger of CPU and memory)">
+    <span class="tslot" title="The heavy job this thread runs, and how much of the host it takes">
       {text}
     </span>
   );
 }
 
 /** The rail's button under a host's meter (SPEC 8.2). Desktop only: the phone shows no host load (V0.99 (3)) and has no
- *  rail. One thread: a press opens it. Several: a menu of them, each with its use. Null when none is counted. */
+ *  rail; its load sheet's card lists the same threads. One thread: a press opens it. Several: a menu of them, each with
+ *  its use. V0.hover-cards: hover or focus shows the threads as a card. Null when none is counted. */
 function RailUndeclared({ h }: { h: HostLoad }) {
   const nav = useUnd();
+  const hv = useHover(".rail");
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
-  const r = railUndeclared(h, nav.lookup);
+  const r = railUndeclared(h, nav.lookup, nav.now());
   if (!r) return null;
   return (
     <>
       <button
         type="button"
         class="rund"
-        title={r.title}
         aria-label={r.aria}
         aria-haspopup={r.only ? undefined : "menu"}
+        {...hv.bind}
         onClick={(e) => {
+          hv.close();
           if (r.only) return nav.openThread(r.only);
           const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
           setAt({ x: b.right + 6, y: b.top });
@@ -314,27 +278,45 @@ function RailUndeclared({ h }: { h: HostLoad }) {
         <UndIcon size={9} />
         {r.count}
       </button>
+      {hv.at && !at && (
+        <HoverCard at={hv.at}>
+          <CardView c={r.card} />
+        </HoverCard>
+      )}
       {at && <ContextMenu x={at.x} y={at.y} items={r.entries.map((x) => ({ id: x.id, label: x.label }))} onPick={(it) => (setAt(null), nav.openThread(it.id))} onClose={() => setAt(null)} />}
     </>
   );
 }
 
 /** The rail's count under a host's meters (desktop: the phone has no rail and shows SheetLeftovers in its load sheet).
- *  A press opens Settings → Automation, where each one has End and Keep. Null without any. */
+ *  A press opens Settings → Automation, where each one has End and Keep; hover or focus shows them as a card
+ *  (V0.hover-cards). Null without any. */
 function RailLeftovers({ h }: { h: HostLoad }) {
   const nav = useUnd();
+  const hv = useHover(".rail");
   const r = hostLeftovers(h);
   if (!r) return null;
   return (
-    <button type="button" class="rlft" title={r.title} aria-label={`${h.host}: ${r.text}. Show them`} onClick={() => nav.openSettings({ page: "automation", sub: "leftovers" })}>
-      {r.count} left
-    </button>
+    <>
+      <button type="button" class="rlft" aria-label={`${h.host}: ${r.text}. Show them`} {...hv.bind} onClick={() => (hv.close(), nav.openSettings({ page: "automation", sub: "leftovers" }))}>
+        {r.count} left
+      </button>
+      {hv.at && (
+        <HoverCard at={hv.at}>
+          <CardView c={r.card} />
+        </HoverCard>
+      )}
+    </>
   );
 }
 
-/** The phone's load sheet line for the same count (the rail's title, as text: no hover on a phone). */
+/** The phone's load sheet: the same card as the rail's hover card, as text (no hover on a phone). */
 function SheetLeftovers({ h }: { h: HostLoad }) {
   const r = hostLeftovers(h);
   if (!r) return null;
-  return <li class="lft">{r.title.replace("Processes threads left running", `${r.text}: processes threads left running`)}</li>;
+  return (
+    <li class="lft">
+      <CardView c={r.card} />
+    </li>
+  );
 }

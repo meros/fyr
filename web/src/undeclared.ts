@@ -2,6 +2,7 @@
 // the row's mark, the rail's button and menu, the thread's strip, Settings' lines. Pure; the components print them.
 // The owner's word is "undeclared"; "slot" and "reservation" never reach the owner (V0.163).
 
+import type { Card } from "./card.ts";
 import { guardLine } from "./guard.ts";
 import { cpuText, gbText, spanText, undeclaredTip, usedMeasures, type HostLoad, type Lookup, type UndeclaredUse } from "./load.ts";
 
@@ -45,7 +46,8 @@ export function rowUndeclared(list: HostLoad[], id: string, now: number): RowUnd
   const g = guardLine(f.h.slots?.guard, id, now);
   const text = u.paused ? (g ? `undeclared · ${g}` : "undeclared · paused: memory") : ["undeclared", ...m, ...(g ? [g] : [])].join(" · ");
   const what = m.join(" and ");
-  return { text, paused: u.paused, title: `Heavy work Fyr did not admit: this thread uses ${what} above its idle level, for ${since(u, now)}. It counts against the host's heavy jobs.` };
+  // V0.hover-cards: what it means, not the measure's name ("admit", "idle level")
+  return { text, paused: u.paused, title: `Heavy work Fyr didn't schedule: ${what} more than at rest, for ${since(u, now)}.` };
 }
 
 export interface RailUndeclared {
@@ -53,22 +55,36 @@ export interface RailUndeclared {
   /** the thread to open when exactly one is counted */
   only: string | null;
   entries: { id: string; label: string }[];
-  title: string;
+  /** V0.hover-cards: the button's hover card: each thread, its use and for how long, and what a click does */
+  card: Card;
   aria: string;
 }
 
 /** The rail's button (desktop only): the flagged threads. Null when none. */
-export function railUndeclared(h: HostLoad, lookup: Lookup): RailUndeclared | null {
+export function railUndeclared(h: HostLoad, lookup: Lookup, now: number): RailUndeclared | null {
   const list = h.slots?.undeclared ?? [];
   if (!list.length) return null;
   const entries = list.map((u) => ({ id: u.thread, label: `${lookup(u.thread).title} · ${measures(u, "none", h.host).join(" · ")}` }));
-  const names = list.map((u) => lookup(u.thread).title);
   const one = list.length === 1;
   return {
     count: list.length,
     only: one ? list[0].thread : null,
     entries,
-    title: one ? `${names[0]} runs undeclared heavy work (${measures(list[0], "none", h.host).join(" · ")}). Click to open it` : `${list.length} threads run undeclared heavy work: ${names.join(", ")}. Click for the list`,
+    card: {
+      head: "Heavy work Fyr didn't schedule",
+      level: "warm",
+      summary: `${one ? "This thread runs" : `These ${list.length} threads run`} heavy jobs without asking first. Fyr counts them against ${h.host}'s heavy-job budget.`,
+      sections: [
+        {
+          list: true,
+          rows: list.map((u) => {
+            const l = lookup(u.thread);
+            return { label: "", value: l.title, note: [l.project, measures(u, "none", h.host).join(" · "), `for ${since(u, now)}`].filter(Boolean).join(" · ") };
+          }),
+        },
+      ],
+      source: one ? "Click to open it." : "Click for the list.",
+    },
     aria: `${plural(list.length, "thread runs", "threads run")} undeclared heavy work`,
   };
 }

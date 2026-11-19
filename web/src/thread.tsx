@@ -176,7 +176,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             </span>
           )}
           {t.hostOffline ? (
-            <span class="chip m hostc" title="The front shows this thread from its last copy; commands wait until the host is back">
+            <span class="chip m hostc" title="The host is offline. This is the last copy Fyr saw; what you send waits until it is back.">
               {hc && <HostMark name={hc.name} />}
               <span>{offlineLine(t)}</span>
             </span>

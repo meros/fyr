@@ -44,7 +44,7 @@ export function AgentStatus({ t, now, phone, onRestart }: { t: Thread; now: numb
       <span class="ell" title={stuck.reason}>
         {liveLine(t, now)}
       </span>
-      <button class={phone ? "m-bt" : "btn"} disabled={!isAvailable(t, "thread.restart")} title={why ?? "End the process and resume the session; unread messages are delivered again"} onClick={onRestart}>
+      <button class={phone ? "m-bt" : "btn"} disabled={!isAvailable(t, "thread.restart")} title={why ?? "Restart the agent. It picks up where it left off and gets your unread messages again."} onClick={onRestart}>
         Restart agent
       </button>
     </div>

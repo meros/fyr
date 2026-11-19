@@ -1,6 +1,7 @@
 // SPEC 0.5 V0.80: the machine load (rail) and each working thread's CPU (rows), as words. Pure.
 import type { Guard } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
+import type { Card, CardRow } from "./card.ts";
 
 export interface ThreadLoad {
   /** a thread id, or "self-deploy" */
@@ -407,27 +408,15 @@ export const STRIP_MAX = 2;
 
 // ---- V0.load-card: the host's load as a card (the rail's hover card, the phone's sheet) ----
 
-export interface CardRow {
-  label: string;
-  value: string;
-  /** quieter words after the value */
-  note?: string;
-  hot?: boolean;
-}
-export interface CardSection {
-  title: string;
-  rows: CardRow[];
-}
-export interface LoadCard {
+export type { CardRow, CardSection } from "./card.ts";
+export { cardLines } from "./card.ts";
+export interface LoadCard extends Card {
   host: string;
   level: LoadLevel;
   /** "Calm", "Busy" or "Overloaded" */
   verdict: string;
   /** one sentence: what the level means for new work */
   summary: string;
-  sections: CardSection[];
-  /** where the figures come from */
-  source?: string;
 }
 
 const VERDICT: Record<LoadLevel, string> = { calm: "Calm", warm: "Busy", hot: "Overloaded" };
@@ -437,7 +426,7 @@ const pct = (n: number) => `${Math.round(n)} %`;
  *  Every figure of the old tooltip lines is here; the measure names (PSI, load average) give way to what they mean. */
 export function loadCard(h: HostLoad, names?: { lookup: Lookup; now: number }): LoadCard {
   const m = railMeter(h);
-  const out: LoadCard = { host: h.host, level: m.level, verdict: VERDICT[m.level], summary: summary(h, m), sections: [] };
+  const out: LoadCard = { host: h.host, head: h.host, headMono: true, level: m.level, verdict: VERDICT[m.level], summary: summary(h, m), sections: [] };
   if (h.provider) out.source = `Measured by ${h.provider}`;
 
   const mach: CardRow[] = [];
@@ -519,9 +508,4 @@ function heavyRows(h: HostLoad, names?: { lookup: Lookup; now: number }): CardRo
       rows.push({ label: i ? "" : "Undeclared", value: `${l.title}${l.project ? ` (${l.project})` : ""}`, note: `${what} for ${spanText((names.now - Date.parse(u.since)) / 1000)}` });
     });
   return rows;
-}
-
-/** The card as plain lines, "Label: value · note" (a row without a label continues the one above); for tests and logs. */
-export function cardLines(c: LoadCard): string[] {
-  return [`${c.verdict}: ${c.summary}`, ...c.sections.flatMap((s) => s.rows.map((r) => `${r.label || "…"}: ${r.value}${r.note ? ` · ${r.note}` : ""}`))];
 }

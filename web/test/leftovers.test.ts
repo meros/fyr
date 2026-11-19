@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { HostLoad } from "../src/load.ts";
 import { buildConversation } from "../src/conversation.ts";
+import { cardLines } from "../src/card.ts";
 import { findLeftovers, hostLeftovers, leftoverRows, stripText, tempRows, type Leftover } from "../src/leftovers.ts";
 import { mockLeftoverCommand, withLeftovers, mockLoad } from "../src/mock.ts";
 
@@ -33,7 +34,14 @@ test("the thread's strip names its leftovers with their memory, the heavy ones f
 
 test("the rail and the phone's sheet count a host's leftovers and their memory", () => {
   assert.equal(hostLeftovers(host([])), null);
-  assert.deepEqual(hostLeftovers(host([chrome, http, fwd])), { count: 3, text: "3 leftover processes · 2.0 GB", title: "Processes threads left running: chromium (1.9 GB), kubectl port-forward, http.server. Settings → Automation lists them with End and Keep." });
+  const r = hostLeftovers(host([chrome, http, fwd]))!;
+  assert.equal(r.count, 3);
+  assert.equal(r.text, "3 leftover processes · 2.0 GB");
+  // V0.hover-cards: the rail's hover card and the phone sheet's text, the heaviest first
+  assert.equal(r.card.head, "Still running after their thread");
+  assert.deepEqual(cardLines(r.card), ["3 processes that threads started and left behind, 2.0 GB in all.", ...cardLines({ sections: r.card.sections })]);
+  assert.match(cardLines({ sections: r.card.sections })[0], /^chromium · (\d+ processes · )?1\.9 GB$/);
+  assert.equal(r.card.source, "End or keep them in Settings → Automation.");
 });
 
 test("Settings lists each leftover with its thread, what holds it and when it ends; orphans name no thread", () => {

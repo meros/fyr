@@ -76,7 +76,7 @@ test("the row: the word and the use, only the measures that are over; paused say
   assert.equal(p?.paused, true);
   assert.equal(rowUndeclared([h], "t_none", NOW), null);
   assert.equal(rowUndeclared([], "t_map", NOW), null);
-  assert.match(rowUndeclared([h], "t_map", NOW)!.title, /^Heavy work Fyr did not admit: this thread uses 2\.8 GB and 2\.1 cores above its idle level, for 3 min\. It counts against the host's heavy jobs\.$/);
+  assert.equal(rowUndeclared([h], "t_map", NOW)!.title, "Heavy work Fyr didn't schedule: 2.8 GB and 2.1 cores more than at rest, for 3 min.");
   // CPU only
   assert.equal(rowUndeclared([host([{ ...map, overMem: false }])], "t_map", NOW)?.text, "undeclared · 2.1 cores");
 });
@@ -102,21 +102,27 @@ test("the meter has two parts, admitted and undeclared, and its tooltip names bo
 });
 
 test("the rail button counts the flagged threads; one opens the thread, several a menu", () => {
-  const two = railUndeclared(host([map, babysit]), lookup)!;
+  const two = railUndeclared(host([map, babysit]), lookup, NOW)!;
   assert.equal(two.count, 2);
   assert.equal(two.only, null);
   assert.deepEqual(two.entries, [
     { id: "t_map", label: "Map perf · 2.8 GB · 2.1 cores" },
     { id: "t_baby", label: "Babysit PR #4170 · 1.6 GB · 1.2 cores" },
   ]);
-  assert.equal(two.title, "2 threads run undeclared heavy work: Map perf, Babysit PR #4170. Click for the list");
+  // V0.hover-cards: the button's hover card names each thread, its project, its use and for how long
+  assert.deepEqual(cardLines(two.card), [
+    "These 2 threads run heavy jobs without asking first. Fyr counts them against desk's heavy-job budget.",
+    "Map perf · acme/web · 2.8 GB · 2.1 cores · for 3 min",
+    "Babysit PR #4170 · acme/web · 1.6 GB · 1.2 cores · for 50 s",
+  ]);
+  assert.equal(two.card.source, "Click for the list.");
   assert.equal(two.aria, "2 threads run undeclared heavy work");
-  const one = railUndeclared(host([map]), lookup)!;
+  const one = railUndeclared(host([map]), lookup, NOW)!;
   assert.equal(one.count, 1);
   assert.equal(one.only, "t_map");
-  assert.equal(one.title, "Map perf runs undeclared heavy work (2.8 GB · 2.1 cores). Click to open it");
+  assert.equal(one.card.source, "Click to open it.");
   assert.equal(one.aria, "1 thread runs undeclared heavy work");
-  assert.equal(railUndeclared(host([]), lookup), null);
+  assert.equal(railUndeclared(host([]), lookup, NOW), null);
 });
 
 test("V0.209: the strip shows only paused work, in the harbour words, with nothing to press", () => {
@@ -178,7 +184,7 @@ test("Settings: learned commands, added patterns and the thresholds", () => {
 
 test("Settings words: undeclared, never slot or reservation", () => {
   const h = host([map, nix], { heavyAdded: [], undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 } });
-  const text = [JSON.stringify(undeclaredRows(h, NOW, lookup)), JSON.stringify(thresholdRows(h)), cardLines(loadCard(h, { lookup, now: NOW })).join(" "), railUndeclared(h, lookup)?.title, stripView(h, { ...map, paused: true })?.note].join(" ");
+  const text = [JSON.stringify(undeclaredRows(h, NOW, lookup)), JSON.stringify(thresholdRows(h)), cardLines(loadCard(h, { lookup, now: NOW })).join(" "), cardLines(railUndeclared(h, lookup, NOW)?.card ?? { sections: [] }).join(" "), stripView(h, { ...map, paused: true })?.note].join(" ");
   assert.ok(!/slot|reservation/i.test(text), text);
 });
 
@@ -211,7 +217,7 @@ test("the mock load: one thread, paused, and two flagged; the commands update it
   assert.equal(rowUndeclared([paused], "t_mapperf", NOW)?.text, "undeclared · paused: memory");
   assert.ok(stripView(paused, paused.slots!.undeclared![0]));
   const two = withUndeclared(mockLoad(), "2", NOW)[0];
-  assert.equal(railUndeclared(two, same)!.count, 2);
+  assert.equal(railUndeclared(two, same, NOW)!.count, 2);
   assert.equal(two.heavyAdded![0].learned, true);
   assert.equal(mockUndeclaredCommand(two, "host.heavyRemove", { pattern: "x" }).ok, false);
   assert.equal(mockUndeclaredCommand(two, "host.heavyRemove", { pattern: two.heavyAdded![0].pattern }).ok, true);
