@@ -516,3 +516,31 @@ func (g *JobGroups) Tick(held []string) {
 		}
 	}
 }
+
+// ThawLeftFrozen thaws, at a start, the work the last fyrd left frozen
+// (V0.thaw-at-start): a restart while the guard held a job/, undeclared/ or
+// undeclared/u*/ frozen leaves it so, and the new engine knows nothing of it,
+// so no episode ends and no thaw comes. Call it before the guard starts.
+// Every thread cgroup the tree knows, in both layouts; one line per thaw.
+func (g *JobGroups) ThawLeftFrozen() {
+	if g == nil || g.Tree == nil {
+		return
+	}
+	for _, c := range g.Tree.threadCgroups() {
+		if c.Name == DeployDir || c.Name == "probe" {
+			continue
+		}
+		ud := filepath.Join(c.Dir, undeclaredDir)
+		for _, d := range append([]string{filepath.Join(c.Dir, jobDir), ud}, unitDirs(ud)...) {
+			if b, err := os.ReadFile(filepath.Join(d, "cgroup.freeze")); err != nil || strings.TrimSpace(string(b)) != "1" {
+				continue
+			}
+			rel, _ := filepath.Rel(c.Dir, d)
+			if err := put(d, "cgroup.freeze", "0"); err != nil {
+				g.Tree.logf("guard: thaw %s/ thread=%s failed: %v", rel, c.Name, err)
+				continue
+			}
+			g.Tree.logf("guard: thawed %s/ thread=%s reason=%q", rel, c.Name, "left frozen by the last fyrd")
+		}
+	}
+}

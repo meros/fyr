@@ -528,9 +528,10 @@ func (t *Tree) Release(id string) {
 		delete(t.splitFailed, d)
 		// Decision 0029 S5: its job's cgroup first (the kernel keeps a parent
 		// with a child); a job still running keeps both until the next Release.
-		// V0.job-limits: and its cli/ leaf.
-		for _, sub := range []string{jobDir, CLIDir} {
-			c := filepath.Join(d, sub)
+		// V0.job-limits: and its cli/ leaf. V0.thaw-at-start: and its
+		// undeclared/, its units first.
+		ud := filepath.Join(d, undeclaredDir)
+		for _, c := range append(append([]string{filepath.Join(d, jobDir)}, unitDirs(ud)...), ud, filepath.Join(d, CLIDir)) {
 			for _, f := range []string{"cgroup.procs", "cgroup.freeze", "memory.high", "cpu.max"} {
 				os.Remove(filepath.Join(c, f)) // only a plain directory (tests) holds these
 			}
