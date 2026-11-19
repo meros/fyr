@@ -367,7 +367,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
 	// being slow and restarts none into the same thrash.
 	mgr.SetPressure(adm.Thrashing)
-	eng.HostName = hostName // V0.163: the heavy-job answers name this host
+	eng.HostName = hostName           // V0.163: the heavy-job answers name this host
+	eng.FolderEnv = engine.FolderArgv // V0.run-folder-env: a Run card runs in its folder's direnv
 	sd := engine.SlotDeps{
 		SlotActive:  jobs.Active, // #174
 		SlotSignals: sampler.Signals, SlotGrowth: jobs.Growth, SlotPolicy: adm.Policy,

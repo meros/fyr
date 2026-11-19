@@ -131,6 +131,9 @@ type Engine struct {
 	// LiveScripts runs them streaming their output (V0.149); nil runs them
 	// with exec. Scripts, when set, wins (older tests).
 	LiveScripts LiveScriptRunner
+	// FolderEnv wraps a script so it runs in its folder's environment (the
+	// folder's direnv, V0.run-folder-env); nil runs it with fyrd's own.
+	FolderEnv func(dir string, argv []string) []string
 	// RootPrompt is why a root run request cannot ask for a password here,
 	// or ""; nil reads this host's processes (V0.149 (4)).
 	RootPrompt func() string

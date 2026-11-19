@@ -137,6 +137,9 @@ func (e *Engine) runPress(threadID string, ef core.Effect) (string, int, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	argv := ef.Script.Argv
+	if !ef.Script.Root && e.FolderEnv != nil { // V0.run-folder-env
+		argv = e.FolderEnv(ef.Script.Dir, argv)
+	}
 	if ef.Script.Root {
 		env, err := exec.LookPath("env")
 		if err != nil {

@@ -60,10 +60,12 @@ const named = (l: Leftover) => (heavy(l) ? `${l.name} (${sizeText(l.rss)})` : l.
 const plural = (n: number) => `${n} ${n === 1 ? "process" : "processes"}`;
 const byMemory = (a: Leftover, b: Leftover) => b.rss - a.rss || a.pid - b.pid;
 
-/** A thread's leftovers on one host, the heaviest first; null without any. */
+/** A thread's leftovers on one host, the heaviest first; null without any. V0.kept-not-leftover: a process the agent
+ *  kept (keep_process) is its work, not a leftover, and stays off the strip until the keep expires; Settings →
+ *  Automation still lists it with End and Keep. */
 export function findLeftovers(list: HostLoad[], id: string): { host: string; items: Leftover[] } | null {
   for (const h of list) {
-    const items = (h.leftovers ?? []).filter((l) => l.thread === id && !l.orphan);
+    const items = (h.leftovers ?? []).filter((l) => l.thread === id && !l.orphan && l.kept?.by !== "agent");
     if (items.length) return { host: h.host, items: items.sort(byMemory) };
   }
   return null;
