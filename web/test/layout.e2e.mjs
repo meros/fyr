@@ -606,7 +606,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     const a = m.settings?.autoDeploy;
     check(!!a && a.role === "switch" && a.checked === "true" && a.label === "Auto-update Fyr" && a.rowH >= 43.5, `${ctx}: no Auto-update switch ${JSON.stringify(a)}`);
     const u = m.settings?.updateNow;
-    check(!!u && u.text === "Update now" && u.h >= 43.5, `${ctx}: no 44 px Update now button ${JSON.stringify(u)}`);
+    check(!!u && /^Update now( · retry)?$/.test(u.text) /* V0.host-updates: a held-back release is retried */ && u.h >= 43.5, `${ctx}: no 44 px Update now button ${JSON.stringify(u)}`);
   }
   if (ctx.startsWith("settings device")) check(!!m.settings && m.settings.device.push && m.settings.device.theme === 3, `${ctx}: This device is wrong ${JSON.stringify(m.settings?.device)}`);
   if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours", `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
@@ -2808,8 +2808,8 @@ for (const [label, w, ht] of [
     const by = Object.fromEntries(rows.map((r) => [r.name, r]));
     check(rows.map((r) => r.name).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the order ${JSON.stringify(rows.map((r) => r.name))}`);
     check(rows.every((r) => r.tag === "BUTTON" && r.btns === 0), `${ctx}: a row is not one button or holds a button ${JSON.stringify(rows)}`);
-    check(/^online since \d\d:\d\d · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
-    check(/^offline since \d\d:\d\d · tailnet · id M3RS$/.test(by["host-b"]?.line) && !by["host-b"]?.bad && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
+    check(/^online since \d\d:\d\d · up to date · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
+    check(/^offline since \d\d:\d\d · 3 commits behind · holds back c705ef5 · tailnet · id M3RS$/.test(by["host-b"]?.line) && by["host-b"]?.bad /* V0.host-updates: it holds a release back */ && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
     check(/ · LAN · no id$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
     check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /^hmark/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`); // V0.170: the mark; the line and the pill say the id changed
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
