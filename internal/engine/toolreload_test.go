@@ -94,7 +94,7 @@ func TestToolReloadReplacesAtIdlePoint(t *testing.T) {
 	idle := h.create("first")
 	h.wait(idle, "first done", summaryIs("echo: first"))
 	busy := h.create("hold")
-	h.wait(busy, "working", state(core.Working))
+	h.wait(busy, "in its turn", func(t core.Thread, _ core.Attention) bool { return t.Running && len(t.Outbox) == 0 })
 	h.m.StopAll() // the update: fyrd stops, the runner keeps both
 	h.e.st.Close()
 

@@ -117,14 +117,13 @@ func (m *Manager) Adopt(procs []runner.Proc) {
 			m.drop(s, "the thread has a process")
 			continue
 		}
+		live := s.live // read before the reader can change it
 		go m.read(s)
-		if !s.live {
+		if !live {
 			m.armIdle(s)
 		}
-		if m.cfg.Tools != nil && s.token != "" && s.toolsHash != m.cfg.Tools() {
-			time.AfterFunc(m.cfg.ToolsGrace, func() { m.reloadTools(s) })
-		}
-		log.Printf("runner: adopted %s for thread %s (pid %d, running %v)", p.ID, t, p.Pid, s.live)
+		m.watchTools(s)
+		log.Printf("runner: adopted %s for thread %s (pid %d, running %v)", p.ID, t, p.Pid, live)
 	}
 }
 
@@ -149,6 +148,7 @@ func (m *Manager) adoptExisting(threadID, procID string) (*session, error) {
 			s, err := m.attach(threadID, p)
 			if err == nil {
 				log.Printf("runner: thread %s already had %s; linked to it", threadID, p.ID)
+				m.watchTools(s)
 			}
 			return s, err
 		}
@@ -305,6 +305,14 @@ func (m *Manager) dropAdopted(s *session) {
 	}
 }
 
+// watchTools checks an adopted process for an older build's MCP tools
+// once ToolsGrace has passed (V0.tool-reload).
+func (m *Manager) watchTools(s *session) {
+	if m.cfg.Tools != nil && s.token != "" && s.toolsHash != m.cfg.Tools() {
+		time.AfterFunc(m.cfg.ToolsGrace, func() { m.reloadTools(s) })
+	}
+}
+
 // reloadTools ends an adopted process that still has an older build's MCP
 // tools (V0.tool-reload): at once when it is idle, else when its turn ends;
 // never in a turn. The next message resumes the session with the new
@@ -314,22 +322,33 @@ func (m *Manager) reloadTools(s *session) {
 	if m.cfg.Tools == nil || m.cfg.ToolsCurrent == nil || s.token == "" {
 		return
 	}
-	h := m.cfg.Tools()
-	m.mu.Lock()
-	mine := m.sessions[s.thread] == s && !s.inputClosed
-	m.mu.Unlock()
-	if !mine || s.toolsHash == h || m.cfg.ToolsCurrent(s.token) {
+	if s.toolsHash == m.cfg.Tools() || m.cfg.ToolsCurrent(s.token) {
 		return
 	}
 	why := "Fyr restarted this agent's process to load the new tools"
 	if m.cfg.Build != "" {
 		why += " (build " + m.cfg.Build + ")"
 	}
-	log.Printf("thread %s: %s", s.thread, why)
+	// As refreshView, on this session only: the thread may have another
+	// process by now.
 	m.mu.Lock()
+	if m.sessions[s.thread] != s || s.inputClosed {
+		m.mu.Unlock()
+		return
+	}
 	s.reloadWhy = why
+	idle := !s.live && len(s.asks) == 0 && len(s.out) == 0 && s.bg == 0 // V0.133
+	if idle {
+		delete(m.sessions, s.thread) // the next send starts a new process
+	} else {
+		s.refresh = true
+	}
 	m.mu.Unlock()
-	m.refreshView(s.thread)
+	log.Printf("thread %s: %s", s.thread, why)
+	if idle {
+		m.closeInput(s)
+		m.refreshed(s)
+	}
 }
 
 // refreshed reports a refresh that loaded the new tools, once its process
