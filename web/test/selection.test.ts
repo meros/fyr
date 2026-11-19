@@ -141,3 +141,10 @@ test("the row after the ones that leave, else the one before", () => {
   assert.equal(rowAfter(order, "a", ["a", "w", "s1", "s2"]), null);
   assert.equal(rowAfter(order, "a", ["w"]), null, "the open row stays: nothing to move");
 });
+
+test("V0.waiting-folds: a folded Waiting to run holds its thread like any folded section", () => {
+  const q = { ...sec(), slots: [thread("q", "working", "working")] };
+  assert.equal(foldedRow(q, "q", {}), null, "open by default");
+  assert.equal(foldedRow(q, "q", { slots: false })?.section, "slots");
+  assert.deepEqual(guestOf(q, "q", null, { slots: false }), { id: "q", why: "folded" });
+});

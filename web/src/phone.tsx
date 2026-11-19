@@ -514,6 +514,9 @@ function MInbox(p: PhoneProps) {
           if (s.key === "slots")
             return (
               <SlotQueueSection
+                open={isOpen("slots", p.list.sectionOpen)}
+                onToggle={() => p.list.toggleSection("slots")}
+                guest={p.inbox.guest?.id ?? null}
                 phone
                 queue={queue}
                 threads={p.inbox.rows.slots}
