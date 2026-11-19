@@ -78,7 +78,8 @@ jobs:
           FYR_RELEASE_KEY: ${{ secrets.FYR_RELEASE_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          export GITHUB_SHA=$(git rev-parse HEAD)
+          GITHUB_SHA=$(git rev-parse HEAD)
+          export GITHUB_SHA
           git config user.name "fyr release"
           git config user.email "fyr-release@users.noreply.github.com"
           nix develop --command scripts/release.sh
