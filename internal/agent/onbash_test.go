@@ -63,7 +63,7 @@ func TestV209TheCallsStartAndEndAreHeard(t *testing.T) {
 func TestJobLimitsGateHookNamesTheWorkerFlag(t *testing.T) {
 	m := New(&stubHost{}, Config{})
 	m.SetOnBash(func(BashCall) string { return "" }, nil)
-	m.SetJobHints(nil, func(c string) string {
+	m.SetJobHints(nil, func(_, c string) string {
 		if c == "npx playwright test" {
 			return "add --workers=3"
 		}

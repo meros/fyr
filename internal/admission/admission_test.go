@@ -182,3 +182,26 @@ func TestV182OverWhenHeavierThanPredictedByAnEighth(t *testing.T) {
 		t.Fatalf("%v %v", live, over)
 	}
 }
+
+type serviceHost struct {
+	*fakeHost
+	svc []slots.Extra
+}
+
+func (h serviceHost) ServiceExtras() []slots.Extra { return h.svc }
+
+// V0.services-not-jobs: a running service's reservation counts beside the jobs, so a batch job waits for it.
+func TestServicesAreReservedInAdmission(t *testing.T) {
+	a, h, _ := setup(4)
+	sh := serviceHost{fakeHost: h, svc: []slots.Extra{{Owner: "t9", Name: "Shop", Need: slots.Need{Mem: 10 * gb}, Service: true}}}
+	held := []slots.Holder{{Owner: "t1", Kind: slots.Test}} // the prior: a quarter of the host each
+	head := slots.Holder{Owner: "t2", Kind: slots.Build}
+	if ok, why, _ := a.Admit(head, held); !ok { // 12 GB of 16 free: the head fits
+		t.Fatalf("without the service: %q", why)
+	}
+	a.Host = sh
+	ok, why, _ := a.Admit(head, held)
+	if ok || why == "" {
+		t.Fatalf("admitted beside a 10 GB service: %v %q", ok, why)
+	}
+}

@@ -15,6 +15,22 @@ export interface ThreadLoad {
   job?: string;
   /** decision 0029 S5: the memory guard froze this thread's job */
   paused?: boolean;
+  /** V0.services-not-jobs: its running services (a dev stack, a dev server, a compose project's containers) */
+  services?: ThreadService[];
+}
+/** V0.services-not-jobs: one running service of a thread. memory is what it holds in the thread's cgroup, containers
+ *  what its compose project's containers hold outside it, reserve what admission counts for it. */
+export interface ThreadService {
+  name: string;
+  memory: number;
+  project?: string;
+  containers?: number;
+  reserve: number;
+}
+/** V0.services-not-jobs: a service pattern of the host; a built-in one can be removed and added back. */
+export interface ServicePattern {
+  pattern: string;
+  builtIn?: boolean;
 }
 /** Decision 0029 S1: one measured job class (its newest run's measures, the median wall time of its last ten). */
 export interface JobClass {
@@ -68,6 +84,8 @@ export interface HostLoad {
   /** V0.176: the processes threads left running, past their grace, and the settled threads' worktrees */
   leftovers?: Leftover[];
   temps?: Temp[];
+  /** V0.services-not-jobs: the commands this host treats as services */
+  servicePatterns?: ServicePattern[];
 }
 /** V0.164: when a thread counts as heavy: shares of what the host gives its agents, and for how many seconds. */
 export interface UndeclaredSettings {
@@ -324,6 +342,18 @@ export function threadJob(list: HostLoad[], id: string): string | null {
     // Decision 0029 S5: a frozen job says so first, whether or not its command is known.
     if (t?.paused) return `${t.job ?? `${held.kind} job`} · paused: memory`;
     return t?.job ? `${t.job}${share}` : null;
+  }
+  return null;
+}
+
+/** V0.services-not-jobs: a thread's running services on its row, "service · 3.2 GB" or "2 services · 5.1 GB" (what
+ *  they hold now, containers included); null when it runs none. */
+export function threadService(list: HostLoad[], id: string): string | null {
+  for (const h of list) {
+    const s = h.threads?.find((x) => x.id === id)?.services;
+    if (!s?.length) continue;
+    const mem = s.reduce((n, x) => n + x.memory + (x.containers ?? 0), 0);
+    return `${s.length === 1 ? "service" : `${s.length} services`} · ${gbText(mem)}`;
   }
   return null;
 }

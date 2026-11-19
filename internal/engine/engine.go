@@ -623,6 +623,16 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(404, "No such heavy command")
 		}
 		reply.Result = map[string]any{"pattern": p}
+	case core.EffectServicePatterns: // V0.services-not-jobs
+		if e.ServicePatterns == nil {
+			return fail(409, "This host keeps no service patterns")
+		}
+		add, _ := ef.Request.Args["add"].(string)
+		remove, _ := ef.Request.Args["remove"].(string)
+		if err := e.ServicePatterns(add, remove); err != nil {
+			return fail(400, err.Error())
+		}
+		reply.Result = ef.Request.Args
 	case core.EffectUndeclaredSettings:
 		if e.UndeclaredSettings == nil {
 			return fail(409, "This host cannot change these settings")

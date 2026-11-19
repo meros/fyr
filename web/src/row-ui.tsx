@@ -7,7 +7,7 @@ import type { Change, ChangeNeed, Thread } from "./types.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { press } from "./confirm.ts";
-import { ThreadCPU, ThreadJob, ThreadSlot, useHasCPU, useThreadJob } from "./load-ui.tsx";
+import { ThreadCPU, ThreadJob, ThreadService, ThreadSlot, useHasCPU, useThreadJob } from "./load-ui.tsx";
 import { RowUndeclared, useRowUndeclared } from "./undeclared-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
 import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
@@ -310,6 +310,7 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
           {(und || job) && detail ? " · " : ""}
           {detail}
           {!job && !und && <ThreadSlot id={t.id} />}
+          <ThreadService id={t.id} />
         </i>
         {chips && (
           <span class="cl">

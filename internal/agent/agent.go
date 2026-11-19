@@ -97,9 +97,10 @@ type Config struct {
 	OnToolDone func(thread, toolUse string)
 	// JobEnv is what a CLI's environment gets so the tools its jobs run size
 	// themselves (V0.job-limits); JobHint is the gate hook's notice for a Bash
-	// command whose runner ignores its cgroup ("" for none). Optional.
+	// command of a thread: a runner that ignores its cgroup, the containers it
+	// started (V0.services-not-jobs); "" for none. Optional.
 	JobEnv  func() []string
-	JobHint func(command string) string
+	JobHint func(thread, command string) string
 	// Runner starts the processes in the launcher's runner, so they outlive
 	// fyrd (V0.90); nil starts them as fyrd's children.
 	Runner *runner.Client
@@ -344,7 +345,7 @@ func (m *Manager) SetOnBash(f func(BashCall) string, done func(thread, toolUse s
 }
 
 // SetJobHints sets Config.JobEnv and Config.JobHint after New (V0.job-limits).
-func (m *Manager) SetJobHints(env func() []string, hint func(command string) string) {
+func (m *Manager) SetJobHints(env func() []string, hint func(thread, command string) string) {
 	m.mu.Lock()
 	m.cfg.JobEnv, m.cfg.JobHint = env, hint
 	m.mu.Unlock()

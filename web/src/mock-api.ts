@@ -211,7 +211,7 @@ export function createMockApi(scenario: string): Api {
         return { ok: true, result: { class: j.class } };
       }
       // V0.164: the owner's commands on undeclared heavy work, as the host answers them (and updates its load).
-      if (action === "host.heavyRemove" || action === "host.undeclaredSettings") {
+      if (action === "host.heavyRemove" || action === "host.undeclaredSettings" || action === "host.servicePatterns") {
         const h = load.find((x) => x.host === (hn || load[0]?.host));
         if (!h) return { ok: false, error: `this front follows no host ${hn}` };
         return mockUndeclaredCommand(h, action, { ...(args ?? {}), host: h.host });

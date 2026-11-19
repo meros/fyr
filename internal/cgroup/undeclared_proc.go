@@ -100,6 +100,10 @@ const rootGrace = 15 * time.Second
 type Elders struct {
 	CLI int
 	Min uint64
+	// Service says a command line is a service (V0.services-not-jobs): a root
+	// whose subtree holds one is neither a root nor an elder, so the guard
+	// never freezes a service or names one as a part in a turn. nil is none.
+	Service func(cmdline string) bool
 }
 
 // agentShell reports the CLI's wrapper around one Bash command.
@@ -191,8 +195,37 @@ func ReadRootsWith(tr *Tree, proc, thread string, after time.Time, el Elders) []
 		}
 		roots = append(roots, Root{PID: p, Cmdline: readCmdline(proc, p), RSS: sum(p)})
 	}
+	if el.Service != nil {
+		roots = skipServices(roots, here, children, func(p int) string { return readCmdline(proc, p) }, el.Service)
+	}
 	sort.Slice(roots, func(i, j int) bool { return roots[i].PID < roots[j].PID })
 	return roots
+}
+
+// skipServices drops the roots whose subtree holds a service.
+func skipServices(roots []Root, here map[int]bool, children map[int][]int, cmd func(int) string, service func(string) bool) []Root {
+	var holds func(p, depth int) bool
+	holds = func(p, depth int) bool {
+		if depth > 64 || !here[p] {
+			return false
+		}
+		if service(cmd(p)) {
+			return true
+		}
+		for _, c := range children[p] {
+			if holds(c, depth+1) {
+				return true
+			}
+		}
+		return false
+	}
+	out := roots[:0]
+	for _, r := range roots {
+		if !holds(r.PID, 0) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // Heaviest is the root whose subtree holds the most memory.

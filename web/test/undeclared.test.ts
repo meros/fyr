@@ -226,3 +226,13 @@ test("the mock load: one thread, paused, and two flagged; the commands update it
   assert.equal(two.undeclaredSettings!.cpu, 0.5);
   assert.equal(mockUndeclaredCommand(two, "host.undeclaredSettings", { after: 5 }).ok, false);
 });
+
+// V0.services-not-jobs: the owner adds and removes service patterns in Settings, as the host answers it.
+test("service patterns are added and removed", () => {
+  const h = host([], { servicePatterns: [{ pattern: "npm run dev", builtIn: true }] });
+  assert.equal(mockUndeclaredCommand(h, "host.servicePatterns", { add: "rails\\s+server" }).ok, true);
+  assert.equal(mockUndeclaredCommand(h, "host.servicePatterns", { add: "(" }).ok, false);
+  assert.equal(mockUndeclaredCommand(h, "host.servicePatterns", { remove: "npm run dev" }).ok, true);
+  assert.equal(mockUndeclaredCommand(h, "host.servicePatterns", { remove: "nope" }).ok, false);
+  assert.deepEqual(h.servicePatterns, [{ pattern: "rails\\s+server" }]);
+});

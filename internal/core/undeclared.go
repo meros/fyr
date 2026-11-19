@@ -16,6 +16,10 @@ const (
 
 	EffectHeavyRemove        EffectKind = "heavy.remove"
 	EffectUndeclaredSettings EffectKind = "undeclared.settings"
+
+	// V0.services-not-jobs: the owner adds or removes a service pattern.
+	KindServicePatterns              = "host.servicePatterns"
+	EffectServicePatterns EffectKind = "service.patterns"
 )
 
 func init() {
@@ -41,6 +45,13 @@ func init() {
 			return nil, errors.New("pattern must name an added pattern")
 		}
 		return map[string]any{"pattern": p}, nil
+	})
+	effect(KindServicePatterns, EffectServicePatterns, func(m map[string]any) (map[string]any, error) {
+		add, remove := str(m, "add", 300), str(m, "remove", 300)
+		if add == "" && remove == "" {
+			return nil, errors.New("add or remove a pattern")
+		}
+		return map[string]any{"add": add, "remove": remove}, nil
 	})
 	effect(KindUndeclaredSettings, EffectUndeclaredSettings, func(m map[string]any) (map[string]any, error) {
 		out := map[string]any{}
