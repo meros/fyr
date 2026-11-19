@@ -302,8 +302,8 @@ func init() {
 		}},
 		{Name: KindSlotPause, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
 			d := mapArgs(in)
-			if _, p := d["paused"].(string); !p && d["resumed"] != true && d["waits"] != true {
-				return Result{}, errors.New("slot.pause needs paused, resumed or waits")
+			if _, p := d["paused"].(string); !p && d["resumed"] != true && d["waits"] != true && d["retry"] != true {
+				return Result{}, errors.New("slot.pause needs paused, resumed, waits or retry")
 			}
 			return Result{Events: []Event{{EventSlot, map[string]any(d)}}}, nil
 		}},

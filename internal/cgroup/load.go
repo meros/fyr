@@ -332,7 +332,26 @@ func (s *Sampler) Signals() slots.Signals {
 	if l.Capacity != nil {
 		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
 	}
+	if l.Agents != nil {
+		sig.AgentsMem = l.Agents.Memory
+	}
 	return sig
+}
+
+// ThreadMemory is thread's memory at the last read (its cgroup, or its
+// process tree); 0 when unknown. V0.guard-wake: the guard keeps what a job
+// held when it froze it.
+func (s *Sampler) ThreadMemory(thread string) uint64 {
+	p := s.pub.Load()
+	if p == nil {
+		return 0
+	}
+	for _, t := range p.Threads {
+		if t.ID == thread {
+			return t.Memory
+		}
+	}
+	return 0
 }
 
 // Run ticks until ctx ends.

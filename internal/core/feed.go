@@ -310,6 +310,16 @@ type SlotOverArgs struct {
 	Predicted float64 `json:"predicted"`
 }
 
+// frozenFor names how long the work was frozen (V0.guard-wake, decision 0036
+// E6), so the agent can tell a timeout the freeze caused from a real failure.
+func frozenFor(d map[string]any) string {
+	f := str(d["frozen"])
+	if f == "" {
+		return ""
+	}
+	return " It was frozen for " + f + "; a timeout or a slow step in that time came from the freeze, not from the work."
+}
+
 // slot: a job the agent was refused for a full host is admitted now; it ended
 // its turn to wait, so wake it.
 func slotNotices(r Reduced) []Notice {
@@ -335,8 +345,12 @@ func slotNotices(r Reduced) []Notice {
 			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: what + " stays frozen past 10 min: memory still stalls critically on this host, and thawing it now would make that worse. It resumes when the stall eases; Fyr tells you then."})
 			continue
 		}
+		if d["retry"] == true { // V0.guard-wake (decision 0036 E1)
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Memory has recovered on this host: run the heavy command Fyr held again."})
+			continue
+		}
 		if d["resumed"] == true && d["work"] == true {
-			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Your heavy work runs again: Fyr thawed it."})
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Your heavy work runs again: Fyr thawed it." + frozenFor(d)})
 			continue
 		}
 		if why, ok := d["paused"].(string); ok {
@@ -344,7 +358,7 @@ func slotNotices(r Reduced) []Notice {
 			continue
 		}
 		if d["resumed"] == true {
-			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Your heavy job runs again: Fyr thawed it."})
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Your heavy job runs again: Fyr thawed it." + frozenFor(d)})
 			continue
 		}
 		if class, ok := d["over"].(string); ok {

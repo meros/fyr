@@ -68,3 +68,26 @@ func TestS5ReleaseRemovesTheJobCgroupFirst(t *testing.T) {
 		t.Fatal("the job's cgroup was not removed before its thread's")
 	}
 }
+
+// V0.guard-wake (decision 0036 E6): how long a job's or undeclared work's cgroup was frozen, from cgroup.stat.local.
+func TestFrozenUsecReadsCgroupStatLocal(t *testing.T) {
+	o, _ := fakeFS(t, "0::/"+unit+"\n")
+	tr := Setup(o)
+	td := tr.Thread("t_a")
+	g := &JobGroups{Tree: tr}
+	if _, ok := g.FrozenUsec("t_a", false); ok {
+		t.Fatal("a value without the file")
+	}
+	write(t, filepath.Join(td, "job", "cgroup.stat.local"), "frozen_usec 1234\n")
+	write(t, filepath.Join(td, "undeclared", "cgroup.stat.local"), "frozen_usec 99\n")
+	if u, ok := g.FrozenUsec("t_a", false); !ok || u != 1234 {
+		t.Fatalf("job: %d %t", u, ok)
+	}
+	if u, ok := g.FrozenUsec("t_a", true); !ok || u != 99 {
+		t.Fatalf("undeclared: %d %t", u, ok)
+	}
+	var none *JobGroups
+	if _, ok := none.FrozenUsec("t_a", false); ok {
+		t.Fatal("nil groups")
+	}
+}

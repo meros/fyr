@@ -177,6 +177,12 @@ type Engine struct {
 	guardPub     atomic.Pointer[slots.Guard]
 	ranks        atomic.Pointer[map[string]int] // V0.project-priority: thread id → its project's rank, the non-zero ones
 	memGuard     bool                           // under mu: the guard told a thread in this episode
+	// V0.guard-wake (decision 0036 E1, E3): the agents' memory when the stall
+	// first went critical in this episode (0: not yet), the last wake, and the
+	// threads whose new heavy command the gate held while memory was short.
+	guardCap     uint64
+	guardWake    time.Time
+	gateHeld     map[string]bool
 	titleMu      sync.Mutex
 	titling      map[string]bool
 	textAskSlots chan struct{} // V0.210: the question job's calls at once
