@@ -104,7 +104,7 @@ export function stripView(h: HostLoad, u: UndeclaredUse): StripView | null {
   const free = h.headroom !== undefined ? ` (${Math.round(h.headroom * 100)} % free)` : "";
   return {
     head: `Paused by Fyr: memory is short on ${h.host}${free}.`,
-    body: "Frozen, not killed; it resumes when memory has recovered for 30 s, within 10 min at most.",
+    body: "Frozen, not killed; it resumes when memory has recovered for 30 s, or after 10 min unless memory stalls.",
     command: u.command,
     note: [...measures(u, "none", h.host).slice(0, 1), "undeclared"].join(" · "),
   };

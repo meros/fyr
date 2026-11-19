@@ -69,10 +69,14 @@ type Options struct {
 	// ScopeProbe starts one process in a scope of the agents' slice; default
 	// runs systemd-run (V0.agents-unit).
 	ScopeProbe ScopeProbe
-	move       func(file, pid string) error // tests watch the moves
-	userBus    bool                         // tests: scopes of the user manager
-	scopeExec  func(name string, args ...string) error
-	oomAdj     string // default /proc/self/oom_score_adj
+	// OomdLimit reads oomd's memory pressure limit on a unit, in percent (0:
+	// none), V0.oomd-guard; nil reads none. fyrd passes UnitOomdLimit, which
+	// asks systemctl; tests leave it nil.
+	OomdLimit func(unit string) float64
+	move      func(file, pid string) error // tests watch the moves
+	userBus   bool                         // tests: scopes of the user manager
+	scopeExec func(name string, args ...string) error
+	oomAdj    string // default /proc/self/oom_score_adj
 }
 
 const (
@@ -121,6 +125,13 @@ type Tree struct {
 	budgetSeen    map[string]budgetSeen // under mu: what the guard's log remembers
 	budgetSummary time.Time             // under mu: the last summary line
 	budgetNow     func() time.Time      // tests; nil is time.Now
+	// V0.oomd-guard: oomd's pressure limit in percent (0: none) on the unit
+	// it watches for the agents (fyr.service in the split layout, the agents'
+	// slice in the scope layout), that unit's cgroup, and when the guard last
+	// logged that its stall came near the limit.
+	oomdLimit float64
+	oomdDir   string
+	oomdNoted time.Time
 }
 
 type focusBeat struct {
@@ -164,6 +175,9 @@ func Setup(o Options) *Tree {
 			if st.legacy != "" {
 				o.Logf("cgroups: threads started before the switch run on in %s/<thread>", st.legacy)
 			}
+			// V0.oomd-guard: fyrd's unit is root-owned with
+			// ManagedOOMPreference=omit here; oomd's rule is on the slice.
+			st.watchOomd(o, o.AgentsSlice, st.agentsDir())
 			return st
 		}
 		o.Logf("cgroups: the agents' slice %s is not usable (%v); keeping the unit layout", o.AgentsSlice, serr)
@@ -173,6 +187,15 @@ func Setup(o Options) *Tree {
 		return nil
 	}
 	o.Logf("cgroups: on, layout unit, in %s (server/, agents/<thread>/, agents/self-deploy/)", t.root)
+	// V0.oomd-guard: in the split unit oomd's rule on fyr.service may pick
+	// server/, fyrd itself; oomd honours user.oomd_omit there (same owner).
+	// Best effort: a file system without user xattrs only loses it. Said only
+	// where fyrd reads oomd's limit (a test's directory may take no xattr).
+	omitErr := omitFromOomd(filepath.Join(t.root, "server"))
+	if o.OomdLimit != nil && omitErr != nil {
+		o.Logf("cgroups: user.oomd_omit not set on server/ (%v); oomd may pick fyrd under this unit", omitErr)
+	}
+	t.watchOomd(o, filepath.Base(t.root), t.root)
 	return t
 }
 

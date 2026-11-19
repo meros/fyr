@@ -308,10 +308,15 @@ type frozenJob struct {
 	turnAt time.Time
 	turn   time.Duration
 	faults uint64
+	// V0.oomd-guard (decision 0036 E2): past FreezeMax while memory stalls
+	// critically, so it stays frozen; the thread was told once.
+	pastMax bool
 }
 
 // Decision 0029 S5: how long memory must be fine before a frozen job thaws,
-// and the longest a job stays frozen.
+// and the longest a job stays frozen while memory does not stall critically
+// (V0.oomd-guard: on 18 and 19 Nov each of six thaws at the limit let a job
+// back into a critical stall, and oomd killed under fyr.service).
 const (
 	ThawAfterOK = 30 * time.Second
 	FreezeMax   = 10 * time.Minute
@@ -536,6 +541,10 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	}
 	var keep []frozenJob
 	var thaws []thawing
+	// V0.oomd-guard (decision 0036 E2): no timed thaw into a critical stall,
+	// the host's or the agents'.
+	critical := sig.Stall == slots.StallCritical || sig.AgentsStall == slots.StallCritical
+	var pastMax []frozenJob // newly held past FreezeMax: told once
 	for _, f := range frozen {
 		holding := false
 		if f.undeclared {
@@ -556,9 +565,17 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		// was killed) holds nothing; release it at once instead of letting it
 		// block every other freeze for ten minutes.
 		emptied := f.undeclared && holding && e.UndeclaredEmpty != nil && e.UndeclaredEmpty(f.owner)
-		if !holding || emptied || now.Sub(f.at) >= FreezeMax {
+		overMax := now.Sub(f.at) >= FreezeMax
+		if !holding || emptied || (overMax && !critical) {
 			thaws = append(thaws, thawing{f, holding, emptied})
 			continue
+		}
+		if overMax {
+			e.guardOnce(now, "pastmax:"+f.owner, fmt.Sprintf("keeping thread=%s frozen past the %s limit: memory stalls critically (%s); it thaws when the stall is below critical", f.owner, FreezeMax, guardSignals(sig)))
+			if !f.pastMax {
+				f.pastMax = true
+				pastMax = append(pastMax, f)
+			}
 		}
 		keep = append(keep, f)
 	}
@@ -595,6 +612,9 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 			reason, why = "episode or hold ended", "ended"
 		case now.Sub(f.at) >= FreezeMax:
 			reason, why = "10 min limit", "limit"
+			if f.pastMax {
+				reason = "10 min limit, stall no longer critical"
+			}
 		}
 		kind, work := "job", "job"
 		if f.undeclared {
@@ -614,6 +634,9 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 				e.slotNotice(f.owner, map[string]any{"resumed": true})
 			}
 		}
+	}
+	for _, f := range pastMax {
+		e.slotNotice(f.owner, map[string]any{"waits": true, "work": f.undeclared})
 	}
 	if !short || len(thaws) > 0 {
 		return // a thaw this tick: the next tick sees what it did

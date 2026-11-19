@@ -57,6 +57,11 @@ type Load struct {
 	// AgentsSwapFull: agents/memory.swap.current is at SwapFullShare of a
 	// set memory.swap.max (V0.guard-swap).
 	AgentsSwapFull bool `json:"agentsSwapFull,omitempty"`
+	// V0.oomd-guard: the unit's own memory.pressure full avg10 (what oomd
+	// compares) and oomd's pressure limit on the unit, both in percent;
+	// absent without the tree or without an oomd rule.
+	UnitMemoryStall *float64 `json:"unitMemoryStall,omitempty"`
+	OomdLimit       float64  `json:"oomdLimit,omitempty"`
 	// Jobs: the measured slot holds per class, the newest first.
 	Jobs []JobClass `json:"jobs,omitempty"`
 	// V0.164: the suggested heavy jobs, the ones the owner added, and the
