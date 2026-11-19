@@ -42,8 +42,7 @@ export interface JobClass {
   /** seconds */
   wall: number;
   at: string;
-  /** decision 0029 S3: the class's cost on this host now (older hosts) and how many runs it is learned from */
-  cost?: number;
+  /** decision 0029 S3: how many runs the class is learned from */
   learned?: number;
   /** V0.163: the class's need as percentages of this host */
   cpuPct?: number;
@@ -130,8 +129,6 @@ export interface SlotHolder {
   kind: string;
   since?: string;
   priority?: boolean;
-  /** decision 0029 S2: the holder's share of the budget (1.0 a job, 0.1 an idle hold); older hosts */
-  cost?: number;
   /** V0.163: the job's need as percentages of the host, CPU and memory, and pct the larger */
   cpuPct?: number;
   memPct?: number;
@@ -141,11 +138,9 @@ export interface Slots {
   n: number;
   held: SlotHolder[];
   waiting: SlotHolder[];
-  /** decision 0029 S2: the holders' costs summed (absent without admission by a budget), and why the head waits */
-  used?: number;
+  /** why the head waits */
   why?: string;
-  /** decision 0029 S4: the adapted budget (absent while it is n) and why */
-  budget?: number;
+  /** decision 0029 S4: why the budget moved (absent while it is full) */
   budgetWhy?: string;
   /** V0.163, percent of what the host gives its agents: in use, the budget and what is free in it per resource; usedPct
    *  is the tighter resource's use of its budget (the rail's bar) and tight names it; binding is what holds the head
@@ -294,8 +289,8 @@ export interface RailBudget {
   waiting: number;
 }
 
-/** Decision 0029 S2: the rail's slot budget in use as a bar ("1.1/2"), hot while anyone waits; null without
- *  admission by a budget (then the pips show). */
+/** Decision 0029 S2, V0.163: the rail's heavy jobs in use as a bar ("55 %" of their budget), hot while anyone waits;
+ *  null on a host without heavy jobs. */
 export function railBudget(h: HostLoad): RailBudget | null {
   const s = h.slots;
   if (!s) return null;
@@ -407,7 +402,7 @@ export function jobLines(h: HostLoad): { class: string; text: string; cost: stri
     // Decision 0029 S3, V0.163: the learned need, CPU and memory as percentages of this host; under three runs a class
     // still counts as at least the prior.
     const n = j.learned ?? 0;
-    const need = j.cpuPct !== undefined ? `≈ ${j.cpuPct} % CPU · ${j.memPct ?? 0} % memory of this host` : j.cost !== undefined ? `cost ${one(j.cost)}` : "";
+    const need = j.cpuPct !== undefined ? `≈ ${j.cpuPct} % CPU · ${j.memPct ?? 0} % memory of this host` : "";
     const cost = !need || !n ? "" : n >= 3 ? `${need} · learned from ${n} runs` : `${need} · ${n} of 3 runs to learn`;
     return { class: j.class, text: `${j.runs} ${j.runs === 1 ? "run" : "runs"} · ${cores} · peak ${gb(j.peak)} GB · ${duration(j.wall)}`, cost, learned: n > 0 };
   });
@@ -454,6 +449,8 @@ export interface LoadCard extends Card {
   summary: string;
 }
 
+/** V0.oomd-guard: the guard warns when the stall comes within this many points of oomd's limit (OomdNearMargin). */
+export const OOMD_NEAR = 10;
 const VERDICT: Record<LoadLevel, string> = { calm: "Calm", warm: "Busy", hot: "Overloaded" };
 const pct = (n: number) => `${Math.round(n)} %`;
 
@@ -485,6 +482,12 @@ export function loadCard(h: HostLoad, names?: { lookup: Lookup; now: number }): 
     const st = h.memoryStall;
     const stall = st === undefined ? undefined : st === "ok" ? "no stalls" : `${st === "critical" ? "stalling hard" : "stalling"}${h.memoryPressure !== undefined ? ` ${one(h.memoryPressure)} %` : ""}`;
     mach.push({ label: "Memory", value: `${pct(h.headroom * 100)} free of ${gb(h.capacity.memory)} GB`, note: stall, hot: st === "critical" });
+  }
+  // V0.load-cleanup: oomd's rule on the agents (V0.oomd-guard) and the stall it compares; hot within OOMD_NEAR of it,
+  // where the guard warns. Absent without a rule.
+  if (h.oomdLimit) {
+    const st = h.unitMemoryStall;
+    mach.push({ label: "oomd", value: `kills at ${pct(h.oomdLimit)} stall`, note: st === undefined ? undefined : `now ${pct(st)}`, hot: st !== undefined && st >= h.oomdLimit - OOMD_NEAR });
   }
   const a = h.agents;
   if (!a) mach.push({ label: "Agents", value: "share the daemon's cgroup", note: "no per-thread figures" });

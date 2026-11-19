@@ -43,6 +43,17 @@ test("the card names the load, how often the CPU makes work wait, and the agents
   assert.equal(cardLines(loadCard(mac))[2], "Agents use: 1.5 cores · 2.0 GB · no cap · process trees");
 });
 
+// V0.load-cleanup: oomd's rule (V0.oomd-guard) on the card: where it kills and the stall now, hot within 10 points.
+test("the card shows oomd's limit and the stall it compares, and nothing without a rule", () => {
+  const rule = (o: Partial<HostLoad>) => cardLines(loadCard({ ...busy, ...o })).find((l) => l.startsWith("oomd:"));
+  assert.equal(rule({ oomdLimit: 85, unitMemoryStall: 3.2 }), "oomd: kills at 85 % stall · now 3 %");
+  assert.equal(rule({ oomdLimit: 80 }), "oomd: kills at 80 % stall");
+  assert.equal(rule({ unitMemoryStall: 3.2 }), undefined);
+  const row = (o: Partial<HostLoad>) => loadCard({ ...busy, ...o }).sections[0].rows.find((r) => r.label === "oomd");
+  assert.equal(row({ oomdLimit: 85, unitMemoryStall: 74.9 })?.hot, false);
+  assert.equal(row({ oomdLimit: 85, unitMemoryStall: 75 })?.hot, true);
+});
+
 test("a thread's CPU is in cores, hot from 2, and absent without a second read", () => {
   assert.deepEqual(threadCPU([busy], "t_busy"), { text: "2.5 cores", hot: true });
   assert.deepEqual(threadCPU([busy], "t_calm"), { text: "0.0 cores", hot: false });

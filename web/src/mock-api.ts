@@ -207,7 +207,7 @@ export function createMockApi(scenario: string): Api {
         const h = load.find((x) => x.host === (hn || load[0]?.host));
         const j = h?.jobs?.find((x) => x.class === args?.class && x.learned);
         if (!h || !j) return { ok: false, error: `No learned job class ${String(args?.class ?? "")}` };
-        h.jobs = h.jobs!.map((x) => (x === j ? { ...x, cost: undefined, learned: undefined } : x));
+        h.jobs = h.jobs!.map((x) => (x === j ? { ...x, learned: undefined } : x));
         return { ok: true, result: { class: j.class } };
       }
       // V0.164: the owner's commands on undeclared heavy work, as the host answers them (and updates its load).

@@ -1,0 +1,13 @@
+# V0.load-cleanup: the load card shows oomd's limit and the stall it compares, HOST-SETUP describes the agents' slice, and the slot-era leftovers go
+
+→ V0.oomd-guard (3), V0.agents-unit (9), V0.psi-trigger-slice, V0.load-card, decision 0029 S2 (the one-number cost), decision 0036 (B).
+
+(1) **oomd on the load card.** `/api/load` has had `oomdLimit` and `unitMemoryStall` since V0.oomd-guard, and nothing showed them. The card's Machine group has an `oomd` row when the host has a rule: `oomd: kills at 85 % stall · now 3 %`, hot once the stall is within 10 points of the limit, where the guard logs `guard: near oomd's limit`. No rule, no row. `LoadCardView` is the rail's hover card and the phone's load sheet, so both fronts have it.
+
+(2) **docs/HOST-SETUP.md.** Its oomd section still told the owner to put the rule on `fyr.service` "until #221", and called the omit "not built yet". It now describes the scope layout: `agentsUnit`, the rule on `fyr-agents.slice`, the polkit rule, `ExecStartPre` handing the slice's `memory.pressure` to the service user, the one manual restart of `fyr.service` after the switch, and how to check it (`oomctl`, `systemctl show`, `ls -l` of the slice's `memory.pressure`, the `cgroups: on, layout scope` log line, `/api/load`'s `cgroupLayout`, `slowdown` and `oomdLimit`). The budget table gains `agentsUnit`, `agentsOomPressureLimit` and `serverMemoryLow`. The zswap section says the kernel parameters need a reboot, or the runtime writes to `/sys/module/zswap/parameters`. Decision 0036 (B) said `MemoryMin`; an italic note says the module uses `MemoryLow`.
+
+(3) **The web no longer reads the one-number cost.** A job class without percentages (a host from before V0.163) shows no need instead of `cost 1.7`; `cost`, `used` and `budget` are gone from the web's types and the mock. The Go fields (`Holder.Cost`, `Snapshot.Used`, `Snapshot.Budget`, `JobClass.Cost`) are still sent; they can go in a later change. `budgetWhy` stays: it is the current reason the budget moved. The rail's pip CSS (`.rpips`, unused since the bar of decision 0029 S2) and the comments that still spoke of pips and "1.1/2" are gone.
+
+(4) **Two stray files.** `internal/cgroup/cpu.stat` and `internal/cgroup/memory.current` were committed with V0.80's red tests; no test reads them (each writes its own in a temp dir), so they are removed.
+
+Tests: `web/test/load.test.ts` (the card shows oomd's limit and the stall it compares, and nothing without a rule), `web/test/learn.test.ts` (a class with only the old one-number cost shows no need), the layout tests on the mock host with `oomdLimit`.
