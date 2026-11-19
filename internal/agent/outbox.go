@@ -120,7 +120,12 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 		}
 		e.Text = "[From thread " + label + "] " + e.Text
 	}
-	if first {
+	// V0.slash-first-turn: the CLI runs a command or a skill only when the
+	// message's text starts with "/", so a notice in front of it turned
+	// the owner's /command into plain text. Its notices stay pending: the
+	// run's hooks take them, or the feed after the run.
+	command := e.From == "" && strings.HasPrefix(strings.TrimSpace(e.Text), "/")
+	if first && !command {
 		// V0.95 (1): the turn this message starts carries the pending
 		// notices, before its words; they are taken, so no tool call
 		// repeats them.
