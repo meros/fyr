@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -53,6 +54,18 @@ type AIMD struct {
 	wrote     Factors // the budget Path holds
 }
 
+// keptPrefix starts the reason of a budget read back after a restart.
+const keptPrefix = "kept across a restart: "
+
+// trimKept drops every keptPrefix a reason already carries: a file an older
+// fyrd wrote may hold several.
+func trimKept(why string) string {
+	for strings.HasPrefix(why, keptPrefix) {
+		why = strings.TrimPrefix(why, keptPrefix)
+	}
+	return why
+}
+
 // kept is the budget as Path holds it.
 type kept struct {
 	Factors
@@ -67,7 +80,8 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 	if !a.started {
 		a.started, a.f, a.last, a.why = true, Full, now, "the full budget"
 		if k, ok := a.load(now); ok {
-			a.f, a.why, a.written, a.wrote = k.Factors, "kept across a restart: "+k.Why, k.At, k.Factors
+			// V0.restart-why: what an earlier restart kept says so once.
+			a.f, a.why, a.written, a.wrote = k.Factors, keptPrefix+trimKept(k.Why), k.At, k.Factors
 		}
 		return a.f, a.why
 	}

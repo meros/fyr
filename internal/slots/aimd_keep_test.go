@@ -61,3 +61,24 @@ func TestBudgetKeptIsRewrittenWhileItHolds(t *testing.T) {
 		t.Fatalf("an unmoving budget aged out: %+v", b)
 	}
 }
+
+// V0.restart-why: a budget kept across two restarts in a row says so once.
+func TestBudgetKeptTwiceSaysItOnce(t *testing.T) {
+	t0 := time.Date(2026, 11, 19, 9, 50, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "slot-budget.json")
+	short := Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.05), Stall: StallOK}
+	a := &AIMD{N: 2, Path: path}
+	for i := 0; i < 5; i++ {
+		a.Step(t0.Add(time.Duration(30*i)*time.Second), short, true, time.Time{}, ResMem)
+	}
+	// The next fyrd holds the kept budget and writes it again while it holds;
+	// the one after reads what it wrote.
+	calm := Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.5), Stall: StallOK}
+	b := &AIMD{N: 2, Path: path}
+	b.Step(t0.Add(130*time.Second), calm, false, time.Time{}, "")
+	b.Step(t0.Add(130*time.Second+AIMDWrite+time.Second), calm, false, time.Time{}, "")
+	_, why := (&AIMD{N: 2, Path: path}).Step(t0.Add(140*time.Second+AIMDWrite), calm, false, time.Time{}, "")
+	if n := strings.Count(why, "kept across a restart"); n != 1 {
+		t.Fatalf("said %d times: %q", n, why)
+	}
+}
