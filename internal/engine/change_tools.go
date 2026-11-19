@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
@@ -38,7 +41,7 @@ const changeRef = "The change: its id (c_…), its key, its PR URL, owner/repo#N
 // The tool descriptions of decision 0024 section 7 (SPEC V0.101), code only
 // since V0.changes-code-only.
 const (
-	ChangeOpenDesc    = "Give Fyr a card for a code change it cannot see by itself: a branch you pushed some other way, or a PR you did not open with gh pr create. Fyr makes cards for your pushes and PRs itself. The same key, PR or branch returns the same change. Only code: a write the owner must approve (an apply, a deploy, a migration) is run_request; a document or a design to approve is ask."
+	ChangeOpenDesc    = "Start a code change in its own git worktree (workspace: true, branch, repo?, after?): Fyr makes the worktree, returns its path and watches it. Or give Fyr a card for a code change it cannot see by itself: a branch you pushed some other way, or a PR you did not open with gh pr create. Fyr makes cards for your pushes and PRs itself. The same key, PR or branch returns the same change. Only code: a write the owner must approve (an apply, a deploy, a migration) is run_request; a document or a design to approve is ask."
 	ChangeUpdateDesc  = "Tell Fyr what only you know about a code change. Send only what changed; send nothing when nothing moved. Fyr reads PR state, checks, reviews, conflicts and the pushed head itself; if you send one of these, Fyr replies with the value it reads. abandoned takes the card off the board."
 	ChangeRequestDesc = "Ask the owner to merge a PR. It returns at once; the answer comes later as a [Fyr] line. Ask right after you push; Fyr shows the ask to the owner when CI is green on that head, closes it and tells you when CI fails or GitHub cannot merge, and merges the head the owner saw; never run gh pr merge."
 	ChangeListDesc    = "Fyr's facts, one line per change, open changes only by default, at most 4,000 characters. id gives one change of this thread in full."
@@ -75,17 +78,19 @@ func (e *Engine) changeTools(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "change_open",
 		Description: ChangeOpenDesc,
 		Schema: obj(map[string]any{
-			"key":      str("A stable name, unique in this thread, for example \"api:retry-backoff\". The same key returns the same change. With pr, the PR names it."),
-			"kind":     map[string]any{"type": "string", "enum": core.OpenKinds(), "description": "code, the default: Fyr tracks no other changes."},
-			"title":    str("One line for the owner: what changes."),
-			"targets":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Where it lands, as kind:name, for example \"repo:github.com/o/r\"."},
-			"branch":   str("The git branch. A branch or a pr is required."),
-			"pr":       str("A GitHub PR URL; Fyr watches its checks and reviews."),
-			"group":    str("A name shared by changes that belong together, for example one feature across several repos."),
-			"after":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Changes this one builds on (a stack), by id or key."},
-			"revision": revisionSchema(),
+			"key":       str("A stable name, unique in this thread, for example \"api:retry-backoff\". The same key returns the same change. With pr, the PR names it."),
+			"kind":      map[string]any{"type": "string", "enum": core.OpenKinds(), "description": "code, the default: Fyr tracks no other changes."},
+			"title":     str("One line for the owner: what changes."),
+			"targets":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Where it lands, as kind:name, for example \"repo:github.com/o/r\"."},
+			"branch":    str("The git branch. A branch or a pr is required."),
+			"pr":        str("A GitHub PR URL; Fyr watches its checks and reviews."),
+			"group":     str("A name shared by changes that belong together, for example one feature across several repos."),
+			"after":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Changes this one builds on (a stack), by id or key. With workspace, the new branch starts from the first one's branch."},
+			"workspace": map[string]any{"type": "boolean", "description": "true: Fyr makes a git worktree of repo on branch for this change and returns its path. Work there, and give that path to a subagent that works on the change."},
+			"repo":      str("With workspace: the folder of the repo, absolute or relative to the thread's folder. Default: the thread's folder."),
+			"revision":  revisionSchema(),
 		}, "title"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+		Call: func(ctx context.Context, th string, a map[string]any) (string, error) {
 			o := core.ChangeOpen{Key: sArg(a, "key"), Kind: core.ChangeKind(sArg(a, "kind")), Title: sArg(a, "title"), Branch: sArg(a, "branch"), Group: sArg(a, "group"),
 				Targets: listArg(a, "targets"), After: listArg(a, "after"), Revision: revisionArg(a["revision"])}
 			pr := sArg(a, "pr")
@@ -100,6 +105,11 @@ func (e *Engine) changeTools(s *mcp.Server) {
 					o.Key = core.PRKey(prRepo, prN)
 				}
 			}
+			if a["workspace"] == true {
+				if err := e.openWorkspace(ctx, th, sArg(a, "repo"), &o); err != nil {
+					return "", err
+				}
+			}
 			r, err := e.changeInput(th, core.KindChangeOpen, core.ChangeOpenArgs{Open: o, PR: pr})
 			if err != nil {
 				return "", err
@@ -112,7 +122,11 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			if !made {
 				verb = "Found"
 			}
-			return fmt.Sprintf("%s change %s %q · %s. Fyr shows it in the thread's Changes tab. Report what only you know with change_update, and ask the owner with change_request.", verb, c.ID, c.Title, phaseText(c)), nil
+			out := fmt.Sprintf("%s change %s %q · %s. Fyr shows it in the thread's Changes tab. Report what only you know with change_update, and ask the owner with change_request.", verb, c.ID, c.Title, phaseText(c))
+			if a["workspace"] == true && c.Workspace != nil {
+				out += " " + workspaceText(c.Workspace)
+			}
+			return out, nil
 		}})
 
 	s.Add(mcp.Tool{Name: "change_request",
@@ -359,4 +373,69 @@ func (e *Engine) heldReply(th, id string) string {
 		return fmt.Sprintf("Recorded. Fyr shows it to the owner when CI is green on %s, and tells you in a [Fyr] message if CI fails or GitHub cannot merge it. Do not ask again or merge another way; continue with other work or end your turn.", head)
 	}
 	return ""
+}
+
+// openWorkspace makes the worktree of change_open {workspace: true}
+// (V0.change-worktree, decision 0019) and puts it on o. The branch is
+// required; the key defaults to it. A change of the thread with this key
+// that already has a worktree keeps it. With after, a new branch starts from
+// the branch of the first change it builds on.
+func (e *Engine) openWorkspace(ctx context.Context, th, repo string, o *core.ChangeOpen) error {
+	if o.Branch == "" {
+		return errors.New("workspace needs the branch to make, for example \"feat/retry\"")
+	}
+	if o.Kind != "" && o.Kind != core.KindCode {
+		return errors.New("workspace is for a code change")
+	}
+	if o.Key == "" {
+		o.Key = o.Branch
+	}
+	t, ok := e.Thread(th)
+	if !ok {
+		return core.NoChange(o.Key)
+	}
+	if c := core.FindChange(&t, o.Key); c != nil && c.Workspace != nil && c.Workspace.Path != "" {
+		if _, err := os.Stat(c.Workspace.Path); err == nil {
+			return nil
+		}
+	}
+	dir := t.Cwd
+	if repo != "" {
+		dir = repo
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(t.Cwd, repo)
+		}
+	}
+	from := ""
+	if len(o.After) > 0 {
+		b := core.FindChange(&t, o.After[0])
+		if b == nil {
+			return core.NoChange(o.After[0])
+		}
+		if b.Branch == "" {
+			return fmt.Errorf("change %s has no branch to build on", b.ID)
+		}
+		from = b.Branch
+	}
+	ws, err := agent.MakeWorktree(ctx, agent.WorktreeReq{Dir: dir, Branch: o.Branch, From: from})
+	if err != nil {
+		return err
+	}
+	o.Workspace = &ws
+	if ws.Repo != "" {
+		o.Targets = append(o.Targets, "repo:"+ws.Repo)
+	}
+	return nil
+}
+
+// workspaceText tells the agent where to work.
+func workspaceText(w *core.Workspace) string {
+	if !w.MadeByFyr {
+		return fmt.Sprintf("The branch %s is already checked out at %s: work there.", w.Branch, w.Path)
+	}
+	from := ""
+	if w.Base != "" {
+		from = " from " + w.Base
+	}
+	return fmt.Sprintf("Fyr made its worktree at %s on branch %s%s: work there (cd into it), and give that path to a subagent that works on this change. Fyr removes it only once nothing in it is uncommitted or unpushed.", w.Path, w.Branch, from)
 }

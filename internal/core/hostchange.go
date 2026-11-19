@@ -396,6 +396,8 @@ func follow(t *Thread, c *Change, rec *Change, now time.Time) {
 	c.Observed = rec.ID
 	if rec.Workspace != nil {
 		w := *rec.Workspace
+		// V0.change-worktree: the worktree Fyr made stays Fyr's.
+		w.MadeByFyr = w.MadeByFyr || c.Workspace != nil && c.Workspace.MadeByFyr
 		c.Workspace = &w
 	}
 	for _, typ := range []CondType{CondPushed, CondClean} {

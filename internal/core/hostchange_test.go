@@ -172,3 +172,19 @@ func TestMergedPRCoversOnlyItsHead(t *testing.T) {
 		t.Fatal("an open PR is not merged")
 	}
 }
+
+// V0.change-worktree (3): a change whose worktree Fyr made stays Fyr's when
+// it follows the record the observer reads from that worktree.
+func TestFyrWorktreeStaysFyrsWhenItFollowsARecord(t *testing.T) {
+	th := &Thread{ID: "t"}
+	ws := &Workspace{Repo: "github.com/o/r", Path: "/w/r/.claude/worktrees/feat", Branch: "feat", Base: "origin/main", MadeByFyr: true}
+	OpenChange(th, ChangeOpen{Key: "feat", Kind: KindCode, Title: "A", Branch: "feat", Targets: []string{"repo:github.com/o/r"}, Workspace: ws}, ByAgent, ct0)
+	if a := FindChange(th, "feat"); a.Workspace == nil || a.Workspace == ws || !a.Workspace.MadeByFyr {
+		t.Fatalf("open: %+v", a.Workspace)
+	}
+	_, rec := observe(t, nil, GitFacts{Repo: "github.com/o/r", Path: ws.Path, Branch: "feat", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "h1"}, ct0)
+	th, _ = fstep(t, th, Input{Source: Observer(ObsGit), Kind: KindChangeObserved, Args: ChangeObservedArgs{After: *rec}}, ct0)
+	if a := FindChange(th, "feat"); a.Observed != rec.ID || a.Workspace.Head != "h1" || !a.Workspace.MadeByFyr {
+		t.Fatalf("after the observer: %+v", a.Workspace)
+	}
+}
