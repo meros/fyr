@@ -361,7 +361,8 @@ func (s *Sampler) Signals() slots.Signals {
 	} else {
 		l = s.get()
 	}
-	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall), AgentsStall: slots.Stall(l.AgentsMemoryStall), SwapFull: l.AgentsSwapFull}
+	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall), AgentsStall: slots.Stall(l.AgentsMemoryStall), SwapFull: l.AgentsSwapFull,
+		UnitStall: l.UnitMemoryStall, OomdLimit: l.OomdLimit}
 	if l.Capacity != nil {
 		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
 	}

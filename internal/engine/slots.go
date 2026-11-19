@@ -416,6 +416,9 @@ func guardSignals(sig slots.Signals) string {
 	if sig.AgentsStall != "" {
 		out += " agents_stall=" + string(sig.AgentsStall)
 	}
+	if sig.UnitStall != nil && sig.OomdLimit > 0 { // V0.guard-agents-stall
+		out += fmt.Sprintf(" unit_full=%.0f%% oomd_limit=%.0f%%", *sig.UnitStall, sig.OomdLimit)
+	}
 	if sig.SwapFull {
 		out += " swap_full=true"
 	}
@@ -482,6 +485,22 @@ func (e *Engine) publishGuard(now time.Time) {
 	e.guardPub.Store(g)
 }
 
+// guardWhy says why memory is short, for a freeze's notice and log: the
+// headroom first, else the critical stall, the host's or the agents'
+// (V0.guard-agents-stall), else the unit's stall near oomd's limit.
+func guardWhy(sig slots.Signals, p slots.Policy) string {
+	if sig.Headroom != nil && *sig.Headroom < sig.Reserve(p) {
+		return sig.MemoryWhy()
+	}
+	if crit, why := sig.Critical(); crit {
+		return why
+	}
+	if why := sig.OomdWhy(); why != "" {
+		return why
+	}
+	return "memory stalls (critical)"
+}
+
 // freezeVictim is the job to freeze: of the holds not frozen yet, the one whose
 // memory grew most (V0.load-tuning; freezing a job that uses none frees nothing
 // and stops nothing), the newest of equals. V0.guard-wake (decision 0036 E4,
@@ -527,11 +546,14 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		return
 	}
 	sig := e.SlotSignals()
-	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy)) || sig.Stall == slots.StallCritical)
 	// V0.oomd-guard (decision 0036 E2): no timed thaw into a critical stall,
-	// the host's or the agents'.
-	critical := sig.Stall == slots.StallCritical || sig.AgentsStall == slots.StallCritical
-	calm := !critical && sig.Stall != slots.StallElevated && sig.AgentsStall != slots.StallElevated
+	// the host's or the agents'. V0.guard-agents-stall (decision 0036 B, act
+	// before oomd): either makes memory short, and so does the unit's stall
+	// near oomd's limit; the host's alone used to.
+	critical, _ := sig.Critical()
+	nearOomd := sig.NearOomd()
+	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy)) || critical || nearOomd)
+	calm := !critical && !nearOomd && sig.Stall != slots.StallElevated && sig.AgentsStall != slots.StallElevated
 	now := e.Now()
 	e.mu.Lock()
 	if e.frozeHolds == nil {
@@ -717,7 +739,10 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	}
 	// With one thread running (n is 0) the freezes below say themselves why
 	// they skip it.
-	if n := e.maxFrozen(); len(keep) >= max(n, 1) || (len(keep) > 0 && now.Sub(keep[len(keep)-1].at) < AddFreezeAfter) {
+	// V0.guard-agents-stall: near oomd's limit the next freeze does not wait
+	// AddFreezeAfter; oomd kills after its duration (20 s), sooner than that.
+	wait := len(keep) > 0 && now.Sub(keep[len(keep)-1].at) < AddFreezeAfter && !nearOomd
+	if n := e.maxFrozen(); len(keep) >= max(n, 1) || wait {
 		if len(keep) >= n && n > 0 {
 			e.guardOnce(now, "maxfrozen", fmt.Sprintf("not freezing more: %d frozen, at most %d (running threads less one)", len(keep), n))
 		}
@@ -747,10 +772,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	if !e.SlotFreeze(victim.Owner) {
 		return
 	}
-	why := "memory stalls (critical)"
-	if sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy) {
-		why = sig.MemoryWhy()
-	}
+	why := guardWhy(sig, e.SlotPolicy)
 	fj := frozenJob{owner: victim.Owner, since: victim.Since.Format(time.RFC3339Nano), at: now, usec: usec, hasUsec: hasUsec}
 	if e.SlotMem != nil {
 		fj.mem = e.SlotMem(victim.Owner)
@@ -937,10 +959,7 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 		e.guardOnce(now, "skip:"+pick.Thread, fmt.Sprintf("could not freeze thread=%s: no process to move or the cgroup refused", pick.Thread))
 		return false
 	}
-	why := "memory stalls (critical)"
-	if sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy) {
-		why = sig.MemoryWhy()
-	}
+	why := guardWhy(sig, e.SlotPolicy)
 	n := 1
 	if picked.episode.Equal(pick.Since) {
 		n = picked.n + 1
@@ -986,8 +1005,8 @@ func (e *Engine) memoryGuard(s slots.Snapshot) {
 	why := ""
 	if sig.Provider != "" && sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy) {
 		why = sig.MemoryWhy()
-	} else if sig.Stall == slots.StallCritical {
-		why = "memory stalls (critical)"
+	} else if crit, w := sig.Critical(); crit { // V0.guard-agents-stall: the agents' stall too
+		why = w
 	}
 	e.mu.Lock()
 	was := e.memGuard

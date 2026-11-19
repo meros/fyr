@@ -35,6 +35,9 @@ func TestS2DecideByTheRules(t *testing.T) {
 		{"memory short holds even with nothing running", host(1, 0.06, StallOK), nil, job, false, "memory: 6 % free"},
 		{"an elevated stall alone holds nothing (cache reclaim at memory.high)", host(1, 0.6, StallElevated), nil, job, true, ""},
 		{"a critical stall holds", host(1, 0.6, StallCritical), nil, job, false, "memory stalls (critical)"},
+		// V0.guard-agents-stall: the agents' own stall, with the host's fine.
+		{"the agents' critical stall holds", Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.6), Stall: StallOK, AgentsStall: StallCritical, CPU: 4, Memory: 8 * gb}, nil, job, false, "the agents' memory stalls (critical)"},
+		{"near oomd's limit holds", Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.6), Stall: StallOK, UnitStall: f(55), OomdLimit: 60, CPU: 4, Memory: 8 * gb}, nil, job, false, "memory stalls near oomd's limit (55 % of 60 %)"},
 		{"no provider: the fixed count", Signals{}, []Need{job}, job, true, ""},
 		{"no provider: full", Signals{}, []Need{idle, idle}, job, false, "2 of 2 heavy jobs run"},
 		{"no slowdown yet: budget and memory only", Signals{Provider: "proc", Headroom: f(0.6), CPU: 4, Memory: 8 * gb}, []Need{job}, job, true, ""},
