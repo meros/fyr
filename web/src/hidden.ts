@@ -80,7 +80,7 @@ export function projectIsHidden(p: Project, hidden: Hidden): boolean {
 export function applyHidden(s: Store, hidden: Hidden): Store {
   if (!hiddenCount(hidden)) return s;
   const keys = hiddenHostKeys(s.hosts, hidden);
-  const threadGone = (t: Thread) => keys.has(threadHost(t, s.host ?? "")) || (!!t.hostId && keys.has(t.hostId)) || (() => {
+  const threadGone = (t: Thread) => keys.has(threadHost(t)) || (!!t.hostId && keys.has(t.hostId)) || (() => {
     const p = projectOf(t, s.projects);
     return !!p && projectIsHidden(p, hidden);
   })();

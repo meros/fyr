@@ -8,7 +8,6 @@ import { useContext, useState } from "preact/hooks";
 import type { Offer, Thread } from "./types.ts";
 import { pressArgs } from "./offers.ts";
 import { copyToClipboard } from "./copy.ts";
-import { useHosts } from "./host-pick-ui.tsx";
 import { cardLook, copyText, dismissArgs, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
 
 type Run = (action: string, args?: Record<string, unknown>) => unknown;
@@ -110,10 +109,9 @@ export const RunCards = createContext<{ t: Thread; onRun: Run } | null>(null);
 /** V0.run-cards-in-conversation: one request's card, at its place in the conversation; nothing once it is closed. */
 export function RunCardAt({ id }: { id: string }) {
   const c = useContext(RunCards);
-  const hs = useHosts();
   const o = c && requests(c.t).find((x) => x.id === id);
   if (!c || !o) return null;
-  return <RunCard o={o} t={c.t} host={c.t.host || hs.self || undefined} onRun={c.onRun} />;
+  return <RunCard o={o} t={c.t} host={c.t.host || undefined} onRun={c.onRun} />;
 }
 
 /** A command in an agent's message (V0.149 (8)): Copy only, since the agent did not declare it. */

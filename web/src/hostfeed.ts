@@ -124,7 +124,7 @@ export function stampLoad(l: HostLoad, host: string): HostLoad {
 }
 
 export function stampDeploy(d: DeployProgress, host: string): DeployProgress {
-  return d.blocking ? { ...d, blocking: d.blocking.map((x) => ref(host, x)) } : d;
+  return { ...d, host, ...(d.blocking ? { blocking: d.blocking.map((x) => ref(host, x)) } : {}) };
 }
 
 /** One host's state with the host it came from. */

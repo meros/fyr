@@ -2780,7 +2780,7 @@ for (const [label, w, ht] of [
     const by = Object.fromEntries(rows.map((r) => [r.name, r]));
     check(rows.map((r) => r.name).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the order ${JSON.stringify(rows.map((r) => r.name))}`);
     check(rows.every((r) => r.tag === "BUTTON" && r.btns === 0), `${ctx}: a row is not one button or holds a button ${JSON.stringify(rows)}`);
-    check(/^online since \d\d:\d\d · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "This install" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
+    check(/^online since \d\d:\d\d · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
     check(/^offline since \d\d:\d\d · tailnet · id M3RS$/.test(by["host-b"]?.line) && !by["host-b"]?.bad && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
     check(/ · LAN · no id$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
     check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /^hmark/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`); // V0.170: the mark; the line and the pill say the id changed
@@ -2887,7 +2887,7 @@ for (const [label, w, ht] of [
 });
 
 // SPEC V0.127 (decision 0016): from any front the owner configures every host it follows. Providers (with System
-// agents) and Automation show one part per host, this install first, the same on the desktop and the phone. 1 the
+// agents) and Automation show one part per host, in the owner's order (decision 0031 2.6: none is "This install"), the same on the desktop and the phone. 1 the
 // parts, their lines, the offline host read-only with its note; 2 a host's provider is its own page (providers/lab/
 // claude) with its host's quota, and Esc goes back to its row; 3 every change names its host (args.host); 4 the phone's
 // controls are 44 px and nothing runs past the edge.
@@ -2920,7 +2920,7 @@ for (const [label, w, ht] of [
     const parts = await evaluate(PARTS);
     const by = Object.fromEntries(parts.map((x) => [x.host, x]));
     check(parts.map((x) => x.host).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the parts ${JSON.stringify(parts.map((x) => x.host))}`);
-    check(by.desk?.line === "This install" && by.desk.rows.join("|") === "Claude|Claude (work account)|DeepSeek" && by.desk.add === false, `${ctx}: desk ${JSON.stringify(by.desk)}`);
+    check(/^Online since \d\d:\d\d$/.test(by.desk?.line ?? "") && by.desk.rows.join("|") === "Claude|Claude (work account)|DeepSeek" && by.desk.add === false, `${ctx}: desk ${JSON.stringify(by.desk)}`);
     check(/^Online since \d\d:\d\d$/.test(by.lab?.line ?? "") && by.lab.rows.join("|") === "Claude|Z.ai" && !by.lab.note, `${ctx}: lab ${JSON.stringify(by.lab)}`);
     const off = by["host-b"];
     check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^host-b is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
@@ -2984,7 +2984,7 @@ for (const [label, w, ht] of [
 });
 
 // SPEC V0.132: New project, Change folder and New thread browse the chosen host's folders, the same on the desktop
-// and the phone. 1 New project in Settings: the Host field (this install first, the offline host named), lab's folders
+// and the phone. 1 New project in Settings: the Host field (in the owner's order, the offline host named; decision 0031 2.6: no "(this install)"), lab's folders
 // in the picker, project.create with host lab; 2 an offline host says so and nothing is sent; 3 New thread: with no
 // project the owner picks the host and the picker is that host's, thread.create names it; a project locks the host.
 for (const [label, w, ht] of [
@@ -3018,7 +3018,7 @@ for (const [label, w, ht] of [
     if (!(await click(`${root} button`, "New project"))) throw new Error("no New project button");
     await waitFor(`!!document.querySelector('${root} .hostf select')`);
     const opts = await evaluate(`[...document.querySelectorAll('${root} .hostf option')].map(o => o.textContent)`);
-    check(opts.join("|") === "desk (this install)|host-b (offline)|lab|old-nuc", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
+    check(opts.join("|") === "desk|host-b (offline)|lab|old-nuc", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
     if (phone) {
       const h = await evaluate(`document.querySelector('${root} .hostf select').getBoundingClientRect().height`);
       check(h >= 44, `${ctx}: the Host field is ${h} px high`);
@@ -5331,6 +5331,62 @@ try {
   await settle();
   const c = await evaluate(`({ f: ${F}, g: ${G} })`);
   check(c.f.off === '["F7QK-2M9X-AB34-CD56"]' && c.g.n === 0, `${ctx}: a link to a quiet thread before the hold (${JSON.stringify(c)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
+// Decision 0031 test 8, V0.forget-front: the client does not know which front it is connected through. 1 two hosts with
+// one thread id (t_lasso on host-b and on desk) are two rows, each with its own host, and each opens by its ref; 2 the
+// pickers, the Hosts rows and the per-host groups never say "this install"; 3 the rail's foot and the phone's header say
+// how the browser is connected, not the front's name; 4 with one host no host is shown on the rows; Settings → This
+// device names the front. The same on the desktop and the phone.
+for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`0031 test 8 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
+  const ctx = `0031 test 8 ${phone ? "phone" : "desktop"}`;
+try {
+  const go = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, hh);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, ready);
+    }
+    await settle();
+  };
+  const L = phone ? ".m-list" : ".ib .list";
+  const DESK = "F7QK-2M9X-AB34-CD56", B = "M3RS-QX7P-5LKA-2WNE";
+  const ROWS = `[...new Set([...document.querySelectorAll('${L} [data-id]')].map((r) => r.dataset.id))].filter((id) => id.endsWith('/t_lasso'))`;
+  const MARK = (id) => `document.querySelector('${L} [data-id="' + ${JSON.stringify(id)} + '"] .hmark')?.dataset.host ?? null`;
+  // 1. One id on two hosts.
+  await go("?mock=rail&hosts=2&sameid=1", `${ROWS}.length === 2`);
+  const rows = (await evaluate(ROWS)).sort();
+  check(JSON.stringify(rows) === JSON.stringify([`${DESK}/t_lasso`, `${B}/t_lasso`].sort()), `${ctx}: the two threads with one id (${JSON.stringify(rows)})`);
+  const marks = [await evaluate(MARK(`${DESK}/t_lasso`)), await evaluate(MARK(`${B}/t_lasso`))];
+  check(marks[0] === "desk" && marks[1] === "host-b", `${ctx}: each row's host (${JSON.stringify(marks)})`);
+  const TITLE = phone ? "document.querySelector('.m-thread .m-tt')?.textContent ?? ''" : "document.querySelector('.th .tt')?.textContent ?? ''";
+  for (const [id, title] of [[`${DESK}/t_lasso`, "Same id on desk"], [`${B}/t_lasso`, "Fix map lasso"]]) {
+    await go(`?mock=rail&hosts=2&sameid=1&open=${id}`, `(${TITLE}).length > 0`);
+    const got = await evaluate(TITLE);
+    check(got.startsWith(title), `${ctx}: ?open=${id} opened "${got}"`);
+  }
+  // 2. No "this install" in the pickers, the Hosts rows or the per-host groups.
+  const THIS = /this install/i;
+  await go(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", "!!document.querySelector('.hostf select')");
+  const opts = await evaluate(`[...document.querySelectorAll('.hostf option')].map((o) => o.textContent)`);
+  check(opts.length > 1 && !opts.some((o) => THIS.test(o)), `${ctx}: New thread's hosts (${JSON.stringify(opts)})`);
+  await go(phone ? "?mock=rail&hosts=2&settings=hosts" : "?mock=rail&hosts=2&dialog=settings&page=hosts", "document.querySelectorAll('.sr.host').length === 4");
+  const hostRows = await evaluate(`[...document.querySelectorAll('.sr.host')].map((r) => r.textContent)`);
+  check(!hostRows.some((t) => THIS.test(t)), `${ctx}: a Hosts row says this install (${JSON.stringify(hostRows)})`);
+  await go(phone ? "?mock=rail&hosts=2&settings=providers" : "?mock=rail&hosts=2&dialog=settings&page=providers", "document.querySelectorAll('.hpart').length === 4");
+  const lines = await evaluate(`[...document.querySelectorAll('.hpart-h')].map((e) => e.textContent)`);
+  check(!lines.some((t) => THIS.test(t)), `${ctx}: a host group says this install (${JSON.stringify(lines)})`);
+  // 3, 4. One host: the connection in words, no host on the rows, This device names the front.
+  await go("?mock=rail", `!!document.querySelector('${L} [data-id]')`);
+  const one = await evaluate(`({ conn: document.querySelector(${JSON.stringify(phone ? ".m-conn .ell" : ".rail .foot .hn")})?.textContent ?? null, marks: document.querySelectorAll('${L} [data-id] .hmark').length })`);
+  check(one.conn === "Connected" && one.marks === 0, `${ctx}: one host (${JSON.stringify(one)})`);
+  await go(phone ? "?mock=rail&settings=device" : "?mock=rail&dialog=settings&page=device", "!!document.querySelector('.sr.front')");
+  const front = await evaluate(`document.querySelector('.sr.front')?.textContent ?? ''`);
+  check(/Connected through\s*desk/.test(front), `${ctx}: This device (${JSON.stringify(front)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }

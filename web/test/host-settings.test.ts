@@ -11,8 +11,8 @@ const now = Date.parse("2026-11-16T20:00:00Z");
 const iso = (minAgo: number) => new Date(now - minAgo * 60_000).toISOString();
 
 test("V0.126 (4): one install, or a front that lists one host, is one ungrouped part that names no host", () => {
-  assert.deepEqual(settingsHosts(undefined, "desk"), [{ id: "", name: "", label: "desk", self: true, online: true }]);
-  assert.deepEqual(settingsHosts([{ name: "desk", online: true }], "desk"), [{ id: "", name: "", label: "desk", self: true, online: true }]);
+  assert.deepEqual(settingsHosts(undefined), [{ id: "", name: "", label: "", online: true }]);
+  assert.deepEqual(settingsHosts([{ name: "desk", online: true }]), [{ id: "", name: "", label: "desk", online: true }]);
 });
 
 test("V0.127, V0.132: several hosts are one group each, in the owner's host order (the front's)", () => {
@@ -22,45 +22,43 @@ test("V0.127, V0.132: several hosts are one group each, in the owner's host orde
       { name: "desk", online: true, since: iso(180) },
       { name: "host-b", online: false, since: iso(25) },
     ],
-    "desk",
   );
-  assert.deepEqual(hs.map((h) => [h.name, h.self, h.online]), [
-    ["lab", false, true],
-    ["desk", true, true],
-    ["host-b", false, false],
+  assert.deepEqual(hs.map((h) => [h.name, h.online]), [
+    ["lab", true],
+    ["desk", true],
+    ["host-b", false],
   ]);
   assert.equal(hs[1].label, "desk");
 });
 
-test("V0.126 (4): a group's line: this install, online, or offline since when", () => {
+test("V0.126 (4): a group's line: online, or offline since when; decision 0031 2.6: no group is \"This install\"", () => {
   const [self, lab, off] = settingsHosts(
     [
       { name: "desk", online: true, since: iso(180) },
       { name: "lab", online: true, since: iso(40) },
       { name: "host-b", online: false, since: iso(25) },
     ],
-    "desk",
   );
-  assert.equal(groupLine(self, now), "This install");
+  assert.equal(groupLine(self, now), `Online since ${dayTime(iso(180), now)}`);
   assert.equal(groupLine(lab, now), `Online since ${dayTime(iso(40), now)}`);
   assert.equal(groupLine(off, now), `Offline since ${dayTime(iso(25), now)}`);
 });
 
 test("V0.126 (3): an offline host's settings are what Fyr last read, said with the time, and cannot be changed", () => {
-  const [, off] = settingsHosts([{ name: "desk", online: true }, { name: "host-b", online: false, since: iso(25) }], "desk");
+  const [, off] = settingsHosts([{ name: "desk", online: true }, { name: "host-b", online: false, since: iso(25) }]);
   assert.equal(
     readOnlyNote(off, iso(26), now),
     `host-b is offline. These are its settings as Fyr last read them at ${dayTime(iso(26), now)}; nothing here can be changed until it is back.`,
   );
   assert.equal(readOnlyNote(off, null, now), "host-b is offline, and Fyr has not read its settings yet. They show when it is back.");
-  const [self] = settingsHosts(undefined, "desk");
+  const [self] = settingsHosts(undefined);
   assert.equal(readOnlyNote(self, null, now), "");
 });
 
 test("decision 0031: a part carries its host's install id, which every call of it names", () => {
-  const parts = settingsHosts([{ id: "AAAA", name: "desk", online: true }, { id: "BBBB", name: "lab", online: true }], "desk");
+  const parts = settingsHosts([{ id: "AAAA", name: "desk", online: true }, { id: "BBBB", name: "lab", online: true }]);
   assert.deepEqual(parts.map((p) => [p.name, p.id]), [["desk", "AAAA"], ["lab", "BBBB"]]);
-  assert.deepEqual(settingsHosts([{ id: "AAAA", name: "desk", online: true }], "desk").map((p) => [p.name, p.id]), [["", "AAAA"]], "one host: one part with no name, with its id");
+  assert.deepEqual(settingsHosts([{ id: "AAAA", name: "desk", online: true }]).map((p) => [p.name, p.id]), [["", "AAAA"]], "one host: one part with no name, with its id");
 });
 
 test("V0.126 (4): a provider's page names its host in the URL, so two hosts' 'claude' are two pages", () => {

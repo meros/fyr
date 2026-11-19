@@ -16,7 +16,7 @@ import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
 import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
 import { HomeScreen } from "./home-ui.tsx";
 import { stripHosts } from "./load.ts";
-import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import { SECTIONS, connLabel, connWords, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -64,7 +64,7 @@ import type { PushStatus } from "./push.ts";
 import { QuotaList, ThreadQuotaFigure, useThreadQuotaCard } from "./quota-ui.tsx";
 import { CardView } from "./card-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { hostLabel, hostOf, hostTag, offlineLine, profilesOfHost, threadProvider, type HostInfo } from "./hosts.ts";
+import { hostOf, hostTag, offlineLine, profilesOfHost, threadProvider, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
 const I = {
@@ -253,11 +253,6 @@ export interface PhoneProps {
   status?: ComponentChildren;
 }
 
-/** The host's name in the header (the mock says so). */
-function useHostName(p: PhoneProps): string {
-  return hostLabel(p.store.host, useApi().mock);
-}
-
 const STORAGE_IOS = "fyr.iosRowDismissed";
 
 function store(key: string, value: string | null) {
@@ -390,7 +385,6 @@ function MBottomBar(p: PhoneProps) {
 
 function MInbox(p: PhoneProps) {
   const queue = useSlotQueue();
-  const hostName = useHostName(p);
   const listRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<SectionKey | null>("needs");
   const [iosDismissed, setIosDismissed] = useState(() => load(STORAGE_IOS) === "1");
@@ -454,9 +448,10 @@ function MInbox(p: PhoneProps) {
           </button>
           {/* V0.166: with several hosts the load strip names each one, so the connection keeps only its dot (the name on
               hover and for the screen reader): a 360 px header has no room for both. */}
-          <span class={`m-conn ${p.store.conn}${strip.length > 1 ? " dot" : ""}`} title={`${hostName}: ${p.store.conn}`}>
+          {/* Decision 0031 2.6: the connection in the same words as the desktop rail's foot, through every front. */}
+          <span class={`m-conn ${p.store.conn}${strip.length > 1 ? " dot" : ""}`} title={connWords(p.store.conn)}>
             <i />
-            <span class="ell">{hostName}</span>
+            <span class="ell">{connLabel(p.store.conn)}</span>
           </span>
           <span class="sp" />
           {/* V0.166: each host's load and heavy jobs, as on the desktop rail; a tap opens the details */}
@@ -495,7 +490,7 @@ function MInbox(p: PhoneProps) {
       {!p.list.selecting && <FilterRow f={p.filters} now={p.now} unlock={p.inbox.unlock} />}
       {p.store.conn === "offline" && (
         <div class="m-cstrip">
-          <span class="ell">Reconnecting to {hostName}…</span>
+          <span class="ell">Reconnecting…</span>
         </div>
       )}
       {showIos && !p.list.selecting && (
@@ -876,7 +871,6 @@ function MSearch(p: PhoneProps) {
 
 function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   const t = p.t;
-  const hostName = useHostName(p);
   const decision = currentDecision(t);
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => setCollapsed(false), [decision?.id]);
@@ -998,7 +992,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
         <MAsk d={decision} card={p.open.card} onCard={p.open.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.open.submitAsk(decision).then(afterAnswer)} />
       )}
       {decision && decision.kind !== "ask" && (
-        <MAllow d={decision} t={t} host={hostName} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} commit={(ok) => p.open.allow(decision, ok).then(afterAnswer)} />
+        <MAllow d={decision} t={t} host={t.host ?? ""} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} commit={(ok) => p.open.allow(decision, ok).then(afterAnswer)} />
       )}
       {!decision && nextOffer && (
         <div class="m-abar">
@@ -1450,10 +1444,10 @@ function Item({ icon, label, sub, right, disabled, onClick }: { icon?: Component
 }
 
 /** The More sheet's Settings row: what it holds, and at its right what needs the owner ("1 needs a login"). */
-function MSettingsItem({ hosts, self, onClick }: { hosts: HostInfo[]; self: string; onClick(): void }) {
+function MSettingsItem({ hosts, onClick }: { hosts: HostInfo[]; onClick(): void }) {
   // V0.125: the hosts that need the owner add to the count, as the Hosts badge does on the Settings screen. V0.127:
   // the providers of every host count.
-  const need = settingsNeed(useProvidersNeed(useApi(), hosts, self), hostsNeed(hosts));
+  const need = settingsNeed(useProvidersNeed(useApi(), hosts), hostsNeed(hosts));
   return <Item label="Settings" sub="Providers, automation, projects, hosts, this device" right={need || undefined} onClick={onClick} />;
 }
 
@@ -1494,7 +1488,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.list.setSelecting(true))} />
         <Item label="Status" sub="What needs you, what runs, what happened" onClick={() => p.nav.replace({ screen: { name: "status" }, sheet: null })} />
         <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
-        <MSettingsItem hosts={p.store.hosts} self={p.store.host} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
+        <MSettingsItem hosts={p.store.hosts} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />
         <Item label="Adopt from T3" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "adopt" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
@@ -1753,7 +1747,7 @@ function MProject(p: PhoneProps & { id: string }) {
     <SetContext.Provider value={{ readOnly: offline, phone: true, saved: sv.mark }}>
     <div class="m-screen m-project">
       <MHeader onBack={p.nav.back} title={pr?.name ?? "Project"} right={<SavedMark shown={sv.shown} />} />
-      {offline && <div class="m-ban">No connection to {p.store.host || "the host"}. Settings show what was last read and cannot be changed until it is back.</div>}
+      {offline && <div class="m-ban">No connection to Fyr. Settings show what was last read and cannot be changed until it is back.</div>}
       <div class="m-nbody">
         <div class={`set phone${offline ? " ro" : ""}`}>
         {pr ? (

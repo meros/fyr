@@ -103,9 +103,20 @@ export function createMockApi(scenario: string): Api {
   const oneHostId = server.state().hostId ?? ""; // read once: stamping runs per thread
   // A front with one host and no list keeps the fixtures' ids as they are (the layout test names them in its selectors);
   // with several hosts the records are refs, as the real front's are.
-  const stampT = (t: ThreadDTO): ThreadDTO => (startHosts.length ? stampThread(t, infoOf(t.host)) : { ...t, hostId: oneHostId });
-  const stampP = (p: Project): Project => (startHosts.length ? stampProject(p, infoOf(p.host)) : { ...p, hostId: oneHostId });
-  const stampState = (st: ReturnType<typeof server.state>) => ({ ...st, threads: st.threads.map(stampT), projects: st.projects.map(stampP) });
+  // Decision 0031 2.4: a record's host is the host whose state it came in, so the one host's name is stamped too.
+  const oneHost = server.state().host ?? "";
+  const stampT = (t: ThreadDTO): ThreadDTO => (startHosts.length ? stampThread(t, infoOf(t.host)) : { ...t, host: t.host || oneHost, hostId: oneHostId });
+  const stampP = (p: Project): Project => (startHosts.length ? stampProject(p, infoOf(p.host)) : { ...p, host: p.host || oneHost, hostId: oneHostId });
+  // Decision 0031 2.6: a front lists every host it follows, its own too; a front with one host lists that one, reached
+  // over the pipe.
+  const oneHostRow = (st: ReturnType<typeof server.state>): HostInfo => ({ name: st.host ?? "", online: true, since: st.now, ...(st.hostId ? { id: st.hostId } : {}), ...(st.machine ? { machine: st.machine } : {}), link: { state: "up", via: "pipe" } });
+  // Decision 0031 test 8: &sameid=1 (with &hosts=2) gives desk a thread with host-b's thread's id (t_lasso): two records.
+  const sameId = (ts: ThreadDTO[]): ThreadDTO[] => {
+    if (q.get("sameid") !== "1" || !startHosts.length) return ts;
+    const src = ts.find((t) => t.rid === "t_lasso");
+    return src ? [...ts, stampThread({ ...src, id: "t_lasso", rid: undefined, host: "desk", hostOffline: undefined, title: "Same id on desk", projectId: undefined, parent: undefined } as ThreadDTO, infoOf("desk"))] : ts;
+  };
+  const stampState = (st: ReturnType<typeof server.state>) => ({ ...st, ...(st.hosts?.length ? {} : { hosts: [oneHostRow(st)] }), threads: sameId(st.threads.map(stampT)), projects: st.projects.map(stampP) });
   let watch = initialBuildWatch();
   // V0.121: the owner's project order, the front's own (&order=p_fyr,p_web sets one; none: by name).
   let order: string[] | null = q.get("order")?.split(",").filter(Boolean) ?? null;

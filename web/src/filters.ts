@@ -69,9 +69,9 @@ export function clickHost(off: readonly string[], hosts: readonly Pick<HostChip,
   return hosts.some((h) => h.key === key && h.last) ? [] : toggleHost(off, key);
 }
 
-/** The host a thread runs on: its own, else the front's own host (a host older than V0.51 names none). */
-export function threadHost(t: Pick<Thread, "host">, self: string): string {
-  return t.host || self;
+/** The host a thread runs on: the host whose state it came in (decision 0031 2.4); no fallback to the front's own. */
+export function threadHost(t: Pick<Thread, "host">): string {
+  return t.host ?? "";
 }
 
 /** Whether the list shows the thread: pinned (always open), or in a section that is not folded. */
@@ -87,12 +87,12 @@ export function hostKey(h: Pick<HostInfo, "id" | "name">): string {
 }
 
 /** The key of the host a thread runs on (hostKey). */
-export function threadHostKey(t: Pick<Thread, "host" | "hostId">, self: string): string {
-  return t.hostId || threadHost(t, self);
+export function threadHostKey(t: Pick<Thread, "host" | "hostId">): string {
+  return t.hostId || threadHost(t);
 }
 
-function hostOk(t: Thread, off: readonly string[], self: string): boolean {
-  return !off.length || !off.includes(threadHostKey(t, self));
+function hostOk(t: Thread, off: readonly string[]): boolean {
+  return !off.length || !off.includes(threadHostKey(t));
 }
 
 function projectOk(t: Thread, project: string | null, projects: Project[]): boolean {
@@ -105,11 +105,11 @@ export function liveProject(sel: FilterSel, projects: Project[]): string | null 
 }
 
 /** The threads both rows let through: on a host that is on, and in the picked project. */
-export function applyFilters(threads: Record<string, Thread>, sel: FilterSel, projects: Project[], self: string): Record<string, Thread> {
+export function applyFilters(threads: Record<string, Thread>, sel: FilterSel, projects: Project[]): Record<string, Thread> {
   const project = liveProject(sel, projects);
   if (!sel.hostsOff.length && !project) return threads;
   const out: Record<string, Thread> = {};
-  for (const t of Object.values(threads)) if (hostOk(t, sel.hostsOff, self) && projectOk(t, project, projects)) out[t.id] = t;
+  for (const t of Object.values(threads)) if (hostOk(t, sel.hostsOff) && projectOk(t, project, projects)) out[t.id] = t;
   return out;
 }
 
@@ -118,8 +118,6 @@ export interface FilterInput {
   projects: Project[];
   /** the front's hosts, in the owner's order (V0.132) */
   hosts: HostInfo[];
-  /** the front's own host name */
-  self: string;
   sel: FilterSel;
   open: Open;
   now: number;
@@ -140,14 +138,14 @@ export function activeFilters(o: FilterInput): { hosts: HostChip[]; projects: Pr
   const nameOf = new Map<string, string>();
   for (const t of Object.values(shown)) {
     if (!inView(t, o.open)) continue;
-    const k = threadHostKey(t, o.self);
+    const k = threadHostKey(t);
     perHost.set(k, (perHost.get(k) ?? 0) + 1);
-    nameOf.set(k, threadHost(t, o.self));
+    nameOf.set(k, threadHost(t));
   }
   // Row 2 counts only the threads on the hosts that are on.
   const perProject = new Map<string, number>();
   for (const t of Object.values(reach)) {
-    if (!inView(t, o.open) || !hostOk(t, o.sel.hostsOff, o.self)) continue;
+    if (!inView(t, o.open) || !hostOk(t, o.sel.hostsOff)) continue;
     const id = projectOf(t, o.projects)?.id;
     if (id) perProject.set(id, (perProject.get(id) ?? 0) + 1);
   }

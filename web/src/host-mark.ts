@@ -81,9 +81,9 @@ export interface HostMark {
 
 /** The mark of the host named `name` among the front's hosts (a host the front no longer lists: from its name). The
  *  owner's icon and colour (`marks`, by install id) come first; a value this client does not know is left out. */
-export function hostMarkOf(name: string, hosts: readonly HostInfo[], colors?: Map<string, string>, self?: { name: string; machine?: string }, marks: OwnerMarks = {}): HostMark {
-  // One host: hosts[] is empty, and this install's own machine comes from the state.
-  const h = hosts.find((x) => x.name === name) ?? (self && self.name === name ? { name, online: true, machine: self.machine } : undefined);
+export function hostMarkOf(name: string, hosts: readonly HostInfo[], colors?: Map<string, string>, marks: OwnerMarks = {}): HostMark {
+  // Decision 0031 2.6: every host, the front's own too, is in hosts[]; there is no other source of a host's machine.
+  const h = hosts.find((x) => x.name === name);
   const own = (h as HostInfo | undefined)?.id ? marks[(h as HostInfo).id!] : undefined;
   const icon = ownerIcon(own?.icon);
   const cs = colors ?? hostColors(hosts, marks);

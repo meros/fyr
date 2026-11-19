@@ -180,7 +180,7 @@ export function AdoptDialog(p: { load(host?: string): Promise<T3Candidate[]>; no
   const [busy, setBusy] = useState(false);
   // V0.139: T3's threads are a host's; the owner picks which (the first in the host order), and they run there.
   const hs = useHosts();
-  const [host, setHost] = useState(() => hostChoices(hs.hosts, hs.self)[0]?.name ?? "");
+  const [host, setHost] = useState(() => hostChoices(hs.hosts)[0]?.name ?? "");
 
   useEffect(() => {
     setCands(null);

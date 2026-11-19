@@ -56,22 +56,22 @@ test("hostMarkOf: glyph, colour, offline, and the words for its tooltip", () => 
   assert.ok(PALETTE_NAMES.includes(gone.color), "a host the front no longer lists: a colour from its name");
 });
 
-test("one host: this install's own machine, from the state", () => {
-  assert.equal(hostMarkOf("solo", [], undefined, { name: "solo", machine: "laptop" }).glyph, "laptop");
-  assert.equal(hostMarkOf("other", [], undefined, { name: "solo", machine: "laptop" }).glyph, "server");
+test("one host: its machine from hosts[], as any host's (decision 0031 2.6: the front lists its own host)", () => {
+  assert.equal(hostMarkOf("solo", [{ name: "solo", online: true, machine: "laptop" }]).glyph, "laptop");
+  assert.equal(hostMarkOf("other", [{ name: "solo", online: true, machine: "laptop" }]).glyph, "server");
 });
 
 // SPEC 0.5 V0.171: the owner's icon and colour, by install id, override the automatic ones.
 test("the owner's mark: a glyph name or an emoji for the icon, a palette name for the colour", () => {
   const hosts = [H("desk", { id: "A", machine: "laptop" }), H("srv", { id: "B", machine: "server" })];
   const marks = { A: { icon: "house", color: "teal" }, B: { icon: "🍓" } };
-  const a = hostMarkOf("desk", hosts, hostColors(hosts, marks), undefined, marks);
+  const a = hostMarkOf("desk", hosts, hostColors(hosts, marks), marks);
   assert.deepEqual([a.glyph, a.emoji, a.color, a.auto], ["house", undefined, "teal", false]);
-  const b = hostMarkOf("srv", hosts, hostColors(hosts, marks), undefined, marks);
+  const b = hostMarkOf("srv", hosts, hostColors(hosts, marks), marks);
   assert.deepEqual([b.glyph, b.emoji, b.auto], [null, "🍓", false]);
   // Unknown values are ignored: the automatic glyph and colour.
   const odd = { A: { icon: "not-an-icon-name", color: "amber" } };
-  const c = hostMarkOf("desk", hosts, hostColors(hosts, odd), undefined, odd);
+  const c = hostMarkOf("desk", hosts, hostColors(hosts, odd), odd);
   assert.equal(c.glyph, "laptop");
   assert.notEqual(c.color, "amber");
   assert.equal(hostMarkOf("desk", hosts).auto, true);

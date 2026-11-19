@@ -56,9 +56,9 @@ test("V0.125: Hosts: the count, what is offline, what needs the owner", () => {
   const on = { name: "a", online: true };
   const off = { name: "b", online: false };
   const changed = { name: "c", online: true, id: "B7LA-0000-0000-0000", idWas: "AX2C-0000-0000-0000" };
-  assert.equal(hostsSummary([]), "This install only");
-  assert.equal(hostsSummary(undefined), "This install only");
-  assert.equal(hostsSummary([on]), "This install only");
+  assert.equal(hostsSummary([]), "One host");
+  assert.equal(hostsSummary(undefined), "One host");
+  assert.equal(hostsSummary([on]), "One host");
   assert.equal(hostsSummary([on, on, on]), "3 hosts");
   assert.equal(hostsSummary([on, off, on]), "3 hosts · 1 offline");
   assert.equal(hostsSummary([on, off, off]), "3 hosts · 2 offline");

@@ -1,6 +1,6 @@
 // SPEC V0.126 (decision 0016): from any front the owner configures every host it follows, with the controls they would
-// have connected to that host directly. Providers (with System agents) and Automation show one group per host, this
-// install first; every read and command of a group names its host, and the front sends it there. An offline host shows
+// have connected to that host directly. Providers (with System agents) and Automation show one group per host, in the
+// owner's host order (decision 0031 2.6: the same through every front); every read and command of a group names its host, and the front sends it there. An offline host shows
 // what the front last read from it, read-only. One install (or a front with one host) is one part without a heading,
 // as before. Pure.
 import { dayTime } from "./format.ts";
@@ -14,8 +14,6 @@ export interface SettingsHost {
   name: string;
   /** the name shown */
   label: string;
-  /** this install */
-  self: boolean;
   online: boolean;
   /** online: since when; offline: since when it was unreachable */
   since?: string;
@@ -23,15 +21,14 @@ export interface SettingsHost {
 
 /** The parts of a per-host page: one without a host name when the front has one host or none, else one per host, in
  *  the owner's host order (V0.132; the front sends hosts[] in it). */
-export function settingsHosts(hosts: Pick<HostInfo, "id" | "name" | "online" | "since">[] | undefined, self: string): SettingsHost[] {
+export function settingsHosts(hosts: Pick<HostInfo, "id" | "name" | "online" | "since">[] | undefined): SettingsHost[] {
   const hs = hosts ?? [];
-  if (hs.length <= 1) return [{ id: hs[0]?.id ?? "", name: "", label: hs[0]?.name || self, self: true, online: true }];
-  return hs.map((h) => ({ id: h.id ?? "", name: h.name, label: h.name, self: h.name === self, online: h.online, ...(h.since ? { since: h.since } : {}) }));
+  if (hs.length <= 1) return [{ id: hs[0]?.id ?? "", name: "", label: hs[0]?.name ?? "", online: true }];
+  return hs.map((h) => ({ id: h.id ?? "", name: h.name, label: h.name, online: h.online, ...(h.since ? { since: h.since } : {}) }));
 }
 
-/** The line under a group's heading: "This install", "Online since 08:31", "Offline since 19:40". */
+/** The line under a group's heading: "Online since 08:31", "Offline since 19:40". */
 export function groupLine(h: SettingsHost, now: number): string {
-  if (h.self) return "This install";
   const at = dayTime(h.since, now);
   return `${h.online ? "Online" : "Offline"}${at ? ` since ${at}` : ""}`;
 }

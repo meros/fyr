@@ -103,10 +103,10 @@ export function hostsNeed(hosts: Pick<HostInfo, "online" | "idWas">[] | undefine
   return (hosts ?? []).filter((h) => h.idWas).length;
 }
 
-/** V0.125: "3 hosts", "3 hosts · 1 offline", "3 hosts · 1 needs you"; one install is "This install only". */
+/** V0.125: "3 hosts", "3 hosts · 1 offline", "3 hosts · 1 needs you"; one host is "One host" (decision 0031 2.6: the same through every front). */
 export function hostsSummary(hosts: Pick<HostInfo, "online" | "idWas">[] | undefined): string {
   const hs = hosts ?? [];
-  if (hs.length <= 1) return "This install only";
+  if (hs.length <= 1) return "One host";
   const need = hostsNeed(hs);
   const off = hs.filter((h) => !h.online).length;
   const tail = need ? ` · ${need === 1 ? "1 needs you" : `${need} need you`}` : off ? ` · ${off} offline` : "";

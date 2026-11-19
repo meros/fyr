@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
-import { hostForProject, hostIdByName, hostLine, linkLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
+import { hostForProject, hostIdByName, hostLine, linkLine, hostState, howIn, profilesOn, hostRoute, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { useHosts } from "./host-pick-ui.tsx";
 import { resolveRef } from "./store.ts";
 import { hostUrl } from "./urls.ts";
@@ -114,11 +114,10 @@ export interface ProjectActions {
 
 export interface SettingsProps {
   api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct">>;
-  host: string;
-  /** V0.51: the front's hosts with their state */
+  /** decision 0031 2.6: the name of the front this browser is connected through, for This device only */
+  front: string;
+  /** V0.51: the front's hosts with their state, the front's own among them */
   hosts?: HostInfo[];
-  /** V0.125: this install's id (the state's hostId, V0.124), shown when the front lists no hosts */
-  hostId?: string;
   /** V0.125: the state's user, for How this browser gets in */
   user?: string;
   phone?: boolean;
@@ -142,7 +141,7 @@ export interface SettingsProps {
   projectActions: ProjectActions;
 }
 
-const OFFLINE = (host: string) => `No connection to ${host || "the host"}. Settings show what was last read and cannot be changed until it is back.`;
+const OFFLINE = () => `No connection to Fyr. Settings show what was last read and cannot be changed until it is back.`;
 
 // ---- the data every page and the nav read; each part of each host loads by itself ----
 
@@ -170,7 +169,7 @@ const EMPTY_SLICE: HostSlice = { providers: null, provErr: null, found: [], depl
  *  `args.host`); the front sends them there. One host (or none) is one part that names no host, as before. */
 function useSettingsData(p: SettingsProps, saved: () => void) {
   const api = p.api;
-  const hosts = settingsHosts(p.hosts, p.host);
+  const hosts = settingsHosts(p.hosts);
   /** The install id a part's host name stands for: every call names its host by id (decision 0031). */
   const hid = (name: string) => hostIdByName(p.hosts, name);
   const [slices, setSlices] = useState<Record<string, HostSlice>>({});
@@ -309,9 +308,9 @@ type Data = AllSettings["all"][number];
 
 /** What needs the owner on the Providers page, for the phone's More sheet ("1 needs a login"); "" while unknown. V0.127:
  *  over every host the front follows. */
-export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[], self = ""): string {
+export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[]): string {
   const [v, setV] = useState("");
-  const names = settingsHosts(hosts, self).map((h) => h.name);
+  const names = settingsHosts(hosts).map((h) => h.name);
   const hid = (name: string) => hostIdByName(hosts, name);
   useEffect(() => {
     let live = true;
@@ -392,7 +391,7 @@ export function Settings(p: SettingsProps) {
     return (
       <SetContext.Provider value={env}>
         {p.header?.(view ? view.title : "Settings", view ? <SavedMark shown={sv.shown} /> : undefined)}
-        {p.offline && <div class="m-ban">{OFFLINE(p.host)}</div>}
+        {p.offline && <div class="m-ban">{OFFLINE()}</div>}
         <div class="m-nbody" ref={pane}>
           <div class={`set phone${p.offline ? " ro" : ""}`}>
             {view ? (
@@ -418,7 +417,7 @@ export function Settings(p: SettingsProps) {
       <div class={`set stx${p.offline ? " ro" : ""}`}>
         {nav}
         <div class="stp" ref={pane} data-page={pageKey(at)}>
-          {p.offline && <div class="m-ban d">{OFFLINE(p.host)}</div>}
+          {p.offline && <div class="m-ban d">{OFFLINE()}</div>}
           <div class="stp-h">
             {v.parent && (
               <>
@@ -579,8 +578,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       return { title: "Projects", ...projectsPage(p, ui) };
     }
     case "hosts": {
-      const self = p.host || "local";
-      const rows = hostRows(p.hosts, self, p.hostId ?? "");
+      const rows = p.hosts ?? [];
       const h = at.sub ? rows.find((x) => x.name === at.sub) : undefined;
       // An unknown name shows the Hosts page.
       if (h)
@@ -588,7 +586,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           title: <span class="mono">{h.name}</span>,
           parent: "Hosts",
           end: <HostPill h={h} />,
-          body: <HostPage key={h.name} h={h} self={self} api={p.api} now={p.now} />,
+          body: <HostPage key={h.name} h={h} api={p.api} now={p.now} />,
         };
       const runOrder = async (names: string[]) => {
         const r = await p.api.frontCommand("front.hostOrder", { ids: names.map((n) => hostIdByName(p.hosts, n)).filter(Boolean) }); // V0.132
@@ -599,7 +597,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
         end: <HostsReorderButton ui={ui} n={rows.length} />,
         body: (
           <>
-            <HostsPage rows={rows} self={self} now={p.now} go={go} ui={ui} run={runOrder} />
+            <HostsPage rows={rows} now={p.now} go={go} ui={ui} run={runOrder} />
             {p.api.peerState && p.api.peerAct && <PeersPanel api={{ peerState: p.api.peerState, peerAct: p.api.peerAct }} st={peers} />}
           </>
         ),
@@ -609,7 +607,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       if (!p.api.authState || !p.api.authAct) return { title: "Devices", body: <Empty text="This host cannot list devices." /> };
       return { title: "Devices", lede: "Who is signed in to this install, and how a new device gets in.", body: <DevicesPage api={{ authState: p.api.authState, authAct: p.api.authAct }} now={p.now} st={auth} /> };
     case "device":
-      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} hosts={p.hosts ?? []} projects={p.projects} /> };
+      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} front={p.front} hosts={p.hosts ?? []} projects={p.projects} /> };
   }
 }
 
@@ -1681,20 +1679,15 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
 /** One host in Settings → Hosts, the same row on the desktop and the phone (the phone's 56 px and larger type come from
  *  the one `.set.phone` rule set, for touch): the state mark, the name, one line (state, route, short id); a changed id
  *  replaces the line and is the only red row. The row opens the host's page, where every action is. */
-function HostRow({ h, self, now, go, still }: { h: HostInfo; self: string; now: number; go(r: PageRef): void; /** the phone's Reorder mode: the row does not open */ still?: boolean }) {
-  const line = hostLine(h, self, now);
+function HostRow({ h, now, go, still }: { h: HostInfo; now: number; go(r: PageRef): void; /** the phone's Reorder mode: the row does not open */ still?: boolean }) {
+  const line = hostLine(h, now);
   const link = linkLine(h.link, now); // decision 0030 Amendment 1: how the front reaches it, and why not
   return (
     <Row
       class="host"
       onClick={still ? undefined : () => go({ page: "hosts", sub: h.name })}
       lead={<HostMark name={h.name} size={24} />}
-      title={
-        <>
-          {h.name}
-          {h.name === self && <span class="tag">This install</span>}
-        </>
-      }
+      title={h.name}
       mono
       desc={h.idWas ? undefined : link ? <>{line}<span class="hlink">{link}</span></> : line}
       error={h.idWas ? line : null}
@@ -1720,7 +1713,7 @@ const HOSTS_FOOT = (
 /** V0.132: the owner orders the hosts with the one reorder control (V0.119 (4)): a grip on the desktop, a Reorder mode
  *  with ↑ and ↓ on the phone. The first is the default host. Each move saves at once (front.hostOrder, kept on every
  *  host) and shows on this device first. */
-function HostsPage({ rows, self, now, go, ui, run }: { rows: HostInfo[]; self: string; now: number; go(r: PageRef): void; ui: PageUi; run(names: string[]): Promise<string | null> }) {
+function HostsPage({ rows, now, go, ui, run }: { rows: HostInfo[]; now: number; go(r: PageRef): void; ui: PageUi; run(names: string[]): Promise<string | null> }) {
   const env = useSet();
   const ro = useReorder(
     rows.map((h) => h.name),
@@ -1754,15 +1747,15 @@ function HostsPage({ rows, self, now, go, ui, run }: { rows: HostInfo[]; self: s
         if (mode)
           return (
             <div key={h.name} class={`hreo mvrow ${r.class}`} ref={r.ref} data-sub={h.name}>
-              <HostRow h={h} self={self} now={now} go={go} still />
+              <HostRow h={h} now={now} go={go} still />
               <MoveControls ro={ro} i={i} name={h.name} />
             </div>
           );
-        if (!can || env.phone) return <HostRow key={h.name} h={h} self={self} now={now} go={go} />;
+        if (!can || env.phone) return <HostRow key={h.name} h={h} now={now} go={go} />;
         return (
           <div key={h.name} class={`hreo g ${r.class}`} ref={r.ref}>
             <Grip {...ro.grip(i, h.name)} />
-            <HostRow h={h} self={self} now={now} go={go} />
+            <HostRow h={h} now={now} go={go} />
           </div>
         );
       })}
@@ -1939,12 +1932,13 @@ function HostMarkGroup({ h, api }: { h: HostInfo; api: SettingsProps["api"] }) {
   );
 }
 
-function HostPage({ h, self, api, now }: { h: HostInfo; self: string; api: SettingsProps["api"]; now: number }) {
+function HostPage({ h, api, now }: { h: HostInfo; api: SettingsProps["api"]; now: number }) {
   const env = useSet();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const isSelf = h.name === self;
-  const route = routeOf(h.url, isSelf, h.found);
+  // Decision 0031 2.6: the host the front runs in is the one its link is the pipe to, a fact about the link.
+  const isSelf = h.link?.via === "pipe";
+  const route = hostRoute(h);
   const trust = async () => {
     setBusy(true);
     const r = await api.frontCommand("front.hostId", { host: h.id });
@@ -1965,7 +1959,7 @@ function HostPage({ h, self, api, now }: { h: HostInfo; self: string; api: Setti
           class="trust"
           title={`Trust ${shortID(h.id)} as ${h.name}`}
           desc={err ? undefined : "Fyr then remembers the new id and stops warning."}
-          error={err ? `Not trusted: ${self} answered “${err}”. Nothing changed.` : null}
+          error={err ? `Not trusted: Fyr answered “${err}”. Nothing changed.` : null}
           end={
             <button type="button" class="btn" disabled={env.readOnly || busy} onClick={() => void trust()}>
               Trust {shortID(h.id)}
@@ -2170,7 +2164,7 @@ function ShownHere({ d, hosts, projects }: { d: SettingsDevice; hosts: HostInfo[
 
 /** Notifications (V0.15), Theme, Show tool details, Install: kept in this browser. Never read-only: none of it goes to
  *  the host except the push subscription, which says so when it fails. */
-function DevicePage({ d, user, hosts, projects }: { d: SettingsDevice; user: string; hosts: HostInfo[]; projects: Project[] }) {
+function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; user: string; front: string; hosts: HostInfo[]; projects: Project[] }) {
   const [tested, setTested] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2234,6 +2228,8 @@ function DevicePage({ d, user, hosts, projects }: { d: SettingsDevice; user: str
         <Row label title="Show tool details" desc="Every tool group open, every machine line in full." end={<Switch on={details} label="Show tool details" onChange={setToolDetails} />} />
         {/* V0.125: how this browser reaches this Fyr; the device list replaces it in slice 5 of decision 0026 */}
         <Row class="howin" title="How this browser gets in" desc={howIn(typeof location === "undefined" ? "" : location.hostname, user)} />
+        {/* Decision 0031 2.6 (1): the one place that says which front this browser is connected through */}
+        {front && <Row class="front" title="Connected through" desc={<span class="mono">{front}</span>} />}
         {d.canInstall && (
           <Row
             title="Install Fyr"

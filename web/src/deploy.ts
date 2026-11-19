@@ -11,6 +11,8 @@ export interface DeployProgress {
   at?: string;
   /** V0.118 (3): the update changed only the web client (V0.81); its end needs no status beyond the reload */
   client?: boolean;
+  /** decision 0031 2.6 (2): the install id of the host that updates, which Restart now names */
+  host?: string;
 }
 
 export type DeployLine = { text: string; tone: "busy" | "ok" | "fail"; more?: string };

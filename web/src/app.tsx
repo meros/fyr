@@ -74,7 +74,7 @@ import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
-import { hostIdByName, hostLabel, hostOfflineNote, multiHost } from "./hosts.ts";
+import { hostIdByName, hostOfflineNote, multiHost } from "./hosts.ts";
 import { HostsContext, ProfilesContext } from "./host-pick-ui.tsx";
 import { HostMarksContext } from "./host-mark-ui.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -400,7 +400,7 @@ function App() {
   }, [steady.next]);
   const listThreads = steady.threads;
   // V0.134: host AND project.
-  const filtered = useMemo(() => applyFilters(listThreads, filterSel, store.projects, store.host ?? ""), [listThreads, store.projects, filterSel, store.host]);
+  const filtered = useMemo(() => applyFilters(listThreads, filterSel, store.projects), [listThreads, store.projects, filterSel]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
   const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset, unlock.showUntil), [filtered, unlock.showUntil, quietClock, store.clockOffset]);
   // V0.ai-search: what AI search reads, in the list's order.
@@ -434,7 +434,7 @@ function App() {
   // V0.134, V0.169: the two rows (only values with threads in view; a selected one stays) and the empty state, on both
   // fronts.
   const filterView = useMemo<FilterView>(() => {
-    const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hosts, self: store.host ?? "", sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
+    const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hosts, sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
     const locked = !!filterSel.project && chips.projects.some((c) => c.selected && quietLocked(c.project, Date.now() + store.clockOffset, unlock.showUntil));
     return {
       ...chips,
@@ -445,7 +445,7 @@ function App() {
       // V0.114: a locked quiet project shows its gate instead.
       empty: locked ? null : filterEmpty(hideQuiet(searchable, filterOn, Date.now() + store.clockOffset), filterSel, sectionOpen),
     };
-  }, [store.threads, store.projects, store.hosts, store.host, filterSel, sectionOpen, unlock.showUntil, searchable, filterOn, quietClock, store.clockOffset]);
+  }, [store.threads, store.projects, store.hosts, filterSel, sectionOpen, unlock.showUntil, searchable, filterOn, quietClock, store.clockOffset]);
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
     for (const s of SECTIONS) l[s.key] = !isOpen(s.key, sectionOpen) ? 0 : expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];
@@ -1217,7 +1217,7 @@ function App() {
       <FolderPicker key={pickHost} fs={pickFs} first={folderPick?.first} onPick={closeFolderPick} autoFocus={autoFocus} />
     );
   // V0.132: the hosts a new project or thread can live on (HostField, NewProjectStep).
-  const hostsCtx = useMemo(() => ({ hosts: store.hosts, self: store.host, now, machine: store.machine }), [store.hosts, store.host, store.machine, Math.floor(now / 60_000)]);
+  const hostsCtx = useMemo(() => ({ hosts: store.hosts, now }), [store.hosts, Math.floor(now / 60_000)]);
   const allHostsCtx = useMemo(() => ({ ...hostsCtx, hosts: fullStore.hosts }), [hostsCtx, fullStore.hosts]); // V0.207: Settings
   const folderPickView = folderPick
     ? phone ? (
@@ -1253,7 +1253,6 @@ function App() {
     openThread: (id) => (phoneRef.current ? navGo({ screen: { name: "thread", id }, sheet: null }) : openThread(id, "open")),
     openProject: openProjectScreen,
     pickProject: (id) => (phoneRef.current ? navGo({ ...navRef.current, sheet: { kind: "project", ids: [id] } }) : openPicker([id])),
-    host: store.host,
     projectFilter: filterOn ? filterId : null,
   };
 
@@ -1298,7 +1297,7 @@ function App() {
   const restartNow = async () => {
     const p = store.deploy;
     if (!p || !(await confirmHost.ask(restartNowAsk(p, store.threads)))) return;
-    const r = await api.command(store.hostId, "host.deployNow"); // the update of the host the front runs in
+    const r = await api.command(p.host ?? "", "host.deployNow"); // decision 0031: the host whose update it is
     if (!r.ok) cmds.notify(r.error ?? "Fyr could not restart now");
   };
 
@@ -1566,9 +1565,8 @@ function App() {
     <HostsContext.Provider value={allHostsCtx}>
     <Settings
       api={api}
-      host={store.host}
+      front={store.host}
       hosts={fullStore.hosts}
-      hostId={store.hostId}
       user={store.user}
       phone={!!phoneHeader}
       at={at}
@@ -1820,7 +1818,7 @@ function App() {
       <ConfirmProvider value={confirmHost.ask}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
-        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={hostLabel(store.host, api.mock)} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
+        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}

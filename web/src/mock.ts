@@ -1795,7 +1795,7 @@ export function mockHosts(now: number, labTrusted = mockLabTrusted) {
 function mockHostsRaw(now: number, labTrusted: boolean) {
   const iso = (ms: number) => new Date(ms).toISOString();
   return [
-    { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777", machine: "laptop", os: "linux" },
+    { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777", machine: "laptop", os: "linux", link: { state: "up", via: "pipe" } },
     { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778", machine: "server", os: "linux" },
     { name: "lab", online: true, since: iso(now - 40 * 60_000), id: "B7LA-4QZE-9KDF-3HXW", url: "http://100.64.0.7:7778", machine: "desktop", os: "darwin", ...(labTrusted ? {} : { idWas: "AX2C-7RTM-8PLQ-6VYD" }),
       // V0.132: lab's own providers, so a thread started there offers them
