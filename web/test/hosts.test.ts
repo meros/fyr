@@ -181,3 +181,35 @@ test("V0.206: a thread's provider is its host's, and a row names it only when th
   assert.equal(rowProvider({ profile: "gone" }, [], [prof("p", "Claude")])?.name, "gone");
   assert.equal(rowProvider({ profile: "" }, [], [prof("p", "Claude")]), null);
 });
+
+test("V0.host-updates: a host's row says how far behind it is and how its last update ended", async () => {
+  const { updateLine, updateRows, badLine } = await import("../src/hosts.ts");
+  const now = Date.parse("2026-11-19T15:00:00");
+  const [h] = decodeHosts([
+    {
+      name: "host-b",
+      online: true,
+      update: { running: "9b1e04a77d2c", wanted: "c705ef5365660a8f", behind: 3, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "failed", reason: "the smoke test failed", startedAt: "2026-11-19T14:00:00" } },
+    },
+  ]);
+  assert.deepEqual(updateLine(h), { text: "3 commits behind · last update failed", bad: true });
+  assert.match(hostLine(h, now), /online · 3 commits behind · last update failed · no id/);
+  const rows = updateRows(h.update!, now);
+  assert.deepEqual(
+    rows.map((r) => r.title),
+    ["Runs", "Newest release", "Last update"],
+  );
+  assert.equal(rows[1].desc, "c705ef5 · 3 commits ahead of what runs");
+  assert.match(rows[2].desc, /^release c705ef5 failed · .* · the smoke test failed$/);
+  assert.equal(rows[2].bad, true);
+
+  const held = { ...h.update!, bad: { commit: "c705ef5365660a8f", why: "exited with code 1", at: "2026-11-19T14:02:00" } };
+  assert.equal(updateLine({ update: held }).text, "3 commits behind · holds back c705ef5");
+  assert.equal(badLine(held.bad, now), `Release c705ef5 is held back here since ${clockTime("2026-11-19T14:02:00")}: exited with code 1. Fyr skips it until a newer release.`);
+
+  assert.deepEqual(updateLine({ update: { behind: 0, running: "a", wanted: "a" } }), { text: "up to date", bad: false });
+  assert.equal(updateLine({ update: { behind: 0, last: { build: "x", result: "failed", startedAt: "" } } }).bad, false, "a failure the host has since got past is not red");
+  assert.equal(updateLine({ update: { behind: -1, paused: true } }).text, "local build");
+  assert.equal(updateLine({}).text, "", "a host without update state says nothing");
+  assert.equal(decodeHosts([{ name: "x", online: true, update: { running: "a" } }])[0].update!.behind, -1);
+});

@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
-import { hostForProject, hostIdByName, hostLine, linkLine, hostState, howIn, profilesOn, hostRoute, shortID, updateWords, type HostInfo } from "./hosts.ts";
+import { badLine, hostForProject, hostIdByName, hostLine, updating, linkLine, hostState, howIn, profilesOn, hostRoute, shortID, updateLine, updateRows, updateWords, type HostInfo } from "./hosts.ts";
 import { useHosts } from "./host-pick-ui.tsx";
 import { resolveRef } from "./store.ts";
 import { hostUrl } from "./urls.ts";
@@ -1581,9 +1581,9 @@ function UpdatesGroup({ d }: { d: Data }) {
   const v = d.updates!;
   const now = Date.now();
   const list = all ? v.updates : v.updates.slice(0, 8);
-  const press = v.paused ? "Back to release" : "Update now";
+  const press = v.paused ? "Back to release" : v.bad?.commit ? "Update now · retry" : "Update now"; // V0.host-updates: the press clears the bad mark
   return (
-    <Group title="Updates" label="Updates" foot={v.bad?.commit ? `Release ${v.bad.commit.slice(0, 7)} rolled back here (${v.bad.why}); Fyr waits for a newer one.` : undefined}>
+    <Group title="Updates" label="Updates" foot={v.bad?.commit ? `Release ${v.bad.commit.slice(0, 7)} is held back here (${v.bad.why}); Fyr waits for a newer one. Update now · retry tries it again.` : undefined}>
       <Row
         title={updateState(v)}
         error={err}
@@ -1682,9 +1682,10 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
 function HostRow({ h, now, go, still }: { h: HostInfo; now: number; go(r: PageRef): void; /** the phone's Reorder mode: the row does not open */ still?: boolean }) {
   const line = hostLine(h, now);
   const link = linkLine(h.link, now); // decision 0030 Amendment 1: how the front reaches it, and why not
+  const upd = updateLine(h); // V0.host-updates: "3 commits behind · last update failed" is in the line
   return (
     <Row
-      class="host"
+      class={upd.bad ? "host bad" : "host"}
       onClick={still ? undefined : () => go({ page: "hosts", sub: h.name })}
       lead={<HostMark name={h.name} size={24} />}
       title={h.name}
@@ -2002,6 +2003,7 @@ function HostPage({ h, api, now }: { h: HostInfo; api: SettingsProps["api"]; now
       {identity}
       {/* V0.171: after Identity, so a changed id and its Trust stay first. */}
       <HostMarkGroup h={h} api={api} />
+      {h.update && <HostUpdatesGroup h={h} api={api} now={now} />}
       <Group title="Connection">
         <Row class="hstate" title={state[0].toUpperCase() + state.slice(1)} desc={under} />
         {h.url && (
@@ -2030,6 +2032,41 @@ function HostPage({ h, api, now }: { h: HostInfo; api: SettingsProps["api"]; now
           ))}
       </Group>
     </>
+  );
+}
+
+/** V0.host-updates (#154): what the host runs, the newest release and how far behind, its last update, and a release it
+ *  holds back with Update now · retry, which clears the mark. One component for the desktop and the phone. */
+function HostUpdatesGroup({ h, api, now }: { h: HostInfo; api: SettingsProps["api"]; now: number }) {
+  const env = useSet();
+  const run = useHostCommand(h.name, api);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const u = h.update!;
+  const press = async () => {
+    setBusy(true);
+    setErr(await run("host.updateNow", {}));
+    setBusy(false);
+  };
+  const label = u.paused ? "Back to release" : u.bad ? "Update now · retry" : "Update now";
+  const offer = h.online && (u.bad || u.paused || u.behind !== 0);
+  return (
+    <Group title="Updates" label="Host updates" foot={u.bad ? badLine(u.bad, now) : undefined}>
+      {updateRows(u, now).map((r) => (
+        <Row key={r.title} title={r.title} desc={r.desc} class={r.bad ? "bad" : undefined} />
+      ))}
+      {offer && (
+        <Row
+          title={u.bad ? `Try ${u.bad.commit.slice(0, 7)} again` : u.paused ? "Go back to the release" : "Install the newest release now"}
+          error={err}
+          end={
+            <button type="button" class="btn" disabled={env.readOnly || busy || updating(h)} onClick={() => void press()}>
+              {label}
+            </button>
+          }
+        />
+      )}
+    </Group>
   );
 }
 

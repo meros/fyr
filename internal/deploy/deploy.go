@@ -89,6 +89,10 @@ type Deployer struct {
 	// Keep is how many builds besides current, previous and next survive a
 	// prune (#147); 0 is 3.
 	Keep int
+	// OnChange hears that this host's update state (Summary) may have
+	// changed (V0.host-updates); nil hears nothing. It is never called with
+	// a lock of the Deployer held.
+	OnChange func()
 
 	exit   int
 	active int // deploys between start and return (V0.111)
@@ -582,6 +586,7 @@ func (d *Deployer) ReportPending() {
 			msg += "; auto-update is paused until a release contains it, or until the owner presses Back to release."
 		} else {
 			d.Unpause()
+			d.ClearBad() // V0.host-updates: a release went live here
 		}
 		d.finish(p.Build, UpdateLive, "")
 		d.Prune()
@@ -598,21 +603,6 @@ func (d *Deployer) tell(thread string, req core.EffectReq, ok bool, msg string) 
 		return
 	}
 	d.Host.Report(thread, req, true, ok, msg)
-}
-
-// markBad keeps a release that rolled back here from being tried again
-// until deployable moves past it (#154).
-func (d *Deployer) markBad(commit, why string) {
-	b, _ := json.Marshal(map[string]string{"commit": commit, "why": why, "at": time.Now().UTC().Format(time.RFC3339)})
-	d.DB.SetKV("update_bad", string(b))
-}
-
-// Bad is the release commit that last rolled back here, and why.
-func (d *Deployer) Bad() (commit, why string) {
-	raw, _ := d.DB.GetKV("update_bad")
-	var m map[string]string
-	json.Unmarshal([]byte(raw), &m)
-	return m["commit"], m["why"]
 }
 
 func firstErr(_ string, err error) error { return err }

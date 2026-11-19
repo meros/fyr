@@ -22,7 +22,9 @@ const (
 	FrameHostMarks = "hostMarks"
 	// FrameAgentMark is this host's own agent's mark (V0.208).
 	FrameAgentMark = "agentMark"
-	FrameEvent     = "event"
+	// FrameUpdate is this host's update state (V0.host-updates).
+	FrameUpdate = "update"
+	FrameEvent  = "event"
 )
 
 // Frame is one Server-Sent Event.

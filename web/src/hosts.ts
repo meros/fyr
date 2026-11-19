@@ -27,6 +27,20 @@ export interface HostInfo {
   os?: string;
   /** decision 0030 Amendment 1: how the front reaches it: over the pipe, a peer link or the old whois link */
   link?: HostLink;
+  /** V0.host-updates (#154): its update state; missing from a host without a release source or an older one */
+  update?: HostUpdate;
+}
+
+/** V0.host-updates (#154): what a host runs, the release it wants, how far behind, its last update, a release it holds back. */
+export interface HostUpdate {
+  running?: string;
+  build?: string;
+  wanted?: string;
+  /** commits the wanted release is ahead of the running one; -1 not known */
+  behind: number;
+  last?: { build: string; commit?: string; result: string; reason?: string; startedAt: string; endedAt?: string; local?: boolean };
+  bad?: { commit: string; why: string; at?: string };
+  paused?: boolean;
 }
 
 export interface HostLink {
@@ -88,7 +102,69 @@ export function decodeHosts(raw: unknown): HostInfo[] {
       ...(typeof h.os === "string" && h.os ? { os: h.os } : {}),
       // decision 0030 Amendment 1, 0031 2.6: how the front reaches it; the pipe is the host in the front's own process
       ...(h.link && typeof h.link === "object" && typeof (h.link as { state?: unknown }).state === "string" ? { link: h.link as HostLink } : {}),
+      ...(h.update && typeof h.update === "object" ? { update: decodeUpdate(h.update as Record<string, unknown>) } : {}),
     }));
+}
+
+function decodeUpdate(u: Record<string, unknown>): HostUpdate {
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  const last = u.last && typeof u.last === "object" && typeof (u.last as { result?: unknown }).result === "string" ? (u.last as HostUpdate["last"]) : undefined;
+  const bad = u.bad && typeof u.bad === "object" && typeof (u.bad as { commit?: unknown }).commit === "string" ? (u.bad as HostUpdate["bad"]) : undefined;
+  return {
+    running: str(u.running),
+    build: str(u.build),
+    wanted: str(u.wanted),
+    behind: typeof u.behind === "number" ? u.behind : -1,
+    ...(last ? { last } : {}),
+    ...(bad ? { bad } : {}),
+    ...(u.paused === true ? { paused: true } : {}),
+  };
+}
+
+const short7 = (s: string | undefined) => (s ? s.slice(0, 7) : "");
+const LAST_BAD: Record<string, string> = { failed: "last update failed", rolledBack: "last update rolled back" };
+
+/** V0.host-updates: how far a host is from the newest release, for its row: "3 commits behind · last update failed",
+ *  "holds back 1a2b3c4", "local build", "up to date"; "" when it says nothing (no state, nothing read yet). */
+export function updateLine(h: Pick<HostInfo, "update">): { text: string; bad: boolean } {
+  const u = h.update;
+  if (!u) return { text: "", bad: false };
+  const bits: string[] = [];
+  if (u.paused) bits.push("local build");
+  else if (u.behind > 0) bits.push(`${u.behind} commit${u.behind === 1 ? "" : "s"} behind`);
+  else if (u.behind === 0) bits.push("up to date");
+  else if (u.wanted && u.running && !u.wanted.startsWith(u.running) && !u.running.startsWith(u.wanted)) bits.push("behind");
+  const lastBad = u.last ? LAST_BAD[u.last.result] : undefined;
+  if (u.bad) bits.push(`holds back ${short7(u.bad.commit)}`);
+  else if (lastBad && u.behind !== 0) bits.push(lastBad);
+  return { text: bits.join(" · "), bad: !!u.bad || (!!lastBad && u.behind !== 0) };
+}
+
+const RESULT_WORDS: Record<string, string> = { inProgress: "in progress", installed: "installed", failed: "failed", rolledBack: "rolled back", replaced: "replaced" };
+
+/** V0.host-updates: the rows of a host's Updates group on its page: what runs, the newest release, the last update. */
+export function updateRows(u: HostUpdate, now: number): { title: string; desc: string; bad?: boolean }[] {
+  const rows: { title: string; desc: string; bad?: boolean }[] = [];
+  rows.push({ title: "Runs", desc: [u.running ? short7(u.running) : "", u.build && !u.build.startsWith(short7(u.running)) ? `build ${u.build}` : "", u.paused ? "a local build; auto-update waits for a release that contains it" : ""].filter(Boolean).join(" · ") || "Not known" });
+  if (u.wanted) {
+    const how = u.behind > 0 ? `${u.behind} commit${u.behind === 1 ? "" : "s"} ahead of what runs` : u.behind === 0 ? "runs here" : "";
+    rows.push({ title: "Newest release", desc: [short7(u.wanted), how].filter(Boolean).join(" · ") });
+  }
+  if (u.last) {
+    const l = u.last;
+    const at = dayTime(l.endedAt || l.startedAt, now);
+    const what = l.local ? `local build ${l.build}` : `release ${short7(l.commit) || l.build}`;
+    const bad = l.result === "failed" || l.result === "rolledBack";
+    rows.push({ title: "Last update", desc: [`${what} ${RESULT_WORDS[l.result] ?? l.result}`, at, bad ? l.reason : ""].filter(Boolean).join(" · "), bad });
+  }
+  return rows;
+}
+
+/** V0.host-updates: the line of a release held back: "Release 1a2b3c4 is held back here since 14:02: failed its smoke
+ *  test. Fyr skips it until a newer release." */
+export function badLine(b: NonNullable<HostUpdate["bad"]>, now: number): string {
+  const at = b.at ? dayTime(b.at, now) : "";
+  return `Release ${short7(b.commit)} is held back here${at ? ` since ${at}` : ""}${b.why ? `: ${b.why}` : ""}. Fyr skips it until a newer release.`;
 }
 
 /** "host-a offline since 19:40 · read-only", or "" while the thread's host is reachable. */
@@ -203,7 +279,7 @@ export function hostLine(h: HostInfo, now: number): string {
   const changed = idChangedLine(h);
   if (changed) return changed;
   const route = hostRoute(h);
-  return [hostState(h, now), route, h.id ? `id ${shortID(h.id)}` : "no id"].filter(Boolean).join(" · ");
+  return [hostState(h, now), updateLine(h).text, route, h.id ? `id ${shortID(h.id)}` : "no id"].filter(Boolean).join(" · ");
 }
 
 /** V0.125: the network a host's link runs over. Decision 0031 2.6: the host in the front's own process is the one whose

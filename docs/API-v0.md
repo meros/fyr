@@ -370,6 +370,12 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 - Stream `event: deploy` `data: {"phase": "build|test|drain|switch|done|failed", "detail"?, "blocking"?: [threadId], "build", "startedAt", "at"}`.
 - `GET /api/state` has `deploy` with the latest progress while an update runs and for two minutes after it ended; otherwise `null`.
 
+## A host's update state (V0.host-updates, #154)
+
+- `GET /api/state` has `update` on a host with a release source: `{"running"?, "build"?, "wanted"?, "behind", "last"?, "bad"?, "paused"?}`. `running` is the commit it runs, `build` its build id, `wanted` the commit `deployable` pointed at when the host last read it, `behind` how many commits `wanted` is ahead of `running` (`-1`: not known; read once per move of either, with one GitHub compare), `last` the newest record of `GET /api/updates` without `phases` and `logs`, `bad` `{"commit", "why", "at"}` while the host holds that release back (it rolled back or failed its smoke test here, and `deployable` still points at it), `paused` while a local build runs.
+- Stream `event: update` with the same object when any of it changes. A front keeps the newest per host and serves it as `hosts[].update`, and sends `hosts` again.
+- `host.updateNow` also clears the bad mark (Update now · retry): the release is tried again, and marked again if it fails again. A release that goes live clears it too.
+
 ## Stalls (SPEC 0.5 V0.147)
 
 - Stream `event: stall` `data: {"at", "what", "file", "exiting"}`: the host's watchdog saw a watched lock held, or a request running, past its limit (`what` names the longest holder; `file` is the goroutine dump on that host). A front adds `"host"`.

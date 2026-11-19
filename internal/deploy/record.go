@@ -79,6 +79,12 @@ func (d *Deployer) edit(build string, mk func() Update, fn func(*Update)) {
 	if build == "" {
 		return
 	}
+	if d.editLocked(build, mk, fn) {
+		d.changed() // V0.host-updates: the last update moved
+	}
+}
+
+func (d *Deployer) editLocked(build string, mk func() Update, fn func(*Update)) bool {
 	recMu.Lock()
 	defer recMu.Unlock()
 	list := d.readLog()
@@ -91,7 +97,7 @@ func (d *Deployer) edit(build string, mk func() Update, fn func(*Update)) {
 	}
 	if i < 0 {
 		if mk == nil {
-			return
+			return false
 		}
 		list = append([]Update{mk()}, list...)
 		i = 0
@@ -103,6 +109,7 @@ func (d *Deployer) edit(build string, mk func() Update, fn func(*Update)) {
 	}
 	b, _ := json.Marshal(list)
 	d.DB.SetKV(logKey, string(b))
+	return true
 }
 
 func (d *Deployer) logsOf(build string) []string {

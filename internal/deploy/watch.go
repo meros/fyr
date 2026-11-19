@@ -150,7 +150,9 @@ func (w *Watcher) Step(ctx context.Context) {
 		}
 		b, _ := json.Marshal(wt)
 		d.DB.SetKV(wantedKey, string(b))
+		d.changed() // V0.host-updates: the wanted release moved
 	}
+	d.noteBehind(ctx, sha)
 	raw, _ := d.DB.GetKV(wantedKey)
 	var wt wanted
 	if raw == "" || json.Unmarshal([]byte(raw), &wt) != nil || wt.SHA == "" {
