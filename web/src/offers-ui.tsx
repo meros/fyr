@@ -19,7 +19,7 @@ export function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
   const n = c.need!;
   const look = needLook(n);
   const merge = (c.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
-  let yes: { label: string; run: () => void } | null = null;
+  let yes: { label: string; title?: string; run: () => void } | null = null;
   if (n.cause === "ask") yes = { ...askYes(n), run: () => onRun("thread.answer", allowArgs(n)) };
   else if (n.cause === "ready" && merge && n.head) yes = { label: look.button, run: () => onRun("action.run", pressArgs(c.id, merge, n.head)) };
   return (
@@ -27,7 +27,7 @@ export function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
       {look.beam && <span class="beamdot" aria-hidden="true" />}
       <span class="chnq">{look.line}</span>
       {yes && (
-        <button class="btn p sm" onClick={yes.run}>
+        <button class="btn p sm" title={yes.title} onClick={yes.run}>
           {yes.label}
         </button>
       )}

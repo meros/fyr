@@ -235,8 +235,9 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
   );
 }
 
-/** V0.101 (decision 0024 section 9): a Needs you cause adds the beam dot and its button to the row: "Merge a1b2c3d"
- *  for a Ready change, bound to the head the row shows (V0.97), and "Answer" for an ask, which opens the thread. */
+/** V0.101 (decision 0024 section 9): a Needs you cause adds the beam dot and its button to the row: "Merge" for a
+ *  Ready change, bound to the head the row shows (V0.97; V0.merge-label: the head is in its title, not on the button),
+ *  and "Answer" for an ask, which opens the thread. */
 export function NeedButton({ t, change, need }: { t: Thread; change: Change; need: ChangeNeed }) {
   const api = useApi();
   const ask = useAsk();

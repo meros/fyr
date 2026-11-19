@@ -21,8 +21,8 @@ test("SPEC V0.101 (1): the client reads need only: a failed condition without a 
 });
 
 test("SPEC V0.101 (6): the inbox row's button: Merge bound to the head for Ready, Answer for an ask, none for a muted need", () => {
-  assert.deepEqual(needLook({ cause: "ready", text: "Merge", head }), { button: "Merge a1b2c3d", line: "Green and waiting for your merge.", beam: true });
-  assert.equal(needLook({ cause: "ready", text: "Review and merge", head }).button, "Review and merge a1b2c3d");
+  assert.deepEqual(needLook({ cause: "ready", text: "Merge", head }), { button: "Merge", line: "Green and waiting for your merge. Merges a1b2c3d.", beam: true });
+  assert.equal(needLook({ cause: "ready", text: "Review and merge", head }).button, "Review and merge");
   assert.equal(needLook({ cause: "ask", ask: "d1", text: "Approve the design" }).button, "Answer");
   assert.equal(needLook({ cause: "fixing", muted: true, text: "Agent is fixing CI" }).beam, false);
   const t = thread("t1", "blocked", "needs", {

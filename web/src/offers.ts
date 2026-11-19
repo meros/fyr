@@ -158,10 +158,12 @@ export const parkedLine = (c: Pick<Change, "parked">, clock: (iso: string) => st
 /** V0.101: the words of a need on its card and row: the button and the line. A merge (Ready or a merge ask) is bound to
  *  the head; an ask is answered; a failure says what failed. */
 export function needLook(n: ChangeNeed): { button: string; line: string; beam: boolean } {
-  const head = n.head ? ` ${shortHead(n.head)}` : "";
+  // V0.merge-label: the button says what it does ("Merge"); the head it is bound to is named in its line, the
+  // button's title on the row, not as a hash on the button.
+  const on = n.head ? ` Merges ${shortHead(n.head)}.` : "";
   switch (n.cause) {
     case "ready":
-      return { button: `${n.text === "Review and merge" ? "Review and merge" : "Merge"}${head}`, line: n.text === "Review and merge" ? "Green; a required review waits for you." : "Green and waiting for your merge.", beam: true };
+      return { button: n.text === "Review and merge" ? "Review and merge" : "Merge", line: (n.text === "Review and merge" ? "Green; a required review waits for you." : "Green and waiting for your merge.") + on, beam: true };
     case "ask":
       return { button: "Answer", line: n.text || "The agent asks you.", beam: true };
     case "waiting": // V0.136: a merge ask held until CI is green on its head; no button, no beam
@@ -173,10 +175,11 @@ export function needLook(n: ChangeNeed): { button: string; line: string; beam: b
   }
 }
 
-/** An ask's yes: "Merge a1b2c3d" for a merge ask, bound to its head (V0.97), else Yes. Since V0.136 a merge ask is
- *  shown only when CI is green on its head, so the yes always runs. */
-export function askYes(n: ChangeNeed): { label: string } {
-  return { label: n.action === "pr.merge" ? `Merge ${shortHead(n.head)}`.trim() : "Yes" };
+/** An ask's yes: "Merge" for a merge ask, bound to its head (V0.97; V0.merge-label: the head is in its title), else
+ *  Yes. Since V0.136 a merge ask is shown only when CI is green on its head, so the yes always runs. */
+export function askYes(n: ChangeNeed): { label: string; title?: string } {
+  if (n.action !== "pr.merge") return { label: "Yes" };
+  return { label: "Merge", title: n.head ? `Merges ${shortHead(n.head)}` : undefined };
 }
 
 /** V0.101: Refresh now on an open change that Fyr reads: a PR, or a branch (a host record or a thread change on one). */
