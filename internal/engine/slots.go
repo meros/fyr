@@ -294,7 +294,7 @@ func (e *Engine) adaptBudget(s slots.Snapshot) {
 		return
 	}
 	sig := e.SlotSignals()
-	f, why := e.SlotAIMD.Step(e.Now(), sig, len(s.Waiting) > 0, e.Slots.LastGrant(), s.Binding)
+	f, why := e.SlotAIMD.Step(e.Now(), sig, len(s.Waiting) > 0, e.Slots.LastGrant(), s.Bound())
 	old := e.Slots.Budget()
 	if f != old || (s.Budget != nil && s.BudgetWhy != why) {
 		if f != old { // V0.load-tuning: the budget's moves can be read back

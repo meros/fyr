@@ -273,7 +273,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// V0.209: the gate hook admits a heavy command by itself.
-	groups := &cgroup.JobGroups{Tree: tree}                    // decision 0029 S5: each holder's job in a cgroup of its own
+	groups := &cgroup.JobGroups{Tree: tree, N: n}              // decision 0029 S5: each holder's job in a cgroup of its own; V0.admission-memory: N sizes a class under three runs
 	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun // V0.job-limits: a job sizes itself
 	// V0.164, V0.209: the learned and added patterns; the detector of
 	// work that nobody asked for, its settings and the record of its episodes.

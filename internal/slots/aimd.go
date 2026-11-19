@@ -59,7 +59,7 @@ type kept struct {
 
 // Step moves the budget at now: waiting is whether a job waits, lastGrant
 // the pool's last admission, binding the resource that holds the head back
-// (ResCPU, ResMem or ""). It returns the factors and why.
+// (ResCPU, ResMem, ResHeadroom or ""; Snapshot.Bound). It returns the factors and why.
 func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time, binding string) (Factors, string) {
 	if !a.started {
 		a.started, a.f, a.last, a.why = true, Full, now, "the full budget"
@@ -102,10 +102,15 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 		a.f.CPU = max(floor, round(a.f.CPU*AIMDDown))
 		a.why = fmt.Sprintf("new jobs run %.1f× slower: the CPU budget shrinks", *s.Slowdown)
 	case calm && waiting && (lastGrant.IsZero() || now.Sub(lastGrant) >= AIMDHold):
-		if binding == ResMem {
+		switch binding {
+		case ResHeadroom:
+			// V0.admission-memory: memory outside the budget holds the head
+			// back; a larger budget would not admit it, only admit more once
+			// that memory is freed (up to AIMDMax of the host).
+		case ResMem:
 			a.f.Mem = min(AIMDMax, a.f.Mem+AIMDUp)
 			a.why = "the host is calm and a job waits for memory: the memory budget grows"
-		} else {
+		default:
 			a.f.CPU = min(AIMDMax, a.f.CPU+AIMDUp)
 			a.why = "the host is calm and a job waits for CPU: the CPU budget grows"
 		}

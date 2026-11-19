@@ -36,7 +36,8 @@ func TestV163TwoMemoryHeavyJobsDoNotFitTheRealHeadroom(t *testing.T) {
 	tight.Headroom = f(0.4) // 5.2 GB really free; 1.3 GB of it is the reserve
 	memHeavy := Need{CPU: 0.6, Mem: 6 * gb}
 	ok, why, res := Decide(DefaultPolicy, tight, Full, 2, []Need{memHeavy}, memHeavy)
-	if ok || res != ResMem || !strings.Contains(why, "memory,") {
+	// V0.admission-memory: the host's headroom binds, not the budget (7 GB of it free).
+	if ok || res != ResHeadroom || Wire(res) != ResMem || !strings.Contains(why, "memory,") {
 		t.Fatalf("%v %q %q", ok, why, res)
 	}
 }

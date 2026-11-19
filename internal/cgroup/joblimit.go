@@ -18,15 +18,33 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/meros/fyr/internal/slots"
 )
 
 // JobSize is what a job's class has learned; Known is false before its first
-// run (or with no class).
+// run (or with no class). Runs is how many runs it is learned from.
 type JobSize struct {
 	Class  string
 	Peak   uint64  // bytes
 	Demand float64 // cores
 	Known  bool
+	Runs   int
+}
+
+// sizeFor is z as a job is sized from it: under slots.LearnRuns runs a
+// class's peak and demand are never below the prior's (1/N of budget and
+// cores), as admission counts them (slots.NeedOf; decision 0029 section 2).
+// V0.admission-memory: a first run its memory.high held back taught a low
+// peak, and the next limit, sized from it, held the next run lower still.
+// Without N (the host's slots setting) z is as learned.
+func (g *JobGroups) sizeFor(z JobSize, budget uint64, cores float64) JobSize {
+	if !z.Known || z.Runs >= slots.LearnRuns || g.N <= 0 {
+		return z
+	}
+	p := slots.Prior(slots.Signals{CPU: cores, Memory: budget}, g.N)
+	z.Peak, z.Demand = max(z.Peak, p.Mem), max(z.Demand, p.CPU)
+	return z
 }
 
 // sizedJob is what was written to one job cgroup, under JobGroups.mu.
@@ -110,7 +128,7 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 		s.events, _ = readKey(filepath.Join(dir, "memory.events"), "high")
 	}
 	budget, used, cores, lifted := g.agentsNow()
-	high, cpu, why := jobLimits(s.size, budget, used, cores, lifted)
+	high, cpu, why := jobLimits(g.sizeFor(s.size, budget, cores), budget, used, cores, lifted)
 	if known && high == s.high && cpu == s.cpu {
 		return
 	}

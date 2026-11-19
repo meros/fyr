@@ -100,27 +100,51 @@ func (a *Admission) Live(h slots.Holder) (slots.Need, bool) {
 // little CPU and the memory it holds; else the prediction, at least what it
 // uses now.
 func (a *Admission) Cost(h slots.Holder) slots.Need {
-	sig := a.Host.Signals()
-	if h.Priority {
-		return slots.Prior(sig, a.N)
-	}
-	l, isLive := a.Live(h)
-	if at, ok := a.Jobs.Active(h.Owner); ok && a.now().Sub(at) >= slots.IdleAfter {
-		return slots.Need{CPU: slots.IdleShare * sig.CPU, Mem: l.Mem}
-	}
-	need, _ := a.Predict(h)
-	if isLive {
-		need = need.Max(l)
-	}
+	need, _ := a.cost(h)
 	return need
 }
 
-func (a *Admission) heldNeeds(held []slots.Holder) []slots.Need {
+// cost is Cost and what the holder may still grow: its need's memory less
+// what it grew since the grant (V0.admission-memory); all of it without a
+// reading yet, nothing for an idle hold (its need is what it holds).
+func (a *Admission) cost(h slots.Holder) (need slots.Need, grow uint64) {
+	sig := a.Host.Signals()
+	l, isLive := a.Live(h)
+	switch {
+	case h.Priority:
+		need = slots.Prior(sig, a.N)
+	case a.idle(h):
+		return slots.Need{CPU: slots.IdleShare * sig.CPU, Mem: l.Mem}, 0
+	default:
+		need, _ = a.Predict(h)
+		if isLive {
+			need = need.Max(l)
+		}
+	}
+	if need.Mem > l.Mem {
+		grow = need.Mem - l.Mem
+	}
+	return need, grow
+}
+
+func (a *Admission) idle(h slots.Holder) bool {
+	at, ok := a.Jobs.Active(h.Owner)
+	return ok && a.now().Sub(at) >= slots.IdleAfter
+}
+
+// heldNeeds is the holders' needs, and sig with their growth still to come
+// (V0.admission-memory: decision 0029 section 3 rule 3 takes it off the
+// headroom; V0.163 had dropped it). One pass over the holders, under the
+// pool's lock like Cost.
+func (a *Admission) heldNeeds(held []slots.Holder) ([]slots.Need, slots.Signals) {
+	sig := a.Host.Signals()
 	out := make([]slots.Need, len(held))
 	for i, h := range held {
-		out[i] = a.Cost(h)
+		var g uint64
+		out[i], g = a.cost(h)
+		sig.Growth += g
 	}
-	return out
+	return out, sig
 }
 
 // extras is the use of the threads that run heavy work Fyr did not admit
@@ -144,7 +168,8 @@ func (a *Admission) extras() []slots.Extra {
 // It returns why not and the binding resource.
 func (a *Admission) Admit(head slots.Holder, held []slots.Holder) (bool, string, string) {
 	need, _ := a.Predict(head)
-	return slots.DecideWith(a.Policy, a.Host.Signals(), a.Pool.Budget(), a.N, a.heldNeeds(held), a.extras(), head.Owner, need)
+	needs, sig := a.heldNeeds(held)
+	return slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(), head.Owner, need)
 }
 
 // Backfill is EASY backfill: c may pass the head when it fits now and is
@@ -152,8 +177,8 @@ func (a *Admission) Admit(head slots.Holder, held []slots.Holder) (bool, string,
 // expected to.
 func (a *Admission) Backfill(head, c slots.Holder, held []slots.Holder) bool {
 	need, wall := a.Predict(c)
-	sig := a.Host.Signals()
-	if ok, _, _ := slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, a.heldNeeds(held), a.extras(), c.Owner, need); !ok {
+	needs, sig := a.heldNeeds(held)
+	if ok, _, _ := slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(), c.Owner, need); !ok {
 		return false
 	}
 	ends := make([]time.Time, len(held))
