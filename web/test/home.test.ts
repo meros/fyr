@@ -85,3 +85,27 @@ test("V0.status-home: the phone's Status screen has its own URL", () => {
   assert.equal(urlFor({ screen: { name: "status" }, sheet: null }), "/?status");
   assert.deepEqual(parseUrl("?status"), { screen: { name: "status" }, sheet: null });
 });
+
+test("V0.day-chart: the day counts open changes from midnight: one carried over, one opened and merged, one still open", async () => {
+  const { homeDay, openAt, hourTicks } = await import("../src/home.ts");
+  const now = new Date(2026, 10, 19, 15, 0).getTime();
+  const h = (n: number) => new Date(2026, 10, 19, n, 0).toISOString();
+  const t = thread("t", "working", "working", {
+    createdAt: h(9),
+    changes: [
+      ch({ id: "old", title: "old", createdAt: "2026-11-18T10:00:00Z", done: { at: h(11), by: "observed", reason: "merged" }, pr: { url: "u", number: 4 } }),
+      ch({ id: "new", title: "new", createdAt: h(10) }),
+      ch({ id: "gone", title: "gone", createdAt: "2026-11-17T10:00:00Z", done: { at: "2026-11-17T12:00:00Z", by: "owner", reason: "done" } }),
+    ],
+  });
+  const d = homeDay({ t }, [], now);
+  assert.deepEqual(d.steps.map((s) => s.open), [1, 2, 1]);
+  assert.equal(d.opened, 1);
+  assert.equal(d.finished, 1);
+  assert.equal(d.open, 1);
+  assert.equal(d.peak, 2);
+  assert.equal(d.started, 1);
+  assert.deepEqual(d.merges.map((m) => m.text), ["#4 old"]);
+  assert.equal(openAt(d, Date.parse(h(10)) + 1), 2);
+  assert.equal(hourTicks(d.from, now).length, 4); // 15 h: every 3 h, 03 to 12
+});

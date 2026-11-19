@@ -2,7 +2,7 @@
 // headline, Your move with the one action each row offers, what moves now, and what happened since the owner last
 // looked. home-ui.tsx draws it on both fronts.
 
-import { boardItems, finishedSince, greenMerges, type GreenMerge } from "./board.ts";
+import { allChanges, boardItems, finishedSince, greenMerges, type GreenMerge } from "./board.ts";
 import { needsGroup, needsGroupRank, rowMeta, rowState } from "./rows.ts";
 import type { Project, Thread } from "./types.ts";
 
@@ -119,4 +119,91 @@ export function homeSummary(o: { running: number; needs: number; mergedToday: nu
 export function startOfDay(now: number): number {
   const d = new Date(now);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** V0.day-chart: one merge on the day's chart. */
+export interface DayMerge {
+  at: number;
+  text: string;
+  thread: string;
+}
+
+/** V0.day-chart: the day so far, for the Today block. */
+export interface HomeDay {
+  from: number;
+  to: number;
+  /** the open changes over the day, as steps: `open` holds from `at` until the next point; the first is at `from` */
+  steps: { at: number; open: number }[];
+  /** changes merged today, oldest first */
+  merges: DayMerge[];
+  /** changes opened today */
+  opened: number;
+  /** changes finished today (merged or the owner's Done) */
+  finished: number;
+  /** changes open now */
+  open: number;
+  /** threads started today */
+  started: number;
+  /** the most open changes at once today */
+  peak: number;
+}
+
+/** V0.day-chart: the day from midnight to now. A change is open from its createdAt until its done.at; one opened
+ *  before today and still open at midnight starts the line above zero. A thread archived is left out, as on the board. */
+export function homeDay(threads: Record<string, Thread>, projects: Project[], now: number): HomeDay {
+  const from = startOfDay(now);
+  const ev: { at: number; d: number }[] = [];
+  const merges: DayMerge[] = [];
+  let open0 = 0;
+  let opened = 0;
+  let finished = 0;
+  for (const i of allChanges(threads, projects)) {
+    const c = i.change;
+    const born = Date.parse(c.createdAt);
+    const end = c.done ? Date.parse(c.done.at) : NaN;
+    if (Number.isNaN(born) || born > now) continue;
+    if (!Number.isNaN(end) && end <= from) continue;
+    if (born <= from) open0++;
+    else {
+      opened++;
+      ev.push({ at: born, d: 1 });
+    }
+    if (!Number.isNaN(end) && end <= now) {
+      finished++;
+      ev.push({ at: end, d: -1 });
+      if (c.done!.reason === "merged") merges.push({ at: end, text: `${c.pr?.number ? `#${c.pr.number} ` : ""}${c.title}`, thread: i.thread.id });
+    }
+  }
+  ev.sort((a, b) => a.at - b.at || a.d - b.d);
+  const steps = [{ at: from, open: open0 }];
+  let open = open0;
+  let peak = open0;
+  for (const e of ev) {
+    open += e.d;
+    peak = Math.max(peak, open);
+    const last = steps[steps.length - 1];
+    if (last.at === e.at) last.open = open;
+    else steps.push({ at: e.at, open });
+  }
+  const started = Object.values(threads).filter((t) => !t.archivedAt && Date.parse(t.createdAt) > from).length;
+  return { from, to: now, steps, merges: merges.sort((a, b) => a.at - b.at), opened, finished, open, started, peak };
+}
+
+/** V0.day-chart: the open changes at `at` (the step that holds then). */
+export function openAt(day: HomeDay, at: number): number {
+  let v = day.steps[0]?.open ?? 0;
+  for (const s of day.steps) {
+    if (s.at > at) break;
+    v = s.open;
+  }
+  return v;
+}
+
+/** V0.day-chart: the hour marks on the day's axis, every 1, 2, 3 or 6 hours so there are at most `max`. */
+export function hourTicks(from: number, to: number, max = 6): number[] {
+  const span = (to - from) / 3600_000;
+  const step = [1, 2, 3, 6].find((s) => span / s <= max) ?? 6;
+  const out: number[] = [];
+  for (let h = step; from + h * 3600_000 < to; h += step) out.push(from + h * 3600_000);
+  return out;
 }

@@ -69,6 +69,11 @@ function collect(threads: Record<string, Thread>, projects: Project[], f: BoardF
   return once(out);
 }
 
+/** V0.day-chart: every change of every thread that is not archived, done or not, once each (the status screen's day). */
+export function allChanges(threads: Record<string, Thread>, projects: Project[]): BoardItem[] {
+  return collect(threads, projects, { settled: true }, () => true);
+}
+
 /** #35: a host record (an observed branch) is in every thread that shows it, and once on the board. V0.87 (3), #69:
  *  a record that a shown change follows is that change's card; a thread's change is one card per id. */
 function once<T extends { change: Change; thread: Thread }>(items: T[]): T[] {
