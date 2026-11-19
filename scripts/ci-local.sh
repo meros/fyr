@@ -37,7 +37,7 @@ started=$(date +%s)
 set +e
 {
 	git fetch -q origin main &&
-		nix develop --command bash -c 'make test FYR_LAYOUT_TIMING=0' &&
+		nix develop --command make test &&
 		nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact \
 			--log-opts="origin/main..$sha" .
 } 2>&1 | tee "$log"
