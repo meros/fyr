@@ -43,8 +43,8 @@ import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, useViewAction } from "./offers-ui.tsx";
-import { DockRun, ProseCommand, RunCardAt, RunCards, showCard } from "./runcard-ui.tsx";
-import { cardsKey, dockRun, placeCards, requests, splitProse, waitingRuns } from "./runcard.ts";
+import { DockRun, NextSteps, ProseCommand, RunCardAt, RunCards, showCard } from "./runcard-ui.tsx";
+import { cardShows, cardsKey, dockRun, placeCards, requests, splitProse, waitingRuns } from "./runcard.ts";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
@@ -529,7 +529,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
   // V0.run-cards-in-conversation: a Run card stands where the agent asked, on desktop and phone.
-  const openCards = cards ? requests(cards.t).map((o) => o.id).join("\n") : "";
+  const openCards = cards ? requests(cards.t).filter((o) => cardShows(o, cards.t.runs)).map((o) => o.id).join("\n") : "";
   const [items, pending, looseCards] = useMemo(() => {
     const placed = placeCards(all.filter((i) => !(i.kind === "user" && i.pending)), openCards ? openCards.split("\n") : []);
     return [placed.items, all.filter((i) => i.kind === "user" && i.pending), placed.loose] as const;
@@ -619,6 +619,10 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
               </div>
             </Boundary>
           ))}
+          {/* V0.next-step-chips: the optional next steps, under the newest message */}
+          <Boundary name="The next steps">
+            <NextSteps />
+          </Boundary>
           {/* V0.message-before-start: a new thread's first message waits alone (the start may wait for the machine); no line above nothing */}
           {pending.length > 0 && items.length > 0 && (
             <div class="here" role="separator" aria-label="The agent has read everything above this line">

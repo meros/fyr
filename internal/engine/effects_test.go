@@ -27,8 +27,8 @@ func TestEffectAtMostOnceAcrossRestart(t *testing.T) {
 		<-release // the host dies before the script returns
 		return "applied", 0, nil
 	}
-	if out, isErr := callAs(t, h.e, id, "offer_action", map[string]any{"on": "thread", "id": "apply", "label": "Apply", "run": "script", "argv": []any{"make", "apply"}}); isErr {
-		t.Fatal(out)
+	if err := declareOffer(h.e, id, "thread", core.ActionSpec{ID: "apply", Label: "Apply", Run: core.RunScript, Argv: []string{"make", "apply"}}); err != nil {
+		t.Fatal(err)
 	}
 	th, _ := h.e.Thread(id)
 	if r := h.cmdID("p1", "action.run", id, core.Args{"on": "thread", "action": "apply", "digest": findOffer(th.Offers, "apply").Digest}); !r.OK {
@@ -84,7 +84,7 @@ func TestEffectResultLandsAfterRestart(t *testing.T) {
 		<-release
 		return "40 passed", 0, nil
 	}
-	callAs(t, h.e, id, "offer_action", map[string]any{"on": "thread", "id": "e2e", "label": "E2E", "run": "script", "argv": []any{"make", "e2e"}})
+	_ = declareOffer(h.e, id, "thread", core.ActionSpec{ID: "e2e", Label: "E2E", Run: core.RunScript, Argv: []string{"make", "e2e"}})
 	th, _ := h.e.Thread(id)
 	if r := h.cmdID("p1", "action.run", id, core.Args{"on": "thread", "action": "e2e", "digest": findOffer(th.Offers, "e2e").Digest}); !r.OK {
 		t.Fatalf("press: %+v", r)

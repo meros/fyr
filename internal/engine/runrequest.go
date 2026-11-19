@@ -34,10 +34,12 @@ func (e *Engine) runRequestTool(s *mcp.Server) {
 			"cwd":        str("The folder to run in; default this thread's folder."),
 			"timeoutSec": map[string]any{"type": "integer", "description": "The time limit, default 600, at most 3600."},
 			"id":         str("Optional: the same id again replaces that request."),
+			"optional":   map[string]any{"type": "boolean", "description": "Nothing waits on it: a chip under your newest message instead of a card in the owner's dock and Your move, gone when the next turn starts if it did not run."},
 		}, "command", "why"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			req := core.RunRequestArgs{ID: sArg(a, "id"), Command: sArg(a, "command"), Why: sArg(a, "why"), Cwd: sArg(a, "cwd")}
 			req.Root, _ = a["root"].(bool)
+			req.Optional, _ = a["optional"].(bool)
 			if n, ok := a["timeoutSec"].(float64); ok {
 				req.TimeoutSec = int(n)
 			}
@@ -50,6 +52,9 @@ func (e *Engine) runRequestTool(s *mcp.Server) {
 				if why := e.rootPrompt(); why != "" {
 					how += fmt.Sprintf(" (it cannot run as root here now: %s; the card tells the owner to copy it)", why)
 				}
+			}
+			if req.Optional {
+				return fmt.Sprintf("The owner sees it as a chip under your newest message, with %s, until the next turn starts. If they run it, the exit code and the output arrive as a message starting with [Fyr].", how), nil
 			}
 			return fmt.Sprintf("The owner sees a Run card with %s. When they run it, the exit code and the output arrive as a message starting with [Fyr]; if they choose Not now, you hear that too. End your turn or do other work meanwhile.", how), nil
 		}})

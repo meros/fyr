@@ -790,6 +790,9 @@ function railFixture(now: number): Fixture {
       offers: [
         req("run-1", `udisksctl mount -b /dev/sdc1\n${mint}`, "Mount the SD card and mint the badge onto it", true),
         req("run-2", "nix build .#badges --print-build-logs", "Build the badge images", false),
+        // V0.next-step-chips: a prompt chip and an optional command under the newest message
+        { id: "fix-build", on: "thread", label: "Fix the badge build", run: "agent", prompt: "Fix the failing badge build.", in: "this", by: "agent", digest: "d-fix" },
+        { ...req("run-3", "nix flake check\nnix run .#badges -- --dry-run", "Dry-run the minting", false), optional: true },
       ],
       runs: [{ action: "run-2", label: "Run", by: "owner", at: min(4), ok: false, exit: 1, endedAt: min(3), output: Array.from({ length: 16 }, (_, i) => `badges> building layer ${i + 1}/16`).join("\n") + "\nerror: builder for '/nix/store/x3k9-badges.drv' failed with exit code 1" }],
       ...(MOCK_ROOTPROMPT ? { rootPrompt: "no polkit authentication agent runs in your session" } : {}),

@@ -452,6 +452,8 @@ export interface Offer {
   command?: string;
   why?: string;
   root?: boolean;
+  /** V0.next-step-chips: a run request nothing waits on: a chip under the newest message, never in the dock */
+  optional?: boolean;
   by: "agent" | "observed";
   digest: string;
 }

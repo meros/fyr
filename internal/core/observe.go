@@ -13,6 +13,7 @@ func RunStarted(t *Thread, now time.Time) {
 	t.Subagents = 0
 	t.Failure = nil
 	t.Stopped = false
+	DropStaleSteps(t) // V0.next-step-chips (3)
 }
 
 // RunEnded closes the run. A nil failure means it finished normally or was

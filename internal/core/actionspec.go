@@ -60,7 +60,10 @@ type ActionSpec struct {
 	Command string `json:"command,omitempty"`
 	Why     string `json:"why,omitempty"`
 	Root    bool   `json:"root,omitempty"`
-	By      string `json:"by"` // agent or observed
+	// Optional is a run request nothing waits on (V0.next-step-chips): a
+	// chip under the newest message, never in Your move or the dock.
+	Optional bool   `json:"optional,omitempty"`
+	By       string `json:"by"` // agent or observed
 	Digest  string `json:"digest"`
 }
 
@@ -91,6 +94,9 @@ func (a ActionSpec) digest() string {
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%q\x00%s\x00%d\x00%s\x00%s\x00%q\x00%s\x00%s", a.On, a.Label, a.Run, a.Effect, a.Argv, a.Cwd, a.TimeoutSec, a.Prompt, a.In, a.When, a.Revision, a.OnOK)
 	if a.Request { // V0.149: what the card shows; older digests stay as they were
 		fmt.Fprintf(h, "\x00%q\x00%q\x00%t", a.Command, a.Why, a.Root)
+		if a.Optional { // V0.next-step-chips: older digests stay as they were
+			fmt.Fprint(h, "\x00optional")
+		}
 	}
 	return fmt.Sprintf("%016x", h.Sum64())
 }
@@ -135,7 +141,7 @@ func (h Holder) declare(a ActionSpec, request bool) error {
 		return errors.New("a run request is declared with run_request")
 	}
 	if !request {
-		a.Command, a.Why, a.Root = "", "", false
+		a.Command, a.Why, a.Root, a.Optional = "", "", false, false
 	}
 	a.ID, a.Label = strings.TrimSpace(a.ID), strings.TrimSpace(a.Label)
 	if a.ID == "" || a.Label == "" {

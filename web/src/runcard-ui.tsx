@@ -8,7 +8,9 @@ import { useContext, useState } from "preact/hooks";
 import type { Offer, Thread } from "./types.ts";
 import { pressArgs } from "./offers.ts";
 import { copyToClipboard } from "./copy.ts";
-import { cardDomId, cardLook, copyText, dismissArgs, dockRun, firstLine, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
+import { cardDomId, cardLook, cardShows, chips, copyText, dismissArgs, dockRun, firstLine, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
+import { press } from "./confirm.ts";
+import { useAsk } from "./confirm-ui.tsx";
 
 type Run = (action: string, args?: Record<string, unknown>) => unknown;
 
@@ -111,10 +113,10 @@ export function RunCard({ o, t, host, onRun, docked }: { o: Offer; t: Pick<Threa
 /** V0.next-step-dock (3), (4): a run request in the dock above the composer, short: why, the command's first line, the
  *  host, and Run, Copy, Not now and Show in conversation. Run scrolls to the full card, which streams the output.
  *  Desktop and phone share it; the phone's buttons are 44 px (phone.css, touch size). */
-export function DockRun({ o, t, host, more, onRun, onShow }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; more: number; onRun: Run; onShow(id: string): void }) {
+export function DockRun({ o, t, host, more, onRun, onShow, chip }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; more: number; onRun: Run; onShow(id: string): void; chip?: boolean }) {
   const l = cardLook(o, t.runs, { host, rootPrompt: t.rootPrompt });
   return (
-    <section class={`ask dockrun${o.root ? " root" : ""}`} aria-label={`${l.title}: ${l.why}`}>
+    <section class={`ask dockrun${chip ? " chiprun" : ""}${o.root ? " root" : ""}`} aria-label={`${l.title}: ${l.why}`}>
       <div class="ah">
         <b>{l.title}</b>
         <span class="ell">{l.folder}</span>
@@ -122,7 +124,8 @@ export function DockRun({ o, t, host, more, onRun, onShow }: { o: Offer; t: Pick
       </div>
       <div class="ab">
         <div class="q">{l.why}</div>
-        <pre class="runc-cmd">{shortStore(firstLine(o.command ?? ""))}</pre>
+        {/* V0.next-step-chips (4): an opened chip shows the whole command, since no card stands in the conversation yet */}
+        {chip ? <Command text={o.command ?? ""} /> : <pre class="runc-cmd">{shortStore(firstLine(o.command ?? ""))}</pre>}
         {l.rootLine && <div class={`runc-root${t.rootPrompt ? " no" : ""}`}>{l.rootLine}</div>}
         <div class="runc-b">
           <button
@@ -141,9 +144,11 @@ export function DockRun({ o, t, host, more, onRun, onShow }: { o: Offer; t: Pick
           <button type="button" class="btn sm" onClick={() => onRun("action.dismiss", dismissArgs(o))}>
             {l.close}
           </button>
-          <button type="button" class="btn sm ghost dockrun-show" onClick={() => onShow(o.id)}>
-            Show in conversation
-          </button>
+          {!chip && (
+            <button type="button" class="btn sm ghost dockrun-show" onClick={() => onShow(o.id)}>
+              Show in conversation
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -152,12 +157,14 @@ export function DockRun({ o, t, host, more, onRun, onShow }: { o: Offer; t: Pick
 
 /** V0.next-step-dock (3): scroll the conversation to a request's full card; on another tab, open the conversation first. */
 export function showCard(id: string, tab: string, setTab: (tab: string) => void) {
-  const go = () => document.getElementById(cardDomId(id))?.scrollIntoView({ behavior: "smooth", block: "center" });
-  if (tab === "conv") go();
-  else {
-    setTab("conv");
-    setTimeout(go, 50);
-  }
+  // The card may not stand yet (a chip's card shows once its run begins): look again for up to 3 s.
+  const go = (tries: number) => {
+    const el = document.getElementById(cardDomId(id));
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    else if (tries > 0) setTimeout(() => go(tries - 1), 100);
+  };
+  if (tab !== "conv") setTab("conv");
+  setTimeout(() => go(30), tab === "conv" ? 0 : 50);
 }
 
 /** What a card in the conversation needs: the thread and its commands. */
@@ -167,7 +174,7 @@ export const RunCards = createContext<{ t: Thread; onRun: Run } | null>(null);
 export function RunCardAt({ id }: { id: string }) {
   const c = useContext(RunCards);
   const o = c && requests(c.t).find((x) => x.id === id);
-  if (!c || !o) return null;
+  if (!c || !o || !cardShows(o, c.t.runs)) return null;
   return <RunCard o={o} t={c.t} host={c.t.host || undefined} onRun={c.onRun} docked={dockRun(c.t)?.o.id === id} />;
 }
 
@@ -184,5 +191,36 @@ export function ProseCommand({ text }: { text: string }) {
         <CopyCmd text={text} />
       </div>
     </article>
+  );
+}
+
+/** V0.next-step-chips (2), (4): the optional next steps, as chips under the agent's newest message. A prompt chip sends
+ *  its prompt (a script from before this version asks first, as its button did); a run chip opens a short Run card
+ *  under the chips, whose Run scrolls to the full card. One component on desktop and phone (44 px on the phone). */
+export function NextSteps() {
+  const c = useContext(RunCards);
+  const ask = useAsk();
+  const [open, setOpen] = useState<string | null>(null);
+  if (!c) return null;
+  const { prompts, runs } = chips(c.t);
+  if (!prompts.length && !runs.length) return null;
+  const opened = runs.find((o) => o.id === open);
+  return (
+    <div class="nsteps" role="group" aria-label="Next steps">
+      <div class="nsteps-b">
+        {prompts.map((o) => (
+          <button key={o.id} type="button" class="nstep" title={o.prompt ?? o.label} onClick={() => void press("thread", o, c.t.cwd, ask, c.onRun as (a: string, args?: Record<string, unknown>) => void)}>
+            {o.label}
+          </button>
+        ))}
+        {runs.map((o) => (
+          <button key={o.id} type="button" class={`nstep run${open === o.id ? " on" : ""}`} aria-expanded={open === o.id} title={o.command} onClick={() => setOpen(open === o.id ? null : o.id)}>
+            <span aria-hidden="true">▸ </span>
+            {o.why ?? o.label}
+          </button>
+        ))}
+      </div>
+      {opened && <DockRun chip o={opened} t={c.t} host={c.t.host || undefined} more={0} onRun={c.onRun} onShow={(id) => showCard(id, "conv", () => {})} />}
+    </div>
   );
 }

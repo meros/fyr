@@ -44,6 +44,8 @@ type RunRequestArgs struct {
 	Root       bool   `json:"root,omitempty"`
 	Cwd        string `json:"cwd,omitempty"`
 	TimeoutSec int    `json:"timeoutSec,omitempty"`
+	// Optional: nothing waits on it; a chip, not Your move (V0.next-step-chips).
+	Optional bool `json:"optional,omitempty"`
 }
 
 // ActionOutputArgs are action.output's: the output so far of a running
@@ -116,7 +118,7 @@ func reduceRunRequest(r Rec, in Input, now time.Time) (Result, error) {
 		label = "Run as root"
 	}
 	spec := ActionSpec{ID: id, Label: label, Run: RunScript, Argv: RunArgv(a.Command), Cwd: cwd, TimeoutSec: a.TimeoutSec,
-		Request: true, Command: a.Command, Why: strings.TrimSpace(a.Why), Root: a.Root}
+		Request: true, Command: a.Command, Why: strings.TrimSpace(a.Why), Root: a.Root, Optional: a.Optional}
 	if err := h.declare(spec, true); err != nil {
 		return Result{}, err
 	}
@@ -128,11 +130,12 @@ func reduceRunRequest(r Rec, in Input, now time.Time) (Result, error) {
 }
 
 // PendingRequest is the thread's oldest run request that never ran, or
-// nil: it puts the thread in Needs you (V0.149 (5)).
+// nil: it puts the thread in Needs you (V0.149 (5)). An optional one waits
+// on nobody (V0.next-step-chips (3)).
 func PendingRequest(t *Thread) *ActionSpec {
 	for i := range t.Offers {
 		a := &t.Offers[i]
-		if a.Request && lastRunOf(t.Runs, a.ID, OnThread) == nil {
+		if a.Request && !a.Optional && lastRunOf(t.Runs, a.ID, OnThread) == nil {
 			return a
 		}
 	}
@@ -348,4 +351,20 @@ func pressData(on, title string, a ActionSpec, more map[string]any) map[string]a
 		d[k] = v
 	}
 	return d
+}
+
+// DropStaleSteps removes the thread's optional next steps when a new run
+// starts (V0.next-step-chips (3)): the actions the agent offered on the
+// thread (a prompt, or a script from before this version) and the optional
+// run requests that never ran belong to the message they stood under. A
+// request that waits on the owner, and any that ran, stay.
+func DropStaleSteps(t *Thread) {
+	keep := t.Offers[:0]
+	for _, a := range t.Offers {
+		stale := a.By == ByAgent && (!a.Request || (a.Request && a.Optional && lastRunOf(t.Runs, a.ID, OnThread) == nil))
+		if !stale {
+			keep = append(keep, a)
+		}
+	}
+	t.Offers = keep
 }
