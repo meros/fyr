@@ -14,6 +14,7 @@ import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
 import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
+import { HomeScreen } from "./home-ui.tsx";
 import { stripHosts } from "./load.ts";
 import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
@@ -309,6 +310,15 @@ export function PhoneApp(p: PhoneProps) {
           </div>
         </div>
       )}
+      {s.name === "status" && (
+        // V0.status-home: the status screen, the same component the desktop shows with no thread open.
+        <div class="m-screen m-status">
+          <MHeader onBack={p.nav.back} title="Status" />
+          <div class="m-nbody">
+            <HomeScreen phone sec={p.inbox.sec} projects={p.store.projects} profiles={p.store.profiles} hosts={p.store.hosts} now={p.now} loaded={p.store.loaded} onOpen={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} onAllNeeds={p.nav.back} />
+          </div>
+        </div>
+      )}
       {s.name === "settings" && <div class="m-screen m-settings">{p.settings?.(s.page ? { page: s.page, ...(s.sub ? { sub: s.sub } : {}), ...(s.host ? { host: s.host } : {}) } : null, (title, end) => <MHeader onBack={p.nav.back} title={title} right={end} />)}</div>}
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
@@ -437,9 +447,10 @@ function MInbox(p: PhoneProps) {
       ) : (
         <div class="m-ih">
           {/* V0.103, V0.113: the rail's logo (V0.93) alone, as on the desktop rail; its alt is the name. */}
-          <span class="m-brand">
+          {/* V0.status-home: the logo opens the Status screen. */}
+          <button class="m-brand b44" onClick={() => p.nav.go({ screen: { name: "status" }, sheet: null })} aria-label="Status">
             <BrandMark size={28} />
-          </span>
+          </button>
           {/* V0.166: with several hosts the load strip names each one, so the connection keeps only its dot (the name on
               hover and for the screen reader): a 360 px header has no room for both. */}
           <span class={`m-conn ${p.store.conn}${strip.length > 1 ? " dot" : ""}`} title={`${hostName}: ${p.store.conn}`}>
@@ -1480,6 +1491,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
     return (
       <MSheet onClose={close} label="More">
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.list.setSelecting(true))} />
+        <Item label="Status" sub="What needs you, what runs, what happened" onClick={() => p.nav.replace({ screen: { name: "status" }, sheet: null })} />
         <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
         <MSettingsItem hosts={p.store.hosts} self={p.store.host} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />

@@ -1730,3 +1730,55 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
   .slide.ready,.m-send,.m-ck,.m-op .mk,.m-under>*{transition:none}
   .tmenu-l{animation:none}
 }
+
+/* V0.status-home: the status screen, in the thread pane with no thread open (desktop) and as the phone's Status screen.
+   .phone: the phone's sizes (44 px targets, one column of tiles, a step larger type: touch on a 360 px screen). */
+.home{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.st-body{flex:1;min-height:0;overflow-y:auto;padding:28px 36px 16px;width:100%;max-width:880px;margin:0 auto;box-sizing:border-box}
+.st-head{margin-bottom:22px}
+.st-day{margin:0;font:600 20px/26px var(--ui);color:var(--ink)}
+.st-day .tnum{color:var(--ink-muted);font-weight:500}
+.st-sum{margin:2px 0 0;color:var(--ink-muted)}
+.st-sum.att{color:var(--beam-ink)}
+.st-blk{margin-bottom:22px}
+.st-bh{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;font:500 11px/16px var(--ui);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint)}
+.st-more{font:500 12px/16px var(--ui);letter-spacing:0;text-transform:none;color:var(--harbour)}
+.st-more:hover{text-decoration:underline}
+.st-mv{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 12px;margin-bottom:6px;background:var(--raised);border:1px solid var(--line);border-left:3px solid var(--beam);border-radius:8px}
+.st-mvt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.st-tt{display:flex;align-items:center;gap:6px;font-weight:500;color:var(--ink)}
+.st-mvt small{display:block;color:var(--ink-muted);font-size:12px}
+.st-mvt small b{color:var(--ink)}
+.st-err{color:var(--signal-ink)!important}
+.st-act{min-width:76px;justify-content:center}
+.st-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.st-tile{display:flex;flex-direction:column;gap:4px;min-width:0;padding:10px 12px;background:var(--raised);border:1px solid var(--line);border-radius:8px}
+.st-tile:hover,.st-mv:hover{border-color:var(--line-strong)}
+.st-mv:hover{border-left-color:var(--beam)}
+.st-line{display:flex;align-items:center;gap:6px;color:var(--ink-muted);font-size:12px}
+.st-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--harbour);animation:st-pulse 1.4s ease-in-out infinite}
+@keyframes st-pulse{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.st-dot{animation:none}}
+.st-meta{font:400 11px/14px var(--mono);color:var(--ink-faint)}
+.st-calm{padding:16px;margin-bottom:22px;border:1px dashed var(--line);border-radius:8px;color:var(--ink-muted);text-align:center}
+.st-log{list-style:none;margin:0;padding:0}
+.st-ev{display:flex;gap:10px;width:100%;padding:5px 0;border-bottom:1px solid var(--line);color:var(--ink);min-width:0}
+.st-ev:hover{background:var(--sunken)}
+.st-ev time{flex:none;width:44px;font:400 11px/18px var(--mono);color:var(--ink-faint)}
+.st-k{font-weight:500}
+.st-k.merged,.st-k.done,.st-k.settled{color:var(--calm)}
+.st-k.failed{color:var(--signal-ink)}
+.st-lmore{padding:5px 0 0 54px;color:var(--ink-faint);font-size:12px}
+.st-sys{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 36px;border-top:1px solid var(--line);background:var(--surface);color:var(--ink-muted);font-size:12px}
+.st-host .hm{width:120px}
+.st-q{min-width:0}
+.st-keys{display:flex;gap:10px;margin-left:auto;color:var(--ink-faint);font-size:11px}
+.home.phone .st-body{padding:16px;max-width:none}
+.home.phone .st-day{font-size:22px;line-height:28px}
+.home.phone .st-sum,.home.phone .st-tt{font-size:15px}
+.home.phone .st-mvt small,.home.phone .st-line{font-size:13px}
+.home.phone .st-act{height:44px;min-width:88px}
+.home.phone .st-tiles{grid-template-columns:1fr}
+.home.phone .st-ev{min-height:44px;align-items:center}
+.home.phone .st-sys{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+.m-status .m-nbody{padding:0;gap:0}
