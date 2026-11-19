@@ -45,6 +45,11 @@ export function refreshLoad(): void {
   void poll();
 }
 
+/** V0.row-calm: whether a thread has a CPU reading, so its row has chips to show. */
+export function useHasCPU(id: string): boolean {
+  return !!threadCPU(useLoad(), id);
+}
+
 export function useLoad(): HostLoad[] {
   const api = useApi();
   const [l, setL] = useState(current);
@@ -211,9 +216,11 @@ export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: C
 }
 
 /** " · 2.6 cores" after a working thread's line; nothing before the host's second read. */
-export function ThreadCPU({ id }: { id: string }) {
+export function ThreadCPU({ id, chip }: { id: string; chip?: boolean }) {
   const c = threadCPU(useLoad(), id);
   if (!c) return null;
+  // V0.row-calm: in an inbox row the reading sits with the chips, where the cut at the line's end cannot take it.
+  if (chip) return <span class={`tcpu${c.hot ? " hot" : ""}`} title="CPU this thread and what it started use right now">{c.text}</span>;
   return (
     <>
       {" · "}

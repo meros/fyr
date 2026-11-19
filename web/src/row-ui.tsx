@@ -7,14 +7,14 @@ import type { Change, ChangeNeed, Thread } from "./types.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { press } from "./confirm.ts";
-import { ThreadCPU, ThreadJob, ThreadSlot, useThreadJob } from "./load-ui.tsx";
+import { ThreadCPU, ThreadJob, ThreadSlot, useHasCPU, useThreadJob } from "./load-ui.tsx";
 import { RowUndeclared, useRowUndeclared } from "./undeclared-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
 import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { hostOf, multiHost, rowProvider } from "./hosts.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
-import { rowMeta, rowState } from "./rows.ts";
+import { rowDetail, rowState, stateNamesPr } from "./rows.ts";
 import { relTime, whenLabel } from "./format.ts";
 import { snoozeLine } from "./snooze.ts";
 import { prChip } from "./pr.ts";
@@ -163,7 +163,7 @@ function RowHead({ t, look }: { t: Thread; look: RowLook }) {
   return (
     // The icons and the pin sit over the title's first-line indent (app.css): inside the clamped box an element would
     // become a block of its own (-webkit-box), and Safari clamps only plain text.
-    <span class={`hd${t.pinnedAt ? " pinned" : ""}`} style={{ "--ri": `${look.icon}px`, ...(host ? { "--rh": `${look.icon + 4}px` } : {}) }}>
+    <span class={`hd${t.pinnedAt ? " pinned" : ""}${t.title ? "" : " untitled"}`} style={{ "--ri": `${look.icon}px`, ...(host ? { "--rh": `${look.icon + 4}px` } : {}) }}>
       {host && (
         <span class="rhm">
           <HostMark name={host} size={look.icon} label />
@@ -210,8 +210,10 @@ function hasChange(t: Thread): boolean {
 export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }: BodyProps) {
   const st = t.attention.state;
   const need = rowNeed(t); // V0.101: the host's cause, read only
+  // V0.row-calm: the chip is left out when the state word already names that PR ("Merge #4170" over "#4170 ready").
+  const chip = hasChange(t) && !stateNamesPr(t);
   return (
-    <div {...attrs} class={`rw${st === "done" ? " dn" : ""}${guest ? " guest" : ""}${extra}`}>
+    <div {...attrs} class={`rw${st === "done" ? " dn" : ""}${need ? " hasneed" : ""}${guest ? " guest" : ""}${extra}`}>
       {lead ?? (
         <span class="tile">
           <StateIcon state={st} />
@@ -223,14 +225,15 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
         {guest && <GuestTag why={guest} />}
         <b class={stateClass(st)}>{rowState(t)}</b> · {pre}
         <RowFrom t={t} look={look} more />
-        {rowMeta(t, { keys: look.keys })}
+        {rowDetail(t, { keys: look.keys })}
       </span>
-      {(hasChange(t) || need) && (
+      {chip && (
         <span class="cl">
-          {hasChange(t) && <PrBadge t={t} />}
-          {need && <NeedButton t={t} {...need} />}
+          <PrBadge t={t} />
         </span>
       )}
+      {/* V0.row-calm: the button sits at the right of the state line, under the age, not on a line of its own */}
+      {need && <NeedButton t={t} {...need} />}
     </div>
   );
 }
@@ -272,10 +275,12 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
   const firstTask = agents.map((x) => x.startedAt).filter(Boolean).sort()[0];
   const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
   const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing
-  const chips = sub || (!working && hasChange(t));
+  const hasCPU = useHasCPU(t.id); // a hook, so called on every row
   const job = useThreadJob(t.id); // decision 0029 S1: first on the line, which is cut at its end
   // V0.164: heavy work Fyr did not admit starts the line, in the beam ink, and says the use itself (same on both fronts).
   const und = useRowUndeclared(t.id, now);
+  const cpu = working && !und && hasCPU;
+  const chips = sub || cpu || (!working && hasChange(t));
   return (
     <div {...attrs} class={`one${agents.length ? " has-agents" : ""}${guest ? " guest" : ""}${extra}`}>
       {lead ?? <StateIcon state={st} />}
@@ -289,11 +294,11 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
           {und ? <RowUndeclared id={t.id} now={now} /> : job && <ThreadJob text={job} />}
           {(und || job) && detail ? " · " : ""}
           {detail}
-          {working && !und && <ThreadCPU id={t.id} />}
           {!job && !und && <ThreadSlot id={t.id} />}
         </i>
         {chips && (
           <span class="cl">
+            {cpu && <ThreadCPU id={t.id} chip />}
             {sub && <span class="sb">{t.subagents ?? 0} sub</span>}
             {!working && <PrBadge t={t} short />}
           </span>

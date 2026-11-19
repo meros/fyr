@@ -90,10 +90,53 @@ export function rowState(t: Thread): string {
       const n = d.questions?.length ?? 1;
       return n === 1 ? "1 question" : `${n} questions`;
     }
-    if (d?.kind === "approval") return "Approval";
+    // V0.row-calm: the word names the action, as "Merge #12" does; the line under it keeps the command.
+    if (d?.kind === "approval") return `Allow ${d.tool ?? "tool"}`;
     if (d?.kind === "effect") return describeEffect(d, t.pr).label;
   }
-  return t.attention.reason || stateLabel(st);
+  return blockedReason(t)?.word ?? (t.attention.reason || stateLabel(st));
+}
+
+/** V0.row-calm: the host's Needs you reason is "<change title>: <need>" (V0.101) or "Run: <why>" (V0.149). The row
+ *  puts the short word ("Merge", "Run") in the state's place and the rest on the line, so a long change title in the
+ *  state colour does not fill the line. */
+export function blockedReason(t: Pick<Thread, "attention" | "changes">): { word: string; what: string } | null {
+  const r = t.attention.reason;
+  if (t.attention.state !== "blocked" || !r) return null;
+  const i = r.indexOf(": ");
+  if (i < 0) return null;
+  const head = r.slice(0, i);
+  const tail = r.slice(i + 2);
+  if (head === "Run") return { word: head, what: tail };
+  if ((t.changes ?? []).some((c) => c.title === head) && tail) return { word: tail, what: head };
+  return null;
+}
+
+/** V0.row-calm: the state word names the row's PR ("Merge #4170"), so a "#4170 ready" chip under it says nothing new. */
+export function stateNamesPr(t: Thread): boolean {
+  return !!t.pr && new RegExp(`#${t.pr.number}\\b`).test(rowState(t));
+}
+
+/** V0.row-calm: the detail after the state word, without what the state word already says. Its first part is left
+ *  out when it names the same PR ("Merge #12" over "Merge pull request #12 · checks are green"), and a detail that
+ *  starts with the state word loses that part, or only the word when nothing follows ("API error 529: overloaded" reads "529: overloaded"). */
+export function rowDetail(t: Thread, o: { keys?: boolean } = {}): string {
+  return trimEcho(rowState(t), rowMeta(t, o));
+}
+
+export function trimEcho(state: string, meta: string): string {
+  const parts = meta.split(" · ");
+  const ref = state.match(/#\d+\b/)?.[0];
+  const head = parts[0];
+  if (ref && new RegExp(`${ref}\\b`).test(head)) parts.shift();
+  else if (state && head.toLowerCase().startsWith(state.toLowerCase())) {
+    const rest = head.slice(state.length).replace(/^[\s:·,–-]+/, "");
+    // With more parts after it the echo goes whole ("Update Fyr to a new version · Hardening" reads "Hardening");
+    // alone, its tail is the news ("529: overloaded").
+    if (rest && parts.length === 1) parts[0] = rest;
+    else parts.shift();
+  }
+  return parts.join(" · ");
 }
 
 /** The line after it. `keys`: a failed row names the retry key (the desktop has a keyboard). */
@@ -115,5 +158,7 @@ export function rowMeta(t: Thread, o: { keys?: boolean } = {}): string {
   }
   if (st === "failed") return `${t.failure?.message ?? ""}${o.keys ? " · r to retry" : ""}`;
   if (st === "working") return t.activity ?? "";
+  const b = blockedReason(t);
+  if (b) return [b.what, rowSummary(t)].filter(Boolean).join(" · ");
   return rowSummary(t);
 }

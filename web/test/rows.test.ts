@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rowMeta, rowProjectName, rowState } from "../src/rows.ts";
+import { rowMeta, rowProjectName, rowState, stateNamesPr, trimEcho } from "../src/rows.ts";
 import type { Decision } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -15,7 +15,7 @@ test("an ask row counts its questions and shows the first", () => {
 
 test("an approval row names the tool and the command", () => {
   const t = asking({ kind: "approval", tool: "Bash", input: { command: "ls" } });
-  assert.equal(rowState(t), "Approval");
+  assert.equal(rowState(t), "Allow Bash");
   assert.equal(rowMeta(t), "Allow Bash ls");
   assert.equal(rowMeta(asking({ kind: "approval" })), "Allow tool");
 });
@@ -60,4 +60,33 @@ test("a question read in text is marked as such and shows the question", () => {
 test("a blocked row with another reason keeps it", () => {
   const t = thread("q", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Fix: CI failed" }, textAsk: { question: "Which logo?", at: "2026-11-18T10:00:00Z", run: 1 } });
   assert.equal(rowState(t), "Fix: CI failed");
+});
+
+// V0.row-calm: the line under the title does not say twice what its state word says.
+test("the detail leaves out what the state word already says", () => {
+  assert.equal(trimEcho("Merge #4170", "Merge pull request #4170 · CI is green"), "CI is green");
+  assert.equal(trimEcho("Merge #4170", "Merge pull request #4170"), "");
+  assert.equal(trimEcho("Update Fyr", "Update Fyr to a new version · Hardening"), "Hardening");
+  assert.equal(trimEcho("API error", "API error 529: overloaded"), "529: overloaded");
+  assert.equal(trimEcho("Merge #41", "Merge pull request #4170"), "Merge pull request #4170");
+  assert.equal(trimEcho("2 questions", "Which?"), "Which?");
+});
+
+test("a row's PR chip is left out when the state word names that PR", () => {
+  const t = asking({ kind: "effect", effect: { action: "pr.merge", args: { pr: "https://github.com/o/r/pull/12" } } } as Partial<Decision>);
+  assert.equal(rowState(t), "Merge #12");
+  assert.equal(stateNamesPr({ ...t, pr: { number: 12 } as never }), true);
+  assert.equal(stateNamesPr({ ...t, pr: { number: 123 } as never }), false);
+  assert.equal(stateNamesPr({ ...asking({ kind: "ask" }), pr: { number: 12 } as never }), false);
+});
+
+test("a Needs you reason puts its short word first and the change on the line", () => {
+  const ch = [{ id: "c", title: "Placement rows load in one read" }] as never;
+  const t = thread("b", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Placement rows load in one read: Merge" }, changes: ch });
+  assert.equal(rowState(t), "Merge");
+  assert.ok(rowMeta(t).startsWith("Placement rows load in one read"));
+  const run = thread("r", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Run: install the hook" } });
+  assert.equal(rowState(run), "Run");
+  const other = thread("o", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Waiting: for CI" } });
+  assert.equal(rowState(other), "Waiting: for CI");
 });

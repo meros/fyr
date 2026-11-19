@@ -97,6 +97,7 @@
 .m-list .one .age{line-height:20px}
 .m-list .one .ic{margin-top:2px}
 .m-list .one .m i{font-size:13px;line-height:18px}
+.m-list .one .cl,.m-list .one .cl .tcpu{font-size:13px;line-height:18px} /* the line's size, as on the desktop; .m-app .cl is the message text */
 .m-list .pr{height:20px;font-size:12px;line-height:18px;border-radius:10px}
 .m-list .rw>.m-ck{grid-row:1/span 2;align-self:start;justify-self:center}
 .m-list .one>.m-ck{justify-self:center}
