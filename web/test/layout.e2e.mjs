@@ -5272,8 +5272,13 @@ try {
   await waitFor(phone ? "!!document.querySelector('.m-thread')" : "!!document.querySelector('.th .tt')", { soft: true });
   await patch(open, "seen", "seen");
   await settle();
-  if (phone) { await evaluate("history.back()"); await waitFor(`!!document.querySelector('${S("unread")}')`, { soft: true }); await settle(); }
-  check((await evaluate(IN("unread"))).includes(open), `${ctx}: the open row left Unread (${JSON.stringify({ open, unread: await evaluate(IN("unread")), seen: await evaluate(IN("seen")), sel: await evaluate(`document.querySelector('${L} [aria-selected="true"]')?.dataset.id ?? null`) })})`);
+  // V0.phone-row-moves: on the phone, back on the list, the row is where the live list has it: in Seen.
+  if (phone) {
+    await evaluate("history.back()");
+    await waitFor(`${IN("seen")}.includes(${JSON.stringify(open)})`, { soft: true });
+    await settle();
+    check((await evaluate(IN("seen"))).includes(open) && !(await evaluate(IN("unread"))).includes(open), `${ctx}: back on the list the read row kept its Unread place (${JSON.stringify({ unread: await evaluate(IN("unread")), seen: await evaluate(IN("seen")) })})`);
+  } else check((await evaluate(IN("unread"))).includes(open), `${ctx}: the open row left Unread (${JSON.stringify({ open, unread: await evaluate(IN("unread")), seen: await evaluate(IN("seen")), sel: await evaluate(`document.querySelector('${L} [aria-selected="true"]')?.dataset.id ?? null`) })})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }
