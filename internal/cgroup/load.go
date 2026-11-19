@@ -95,8 +95,6 @@ type ThreadLoad struct {
 	// memory.peak, and the class of the job its slot runs now.
 	CPUPressure *float64 `json:"cpuPressure,omitempty"`
 	Peak        uint64   `json:"peak,omitempty"`
-	// MemoryHigh is the thread's own limit, 0 for none (decision 0032 slice 3).
-	MemoryHigh uint64 `json:"memoryHigh,omitempty"`
 	// Working is the working set, memory.current less inactive_file (V0.164):
 	// what the undeclared-work detector reads; Memory stays the raw reading.
 	Working uint64 `json:"-"`
@@ -258,8 +256,8 @@ func (s *Sampler) Tick() {
 		s.Services.Tick(s.Tree, ids)
 	}
 	s.detect(l)
-	s.Tree.SplitThreads()                     // V0.job-limits: each thread's CLI in its cli/ leaf
-	s.Tree.ApplyThreadBudget(s.threadHolds()) // decision 0032 slice 3
+	s.Tree.SplitThreads()                      // V0.job-limits: each thread's CLI in its cli/ leaf
+	s.Tree.ShadowThreadBudget(s.threadHolds()) // decision 0032 slice 3, V0.share-shadow: measured, not enforced
 	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
 		return
 	}
@@ -336,20 +334,14 @@ func (s *Sampler) TreeCPUTime(thread string) (time.Duration, bool) {
 	return 0, false
 }
 
-// threadHolds are the slots held now, with what each job is known to need.
-func (s *Sampler) threadHolds() map[string]ThreadHold {
+// threadHolds are the threads holding a slot now.
+func (s *Sampler) threadHolds() map[string]bool {
 	if s.Slots == nil || s.Slots.Off() {
 		return nil
 	}
-	out := map[string]ThreadHold{}
+	out := map[string]bool{}
 	for _, h := range s.Slots.Snapshot().Held {
-		var hold ThreadHold
-		if s.Jobs != nil {
-			if lr, ok := s.Jobs.Learned(s.Jobs.ClassOf(h.Owner, h.Kind)); ok {
-				hold = ThreadHold{Peak: lr.Peak, Known: true}
-			}
-		}
-		out[h.Owner] = hold
+		out[h.Owner] = true
 	}
 	return out
 }
@@ -496,7 +488,6 @@ func (s *Sampler) get() Load {
 		for _, c := range s.Tree.threadCgroups() {
 			d := c.Dir
 			t := ThreadLoad{ID: c.Name, Memory: readBytes(filepath.Join(d, "memory.current")), Peak: readBytes(filepath.Join(d, "memory.peak"))}
-			t.MemoryHigh = readBytes(filepath.Join(d, "memory.high"))
 			t.Working = t.Memory
 			if in, ok := readKey(filepath.Join(d, "memory.stat"), "inactive_file"); ok && in <= t.Memory {
 				t.Working -= in

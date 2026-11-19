@@ -361,7 +361,6 @@ func addThreadLoad(a, b ThreadLoad) ThreadLoad {
 	a.Memory += b.Memory
 	a.Working += b.Working
 	a.Peak = max(a.Peak, b.Peak)
-	a.MemoryHigh = max(a.MemoryHigh, b.MemoryHigh)
 	if a.CPU == nil {
 		a.CPU = b.CPU
 	} else if b.CPU != nil {

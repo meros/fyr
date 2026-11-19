@@ -130,7 +130,7 @@
         assert nixpkgs.lib.hasInfix ''subject.user == "u"'' sys.config.security.polkit.extraConfig;
         assert conf.cgroups.agentsSlice == "fyr-agents.slice" && nixpkgs.lib.hasSuffix "/bin/systemd-run" conf.cgroups.systemdRun;
         assert removeAttrs conf.cgroups [ "agentsSlice" "systemdRun" "systemctl" ] == { enable = true; serverMemoryLow = "1G"; agentsCpuMax = "400000 100000";
-          agentsMemoryHigh = "13G"; agentsMemoryMax = "14G"; agentsMemorySwapMax = "16G"; threadMemoryHighPercent = 0; };
+          agentsMemoryHigh = "13G"; agentsMemoryMax = "14G"; agentsMemorySwapMax = "16G"; };
         # V0.psi-trigger-slice: before fyrd starts, root hands the slice's
         # memory.pressure to the user (fyrd's PSI trigger, V0.guard-wake); the
         # slice is started first so its cgroup exists.
