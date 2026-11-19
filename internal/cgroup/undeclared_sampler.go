@@ -33,7 +33,9 @@ func (s *Sampler) detect(l Load) {
 		if t.ID == "probe" || t.ID == DeployDir {
 			continue
 		}
-		in.Reads = append(in.Reads, Reading{Thread: t.ID, CPU: t.CPU, Work: t.Working})
+		// V0.services-not-jobs: a service's memory is reserved, not undeclared work.
+		work := t.Working - min(t.Working, s.Services.InCgroup(t.ID))
+		in.Reads = append(in.Reads, Reading{Thread: t.ID, CPU: t.CPU, Work: work})
 	}
 	s.Detect.Observe(s.now(), in)
 	names := map[string]string{}
@@ -43,6 +45,13 @@ func (s *Sampler) detect(l Load) {
 		}
 		if root, ok := Heaviest(s.Roots(f)); ok {
 			s.Detect.SetCommand(f.Thread, CommandOf(root, s.Groups.Bashes(f.Thread)))
+		}
+	}
+	if s.Project != nil { // V0.services-not-jobs: a service's wait reason names its thread too
+		for _, t := range l.Threads {
+			if _, ok := names[t.ID]; !ok && len(s.Services.Of(t.ID)) > 0 {
+				names[t.ID] = s.Project(t.ID)
+			}
 		}
 	}
 	s.names.Store(&names)
@@ -63,7 +72,11 @@ func (s *Sampler) Roots(f Flag) []Root {
 		cli = s.CLIs()[f.Thread]
 	}
 	if s.Tree != nil {
-		return ReadRootsWith(s.Tree, s.Proc, f.Thread, f.FirstOver, Elders{CLI: cli, Min: minOld})
+		el := Elders{CLI: cli, Min: minOld}
+		if s.Services != nil {
+			el.Service = s.Services.IsService // V0.services-not-jobs
+		}
+		return ReadRootsWith(s.Tree, s.Proc, f.Thread, f.FirstOver, el)
 	}
 	if s.Trees == nil {
 		return nil
@@ -93,6 +106,12 @@ func (s *Sampler) Undeclared() []slots.Undeclared {
 		out = append(out, u)
 	}
 	return out
+}
+
+// ServiceExtras are the threads' running services' reservations for admission
+// (V0.services-not-jobs), from the last tick.
+func (s *Sampler) ServiceExtras() []slots.Extra {
+	return s.Services.Extras(s.nameOf)
 }
 
 // nameOf is what a thread is called in a wait reason: its project, else its id.

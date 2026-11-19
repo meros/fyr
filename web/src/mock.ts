@@ -1949,6 +1949,10 @@ export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Dat
       memoryStall: mode === "paused" ? "critical" : h.memoryStall,
       undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 },
       heavyAdded: [{ pattern: "python3? build_admin_ny\\.py", kind: "build", at: new Date(now - 24 * 3600_000).toISOString(), refused: 0, learned: true }],
+      servicePatterns: [
+        { pattern: "(^|[\\s/])docker\\s+compose\\b.*\\sup\\b", builtIn: true },
+        { pattern: "(^|[\\s/])(npm|pnpm|bun)\\s+run\\s+dev\\b", builtIn: true },
+      ],
     },
     ...rest,
   ];
@@ -1956,6 +1960,23 @@ export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Dat
 /** V0.164: host.heavyRemove and host.undeclaredSettings on the mock host's load, with the host's refusals (an unknown
  *  pattern, a threshold out of range). */
 export function mockUndeclaredCommand(h: HostLoad, action: string, args: Record<string, unknown>): { ok: boolean; error?: string; result?: Record<string, unknown> } {
+  if (action === "host.servicePatterns") {
+    // V0.services-not-jobs: as the host does it (a removed built-in pattern can be added back).
+    const list = h.servicePatterns ?? [];
+    if (typeof args.remove === "string" && args.remove) {
+      if (!list.some((x) => x.pattern === args.remove)) return { ok: false, error: "no such service pattern" };
+      h.servicePatterns = list.filter((x) => x.pattern !== args.remove);
+    }
+    if (typeof args.add === "string" && args.add.trim()) {
+      try {
+        new RegExp(args.add);
+      } catch {
+        return { ok: false, error: "not a valid pattern" };
+      }
+      if (!(h.servicePatterns ?? []).some((x) => x.pattern === args.add)) h.servicePatterns = [...(h.servicePatterns ?? []), { pattern: args.add.trim() }];
+    }
+    return { ok: true, result: args };
+  }
   if (action === "host.heavyRemove") {
     if (!h.heavyAdded?.some((x) => x.pattern === args.pattern)) return { ok: false, error: "That pattern was not added" };
     h.heavyAdded = h.heavyAdded.filter((x) => x.pattern !== args.pattern);

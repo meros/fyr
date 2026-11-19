@@ -1505,6 +1505,7 @@ function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: Se
           ))}
         </Group>
       )}
+      {h.servicePatterns && <ServiceGroup h={h} run={run} readOnly={env.readOnly} />}
       {th && (
         <Group label="When a thread counts as heavy" title="When a thread counts as heavy" fold={{ id: `${host}:thresholds`, open: false }} foot="A thread's idle level is what its agent uses between jobs (the CLI and the servers it keeps running), learned per thread.">
           {th.map((r) => (
@@ -1640,6 +1641,38 @@ function GitHubGroup({ d }: { d: Data }) {
       {githubRows(v).map((r) => (
         <Row key={r.title} title={r.title} desc={r.desc} mono />
       ))}
+    </Group>
+  );
+}
+
+/** V0.services-not-jobs: the commands this host treats as services, edited like the heavy commands; desktop and phone
+ *  share it. */
+function ServiceGroup({ h, run, readOnly }: { h: HostLoad; run(action: string, args: Record<string, unknown>): Promise<string | null>; readOnly: boolean }) {
+  const [err, setErr] = useState<{ key: string; text: string } | null>(null);
+  const act = async (key: string, args: Record<string, unknown>) => {
+    const e = await run("host.servicePatterns", args);
+    setErr(e ? { key, text: e } : null);
+    return e;
+  };
+  return (
+    <Group label="Services" title="Services" foot="Commands that keep running for the work beside them: dev stacks, dev servers, compose projects. Fyr reserves the memory a service needed at its peak while it runs, counts the containers a thread starts as its own, and never pauses a service. Patterns are regular expressions matched against the command.">
+      {(h.servicePatterns ?? []).map((p) => (
+        <Row
+          key={p.pattern}
+          title={p.pattern}
+          mono
+          desc={p.builtIn ? "built in" : "added"}
+          error={err?.key === `s:${p.pattern}` ? err.text : null}
+          end={
+            <button type="button" class="btn" disabled={readOnly} onClick={() => void act(`s:${p.pattern}`, { remove: p.pattern })}>
+              Remove
+            </button>
+          }
+        />
+      ))}
+      <Row error={err?.key === "s:add" ? err.text : null} class="fieldrow">
+        <SaveField value="" label="Service pattern to add" placeholder="rails\s+server" mono clears alwaysButton button="Add" onError={(e) => setErr(e ? { key: "s:add", text: e } : null)} onSave={(v) => act("s:add", { add: v.trim() })} />
+      </Row>
     </Group>
   );
 }

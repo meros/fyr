@@ -166,6 +166,9 @@ type Extra struct {
 	Owner string
 	Name  string // what the wait reason calls it: the thread's title
 	Need  Need
+	// Service: a running service's reservation (V0.services-not-jobs), not
+	// undeclared work; the wait reason says so.
+	Service bool
 }
 
 // DecideWith is Decide with the undeclared use of other threads counted
@@ -247,6 +250,9 @@ func undeclaredWhy(others []Extra, s Signals, res string) string {
 	more := ""
 	if k > 1 {
 		more = fmt.Sprintf(" +%d", k-1)
+	}
+	if big.Service {
+		return fmt.Sprintf(" (%s's services hold %s%s)", big.Name, use, more)
 	}
 	return fmt.Sprintf(" (%s uses %s undeclared%s)", big.Name, use, more)
 }

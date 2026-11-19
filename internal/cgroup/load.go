@@ -72,6 +72,8 @@ type Load struct {
 	// folders listed for the owner (settled threads' worktrees).
 	Leftovers []Leftover `json:"leftovers,omitempty"`
 	Temps     []Temp     `json:"temps,omitempty"`
+	// ServicePatterns: the host's service patterns (V0.services-not-jobs).
+	ServicePatterns []heavy.ServicePattern `json:"servicePatterns,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -101,6 +103,8 @@ type ThreadLoad struct {
 	Job  string        `json:"job,omitempty"`
 	// Paused: the memory guard froze this thread's job (decision 0029 S5).
 	Paused bool `json:"paused,omitempty"`
+	// Services: its running services (V0.services-not-jobs).
+	Services []Service `json:"services,omitempty"`
 }
 
 // MinGap is how often the host reads at most; a client asks every 5 s.
@@ -135,6 +139,9 @@ type Sampler struct {
 	// V0.176: the leftover tracker and the temp sweep; optional.
 	Leftovers *Leftovers
 	Temps     *Temps
+	// V0.services-not-jobs: the threads' services and the host's patterns; optional.
+	Services    *Services
+	ServiceBook *heavy.Services
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -164,6 +171,17 @@ func (s *Sampler) Get() Load {
 	}
 	if s.Leftovers != nil {
 		l.Leftovers = s.Leftovers.View()
+	}
+	if s.ServiceBook != nil && l.Provider != "" {
+		l.ServicePatterns = s.ServiceBook.List()
+	}
+	if s.Services != nil {
+		th := make([]ThreadLoad, len(l.Threads))
+		for i, t := range l.Threads {
+			t.Services = s.Services.Of(t.ID)
+			th[i] = t
+		}
+		l.Threads = th
 	}
 	if s.Temps != nil {
 		l.Temps = s.Temps.View()
@@ -222,6 +240,13 @@ func (s *Sampler) Tick() {
 		s.clis.Store(&c)
 	}
 	l := s.get()
+	if s.Services != nil { // V0.services-not-jobs: before the detector, which leaves them out
+		ids := make([]string, 0, len(l.Threads))
+		for _, t := range l.Threads {
+			ids = append(ids, t.ID)
+		}
+		s.Services.Tick(s.Tree, ids)
+	}
 	s.detect(l)
 	s.Tree.SplitThreads()                     // V0.job-limits: each thread's CLI in its cli/ leaf
 	s.Tree.ApplyThreadBudget(s.threadHolds()) // decision 0032 slice 3

@@ -284,8 +284,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	usettings.Load()
 	detector := &cgroup.Detector{}
 	episodes := &cgroup.Episodes{KV: h.st}
+	// V0.services-not-jobs: the service patterns, and the threads' running services.
+	svcBook := &heavy.Services{KV: h.st, Base: cfg.ServicePatterns}
+	svcBook.Load()
+	services := &cgroup.Services{Match: svcBook.Match, Docker: &cgroup.Docker{}, KV: h.st,
+		Cwd: func(th string) string { t, _ := eng.Thread(th); return t.Cwd }}
 	mgr.SetOnBash(func(c agent.BashCall) string {
 		groups.Bash(c.Thread, c.Command)
+		services.Bash(c.Thread, c.Command)
 		class, text := heavyCmds.Match(c.Command)
 		jobs.Saw(c.Thread, class)
 		groups.Seen(c.Thread, text)
@@ -295,7 +301,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return eng.HeavyGate(engine.HeavyCall{Thread: c.Thread, Class: class, ToolUse: c.ToolUse, Background: c.Background || heavy.Detached(c.Command), Subagent: c.Subagent})
 	}, func(thread, toolUse string) { go eng.HeavyDone(thread, toolUse) }) // never on the stream's goroutine: it may grant
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
-		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject} // V0.164
+		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject, // V0.164
+		Services: services, ServiceBook: svcBook} // V0.services-not-jobs
 	// V0.164: an ended episode is kept, teaches its command, and ends its frozen group.
 	detector.OnEnd = func(ep cgroup.Episode) {
 		ep.Project = eng.ThreadProject(ep.Thread)
@@ -312,7 +319,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return cgroup.Capacity{CPU: sig.CPU, Memory: sig.Memory}
 	}
 	mgr.SetJobHints(func() []string { return cgroup.JobEnv(capOf()) },
-		func(c string) string { return heavy.WorkerHint(c, cgroup.Workers(capOf())) })
+		func(thread, c string) string {
+			return strings.TrimSpace(heavy.WorkerHint(c, cgroup.Workers(capOf())) + "\n" + services.Notice(thread, capOf()))
+		})
 	pool.Guard = eng.GuardView // decision 0032
 	if tree == nil {
 		// V0.164 section 10, V0.process-tree-hosts: no cgroup tree, so each thread is its
@@ -334,7 +343,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
 		Undeclared: sampler.Undeclared, UndeclaredSettings: usettings.Set,
-		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
+		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, ServicePatterns: svcBook.Edit, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
 				if f.Thread == thread && groups.FreezeUndeclared(thread, sampler.Roots(f)) {

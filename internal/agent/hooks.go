@@ -90,8 +90,8 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 	if n := core.GateNudge(name, ti); n != "" { // V0.143
 		notes = append(notes, n)
 	}
-	if c, _ := ti["command"].(string); name == "Bash" && c != "" && jobHint != nil {
-		if n := jobHint(c); n != "" { // V0.job-limits
+	if c, _ := ti["command"].(string); name == "Bash" && c != "" && jobHint != nil && s != nil {
+		if n := jobHint(s.thread, c); n != "" { // V0.job-limits
 			notes = append(notes, n)
 		}
 	}

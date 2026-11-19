@@ -124,6 +124,7 @@ func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
 	var calls []string
 	e.HeavyRemove = func(p string) bool { calls = append(calls, "remove "+p); return true }
 	e.UndeclaredSettings = func(map[string]any) error { calls = append(calls, "settings"); return nil }
+	e.ServicePatterns = func(add, remove string) error { calls = append(calls, "service +"+add+" -"+remove); return nil } // V0.services-not-jobs
 	e.UpdateNow = func() error { calls = append(calls, "update"); return nil }
 	e.HeavyRefused = func(class string) { calls = append(calls, "refused "+class) }
 	e.Undeclared = func() []slots.Undeclared { return []slots.Undeclared{flagFor(a, *now)} }
@@ -131,6 +132,7 @@ func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
 	for i, c := range []api.Cmd{
 		{Action: core.KindHeavyRemove, Args: map[string]any{"pattern": "make check"}},
 		{Action: core.KindUndeclaredSettings, Args: map[string]any{"on": false}},
+		{Action: core.KindServicePatterns, Args: map[string]any{"add": "rails server"}},
 		{Action: core.KindUpdateNow},
 	} {
 		c.CommandID = "c" + string(rune('0'+i))
@@ -142,7 +144,7 @@ func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
 	e.Slots.Acquire("t_other2", slots.Test)
 	e.HeavyGate(HeavyCall{Thread: a, Class: "make check", ToolUse: "tu"})
 	e.Tick()
-	want := []string{"remove make check", "settings", "update", "refused make check"}
+	want := []string{"remove make check", "settings", "service +rails server -", "update", "refused make check"}
 	if !slices.Equal(calls, want) {
 		t.Fatalf("calls %v, want %v", calls, want)
 	}

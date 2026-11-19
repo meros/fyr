@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the rail and each working thread's CPU, as words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardLines, cpuText, loadCard, railBudget, railLoad, railMeter, shortHostNames, stripHosts, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
+import { cardLines, cpuText, loadCard, railBudget, railLoad, railMeter, shortHostNames, stripHosts, threadCPU, threadService, threadSlot, type HostLoad } from "../src/load.ts";
 
 const busy: HostLoad = {
   host: "laptop",
@@ -117,4 +117,18 @@ test("V0.166: the phone's strip lists hosts in the owner's order: those with a l
   assert.deepEqual(r.map((h) => [h.name, !!h.load, h.offline ?? null]), [["desk", true, null], ["server", false, "2026-11-17T10:00:00Z"], ["lab", true, null]]);
   assert.deepEqual(stripHosts([l("a")], []).map((h) => h.name), ["a"]); // no host list: the load's own
   assert.deepEqual(stripHosts([l("other")], [{ name: "desk", online: true }]).map((h) => h.name), ["other"]);
+});
+
+// V0.services-not-jobs: the row names a thread's running services and what they hold, containers included.
+test("a thread's services on its row", () => {
+  const h: HostLoad = {
+    ...busy,
+    threads: [
+      { id: "t_one", memory: 4e9, services: [{ name: "process-compose up", memory: 3.2e9, reserve: 4e9 }] },
+      { id: "t_two", memory: 1e9, services: [{ name: "npm run dev", memory: 1e9, reserve: 1e9 }, { name: "compose shop", memory: 0, project: "shop", containers: 2.1e9, reserve: 2.5e9 }] },
+    ],
+  };
+  assert.equal(threadService([h], "t_one"), "service · 3.2 GB");
+  assert.equal(threadService([h], "t_two"), "2 services · 3.1 GB");
+  assert.equal(threadService([h], "t_busy"), null);
 });

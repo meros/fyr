@@ -12,7 +12,7 @@ import { ContextMenu } from "./menu-ui.tsx";
 import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
 import { railUndeclared } from "./undeclared.ts";
 import { hostLeftovers } from "./leftovers.ts";
-import { loadCard, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, STRIP_MAX, type LoadCard, type StripHost, threadCPU, threadJob, threadSlot, type HostLoad, type Slots } from "./load.ts";
+import { loadCard, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, STRIP_MAX, type LoadCard, type StripHost, threadCPU, threadJob, threadService, threadSlot, type HostLoad, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -239,6 +239,27 @@ export function ThreadSlot({ id }: { id: string }) {
     <>
       {" · "}
       <span class="tslot" title="Heavy jobs such as tests and builds wait until the host has room">
+        {s}
+      </span>
+    </>
+  );
+}
+
+/** A row's load in one subscription: whether the thread has a CPU reading, its job and its services (a hook, so one
+ *  per row: each useLoad re-renders its row on every poll). */
+export function useRowLoad(id: string): { hasCPU: boolean; job: string | null; service: string | null } {
+  const l = useLoad();
+  return { hasCPU: !!threadCPU(l, id), job: threadJob(l, id), service: threadService(l, id) };
+}
+
+/** V0.services-not-jobs: the thread's running services ("service · 3.2 GB") after the rest of its line; nothing when it
+ *  runs none. Desktop and phone share the row, so both show it. */
+export function ThreadService({ text: s }: { text: string | null }) {
+  if (!s) return null;
+  return (
+    <>
+      {" · "}
+      <span class="tslot" title="Services this thread runs (a dev stack, a dev server, containers). Fyr reserves their memory before it admits heavy jobs and never pauses them">
         {s}
       </span>
     </>

@@ -123,6 +123,8 @@ type config struct {
 	UndeclaredMemory float64         `json:"undeclaredMemory"`
 	UndeclaredAfter  int             `json:"undeclaredAfter"`
 	HeavyAdded       []heavy.Pattern `json:"heavyAdded"`
+	// ServicePatterns are service patterns beside the built-in ones (V0.services-not-jobs).
+	ServicePatterns []string `json:"servicePatterns"`
 	// Peers: V0.123's static discovery origins; read only to say they are
 	// ignored (V0.retire-discovery).
 	Peers []string `json:"peers"`

@@ -7,7 +7,7 @@ import type { Change, ChangeNeed, Thread } from "./types.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { press } from "./confirm.ts";
-import { ThreadCPU, ThreadJob, ThreadSlot, useHasCPU, useThreadJob } from "./load-ui.tsx";
+import { ThreadCPU, ThreadJob, ThreadService, ThreadSlot, useRowLoad } from "./load-ui.tsx";
 import { RowUndeclared, useRowUndeclared } from "./undeclared-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
 import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
@@ -290,8 +290,9 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
   const firstTask = agents.map((x) => x.startedAt).filter(Boolean).sort()[0];
   const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
   const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing
-  const hasCPU = useHasCPU(t.id); // a hook, so called on every row
-  const job = useThreadJob(t.id); // decision 0029 S1: first on the line, which is cut at its end
+  // One load subscription per row: its CPU reading, its job (decision 0029 S1: first on the line, which is cut at its
+  // end) and its services (V0.services-not-jobs).
+  const { hasCPU, job, service } = useRowLoad(t.id);
   // V0.164: heavy work Fyr did not admit starts the line, in the beam ink, and says the use itself (same on both fronts).
   const und = useRowUndeclared(t.id, now);
   const cpu = working && !und && hasCPU;
@@ -310,6 +311,7 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
           {(und || job) && detail ? " · " : ""}
           {detail}
           {!job && !und && <ThreadSlot id={t.id} />}
+          <ThreadService text={service} />
         </i>
         {chips && (
           <span class="cl">

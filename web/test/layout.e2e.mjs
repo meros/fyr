@@ -2404,7 +2404,7 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
         now: rows('When a thread counts as heavy').map((e) => e.querySelector('.sr-d').textContent), vals: rows('When a thread counts as heavy').map((e) => e.querySelector('input').value),
         und: rows('Undeclared now').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()), added: rows('Learned heavy jobs').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()),
         noSlot: !/slot|reservation/i.test([...d.querySelectorAll('section.sg')].filter((s) => /Undeclared|Learned|counts as heavy/.test(s.getAttribute('aria-label') || '')).map((s) => s.innerText).join(' ')) }; })()`);
-    check(st.page.startsWith("automation") && st.groups.join("|").includes("Undeclared now|Learned heavy jobs|When a thread counts as heavy|Heavy jobs"), `${ctx}: the groups are ${st.groups.join("|")}`);
+    check(st.page.startsWith("automation") && st.groups.join("|").includes("Undeclared now|Learned heavy jobs|Services|When a thread counts as heavy|Heavy jobs"), `${ctx}: the groups are ${st.groups.join("|")}`);
     check(st.now.join("|") === "Now 1.0 of laptop's 4 cores|Now 1.1 GB of laptop's 14 GB|Shorter bursts (a typecheck, one test file) never count" && st.vals.join() === "25,8,45", `${ctx}: the thresholds are wrong (${JSON.stringify([st.now, st.vals])})`);
     check(st.und.length === 1 && /^Map perf acme\/web · node test\/layout\.e2e\.mjs · 2\.8 GB \(20 %\) · 2\.1 cores \(52 %\) · \d+ min ?Open$/.test(st.und[0]), `${ctx}: Undeclared now is ${JSON.stringify(st.und)}`);
     check(st.added.length === 1 && /build · learned /.test(st.added[0]) && st.noSlot, `${ctx}: the learned commands are ${JSON.stringify([st.added, st.noSlot])}`);
@@ -2467,7 +2467,7 @@ for (const dark of [false, true]) section(`V0.164 phone${dark ? " dark" : ""}`, 
     await tapCenter(".m-thread .chneed.textask .btn", "!document.querySelector('.m-thread .chneed.textask')");
     // Settings: every button and field of the new groups is 44 px high; nothing is wider than the screen.
     await openScreen({ url: "?mock=rail&undeclared=2&settings=automation", ready: "!!document.querySelector('.set.phone section[aria-label=\"Undeclared now\"]')" }, W, 844);
-    const g = await evaluate(`(() => { const labels = ['Undeclared now', 'Learned heavy jobs', 'When a thread counts as heavy'];
+    const g = await evaluate(`(() => { const labels = ['Undeclared now', 'Learned heavy jobs', 'Services', 'When a thread counts as heavy'];
       const secs = labels.map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
       const ctl = secs.flatMap((s) => s ? [...s.querySelectorAll('button, input, select')] : []).filter((e) => e.getBoundingClientRect().height > 0);
       return { have: secs.map((s) => !!s), n: ctl.length, minH: Math.min(...ctl.map((e) => e.getBoundingClientRect().height)), small: ctl.filter((e) => e.getBoundingClientRect().height < 44).map((e) => e.getAttribute('aria-label') || e.textContent),

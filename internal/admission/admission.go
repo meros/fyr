@@ -131,6 +131,11 @@ func (a *Admission) extras() []slots.Extra {
 	for _, u := range a.Host.Undeclared() {
 		out = append(out, slots.Extra{Owner: u.Thread, Name: u.Name, Need: slots.Need{CPU: u.CPU, Mem: u.Mem}})
 	}
+	// V0.services-not-jobs: a running service's memory is reserved from its
+	// learned peak while it runs.
+	if sv, ok := a.Host.(interface{ ServiceExtras() []slots.Extra }); ok {
+		out = append(out, sv.ServiceExtras()...)
+	}
 	return out
 }
 
