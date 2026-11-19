@@ -1610,15 +1610,15 @@ for (const front of ["desktop", "phone"]) section(`V0.model-choice ${front}`, as
 try {
   const phone = front === "phone";
   const root = phone ? ".m-new" : ".dlg";
-  const sel = phone ? `${root} select[aria-label="Provider and model"]` : `${root} select[aria-label="Model"]`;
+  const sel = `${root} .agp select[aria-label="Provider and model"]`; // V0.agent-pill: the pill's provider · model part, both fronts
   if (phone) await openScreen({ url: "?mock=rail&new", ready: `!!document.querySelector('${sel}')` }, 390, 844);
   else await navigate(`${origin}/?mock=rail&dialog=new`, `!!document.querySelector('${sel}')`);
   const n = await evaluate(`(() => { const s = document.querySelector('${sel}');
     return { picked: s.selectedOptions[0]?.textContent ?? '', groups: [...s.querySelectorAll('optgroup')].length, opts: [...s.options].map((o) => o.textContent),
-      chip: s.closest('.m-dchip')?.querySelector('.ell')?.textContent ?? '', provider: !!document.querySelector('${root} select[aria-label="Provider"]'),
+      chip: [...(s.closest('.ags')?.querySelectorAll('.agt') ?? [])].map((e) => e.textContent).join(' · '), provider: !!document.querySelector('${root} select[aria-label="Provider"]'),
       effort: !!document.querySelector('${root} select[aria-label="Effort"]') }; })()`);
   check(/^[^·]+ · [A-Z]/.test(n.picked) && n.groups >= 1 && n.opts.every((o) => / · /.test(o)) && !n.provider, `V0.model-choice ${front}: New thread's choice ${JSON.stringify(n)}`);
-  if (phone) check(n.chip === n.picked, `V0.model-choice phone: the chip says "${n.chip}", the choice "${n.picked}"`);
+  check(n.chip === n.picked, `V0.model-choice ${front}: the pill says "${n.chip}", the choice "${n.picked}"`);
   await shot(`model-choice-new-${front}.png`);
   // Hand over: the target as one choice, the mapping line, effort only when the model takes it.
   if (phone) {
