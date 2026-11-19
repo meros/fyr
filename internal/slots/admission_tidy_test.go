@@ -97,3 +97,37 @@ func TestAdmissionTidyAIMDReadsTheConfiguredReserve(t *testing.T) {
 		t.Fatalf("15 %% free under a 20 %% reserve did not cut: %+v", b)
 	}
 }
+
+// V0.admission-tidy: two holders that both wait to grow would each count the
+// other's hold and never be admitted; with every holder waiting to grow, the
+// head is decided as with nothing held, and the next waits beside it.
+func TestAdmissionTidyTwoGrowersDoNotBlockEachOther(t *testing.T) {
+	p := New(2)
+	p.Acquire("a", Test) // by the count, before Admit is set
+	p.Acquire("b", Test)
+	// A heavier job fits only with nothing else held.
+	p.Admit = func(_ Holder, held []Holder) (bool, string, string) { return len(held) == 0, "needs more", ResMem }
+	if held, _ := p.Grow("a", E2E); held {
+		t.Fatal("setup: a grew beside b's ungrown hold")
+	}
+	var told []string
+	p.OnGrant = func(o, _ string) { told = append(told, o) }
+	if held, _ := p.Grow("b", E2E); held {
+		t.Fatal("b grew beside a's hold")
+	}
+	s := p.Snapshot()
+	if len(s.Waiting) != 1 || s.Waiting[0].Owner != "b" || len(told) != 1 || told[0] != "a" {
+		t.Fatalf("the oldest grower was not admitted: waiting %+v told %v", s.Waiting, told)
+	}
+	// The memory rules still hold: nothing is granted while memory is short.
+	q := New(2)
+	q.Acquire("a", Test)
+	q.Acquire("b", Test)
+	q.Admit = func(Holder, []Holder) (bool, string, string) { return false, "memory short", ResHeadroom }
+	q.Grow("a", E2E)
+	q.Grow("b", E2E)
+	q.Fill()
+	if s := q.Snapshot(); len(s.Waiting) != 2 {
+		t.Fatalf("granted past the memory rule: %+v", s.Waiting)
+	}
+}

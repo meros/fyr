@@ -366,20 +366,46 @@ func (p *Pool) Grow(owner, kind string) (held bool, ahead int) {
 		return true, 0
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if index(p.held, owner) < 0 {
+		p.mu.Unlock()
 		return false, -1
 	}
 	if i := index(p.wait, owner); i >= 0 {
+		p.mu.Unlock()
 		return false, i
 	}
 	h := Holder{Owner: owner, Kind: kind, Since: p.now()}
 	if len(p.wait) == 0 && p.admitLocked(h) {
+		p.mu.Unlock()
 		return true, 0
 	}
-	defer p.save()
+	asked := len(p.wait) == 0
 	p.wait = slices.Insert(p.wait, p.placeLocked(owner), h)
-	return false, index(p.wait, owner)
+	// A queue whose holders all wait to grow may now admit its head (the
+	// progress rule in admitLocked).
+	var told []Holder
+	if !asked {
+		for _, g := range p.promoteLocked() {
+			if g.Owner == owner {
+				held = true
+			} else {
+				told = append(told, g)
+			}
+		}
+	}
+	p.save()
+	ahead = index(p.wait, owner)
+	on := p.OnGrant
+	p.mu.Unlock()
+	if on != nil {
+		for _, g := range told {
+			on(g.Owner, g.Kind)
+		}
+	}
+	if held {
+		return true, 0
+	}
+	return false, ahead
 }
 
 // Take gives owner's held slot back without handing it on and calls nobody,
@@ -542,12 +568,21 @@ func (p *Pool) backfillLocked(told []Holder) []Holder {
 // admitLocked asks Admit (else the count rule) about head and keeps why it
 // waits; call it with p.mu held.
 func (p *Pool) admitLocked(head Holder) bool {
+	others := p.othersLocked(head.Owner)
+	// V0.admission-tidy: when the head holds a slot and waits to grow, and every
+	// other holder waits to grow too, no holder runs ungrown: each one's decision
+	// would count the others' holds, and none would ever be admitted. The head is
+	// then decided as with nothing held (one job always runs), the memory rules
+	// still applying.
+	if index(p.held, head.Owner) >= 0 && !slices.ContainsFunc(others, func(h Holder) bool { return index(p.wait, h.Owner) < 0 }) {
+		others = nil
+	}
 	if p.Admit == nil {
-		ok := len(p.othersLocked(head.Owner)) < p.n
+		ok := len(others) < p.n
 		p.why = ""
 		return ok
 	}
-	ok, why, binding := p.Admit(head, p.othersLocked(head.Owner))
+	ok, why, binding := p.Admit(head, others)
 	p.why, p.binding = why, binding
 	if ok {
 		p.why, p.binding = "", ""

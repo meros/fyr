@@ -16,6 +16,9 @@ export interface QueueEntry {
   pos: number;
   /** the deploy's or the updater's wait: ahead of every thread, not movable */
   priority: boolean;
+  /** V0.admission-tidy: the thread holds a slot and waits to grow it for a heavier command. It runs, so it has no row in
+   *  this section (its row says "waiting to grow", threadSlot) but keeps its place for a reorder. */
+  grow?: boolean;
 }
 
 /** Every host's queue, host by host in the load's order (the front's host order). Hosts without slots or without a
@@ -23,7 +26,10 @@ export interface QueueEntry {
 export function slotQueue(load: HostLoad[]): QueueEntry[] {
   const out: QueueEntry[] = [];
   for (const h of load) {
-    (h.slots?.waiting ?? []).forEach((w, i) => out.push({ host: h.host, owner: w.owner, kind: w.kind, pos: i + 1, priority: !!w.priority }));
+    const held = new Set((h.slots?.held ?? []).map((x) => x.owner));
+    (h.slots?.waiting ?? []).forEach((w, i) =>
+      out.push({ host: h.host, owner: w.owner, kind: w.kind, pos: i + 1, priority: !!w.priority, ...(held.has(w.owner) ? { grow: true } : {}) }),
+    );
   }
   return out;
 }
@@ -56,6 +62,7 @@ export interface QueueRow {
 export function withQueue(entries: QueueEntry[], threads: Record<string, Thread>): QueueRow[] {
   const out: QueueRow[] = [];
   for (const e of entries) {
+    if (e.grow) continue; // V0.admission-tidy: it runs; its row is where it is
     if (e.priority) out.push({ entry: e, thread: null });
     else if (threads[e.owner]) out.push({ entry: e, thread: threads[e.owner] });
   }
