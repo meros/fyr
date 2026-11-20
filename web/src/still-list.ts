@@ -1,6 +1,6 @@
-// V0.207, V0.open-row-only: the list keeps its place. Two things keep a row from moving under the owner: a stable order
-// (`trackArrivals` and the order in store.ts), and the open row staying where it was until the owner opens another. Every
-// other row moves the moment its state changes: nothing waits. One implementation for both fronts.
+// V0.207, V0.open-row-glides: the list keeps its place. A stable order (`trackArrivals` and the order in store.ts) keeps
+// a row from moving under the owner; a row that changes state moves at once, the open one too, and glides there; j/k
+// walks from where the open row was (`stillRows`). One implementation for both fronts.
 import { SECTIONS, isPinned, naturalAt, sectionOf, type Arrival, type SectionKey, type Sections } from "./store.ts";
 import { needsGroupRank } from "./rows.ts";
 import type { Thread } from "./types.ts";
@@ -67,11 +67,11 @@ export function stillRows(live: Sections, open: RowPlace | null): Sections {
 
 /** The row to hold still on the screen: the one under the pointer, else the open row if it is in view, else the first
  *  row in view. At the very top with no pointer in the list there is none: a new row may then push the list down, so the
- *  owner sees it. */
-export function anchorRow(o: { hovered: string | null; open: string | null; firstVisible: string | null; visible(id: string): boolean; scrollTop: number }): string | null {
-  if (o.hovered) return o.hovered;
-  if (o.scrollTop <= 0) return null;
-  return o.open && o.visible(o.open) ? o.open : o.firstVisible;
+ *  owner sees it. V0.open-row-glides: the open row may move to another place, and the list does not chase it: the row
+ *  above it stands in (else the one below), so the rows under it close the gap it leaves. */
+export function anchorRow(o: { hovered: string | null; open: string | null; firstVisible: string | null; visible(id: string): boolean; scrollTop: number; besideOpen?: string | null }): string | null {
+  const id = o.hovered ?? (o.scrollTop <= 0 ? null : o.open && o.visible(o.open) ? o.open : o.firstVisible);
+  return id && id === o.open ? (o.besideOpen ?? null) : id;
 }
 
 /** V0.finish-debounce: how long a thread that stopped working stays in Moving before it shows as finished. A run that

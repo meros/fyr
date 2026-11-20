@@ -1958,3 +1958,8 @@ button.chip.wake:hover{color:var(--ink)}
 .pr.wake{display:inline-flex;align-items:center;gap:4px;max-width:240px;font-family:var(--ui)}
 .pr.wake span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .one .cl .pr.wake{max-width:168px} /* the row's own line keeps its room; the full text is the title */
+
+/* V0.open-row-glides: a select draws its own chevron, the same in every engine. WebKitGTK (the Linux app) puts its own
+   padding inside a native menulist and cut the text of a 34 px field; with no native look the field's own padding and
+   line height hold. The chevron is two gradients, so it takes the theme's ink without an image. */
+:root select:not([multiple]){appearance:none;-webkit-appearance:none;padding-right:28px;background-image:linear-gradient(45deg,transparent 50%,var(--ink-muted) 50%),linear-gradient(135deg,var(--ink-muted) 50%,transparent 50%);background-position:calc(100% - 15px) 55%,calc(100% - 10px) 55%;background-size:5px 5px;background-repeat:no-repeat;text-overflow:ellipsis}

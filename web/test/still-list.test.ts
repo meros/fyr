@@ -79,12 +79,19 @@ test("V0.207: the pinned block follows the drawn rows", () => {
   assert.deepEqual(ids(stillRows(live, place).pinned), ["p"]);
 });
 
-test("V0.207: the anchor is the hovered row, else the open row in view, else the first in view; none at the top", () => {
+test("V0.207: the anchor is the hovered row, else (beside) the open row in view, else the first in view; none at the top", () => {
   const o = { hovered: null, open: "o", firstVisible: "f", visible: (x: string) => x === "o", scrollTop: 50 };
   assert.equal(anchorRow({ ...o, hovered: "h", scrollTop: 0 }), "h");
-  assert.equal(anchorRow(o), "o");
   assert.equal(anchorRow({ ...o, visible: () => false }), "f");
   assert.equal(anchorRow({ ...o, scrollTop: 0 }), null);
+});
+
+test("V0.open-row-glides: the open row is never the anchor; the row beside it stands in, so the list does not chase it", () => {
+  const o = { hovered: null, open: "o", firstVisible: "f", visible: (x: string) => x === "o", scrollTop: 50, besideOpen: "b" };
+  assert.equal(anchorRow(o), "b");
+  assert.equal(anchorRow({ ...o, hovered: "o", scrollTop: 0 }), "b");
+  assert.equal(anchorRow({ ...o, besideOpen: null }), null);
+  assert.equal(anchorRow({ ...o, hovered: "h" }), "h");
 });
 
 test("V0.finish-debounce: a thread that stops working stays in Moving for the hold, then shows finished", async () => {
