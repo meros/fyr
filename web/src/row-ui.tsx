@@ -286,7 +286,8 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
   const working = t.attention.section === "working";
   const agents = groupTasks(t.tasks).running;
   // The project is on the first line now, so the second never falls back to it.
-  const detail = working ? (t.activity || agents.length ? workingLine(t) : "") : st === "snoozed" ? snoozeLine(t, now) : "";
+  // V0.ci-wait-moves: a row in Moving always says why (Waiting for CI on #846, Starting, Waiting for the machine).
+  const detail = working ? workingLine(t) : st === "snoozed" ? snoozeLine(t, now) : "";
   const firstTask = agents.map((x) => x.startedAt).filter(Boolean).sort()[0];
   const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
   const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing

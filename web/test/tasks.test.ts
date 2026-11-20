@@ -21,15 +21,15 @@ test("tasks: running first, then newest started", () => {
 
 test("waiting row: the reason plus the newest running task's activity", () => {
   const t = thread("w", "waiting", "working", {
-    attention: { state: "waiting", section: "working", reason: "2 agents" },
+    attention: { state: "waiting", section: "working", reason: "2 subagents running" },
     tasks: [
       task("a", "running", 1, { activity: "Reading files", updatedAt: at(3) }),
       task("b", "running", 2, { activity: "Running build", updatedAt: at(8) }),
       task("c", "completed", 0, { activity: "Old", updatedAt: at(9) }),
     ],
   });
-  assert.equal(workingLine(t), "2 agents · Running build");
-  assert.equal(workingLine({ ...t, tasks: [] }), "2 agents", "no activity: the reason alone");
+  assert.equal(workingLine(t), "2 subagents running · Running build");
+  assert.equal(workingLine({ ...t, tasks: [] }), "2 subagents running", "no activity: the reason alone");
 });
 
 test("working row with running tasks adds the agent count", () => {
@@ -93,18 +93,27 @@ test("live line while Fyr waits for the machine", () => {
 test("V0.195: a thread waiting for a background command says which, for how long, and that it went quiet", () => {
   const now = Date.parse("2026-11-18T09:36:00Z");
   const cmd: TaskDTO = { id: "b", description: "Wait for it", type: "local_bash", background: true, status: "running", startedAt: "2026-11-18T09:01:00Z" };
-  const base = { running: false, tasks: [cmd], attention: { state: "waiting", section: "working", reason: "Background: Wait for it" } } as unknown as Thread;
-  assert.equal(waitLine(base, now), "Background: Wait for it · 35 min");
-  assert.equal(workingLine(base), "Background: Wait for it");
+  const base = { running: false, tasks: [cmd], attention: { state: "waiting", section: "working", reason: "Running in background: Wait for it" } } as unknown as Thread;
+  assert.equal(waitLine(base, now), "Running in background: Wait for it · 35 min");
+  assert.equal(workingLine(base), "Running in background: Wait for it");
   assert.equal(taskLine(cmd), "Running");
   assert.equal(agentsSummary([cmd]), "1 background command");
   const quiet = { ...cmd, quietSince: "2026-11-18T09:19:00Z" };
   const q = { ...base, tasks: [quiet] } as Thread;
   const at = clockTime(quiet.quietSince);
-  assert.equal(waitLine(q, now), `Background: Wait for it · 35 min · no CPU use since ${at}`);
-  assert.equal(workingLine(q), `Background: Wait for it · no CPU use since ${at}`);
+  assert.equal(waitLine(q, now), `Running in background: Wait for it · 35 min · no CPU use since ${at}`);
+  assert.equal(workingLine(q), `Running in background: Wait for it · no CPU use since ${at}`);
   assert.equal(taskLine(quiet), `No CPU use since ${at}`);
   assert.equal(waitLine({ ...q, running: true } as Thread, now), "", "a live turn has its own line");
   assert.equal(waitLine({ ...q, tasks: [{ ...cmd, type: "local_agent", background: true }] } as Thread, now), "", "an agent is not a command");
   assert.match(taskEventText({ kind: "quiet", description: "Wait for it", minutes: 5 }), /No CPU use for 5 min while waiting for Wait for it/);
+});
+
+test("V0.ci-wait-moves: every row in Moving says why it is there", () => {
+  const ci = thread("ci", "waiting", "working", { attention: { state: "waiting", section: "working", reason: "Waiting for CI on #846: 2 of 5 checks done" } });
+  assert.equal(workingLine(ci), "Waiting for CI on #846: 2 of 5 checks done");
+  const starting = thread("s", "working", "working", { attention: { state: "working", section: "working", reason: "Starting" } });
+  assert.equal(workingLine(starting), "Starting");
+  const fresh = thread("f", "working", "working", { project: "fyr" });
+  assert.equal(workingLine(fresh), "Working", "a run with no activity yet says Working, not the project");
 });
