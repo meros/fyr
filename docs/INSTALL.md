@@ -35,6 +35,16 @@ The keys you are most likely to set in `config.json`:
 
 **The agents' `PATH`** is, in this order: `agentPath`, the `PATH` fyrd started with (the unit's), the `PATH` of your login shell (`$SHELL -l`, read once at start; a profile that takes more than 5 s is skipped and logged), then those of `~/.local/bin`, `~/.nix-profile/bin`, `/etc/profiles/per-user/<you>/bin`, `/run/wrappers/bin` and `/run/current-system/sw/bin` that exist. Each folder appears once, where it first comes. So a tool your login shell finds, the agents find; restart Fyr after you change your profile.
 
+## macOS (`Fyr.app`)
+
+The recommended macOS install (macOS 13+, Apple Silicon and Intel) is [`Fyr.dmg`](https://github.com/meros/fyr/releases/latest/download/Fyr.dmg) (decision 0037). Drag **Fyr** into **Applications** and open it.
+
+- **First launch (Gatekeeper):** `Fyr.app` is signed with Fyr's own self-signed certificate (`Fyr Local Signing`) rather than an Apple Developer ID yet. Because browsers quarantine downloads, macOS blocks the first double-click; use **right-click → Open** or **System Settings → Privacy & Security → Open Anyway**.
+- **Background agent & Login Items:** on launch `Fyr.app` registers its per-user `launchd` agent (`fyr.agent`) via `SMAppService` with no admin rights, and registers itself as a Login Item so macOS notifications arrive even with the window closed. If you previously used `scripts/install-macos.sh`, `Fyr.app` stops the script's job, removes its plist, and keeps your data in `~/.local/share/fyr`.
+- **Setup wizard:** open **Settings → Setup** (or the **Set up** card at the top of the inbox) to install Command Line Tools, check Claude Code, download and sign in to `gh`, pick or clone a first project, and pair a phone.
+- **Updates:** `fyrd` updates itself from signed CI releases as on Linux, and `Fyr.app` checks for newer signed app releases every 6 hours (or via **Check for Updates…** in the menu bar), accepting only builds signed with its pinned certificate. macOS permissions granted once survive updates because they are tied to the certificate.
+- **Developer / script path:** `scripts/install-macos.sh` remains available for terminal or local-checkout installs, and `macos/build.sh --dmg` builds `Fyr.app` and `Fyr.dmg` locally.
+
 ## Linux without Nix
 
 `scripts/install-linux.sh` is the NixOS module's stand-in on Debian, Ubuntu and other systemd Linux (V0.linux-without-nix). Run it as the user Fyr and its agents run as; it refuses root.
@@ -124,6 +134,6 @@ To try a branch, an agent asks Fyr to deploy its checkout (`fyr.deploy {dir}`). 
 ## Uninstall
 
 - **NixOS:** remove `services.fyr`, then remove `~/.local/share/fyr` if you do not want the data.
-- **macOS:** `scripts/install-macos.sh --uninstall`.
+- **macOS:** choose **Uninstall…** from the Fyr menu-bar icon (unregisters the background agent and Login Item, turns off Fyr's Tailscale Serve if configured, optionally deletes `~/.local/share/fyr` and `~/Library/Logs/fyr.log`, and moves `Fyr.app` to the Trash). Dragging `Fyr.app` to the Trash also cleans up the background agent on its next start. For a script install, run `scripts/install-macos.sh --uninstall`.
 - **Linux without Nix:** `scripts/install-linux.sh --uninstall`, then remove `~/.local/share/fyr` and `~/.config/fyr` if you do not want the data.
 - **From source:** stop `fyr`, then remove `~/.local/share/fyr` and `~/.config/fyr`.
