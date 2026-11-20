@@ -870,7 +870,9 @@ func (f *Front) wouldRefuse(r *http.Request) {
 // BrowserName names a browser from its User-Agent: "Chrome on Android".
 func BrowserName(ua string) string {
 	b := "A browser"
-	for _, c := range []struct{ key, name string }{{"Edg/", "Edge"}, {"Firefox/", "Firefox"}, {"Chrome/", "Chrome"}, {"Safari/", "Safari"}} {
+	// Decision 0038: the Linux app's window first; it runs on WebKit, so its
+	// user agent also says Safari.
+	for _, c := range []struct{ key, name string }{{"FyrDesktop/", "The Fyr app"}, {"Edg/", "Edge"}, {"Firefox/", "Firefox"}, {"Chrome/", "Chrome"}, {"Safari/", "Safari"}} {
 		if strings.Contains(ua, c.key) {
 			b = c.name
 			break

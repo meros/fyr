@@ -16,7 +16,9 @@ export function isStandalone(): boolean {
 // subscription: a native device whose pushes it reads from fyrd and shows as macOS notifications. It answers
 // on window.webkit.messageHandlers.fyrPush: "status", "on" and "off", each with { on, endpoint?, denied?, error? }.
 type NativeReply = { on: boolean; endpoint?: string; denied?: boolean; error?: string };
-type NativeBridge = { postMessage(m: { op: "status" | "on" | "off" }): Promise<NativeReply> };
+type NativeBridge = {
+  postMessage(m: { op: "status" | "on" | "off" } | { op: "clear"; threadId: string; state: string }): Promise<NativeReply>;
+};
 
 function nativePush(): NativeBridge | null {
   const w = window as Window & { webkit?: { messageHandlers?: { fyrPush?: NativeBridge } } };
@@ -56,6 +58,7 @@ function watchWaiting(reg: ServiceWorkerRegistration) {
 
 /** Register /sw.js; a waiting new worker takes over on the next navigation. */
 export function registerServiceWorker(onOpen: (threadId: string) => void): void {
+  if (nativePush()) return; // decision 0038: the app's window has no worker; the app opens a clicked thread with /?open=
   if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
   navigator.serviceWorker.addEventListener("message", (e: MessageEvent) => {
     if (e.data?.type === "open" && typeof e.data.threadId === "string") onOpen(e.data.threadId);
@@ -255,6 +258,13 @@ export async function promptInstall(): Promise<boolean> {
 /** Closes a thread's notification once the thread left the state it was shown for (design/mobile rule 12,
  *  V0.notification-polish). */
 export function clearThreadNotification(threadId: string, state: string): void {
+  const n = nativePush();
+  if (n) {
+    // Decision 0038: the app's notifications are the app's to close (the Linux app answers; one that does not knows no
+    // "clear" and refuses it).
+    void n.postMessage({ op: "clear", threadId, state }).catch(() => undefined);
+    return;
+  }
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
   void navigator.serviceWorker.ready
     .then((r) => r.getNotifications({ tag: threadId }))
