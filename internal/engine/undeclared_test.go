@@ -60,7 +60,7 @@ func endRun(e *Engine, id string, now time.Time) {
 
 type fz struct {
 	free    float64
-	stall   slots.Stall
+	stall   slots.Stall // "": elevated while the headroom is under 10 %, else ok (V0.sim-fixes: a freeze needs a stall)
 	agents  slots.Stall // the agents' own stall (V0.oomd-guard)
 	mem     uint64      // the agents' memory (V0.guard-wake)
 	slow    *float64
@@ -74,10 +74,17 @@ type fz struct {
 
 func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 	e, u, now, a := undEngine(t)
-	z := &fz{free: 0.30, stall: slots.StallOK, frozen: map[string]bool{}, slotted: map[string]bool{}, empty: map[string]bool{}}
+	z := &fz{free: 0.30, frozen: map[string]bool{}, slotted: map[string]bool{}, empty: map[string]bool{}}
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: z.stall, AgentsStall: z.agents, AgentsMem: z.mem, Slowdown: z.slow, UnitStall: z.unit, OomdLimit: z.oomd}
+		st := z.stall
+		if st == "" {
+			st = slots.StallOK
+			if z.free < slots.DefaultPolicy.MemoryReserve {
+				st = slots.StallElevated
+			}
+		}
+		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: st, AgentsStall: z.agents, AgentsMem: z.mem, Slowdown: z.slow, UnitStall: z.unit, OomdLimit: z.oomd}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	e.SlotFreeze = func(o string) bool { z.slotted[o] = true; return true }
@@ -152,10 +159,11 @@ func TestF5CPUOnlyIsNotFrozenTheJobsRuleApplies(t *testing.T) {
 	}
 }
 
-// Decision 0032 slice 1 (amends V0.164 7): the only heavy work is frozen when
-// another thread runs, since a thrashing cgroup starves that thread's agent;
-// it is left alone only when nobody would gain.
-func TestF6TheOnlyHeavyWorkIsFrozenWhenSomebodyElseRunsAndNotOtherwise(t *testing.T) {
+// Decision 0032 slice 1 (amends V0.164 7) froze the only heavy work when
+// another thread ran. V0.sim-fixes (3): not for an agent that runs no heavy
+// work (nothing would run; the frozen memory stays charged), only beside
+// other heavy work.
+func TestF6TheOnlyHeavyWorkIsFrozenOnlyBesideOtherHeavyWork(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	endRun(e, th[1], *now) // nobody else runs
 	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
@@ -164,7 +172,12 @@ func TestF6TheOnlyHeavyWorkIsFrozenWhenSomebodyElseRunsAndNotOtherwise(t *testin
 	if len(z.frozen) != 0 {
 		t.Fatal("a freeze that helps nobody")
 	}
-	running(e, th[1]) // another thread runs: somebody to help
+	running(e, th[1]) // another thread runs, with no heavy work
+	e.Tick()
+	if len(z.frozen) != 0 {
+		t.Fatal("the only heavy work frozen for an idle agent")
+	}
+	e.Slots.Acquire(th[1], slots.Test) // now with a job
 	e.Tick()
 	if !z.frozen[th[0]] || len(z.frozen) != 1 {
 		t.Fatalf("%v", z.frozen)
@@ -211,6 +224,7 @@ func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	u.flags = []slots.Undeclared{flagFor(a, *now)}
 	froze := 0
 	for range MaxFreezes + 2 {
@@ -239,6 +253,7 @@ func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 func TestF13AFreezeThatHoldsNothingIsReleased(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	u.flags = []slots.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
@@ -277,6 +292,7 @@ func TestF15TheGuardLogsWhatItDidAndWhy(t *testing.T) {
 	e.Tick()
 	e.Tick() // the same skip on the next tick is not logged twice
 	running(e, th[1])
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): heavy work beside it
 	e.Tick()
 	z.free, z.stall = 0.5, slots.StallOK
 	*now = now.Add(time.Second)
@@ -455,6 +471,7 @@ func TestF16TheGuardViewShowsTheHistoryAndEachThreadsFreezes(t *testing.T) {
 	if e.GuardView() != nil && len(e.GuardView().Events) != 0 {
 		t.Fatal("events before any tick")
 	}
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	u.flags = []slots.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()

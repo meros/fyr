@@ -66,7 +66,7 @@ var invTexts = map[string]string{
 	InvProbeSilent:       "The cgroups provider runs, but the slowdown probe has given no reading for more than 5 minutes.",
 	InvLimitUnderPrior:   "A job's memory.high was written below the prior (the agents' memory budget divided by the slots setting).",
 	InvPSITriggerMissing: "An hour after fyrd started, the scope layout still has no PSI trigger on the agents' memory stall.",
-	InvShortNothingFroze: "Memory has been short for more than 10 minutes with flagged work running, and nothing is frozen or held.",
+	InvShortNothingFroze: "Memory has been short and stalling for more than 10 minutes with flagged work the guard may freeze (beside other heavy work, or in two or more parts), and nothing is frozen or held.",
 }
 
 // invOrder is the order the Settings list shows.
@@ -211,13 +211,28 @@ func (e *Engine) checkInvariants() {
 	if e.SlotSignals == nil {
 		return
 	}
-	sig := e.SlotSignals()
 	now := e.Now()
 	flags := e.flags()
 	e.mu.Lock()
 	frozen := append([]frozenJob(nil), e.frozen...)
 	short, since, held := e.guardShort, e.guardSince, len(e.gateHeld)
+	trig := e.guardTrig
 	e.mu.Unlock()
+	sig := e.SlotSignals().Fresh(trig, now) // as freezeGuard reads it
+	// V0.sim-fixes (3): with nothing frozen the guard keeps its rules when
+	// memory does not stall (the headroom alone freezes nothing) or the only
+	// heavy work that runs is one part (it is never frozen whole); then
+	// nothing frozen is no violation. Asked outside c.mu.
+	mayFreeze := false
+	if short && len(flags) > 0 && len(frozen) == 0 && held == 0 {
+		crit, _ := sig.Critical()
+		if crit || sig.NearOomd() || stalls(sig) {
+			mayFreeze = e.Slots == nil || e.maxFrozen(e.Slots.Snapshot(), flags) >= 1
+			for _, f := range flags {
+				mayFreeze = mayFreeze || (f.MemOver && len(e.workUnits(f.Thread)) >= 2)
+			}
+		}
+	}
 	c := &e.inv
 	c.mu.Lock()
 	if c.start.IsZero() {
@@ -256,7 +271,7 @@ func (e *Engine) checkInvariants() {
 	if c.psiSeen && c.scope && !c.armed && now.Sub(c.start) >= InvPSIWithin && first("psi") {
 		c.pending = append(c.pending, violation{InvPSITriggerMissing, fmt.Sprintf("layout=scope no PSI trigger %s after the start", now.Sub(c.start).Round(time.Minute))})
 	}
-	if short && !since.IsZero() && now.Sub(since) > InvShortAfter && len(flags) > 0 && len(frozen) == 0 && held == 0 && first("short@"+since.Format(time.RFC3339Nano)) {
+	if mayFreeze && !since.IsZero() && now.Sub(since) > InvShortAfter && first("short@"+since.Format(time.RFC3339Nano)) {
 		names := make([]string, 0, len(flags))
 		for _, f := range flags {
 			names = append(names, fmt.Sprintf("%s(%s %s)", f.Thread, f.Command, slots.GB(float64(f.Mem))))

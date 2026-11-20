@@ -175,6 +175,7 @@ type Engine struct {
 	frozen       []frozenJob
 	guardOK      time.Time            // under mu: since when memory is fine (zero: it is not)
 	frozeHolds   map[string]time.Time // under mu: holds frozen once already (owner → since)
+	jobThawed    map[string]time.Time // under mu: owner → when the guard last thawed its job (V0.sim-fixes: its idle clock starts there)
 	queuedAt     map[string]time.Time // under mu: when each waiting thread joined the queue (V0.load-tuning)
 	slotOverTold map[string]time.Time // under mu: owner → the hold already told
 	undFroze     map[string]undFreeze // under mu: thread → what the guard froze of its episode

@@ -34,6 +34,7 @@ func TestFreezeFastTheTriggerWithACriticalStallFreezesAtOnce(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	growing(t, e, u, a, now)
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	z.free, z.agents = 0.30, slots.StallCritical
 	*now = now.Add(time.Second)
 	e.GuardNow()
@@ -46,6 +47,7 @@ func TestFreezeFastNearOomdsLimitWithTheTrigger(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	growing(t, e, u, a, now)
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	unit := 52.0
 	z.free, z.agents, z.unit, z.oomd = 0.30, slots.StallElevated, &unit, 60
 	e.GuardNow()
@@ -95,11 +97,29 @@ func TestFreezeFastNeverAService(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	growing(t, e, u, a, now)
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	e.GuardService = func(string) bool { return true }
 	z.free, z.agents = 0.30, slots.StallCritical
 	e.GuardNow()
 	if z.frozen[a] {
 		t.Fatal("froze a service")
+	}
+}
+
+// V0.sim-fixes (3): the trigger does not lift "one always runs": the growing
+// work flagged early is not frozen whole while it is the only heavy work.
+func TestFreezeFastNeverTheOnlyHeavyWork(t *testing.T) {
+	e, u, now, z, th := fzEngine(t)
+	a := th[0]
+	asked := growing(t, e, u, a, now)
+	z.free, z.agents = 0.30, slots.StallCritical
+	*now = now.Add(time.Second)
+	e.GuardNow()
+	if *asked == 0 {
+		t.Fatal("the trigger did not flag the growing work")
+	}
+	if len(z.frozen) != 0 {
+		t.Fatalf("froze the only heavy work that runs: %v", z.frozen)
 	}
 }
 

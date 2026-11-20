@@ -38,7 +38,7 @@ import (
 const (
 	invOomd       = "oomd-kill"     // oomd killed a thread while another thread's heavy work could have been frozen
 	invThawCrit   = "thaw-critical" // a thaw into the agents' critical stall, before the 30 min ceiling, of work that had not ended
-	invMaxFrozen  = "max-frozen"    // more threads frozen than the running threads less one
+	invMaxFrozen  = "max-frozen"    // more threads frozen than the threads with heavy work less one (V0.sim-fixes)
 	invOldest     = "oldest-frozen" // the oldest running hold was frozen
 	invService    = "service-frozen"
 	invAllFrozen  = "all-frozen"  // live heavy work and none of it ran for 60 s
@@ -540,21 +540,33 @@ func (r *simRun) restart() {
 // checkTick checks the invariants that hold between ticks.
 func (r *simRun) checkTick() {
 	h := r.h
-	frozenTh := map[string]bool{}
+	heavyTh, runsTh := map[string]bool{}, map[string]bool{}
 	liveHeavy, runningHeavy := 0, 0
 	for _, u := range h.units {
 		if u.live() && u.heavy() {
 			liveHeavy++
-			if u.frozen {
-				frozenTh[u.Thread] = true
-			} else {
+			heavyTh[u.Thread] = true
+			if !u.frozen {
 				runningHeavy++
+				runsTh[u.Thread] = true
 			}
 		}
 	}
-	n := len(r.e.Running())
-	if len(frozenTh) > max(n-1, 0) {
-		r.viol(invMaxFrozen, "%d threads frozen with %d running", len(frozenTh), n)
+	// A thread is frozen when none of its heavy work runs (taking turns, one
+	// part does).
+	// V0.sim-fixes (3): frozen work left alone wakes at once unless memory
+	// stalls critically or near oomd's limit, as the guard reads it (a fresh
+	// PSI trigger is critical, V0.freeze-fast-class-name): no thaw into a
+	// critical stall (decision 0036 E2, V0.load-invariants). Only then may it
+	// stay frozen with no other heavy work running.
+	if frozen, n := len(heavyTh)-len(runsTh), len(heavyTh); frozen > max(n-1, 0) {
+		r.e.mu.Lock()
+		trig := r.e.guardTrig
+		r.e.mu.Unlock()
+		sig := h.signals().Fresh(trig, r.e.Now())
+		if crit, _ := sig.Critical(); !crit && !sig.NearOomd() {
+			r.viol(invMaxFrozen, "%d threads frozen with %d with heavy work", frozen, n)
+		}
 	}
 	switch {
 	case liveHeavy == 0 || runningHeavy > 0:
@@ -607,8 +619,8 @@ func scenarios() []scenario {
 		}
 		add(s)
 		s2 := s
-		s2.name = "turns+reclaim-cli"
-		s2.params = func(p *simParams) { p.ReclaimReachesCLI = true }
+		s2.name = "turns-old-reclaim" // the reclaim before V0.freeze-charge
+		s2.params = func(p *simParams) { p.ReclaimReachesCLI = false }
 		s2.units = cloneUnits(s.units)
 		add(s2)
 	}
@@ -694,7 +706,7 @@ func scenarios() []scenario {
 		}
 		l := map[string]cgroup.Learned{"build": learnedClass(2, 7, 750)}
 		add(scenario{name: "unknown-limit", idle: 1, units: mk(), learned: l})
-		add(scenario{name: "unknown-limit+floor", idle: 1, params: func(p *simParams) { p.LimitFloor = true }, units: mk(), learned: l})
+		add(scenario{name: "unknown-limit-old", idle: 1, params: func(p *simParams) { p.LimitFloor = false }, units: mk(), learned: l}) // the limits before V0.freeze-charge
 	}
 	// 14. Near oomd's limit: oomd at 50 %, three heavy undeclared threads.
 	add(scenario{name: "near-oomd", idle: 1, params: func(p *simParams) { p.OomdLimit = 50 }, units: []*simUnit{
@@ -709,16 +721,10 @@ func scenarios() []scenario {
 		a.Background, b.Background = true, true
 		add(scenario{name: "background", idle: 1, units: []*simUnit{a, b}, learned: map[string]cgroup.Learned{"make check": learnedClass(2, 1.5, 300)}})
 	}
+	// V0.sim-fixes fixed the rest of V0.load-sim's list: a violation of
+	// those scenarios now fails the test.
 	known := map[string]map[string]string{
-		"turns-4x4GB":    {invAllFrozen: whyAllFrozen},
-		"file-cache":     {invThawCrit: whyHoldStale},
-		"two-growers":    {invThawCrit: whyHoldStale, invStarved: whyLimitCrawl},
-		"restart-frozen": {invThawCrit: whyHoldStale, invStarved: whyLimitCrawl},
-		"background":     {invThawCrit: whyHoldStale, invStarved: whyLimitCrawl},
-		"leak":           {invAllFrozen: whyAllFrozen},
-		"swap-full":      {invAllFrozen: whyAllFrozen, invOomd: whyFrozenKill},
-		"near-oomd":      {invAllFrozen: whyAllFrozen, invOomd: whyFrozenKill},
-		"unknown-limit":  {invAllFrozen: whyOwnLimit},
+		"swap-full": {invOomd: whyFrozenKill},
 	}
 	for i := range out {
 		out[i].expect = known[out[i].name]
@@ -729,11 +735,13 @@ func scenarios() []scenario {
 // Why the current code makes the violations the table lists (V0.load-sim).
 // Each is a finding to fix; remove its line when the fix lands.
 const (
-	whyHoldStale  = "sweepSlots drops a frozen job's hold: SlotActive does not move while the job is frozen, so a foreground call goes stale at HeavyCallStale (15 min), a background job at SlotIdle (2 min), and after a restart heavyCalls is empty (2 min); freezeGuard then thaws it as \"episode or hold ended\" into the critical stall"
-	whyLimitCrawl = "V0.job-limits sizes memory.high from a learned peak 4x too small and raises it by 1.2 once, so the job keeps a third of its memory, runs about 30x slower and keeps the agents' stall critical; it does not finish"
-	whyAllFrozen  = "maxFrozen counts agents with no heavy work as running and freezeUndeclared freezes work for their sake, so every heavy part can be frozen; the frozen memory stays charged (cli/, out of the reclaim's reach), the headroom never recovers and only the 10 min timed thaw runs the work again"
-	whyOwnLimit   = "the work moved into undeclared/ while memory is short gets memory.high = the free budget (V0.job-limits, unknown class); after the thaw it crawls under its own limit, the stall that causes sets a wake cap it can never fit under, and it runs only in 10 min slices (unknown-limit+floor: 20 min instead of 118)"
-	whyFrozenKill = "oomd picks the thread whose frozen pages the kernel reclaimed: pgscan counts them, so freezing makes a thread oomd's first choice; the guard froze on headroom alone while nothing stalled, the frozen memory held the host short, and the timed thaws let the stall rise"
+	// V0.sim-fixes (5): left as a finding of the model. The 2 GB of swap
+	// cannot hold the two parts that run, so the stall reaches oomd's limit
+	// with or without Fyr (no Fyr loses a thread too); the model counts the
+	// kernel's reclaim of the frozen part's cold pages as its pgscan, so oomd
+	// takes the frozen thread. Fyr's own reclaim is already off near the limit
+	// (V0.guard-tidy); how real oomd ranks a frozen cgroup is not measured.
+	whyFrozenKill = "oomd picks the thread whose frozen pages the kernel reclaimed: the model counts that as its pgscan, so the frozen thread is oomd's first choice once the two that run fill the 2 GB of swap"
 )
 
 func cloneUnits(us []*simUnit) []*simUnit {

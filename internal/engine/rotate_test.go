@@ -107,6 +107,7 @@ func TestT4ATurnPaysForTheSwapIn(t *testing.T) {
 
 func TestT5OnePartIsFrozenWhole(t *testing.T) {
 	e, u, now, z, th, r := turnEngine(t, threeUnits[0])
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()

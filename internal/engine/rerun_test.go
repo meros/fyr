@@ -118,7 +118,7 @@ func slotEngine(t *testing.T) (*Engine, *time.Time, string, string, map[string]b
 	free := 0.5
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK, CPU: 8, Memory: 16 << 30}
+		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free), CPU: 8, Memory: 16 << 30}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	frozen := map[string]bool{}

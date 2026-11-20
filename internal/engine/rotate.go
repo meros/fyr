@@ -122,6 +122,19 @@ func (e *Engine) nextTurn(f frozenJob, now time.Time) frozenJob {
 		e.guardOnce(now, "turn:"+f.owner, "could not move the turn in thread="+f.owner+": the cgroup refused")
 		return f
 	}
+	// V0.sim-fixes (4): each frozen part's memory at its freeze, for the wake
+	// rule; a part that ended is gone from it.
+	parts := map[int]uint64{}
+	for _, u := range units {
+		switch {
+		case u.PID == next.PID:
+		case u.PID == f.active:
+			parts[u.PID] = u.RSS
+		default:
+			parts[u.PID] = max(f.parts[u.PID], u.RSS)
+		}
+	}
+	f.parts = parts
 	if next.PID != f.active {
 		log.Printf("guard: turn thread=%s pid=%d cmd=%q mem=%s turn=%s units=%d read_back=%s/s", f.owner, next.PID, next.Command,
 			slots.GB(float64(next.RSS)), turn.Round(time.Second), len(units), slots.GB(rate))

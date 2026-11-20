@@ -56,19 +56,26 @@ func TestInvariantThawIntoCritical(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	out := invLog(t, e)
+	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
 	u.flags = []slots.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	if !z.frozen[a] {
 		t.Fatal("setup: not frozen")
 	}
-	u.flags = nil // the episode ended while the agents' memory stalls critically
+	// V0.sim-fixes (1): an episode that ends while the agents' memory stalls
+	// critically keeps its work frozen, so the guard itself gives no violation.
+	u.flags = nil
 	z.agents = slots.StallCritical
 	*now = now.Add(10 * time.Second)
 	e.Tick()
-	if z.frozen[a] {
-		t.Fatal("setup: not thawed")
+	if !z.frozen[a] || invLines(out, InvThawIntoCritical) != 0 {
+		t.Fatalf("thawed into the critical stall: frozen=%v\n%s", z.frozen, out)
 	}
+	// A thaw into it (a regression of that rule) is the violation.
+	crit := slots.Signals{Provider: "cgroups", AgentsStall: slots.StallCritical}
+	e.guardRecord(slots.GuardEvent{At: *now, Kind: "thaw", Work: "undeclared", Thread: a, Reason: "ended"}, crit)
+	e.Tick() // checkInvariants runs on it and the view is published
 	if n := invLines(out, InvThawIntoCritical); n != 1 {
 		t.Fatalf("%d invariant lines:\n%s", n, out)
 	}
@@ -218,6 +225,18 @@ func TestInvariantShortNothingFrozen(t *testing.T) {
 	u.flags = []slots.Undeclared{flagFor(a, *now)}
 	e.UndeclaredRootsMem = func(string) (uint64, bool) { return 1e6, true } // its work holds little: never frozen
 	z.free = 0.04
+	// V0.sim-fixes (3): alone, the only heavy work that runs is never frozen
+	// whole, so nothing frozen keeps the rule.
+	e.Tick()
+	tickFor(e, now, InvShortAfter+20*time.Second)
+	if invLines(out, InvShortNothingFroze) != 0 {
+		t.Fatalf("a violation for the only heavy work:\n%s", out)
+	}
+	// Beside another thread's job it could be frozen: the clock starts over.
+	z.free = 0.5
+	e.Tick()
+	e.Slots.Acquire(th[1], slots.Test)
+	z.free = 0.04
 	e.Tick()
 	tickFor(e, now, InvShortAfter)
 	if invLines(out, InvShortNothingFroze) != 0 {
@@ -229,6 +248,21 @@ func TestInvariantShortNothingFrozen(t *testing.T) {
 	}
 	if n := invLines(out, InvShortNothingFroze); n != 1 || len(invCards(e, InvShortNothingFroze)) != 1 {
 		t.Fatalf("%d lines:\n%s", n, out)
+	}
+}
+
+// V0.sim-fixes (3): short on the headroom alone, with no stall, freezes
+// nothing, and nothing frozen is no violation.
+func TestInvariantShortNothingFrozenNotWithoutAStall(t *testing.T) {
+	e, u, now, z, th := fzEngine(t)
+	out := invLog(t, e)
+	e.Slots.Acquire(th[1], slots.Test)
+	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	z.free, z.stall = 0.04, slots.StallOK
+	e.Tick()
+	tickFor(e, now, InvShortAfter+time.Minute)
+	if len(z.frozen) != 0 || invLines(out, InvShortNothingFroze) != 0 {
+		t.Fatalf("frozen=%v\n%s", z.frozen, out)
 	}
 }
 

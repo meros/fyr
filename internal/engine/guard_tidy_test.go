@@ -17,7 +17,7 @@ import (
 )
 
 // jobGuard is two running threads holding slots, a the oldest, with memory
-// short, and what the guard froze.
+// short and the agents' stall elevated, and what the guard froze.
 func jobGuard(t *testing.T) (*Engine, *time.Time, string, string, *float64, *slots.Stall, map[string]bool) {
 	e, _, now := bare(t)
 	p := slots.New(2)
@@ -29,7 +29,7 @@ func jobGuard(t *testing.T) (*Engine, *time.Time, string, string, *float64, *slo
 	p.Acquire(a, slots.Test)
 	*now = now.Add(time.Minute)
 	p.Acquire(b, slots.Test)
-	free, agents := 0.02, slots.StallOK
+	free, agents := 0.02, slots.StallElevated // V0.sim-fixes (3): the headroom alone freezes nothing while memory does not stall
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals {
 		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK, AgentsStall: agents}

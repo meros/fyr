@@ -53,8 +53,11 @@ type sizedJob struct {
 	undeclared    bool
 	size          JobSize
 	high, cpu     string
-	events        uint64 // memory.events high when the limit was set
+	events        uint64 // memory.events high when the limit was set, or at its last hit
 	hit           bool
+	// raised is the least memory.high the job's hits and stalls have earned:
+	// its use × holdMargin at its last hit or while it stalled (V0.sim-fixes).
+	raised uint64
 	// V0.joblimit-slice: the limits of a class not learned yet, sized once
 	// when the job was moved; only the swap valve changes them after.
 	kept                       bool
@@ -179,6 +182,9 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 	} else {
 		high, cpu, why = jobLimits(z, budget, used, cores, lifted)
 	}
+	if !lifted && high != "max" {
+		high, why = s.grown(dir, high, why, budget)
+	}
 	g.mu.Lock()
 	turns := g.turns[dir]
 	g.mu.Unlock()
@@ -186,6 +192,12 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 		high, why = "max", "turns" // V0.guard-tidy (liftForTurns)
 	}
 	if known && high == s.high && cpu == s.cpu {
+		g.mu.Lock()
+		if cur, ok := g.sized[dir]; ok && s.raised > cur.raised {
+			cur.raised = s.raised // grown keeps what a stall earned
+			g.sized[dir] = cur
+		}
+		g.mu.Unlock()
 		return
 	}
 	var bad []string
@@ -216,6 +228,9 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 	if g.sized == nil {
 		g.sized = map[string]sizedJob{}
 	}
+	if cur, ok := g.sized[dir]; ok {
+		s.raised = max(s.raised, cur.raised) // resize may have raised it since
+	}
 	g.sized[dir] = s
 	g.mu.Unlock()
 	kind := jobDir
@@ -231,6 +246,37 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 	if g.Limited != nil { // V0.load-invariants
 		g.Limited(thread, s.class, why, high, budget, s.size.Runs)
 	}
+}
+
+// OwnStallLift is the job's own memory full stall (avg10, percent) at which
+// its memory.high lifts (V0.sim-fixes (2)): the job throttles itself into the
+// stall V0.job-limits meant to avoid. StallCritical, as for the agents.
+const OwnStallLift = StallCritical
+
+// grown is memory.high as the job's hits and its own stall leave it
+// (V0.sim-fixes (2)). The load simulation (V0.load-sim) ran a class learned at
+// 1.5 GB whose jobs grew to 7 GB: one ×1.2 on the class left each job a third
+// of its memory, about 30× slower, holding the agents' stall critical.
+//   - A hit raises the limit to the job's use × holdMargin (resize), again at
+//     each hit; at or past the agents' budget there is no limit.
+//   - While the job's own memory full stall is OwnStallLift or more, the limit
+//     lifts; its use × holdMargin is kept as the least it comes back at.
+//
+// s.raised is updated here when the job stalls; the caller stores s.
+func (s *sizedJob) grown(dir, high, why string, budget uint64) (string, string) {
+	if p, ok := readPSI(filepath.Join(dir, "memory.pressure")); ok && p.hasFull && p.full >= OwnStallLift {
+		s.raised = max(s.raised, uint64(holdMargin*float64(readBytes(filepath.Join(dir, "memory.current")))))
+		return "max", "own-stall"
+	}
+	n, err := strconv.ParseUint(high, 10, 64)
+	if err != nil || s.raised <= n {
+		return high, why
+	}
+	if budget > 0 && s.raised >= budget {
+		return "max", "raised"
+	}
+	page := uint64(os.Getpagesize())
+	return strconv.FormatUint(max(s.raised/page*page, page), 10), "raised"
 }
 
 func mbOr(v string) string {
@@ -252,7 +298,8 @@ func cpuOr(v string) string {
 }
 
 // resize follows the swap valve for every sized job and notes a job that hit
-// its memory.high: its class's learned peak is raised once per job.
+// its memory.high: its class's learned peak is raised once per job, and the
+// job's own limit to its use × holdMargin at each hit (V0.sim-fixes (2)).
 func (g *JobGroups) resize() {
 	if g == nil || g.Tree == nil {
 		return
@@ -269,24 +316,31 @@ func (g *JobGroups) resize() {
 			continue
 		}
 		g.sizeJob(s.thread, d, s.undeclared)
-		if s.hit || s.high == "max" {
+		g.mu.Lock()
+		s = g.sized[d]
+		g.mu.Unlock()
+		if s.high == "max" {
 			continue
 		}
 		ev, ok := readKey(filepath.Join(d, "memory.events"), "high")
 		if !ok || ev <= s.events {
 			continue
 		}
+		use := readBytes(filepath.Join(d, "memory.current"))
+		first := !s.hit
 		g.mu.Lock()
 		if cur, ok := g.sized[d]; ok {
-			cur.hit = true
+			cur.hit, cur.events = true, ev
+			cur.raised = max(cur.raised, uint64(holdMargin*float64(use)))
 			g.sized[d] = cur
 		}
 		g.mu.Unlock()
 		g.Tree.logf("guard: job limit hit thread=%s class=%q high=%s mem=%s high_events=+%d learned_peak=%s",
-			s.thread, s.class, mbOr(s.high), inMB(readBytes(filepath.Join(d, "memory.current"))), ev-s.events, inMB(s.size.Peak))
-		if g.Raise != nil && s.class != "" {
+			s.thread, s.class, mbOr(s.high), inMB(use), ev-s.events, inMB(s.size.Peak))
+		if first && g.Raise != nil && s.class != "" {
 			g.Raise(s.class)
 		}
+		g.sizeJob(s.thread, d, s.undeclared) // the raised limit, now
 	}
 }
 

@@ -28,7 +28,9 @@
 //     the thread with the most pages scanned lately (memory.oom.group).
 //   - V0.job-limits: a job's memory.high is 1.25 × its class's peak (at least
 //     the prior under 3 runs), or for an unknown class the free budget, at
-//     most half; it lifts while swap is at 90 % of its cap.
+//     most half; it lifts while swap is at 90 % of its cap. V0.sim-fixes: a
+//     hit raises it to the job's use × 1.25, and it lifts while the job's
+//     own stall is critical.
 package engine
 
 import (
@@ -41,8 +43,8 @@ import (
 
 const gb = 1e9
 
-// simParams is the host. Switches model fixes not in this tree yet, so the
-// table can show what they change.
+// simParams is the host. Switches select the tree before a fix, so the table
+// can show what the fix changed.
 type simParams struct {
 	Cores       float64
 	Budget      float64 // the agents' memory.high
@@ -57,17 +59,20 @@ type simParams struct {
 	OomdFor     time.Duration
 	JobLimits   bool // V0.job-limits
 	// ReclaimReachesCLI: Fyr's reclaim of frozen undeclared work also reaches
-	// the pages still charged to the thread's cli/ (a fix; off is today's tree).
+	// the pages still charged to the thread's cli/ (V0.freeze-charge (4); off
+	// is the tree before it).
 	ReclaimReachesCLI bool
-	// LimitFloor: an unknown class's memory.high is at least the prior, half
-	// the budget (a fix; off is today's tree, which sizes it from the free
-	// budget at the move, 73 MB on 19 Nov).
+	// LimitFloor: V0.freeze-charge (2, 3): undeclared work the guard moves
+	// gets no memory.high, and an unknown job's is never below the prior, half
+	// the budget. Off is the tree before it, which sized both from the free
+	// budget at the move (73 MB on 19 Nov).
 	LimitFloor bool
 }
 
 func defaultParams() simParams {
 	return simParams{Cores: 8, Budget: 12 * gb, RAM: 24 * gb, HostBase: 1.5 * gb, CLI: 0.4 * gb, SwapCap: 8 * gb,
-		ReadBack: 400e6, ColdReclaim: 200e6, Evict: 1e9, OomdLimit: 85, OomdFor: 20 * time.Second, JobLimits: true}
+		ReadBack: 400e6, ColdReclaim: 200e6, Evict: 1e9, OomdLimit: 85, OomdFor: 20 * time.Second, JobLimits: true,
+		ReclaimReachesCLI: true, LimitFloor: true}
 }
 
 type unitKind int
@@ -239,14 +244,14 @@ func (h *simHost) start(u *simUnit) {
 	if u.Kind == kAdmitted {
 		h.holds[u.Thread] = &simHold{mem0: 0, active: h.t, unit: u}
 		if h.p.JobLimits {
-			u.high = h.limitFor(u.Class)
+			u.high = h.limitFor(u.Class, false)
 		}
 	}
 }
 
 // limitFor is V0.job-limits's memory.high for a part of class (V0.joblimit
-// sizeFor and jobLimits), 0 for none.
-func (h *simHost) limitFor(class string) float64 {
+// sizeFor and jobLimits), 0 for none; undeclared: the guard moved it.
+func (h *simHost) limitFor(class string, undeclared bool) float64 {
 	l, ok := h.learned[class]
 	if ok && l.Peak > 0 {
 		peak := float64(l.Peak)
@@ -258,10 +263,13 @@ func (h *simHost) limitFor(class string) float64 {
 		}
 		return 0
 	}
+	if undeclared && h.p.LimitFloor {
+		return 0
+	}
 	free := max(0, h.p.Budget-h.agentsRes)
 	m := min(free, 0.5*h.p.Budget)
 	if h.p.LimitFloor {
-		m = max(m, h.p.Budget/2)
+		m = max(m, h.p.Budget/2) // the prior of 2 slots
 	}
 	return max(m, 4096)
 }
@@ -300,7 +308,7 @@ func (h *simHost) freeze(us []*simUnit, move bool) {
 		if move && !u.moved {
 			u.moved, u.cli = true, u.res
 			if h.p.JobLimits {
-				u.high = h.limitFor("") // an undeclared command's class is not known
+				u.high = h.limitFor("", true) // an undeclared command's class is not known
 			}
 		}
 	}
@@ -372,16 +380,32 @@ func (h *simHost) step() {
 		u.ws = u.want()
 		u.peakSeen = max(u.peakSeen, u.ws)
 		u.allowed = u.ws
-		if h.p.JobLimits && u.high > 0 && !h.lifted && !u.turns {
+		// V0.sim-fixes (2): while the part's own stall is critical its limit
+		// lifts, and its use × 1.25 is the least it comes back at.
+		ownStall := u.m > 1 && stalled(u.m)*100 >= cgroup.OwnStallLift
+		if h.p.JobLimits && u.high > 0 && !h.lifted && !u.turns && ownStall {
+			u.high = max(u.high, 1.25*(u.res-u.cli))
+		}
+		if h.p.JobLimits && u.high > 0 && !h.lifted && !u.turns && !ownStall {
 			u.allowed = min(u.ws, u.cli+u.high)
 			// V0.job-limits: a job that hits its memory.high raises its
-			// class's peak by 1.2 once, and the next resize raises its limit.
-			if u.ws > u.allowed && !u.hit && u.Kind == kAdmitted && u.Class != "" {
+			// class's peak by 1.2 once. V0.sim-fixes (2): and the resize (every
+			// 10 s) raises its limit to its use × 1.25 at each hit, none at
+			// or past the budget.
+			if u.ws > u.allowed && h.t%(10*time.Second) == 0 {
+				if !u.hit && u.Kind == kAdmitted && u.Class != "" {
+					if l, ok := h.learned[u.Class]; ok {
+						l.Peak = uint64(float64(l.Peak) * 1.2)
+						h.learned[u.Class] = l
+					}
+				}
 				u.hit = true
-				if l, ok := h.learned[u.Class]; ok {
-					l.Peak = uint64(float64(l.Peak) * 1.2)
-					h.learned[u.Class] = l
-					u.high = h.limitFor(u.Class)
+				u.high = max(u.high, 1.25*(u.allowed-u.cli))
+				if u.high >= h.p.Budget {
+					u.high = 0
+				}
+				u.allowed = u.ws
+				if u.high > 0 {
 					u.allowed = min(u.ws, u.cli+u.high)
 				}
 			}
@@ -653,11 +677,12 @@ func level(avg float64) slots.Stall {
 	return slots.StallOK
 }
 
-// psiTrigger is V0.guard-wake's trigger: 150 ms of full stall in 2 s.
+// psiTrigger is fyrd's trigger: 200 ms of full stall in 2 s, the critical
+// level (V0.freeze-fast-class-name (3); V0.guard-wake set it at 150 ms).
 func (h *simHost) psiTrigger() bool {
 	s := 0.0
 	for _, v := range h.inst2 {
 		s += v
 	}
-	return len(h.inst2) == 2 && s/2 >= 0.075
+	return len(h.inst2) == 2 && s/2 >= cgroup.StallCritical/100
 }

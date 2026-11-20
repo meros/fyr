@@ -233,7 +233,8 @@ func Wire(binding string) string {
 
 // Decide says whether head may start beside held, why not, and which
 // resource binds (V0.163). In order: without a provider (or capacity) the
-// fixed count n; memory short or critically stalling holds every job; with
+// fixed count n; memory short holds every job but a cheap one (V0.sim-fixes)
+// and a critical stall every job; with
 // nothing held the head starts (one job always runs); its CPU must fit the
 // free CPU budget and its memory the free memory (the memory budget less
 // the held jobs' needs, and no more than the real headroom above the
@@ -266,8 +267,18 @@ func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extr
 		}
 		return false, fmt.Sprintf("%d of %d heavy jobs run (this host counts jobs: no load measures)", len(held), n), ""
 	}
+	// V0.sim-fixes (2): while memory is short a cheap job still backfills
+	// unless the stall is critical or near oomd's limit (below), or the swap
+	// is full (V0.guard-swap: then what reads as free is the code the agents
+	// run): decision 0029 section 4, a job of CheapShare or less barely
+	// touches the head's room. The load simulation (V0.load-sim) had a 0.5 GB
+	// job wait 239 min behind one job larger than the budget.
+	backfill := false
 	if s.Headroom != nil && *s.Headroom < s.Reserve(p) {
-		return false, s.MemoryWhy(), ResHeadroom
+		if !Cheap(head, s) || s.SwapFull {
+			return false, s.MemoryWhy(), ResHeadroom
+		}
+		backfill = true
 	}
 	if crit, why := s.Critical(); crit {
 		return false, why, ResMem
@@ -301,7 +312,7 @@ func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extr
 			memFree, memBind = room, ResHeadroom
 		}
 	}
-	if float64(head.Mem) > memFree+1 {
+	if float64(head.Mem) > memFree+1 && !backfill {
 		grow := ""
 		if memBind == ResHeadroom && s.Growth > 0 {
 			grow = fmt.Sprintf(" (the running jobs may still grow %s)", GB(float64(s.Growth)))

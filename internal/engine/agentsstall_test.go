@@ -51,7 +51,8 @@ func TestAgentsStallElevatedIsNotFine(t *testing.T) {
 func TestNearOomdsLimitTheNextFreezeDoesNotWait(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	third(t, e)
+	c := third(t, e)
+	e.Slots.Acquire(c, slots.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
 	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	unit := 30.0
 	z.free, z.agents, z.unit, z.oomd = 0.30, slots.StallCritical, &unit, 60
