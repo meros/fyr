@@ -32,7 +32,8 @@ import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
-import { changeChip, headerPr } from "./offers.ts";
+import { changeChip, headerPr, settleLine } from "./offers.ts";
+import { WakeChip } from "./wake-ui.tsx";
 import { SETTLE_DONE_HINT, seenToggle, settleDoneEntry } from "./menu.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
@@ -957,7 +958,14 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             const c = changeChip(t); // V0.59 (8)
             return c ? <span class={`m-chip prc ${c.cls}`} title={c.title}>{c.text}</span> : null;
           })()}
+          {(() => {
+            const l = settleLine(t); // as the desktop header shows it
+            return l ? <span class="m-chip"><span>{l}</span></span> : null;
+          })()}
           </button>
+          {/* V0.wakeups-via-watch: the desktop header's wake chip. Outside the Details button, which takes every tap on the
+              chips row, so a tap here cancels the wake-up as on the desktop. */}
+          <WakeChip t={t} now={p.now} cls="m-chip" button="m-pjb m-wakeb" onCancel={(rule) => p.commands.run("thread.cancelWake", [t.id], { rule })} />
         </div>
         {t.hostOffline && (
           <div class="m-offl" role="status" title="The host is offline. This is the last copy Fyr saw; what you send waits until it is back.">

@@ -508,3 +508,6 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 .invc-list.m{padding:8px 16px}
 .invc-list.m .invc{font-size:13px;line-height:18px}
 .invc-list.m .btn{height:44px;padding:0 14px;border-radius:10px;font-size:14px}
+/* V0.wakeups-via-watch: the wake chip stands right of the scrolling chips in its own 44 px tap target (as .m-pjb) */
+.m-wakeb{flex:0 1 auto;max-width:42%}
+.m-wakeb .m-chip.wake{max-width:100%}

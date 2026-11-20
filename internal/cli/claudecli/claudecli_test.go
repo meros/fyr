@@ -49,6 +49,11 @@ func TestArgs(t *testing.T) {
 	if strings.Contains(strings.Join(Args(cli.Launch{Session: "s"}), " "), "--effort") {
 		t.Fatal("no effort asked")
 	}
+	// V0.wakeups-via-watch: the CLI's own timers are off.
+	got = strings.Join(Args(cli.Launch{Session: "s", DisallowedTools: []string{"CronCreate", "CronDelete", "ScheduleWakeup"}}), " ")
+	if !strings.Contains(got, "--disallowedTools CronCreate,CronDelete,ScheduleWakeup") {
+		t.Fatal(got)
+	}
 }
 
 func TestEffortFor(t *testing.T) {

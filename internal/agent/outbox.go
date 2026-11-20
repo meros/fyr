@@ -88,6 +88,9 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 		ud["from"] = e.From
 	}
 	m.observe(threadID, core.KindMessageSent, core.MessageSentArgs{ID: e.MessageID, Log: []core.Event{{Type: "user", Data: ud}}})
+	if e.From == "" && isLoop(userText) {
+		m.noteLoop(threadID) // V0.wakeups-via-watch: /loop keeps the CLI's timers
+	}
 	s, err := m.ensure(threadID)
 	if err != nil {
 		// V0.33: the message stays in the log, marked lost.

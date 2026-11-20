@@ -59,6 +59,9 @@ type Thread struct {
 	SettleWhenDone   bool           `json:"settleWhenDone,omitempty"`
 	SettleWhenMerged bool           `json:"settleWhenMerged,omitempty"`
 	SettleWhen       *core.SettleOn `json:"settleWhen,omitempty"`
+	// Wakes are the agent's armed wake-ups, soonest first
+	// (V0.wakeups-via-watch): its watches on a time.
+	Wakes []core.WakeUp `json:"wakes,omitempty"`
 	// Settle shadows thread.settle, which the fields above carry.
 	Settle *struct{} `json:"settle,omitempty"`
 	// Feed shadows thread.feed: the notices are the agent's (#47).

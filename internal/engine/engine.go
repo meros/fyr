@@ -1067,7 +1067,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	quiet := core.PushQuiet(t, att.State, e.autoMergeOn)
 	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now), PushQuiet: quiet,
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
-		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: changes,
+		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Wakes: core.Wakes(t), Changes: changes,
 		RootPrompt: e.threadRootPrompt(t)}
 }
 

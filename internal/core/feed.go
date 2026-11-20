@@ -801,6 +801,9 @@ func ownerNotices(r Reduced) []Notice {
 			add("park:"+c.ID, fmt.Sprintf("The owner took back Not now on %s; it needs the owner again.", changeName(c)))
 		}
 	}
+	if r.In.Kind == KindCancelWake { // V0.wakeups-via-watch; a firing in the same reduce is not a cancel
+		out = append(out, cancelledWakes(b, a)...)
+	}
 	if (a.ArchivedAt != nil) != (b.ArchivedAt != nil) {
 		s := "unarchived"
 		if a.ArchivedAt != nil {
