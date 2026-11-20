@@ -1,0 +1,33 @@
+# A PR's gate, on the self-hosted runner on meros-server (V0.ci-self-hosted): self-hosted minutes cost nothing on a
+# private repo, so PRs run on GitHub again (#405 had moved them to scripts/ci-local.sh to save paid minutes). The
+# runner takes one job at a time; a newer push to a PR cancels its older run. scripts/ci-local.sh stays the fallback
+# when the runner is down (its status local/test counts the same for Fyr).
+#
+# Only for this private repo: a self-hosted runner runs whatever a workflow says, so it must never take PRs from
+# people who are not the owner.
+name: pr
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: [self-hosted, meros-server]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # make test as scripts/ci-local.sh runs it; Chromium is on PATH as google-chrome (the runner's NixOS module),
+      # so no FYR_ variable reaches the Go tests (the neutrality test forbids them).
+      - name: make test
+        run: nix develop --command make test
+      - name: gitleaks over the PR's commits
+        run: nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact --log-opts="origin/${{ github.base_ref }}..HEAD" .
