@@ -554,6 +554,8 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
       check();
     });
     ro.observe(el);
+    // The content grows after the first paint (late markdown, images, folded work): follow it while at the bottom.
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
   }, []);
 
