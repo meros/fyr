@@ -1,6 +1,6 @@
 # V0.load-sim: a simulation runs Fyr's real admission and memory guard against a modelled host over 17 scenarios and checks invariants
 
-→ decisions 0029, 0032 and 0036, V0.multi-freeze, V0.guard-wake, V0.oomd-guard, V0.guard-tidy, V0.job-limits. (owner, 19 Nov: "Can we simulate the logic and see if this will be well behaved in various situations?")
+→ decisions 0029, 0032 and 0036, V0.multi-freeze, V0.guard-wake, V0.oomd-guard, V0.guard-tidy, V0.job-limits. 
 
 (1) **What runs.** `internal/engine/sim_test.go` builds an engine as fyrd wires it: `slots.Pool` with `internal/admission`'s policy, the AIMD budget, `HeavyGate`, and the engine tick with `freezeGuard`, the turns, the wake rule and `memoryGuard`. The PSI trigger calls `GuardNow`. Every dependency (signals, freeze and thaw, the parts of undeclared work, the job tracker, the detector) is answered by the host model in `simhost_test.go`. A step is one simulated second and the engine ticks every 10. It is a test, so it ships nothing: `go test ./internal/engine/ -run TestSim -v` prints one row per scenario in about 5 s. `FYR_SIM_LOG=<scenario>` prints that run's `guard:` log.
 

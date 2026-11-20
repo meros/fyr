@@ -1,6 +1,6 @@
 # V0.message-before-start: the owner's message shows while the agent starts
 
-→ V0.153, V0.33. (owner, 19 Nov, a new thread under memory pressure: the conversation said "No messages yet." above "Waiting for the machine (memory pressure) · since 11:49": "It should show the sent message and "waiting" or something".)
+→ V0.153, V0.33. 
 
 (1) **The cause.** The agent manager wrote the message's `user` event only after the process had started. Under pressure that start waits up to `PressureMaxWait` (15 min, V0.153), and V0.153 left this open: "the owner's message shows in the conversation only once the start succeeds".
 

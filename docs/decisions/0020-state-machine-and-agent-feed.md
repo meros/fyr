@@ -1,9 +1,8 @@
 # 0020 One state machine beside the agent, and one feed into it
 
-Date: 2026-11-15 · Status: accepted (owner, 2026-11-15: "Yes, build on it"; wake for every notice; one sentence per notice and a state tool) · Builds on SPEC 3.2 (Entity), 4 (Events), 5 (Actions), 5.10 (async effects), 7 (Rules); 0018, 0019 · Replaces #34
+Date: 2026-11-15 · Status: accepted · Builds on SPEC 3.2 (Entity), 4 (Events), 5 (Actions), 5.10 (async effects), 7 (Rules); 0018, 0019 · Replaces #34
 
-**Context.** The owner: "there might be a state somewhere, for everything in the thread that is not messages: what PRs are being watched, state of those, state for the live view etc. When this state is updated, a diff or event is sent to the agent as well as a reducer being run for non-LLM actions... we have something here that the agent needs to be aware of and shape/act on, but it is also a machine that lives outside the agent (merge doesn't make the LLM merge, it merges and lets the agent know). Figure out a solid robust DRY foundation for these mechanisms."
-
+**Context.** 
 The spec has the parts in sections 3.2, 4, 5 and 7. The V0 rows built around them, so today one idea has several forms:
 
 | Idea | Forms in the code (solid-core, 15 Nov) |
@@ -47,7 +46,7 @@ The spec has the parts in sections 3.2, 4, 5 and 7. The V0 rows built around the
 | A change by the owner to the thread's settings, project or settle state | next |
 | Everything else | silent |
 
-**Waking (owner, 2026-11-15: "wake for every notice").** When the agent is idle, every notice that is not `silent` starts a turn, `next` included; while a run is live, `next` waits for the next tool call or turn and `stop` for the run's end, as in the table. A settled or archived thread gets no `wake`: Rules for it are suspended (7.4) and its notices wait until it is revived.
+**Waking.** When the agent is idle, every notice that is not `silent` starts a turn, `next` included; while a run is live, `next` waits for the next tool call or turn and `stop` for the run's end, as in the table. A settled or archived thread gets no `wake`: Rules for it are suspended (7.4) and its notices wait until it is revived.
 
 **Records the agent shapes.** The agent writes through the same Inputs: open and revise changes, declare actions, set its live view, arm a Rule ("settle when", "tell me when"). The field rights make sure it cannot write facts (a PR's checks), approvals or the owner's state.
 

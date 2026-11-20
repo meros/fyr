@@ -1,6 +1,6 @@
 # V0.native-feel: every control and sheet moves and answers like a native one
 
-→ V0.32 (native feel on the phone), V0.68 (the confirmation), V0.207 (the list keeps its place), design/mobile/README.md section 2. *Amends V0.32: its 0.24 s screen slide and its `:active` press are replaced; its rules on zoom, bounce, selection and haptics stand.* (owner, 18 Nov: "I want the UI elements (basic (buttons etc)/more advanced (bottom sheets etc)) to be much more like real non-html. I like the style, but they should handle very smooth overall and native-like!", then "include some polish as well".)
+→ V0.32 (native feel on the phone), V0.68 (the confirmation), V0.207 (the list keeps its place), design/mobile/README.md section 2. *Amends V0.32: its 0.24 s screen slide and its `:active` press are replaced; its rules on zoom, bounce, selection and haptics stand.* 
 
 The look does not change: colours, type, sizes and shapes are as they were. What changes is how things move and answer. One implementation for both fronts: `web/src/motion.ts` (the numbers, pure), `web/src/motion-ui.tsx` (gestures and animations), and the last block of `web/src/app.css`.
 

@@ -2,7 +2,7 @@
 
 → V0.fix-flakes (the same kind of cause), #159 (a local build pauses auto-update), V0.82 (2) (a successful deploy ships).
 
-`TestLocalBuildSmokesAndPauses` failed on an idle meros-server with `reports []` and passed alone. The "update:" lines around it in the log were other tests' goroutines logging; they share no state with it (each test has its own `Deployer`, `host` and store).
+`TestLocalBuildSmokesAndPauses` failed on an idle home-server with `reports []` and passed alone. The "update:" lines around it in the log were other tests' goroutines logging; they share no state with it (each test has its own `Deployer`, `host` and store).
 
 (1) **The cause: the tests waited for one step and read the result of a later one.** After the probation, `ReportPending`'s goroutine pauses auto-update (for a local build) and calls `OnShipped`, then records the update as live, prunes old builds, and only then tells the thread (`tell` → `Host.Report`). `TestLocalBuildSmokesAndPauses` waited for `PausedBy` and read the reports at once; `TestV082DeployRecordsCommitAndShips` waited for `OnShipped`, slept 20 ms and read them. On a slow disk the prune can outlast either, and the report is not there yet. The product order is right (the thread hears only once the update is recorded); the tests were wrong.
 

@@ -1,8 +1,8 @@
 # 0024 Changes v2: one card per piece of work
 
-Date: 2026-11-16 · Status: accepted (owner: "Decision 0024, then slices 1-5") · Mockups: [`design/changes-v2/index.html`](../../design/changes-v2/index.html) · Amends 0018 (+ addendum #35), 0020 (wake rule), V0.59, V0.62, V0.70, V0.84, V0.87, V0.88 · Keeps 0020's foundation and D5
+Date: 2026-11-16 · Status: accepted  · Mockups: [`design/changes-v2/index.html`](../../design/changes-v2/index.html) · Amends 0018 (+ addendum #35), 0020 (wake rule), V0.59, V0.62, V0.70, V0.84, V0.87, V0.88 · Keeps 0020's foundation and D5
 
-**Context.** The owner, 16 Nov: "Changesets do not work today - that is a fact." Two days of transcripts, the live store and the code show the cause: one piece of work had three identity schemes (the agent's key, a repo-and-branch record, a PR URL), joined by rules that depend on the order things happen. Each fix since V0.70 handled one order. The design below went through four adversarial review rounds (data model, owner UX, agent ergonomics, scope and feasibility, an implementer's read of slices 1–5) before the owner's decisions in section 12.
+**Context.** Two days of transcripts, the live store and the code show the cause: one piece of work had three identity schemes (the agent's key, a repo-and-branch record, a PR URL), joined by rules that depend on the order things happen. Each fix since V0.70 handled one order. The design below went through four adversarial review rounds (data model, owner UX, agent ergonomics, scope and feasibility, an implementer's read of slices 1–5) before the owner's decisions in section 12.
 
 ## In short
 
@@ -222,4 +222,4 @@ One host store with owner and follower links (the old slice 8: no evidence row n
 
 ## Addendum (16 Nov): slice 5's number and its first part
 
-PR #112 (the load indicator) took V0.99. Slice 5 takes the next free SPEC number when it is built (owner, 16 Nov: "Slice 5 moves"). PR #114 built the first part of slice 5's ask rule (section 5): an effect ask is void when its PR is no longer open or its change is abandoned or reverted (`voidAsks` in `internal/core/voidask.go`). Slice 5 adds "its change is done" there once `IsDone()` (V0.98) exists.
+PR #112 (the load indicator) took V0.99. Slice 5 takes the next free SPEC number when it is built. PR #114 built the first part of slice 5's ask rule (section 5): an effect ask is void when its PR is no longer open or its change is abandoned or reverted (`voidAsks` in `internal/core/voidask.go`). Slice 5 adds "its change is done" there once `IsDone()` (V0.98) exists.

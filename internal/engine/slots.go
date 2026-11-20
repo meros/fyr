@@ -993,7 +993,7 @@ func wakeable(f frozenJob, sig slots.Signals, cap, resident uint64) (bool, strin
 }
 
 // stalls says memory stalls at all (V0.sim-fixes (3)): the host's or the
-// agents' stall is elevated or worse. The owner, 19 Nov: a freeze needs short
+// agents' stall is elevated or worse. A freeze needs short
 // headroom and at least an elevated stall; admission still holds new jobs on
 // the headroom alone.
 func stalls(sig slots.Signals) bool {

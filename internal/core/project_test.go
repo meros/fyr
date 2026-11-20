@@ -11,7 +11,7 @@ func TestDefaultColor(t *testing.T) {
 		t.Fatal("not stable")
 	}
 	seen := map[string]bool{}
-	for _, n := range []string{"acme", "wayout", "nixos", "fyr", "recept", "utdelningar", "a", "b", "c", "d", "e", "f"} {
+	for _, n := range []string{"acme", "garden", "nixos", "fyr", "recept", "utdelningar", "a", "b", "c", "d", "e", "f"} {
 		c := DefaultColor(n)
 		if !ValidColor(c) || c == "amber" {
 			t.Fatalf("%s → %q", n, c)

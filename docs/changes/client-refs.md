@@ -1,6 +1,6 @@
 # V0.client-refs: what a device keeps, a link and a push name a record by its host and a host by its install id
 
-→ decision 0031 slice 3 (2.1, 2.5, 4.2, C11, C12, F15), V0.15, V0.29, V0.134, V0.169, V0.207. *Amends V0.169 (the hosts turned off are kept by install id, not by name).* (owner, 17 Nov, decision 0031: "All operations need to include what host to direct to"; 19 Nov: "Finish decision 0031".)
+→ decision 0031 slice 3 (2.1, 2.5, 4.2, C11, C12, F15), V0.15, V0.29, V0.134, V0.169, V0.207. *Amends V0.169 (the hosts turned off are kept by install id, not by name).* (decision 0031)
 
 (1) **The device's keys, once.** After the first state that lists the hosts and their records, what the browser kept by a host's own id or a host's name moves, and `fyr.storage = 2` marks it done: a draft `fyr.draft.<id>` becomes `fyr.draft.<hostId>/<id>`; the project filter, New thread's project (`fyr.newThread`, which `fyr.lastProject` and `fyr.newDefaults` fold into) and the folded live views (`fyr.view.collapsed`) name refs; the hosts turned off (`fyr.hostsOff`) name install ids, a name no host has is dropped, and a host that reports no id keeps its name. A record that no single host has (none, or two with the id) keeps its old key; a draft under it is read as a fallback for one release and goes once the draft is written under the ref.
 

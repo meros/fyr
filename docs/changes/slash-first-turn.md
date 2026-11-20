@@ -1,6 +1,6 @@
 # V0.slash-first-turn: a slash command that starts a run runs as a command, not as plain text
 
-→ V0.79 (4), V0.95 (1). *Amends V0.95 (1) (the turn's first message carries the pending notices).* (owner, 19 Nov, with a screenshot of `/norban:verify-batch` answered as text twice: "Can't run skills".)
+→ V0.79 (4), V0.95 (1). *Amends V0.95 (1) (the turn's first message carries the pending notices).* 
 
 (1) **The cause.** The CLI runs a command or a skill only when the user message's text starts with `/` (and, with several text blocks, when the last one does). V0.95 (1) put the pending notices in front of the first message of a run, so a `/command` sent to an idle thread with any notice pending reached the agent as plain text; a skill that only the user may start (`disable-model-invocation`) then could not run at all. Checked on CLI 2.1.322: `/cost` alone runs with no API call; `[Fyr] note.\n\n/cost`, or `/cost` followed by a second text block, calls the model.
 

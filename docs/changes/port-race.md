@@ -2,7 +2,7 @@
 
 → V0.174 (slice 5b), V0.fix-flakes (4), the authtest harness's mesh, live fixture and LAN installs.
 
-**The failure.** `TestBothDirectionsBlockedShowsTheReasonAndAFlapGivesOneLink` failed on an idle meros-server: "b's front never showed a's link as wanted". b's log after its restart: `peer: listen 127.0.0.1:38833: … bind: address already in use; peers are off`, then `listening on http://127.0.0.1:38833`. The restarted fyrd's own HTTP listener had taken its peer port.
+**The failure.** `TestBothDirectionsBlockedShowsTheReasonAndAFlapGivesOneLink` failed on an idle home-server: "b's front never showed a's link as wanted". b's log after its restart: `peer: listen 127.0.0.1:38833: … bind: address already in use; peers are off`, then `listening on http://127.0.0.1:38833`. The restarted fyrd's own HTTP listener had taken its peer port.
 
 **The cause.** The harness started an install with `peerListen: 127.0.0.1:0` and then pinned the port the kernel gave it (`Mesh`, `PinPeerPort`), so that a restart keeps the address in everyone's roster, as a real install's fixed peer port does. Between the stop and the next start the port is free, and it lies in the kernel's ephemeral range: any listen on :0 may be handed it. The restarted fyrd listens on :0 for HTTP before it opens its peer port, so it can take its own; so can any other test's listener. Measured here: after a port from :0 is closed, the next listen on :0 gets that very port 16 times in 100 000. The same held for the mesh's loopback host port (`HostListen`), found free beforehand and closed (`freePort`), and for the live fixture's Mac (`PinPeerPort`) and the LAN test's b.
 

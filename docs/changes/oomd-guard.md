@@ -1,6 +1,6 @@
 # V0.oomd-guard: fyrd asks oomd to skip its own cgroup, warns near oomd's limit, and keeps a job frozen past 10 min while memory stalls critically
 
-→ decision 0036 slice 0 ((B) until #221, (E2)), V0.151 (3), V0.164 section 7, V0.multi-freeze. (owner, 19 Nov: "What is the best way to manage this? What are we missing?")
+→ decision 0036 slice 0 ((B) until #221, (E2)), V0.151 (3), V0.164 section 7, V0.multi-freeze. 
 
 (1) **The cause.** On 18 Nov at 15:30:18 systemd-oomd marked `fyr.service/server` (fyrd itself, 2.2 GB, its own pressure 0) for killing, because `fyr.service` was at 74.8 % memory pressure against its 70 % limit. The guard's last line before it was at 15:23:29 (`memory short: headroom=5% stall=ok … running=1`); it did not see the unit's stall that oomd read. From 18 to 19 Nov all six thaws for "10 min limit" happened while the host's and the agents' stall were both critical; on 19 Nov from 09:58 to 10:31 the agents' headroom was 0–1 % and the stall critical for 33 minutes, and each thaw let the job back into it.
 

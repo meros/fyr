@@ -1,6 +1,6 @@
 # V0.run-folder-env: a Run card runs in its folder's environment, through the folder's direnv
 
-→ V0.149, V0.60. (owner, 19 Nov, #355: "Fix it now".)
+→ V0.149, V0.60. (#355)
 
 (1) **What happened.** On 19 Nov a `run_request` script with `gcloud …` exited 127. fyrd's environment (a service's short PATH) has no `gcloud`, and once the agent wrote the full path, gcloud found no account: `CLOUDSDK_CONFIG` was not set. The agent's own Bash in that folder has both from the workspace's `.envrc` and `shell.nix`.
 

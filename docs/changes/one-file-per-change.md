@@ -1,6 +1,6 @@
 # V0.one-file-per-change: each change to v0 is its own file, named instead of numbered
 
-→ SPEC 0.5, `docs/PROCESS.md`. (owner, 18 Nov: "Almost every pr conflicts due to version. Fix this problem.")
+→ SPEC 0.5, `docs/PROCESS.md`. 
 
 (1) **Why.** Every PR added a row at the end of the table in SPEC 0.5, so any two open PRs conflicted on that line, and each had taken its number from the `main` it started on: V0.199 and V0.207 were each given twice.
 

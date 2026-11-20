@@ -1,6 +1,6 @@
 # V0.hover-cards: the other long tooltips read as cards or plain words
 
-→ V0.44, V0.77 (1), V0.quota-in-thread, V0.164, V0.176, V0.86, V0.137, V0.163, V0.load-card. *Amends the tooltip of each: the figures stay, their words and layout change.* (owner, 19 Nov, after V0.load-card: "This mumbo jumbo is unreadable! Improve", for the rest of the web UI's tooltips.)
+→ V0.44, V0.77 (1), V0.quota-in-thread, V0.164, V0.176, V0.86, V0.137, V0.163, V0.load-card. *Amends the tooltip of each: the figures stay, their words and layout change.* (V0.load-card)
 
 *Cause:* the browser's own `title` held whole reports: the quota's windows, reset times, age, stale note, error and next try as six lines of one size; the rail's undeclared and leftover buttons as one run-on sentence with every thread or process in it; and the heavy-job texts in measure words ("its share of the host (the larger of CPU and memory)", "above its idle level", "admit").
 

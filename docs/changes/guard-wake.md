@@ -1,6 +1,6 @@
 # V0.guard-wake: the guard holds a new heavy command before it freezes a running one, wakes frozen work by Buck2's rule, freezes up to the running threads less one, reacts to a PSI trigger, and says how long work was frozen
 
-→ decision 0036 slice 5 ((E1), (E3)–(E6)), V0.151, V0.209, V0.multi-freeze, V0.oomd-guard. (owner, 19 Nov: "All slices please".)
+→ decision 0036 slice 5 ((E1), (E3)–(E6)), V0.151, V0.209, V0.multi-freeze, V0.oomd-guard. 
 
 (1) **Hold a start before freezing a run (E1).** While the memory guard says memory is short, the gate hook holds a newly matched heavy command. A command that has not started has no timer running, so holding it costs less than freezing a job that runs. The pool already queued a thread with no admission (memory short holds every job, decision 0029 S2). The hold now also covers a thread that already holds an admission and a learned command (V0.209: it never queues). The command is refused with "Heavy job (make e2e): memory is short on this host, so Fyr holds new heavy commands until it recovers instead of pausing ones that run. It did not run. Do not work around this. Fyr tells you in a [Fyr] message when memory has recovered; run the command again then. …" A subagent is told not to retry, as for a queued job. When memory is no longer short, each held thread gets "Memory has recovered on this host: run the heavy command Fyr held again." Log: `guard: held at the gate thread=… class=… admitted=… learned=…`.
 

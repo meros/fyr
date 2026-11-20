@@ -1,13 +1,6 @@
 # 0025 Fronts find the hosts on the tailnet and mesh; the client keeps one uplink
 
-Date: 2026-11-16 · Status: accepted (owner, 16 Nov, in the multi-host thread) · Amends 0016 and 0021 (points 3, 5 and 8) · SPEC V0.123 · Superseded in part by 0030 ((1) proof and (2)), once 0030 is accepted
-
-**The owner's words, 16 Nov, in order:**
-- "Start building multi host... The fyrd should detect other hosts on the tailnet and hand to client. Client maintains connection to all."
-- "The hosts will likely need to mesh with each other and relay traffic to some degree..."
-- "I think maybe it's the hosts that maintain connections, not the client. The client should only have one uplink."
-- After seeing the diagram: "Yes this is good! It's the fronts that mesh of course!"
-- On whether the host part dials its peers: "Only frontend fyrd."
+Date: 2026-11-16 · Status: accepted · Amends 0016 and 0021 (points 3, 5 and 8) · SPEC V0.123 · Superseded in part by 0030 ((1) proof and (2)), once 0030 is accepted
 
 The owner answered three questions while the client was still meant to connect to every host. Two of the answers still hold: discovery adds a host automatically, and push stays on the installed front. The third chose tailnet identity for the browser over tokens or pairing. That stays true without changing anything, because the browser still reaches only its own front through Tailscale Serve.
 

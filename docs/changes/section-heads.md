@@ -1,6 +1,6 @@
 # V0.section-heads: the inbox's section headers stand out and show that they fold
 
-→ V0.186, V0.your-move. *Amends the phone's fold arrow, which only some sections had.* (owner, 18 Nov, about the list's headers: "Make these categories pop, icons? Fold/unfold indicators?")
+→ V0.186, V0.your-move. *Amends the phone's fold arrow, which only some sections had.* 
 
 (1) **The title.** A section header shows a chevron, the section's state icon (the rail's and the strip's), the name and the count. A section with rows has its name in full ink and semi-bold and its count in a pill. An empty section steps back: faint, no pill.
 

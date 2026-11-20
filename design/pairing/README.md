@@ -1,6 +1,6 @@
 # Pairing and discovery in Settings
 
-The design of every Settings surface that decision 0026 (keys, not networks) needs: the hosts, their ids and trust, the found installs, pairing by code, the tailnet shortcut, adding by address, a changed id, devices, removal and key rotation, and the empty and error states. Desktop and phone, drawn from one page each. (Owner, 16 Nov: "Make sure the settings pane is fully built and thought through for the pairing and discovery workflows".)
+The design of every Settings surface that decision 0026 (keys, not networks) needs: the hosts, their ids and trust, the found installs, pairing by code, the tailnet shortcut, adding by address, a changed id, devices, removal and key rotation, and the empty and error states. Desktop and phone, drawn from one page each. 
 
 | Path | What |
 |---|---|

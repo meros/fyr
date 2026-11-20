@@ -35,10 +35,10 @@ test("in view: an unfolded section or pinned; Snoozed and Settled are folded by 
 });
 
 test("V0.169: row 1 has a toggle per host with threads in view, in the owner's order, all on by default, with short names", () => {
-  const hs = [H("meros-laptop"), H("meros-server", false)];
-  const threads = byId(T("a", "needs", "p_fyr", "meros-laptop"), T("b", "working", "p_web", "meros-server"), T("c", "seen", "p_web", "meros-laptop"));
+  const hs = [H("home-laptop"), H("home-server", false)];
+  const threads = byId(T("a", "needs", "p_fyr", "home-laptop"), T("b", "working", "p_web", "home-server"), T("c", "seen", "p_web", "home-laptop"));
   const f = activeFilters({ ...base, hosts: hs, threads, sel: S() });
-  assert.deepEqual(f.hosts.map((h) => [h.name, h.short, h.n, h.on, h.last]), [["meros-laptop", "laptop", 2, true, false], ["meros-server", "server", 1, true, false]]);
+  assert.deepEqual(f.hosts.map((h) => [h.name, h.short, h.n, h.on, h.last]), [["home-laptop", "laptop", 2, true, false], ["home-server", "server", 1, true, false]]);
   assert.equal(f.hosts[1].info?.online, false, "an offline host still has threads, so it counts");
 });
 

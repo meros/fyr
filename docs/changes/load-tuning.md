@@ -1,6 +1,6 @@
 # V0.load-tuning: heavy jobs are predicted from their highs, only the agents' own memory stall cuts their budget, and the guard pauses the job that grew
 
-→ V0.148, V0.151, V0.163, decision 0029 S3, S4, S5. *Amends V0.148 (the demand's average), V0.151 (the newest job) and V0.163 (what cuts the memory budget).* (owner, 18 Nov, after reading a day of load logs: "review, research and do a tweak PR".)
+→ V0.148, V0.151, V0.163, decision 0029 S3, S4, S5. *Amends V0.148 (the demand's average), V0.151 (the newest job) and V0.163 (what cuts the memory budget).* 
 
 (1) **CPU demand.** A class's learned demand follows its runs' highs and decays by 10 % a run, as its memory peak does. A starved run still moves it by α/2, because its demand says little. Replayed over the 170 recorded runs with a prediction (17–18 Nov): runs more than 1.5 cores above their prediction fall from 25 % to 11 %; the prediction is on average 1.5 cores above the run instead of 0.7, which the CPU budget's growth on a calm host can give back.
 

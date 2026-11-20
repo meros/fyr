@@ -1,6 +1,6 @@
 # V0.stable-groups: a row keeps its place in its group; a new row goes last
 
-→ V0.26, V0.207, V0.your-move. *Amends V0.26 (1) (Working newest started first), V0.207 (1) (Unread newest first) and the state order inside a Your move group.* (owner, 19 Nov: "Avoid reordering within a group. add new at the bottom".)
+→ V0.26, V0.207, V0.your-move. *Amends V0.26 (1) (Working newest started first), V0.207 (1) (Unread newest first) and the state order inside a Your move group.* 
 
 (1) **Order.** Inside each group of Your move (Answer, Approve, Unblock, Questions in text), in Working and in Unread, rows are oldest first by when the thread came into that group. A thread that comes in later goes to the bottom. Nothing a thread does while it stays in its group moves it: not activity, not a new run, not a change of state inside the group (failed and blocked are both Unblock).
 

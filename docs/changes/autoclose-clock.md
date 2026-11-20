@@ -1,6 +1,6 @@
 # V0.autoclose-clock: the auto-close clock empties when the section closes, not halfway
 
-→ V0.196, V0.48. (owner, 20 Nov: "The autoclose logic is buggy... Time runs out, but when window is not focused it stays open. When i focus the window again only one of the sections collapse again".)
+→ V0.196, V0.48. 
 
 (1) **The cause.** The clock in the header of an opened Snoozed or Settled section is a CSS animation whose duration was the time left, computed on every render. The list re-renders on each store update, and a new `animation-duration` on a running animation rescales the time already gone: one second after a re-render at 1 s the pie showed 2/9 gone, and at 5 s it was empty while the section still had 5 s to go. Clicking back into the window to see why restarted the section clicked in, so only the other one folded.
 

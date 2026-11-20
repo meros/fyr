@@ -1,6 +1,6 @@
 # V0.notification-polish: a notification says what the inbox row says, arrives once, and each device chooses whether finished threads notify
 
-→ V0.15, V0.20, V0.54, V0.119, V0.140, V0.207, V0.210, V0.your-move, design/mobile rule 12. *Amends V0.15 (the body's words, the test, when a notification closes) and V0.119 (5) (the Notifications row's line).* (owner, 18 Nov: "Polish notification, what they say, when they arrive, the settings for them".)
+→ V0.15, V0.20, V0.54, V0.119, V0.140, V0.207, V0.210, V0.your-move, design/mobile rule 12. *Amends V0.15 (the body's words, the test, when a notification closes) and V0.119 (5) (the Notifications row's line).* 
 
 **What they say.**
 

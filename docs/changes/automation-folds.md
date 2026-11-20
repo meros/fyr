@@ -1,6 +1,6 @@
 # V0.automation-folds: the Automation page folds its reference groups to one line each
 
-→ V0.119, V0.126, V0.164, V0.173, V0.176, V0.188, Decision 0029 S1. (owner, 19 Nov: "The automation screen is becoming unreadably long. Fix".)
+→ V0.119, V0.126, V0.164, V0.173, V0.176, V0.188, Decision 0029 S1. 
 
 (1) **The fold.** Each group on Settings → Automation except Auto-update has a header that folds it: a click, tap, Enter or Space on the title. Folded, the header keeps its title and one summary line, and the card and its foot are not drawn. The fold is remembered per device (`fyr.settingsFold`), per group and host.
 

@@ -10,7 +10,7 @@ func TestServicesMatch(t *testing.T) {
 		"process-compose --config process-compose.yaml --tui=false":                       true,
 		"/nix/store/x/bin/process-compose -f pc.yaml":                                     true,
 		"process-compose down":                                                            false,
-		"docker compose -f devdocker/docker-compose.yaml --project-name norban-dev up -d": true,
+		"docker compose -f devdocker/docker-compose.yaml --project-name acme-dev up -d": true,
 		"docker compose logs -f":                                                          false,
 		"docker-compose up":                                                               true,
 		"npm run dev":                                                                     true,
@@ -58,7 +58,7 @@ func TestComposeProject(t *testing.T) {
 		cmd, cwd, want string
 		up, down       bool
 	}{
-		{"docker compose -f devdocker/docker-compose.yaml --project-name norban-dev up -d", "/w", "norban-dev", true, false},
+		{"docker compose -f devdocker/docker-compose.yaml --project-name acme-dev up -d", "/w", "acme-dev", true, false},
 		{"docker compose -p=Shop up", "/w", "shop", true, false},
 		{"cd x && docker compose -f devdocker/docker-compose.yaml up", "/w/repo", "devdocker", true, false},
 		{"COMPOSE_PROJECT_NAME=abc docker-compose up -d", "/w", "abc", true, false},

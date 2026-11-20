@@ -5,8 +5,7 @@ package engine
 // per invariant and never while its card is open, puts a card in the owner's
 // Needs you with the evidence: the signals and the guard's log lines of the
 // ten minutes before. The card's Fix it starts a thread in the host's Fyr
-// checkout with that evidence; fyrd never starts one by itself (the owner,
-// 19 Nov: "a Needs-you card only").
+// checkout with that evidence; fyrd never starts one by itself.
 
 import (
 	"encoding/json"

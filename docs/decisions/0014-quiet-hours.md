@@ -2,7 +2,7 @@
 
 Date: 2026-11-14 · Status: accepted (owner, walk-through) · Spec: 0.5 V0.46
 
-**Context.** The owner asked: "Add per project quiet hours! Hide threads by default and dont notify". Some projects (work, for example) should not reach the owner in the evening and at night, while the others still do. Their example window: "17-06", 17:00 to 06:00.
+**Context.** Some projects (work, for example) should not reach the owner in the evening and at night, while the others still do. Their example window: "17-06", 17:00 to 06:00.
 
 **Decision.** The owner chose in a walk-through:
 

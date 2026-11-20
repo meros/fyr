@@ -1,6 +1,6 @@
 # V0.settle-merge-fixes: a merge is asked with the call, "settle when merged" waits for every PR, a one-shot watch fires on resume, and another agent's message does not keep a settled thread open
 
-→ V0.203, V0.settle-request, V0.changes-code-only, V0.22, 7.4, SPEC 13.1 `m`. *Amends 7.4 (resume of a state Condition) and what "settle when merged" waits for.* (owner, 19 Nov: "We've had lots of weird behavior with threads claiming they would auto settle but didn't. And merges that didn't go through automatically".)
+→ V0.203, V0.settle-request, V0.changes-code-only, V0.22, 7.4, SPEC 13.1 `m`. *Amends 7.4 (resume of a state Condition) and what "settle when merged" waits for.* 
 
 The day's log showed four causes:
 - About 35 agent messages began with the bare word "merge" instead of calling `change_request {ask: "merge"}`. The prompt said 'ask "merge"' without naming the tool. No merge ask opened, so auto-merge had nothing to approve, and the owner pressed Merge on #374, #379, #381, #382 and #383.

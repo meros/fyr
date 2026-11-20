@@ -1,6 +1,6 @@
 # V0.one-device-per-browser: a browser on the tailnet is one device, not one for each request without a cookie
 
-→ V0.130 (3), V0.157, decision 0030 3.4. (owner, 19 Nov, with Settings → Devices full of "Chrome on Android" rows: "It feels like the devices might be broken? Does it add another one for each version or something?") One install had 689 devices, 680 of them never used after the request that made them: 585 from another install's probe of `/.well-known/fyr`, once a minute, and about 90 from a phone whose page sent its first requests together, each without the cookie.
+→ V0.130 (3), V0.157, decision 0030 3.4. One install had 689 devices, 680 of them never used after the request that made them: 585 from another install's probe of `/.well-known/fyr`, once a minute, and about 90 from a phone whose page sent its first requests together, each without the cookie.
 
 (1) **A request that needs no session makes no device.** Through Serve's socket the owner's node is enrolled only for a request that would be refused without a session: not for `/.well-known/fyr`, a file of the client or a preview.
 

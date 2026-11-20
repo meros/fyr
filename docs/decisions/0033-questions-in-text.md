@@ -4,7 +4,7 @@ Status: accepted, 18 Nov 2026. Spec: V0.210.
 
 ## Problem
 
-The owner: "things are done and waiting for me to answer questions in text". Needs you holds facts Fyr can compute: asks, failures, a ready PR. A question the agent only writes in its last message is none of these, so the thread lands in Unread and then Seen. In Fyr's own log for 14 to 18 Nov, formal asks were answered in a median of 1 minute (90% within 6). Turn endings that looked like a text question had a median of 5 minutes, and 10% took about 6 hours or more.
+Needs you holds facts Fyr can compute: asks, failures, a ready PR. A question the agent only writes in its last message is none of these, so the thread lands in Unread and then Seen. In Fyr's own log for 14 to 18 Nov, formal asks were answered in a median of 1 minute (90% within 6). Turn endings that looked like a text question had a median of 5 minutes, and 10% took about 6 hours or more.
 
 ## What was measured
 

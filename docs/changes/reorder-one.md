@@ -1,6 +1,6 @@
 # V0.reorder-one: every list the owner orders moves the same way, and a drag feels like one
 
-→ V0.119 (4), V0.120 (4), V0.121, V0.132, V0.137. *Amends V0.119 (4): the phone's Reorder mode also has a handle to drag, and the desktop's drag moves the row itself.* (owner, 19 Nov: "Align all reorder things to work the same way. Make sure desktop and mobile both are really nice to use".)
+→ V0.119 (4), V0.120 (4), V0.121, V0.132, V0.137. *Amends V0.119 (4): the phone's Reorder mode also has a handle to drag, and the desktop's drag moves the row itself.* 
 
 (1) **One control, four lists.** A provider's Models, Settings → Projects, Settings → Hosts and Waiting to run use one hook (`web/src/reorder-ui.tsx`) and one set of style rules. Before, each list kept its own pending order, its own error and its own lift style, and the Hosts page showed nothing while a row was dragged.
 

@@ -1,6 +1,6 @@
 # V0.update-changelog: each update in Settings says what it brought, the commits since what ran before
 
-→ V0.126 (#151), V0.173, decision 0027. (owner, 20 Nov: "Changelogs..." on the Updates list.)
+→ V0.126 (#151), V0.173, decision 0027. 
 
 (1) **The record.** When an update starts, Fyr notes in its record (kv `update_log`) the commit it counted from (`from`: the commit of the build that runs) and the commits the new build has that one lacks (`changes`: sha and the first line of the message, newest first, at most 40) and how many there are in all (`changesAll`). Best effort: a host where nothing ran before, or a list that cannot be read, gives a record without a changelog, and the update goes on.
 - **A release:** one GitHub compare (`repos/<repo>/compare/<from>...<sha>`), once per update, counted with fyrd's other gh calls (V0.173).

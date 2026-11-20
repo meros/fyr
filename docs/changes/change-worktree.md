@@ -1,6 +1,6 @@
 # V0.change-worktree: change_open makes a git worktree for a code change, so two changes never share a working tree
 
-→ decision 0019 (How the agent gets one, Serial changes, Who owns a worktree), V0.changes-code-only, V0.worktree-sweep; issue #44. (owner, 15 Nov: "we need a robust mechanism for threads to use worktrees when other threads or subagents are also working in same folder", and "one thread may run multiple changes in parallel or serial".)
+→ decision 0019 (How the agent gets one, Serial changes, Who owns a worktree), V0.changes-code-only, V0.worktree-sweep; issue #44. 
 
 (1) **The call.** `change_open {title, branch, workspace: true, repo?, after?, key?}`. `repo` is the folder of the repo, absolute or relative to the thread's folder, and defaults to the thread's folder; a folder that holds many repos and is not one itself needs it. The key defaults to the branch. Fyr makes the worktree before it records the change and answers with its path: "Fyr made its worktree at … on branch … from origin/main: work there". The agent and its subagents on that change work there.
 

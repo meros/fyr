@@ -1,6 +1,6 @@
 # V0.changes-code-only: a change is code Fyr tracks itself; the agent no longer declares other changes
 
-→ V0.59, V0.60, V0.72, V0.84, V0.98, V0.101, V0.next-step-dock, V0.next-step-chips. *Amends V0.59: the agent cannot open a change of any kind but code, and a change has no asks but merge.* (owner, 19 Nov: "The custom changes I don't think makes much sense at all. Simplify, align and make sure it's all very well UX", then, asked whether to keep them as a plain record: "Drop them".)
+→ V0.59, V0.60, V0.72, V0.84, V0.98, V0.101, V0.next-step-dock, V0.next-step-chips. *Amends V0.59: the agent cannot open a change of any kind but code, and a change has no asks but merge.* 
 
 (1) **The cause.** In 14 to 19 Nov agents opened 73 changes that were not code: 46 were "Deploy/Update Fyr" records that `fyr.deploy` has since replaced, and 3 ever had a button. Apply, deploy, revert, review and approve on such a change, and `bind`, `onOk` and `when` on its buttons, were a third way to hand the owner a step, beside the Run card and the button.
 

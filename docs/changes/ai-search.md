@@ -1,6 +1,6 @@
 # V0.ai-search: search understands what the owner means, and the phone's search field is a real field
 
-→ V0.108, V0.114, V0.115. (owner: "The search is useless... It's ugly on mobile and it should optimally use ai to find its way")
+→ V0.108, V0.114, V0.115. 
 
 1. **The phone's field.** The Search screen's field has its own look: a 44 px rounded field with the icon, 16 px text (iOS zooms a page on a smaller field), a clear button and the keyboard's Search key.
 2. **Typed search takes words.** Every word of the query must be in the title, the project or `#<PR number>`, in any order. It stays instant and costs nothing.

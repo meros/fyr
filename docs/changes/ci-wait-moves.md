@@ -1,6 +1,6 @@
 # V0.ci-wait-moves: a thread waiting for CI moves without the owner, and every row in Moving says why
 
-→ V0.136, V0.starting-moves, V0.153, V0.195, V0.your-move. (owner, 20 Nov: "Consider having waiting for CI in Moving without you... It's a bit confusing when it's in finished, but it's not finished!" and "Make sure it's easy to see why it's in moving without you. Don't reorder items in there, but the status line should always be logical for all states".)
+→ V0.136, V0.starting-moves, V0.153, V0.195, V0.your-move. 
 
 (1) **The cause.** A thread was in Moving without you only while its agent ran, started, waited for the machine or had a background task. An agent that pushed, asked for the merge and ended its turn left a thread in Finished, unread, though Fyr still waited for CI before it could ask the owner anything.
 

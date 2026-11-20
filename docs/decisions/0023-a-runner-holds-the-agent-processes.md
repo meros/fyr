@@ -1,6 +1,6 @@
 # 0023 A runner in the launcher holds the agent processes
 
-Date: 2026-11-16 · Status: accepted (owner, 2026-11-16: "Build the Claude in long living stable process, to enable full reload and crashes without stopping progress"; "Make sure it's very robust: no duplicate process, always find the old running process, timeout if abandoned for an hour"; "No smarts in that process besides this"; "All smarts is in the daemon") · Takes up option 1 of 0022, which 0022 declined "for now" · Amends V0.13 (4), V0.6 and V0.83 · Spec row V0.90
+Date: 2026-11-16 · Status: accepted · Takes up option 1 of 0022, which 0022 declined "for now" · Amends V0.13 (4), V0.6 and V0.83 · Spec row V0.90
 
 **Context.** The `claude` CLI is a child of fyrd and talks to it over pipes, so every restart of fyrd ends every running turn. 0022 kept the drain for deploys (wait until no thread runs, up to 30 minutes) and added Restart now, which cuts the turns and sends "continue". A crash of fyrd cuts the turns with no way out at all. 0022 named the alternative, a small long-lived process that holds the pipes, and declined it for its cost: a protocol that must stay stable, process ownership outside fyrd, and in-flight requests across a restart. The owner asked for it on 16 Nov.
 

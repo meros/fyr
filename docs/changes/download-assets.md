@@ -1,6 +1,6 @@
 # V0.download-assets: an image or a file in a thread can be downloaded
 
-→ V0.18, V0.19, V0.165. (owner, 18 Nov: "Add ability to download assets like images".)
+→ V0.18, V0.19, V0.165. 
 
 (1) **Download.** An image preview's card has Download beside Full screen, the image viewer has it beside Close, and a file the owner sent has it beside its chip. It is a link: the browser saves the file the way it saves any other (Downloads on a desktop, the system's own sheet on a phone). Both fronts show the same control; on the phone it is 44 px, like the button beside it.
 

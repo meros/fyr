@@ -62,7 +62,7 @@ func shownIn(e *Engine, id string) []core.Change {
 	return w.Changes
 }
 
-// #35 (owner, 15 Nov: one record per repo and branch on the host): two
+// #35: two
 // threads in one folder show one record of the branch, with both threads,
 // stored once; a thread elsewhere does not. The live case: branch v0 of fyr
 // was a change of two threads with one id. When the branch is merged into

@@ -1,8 +1,6 @@
 # 0030 Every hop names who acts: one authenticator per listener, an explicit principal across every proxy, keys between installs, sessions for browsers, and tests for every way in
 
-Date: 2026-11-17 · Status: **accepted** (owner, 17 Nov: "Bygg klart"); amended 17 Nov (Amendment 1: one two-way link per pair); the owner answered Q1–Q4 on 17 Nov (see "The owner's answers") · Supersedes the overlapping parts of 0025 ((1) proof, (2) following), 0026 ((3) pairing by PAKE and the roster's rules, (4), (5) browser authentication, the slices) and 0028 ((1), (3), (4), (7), the slices); what it keeps from them is listed under "What stands" · Builds on 0016, 0021, 0027 · Spec rows: one per slice, numbered when the slice's PR opens
-
-**The owner's words, 17 Nov:** "Start a Fable review, a clean-room redesign and then a Sonnet implementation of the whole authentication chain. It should be easy to set up on a tailnet, but work on any LAN. Clients must be able to authenticate either automatically or via some form of pairing/token. Hosts must be able to find each other on a LAN, with automatic pairing under certain safe circumstances." And: "the whole thing must have tests too".
+Date: 2026-11-17 · Status: **accepted**; amended 17 Nov (Amendment 1: one two-way link per pair); the owner answered Q1–Q4 on 17 Nov (see "The owner's answers") · Supersedes the overlapping parts of 0025 ((1) proof, (2) following), 0026 ((3) pairing by PAKE and the roster's rules, (4), (5) browser authentication, the slices) and 0028 ((1), (3), (4), (7), the slices); what it keeps from them is listed under "What stands" · Builds on 0016, 0021, 0027 · Spec rows: one per slice, numbered when the slice's PR opens
 
 **How this record was made.** Part 1 is a review of the code at `3f83c69`. Part 2 compares two designs: one written by a subagent that was given only the requirements and the threat model (no code, no decisions), and one written after the review. Part 3 is the decision, part 4 the test plan, part 5 the migration, part 6 the slices.
 
@@ -18,7 +16,7 @@ Three decisions (0025, 0026, 0028) describe the chain. Of them, the code has: di
 | B | The same port with `Tailscale-User-Login` and a `*.ts.net` Host | nobody legitimate since V0.130 | the header, when the Host ends in `.ts.net` | both are typed by any local process. Observe mode logs it and serves it | none |
 | C | `serve.sock` | the phone through Tailscale Serve | the header on that socket. The Host is overwritten with the public name (#226) | the socket's peer is not checked (file mode only). The node is not looked up, so a device cannot be told from another of the same login, and cannot be blocked | NixOS: one option. Mac: by hand. A tagged node also needs `ownerLogin` |
 | D | Front → its own host, in-process (`both`) | the front's proxy and its own stream | **the host runs the browser guard again** on what the front forwards: the browser's Host and the browser's `Tailscale-User-Login` | the host decides from headers a browser typed, relayed by a proxy. The mark "came through Serve" is a context value and does not cross the hop: **#225 and #226**. The fix made the front rewrite the Host so that a second Host check passes. The host never learns which device acts | none |
-| E | Front → a remote host, plain HTTP on `100.x:7778` | other installs' fronts | tailscaled whois of the connection = the owner's login | (1) whois names a *node*, not a program: **any app on the owner's phone and any process on any of the owner's untagged nodes is the owner here**. (2) No Host or Origin check: a web page in any browser on such a node reaches it by DNS rebinding, and can set `X-Fyr`. (3) A tagged node has no login: **meros-server's front cannot follow the laptop**. (4) The front forwards the browser's `Cookie` (the session) to every host. (5) No encryption or key check of its own | per host: `hostPort`, a firewall rule, a static `hosts` entry when discovery misses it |
+| E | Front → a remote host, plain HTTP on `100.x:7778` | other installs' fronts | tailscaled whois of the connection = the owner's login | (1) whois names a *node*, not a program: **any app on the owner's phone and any process on any of the owner's untagged nodes is the owner here**. (2) No Host or Origin check: a web page in any browser on such a node reaches it by DNS rebinding, and can set `X-Fyr`. (3) A tagged node has no login: **home-server's front cannot follow the laptop**. (4) The front forwards the browser's `Cookie` (the session) to every host. (5) No encryption or key check of its own | per host: `hostPort`, a firewall rule, a static `hosts` entry when discovery misses it |
 | F | `hostListen` on loopback (development) | a second install on one machine | the loopback guard, as A | as A | config |
 | G | `/mcp` on the main port **and on the peer listener** | each agent's CLI | a per-session bearer, in a 0600 file since V0.129; `Origin` refused | the token is accepted from the tailnet listener too. 0028 (4) said to remove it; not done | none |
 | H | `owner.sock` | `fyr open` | the peer's UID (SO_PEERCRED, LOCAL_PEERCRED) | sound. It serves one call only, so pairing, revocation and recovery have no local channel yet | none |
@@ -33,7 +31,7 @@ Three decisions (0025, 0026, 0028) describe the chain. Of them, the code has: di
 | **#225**: tailscaled passes no browser Host on `serve.sock`; the guard refused the owner | C: identity was derived from two headers that had to agree, and one of them is not what the code assumed | trust read from the Host header |
 | **#226**: live view and uploads gave 403 after #225 | D: the host re-derives identity from forwarded browser headers, and the Serve mark is lost across the hop | trust kept in a request context, and a second guard behind a proxy |
 | **The phone could not connect; the owner hand-built a fix** | C and J: the phone's only door is Serve on one install, with a guard that reads Host; there is no second way in (a code, a link) to fall back on | one way in, no pairing |
-| **meros-server is tagged** | C, E, J: every tailnet check asks for a user login. A tagged node has none, so it needs `ownerLogin` by hand, cannot follow another host, and is not found | identity taken from the network |
+| **home-server is tagged** | C, E, J: every tailnet check asks for a user login. A tagged node has none, so it needs `ownerLogin` by hand, cannot follow another host, and is not found | identity taken from the network |
 | **The Mac must see the laptop** | J and E: needs Serve on both, a host port on both, and a whois that happens to work | discovery and trust are the same mechanism |
 
 ### The findings, in order of weight
@@ -66,7 +64,7 @@ Where they differ, the stronger choice and why:
 | A front that follows hosts through a third | forbidden: a request with an actor header is never proxied on | not addressed | **clean-room** | no chains, so one hop is the whole proof |
 | Offline revocation | sync the roster with other members before honouring a peer | tombstones win; sync first on every connection | **sync first on every connection**, the 10-minute rule dropped | one rule that is easy to test; the residual is stated in the threat table |
 | Revoked signers | adds signed by a revoked key are void; the revoker re-signs survivors | undecided | **clean-room** | it is the only rule that gives every host the same roster regardless of the order statements arrive in |
-| The owner's login on a tagged node | carried by the roster | config `ownerLogin`, or learned from the first owner-socket link redeemed through Serve | **clean-room, with config still winning** | meros-server needs no hand-set option after it pairs |
+| The owner's login on a tagged node | carried by the roster | config `ownerLogin`, or learned from the first owner-socket link redeemed through Serve | **clean-room, with config still winning** | home-server needs no hand-set option after it pairs |
 | A test harness as slice 0 | a decision log first | a fake tailscaled, a process harness and today's behaviour pinned first | **review-based** | the owner's second message; and the migration test needs today's state as a fixture before anything changes |
 
 ---
@@ -159,7 +157,7 @@ A built-in, name-constrained local CA is not built (Q3).
 | 2 | **A member vouches** | the `install-add` verifies against a live member of this install's roster | yes (it is roster sync) |
 | 3 | **The owner's invite** | `fyr pair` (over `owner.sock`) or Settings → Hosts → Pair (step-up) shows `fyr1-<install id>-<10 characters>`, as text, a QR and a link; 10 min, single use, 5 wrong tries end it. The other side (`fyr pair <code>`, or its Settings) pins the id from the code, dials, and sends the secret inside the pinned channel; the inviter learns the joiner's key from that channel. Discovery supplies the address | no: one action |
 
-**Never:** the same LAN or subnet, an mDNS answer, a name, first contact, the same tailnet with another user, or a tag. **A tagged node** (meros-server) never uses condition 1 in either direction, since a tag says who may reach a node and not whose it is. It pairs once by 3 (`ssh meros-server fyr pair`, paste the code on the laptop) and is then known to every other install by 2.
+**Never:** the same LAN or subnet, an mDNS answer, a name, first contact, the same tailnet with another user, or a tag. **A tagged node** (home-server) never uses condition 1 in either direction, since a tag says who may reach a node and not whose it is. It pairs once by 3 (`ssh home-server fyr pair`, paste the code on the laptop) and is then known to every other install by 2.
 
 **Removal and rotation.** Settings → Hosts → Remove, or `fyr host remove`, on any member: a tombstone; live links to it close; it can sign nothing. `fyr rotate-key`: `key-rotate` signed by the old key, presented in the handshake so a peer that was offline follows it. A key that may be stolen is removed and paired again, not rotated.
 
@@ -200,7 +198,7 @@ Out of scope: several owners, root on a trusted machine, the tailnet's control p
 
 0016 and 0021 (roles, dual by default, one owner per record, the client's one uplink). 0025 (3)–(5). 0026 (1) the key and id, (2) sources, (6) the tailnet as one route, and its browser-path table. 0028 (2) the owner socket, (5) step-up, (6) agents named for what they are, Q1–Q4. V0.129 and V0.130 as built.
 
-### The owner's answers (17 Nov)
+### The owner's answers
 
 | Q | Asked | Recommended | Owner |
 |---|---|---|---|
@@ -283,7 +281,7 @@ Tests are part of each slice: a slice's PR opens with its tests red in the first
 | The laptop's and the phone's V0.130 sessions | they become roster device records in place (slice 2); the phone's node is approved because it signed in during observe | nothing |
 | `fyr-app` on `127.0.0.1:7777` without a cookie | counted as would-refuse until it runs `fyr open --app` | one line in `~/nixos-config` |
 | laptop ↔ Mac (untagged, the same user) | condition 1 pairs them when both run slice 3; the front moves to the peer link and keeps the whois link as a fallback until `peer` is enforced | Serve on the Mac (the install script) |
-| meros-server (tagged) | keeps today's one-way whois link and `ownerLogin` until it pairs: `ssh meros-server fyr pair`, paste on the laptop (slice 4). Then it follows the laptop too, and learns the owner's login from the roster | one code, once |
+| home-server (tagged) | keeps today's one-way whois link and `ownerLogin` until it pairs: `ssh home-server fyr pair`, paste on the laptop (slice 4). Then it follows the laptop too, and learns the owner's login from the roster | one code, once |
 | the plain `100.x:7778` listener | from slice 1 it requires `Fyr-Actor` from fronts that send it and refuses `Origin` and foreign Hosts; removed in slice 5 | nothing |
 | `browser` enforce | by itself when ready (rule 3), with a notice. Closes ways A, B and F | nothing |
 
@@ -305,9 +303,7 @@ One Sonnet thread builds them in order, one PR per slice, because every slice to
 
 ## Amendment 1 (17 Nov): one two-way link per pair of installs
 
-**The owner's words, 17 Nov:** "Can we not make the connections two-way? Any part can open? I want a robust mesh."
-
-**Why.** Slices 3 to 5 made trust spread through the roster, but reachability did not: a front dials each host's peer port itself, so a link exists only in the direction the network allows. meros-server is `tag:server`; the owner's tailnet policy lets members reach the server and not the server reach members, so its front cannot see the laptop or the Mac even after pairing ("rejected due to acl"). A host behind a NAT or an ACL *can* dial out. The link must be usable the other way over a connection opened from the side that can open it.
+**Why.** Slices 3 to 5 made trust spread through the roster, but reachability did not: a front dials each host's peer port itself, so a link exists only in the direction the network allows. home-server is `tag:server`; the owner's tailnet policy lets members reach the server and not the server reach members, so its front cannot see the laptop or the Mac even after pairing ("rejected due to acl"). A host behind a NAT or an ACL *can* dial out. The link must be usable the other way over a connection opened from the side that can open it.
 
 **Review.** A Fable review (17 Nov) read this text against the code and found four blockers and six things to fix; they are folded in below and marked (B1…S6). One blocker was already in slice 5's code (a stranger's certificate could write to the roster) and is fixed there.
 

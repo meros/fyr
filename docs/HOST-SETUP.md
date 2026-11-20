@@ -1,6 +1,6 @@
 # Recommended host settings
 
-These are the settings for a machine that runs Fyr's agents. They come from decisions 0029, 0032 and 0036 and from what meros-laptop did on 17–19 Nov. Fyr reads what the host gives it and works without them, but its memory guard works best with them. The NixOS lines go in the machine's own configuration, not in Fyr's module, except where they name `services.fyr`.
+These are the settings for a machine that runs Fyr's agents. They come from decisions 0029, 0032 and 0036 and from what home-laptop did on 17–19 Nov. Fyr reads what the host gives it and works without them, but its memory guard works best with them. The NixOS lines go in the machine's own configuration, not in Fyr's module, except where they name `services.fyr`.
 
 ## Linux
 
@@ -11,7 +11,7 @@ These are the settings for a machine that runs Fyr's agents. They come from deci
 | cgroup v2, PSI | on (`psi=1` if the kernel turns it off by default) | The guard's memory stall, the CPU slowdown and the per-thread numbers come from them (decision 0029 section 0). Without them Fyr falls back to the process tree and `/proc`. |
 | Swap | **zswap with its shrinker, plus a disk swap. No zram.** | zram in front of disk swap fills with cold pages first; after that, pages still in use go to disk (decision 0036). zswap writes back the least recently used pages, and it has per-cgroup limits (`memory.zswap.max`, `memory.zswap.writeback`). Meta's guidance (Chris Down, March 2026): prefer zswap, and do not run zram alongside disk swap. |
 | Disk swap size | about half of RAM or more | The agents' `memory.swap.max` needs room under it. Without swap, `memory.high` livelocks instead of slowing a job (decision 0032). |
-| `vm.swappiness` | about 100 with zswap; tune from the guard's log | 120 and above are tuned for zram. meros-laptop went from 120 to 100 (nixos-config#5). |
+| `vm.swappiness` | about 100 with zswap; tune from the guard's log | 120 and above are tuned for zram. home-laptop went from 120 to 100 (nixos-config#5). |
 | `vm.page-cluster` | 0 | A fault takes one page from the zswap pool; readahead after a writeback is rarely worth it. |
 | MGLRU `min_ttl_ms` | **0** (off) | It calls the global OOM killer from kswapd. That killer picks by `oom_score`, can pick fyrd, and races Fyr's guard and oomd. |
 
