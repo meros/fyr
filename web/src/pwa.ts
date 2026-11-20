@@ -17,12 +17,21 @@ export function isStandalone(): boolean {
 // on window.webkit.messageHandlers.fyrPush: "status", "on" and "off", each with { on, endpoint?, denied?, error? }.
 type NativeReply = { on: boolean; endpoint?: string; denied?: boolean; error?: string };
 type NativeBridge = {
-  postMessage(m: { op: "status" | "on" | "off" } | { op: "clear"; threadId: string; state: string }): Promise<NativeReply>;
+  postMessage(m: { op: "status" | "on" | "off" | "settings" } | { op: "clear"; threadId: string; state: string }): Promise<NativeReply>;
 };
 
 function nativePush(): NativeBridge | null {
   const w = window as Window & { webkit?: { messageHandlers?: { fyrPush?: NativeBridge } } };
   return w.webkit?.messageHandlers?.fyrPush ?? null;
+}
+
+export function isNativePush(): boolean {
+  return !!nativePush();
+}
+
+export function openNativeNotificationSettings(): void {
+  const n = nativePush();
+  if (n) void n.postMessage({ op: "settings" }).catch(() => undefined);
 }
 
 /** This device's push endpoint: the native device's in Fyr.app, else the browser's subscription. */
