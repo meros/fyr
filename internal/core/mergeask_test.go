@@ -223,6 +223,68 @@ func TestBlockedMergeAskTellsTheAgentTheRule(t *testing.T) {
 	}
 }
 
+// V0.review-threads: a pull_request rule asks for a review only when it
+// requires approvals. #1008 on 20 Nov: green, BLOCKED, review decision
+// empty, a pull_request rule with 0 approvals and thread resolution on, and
+// one unresolved bot review thread. Fyr said a review was required, twice,
+// and the agent and the owner (the PR's author, who cannot approve it)
+// chased an approval nobody needed.
+func TestBlockedMergeAskNamesReviewThreadsOrApproval(t *testing.T) {
+	now := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	rules := []string{"pull_request", "required_status_checks"}
+	cases := []struct {
+		name      string
+		pr        func(*PR)
+		why, next string
+		not       string
+	}{
+		{"#1008: 0 approvals, an unresolved thread", func(p *PR) {
+			p.Review, p.Rules, p.Approvals, p.ThreadResolution, p.UnresolvedThreads = "", rules, 0, true, 1
+		}, "1 review thread is unresolved and the rules of main require every review thread resolved", "resolve it", "review is required"},
+		{"0 approvals, three unresolved threads", func(p *PR) {
+			p.Rules, p.ThreadResolution, p.UnresolvedThreads = rules, true, 3
+		}, "3 review threads are unresolved", "answer each unresolved review thread", "review is required"},
+		{"0 approvals, threads resolved", func(p *PR) {
+			p.Rules, p.ThreadResolution = rules, true
+		}, "the rules of main block it (pull_request, required_status_checks)", "admin rights", "review is required"},
+		{"review required", func(p *PR) {
+			p.Review, p.Rules, p.ThreadResolution, p.UnresolvedThreads = "REVIEW_REQUIRED", rules, true, 2
+		}, "a review is required by the rules of main", "the PR's author cannot approve their own PR", "unresolved"},
+		{"1 approval, none given", func(p *PR) { p.Rules, p.Approvals = rules, 1 }, "a review is required by the rules of main", "the PR's author cannot approve their own PR", ""},
+	}
+	for _, c := range cases {
+		th, _ := heldAsk(t, now)
+		at := now.Add(5 * time.Minute)
+		th, _, res, err := Reduce(th, &View{}, askPR(at, func(p *PR) {
+			p.Checks, p.MergeState, p.ChecksDone, p.Base = ChecksPass, "BLOCKED", 5, "main"
+			c.pr(p)
+		}), at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(th.Decisions) != 0 || len(th.HeldAsks) != 0 {
+			t.Errorf("%s: the owner is asked: %+v", c.name, th.Decisions)
+			continue
+		}
+		var said string
+		for _, n := range resultNotices(Reduced{Before: th, After: th, Events: res.Events}) {
+			said += n.What
+		}
+		if !strings.Contains(said, c.why) || !strings.Contains(said, c.next) || (c.not != "" && strings.Contains(said, c.not)) {
+			t.Errorf("%s: the agent hears %q", c.name, said)
+		}
+	}
+	// an approved PR under a rule that requires one is not held for a review
+	why, _ := blockedWhy(&PR{Base: "main", Review: "APPROVED", Rules: rules, Approvals: 1, ThreadResolution: true, UnresolvedThreads: 1})
+	if !strings.Contains(why, "1 review thread is unresolved") {
+		t.Errorf("approved with a thread open: %q", why)
+	}
+	// GitHub's refusal for an unresolved conversation
+	if next := refusedNext(&PR{Base: "main"}, "A conversation must be resolved before this pull request can be merged."); !strings.Contains(next, "resolve it") {
+		t.Errorf("refused for a conversation: %q", next)
+	}
+}
+
 // V0.136: GitHub refuses a merge Fyr runs (here the owner's yes to a green
 // ask). The change carries GitHub's words, so the card shows them and
 // Stopped on a failure applies; the agent hears them once, with the next

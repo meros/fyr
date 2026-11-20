@@ -85,16 +85,35 @@ func baseName(p *PR) string {
 	return p.Base
 }
 
+// approveNext is the agent's next step when an approval is missing. GitHub
+// does not let a PR's author approve their own PR, so when the owner opened
+// it, someone else must.
+const approveNext = "request a review from someone who can approve (gh pr edit --add-reviewer <login>); the PR's author cannot approve their own PR, so if the owner opened it, someone else must approve it, or the owner merges it on GitHub with admin rights"
+
+// threads is "1 review thread is" or "n review threads are".
+func threads(n int) string {
+	if n == 1 {
+		return "1 review thread is"
+	}
+	return fmt.Sprintf("%d review threads are", n)
+}
+
 // blockedWhy names what blocks a PR GitHub reads as BLOCKED while its
 // checks are green, from the review decision and the base's rules the
 // poller read, with the agent's next step. The first rule that applies
-// wins; Merge as admin is the owner's, on GitHub.
+// wins; Merge as admin is the owner's, on GitHub. A pull_request rule asks
+// for a review only when it requires approvals (V0.review-threads): GitHub's
+// empty review decision means none is required, and the block is then
+// often an unresolved review thread.
 func blockedWhy(p *PR) (string, string) {
 	base := baseName(p)
 	has := func(r string) bool { return slices.Contains(p.Rules, r) }
 	switch {
-	case p.Review == "REVIEW_REQUIRED" || (has("pull_request") && p.Review != "APPROVED"):
-		return "a review is required by the rules of " + base, "request a review from someone who can approve (gh pr edit --add-reviewer <login>), or ask the owner to approve it"
+	case p.Review == "REVIEW_REQUIRED" || (p.Approvals > 0 && p.Review != "APPROVED"):
+		return "a review is required by the rules of " + base, approveNext
+	case p.ThreadResolution && p.UnresolvedThreads > 0:
+		return fmt.Sprintf("%s unresolved and the rules of %s require every review thread resolved", threads(p.UnresolvedThreads), base),
+			"answer each unresolved review thread (fix the code or reply), resolve it (gh pr view --web, or the resolveReviewThread mutation), and ask again"
 	case len(p.MissingChecks) > 0:
 		return "a required check has not reported on " + shortSHA(p.Head) + ": " + failedNames(p.MissingChecks), "make the required checks run on this head (push again, or check that the workflow runs for this branch)"
 	case has("required_signatures"):
@@ -105,6 +124,8 @@ func blockedWhy(p *PR) (string, string) {
 		return "the rules of " + base + " require a successful deployment first", "deploy to the required environment, or ask the owner"
 	case has("merge_queue"):
 		return base + " merges through a merge queue", "ask the owner to add the PR to the merge queue on GitHub"
+	case p.ThreadResolution && p.UnresolvedThreads < 0:
+		return "the rules of " + base + " block it; they require every review thread resolved", "resolve any unresolved review threads; if none are left, ask the owner to check the rules"
 	case len(p.Rules) > 0:
 		return "the rules of " + base + " block it (" + strings.Join(p.Rules, ", ") + ")", "ask the owner to check the rules, or to merge it on GitHub with admin rights"
 	case p.Protected:
@@ -120,8 +141,10 @@ func refusedNext(p *PR, text string) string {
 	switch {
 	case strings.Contains(l, strings.ToLower(HeadMoved)) || strings.Contains(l, "head branch was modified"):
 		return "ask again for the new head; Fyr shows it when CI is green on it"
+	case strings.Contains(l, "conversation") || strings.Contains(l, "review thread"): // V0.review-threads
+		return "answer each unresolved review thread (fix the code or reply), resolve it, and ask again"
 	case strings.Contains(l, "approv") || strings.Contains(l, "review is required") || strings.Contains(l, "review required"):
-		return "request a review from someone who can approve (gh pr edit --add-reviewer <login>), or ask the owner to approve it"
+		return approveNext
 	case strings.Contains(l, "sign"):
 		return "sign the commits and push"
 	case strings.Contains(l, "status check") || strings.Contains(l, "ci has not passed") || strings.Contains(l, "no check has reported"):
