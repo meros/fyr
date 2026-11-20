@@ -12,9 +12,29 @@ export function isStandalone(): boolean {
   return nav.standalone === true || (typeof matchMedia === "function" && matchMedia("(display-mode: standalone)").matches);
 }
 
+// V0.mac-notify: in Fyr.app's window (decision 0037) the app, not a service worker, is this device's push
+// subscription: a native device whose pushes it reads from fyrd and shows as macOS notifications. It answers
+// on window.webkit.messageHandlers.fyrPush: "status", "on" and "off", each with { on, endpoint?, denied?, error? }.
+type NativeReply = { on: boolean; endpoint?: string; denied?: boolean; error?: string };
+type NativeBridge = { postMessage(m: { op: "status" | "on" | "off" }): Promise<NativeReply> };
+
+function nativePush(): NativeBridge | null {
+  const w = window as Window & { webkit?: { messageHandlers?: { fyrPush?: NativeBridge } } };
+  return w.webkit?.messageHandlers?.fyrPush ?? null;
+}
+
+/** This device's push endpoint: the native device's in Fyr.app, else the browser's subscription. */
+async function deviceEndpoint(): Promise<string | undefined> {
+  const n = nativePush();
+  if (n) return (await n.postMessage({ op: "status" })).endpoint;
+  const reg = await registration();
+  return (reg ? await reg.pushManager.getSubscription() : null)?.endpoint;
+}
+
 export function pushEnv(): PushEnv {
   const ua = navigator.userAgent;
   return {
+    native: !!nativePush(),
     secure: window.isSecureContext,
     serviceWorker: "serviceWorker" in navigator,
     pushManager: "PushManager" in window,
@@ -76,6 +96,15 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
 }
 
 export async function currentPushStatus(): Promise<PushStatus> {
+  const n = nativePush();
+  if (n) {
+    try {
+      const r = await n.postMessage({ op: "status" });
+      return r.denied ? "denied" : r.on ? "on" : "off";
+    } catch {
+      return "off";
+    }
+  }
   const env = pushEnv();
   const perm = "Notification" in window ? Notification.permission : "default";
   let subscribed = false;
@@ -90,6 +119,7 @@ export async function currentPushStatus(): Promise<PushStatus> {
 
 /** Ask the host whether it still has this device's subscription; drop it locally when not. Returns the bell state. */
 export async function syncPushStatus(api: Api): Promise<PushStatus> {
+  if (nativePush()) return currentPushStatus(); // the app stores itself again when fyrd forgot it
   try {
     const reg = await registration();
     const sub = reg ? await reg.pushManager.getSubscription() : null;
@@ -106,9 +136,8 @@ export async function syncPushStatus(api: Api): Promise<PushStatus> {
 /** V0.notification-polish: tell the front what this device wants to be told about. A failure waits like syncPushHidden. */
 export async function syncPushPrefs(api: Api, prefs: PushPrefs): Promise<void> {
   try {
-    const reg = await registration();
-    const sub = reg ? await reg.pushManager.getSubscription() : null;
-    if (sub) await api.pushPrefs(sub.endpoint, prefs);
+    const endpoint = await deviceEndpoint();
+    if (endpoint) await api.pushPrefs(endpoint, prefs);
   } catch {
     /* the next change or reconnect sends it again */
   }
@@ -118,8 +147,7 @@ export async function syncPushPrefs(api: Api, prefs: PushPrefs): Promise<void> {
 export async function testPush(api: Api): Promise<PushReply> {
   let endpoint: string | undefined;
   try {
-    const reg = await registration();
-    endpoint = (reg ? await reg.pushManager.getSubscription() : null)?.endpoint;
+    endpoint = await deviceEndpoint();
   } catch {
     /* the front then sends to every device */
   }
@@ -131,9 +159,8 @@ export async function testPush(api: Api): Promise<PushReply> {
 /** V0.207: tell the front what this device hides. A failure waits for the next change or reconnect. */
 export async function syncPushHidden(api: Api, hidden: PushHidden): Promise<void> {
   try {
-    const reg = await registration();
-    const sub = reg ? await reg.pushManager.getSubscription() : null;
-    if (sub) await api.pushHidden(sub.endpoint, hidden);
+    const endpoint = await deviceEndpoint();
+    if (endpoint) await api.pushHidden(endpoint, hidden);
   } catch {
     /* the next change or reconnect sends it again */
   }
@@ -142,6 +169,16 @@ export async function syncPushHidden(api: Api, hidden: PushHidden): Promise<void
 export type PushResult = { status: PushStatus; error?: string };
 
 export async function enablePush(api: Api): Promise<PushResult> {
+  const n = nativePush();
+  if (n) {
+    try {
+      const r = await n.postMessage({ op: "on" });
+      if (r.denied) return { status: "denied" };
+      return r.on ? { status: "on" } : { status: "off", error: r.error ?? "Fyr.app did not turn notifications on" };
+    } catch (e) {
+      return { status: "off", error: e instanceof Error ? e.message : String(e) };
+    }
+  }
   const perm = await Notification.requestPermission();
   if (perm !== "granted") return { status: perm === "denied" ? "denied" : "off" };
   try {
@@ -160,6 +197,16 @@ export async function enablePush(api: Api): Promise<PushResult> {
 }
 
 export async function disablePush(api: Api): Promise<PushResult> {
+  const n = nativePush();
+  if (n) {
+    try {
+      const r = await n.postMessage({ op: "off" }); // the app stops reading first, so it does not store itself again
+      if (r.endpoint) await api.pushUnsubscribe(r.endpoint);
+      return { status: "off" };
+    } catch (e) {
+      return { status: "on", error: e instanceof Error ? e.message : String(e) };
+    }
+  }
   try {
     const reg = await registration();
     const sub = reg ? await reg.pushManager.getSubscription() : null;

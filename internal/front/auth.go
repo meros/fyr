@@ -512,10 +512,73 @@ func (f *Front) OwnerHandler(origin string) http.Handler {
 		}
 		api.WriteJSON(w, 200, f.authState())
 	})
+	nativeRoutes(mux, f.opt.Push)
 	if f.opt.OwnerRoutes != nil {
 		f.opt.OwnerRoutes(mux)
 	}
 	return mux
+}
+
+// NativePusher is the part of a Pusher that serves native devices
+// (*push.Pusher implements it; V0.mac-notify).
+type NativePusher interface {
+	NewNative(user, endpoint, device string) (string, error)
+	Listen(endpoint string) (<-chan []byte, func())
+}
+
+// nativeRoutes serve Fyr.app on the owner socket (decision 0037,
+// V0.mac-notify): POST /push/native stores the app as a device, keeping the
+// endpoint it already holds, and GET /push/native/stream?endpoint= sends its
+// pushes as one JSON line each, an empty line every 30 s to show the link
+// lives.
+func nativeRoutes(mux *http.ServeMux, p Pusher) {
+	np, ok := p.(NativePusher)
+	if !ok {
+		return
+	}
+	mux.HandleFunc("POST /push/native", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Endpoint, Device string }
+		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		ep, err := np.NewNative(core.Owner, b.Endpoint, nameOr(b.Device, "Fyr.app"))
+		if err != nil {
+			api.WriteJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		api.WriteJSON(w, 200, map[string]any{"ok": true, "endpoint": ep})
+	})
+	mux.HandleFunc("GET /push/native/stream", func(w http.ResponseWriter, r *http.Request) {
+		ep := r.URL.Query().Get("endpoint")
+		if !push.IsNative(ep) || !p.Known(ep) {
+			api.WriteJSON(w, 404, map[string]any{"ok": false, "error": "no such native device"})
+			return
+		}
+		fl, _ := w.(http.Flusher)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(200)
+		if fl != nil {
+			fl.Flush()
+		}
+		ch, stop := np.Listen(ep)
+		defer stop()
+		tick := time.NewTicker(30 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case b, ok := <-ch:
+				if !ok {
+					return // another listener took over, or the device was removed
+				}
+				w.Write(append(b, '\n'))
+			case <-tick.C:
+				w.Write([]byte("\n"))
+			}
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+	})
 }
 
 func nameOr(n, d string) string {

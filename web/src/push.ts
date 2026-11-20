@@ -22,10 +22,13 @@ export interface PushEnv {
   /** iPhone or iPad: Web Push exists only for a web app added to the home screen */
   ios: boolean;
   standalone: boolean;
+  /** V0.mac-notify: Fyr.app's window, which shows pushes as macOS notifications instead of Web Push */
+  native?: boolean;
 }
 
 /** Why push cannot be turned on here, or null when it can. */
 export function unsupportedReason(env: PushEnv): string | null {
+  if (env.native) return null;
   if (env.ios && !env.standalone) return "On an iPhone, add Fyr to the Home Screen first: Share, then Add to Home Screen.";
   if (!env.secure) return "Notifications need a secure address: the tailnet https:// address or localhost.";
   if (!env.serviceWorker || !env.pushManager || !env.notification) return "This browser does not support Web Push.";

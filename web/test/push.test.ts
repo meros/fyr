@@ -134,3 +134,9 @@ test("V0.notification-polish: finished threads are a choice of the device, on un
   assert.deepEqual(parsePushPrefs('{"finished":true}'), { finished: true });
   assert.match(FINISHED_DESC, /finishes/);
 });
+
+test("V0.mac-notify: Fyr.app's window has no Web Push and still turns notifications on", () => {
+  const wk: PushEnv = { secure: true, serviceWorker: false, pushManager: false, notification: false, ios: false, standalone: false };
+  assert.match(unsupportedReason(wk) ?? "", /does not support/);
+  assert.equal(unsupportedReason({ ...wk, native: true }), null);
+});

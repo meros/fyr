@@ -102,6 +102,7 @@ type Pusher struct {
 	Subject string // VAPID subject, mailto: or https:
 	Send    Sender
 	keys    Keys
+	native  natives // V0.mac-notify: the native devices' queues
 }
 
 // Init loads the VAPID key pair, or makes and stores one.
@@ -132,7 +133,12 @@ func (p *Pusher) Subscribe(user string, sub Subscription, device string) error {
 	return p.DB.PutPushSub(user, sub.Endpoint, device, b)
 }
 
-func (p *Pusher) Unsubscribe(endpoint string) error { return p.DB.DeletePushSub(endpoint) }
+func (p *Pusher) Unsubscribe(endpoint string) error {
+	if IsNative(endpoint) {
+		p.dropNative(endpoint)
+	}
+	return p.DB.DeletePushSub(endpoint)
+}
 
 // SetHidden stores what the device behind endpoint hides (V0.207). It reports
 // false when no such subscription is stored.
@@ -234,6 +240,9 @@ func (p *Pusher) NotifyOne(user, endpoint string, pl Payload) int {
 // deliver sends pl to one subscription: 1 when the push service took it.
 func (p *Pusher) deliver(s Subscription, pl Payload) int {
 	body, _ := json.Marshal(pl)
+	if IsNative(s.Endpoint) { // V0.mac-notify: the app reads it over the owner socket
+		return p.deliverNative(s.Endpoint, pl, body)
+	}
 	var code int
 	var err error
 	if p.Send != nil {
