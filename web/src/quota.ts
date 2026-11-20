@@ -1,4 +1,5 @@
 // SPEC 0.5 V0.44: provider quota per profile, as words. Pure.
+import type { HostId } from "./hostid.ts";
 import type { Card, CardRow } from "./card.ts";
 import { relTime, untilLabel } from "./format.ts";
 
@@ -16,6 +17,8 @@ export interface Quota {
   profile: string;
   /** V0.127: the host of the provider (the front stamps it); the same id on two hosts is two quotas */
   host?: string;
+  /** Slice 2b: the install id of the host it was read from (api.ts): its provider's name is that host's */
+  hostId?: HostId;
   kind: string;
   windows?: QuotaWindow[];
   balance?: QuotaBalance;

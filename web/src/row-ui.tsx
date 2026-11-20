@@ -12,7 +12,7 @@ import { RowUndeclared, useRowUndeclared } from "./undeclared-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
 import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { hostOf, multiHost, rowProvider } from "./hosts.ts";
+import { multiHost, rowProvider } from "./hosts.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowDetail, rowState, stateNamesPr } from "./rows.ts";
 import { relTime, whenLabel } from "./format.ts";
@@ -163,7 +163,7 @@ function RowHead({ t, look }: { t: Thread; look: RowLook }) {
   // V0.170: with more than one host, the host's mark comes first, then the project's icon (circles are hosts, squares
   // are projects); --rh moves the icon, the pin and the title's indent past it.
   const { hosts } = useHosts();
-  const host = multiHost(hosts) ? hostOf(t, hosts) : undefined;
+  const host = multiHost(hosts) ? t.host : undefined; // slice 2b: the host whose state the thread is in
   return (
     // The icons and the pin sit over the title's first-line indent (app.css): inside the clamped box an element would
     // become a block of its own (-webkit-box), and Safari clamps only plain text.
@@ -189,7 +189,7 @@ function RowHead({ t, look }: { t: Thread; look: RowLook }) {
 /** V0.135: the start of a row's second line: the project's name when the icon does not say it, the provider when there
  *  is more than one (V0.206), and ↳ for a thread another thread started. */
 function RowFrom({ t, look, more }: { t: Thread; look: RowLook; more: boolean }) {
-  const provider = rowProvider(t, useHosts().hosts, useContext(ProfilesContext));
+  const provider = rowProvider(t, useContext(ProfilesContext));
   return (
     <>
       <RowProjectName t={t} sep={!!provider || !!t.parent || more} />
@@ -278,7 +278,7 @@ export function NeedButton({ t, change, need }: { t: Thread; change: Change; nee
         onClick={(e) => {
           if (!canMerge) return; // Answer: the row's own click opens the thread
           e.stopPropagation();
-          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(t.hostId ?? "", action, t.id, args), need.head);
+          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(t.hostId, action, t.id, args), need.head);
         }}
       >
         {look.button}

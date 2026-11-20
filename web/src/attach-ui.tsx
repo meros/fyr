@@ -1,5 +1,6 @@
 // Attachment chips, pickers and a sent message's attachments (SPEC 0.5 V0.18, V0.165).
 
+import type { HostId } from "./hostid.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, removeChip, type Chip } from "./attach.ts";
 import { useApi } from "./api-context.ts";
@@ -9,7 +10,7 @@ let keySeq = 0;
 
 /** Chips for one composer: add files (picked, pasted, dropped), each uploads at once, to `host` (V0.54: the
  *  thread's host, or the one a new thread starts on; the front routes by it). */
-export function useAttachments(host?: string) {
+export function useAttachments(host?: HostId) {
   const api = useApi();
   const [chips, setChips] = useState<Chip[]>([]);
   const hostRef = useRef(host);
@@ -38,7 +39,13 @@ export function useAttachments(host?: string) {
       const ac = new AbortController();
       aborts.current.set(nf.key, ac);
       const named = file.name ? file : new File([file], nf.name, { type: file.type });
-      void api.uploadAttachment(hostRef.current ?? "", named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal).then((r) => {
+      const to = hostRef.current;
+      // Slice 2b: an attachment goes to the host the thread is on; with none picked there is nowhere to send it.
+      if (!to) {
+        setChips((c) => chipError(c, nf.key, null, "Pick the host first"));
+        continue;
+      }
+      void api.uploadAttachment(to, named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal).then((r) => {
         aborts.current.delete(nf.key);
         if (ac.signal.aborted) return;
         setChips((c) => (r.ok ? chipDone(c, nf.key, r.reply) : chipError(c, nf.key, r.status, r.error)));
@@ -173,27 +180,27 @@ export interface SentAttachment {
 /** A user message's attachments: image thumbnails (tap: the zooming viewer, V0.165, swiping between this message's
  *  images) and file chips (open in a new tab: the phone hands a PDF to its own viewer), each chip with Download
  *  beside it (V0.download-assets; an image has it in the viewer). */
-export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: string }) {
+export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: HostId }) {
   const { attachmentUrl } = useApi();
   if (!items.length) return null;
-  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(host ?? "", a.id), title: a.name, name: a.name }));
+  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(host, a.id), title: a.name, name: a.name }));
   return (
     <div class="att-sent">
       {items.map((a) =>
         isImage(a.mediaType) ? (
           <button class="att-img" onClick={() => openImages(images, images.findIndex((x) => x.key === a.id))} aria-label={`Open ${a.name}`}>
-            <img src={attachmentUrl(host ?? "", a.id)} alt={a.name} loading="lazy" decoding="async" />
+            <img src={attachmentUrl(host, a.id)} alt={a.name} loading="lazy" decoding="async" />
           </button>
         ) : (
           <span class="att-fw">
-            <a class="att-file" href={attachmentUrl(host ?? "", a.id)} target="_blank" rel="noopener noreferrer" title={a.name}>
+            <a class="att-file" href={attachmentUrl(host, a.id)} target="_blank" rel="noopener noreferrer" title={a.name}>
               <span class="att-th lab">{fileLabel(a.mediaType, a.name)}</span>
               <span class="att-tx">
                 <span class="att-n">{a.name}</span>
                 <span class="att-m">{formatSize(a.size)}</span>
               </span>
             </a>
-            <DownloadLink cls="att-dl" src={attachmentUrl(host ?? "", a.id)} name={a.name} />
+            <DownloadLink cls="att-dl" src={attachmentUrl(host, a.id)} name={a.name} />
           </span>
         ),
       )}

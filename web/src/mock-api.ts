@@ -11,9 +11,10 @@ import { decodeHosts } from "./hosts.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
 import type { HostLoad } from "./load.ts";
-import type { ThreadDTO, Project, CommandReply } from "./types.ts";
+import type { ThreadDTO, Project, CommandReply, StateDTO } from "./types.ts";
 import type { HostInfo } from "./hosts.ts";
-import { bare, ref, stampEvent, stampLoad, stampProject, stampSlots, stampThread, unrefDeep } from "./hostfeed.ts";
+import { addressable, bare, ref, stampDeploy, stampEvent, stampLoad, stampProject, stampSlots, stampThread, unrefDeep, type Snapshot } from "./hostfeed.ts";
+import { asHostId, type HostId } from "./hostid.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -88,9 +89,11 @@ export function createMockApi(scenario: string): Api {
   // without a host list is one host (desk), reached by any id; a host with no id (old-nuc) is stamped "".
   // The ids do not change (the order does), so they are read once: stamping runs for every thread of every frame.
   const startHosts = mockHostList();
-  const idOfName = (name: string | undefined): string => {
-    if (!startHosts.length) return ""; // one host and no list: its ids are not prefixed, as a record of a host that reports no id
-    return startHosts.find((h) => h.name === (name || startHosts[0].name))?.id ?? "";
+  // The front's own host: desk, by its install id. A front without a host list is that one host (it lists it, below).
+  const deskId = asHostId(server.state().hostId)!;
+  const idOfName = (name: string | undefined): HostId => {
+    if (!startHosts.length) return deskId;
+    return (startHosts.find((h) => h.name === (name || "desk"))?.id ?? ("\u0000" + (name ?? ""))) as HostId;
   };
   const nameOf = (id: string): string => {
     const hs = mockHostList();
@@ -98,25 +101,53 @@ export function createMockApi(scenario: string): Api {
     // A host with no install id (older than V0.124) cannot be addressed (decision 0031): there is no name to fall back to.
     return hs.find((h) => h.id === id)?.name ?? "\u0000" + id;
   };
-  // The host's row for a fixture's host name; a front without a host list is one host, desk, always online.
-  const infoOf = (name: string | undefined): HostInfo => startHosts.find((h) => h.name === (name || startHosts[0]?.name)) ?? { id: "", name: name ?? "", online: true }; // read once: stamping runs per thread
-  const oneHostId = server.state().hostId ?? ""; // read once: stamping runs per thread
-  // A front with one host and no list keeps the fixtures' ids as they are (the layout test names them in its selectors);
-  // with several hosts the records are refs, as the real front's are.
-  // Decision 0031 2.4: a record's host is the host whose state it came in, so the one host's name is stamped too.
-  const oneHost = server.state().host ?? "";
-  const stampT = (t: ThreadDTO): ThreadDTO => (startHosts.length ? stampThread(t, infoOf(t.host)) : { ...t, host: t.host || oneHost, hostId: oneHostId });
-  const stampP = (p: Project): Project => (startHosts.length ? stampProject(p, infoOf(p.host)) : { ...p, host: p.host || oneHost, hostId: oneHostId });
   // Decision 0031 2.6: a front lists every host it follows, its own too; a front with one host lists that one, reached
   // over the pipe.
-  const oneHostRow = (st: ReturnType<typeof server.state>): HostInfo => ({ name: st.host ?? "", online: true, since: st.now, ...(st.hostId ? { id: st.hostId } : {}), ...(st.machine ? { machine: st.machine } : {}), link: { state: "up", via: "pipe" } });
+  const oneHostRow = (st: ReturnType<typeof server.state>): HostInfo & { id: HostId } => ({ name: st.host ?? "", online: true, since: st.now, id: deskId, ...(st.machine ? { machine: st.machine } : {}), link: { state: "up", via: "pipe" } });
+  // The host's row for a fixture's host name (a fixture record without one is desk's). Read once: stamping runs per thread.
+  const infoOf = (name: string | undefined): (HostInfo & { id: HostId }) | undefined => (startHosts.length ? addressable(startHosts).find((h) => h.name === (name || "desk")) : oneHostRow(server.state()));
+  // A front with one host and no list keeps the fixtures' ids as they are (the layout test names them in its selectors);
+  // with several hosts the records are refs, as the real front's are.
+  // Decision 0031 2.4: a record's host is the host whose state it came in. A fixture record on a host with no install id
+  // (old-nuc) cannot be addressed: it is in no host's state, as with the real front.
+  const stampT = (t: ThreadDTO): ThreadDTO | null => {
+    const h = infoOf(t.host);
+    if (!h) return null;
+    return startHosts.length ? stampThread(t, h) : { ...t, host: t.host || h.name, hostId: h.id };
+  };
+  const stampP = (p: Project): Project | null => {
+    const h = infoOf(p.host);
+    if (!h) return null;
+    return startHosts.length ? stampProject(p, h) : { ...p, host: p.host || h.name, hostId: h.id };
+  };
   // Decision 0031 test 8: &sameid=1 (with &hosts=2) gives desk a thread with host-b's thread's id (t_lasso): two records.
   const sameId = (ts: ThreadDTO[]): ThreadDTO[] => {
     if (q.get("sameid") !== "1" || !startHosts.length) return ts;
     const src = ts.find((t) => t.rid === "t_lasso");
-    return src ? [...ts, stampThread({ ...src, id: "t_lasso", rid: undefined, host: "desk", hostOffline: undefined, title: "Same id on desk", projectId: undefined, parent: undefined } as ThreadDTO, infoOf("desk"))] : ts;
+    return src ? [...ts, stampThread({ ...src, id: "t_lasso", rid: undefined, host: "desk", hostOffline: undefined, title: "Same id on desk", projectId: undefined, parent: undefined } as ThreadDTO, infoOf("desk")!)] : ts;
   };
-  const stampState = (st: ReturnType<typeof server.state>) => ({ ...st, ...(st.hosts?.length ? {} : { hosts: [oneHostRow(st)] }), threads: sameId(st.threads.map(stampT)), projects: st.projects.map(stampP) });
+  /** The fixture server's one state as the real front sends it (slice 2b): the front's own, and one state per host. */
+  const snapshot = (st: ReturnType<typeof server.state>): Snapshot => {
+    const hosts = st.hosts?.length ? st.hosts : [oneHostRow(st)];
+    const threads = sameId(st.threads.map(stampT).filter((t): t is ThreadDTO => !!t));
+    const projects = st.projects.map(stampP).filter((p): p is Project => !!p);
+    const states: Record<string, StateDTO> = {};
+    for (const h of addressable(hosts)) {
+      states[h.id] = {
+        now: st.now,
+        user: st.user,
+        threads: threads.filter((t) => t.hostId === h.id),
+        projects: projects.filter((p) => p.hostId === h.id),
+        // V0.132: lab has its own providers; the others the fixture's
+        profiles: h.profiles ?? st.profiles,
+        actions: st.actions,
+        // V0.39: the update in the fixture is desk's, the host the front runs in
+        deploy: h.id === deskId && st.deploy ? stampDeploy(st.deploy, h.id) : null,
+        ...(h.id === deskId && st.stall ? { stall: { ...(st.stall as object), host: h.name } } : {}),
+      };
+    }
+    return { now: st.now, user: st.user, ...(st.buildId ? { buildId: st.buildId } : {}), front: { id: deskId, name: st.host ?? "" }, hosts: decodeHosts(hosts), states };
+  };
   let watch = initialBuildWatch();
   // V0.121: the owner's project order, the front's own (&order=p_fyr,p_web sets one; none: by name).
   let order: string[] | null = q.get("order")?.split(",").filter(Boolean) ?? null;
@@ -268,12 +299,22 @@ export function createMockApi(scenario: string): Api {
     start(h) {
       h.conn("connecting");
       watch = observeBuildId(watch, server.buildId).watch;
-      server.subscribe({ thread: (t) => h.thread(stampT(t)), event: (e) => h.event(stampEvent(e, idOfName(server.state().threads.find((t) => t.id === e.subject)?.host))), project: (p) => h.project?.(stampP(p)) });
+      server.subscribe({
+        thread: (t) => {
+          const x = stampT(t);
+          if (x) h.thread(x);
+        },
+        event: (e) => h.event(stampEvent(e, idOfName(server.state().threads.find((t) => t.id === e.subject)?.host))),
+        project: (p) => {
+          const x = stampP(p);
+          if (x) h.project?.(x);
+        },
+      });
       onOrder = h.projectOrder;
       onHosts = h.hosts;
       onMarks = h.hostMarks;
       setTimeout(() => {
-        h.state({ ...stampState(server.state()), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
+        h.state({ ...snapshot(server.state()), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
         h.conn(offline ? "offline" : "live");
       }, 0);
       // V0.207, the layout test's hook: a host update of one thread, as the stream brings it.
@@ -286,7 +327,8 @@ export function createMockApi(scenario: string): Api {
         const updatedAt = new Date(Math.max(Date.now(), Date.parse(base.updatedAt) + 1000)).toISOString();
         const next = { ...base, ...patch, rev: ++patchRev, updatedAt };
         patched.set(id, next);
-        h.thread(next);
+        const x = stampT(next); // slice 2b: a thread goes into the state of its host
+        if (x) h.thread(x);
       };
       // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
       // one pair every 10 ms, the way a busy agent streams.
@@ -295,14 +337,15 @@ export function createMockApi(scenario: string): Api {
         if (!base) return;
         for (let i = 1; i <= n; i++) {
           setTimeout(() => {
-            h.thread({ ...base, rev: (base.rev ?? 0) + i, activity: `Step ${i} of ${n}`, updatedAt: new Date().toISOString() });
+            const x = stampT({ ...base, rev: (base.rev ?? 0) + i, activity: `Step ${i} of ${n}`, updatedAt: new Date().toISOString() });
+            if (x) h.thread(x);
             h.event({ seq: 1_000_000 + i, at: new Date().toISOString(), subject: id, type: "msg", data: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: `Burst message ${i}: **bold**, \`code\`, and a list:\n\n- one\n- two` }] } } });
           }, i * 10);
         }
       };
     },
     frontCommand(action, args) {
-      return this.command("", action, undefined, args);
+      return mockCommand("", action, undefined, args);
     },
     async command(host, action, tid, a) {
       // The host knows its own ids: a ref goes in bare and the ids in the reply come back as refs, as api.ts does.
@@ -432,8 +475,9 @@ export function createMockApi(scenario: string): Api {
         };
       });
     },
-    async profiles() {
-      return server.state().profiles;
+    async profiles(host) {
+      const h = mockHostList().find((x) => x.id === host);
+      return h?.profiles ?? server.state().profiles;
     },
     async events(host, threadId, after = 0, limit = 400) {
       return server.events(bare(host, threadId), after, limit).map((e) => stampEvent(e, host));
@@ -471,7 +515,7 @@ export function createMockApi(scenario: string): Api {
     async pushTest() {
       return server.pushTest();
     },
-    async presence(_host, _threadId, _device) {
+    async presence(_open, _device) {
       /* the mock has no push */
     },
     async pushStatus(endpoint) {
@@ -500,11 +544,12 @@ export function createMockApi(scenario: string): Api {
     async quota() {
       // V0.127: the front stamps each quota with its host; lab's Claude has its own.
       const hs = mockHostList();
-      if (!hs.length) return mockQuota(Date.now());
+      if (!hs.length) return mockQuota(Date.now()).map((q) => ({ ...q, hostId: deskId }));
       const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
-      return [...mockQuota(Date.now()).map((q) => ({ ...q, host: hs[0].name })), { profile: "claude", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 12, resetsAt: at(200) }, { name: "7 d", usedPct: 23, resetsAt: at(4 * 1440) }], updatedAt: at(-3) },
+      const lab = idOfName("lab");
+      return [...mockQuota(Date.now()).map((q) => ({ ...q, host: hs[0].name, hostId: idOfName(hs[0].name) })), { profile: "claude", host: "lab", hostId: lab, kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 12, resetsAt: at(200) }, { name: "7 d", usedPct: 23, resetsAt: at(4 * 1440) }], updatedAt: at(-3) },
         // V0.141: a fourth provider, for the layout tests with two hosts and four quotas (the phone's load sheet lists them)
-        { profile: "zai", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 83, resetsAt: at(90) }], updatedAt: at(-1) }];
+        { profile: "zai", host: "lab", hostId: lab, kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 83, resetsAt: at(90) }], updatedAt: at(-1) }];
     },
     async load() {
       // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).

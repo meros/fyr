@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PALETTE, moveToast, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, orderProjects, paletteColor, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
-import { thread } from "./helpers.ts";
+import { thread, TH, snapshot, view } from "./helpers.ts";
 import { applySnapshot, initialStore, upsertProject } from "../src/store.ts";
 
 test("a thread without a project shows No project (a thread in the home folder, V0.23)", () => {
@@ -166,29 +166,30 @@ test("SPEC 0.5 V0.30, V0.121: a new thread starts on the inbox filter, else the 
 });
 
 test("a deleted project leaves the store (V0.58)", () => {
-  const a = { id: "p1", name: "App" } as Project;
-  const b = { id: "p2", name: "Garden" } as Project;
+  const a = { id: "p1", name: "App", hostId: TH } as Project;
+  const b = { id: "p2", name: "Garden", hostId: TH } as Project;
   let s = upsertProject(upsertProject(initialStore(), a), b);
-  s = upsertProject(s, { id: "p1", deleted: true } as unknown as Project);
-  assert.deepEqual(s.projects.map((p) => p.id), ["p2"]);
-  assert.equal(upsertProject(s, { id: "p9", deleted: true } as unknown as Project).projects.length, 1, "an unknown id changes nothing");
+  s = upsertProject(s, { id: "p1", hostId: TH, deleted: true } as unknown as Project);
+  assert.deepEqual(view(s).projects.map((p) => p.id), ["p2"]);
+  assert.equal(view(upsertProject(s, { id: "p9", hostId: TH, deleted: true } as unknown as Project)).projects.length, 1, "an unknown id changes nothing");
+  assert.equal(upsertProject(s, { id: "p2", deleted: true } as unknown as Project), s, "slice 2b: a frame that names no host changes nothing");
 });
 
 // #42: a project frame that crossed the snapshot in flight keeps its newer copy; an older frame changes nothing.
 test("projects keep the copy with the higher rev", () => {
-  const frame = { id: "p1", name: "New name", rev: 20 } as Project;
+  const frame = { id: "p1", name: "New name", rev: 20, hostId: TH } as Project;
   let s = upsertProject(initialStore(), frame);
-  s = applySnapshot(s, { now: "", user: "", threads: [], actions: [], profiles: [], projects: [{ id: "p1", name: "Old name", rev: 10 } as Project, { id: "p2", name: "B", rev: 10 } as Project] }, Date.now());
-  assert.deepEqual(s.projects.map((p) => p.name), ["B", "New name"], "V0.121: with no order set, by name");
-  s = upsertProject(s, { id: "p2", name: "Older", rev: 5 } as Project);
-  const p2 = () => s.projects.find((x) => x.id === "p2")?.name;
+  s = applySnapshot(s, snapshot({ projects: [{ id: "p1", name: "Old name", rev: 10 } as Project, { id: "p2", name: "B", rev: 10 } as Project] }), Date.now());
+  assert.deepEqual(view(s).projects.map((p) => p.name), ["B", "New name"], "V0.121: with no order set, by name");
+  s = upsertProject(s, { id: "p2", name: "Older", rev: 5, hostId: TH } as Project);
+  const p2 = () => view(s).projects.find((x) => x.id === "p2")?.name;
   assert.equal(p2(), "B", "an older frame is ignored");
-  s = upsertProject(s, { id: "p2", name: "Same rev", rev: 10 } as Project);
+  s = upsertProject(s, { id: "p2", name: "Same rev", rev: 10, hostId: TH } as Project);
   assert.equal(p2(), "Same rev", "an equal rev replaces");
-  s = applySnapshot(s, { now: "", user: "", threads: [], actions: [], profiles: [], projects: [{ id: "p1", name: "Newest", rev: 30 } as Project] }, Date.now());
-  assert.deepEqual(s.projects.map((p) => p.name), ["Newest"], "a newer snapshot wins and drops what it lacks");
-  s = upsertProject(s, { id: "p1", name: "No rev" } as Project);
-  assert.equal(s.projects[0].name, "No rev", "without a rev on both sides the frame replaces");
+  s = applySnapshot(s, snapshot({ projects: [{ id: "p1", name: "Newest", rev: 30 } as Project] }), Date.now());
+  assert.deepEqual(view(s).projects.map((p) => p.name), ["Newest"], "a newer snapshot wins and drops what it lacks");
+  s = upsertProject(s, { id: "p1", name: "No rev", hostId: TH } as Project);
+  assert.equal(view(s).projects[0].name, "No rev", "without a rev on both sides the frame replaces");
 });
 
 test("SPEC 0.5 V0.63: while New project is open, the new-thread chip shows the project being made", async () => {
@@ -261,14 +262,14 @@ test("V0.121: listed projects first in the owner's order, then the rest by creat
 });
 
 test("V0.121: the store keeps its projects in the owner's order: the snapshot, a frame, the order event", () => {
-  let s = applySnapshot(initialStore(), { now: "", user: "", buildId: "", host: "", threads: [], actions: [], profiles: [], projects: ordered, projectOrder: ["p3", "p1"] } as never, 0);
-  assert.deepEqual(s.projects.map((p) => p.id), ["p3", "p1", "p2", "p4"]);
-  s = upsertProject(s, { id: "p5", name: "aaa", createdAt: "2026-11-09T00:00:00Z" } as Project);
-  assert.deepEqual(s.projects.map((p) => p.id), ["p3", "p1", "p2", "p4", "p5"], "a new project lands last");
-  s = upsertProject(s, { id: "p3", name: "zzz renamed", createdAt: "2026-11-02T00:00:00Z" } as Project);
-  assert.equal(s.projects[0].id, "p3", "a rename keeps its place");
+  let s = applySnapshot(initialStore(), snapshot({ projects: ordered, projectOrder: ["p3", "p1"] }), 0);
+  assert.deepEqual(view(s).projects.map((p) => p.id), ["p3", "p1", "p2", "p4"]);
+  s = upsertProject(s, { id: "p5", name: "aaa", createdAt: "2026-11-09T00:00:00Z", hostId: TH } as Project);
+  assert.deepEqual(view(s).projects.map((p) => p.id), ["p3", "p1", "p2", "p4", "p5"], "a new project lands last");
+  s = upsertProject(s, { id: "p3", name: "zzz renamed", createdAt: "2026-11-02T00:00:00Z", hostId: TH } as Project);
+  assert.equal(view(s).projects[0].id, "p3", "a rename keeps its place");
   s = setProjectOrder(s, ["p4", "p5"]);
-  assert.deepEqual(s.projects.map((p) => p.id), ["p4", "p5", "p1", "p3", "p2"], "the rest by creation time");
+  assert.deepEqual(view(s).projects.map((p) => p.id), ["p4", "p5", "p1", "p3", "p2"], "the rest by creation time");
   assert.deepEqual(s.projectOrder, ["p4", "p5"]);
 });
 

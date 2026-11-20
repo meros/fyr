@@ -1,6 +1,7 @@
 // Assistant markdown. Raw HTML in the source is escaped, links are limited to safe schemes,
 // and images render as links (no remote fetches from the log).
 
+import type { HostId } from "./hostid.ts";
 import { Marked, type Tokens } from "marked";
 import { inlineAttachmentId } from "./previews.ts";
 import { attachmentUrl } from "./attach.ts";
@@ -8,8 +9,8 @@ import { attachmentUrl } from "./attach.ts";
 // V0.38: a message renders once; a new event does not parse the old ones again.
 const memo = new Map<string, string>();
 // V0.54: the host of the thread being rendered; its attachments load from there (#41: through the Api's URLs).
-let curHost: string | undefined;
-let curUrl: (host: string, id: string) => string = attachmentUrl;
+let curHost: HostId | undefined;
+let curUrl: (host: HostId | undefined, id: string) => string = attachmentUrl;
 
 /** The page's origin; tests set one. */
 let originOverride: string | null = null;
@@ -72,7 +73,7 @@ const md = new Marked({
   },
 });
 
-export function renderMarkdown(src: string, host?: string, urlFor: (host: string, id: string) => string = attachmentUrl): string {
+export function renderMarkdown(src: string, host?: HostId, urlFor: (host: HostId | undefined, id: string) => string = attachmentUrl): string {
   if (urlFor !== curUrl) {
     // Another Api's URLs: what is cached points elsewhere.
     curUrl = urlFor;

@@ -1,6 +1,7 @@
 // SPEC 0.5 V0.44: provider quota where a profile is chosen and, V0.quota-in-thread, in the header of the open thread. One poll for the whole client
 // (every minute while the page is visible; the host reads providers at most every five minutes).
 
+import { profilesOf, type HostProfiles } from "./hosts.ts";
 import { useEffect, useState } from "preact/hooks";
 import type { Profile } from "./types.ts";
 import type { Api } from "./api.ts";
@@ -125,14 +126,14 @@ export function ProfileQuota(p: { profile: string; profiles: Profile[] }) {
   return q ? <QuotaLine q={q} name={nameOf(p.profiles, p.profile)} /> : null;
 }
 
-/** Every profile's quota (phone new-thread screen). */
-export function QuotaList(p: { profiles: Profile[] }) {
+/** Every profile's quota (phone new-thread screen, the load sheet), each named by its own host's provider. */
+export function QuotaList(p: { profiles: HostProfiles }) {
   const list = useQuotas();
   if (!list.length) return null;
   return (
     <div class="qlist" aria-label="Quota">
       {list.map((q) => (
-        <QuotaLine q={q} name={nameOf(p.profiles, q.profile)} color={p.profiles.find((x) => x.id === q.profile)?.color} />
+        <QuotaLine q={q} name={nameOf(profilesOf(q, p.profiles), q.profile)} color={profilesOf(q, p.profiles).find((x) => x.id === q.profile)?.color} />
       ))}
     </div>
   );

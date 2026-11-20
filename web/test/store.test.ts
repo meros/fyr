@@ -26,14 +26,14 @@ import {
   undoVerb,
   upsertThread,
   UNDO_MS,
+  bannerDeploy,
 } from "../src/store.ts";
-import type { StateDTO } from "../src/types.ts";
-import { thread } from "./helpers.ts";
+import { snapshot, thread, view, TH } from "./helpers.ts";
 
 const at = (m: number) => new Date(Date.UTC(2026, 10, 14, 9, m)).toISOString();
 
-function snap(threads = [] as ReturnType<typeof thread>[]): StateDTO {
-  return { now: at(0), user: "owner", threads, actions: [], profiles: [], projects: [] };
+function snap(threads = [] as ReturnType<typeof thread>[]) {
+  return snapshot({ now: at(0), threads });
 }
 
 test("upsert places threads into sections by attention.section", () => {
@@ -42,14 +42,14 @@ test("upsert places threads into sections by attention.section", () => {
   s = upsertThread(s, thread("w", "working", "working", { running: true, runStartedAt: at(1) }));
   s = upsertThread(s, thread("z", "snoozed", "snoozed"));
   s = upsertThread(s, thread("arch", "archived", "archived"));
-  const sec = sections(s.threads);
+  const sec = sections(view(s).threads);
   assert.deepEqual(sec.needs.map((t) => t.id), ["a"]);
   assert.deepEqual(sec.working.map((t) => t.id), ["w"]);
   assert.deepEqual(sec.snoozed.map((t) => t.id), ["z"]);
   assert.equal(Object.values(sec).flat().some((t) => t.id === "arch"), false, "archived is hidden");
   // Moving to another section on a later upsert.
   s = upsertThread(s, thread("a", "settled", "settled", { updatedAt: at(5) }));
-  const sec2 = sections(s.threads);
+  const sec2 = sections(view(s).threads);
   assert.deepEqual(sec2.needs, []);
   assert.deepEqual(sec2.settled.map((t) => t.id), ["a"]);
 });
@@ -64,7 +64,7 @@ test("needs you sorts by group, then oldest first inside the group", () => {
     thread("ask-new", "asking", "needs", { activityAt: at(20) }),
     thread("done-old", "done", "needs", { activityAt: at(2) }),
   ];
-  const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
+  const sec = sections(view(applySnapshot(initialStore(), snap(ts), 0)).threads);
   assert.deepEqual(sec.needs.map((t) => t.id), ["ask-old", "ask-new", "done-old", "failed", "blocked", "done-new"]);
 });
 
@@ -78,7 +78,7 @@ test("needs you puts merge asks after questions and before failures", () => {
     thread("question-old", "asking", "needs", { activityAt: at(1), decisions: [ask] }),
     thread("both", "asking", "needs", { activityAt: at(2), decisions: [merge, ask] }),
   ];
-  const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
+  const sec = sections(view(applySnapshot(initialStore(), snap(ts), 0)).threads);
   assert.deepEqual(sec.needs.map((t) => t.id), ["question-old", "both", "merge-new", "failed"]);
 });
 
@@ -92,7 +92,7 @@ test("working sorts by runStartedAt (oldest started first); seen, snoozed, settl
     thread("x-old", "settled", "settled", { activityAt: at(3) }),
     thread("x-new", "settled", "settled", { activityAt: at(8) }),
   ];
-  const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
+  const sec = sections(view(applySnapshot(initialStore(), snap(ts), 0)).threads);
   assert.deepEqual(sec.working.map((t) => t.id), ["w-early", "w-late"]);
   assert.deepEqual(sec.seen.map((t) => t.id), ["s-new", "s-old"]);
   assert.deepEqual(sec.settled.map((t) => t.id), ["x-new", "x-old"]);
@@ -113,7 +113,7 @@ test("pinned threads come first in the flat order and show once", () => {
     thread("s-pin-new", "seen", "seen", { activityAt: at(8), ...pin }),
     thread("s", "seen", "seen", { activityAt: at(30) }),
   ];
-  const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
+  const sec = sections(view(applySnapshot(initialStore(), snap(ts), 0)).threads);
   assert.deepEqual(sec.pinned.map((t) => t.id), ["ask-pin", "s-pin-new", "s-pin-old", "w-pin"]);
   assert.deepEqual(sec.needs.map((t) => t.id), ["ask-pin", "ask"], "a pinned thread still counts in its section");
   assert.deepEqual(unpinned(sec.needs).map((t) => t.id), ["ask"]);
@@ -131,26 +131,26 @@ test("working order does not follow activity; waiting threads use the earliest r
     thread("wait", "waiting", "working", { runStartedAt: null, activityAt: at(59), tasks: [task("t1", at(30)), task("t2", at(15)), task("t0", at(1), "completed")] }),
   ];
   let s = applySnapshot(initialStore(), snap(ts), 0);
-  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-a", "w-b", "wait", "w-new"]);
+  assert.deepEqual(sections(view(s).threads).working.map((t) => t.id), ["w-a", "w-b", "wait", "w-new"]);
   // New activity on w-b (a later update) leaves the order as it was.
-  s = upsertThread(s, { ...s.threads["w-b"], activityAt: at(59), updatedAt: at(59), activity: "Reading app.tsx" });
-  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-a", "w-b", "wait", "w-new"]);
+  s = upsertThread(s, { ...view(s).threads["w-b"], activityAt: at(59), updatedAt: at(59), activity: "Reading app.tsx" });
+  assert.deepEqual(sections(view(s).threads).working.map((t) => t.id), ["w-a", "w-b", "wait", "w-new"]);
 });
 
 test("an older upsert never overwrites a newer thread; an equal one does (time-driven attention)", () => {
   let s = upsertThread(initialStore(), thread("a", "done", "needs", { updatedAt: at(10) }));
   s = upsertThread(s, thread("a", "working", "working", { updatedAt: at(5) }));
-  assert.equal(s.threads.a.attention.state, "done");
+  assert.equal(view(s).threads.a.attention.state, "done");
   s = upsertThread(s, thread("a", "seen", "seen", { updatedAt: at(10) }));
-  assert.equal(s.threads.a.attention.state, "seen");
+  assert.equal(view(s).threads.a.attention.state, "seen");
 });
 
 test("snapshot keeps a newer stream upsert that arrived first, and drops threads it does not list", () => {
   let s = upsertThread(initialStore(), thread("a", "done", "needs", { updatedAt: at(20) }));
   s = upsertThread(s, thread("gone", "seen", "seen"));
   s = applySnapshot(s, snap([thread("a", "working", "working", { updatedAt: at(10) })]), 0);
-  assert.equal(s.threads.a.attention.state, "done");
-  assert.equal(s.threads.gone, undefined);
+  assert.equal(view(s).threads.a.attention.state, "done");
+  assert.equal(view(s).threads.gone, undefined);
   assert.equal(s.loaded, true);
 });
 
@@ -220,16 +220,16 @@ test("upsert keeps the higher rev", () => {
 test("thread patches apply on the matching rev only", () => {
   const t0 = thread("t1", "working", "working", { rev: 5, title: "a", activity: "Reading x", tasks: [{ id: "k", description: "d", status: "running" }] });
   let s = upsertThread(initialStore(), t0);
-  const r = applyThreadPatch(s, { id: "t1", rev: 6, base: 5, patch: { rev: 6, activity: null, tasks: [{ id: "k", description: "d", status: "completed" }] } });
+  const r = applyThreadPatch(s, { id: "t1", host: TH, rev: 6, base: 5, patch: { rev: 6, activity: null, tasks: [{ id: "k", description: "d", status: "completed" }] } });
   assert.equal(r.needFull, false);
-  assert.equal(r.store.threads.t1.rev, 6);
-  assert.equal(r.store.threads.t1.activity, undefined, "a removed field is gone");
-  assert.equal(r.store.threads.t1.tasks?.[0].status, "completed");
-  assert.equal(r.store.threads.t1.title, "a");
-  const stale = applyThreadPatch(r.store, { id: "t1", rev: 9, base: 8, patch: { title: "b" } });
+  assert.equal(view(r.store).threads.t1.rev, 6);
+  assert.equal(view(r.store).threads.t1.activity, undefined, "a removed field is gone");
+  assert.equal(view(r.store).threads.t1.tasks?.[0].status, "completed");
+  assert.equal(view(r.store).threads.t1.title, "a");
+  const stale = applyThreadPatch(r.store, { id: "t1", host: TH, rev: 9, base: 8, patch: { title: "b" } });
   assert.equal(stale.needFull, true);
-  assert.equal(stale.store.threads.t1.title, "a", "a patch on another base changes nothing");
-  assert.equal(applyThreadPatch(r.store, { id: "nope", rev: 1, base: 0, patch: {} }).needFull, true);
+  assert.equal(view(stale.store).threads.t1.title, "a", "a patch on another base changes nothing");
+  assert.equal(applyThreadPatch(r.store, { id: "nope", host: TH, rev: 1, base: 0, patch: {} }).needFull, true);
 });
 
 // review 2026-11-15: events that arrive between a new subscription and conn → live must not hide the gap before them.
@@ -258,13 +258,14 @@ test("a reconnect refetches each loaded timeline from where it was when the stre
 
 // review 2026-11-15: the device's copy of the state keeps the host list and the deploy, so an offline start has them.
 test("the stored state round-trips hosts and deploy", () => {
-  const live = applySnapshot(initialStore(), { ...snap([thread("a", "seen", "seen")]), host: "front", hosts: [{ name: "front", online: true }, { name: "nas", online: false }], deploy: { phase: "build" } }, Date.parse(at(0)));
+  const hosts = [{ name: "front", online: true, id: TH }, { name: "nas", online: false }];
+  const live = applySnapshot(initialStore(), snapshot({ now: at(0), threads: [thread("a", "seen", "seen")], hosts, front: { id: TH, name: "front" }, per: { [TH]: { deploy: { phase: "build" } } } }), Date.parse(at(0)));
   const stored = stateForCache(live, at(1));
   const offline = applySnapshot(initialStore(), stored, Date.parse(at(2)));
-  assert.deepEqual(offline.hosts.map((h) => h.name), ["front", "nas"]);
-  assert.equal(offline.deploy?.phase, "build");
-  assert.equal(offline.host, "front");
-  assert.deepEqual(Object.keys(offline.threads), ["a"]);
+  assert.deepEqual(offline.hostList.map((h) => h.name), ["front", "nas"]);
+  assert.equal(bannerDeploy(offline)?.phase, "build");
+  assert.equal(offline.front.name, "front");
+  assert.deepEqual(Object.keys(view(offline).threads), ["a"]);
 });
 
 // review 2026-11-15: one search match for the desktop list and the phone search (title, project, #PR).

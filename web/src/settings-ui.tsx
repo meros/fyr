@@ -12,8 +12,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
-import { badLine, hostForProject, hostIdByName, hostLine, updating, linkLine, hostState, howIn, profilesOn, hostRoute, shortID, updateLine, updateRows, updateWords, type HostInfo } from "./hosts.ts";
-import { useHosts } from "./host-pick-ui.tsx";
+import { badLine, hostLine, updating, linkLine, hostState, howIn, profilesOf, hostRoute, shortID, updateLine, updateRows, updateWords, type HostInfo, type HostProfiles } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import { resolveRef } from "./store.ts";
 import { hostUrl } from "./urls.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, type SettingsHost } from "./host-settings.ts";
@@ -33,7 +33,7 @@ import { CARD_WORD, cardState } from "./quota.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { removeProviderAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
-import type { Profile, Project } from "./types.ts";
+import type { Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { changeLines, changesLabel, githubPause, githubRows, githubState, releaseSource, updateRow, updateState, type UpdatesView } from "./updates.ts";
@@ -104,13 +104,13 @@ export interface ProjectActions {
   setFolder(id: string, path: string): Promise<string | null>;
   delete(id: string): Promise<string | null>;
   /** New project without a thread; the error, or null. V0.132: on `host` (several hosts) */
-  create(name: string, folder: string, host?: string): Promise<string | null>;
+  create(name: string, folder: string, host: HostId): Promise<string | null>;
   /** V0.121: the owner's project order (front.projectOrder); the error, or null */
   order(ids: string[]): Promise<string | null>;
   /** Decision 0034: linked projects; the error, or null */
   link(id: string, other: string): Promise<string | null>;
   unlink(id: string): Promise<string | null>;
-  add(id: string, host: string, folder: string): Promise<string | null>;
+  add(id: string, host: HostId, folder: string): Promise<string | null>;
 }
 
 export interface SettingsProps {
@@ -134,7 +134,8 @@ export interface SettingsProps {
   onChanged?(): void;
   device: SettingsDevice;
   projects: Project[];
-  profiles: Profile[];
+  /** slice 2b: each host's profiles; a project's editor offers its own host's */
+  profilesByHost: HostProfiles;
   /** the host's clock */
   now: number;
   /** the first state has arrived, so `now` is the host's clock (V0.120: the page's check on open waits for it) */
@@ -166,13 +167,17 @@ interface HostSlice {
 }
 const EMPTY_SLICE: HostSlice = { providers: null, provErr: null, found: [], deploy: null, deployErr: null, updates: null, repos: null, reposErr: null, sa: null, saErr: null, readAt: null };
 
-/** V0.127: the settings of every host the front follows. Each host's reads and commands name it (`?host=`,
- *  `args.host`); the front sends them there. One host (or none) is one part that names no host, as before. */
+/** V0.127: the settings of every host the front follows. Each host's reads and commands name it by its install id
+ *  (decision 0031); one host is one part without a heading. */
 function useSettingsData(p: SettingsProps, saved: () => void) {
   const api = p.api;
   const hosts = settingsHosts(p.hosts);
-  /** The install id a part's host name stands for: every call names its host by id (decision 0031). */
-  const hid = (name: string) => hostIdByName(p.hosts, name);
+  /** The install id of a part (keyed by its host's name): a host with none cannot be named, and nothing is sent. */
+  const hid = (name: string): HostId => {
+    const id = hosts.find((h) => h.name === name)?.id;
+    if (!id) throw new Error("this host reports no install id");
+    return id;
+  };
   const [slices, setSlices] = useState<Record<string, HostSlice>>({});
   const patch = (host: string, part: Partial<HostSlice>) => setSlices((s) => ({ ...s, [host]: { ...(s[host] ?? EMPTY_SLICE), ...part } }));
   const seen = (host: string, r: { readAt?: string }) => patch(host, { readAt: r.readAt ?? null });
@@ -256,7 +261,9 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
 
   /** One owner command to a host; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
   const command = async (host: string, action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
-    const r = await api.command(hid(host), action, undefined, args);
+    const id = hosts.find((h) => h.name === host)?.id;
+    if (!id) return "This host reports no install id, so nothing can be sent to it until it updates";
+    const r = await api.command(id, action, undefined, args);
     if (!r.ok) {
       await reload(); // the control goes back to what the host has
       return r.error ?? "That did not work";
@@ -288,7 +295,9 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
       runProvider,
       /** V0.120: ask a provider for its models now. Not a save: no Saved mark. The reply waits for the check. */
       refreshModels: async (id: string): Promise<string | null> => {
-        const r = await api.command(hid(host), "provider.refreshModels", undefined, { id });
+        const to = hosts.find((h) => h.name === host)?.id;
+        if (!to) return "This host reports no install id, so nothing can be sent to it until it updates";
+        const r = await api.command(to, "provider.refreshModels", undefined, { id });
         await loadProviders(host);
         if (r.ok) p.onChanged?.();
         return r.ok ? null : (r.error ?? "That did not work");
@@ -301,8 +310,9 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
     };
   };
   const all = hosts.map(of);
-  /** The part a sub-page belongs to: its host's, else the first. */
-  const at = (host: string | undefined) => all.find((d) => d.host.name === (host ?? "")) ?? (host ? undefined : all[0]);
+  /** The part a sub-page belongs to: its host's (the one part of a front with one host has no name); none for a host
+   *  that is not one of the parts. */
+  const at = (host: string | undefined) => all.find((d) => d.host.name === (host ?? "")) ?? (!host && all.length === 1 ? all[0] : undefined);
   return { all, at, grouped: hosts.length > 1 };
 }
 type AllSettings = ReturnType<typeof useSettingsData>;
@@ -312,17 +322,16 @@ type Data = AllSettings["all"][number];
  *  over every host the front follows. */
 export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[]): string {
   const [v, setV] = useState("");
-  const names = settingsHosts(hosts).map((h) => h.name);
-  const hid = (name: string) => hostIdByName(hosts, name);
+  const ids = settingsHosts(hosts).flatMap((h) => (h.id ? [h.id] : [])); // a host with no install id cannot be asked
   useEffect(() => {
     let live = true;
     void Promise.all(
-      names.map((h) =>
-        Promise.all([api.providers(hid(h)).then((r) => r.data), api.systemAgents ? api.systemAgents(hid(h)).then((r) => r.data).catch(() => null) : null]).catch(() => [[], null] as const),
+      ids.map((h) =>
+        Promise.all([api.providers(h).then((r) => r.data), api.systemAgents ? api.systemAgents(h).then((r) => r.data).catch(() => null) : null]).catch(() => [[], null] as const),
       ),
     ).then((parts) => live && setV(providersNeed(parts.flatMap(([l]) => l), parts.reduce((n, [, sa]) => n + (sa?.jobs.filter((j) => j.error).length ?? 0), 0))));
     return () => void (live = false);
-  }, [names.join(" ")]);
+  }, [ids.join(" ")]);
   return v;
 }
 
@@ -522,7 +531,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           lede: on ? `On ${on}. A key you paste is kept on ${on} and never leaves it.` : undefined,
           body: (
             <HostEnv d={d}>
-              <AddProvider onCancel={() => go({ page: "providers" })} onCreate={async (args) => { const e = await d.runProvider("provider.create", args); if (!e) go({ page: "providers" }); return e; }} />
+              <AddProvider host={d.host.id} onCancel={() => go({ page: "providers" })} onCreate={async (args) => { const e = await d.runProvider("provider.create", args); if (!e) go({ page: "providers" }); return e; }} />
             </HostEnv>
           ),
         };
@@ -560,7 +569,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
               key={pr.id}
               project={pr}
               linking={group && linkingFor(group, p.projects, p.projectActions, (id) => go({ page: "projects", sub: id }))}
-              profiles={profilesOn(hostForProject(pr.host, p.hosts), p.hosts, p.profiles) /* V0.127: its host's providers */}
+              profiles={profilesOf(pr, p.profilesByHost) /* V0.127: its host's providers */}
               now={p.now}
               onSave={(patch) => p.projectActions.update(pr.id!, patch)}
               onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
@@ -591,7 +600,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           body: <HostPage key={h.name} h={h} api={p.api} now={p.now} />,
         };
       const runOrder = async (names: string[]) => {
-        const r = await p.api.frontCommand("front.hostOrder", { ids: names.map((n) => hostIdByName(p.hosts, n)).filter(Boolean) }); // V0.132
+        const r = await p.api.frontCommand("front.hostOrder", { ids: names.flatMap((n) => rows.find((x) => x.name === n)?.id ?? []) }); // V0.132: the rows as moved, by id
         return r.ok ? null : (r.error ?? "That did not work");
       };
       return {
@@ -1196,7 +1205,7 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
 }
 
 /** Add provider (A5): today's fields and validation, as a page. */
-function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknown>): Promise<string | null> }) {
+function AddProvider(p: { /** slice 2b: the host the provider is added on, whose folders the picker reads */ host?: HostId; onCancel(): void; onCreate(args: Record<string, unknown>): Promise<string | null> }) {
   const [f, setF] = useState<ProviderForm>(EMPTY_FORM);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1228,7 +1237,7 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
               <span>Config folder (empty: ~/.claude)</span>
               <div class="setkey">
                 <input value={f.configDir} onInput={set("configDir")} placeholder="~/.claude-work" disabled={env.readOnly} />
-                <button type="button" class="btn" disabled={env.readOnly} onClick={() => void picker.pick({ title: "Config folder" }).then((d) => d && setF({ ...f, configDir: d }))}>
+                <button type="button" class="btn" disabled={env.readOnly} onClick={() => void picker.pick({ title: "Config folder", ...(p.host ? { host: p.host } : {}) }).then((d) => d && setF({ ...f, configDir: d }))}>
                   Choose…
                 </button>
               </div>
@@ -1306,7 +1315,7 @@ function AutomationPage({ d, hasDeploy, api, focus }: { d: Data; hasDeploy: bool
         ))}
       {d.updates && <UpdatesGroup d={d} />}
       {d.updates?.github && <GitHubGroup d={d} />}
-      <HeavyJobsGroup host={d.host.name} api={api} focus={focus} />
+      <HeavyJobsGroup host={d.host.name} id={d.host.id} api={api} focus={focus} />
       {d.repos === null && d.reposErr ? (
         <LoadError text={d.reposErr} onRetry={() => void d.loadRepos()} />
       ) : d.repos === null ? (
@@ -1332,16 +1341,16 @@ function AutomationPage({ d, hasDeploy, api, focus }: { d: Data; hasDeploy: bool
 /** Decision 0029 S1 (#185), V0.164, V0.209: heavy jobs on this host, which run by themselves: what runs undeclared now,
  *  the commands Fyr learned, when a thread counts as heavy, and the classes the host measured.
  *  Desktop and phone share it; a read-only front shows it all with its buttons disabled. */
-function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps["api"]; focus?: string }) {
+function HeavyJobsGroup({ host, id, api, focus }: { host: string; id?: HostId; api: SettingsProps["api"]; focus?: string }) {
   const env = useSet();
   const list = useLoad();
   const h = list.find((x) => x.host === host) ?? (list.length === 1 ? list[0] : undefined);
   if (!h) return null;
   return (
     <>
-      <LeftoverGroups h={h} host={host} api={api} focus={focus} />
-      {h.provider && <UndeclaredGroups h={h} host={host} api={api} />}
-      {h.provider && <MeasuredJobs h={h} host={host} api={api} env={env} />}
+      <LeftoverGroups h={h} host={host} id={id} api={api} focus={focus} />
+      {h.provider && <UndeclaredGroups h={h} host={host} id={id} api={api} />}
+      {h.provider && <MeasuredJobs h={h} host={host} id={id} api={api} env={env} />}
       <InvariantGroup h={h} host={host} />
     </>
   );
@@ -1366,10 +1375,10 @@ function InvariantGroup({ h, host }: { h: HostLoad; host: string }) {
 /** V0.176: the processes threads left running on this host (End now, Keep for a day) and the worktrees nobody
  *  works in (Remove when pushed and clean; V0.worktree-sweep: Fyr removes them by itself). Absent when there is nothing. The rail's count lands here (sub
  *  "leftovers"). Desktop and phone share it. */
-function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; api: SettingsProps["api"]; focus?: string }) {
+function LeftoverGroups({ h, host, id, api, focus }: { h: HostLoad; host: string; id?: HostId; api: SettingsProps["api"]; focus?: string }) {
   const env = useSet();
   const und = useUnd();
-  const run = useHostCommand(host, api);
+  const run = useHostCommand(id, api);
   const [err, setErr] = useState<{ key: string; text: string } | null>(null);
   const act = async (key: string, action: string, args: Record<string, unknown>) => {
     const e = await run(action, args);
@@ -1436,12 +1445,12 @@ function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; ap
   );
 }
 
-/** A command to the host, with the Saved mark and a fresh read of the load. */
-function useHostCommand(host: string, api: SettingsProps["api"]): (action: string, args: Record<string, unknown>) => Promise<string | null> {
+/** A command to the host, with the Saved mark and a fresh read of the load. A host with no install id cannot be named. */
+function useHostCommand(host: HostId | undefined, api: SettingsProps["api"]): (action: string, args: Record<string, unknown>) => Promise<string | null> {
   const env = useSet();
-  const { hosts } = useHosts();
   return async (action, args) => {
-    const r = await api.command(hostIdByName(hosts, host), action, undefined, args);
+    if (!host) return "This host reports no install id, so nothing can be sent to it until it updates";
+    const r = await api.command(host, action, undefined, args);
     if (r.ok) (env.saved(), refreshLoad());
     return r.ok ? null : (r.error ?? "That did not work");
   };
@@ -1449,10 +1458,10 @@ function useHostCommand(host: string, api: SettingsProps["api"]): (action: strin
 
 /** V0.164 (SPEC 8.5). A group is absent when it has nothing to show; the thresholds are absent on a host that does not
  *  send them. */
-function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: SettingsProps["api"] }) {
+function UndeclaredGroups({ h, host, id, api }: { h: HostLoad; host: string; id?: HostId; api: SettingsProps["api"] }) {
   const env = useSet();
   const und = useUnd();
-  const run = useHostCommand(host, api);
+  const run = useHostCommand(id, api);
   const [err, setErr] = useState<{ key: string; text: string } | null>(null);
   const fail = (key: string) => (text: string | null) => setErr(text ? { key, text } : null);
   const act = async (key: string, action: string, args: Record<string, unknown>) => fail(key)(await run(action, args));
@@ -1586,14 +1595,14 @@ function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: Se
 }
 
 /** Decision 0029 S1 (#185): the heavy jobs this host measured, per class (project and command), the newest first. */
-function MeasuredJobs({ h, host, api, env }: { h: HostLoad; host: string; api: SettingsProps["api"]; env: { readOnly: boolean } }) {
+function MeasuredJobs({ h, host, id, api, env }: { h: HostLoad; host: string; id?: HostId; api: SettingsProps["api"]; env: { readOnly: boolean } }) {
   const [err, setErr] = useState<{ class: string; text: string } | null>(null);
-  const { hosts } = useHosts();
   const lines = jobLines(h);
   const budget = budgetLine(h); // V0.163: the budget as percentages of the host
   // Decision 0029 S3: Reset forgets a class's learned cost on this host (owner only); it counts as 1.0 again.
   const reset = async (c: string) => {
-    const r = await api.command(hostIdByName(hosts, host), "host.jobReset", undefined, { class: c });
+    if (!id) return setErr({ class: c, text: "This host reports no install id" });
+    const r = await api.command(id, "host.jobReset", undefined, { class: c });
     setErr(r.ok ? null : { class: c, text: r.error ?? "Not reset" });
     if (r.ok) refreshLoad();
   };
@@ -2152,7 +2161,7 @@ function HostPage({ h, api, now }: { h: HostInfo; api: SettingsProps["api"]; now
  *  holds back with Update now · retry, which clears the mark. One component for the desktop and the phone. */
 function HostUpdatesGroup({ h, api, now }: { h: HostInfo; api: SettingsProps["api"]; now: number }) {
   const env = useSet();
-  const run = useHostCommand(h.name, api);
+  const run = useHostCommand(h.id, api);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const u = h.update!;

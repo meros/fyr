@@ -14,7 +14,8 @@ import { attachmentUrl, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
 import { frontPath, hostPath } from "./urls.ts";
-import { addressable, bare, decodeFront, flatten, hostOfFrame, reachabilityChanged, ref, stampDeploy, stampEvent, stampLoad, stampPatch, stampProject, stampSlots, stampThread, unrefDeep, type FrontState, type HostResult } from "./hostfeed.ts";
+import { addressable, bare, decodeFront, hostOfFrame, reachabilityChanged, ref, snapshotOf, stampDeploy, stampEvent, stampLoad, stampPatch, stampProject, stampSlots, stampThread, unrefDeep, type FrontState, type HostResult, type Snapshot } from "./hostfeed.ts";
+import type { HostId } from "./hostid.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
@@ -31,12 +32,13 @@ import { reloadForNewBuild } from "./pwa.ts";
 import type { SlashCommand } from "./slash.ts";
 
 export interface ApiHandlers {
-  state(dto: StateDTO): void;
+  /** Slice 2b: the front's state and each host's own, by install id */
+  state(snap: Snapshot): void;
   thread(t: ThreadDTO): void;
-  /** V0.39: where an update of Fyr is */
+  /** V0.39: where an update of Fyr is, on the host it names (`p.host`) */
   deploy?(p: DeployProgress): void;
-  /** V0.147 */
-  stall?(raw: unknown): void;
+  /** V0.147: a host's stall */
+  stall?(host: HostId, raw: unknown): void;
   /** V0.38: a merge patch against the thread copy with rev === base */
   threadPatch?(p: ThreadPatch): void;
   /** a project made or changed (V0.23); optional for older callers */
@@ -55,18 +57,18 @@ export interface Api {
   readonly mock: boolean;
   start(h: ApiHandlers): void;
   /** A host's command (decision 0031: the host is named in the path, never in `args`). `host` is its install id. */
-  command(host: string, action: string, threadId?: string, args?: Record<string, unknown>): Promise<CommandReply>;
+  command(host: HostId, action: string, threadId?: string, args?: Record<string, unknown>): Promise<CommandReply>;
   /** The front's own commands (front.projectOrder {ids}, front.hostOrder {ids}, front.hostId {host}, front.hostMark). */
   frontCommand(action: string, args?: Record<string, unknown>): Promise<CommandReply>;
-  events(host: string, threadId: string, after?: number, limit?: number): Promise<FyrEvent[]>;
+  events(host: HostId, threadId: string, after?: number, limit?: number): Promise<FyrEvent[]>;
   /** The newest `limit` events older than `before`, to page back. */
-  eventsBefore(host: string, threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
+  eventsBefore(host: HostId, threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
   /** V0.38: one thread whole, when a patch does not fit the copy we have */
-  thread(host: string, threadId: string): Promise<ThreadDTO | null>;
+  thread(host: HostId, threadId: string): Promise<ThreadDTO | null>;
   /** V0.38: one event whole (the stream and the list cut large tool output) */
-  fullEvent(host: string, threadId: string, seq: number): Promise<FyrEvent | null>;
+  fullEvent(host: HostId, threadId: string, seq: number): Promise<FyrEvent | null>;
   /** V0.139: that host's T3 */
-  t3Candidates(host: string): Promise<T3Candidate[]>;
+  t3Candidates(host: HostId): Promise<T3Candidate[]>;
   /** Web Push (SPEC V0.15): the front's VAPID public key, base64url. */
   pushKey(): Promise<string>;
   pushSubscribe(subscription: PushSubscriptionJSON, device: string): Promise<PushReply>;
@@ -79,45 +81,45 @@ export interface Api {
   pushTest(endpoint?: string): Promise<PushReply>;
   /** Whether the front still has this subscription; null when it could not be asked. */
   pushStatus(endpoint: string): Promise<boolean | null>;
-  /** Tell the front which thread of which host this device shows (V0.20); "" for none. */
-  presence(host: string, threadId: string, device: string): Promise<void>;
+  /** Tell the front which thread of which host this device shows (V0.20); null for none. */
+  presence(open: { host: HostId; threadId: string } | null, device: string): Promise<void>;
   /** Attachments (SPEC V0.18): upload one file to a host (the thread's, or the one a new thread starts on); progress
    *  as bytes sent. */
-  uploadAttachment(host: string, file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<UploadResult>;
-  attachmentUrl(host: string, id: string): string;
+  uploadAttachment(host: HostId, file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<UploadResult>;
+  attachmentUrl(host: HostId | undefined, id: string): string;
   /** V0.116: the owner's image for a project's icon (PNG, JPEG or GIF, at most 2 MB), sent to the project's host. */
-  uploadProjectIcon(host: string, projectId: string, file: Blob): Promise<{ ok: boolean; error?: string }>;
+  uploadProjectIcon(host: HostId, projectId: string, file: Blob): Promise<{ ok: boolean; error?: string }>;
   /** An HTML preview (V0.19), for a sandboxed iframe; from the thread's host (V0.54). */
-  previewUrl(host: string, id: string): string;
+  previewUrl(host: HostId | undefined, id: string): string;
   /** The Changes tab (V0.25): the branch diff of the thread's folder. */
-  changes(host: string, threadId: string): Promise<ChangesDTO>;
+  changes(host: HostId, threadId: string): Promise<ChangesDTO>;
   /** One file's unified diff (V0.25). */
-  filePatch(host: string, threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
+  filePatch(host: HostId, threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
-  prDetail(host: string, threadId: string, fresh?: boolean): Promise<PrReply>;
+  prDetail(host: HostId, threadId: string, fresh?: boolean): Promise<PrReply>;
   /** V0.ai-search: the host's threads among `ids` (its own ids) that fit the owner's words, best first. Throws with the reason. */
-  searchThreads(host: string, query: string, ids: string[], signal?: AbortSignal): Promise<SearchHit[]>;
+  searchThreads(host: HostId, query: string, ids: string[], signal?: AbortSignal): Promise<SearchHit[]>;
   /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
-  fsList(host: string, path: string): Promise<FsListing>;
-  fsRecent(host: string): Promise<FsDir[]>;
-  fsRepos(host: string): Promise<FsDir[]>;
+  fsList(host: HostId, path: string): Promise<FsListing>;
+  fsRecent(host: HostId): Promise<FsDir[]>;
+  fsRepos(host: HostId): Promise<FsDir[]>;
   /** Makes parent/name and returns its path. */
-  fsMkdir(host: string, parent: string, name: string): Promise<string>;
+  fsMkdir(host: HostId, parent: string, name: string): Promise<string>;
   /** V0.44: each profile's provider quota over the hosts that are online, one read per host; [] when none can say. */
   quota(): Promise<Quota[]>;
   /** V0.80: each host's load and its threads' CPU, one read per host; [] when no host can say. */
   load(): Promise<HostLoad[]>;
   // V0.127: the per-host settings reads. An offline host answers what the front last read from it, with when (readAt).
   /** V0.50: Settings → Providers; never a key, only whether one is set. */
-  providers(host: string): Promise<HostRead<ProviderDTO[]>>;
+  providers(host: HostId): Promise<HostRead<ProviderDTO[]>>;
   /** V0.50: logins, endpoints and keys found on the host. */
-  providersFound(host: string): Promise<HostRead<FoundDTO[]>>;
+  providersFound(host: HostId): Promise<HostRead<FoundDTO[]>>;
   /** V0.102: the repos Fyr knows and whether each merges agents' merge asks with no press. */
-  autoMerge(host: string): Promise<HostRead<AutoMergeRepo[]>>;
+  autoMerge(host: HostId): Promise<HostRead<AutoMergeRepo[]>>;
   /** V0.111: whether Fyr approves agents' deploy asks of merged code with no press. */
-  autoDeploy(host: string): Promise<HostRead<AutoDeploySetting>>;
+  autoDeploy(host: HostId): Promise<HostRead<AutoDeploySetting>>;
   /** V0.126 (#151): the update record and whether a local build pauses auto-update. */
-  updates(host: string): Promise<HostRead<UpdatesView>>;
+  updates(host: HostId): Promise<HostRead<UpdatesView>>;
   /** V0.157: Settings → Devices: the signed-in devices, the ones that wait, the browser way in's mode. */
   authState(): Promise<AuthState>;
   /** V0.157: approve (code or id), deny, revoke, add (a one-time link and its QR code), mode (browser way in). */
@@ -127,9 +129,9 @@ export interface Api {
   /** V0.159: invite (open one here: a code, a QR image, a link) or join (an invite from another install). */
   peerAct(action: "invite" | "join" | "remove", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.115: the system agents setting of a host */
-  systemAgents(host: string): Promise<HostRead<SystemAgentsView>>;
-  /** V0.50: the current profiles of every host that is online (after a provider changed). */
-  profiles(): Promise<Profile[]>;
+  systemAgents(host: HostId): Promise<HostRead<SystemAgentsView>>;
+  /** V0.50: a host's current profiles (after a provider changed). */
+  profiles(host: HostId): Promise<Profile[]>;
   /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
   commands(source: CommandSource): Promise<SlashCommand[]>;
   /** V0.98 (3): opening the Changes board is a visit; each host keeps the owner's boardSeenAt and returns the one
@@ -138,7 +140,7 @@ export interface Api {
 }
 
 /** Whose commands: a thread's, or the newest of a provider and folder on a host (V0.79). */
-export type CommandSource = { host: string; threadId: string } | { host: string; cwd: string; profile: string };
+export type CommandSource = { host: HostId; threadId: string } | { host: HostId; cwd: string; profile: string };
 
 /** V0.127: a per-host settings read; readAt is set when the host is offline and this is what the front last read. */
 export interface HostRead<T> {
@@ -146,7 +148,7 @@ export interface HostRead<T> {
   readAt?: string;
 }
 
-async function hostGet<T>(host: string, path: string): Promise<HostRead<T>> {
+async function hostGet<T>(host: HostId, path: string): Promise<HostRead<T>> {
   const r = await fetch(hostPath(host, path), { headers: { Accept: "application/json" } });
   const j = (await r.json().catch(() => ({}))) as T & { error?: string };
   if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -213,9 +215,9 @@ function createHttpApi(): Api {
     return r.reload;
   };
 
-  /** The front's state, then every host's own, in parallel: the state the store reads (hostfeed.flatten). A host
-   *  whose state cannot be read is listed and has no records. */
-  const loadAll = async (): Promise<ReturnType<typeof flatten> & { buildId?: string }> => {
+  /** The front's state, then every host's own, in parallel: the snapshot the store reads, one state per host
+   *  (hostfeed.snapshotOf). A host whose state cannot be read is listed and has no records. */
+  const loadAll = async (): Promise<Snapshot> => {
     const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
     if (!r.ok) {
       if (r.status === 401) void reloadIfSignedOut(); // V0.157: a revoked device lands on the signed-out page
@@ -225,10 +227,10 @@ function createHttpApi(): Api {
     front = f;
     // V0.38: with a stored copy, ask each host only for the threads changed since it. A rev is its host's own clock, so
     // "since" is each host's own newest, from that host's own stored state (V0.host-ids, decision 0031 2.5); its partial
-    // answer merges into that state before the hosts are flattened into one.
+    // answer merges into that state, which the store keeps as that host's (slice 2b).
     const results = await Promise.all(
       addressable(f.hosts).map(async (host): Promise<HostResult> => {
-        const id = host.id!;
+        const id = host.id;
         const stored = await cache.hostState(id);
         const since = hostSince(stored);
         try {
@@ -240,7 +242,7 @@ function createHttpApi(): Api {
         }
       }),
     );
-    return flatten(f, results);
+    return snapshotOf(f, results);
   };
 
   const reload = async (gen: number) => {
@@ -303,17 +305,18 @@ function createHttpApi(): Api {
     es.addEventListener("stall", (m) => {
       const s = frame<{ host?: string }>(m);
       const host = s && hostOfFrame(hostsNow(), s);
-      if (s && host) h.stall?.({ ...s, host: host.name });
+      if (s && host) h.stall?.(host.id, { ...s, host: host.name });
     });
     es.addEventListener("deploy", (m) => {
-      // Until slice 4 the banner is the update of the host the front runs in.
+      // Each host's update goes to that host's state; the banner reads the one of the host the front runs in (store.ts).
       const d = frame<DeployProgress & { host?: string }>(m);
-      if (d && d.host && d.host === front?.front.id) h.deploy?.(stampDeploy(d, d.host));
+      const host = d && hostOfFrame(hostsNow(), d);
+      if (d && host) h.deploy?.(stampDeploy(d, host.id));
     });
     es.addEventListener("thread.patch", (m) => {
       const p = frame<ThreadPatch & { host?: string }>(m);
       const host = p && hostOfFrame(hostsNow(), p);
-      if (p && host) h.threadPatch?.(stampPatch(p, host.id!));
+      if (p && host) h.threadPatch?.(stampPatch(p, host.id));
     });
     es.addEventListener("thread", (m) => {
       const t = frame<ThreadDTO>(m);
@@ -323,7 +326,7 @@ function createHttpApi(): Api {
     es.addEventListener("event", (m) => {
       const e = frame<FyrEvent & { host?: string }>(m);
       const host = e && hostOfFrame(hostsNow(), e);
-      if (e && host) h.event(stampEvent(e, host.id!));
+      if (e && host) h.event(stampEvent(e, host.id));
     });
     es.onerror = () => {
       if (gen === generation) {
@@ -388,7 +391,7 @@ function createHttpApi(): Api {
     return gaveUp ? { ok: false, error: "Fyr is restarting or not reachable; try again in a moment" } : reply;
   };
 
-  const eachOne = async <T,>(host: string, path: string): Promise<T[]> => {
+  const eachOne = async <T,>(host: HostId, path: string): Promise<T[]> => {
     try {
       const r = await fetch(hostPath(host, path));
       const j = (await r.json().catch(() => [])) as unknown;
@@ -396,24 +399,6 @@ function createHttpApi(): Api {
     } catch {
       return [];
     }
-  };
-
-  /** A read over every host that is online, one call each, joined in the owner's host order. */
-  const eachHost = async <T,>(path: string): Promise<T[]> => {
-    const lists = await Promise.all(
-      addressable(hostsNow())
-        .filter((h) => h.online)
-        .map(async (h) => {
-          try {
-            const r = await fetch(hostPath(h.id!, path));
-            const j = (await r.json().catch(() => [])) as unknown;
-            return r.ok && Array.isArray(j) ? (j as T[]) : [];
-          } catch {
-            return [];
-          }
-        }),
-    );
-    return lists.flat();
   };
 
   const mutate = async (path: string, body: unknown): Promise<{ ok: boolean; error?: string } & Record<string, unknown>> => {
@@ -488,7 +473,7 @@ function createHttpApi(): Api {
       const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}`));
       if (!r.ok) return null;
       const t = (await r.json()) as ThreadDTO;
-      const info = hostsNow().find((x) => x.id === host);
+      const info = addressable(hostsNow()).find((x) => x.id === host);
       return info ? stampThread(t, info) : t;
     },
     async fullEvent(host, threadId, seq) {
@@ -602,16 +587,17 @@ function createHttpApi(): Api {
     peerState: () => getJson<PeerState>(frontPath("/peer/state")).then((s) => ({ ...s, members: s.members ?? [], candidates: s.candidates ?? [] })),
     peerAct: (action, body) => mutate(frontPath(`/peer/${action}`), body),
     authAct: (action, body) => mutate(frontPath(`/auth/${action}`), body),
-    async profiles() {
-      const seen = new Set<string>();
-      return (await eachHost<Profile>("/profiles")).filter((p) => !seen.has(p.id) && !!seen.add(p.id));
+    profiles: (host) => eachOne<Profile>(host, "/profiles"),
+    // Slice 2b: each quota names the host it was read from, so its provider's name is that host's.
+    async quota() {
+      const lists = await Promise.all(addressable(hostsNow()).filter((h) => h.online).map(async (h) => (await eachOne<Quota>(h.id, "/quota")).map((q) => ({ ...q, host: q.host || h.name, hostId: h.id }))));
+      return lists.flat();
     },
-    quota: () => eachHost<Quota>("/quota"),
     async load() {
       const lists = await Promise.all(
         addressable(hostsNow())
           .filter((h) => h.online)
-          .map(async (h) => (await eachOne<HostLoad>(h.id!, "/load")).map((l) => stampLoad(l, h.id!))),
+          .map(async (h) => (await eachOne<HostLoad>(h.id, "/load")).map((l) => stampLoad(l, h.id))),
       );
       return lists.flat();
     },
@@ -622,7 +608,7 @@ function createHttpApi(): Api {
           .filter((h) => h.online)
           .map(async (h) => {
             try {
-              const r = await fetch(hostPath(h.id!, "/board/visit"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: "{}" });
+              const r = await fetch(hostPath(h.id, "/board/visit"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: "{}" });
               const j = (await r.json().catch(() => ({}))) as { seenAt?: string | null };
               return r.ok && typeof j.seenAt === "string" ? j.seenAt : null;
             } catch {
@@ -648,9 +634,10 @@ function createHttpApi(): Api {
         return { error: "Fyr is not reachable." };
       }
     },
-    async presence(host, threadId, device) {
+    async presence(open, device) {
       try {
-        await fetch(frontPath("/presence"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ host, threadId: bare(host, threadId), device }), keepalive: true });
+        const body = open ? { host: open.host, threadId: bare(open.host, open.threadId), device } : { host: "", threadId: "", device };
+        await fetch(frontPath("/presence"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify(body), keepalive: true });
       } catch {
         /* best effort */
       }

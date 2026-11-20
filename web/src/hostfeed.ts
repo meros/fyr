@@ -1,12 +1,13 @@
-// Decision 0031 slice 2a: the front's state (/api/front/state: the hosts) and each host's own state
-// (/api/h/<id>/state) become the one state the store reads today. A thread's host is the host whose state or frame it
-// came in: it is stamped here, by name for what is shown (`host`) and by install id for what is sent (`hostId`). The
-// store keeps one threads map until slice 2b, so what is stamped is all that tells a record's host. Pure.
+// Decision 0031: the front's state (/api/front/state: the hosts) and each host's own state (/api/h/<id>/state) make the
+// snapshot the store reads: one state per host, by install id (slice 2b). A record's host is the host whose state or
+// frame it came in: it is stamped here, by name for what is shown (`host`) and by install id for what is sent
+// (`hostId`). Pure.
 import type { HostInfo } from "./hosts.ts";
 import { decodeHosts } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import type { DeployProgress } from "./deploy.ts";
 import type { HostLoad, Slots } from "./load.ts";
-import type { FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
+import type { FyrEvent, Project, StateDTO, ThreadDTO } from "./types.ts";
 
 /** /api/front/state: what belongs to no host. */
 export interface FrontState {
@@ -34,8 +35,8 @@ export function decodeFront(raw: unknown): FrontState {
 }
 
 /** The hosts that can be addressed: a host without an install id (a Fyr older than V0.124) is listed and has nothing. */
-export function addressable(hosts: HostInfo[]): HostInfo[] {
-  return hosts.filter((h) => !!h.id);
+export function addressable(hosts: readonly HostInfo[]): (HostInfo & { id: HostId })[] {
+  return hosts.filter((h): h is HostInfo & { id: HostId } => !!h.id);
 }
 
 // ---- refs (decision 0031 2.5) ----
@@ -65,9 +66,9 @@ export function unrefDeep<T>(host: string, value: T): T {
 
 /** A thread as the client keeps it: its ref as its id (the host's in `rid`), its host's name and id, and the time the
  *  host went away while it is unreachable. */
-export function stampThread(t: ThreadDTO, h: HostInfo): ThreadDTO {
+export function stampThread(t: ThreadDTO, h: HostInfo & { id: HostId }): ThreadDTO {
   const { hostOffline: _, ...rest } = t;
-  const host = h.id ?? "";
+  const host = h.id;
   return {
     ...rest,
     id: ref(host, t.id),
@@ -81,25 +82,25 @@ export function stampThread(t: ThreadDTO, h: HostInfo): ThreadDTO {
   };
 }
 
-export function stampProject(p: Project, h: HostInfo): Project {
-  const host = h.id ?? "";
+export function stampProject(p: Project, h: HostInfo & { id: HostId }): Project {
+  const host = h.id;
   return { ...p, ...(p.id ? { id: ref(host, p.id), rid: p.id } : {}), host: h.name, hostId: host };
 }
 
 /** A timeline event of a host's thread: its subject is the thread's ref. */
-export function stampEvent(e: FyrEvent, host: string): FyrEvent {
+export function stampEvent(e: FyrEvent, host: HostId): FyrEvent {
   return { ...e, subject: ref(host, e.subject) };
 }
 
 /** A thread patch: the thread's ref, and the ids inside the patch as refs. */
-export function stampPatch(p: { id: string; rev: number; base: number; patch: Record<string, unknown> }, host: string) {
+export function stampPatch(p: { id: string; rev: number; base: number; patch: Record<string, unknown> }, host: HostId) {
   const patch = { ...p.patch };
   for (const k of ["projectId", "parent"]) if (typeof patch[k] === "string" && patch[k]) patch[k] = ref(host, patch[k] as string);
-  return { ...p, id: ref(host, p.id), patch };
+  return { ...p, id: ref(host, p.id), host, patch };
 }
 
 /** The ids a load or deploy names (a thread of that host; "self-deploy" is not one) as refs. */
-export function stampSlots(x: Slots, host: string): Slots {
+export function stampSlots(x: Slots, host: HostId): Slots {
   const r = (id: string) => (id === "self-deploy" ? id : ref(host, id));
   return {
     ...x,
@@ -109,12 +110,13 @@ export function stampSlots(x: Slots, host: string): Slots {
   };
 }
 
-export function stampLoad(l: HostLoad, host: string): HostLoad {
+export function stampLoad(l: HostLoad, host: HostId): HostLoad {
   const r = (id: string) => (id === "self-deploy" ? id : ref(host, id));
   const slots = (x: Slots) => stampSlots(x, host);
   const heavy = (l as { heavy?: Slots }).heavy;
   return {
     ...l,
+    hostId: host,
     threads: (l.threads ?? []).map((t) => ({ ...t, id: r(t.id) })),
     ...(l.slots ? { slots: slots(l.slots) } : {}),
     ...(heavy ? ({ heavy: slots(heavy) } as object) : {}),
@@ -123,58 +125,61 @@ export function stampLoad(l: HostLoad, host: string): HostLoad {
   };
 }
 
-export function stampDeploy(d: DeployProgress, host: string): DeployProgress {
+export function stampDeploy(d: DeployProgress, host: HostId): DeployProgress {
   return { ...d, host, ...(d.blocking ? { blocking: d.blocking.map((x) => ref(host, x)) } : {}) };
 }
 
 /** One host's state with the host it came from. */
 export interface HostResult {
-  host: HostInfo;
+  host: HostInfo & { id: HostId };
   state: StateDTO;
 }
 
-/** The front's state and every host's, in the shape the store reads: records stamped, actions the first host's,
- *  profiles merged by id with the first host's winning, the deploy of the host the front runs in (the banner, until
- *  slice 4), each host's stall named by its host. */
-export function flatten(front: FrontState, results: HostResult[]): StateDTO {
-  const threads: ThreadDTO[] = [];
-  const projects: Project[] = [];
-  const profiles: Profile[] = [];
-  const seen = new Set<string>();
-  const stalls: unknown[] = [];
-  let actions: StateDTO["actions"] = [];
-  let deploy: StateDTO["deploy"] = null;
-  for (const { host, state } of results) {
-    for (const t of state.threads ?? []) threads.push(stampThread(t, host));
-    for (const p of state.projects ?? []) projects.push(stampProject(p, host));
-    for (const p of state.profiles ?? []) if (!seen.has(p.id)) (seen.add(p.id), profiles.push(p));
-    if (!actions.length && state.actions?.length) actions = state.actions;
-    if (host.id === front.front.id && state.deploy) deploy = stampDeploy(state.deploy, host.id ?? "");
-    if (state.stall && typeof state.stall === "object") stalls.push({ ...(state.stall as object), host: host.name });
-  }
-  const self = front.hosts.find((h) => h.id === front.front.id);
+/** What the store reads on a (re)load (decision 0031 2.5): the front's own state and each host's, by install id, its
+ *  records stamped. Nothing is merged across hosts: each host keeps its own threads, projects, profiles, actions,
+ *  deploy and stall. `front` names the front for the three uses of 2.6 only. */
+export interface Snapshot {
+  now: string;
+  user: string;
+  buildId?: string;
+  front: { id: string; name: string };
+  hosts: HostInfo[];
+  projectOrder?: string[];
+  hostMarks?: StateDTO["hostMarks"];
+  /** each addressable host's own state, by install id */
+  states: Record<string, StateDTO>;
+}
+
+/** One host's state as the store keeps it: its records stamped with the host, its deploy and stall named by it. */
+export function stampState(state: StateDTO, h: HostInfo & { id: HostId }): StateDTO {
+  return {
+    ...state,
+    threads: (state.threads ?? []).map((t) => stampThread(t, h)),
+    projects: (state.projects ?? []).map((p) => stampProject(p, h)),
+    deploy: state.deploy ? stampDeploy(state.deploy, h.id) : null,
+    ...(state.stall && typeof state.stall === "object" ? { stall: { ...(state.stall as object), host: h.name } } : {}),
+  };
+}
+
+/** The front's state and every host's, in the shape the store reads. */
+export function snapshotOf(front: FrontState, results: HostResult[]): Snapshot {
+  const states: Record<string, StateDTO> = {};
+  for (const { host, state } of results) states[host.id] = stampState(state, host);
   return {
     now: front.now,
     user: front.user,
     ...(front.buildId ? { buildId: front.buildId } : {}),
-    host: front.front.name,
-    hostId: front.front.id,
-    ...(self?.machine ? { machine: self.machine } : {}),
-    ...(front.hostMarks ? { hostMarks: front.hostMarks } : {}),
+    front: front.front,
     hosts: front.hosts,
-    threads,
-    projects,
-    actions,
-    profiles,
-    deploy,
-    ...(stalls.length ? { stalls } : {}),
+    ...(front.hostMarks ? { hostMarks: front.hostMarks } : {}),
     ...(front.projectOrder ? { projectOrder: front.projectOrder } : {}),
+    states,
   };
 }
 
 /** A frame of a host's stream names the host by install id: the host's row, or undefined for one not listed. */
-export function hostOfFrame(hosts: HostInfo[], frame: { host?: unknown }): HostInfo | undefined {
-  return typeof frame.host === "string" ? hosts.find((h) => h.id === frame.host) : undefined;
+export function hostOfFrame(hosts: HostInfo[], frame: { host?: unknown }): (HostInfo & { id: HostId }) | undefined {
+  return typeof frame.host === "string" && frame.host ? addressable(hosts).find((h) => h.id === frame.host) : undefined;
 }
 
 /** Whether the hosts that are reachable changed: then every host's state is read again (a thread's offline stamp and

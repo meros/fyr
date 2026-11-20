@@ -1,4 +1,5 @@
 // SPEC 0.5 V0.80: the machine load (rail) and each working thread's CPU (rows), as words. Pure.
+import type { HostId } from "./hostid.ts";
 import type { Guard } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
 import type { Card, CardRow } from "./card.ts";
@@ -50,6 +51,8 @@ export interface JobClass {
 }
 export interface HostLoad {
   host: string;
+  /** Slice 2b: the install id of the host it was read from (hostfeed.ts `stampLoad`): a command about it names this */
+  hostId?: HostId;
   at?: string;
   cores: number;
   /** 1, 5 and 15 minutes */

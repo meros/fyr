@@ -1,5 +1,6 @@
 // DTOs of the v0 HTTP API (docs/API-v0.md). The client renders these; it never computes status.
 
+import type { HostId } from "./hostid.ts";
 export type AttentionState =
   | "asking"
   | "failed"
@@ -110,7 +111,7 @@ export interface ThreadDTO {
   /** V0.51: the name of the host that runs the thread */
   host?: string;
   /** Decision 0031: the install id of the host whose state or frame the thread came in; the client stamps it */
-  hostId?: string;
+  hostId?: HostId;
   /** Decision 0031: the host's own id of the thread; `id` is the ref (`<hostId>/<rid>`) the client keys by */
   rid?: string;
   /** V0.51: the host is unreachable since then (RFC 3339): the front shows its cached copy, read-only */
@@ -190,6 +191,8 @@ export interface ThreadDTO {
  * ones), so no screen needs `?? []`. The wire type stays ThreadDTO.
  */
 export interface Thread extends ThreadDTO {
+  /** Slice 2b: the host whose state the thread is kept in; every thread the store holds has one */
+  hostId: HostId;
   decisions: Decision[];
   tasks: TaskDTO[];
   changes: Change[];
@@ -241,7 +244,7 @@ export interface Project {
   /** V0.51: the host the project lives on (a front stamps it) */
   host?: string;
   /** Decision 0031: the install id of the host the project came from; the client stamps it */
-  hostId?: string;
+  hostId?: HostId;
   /** Decision 0031: the host's own id of the project; `id` is the ref */
   rid?: string;
   name: string;
@@ -257,7 +260,7 @@ export interface Project {
   /** Decision 0034: when the values the members share were set; the newest wins */
   sharedAt?: string;
   /** Decision 0034: the client's: the member whose image a linked project shows */
-  imageFrom?: { id: string; hostId: string };
+  imageFrom?: { id: string; hostId: HostId };
   /** Decision 0034: the client's: every record of a linked project, the one shown first; absent on any other project */
   members?: Project[];
   profile?: string;

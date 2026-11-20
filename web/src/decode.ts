@@ -2,6 +2,7 @@
 // omits empty fields (Go omitempty), so every field a screen reads without a
 // check gets its empty value here, and nothing past this point needs `?? ""`.
 import { decodeHosts } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import type { Attention, Decision, NewProjectDraft, Project, StateDTO, Thread } from "./types.ts";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -17,11 +18,13 @@ function decodeDraft(raw: unknown): NewProjectDraft | undefined {
   return name ? { name, folder: str(s.folder) } : undefined;
 }
 
-export function decodeThread(raw: unknown): Thread {
+/** Slice 2b: a thread is decoded into the state of the host it came in, so its host is that one whatever it says. */
+export function decodeThread(raw: unknown, host: HostId): Thread {
   const t = obj(raw) as unknown as Thread;
   const a = obj(t.attention);
   return {
     ...t,
+    hostId: host,
     id: str(t.id),
     title: str(t.title),
     cwd: str(t.cwd),
@@ -58,14 +61,15 @@ export function decodeProject(raw: unknown): Project {
 /** The state with its threads decoded (#41). */
 export type DecodedState = Omit<StateDTO, "threads"> & { threads: Thread[] };
 
-export function decodeState(raw: unknown): DecodedState {
+/** One host's state (slice 2b), its threads that host's. */
+export function decodeState(raw: unknown, host: HostId): DecodedState {
   const s = obj(raw) as unknown as StateDTO;
   return {
     ...s,
     now: str(s.now),
     user: str(s.user),
     host: str(s.host),
-    threads: arr(s.threads).map(decodeThread).filter((t) => t.id),
+    threads: arr(s.threads).map((t) => decodeThread(t, host)).filter((t) => t.id),
     projects: arr(s.projects).map(decodeProject),
     actions: arr(s.actions),
     profiles: arr(s.profiles),

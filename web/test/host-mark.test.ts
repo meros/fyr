@@ -5,6 +5,7 @@ import { HOST_ICON_NAMES, hostColors, hostGlyph, hostMarkOf } from "../src/host-
 import { decodeHosts, type HostInfo } from "../src/hosts.ts";
 import { PALETTE_NAMES } from "../src/projects.ts";
 import { decodeHostMarks } from "../src/store.ts";
+import { hid } from "./helpers.ts";
 
 const H = (name: string, extra: Partial<HostInfo> = {}): HostInfo => ({ name, online: true, ...extra });
 
@@ -24,7 +25,7 @@ test("decodeHosts reads machine and os", () => {
 });
 
 test("colours: from the install id, from the palette (never amber), stable, and different for each host", () => {
-  const hosts = [H("home-laptop", { id: "F7QK-2M9X-AB34-CD56" }), H("home-server", { id: "M3RS-QX7P-5LKA-2WNE" }), H("MacBook-Air-7", { id: "B7LA-4QZE-9KDF-3HXW" })];
+  const hosts = [H("home-laptop", { id: hid("F7QK-2M9X-AB34-CD56") }), H("home-server", { id: hid("M3RS-QX7P-5LKA-2WNE") }), H("MacBook-Air-7", { id: hid("B7LA-4QZE-9KDF-3HXW") })];
   const c = hostColors(hosts);
   assert.equal(c.size, 3);
   for (const v of c.values()) assert.ok(PALETTE_NAMES.includes(v));
@@ -38,14 +39,14 @@ test("colours: from the install id, from the palette (never amber), stable, and 
 });
 
 test("ten or more hosts still each get a colour", () => {
-  const many = Array.from({ length: 12 }, (_, i) => H(`h${i}`, { id: `ID${i}` }));
+  const many = Array.from({ length: 12 }, (_, i) => H(`h${i}`, { id: hid(`ID${i}`) }));
   const c = hostColors(many);
   assert.equal(c.size, 12);
   assert.equal(new Set(c.values()).size, 10, "the palette's ten, then they repeat");
 });
 
 test("hostMarkOf: glyph, colour, offline, and the words for its tooltip", () => {
-  const hosts = [H("desk", { id: "A", machine: "desktop" }), H("srv", { id: "B", machine: "server", online: false })];
+  const hosts = [H("desk", { id: hid("A"), machine: "desktop" }), H("srv", { id: hid("B"), machine: "server", online: false })];
   const m = hostMarkOf("srv", hosts);
   assert.equal(m.glyph, "server");
   assert.equal(m.offline, true);
@@ -63,7 +64,7 @@ test("one host: its machine from hosts[], as any host's (decision 0031 2.6: the 
 
 // SPEC 0.5 V0.171: the owner's icon and colour, by install id, override the automatic ones.
 test("the owner's mark: a glyph name or an emoji for the icon, a palette name for the colour", () => {
-  const hosts = [H("desk", { id: "A", machine: "laptop" }), H("srv", { id: "B", machine: "server" })];
+  const hosts = [H("desk", { id: hid("A"), machine: "laptop" }), H("srv", { id: hid("B"), machine: "server" })];
   const marks = { A: { icon: "house", color: "teal" }, B: { icon: "🍓" } };
   const a = hostMarkOf("desk", hosts, hostColors(hosts, marks), marks);
   assert.deepEqual([a.glyph, a.emoji, a.color, a.auto], ["house", undefined, "teal", false]);
@@ -78,7 +79,7 @@ test("the owner's mark: a glyph name or an emoji for the icon, a palette name fo
 });
 
 test("an owner's colour is kept free: the automatic colours of the other hosts avoid it", () => {
-  const hosts = [H("a", { id: "A" }), H("b", { id: "B" }), H("c", { id: "C" })];
+  const hosts = [H("a", { id: hid("A") }), H("b", { id: hid("B") }), H("c", { id: hid("C") })];
   const auto = hostColors(hosts);
   // Give c the colour a had automatically: a then moves to another hue, and no two hosts share one.
   const marks = { C: { color: auto.get("a")! } };

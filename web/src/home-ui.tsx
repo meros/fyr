@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import { HOME_LOG, HOME_MOVES, homeDay, homeLog, hourTicks, openAt, type HomeDay, homeMoves, homeNeeds, homeRunning, homeSummary, lookWindow, runningLine, startOfDay, type HomeMove } from "./home.ts";
-import type { HostInfo } from "./hosts.ts";
+import { profilesOf, type HostInfo, type HostProfiles } from "./hosts.ts";
 import { HostMeters, ThreadCPU, useLoad } from "./load-ui.tsx";
 import { stripHosts } from "./load.ts";
 import { ProjectIcon } from "./project-ui.tsx";
@@ -14,7 +14,7 @@ import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { SECTIONS, type Sections } from "./store.ts";
 import { clockTime, relTime } from "./format.ts";
 import { hostVersions } from "./updates.ts";
-import type { Profile, Project, Thread } from "./types.ts";
+import type { Project, Thread } from "./types.ts";
 
 const LOOK_KEY = "fyr.home.lookedAt";
 
@@ -39,7 +39,8 @@ export interface HomeProps {
   /** what the inbox shows (its filters and quiet hours hold here too) */
   sec: Sections;
   projects: Project[];
-  profiles: Profile[];
+  /** slice 2b: each host's profiles, for the quota lines' names */
+  profiles: HostProfiles;
   hosts: HostInfo[];
   /** the server-adjusted clock */
   now: number;
@@ -309,7 +310,7 @@ function RunTile({ t, p }: { t: Thread; p: HomeProps }) {
 
 /** The machines and the quotas, at the foot: each host's two meters (as on the rail and the phone's strip) and every
  *  provider's quota line; the desktop adds its keys. */
-function SystemStrip({ hosts, profiles, keys }: { hosts: HostInfo[]; profiles: Profile[]; keys?: [string, string][] }) {
+function SystemStrip({ hosts, profiles, keys }: { hosts: HostInfo[]; profiles: HostProfiles; keys?: [string, string][] }) {
   const strip = stripHosts(useLoad(), hosts);
   const quotas = useQuotas();
   const versions = hostVersions(hosts); // V0.versioned-releases
@@ -325,7 +326,7 @@ function SystemStrip({ hosts, profiles, keys }: { hosts: HostInfo[]; profiles: P
       ))}
       {quotas.map((q) => (
         <span class="st-q">
-          <QuotaLine q={q} name={profiles.find((x) => x.id === q.profile)?.name ?? q.profile} bare={false} />
+          <QuotaLine q={q} name={profilesOf(q, profiles).find((x) => x.id === q.profile)?.name ?? q.profile} bare={false} />
         </span>
       ))}
       {versions.map((v) => (

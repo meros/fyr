@@ -1,5 +1,6 @@
 // V0.ai-search: what AI search asks each host and how the answers become one list. No UI here (ai-search-ui.tsx).
 
+import type { HostId } from "./hostid.ts";
 import type { SearchHit } from "./api.ts";
 import { bare, ref } from "./hostfeed.ts";
 import type { Thread } from "./types.ts";
@@ -14,10 +15,10 @@ export interface AiHit {
 
 /** The threads to ask each host about, in list order: host id → the host's own thread ids. A thread with no host id
  *  (an offline host's cached copy can be read, but its host cannot answer) is left out. */
-export function askPerHost(threads: readonly Thread[]): Map<string, string[]> {
-  const out = new Map<string, string[]>();
+export function askPerHost(threads: readonly Thread[]): Map<HostId, string[]> {
+  const out = new Map<HostId, string[]>();
   for (const t of threads) {
-    if (!t.hostId || t.hostOffline) continue;
+    if (t.hostOffline) continue;
     const ids = out.get(t.hostId) ?? [];
     if (ids.length < AI_SEARCH_THREADS) ids.push(t.rid ?? bare(t.hostId, t.id));
     out.set(t.hostId, ids);

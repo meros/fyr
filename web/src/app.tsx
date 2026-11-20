@@ -39,6 +39,13 @@ import {
   applyThreadPatch,
   moveHostInStore,
   resolveRef,
+  viewOf,
+  bannerDeploy,
+  profilesByHost,
+  profilesOn,
+  setProfiles,
+  hostOfThread,
+  type View,
 } from "./store.ts";
 import { migrateStorage, moveHostKeys, moveRef, rotations } from "./storage-migrate.ts";
 import { placeOf, steadyThreads, stillRows, trackArrivals, type FinishHold, type RowPlace } from "./still-list.ts";
@@ -69,14 +76,15 @@ import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf, splitSharedPatch } from "./projects.ts";
+import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, projectRecords, recordOf, splitSharedPatch } from "./projects.ts";
 import { HIDDEN_KEY, NOTHING_HIDDEN, applyHidden, hiddenCount, parseHidden, pushHiddenOf, type Hidden, type PushHidden } from "./hidden.ts";
 import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
-import { hostIdByName, hostOfflineNote, multiHost } from "./hosts.ts";
+import { hostOfflineNote, multiHost } from "./hosts.ts";
+import { asHostId, type HostId } from "./hostid.ts";
 import { HostsContext, ProfilesContext } from "./host-pick-ui.tsx";
 import { HostMarksContext } from "./host-mark-ui.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -229,7 +237,13 @@ function isTextTarget(t: EventTarget | null): boolean {
 function App() {
   // #41: every component reaches the host through ApiContext; a test can provide a fake Api.
   const api = useApi();
-  const [fullStore, setStore] = useState<Store>(initialStore);
+  const [rawStore, setStore] = useState<Store>(initialStore);
+  // Slice 2b: the store keeps each host's state; the lists the screens draw are selectors over the hosts (store.ts viewOf).
+  const fullStore = useMemo(() => viewOf(rawStore), [rawStore]);
+  const rawRef = useRef(rawStore);
+  rawRef.current = rawStore;
+  /** The host whose state has the thread (hidden ones too: Settings and an undo act on them); none for one not kept. */
+  const hostOfId = (id: string) => hostOfThread(rawRef.current, id);
   // V0.207: what this device hides is gone from `store`, so every list on both fronts follows. Settings and the cache
   // read `fullStore`.
   const [deviceHidden, setHiddenState] = useState<Hidden>(() => {
@@ -249,6 +263,8 @@ function App() {
     }
   };
   const store = useMemo(() => applyHidden(fullStore, deviceHidden), [fullStore, deviceHidden]);
+  /** Slice 2b: each host's profiles by install id; a thread's or a project's are its own host's. */
+  const byHost = profilesByHost(rawStore);
   // V0.109: the list keeps no cursor of its own. The marked row is the open thread; with nothing open, the last one.
   const [lastOpen, setLastOpen] = useState<string | null>(null);
   const [view, setView] = useState<{ id: string; mode: "open" | "peek" } | null>(null);
@@ -301,7 +317,7 @@ function App() {
       if ((action === "thread.markSeen" || action === "thread.markUnseen") && ids.length === 1) setFreed(ids[0]);
     },
     undoMs: phone ? PHONE_UNDO_MS : UNDO_MS,
-    hostOf: (id) => threadsRef.current[id]?.hostId ?? "",
+    hostIdOf: (id) => hostOfId(id),
     onUndone: (entry, ok) => {
       const back = reopenRef.current;
       reopenRef.current = null;
@@ -383,10 +399,10 @@ function App() {
   const unlock = useQuietUnlock(store.clockOffset);
   // V0.207: a hidden host or project is no filter value: it would leave a chip behind.
   const filterSel = useMemo<FilterSel>(() => {
-    const gone = (key: string) => fullStore.hosts.some((h) => hostKey(h) === key) && !store.hosts.some((h) => hostKey(h) === key);
+    const gone = (key: string) => fullStore.hostList.some((h) => hostKey(h) === key) && !store.hostList.some((h) => hostKey(h) === key);
     const projectGone = !!findProject(fullStore.projects, projectFilter) && !filterOn;
     return { hostsOff: hostsOff.filter((n) => !gone(n)), project: projectGone ? null : projectFilter || null };
-  }, [hostsOff, projectFilter, fullStore.hosts, fullStore.projects, store.hosts, filterOn]);
+  }, [hostsOff, projectFilter, fullStore.hostList, fullStore.projects, store.hostList, filterOn]);
   // V0.finish-debounce: a thread that just stopped working stays in Moving a few seconds before the list shows it
   // finished, so a run that starts again at once does not blink. The thread view reads store.threads, live.
   const [holdClock, setHoldClock] = useState(0);
@@ -438,7 +454,7 @@ function App() {
   // V0.134, V0.169: the two rows (only values with threads in view; a selected one stays) and the empty state, on both
   // fronts.
   const filterView = useMemo<FilterView>(() => {
-    const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hosts, sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
+    const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hostList, sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
     const locked = !!filterSel.project && chips.projects.some((c) => c.selected && quietLocked(c.project, Date.now() + store.clockOffset, unlock.showUntil));
     return {
       ...chips,
@@ -449,7 +465,7 @@ function App() {
       // V0.114: a locked quiet project shows its gate instead.
       empty: locked ? null : filterEmpty(hideQuiet(searchable, filterOn, Date.now() + store.clockOffset), filterSel, sectionOpen),
     };
-  }, [store.threads, store.projects, store.hosts, filterSel, sectionOpen, unlock.showUntil, searchable, filterOn, quietClock, store.clockOffset]);
+  }, [store.threads, store.projects, store.hostList, filterSel, sectionOpen, unlock.showUntil, searchable, filterOn, quietClock, store.clockOffset]);
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
     for (const s of SECTIONS) l[s.key] = !isOpen(s.key, sectionOpen) ? 0 : expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];
@@ -545,7 +561,7 @@ function App() {
         if (st) clearThreadNotification(p.id, st);
         batch((s) => {
           const r = applyThreadPatch(s, p);
-          if (r.needFull) queueMicrotask(() => void api.thread(s.threads[p.id]?.hostId ?? "", p.id).then((t) => t && setStore((x) => upsertThread(x, t))));
+          if (r.needFull) queueMicrotask(() => void api.thread(p.host, p.id).then((t) => t && setStore((x) => upsertThread(x, t))));
           return r.store;
         });
       },
@@ -553,7 +569,7 @@ function App() {
       project: (p) => batch((s) => upsertProject(s, p)),
       projectOrder: (ids) => batch((s) => setProjectOrder(s, ids)),
       deploy: (p) => batch((s) => setDeploy(s, p)),
-      stall: (raw) => batch((s) => setStall(s, raw)),
+      stall: (host, raw) => batch((s) => setStall(s, host, raw)),
       hosts: (hs) => batch((s) => setHosts(s, hs)),
       hostMarks: (m) => batch((s) => ({ ...s, hostMarks: m })), // V0.171
       conn: (c) => batch((s) => setConn(s, c)),
@@ -593,14 +609,14 @@ function App() {
     } catch {
       return;
     }
-    if (migrateStorage(kv, { hosts: fullStore.hosts, threads: Object.values(fullStore.threads), projects: projectRecords(fullStore.projects) })) rereadFilters();
+    if (migrateStorage(kv, { hosts: fullStore.hostList, threads: Object.values(fullStore.threads), projects: projectRecords(fullStore.projects) })) rereadFilters();
   }, [fullStore.loaded]);
   // Decision 0031 2.1, 2.5: a host listed with a new id and the one it had (idWas): what the device keeps under the old
   // id moves to the new one (the keys, the stored timelines, the store, the thread on screen).
-  const rotationKey = rotations(fullStore.hosts).map((r) => `${r.was}>${r.now}`).join(",");
+  const rotationKey = rotations(fullStore.hostList).map((r) => `${r.was}>${r.now}`).join(",");
   useEffect(() => {
     if (!rotationKey) return;
-    for (const { was, now } of rotations(fullStore.hosts)) {
+    for (const { was, now } of rotations(fullStore.hostList)) {
       let kv: Storage | null = null;
       try {
         kv = localStorage;
@@ -646,8 +662,9 @@ function App() {
   const [earlier, setEarlier] = useState<Record<string, boolean>>({});
   const loadEarlier = (id: string) => {
     const first = store.events[id]?.[0]?.seq;
-    if (!first) return;
-    void api.eventsBefore(store.threads[id]?.hostId ?? "", id, first, PAGE).then((evs) => {
+    const host = hostOfId(id);
+    if (!first || !host) return;
+    void api.eventsBefore(host, id, first, PAGE).then((evs) => {
       setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
       setStore((s) => mergeEvents(s, id, evs));
     });
@@ -665,7 +682,8 @@ function App() {
       const now = Date.now();
       if (shouldBeat(beatRef.current, target, now)) {
         beatRef.current = { last: target, at: now };
-        void api.presence(threadsRef.current[target]?.hostId ?? "", target, device);
+        const host = target ? hostOfId(target) : undefined;
+        void api.presence(host ? { host, threadId: target } : null, device);
       }
     };
     tick();
@@ -692,7 +710,9 @@ function App() {
       if (stored?.length) setStore((s) => (s.events[id] ? s : mergeEvents(s, id, stored, true)));
       const from = known ? after : stored?.length ? stored[stored.length - 1].seq : 0;
       try {
-        const evs = await api.events(threadsRef.current[id]?.hostId ?? "", id, from, PAGE);
+        const host = hostOfId(id);
+        if (!host) throw new Error("no host"); // a thread the store does not keep: nothing to read it from
+        const evs = await api.events(host, id, from, PAGE);
         if (cancelled) return;
         if (!known && !stored?.length) setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
         if (!known && stored?.length) {
@@ -722,16 +742,16 @@ function App() {
     const t = setTimeout(
       () =>
         idle(() =>
-          void cache.saveState(stateForCache(fullStore, new Date().toISOString())),
+          void cache.saveState(stateForCache(rawStore, new Date().toISOString())),
         ),
       2000,
     );
     return () => clearTimeout(t);
-  }, [fullStore.threads, fullStore.projects, fullStore.hosts, fullStore.deploy, fullStore.loaded]);
+  }, [rawStore.hosts, rawStore.hostList, rawStore.loaded]);
 
   // V0.207: the front leaves this device out of the pushes of what it hides. Sent again when push turns on and on a
   // reconnect, so a change made offline arrives.
-  const pushHidden = useMemo(() => JSON.stringify(pushHiddenOf(fullStore.hosts, fullStore.projects, deviceHidden)), [fullStore.hosts, fullStore.projects, deviceHidden]);
+  const pushHidden = useMemo(() => JSON.stringify(pushHiddenOf(fullStore.hostList, fullStore.projects, deviceHidden)), [fullStore.hostList, fullStore.projects, deviceHidden]);
   useEffect(() => {
     if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || api.mock) return;
     void syncPushHidden(api, JSON.parse(pushHidden) as PushHidden);
@@ -779,7 +799,7 @@ function App() {
       if (t && !gatedRef.current && shouldMarkSeen(tr, t, Date.now())) {
         setTracker((x) => markSent(x, t));
         // upTo: only what this view showed counts as seen (API v0, SPEC 6.4).
-        void api.command(t.hostId ?? "", "thread.markSeen", t.id, { upTo: t.activityAt });
+        void api.command(t.hostId, "thread.markSeen", t.id, { upTo: t.activityAt });
       }
     }, 250);
     const onFocus = () => setTracker((x) => setWindowFocus(x, true, Date.now()));
@@ -1134,7 +1154,8 @@ function App() {
     // A project command goes to the project's host, a thread's to the thread's (decision 0031).
     const pid = typeof args.id === "string" ? args.id : typeof args.projectId === "string" ? args.projectId : "";
     // V0.207: from the full store, because Settings also edits what this device hides.
-    const host = (threadId ? fullStore.threads[threadId]?.hostId : recordOf(fullStore.projects, pid)?.hostId) ?? "";
+    const host = threadId ? hostOfId(threadId) : recordOf(fullStore.projects, pid)?.hostId;
+    if (!host) return threadId ? "This thread's host is not one Fyr follows now" : "This project's host is not one Fyr follows now";
     const r = await api.command(host, action, threadId, args);
     return r.ok ? null : (r.error ?? "That did not work");
   };
@@ -1155,10 +1176,12 @@ function App() {
     /** V0.55: the project's one folder, from the picker. */
     setFolder: (id: string, path: string) => projectCommand("project.update", { id, folder: path }),
     /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
-    create: async (name: string, folder: string, threadIds: string[] = [], host?: string): Promise<{ error: string | null; id?: string }> => {
+    create: async (name: string, folder: string, threadIds: string[] = [], host?: HostId): Promise<{ error: string | null; id?: string }> => {
       const args: Record<string, unknown> = { name };
-      // V0.132: on the host picked, else the threads' host (a project made from threads lives where they run).
-      const on = host ? hostIdByName(fullStore.hosts, host) : threadIds.length ? (store.threads[threadIds[0]]?.hostId ?? "") : hostIdByName(store.hosts);
+      // V0.132: on the host picked, else the threads' host (a project made from threads lives where they run). Slice 2b:
+      // never a default host; the forms name one.
+      const on = host ?? (threadIds.length ? hostOfId(threadIds[0]) : undefined);
+      if (!on) return { error: "Pick the host the project lives on" };
       if (folder) args.folder = folder;
       if (threadIds.length === 1) args.threadId = threadIds[0];
       const r = await api.command(on, "project.create", undefined, args);
@@ -1182,7 +1205,7 @@ function App() {
       setStore((s) => setProjectOrder(s, all));
       const r = await api.frontCommand("front.projectOrder", { ids: all });
       if (r.ok) return null;
-      setStore((s) => (before ? setProjectOrder(s, before) : { ...s, projectOrder: null, projects: orderProjects(s.projects, null) }));
+      setStore((s) => (before ? setProjectOrder(s, before) : { ...s, projectOrder: null }));
       return r.error ?? "That did not work";
     },
     /** File threads into a project; null: No project. Shows the result or the error as a toast. */
@@ -1205,7 +1228,7 @@ function App() {
       return failed?.[0]?.error ?? null;
     },
     /** Decision 0034: the project gets a member on another host, in a folder there. */
-    add: async (id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }> => {
+    add: async (id: string, host: HostId, folder: string): Promise<{ error: string | null; id?: string }> => {
       const r = await api.frontCommand("front.projectAdd", { ref: id, host, folder });
       if (!r.ok) return { error: r.error ?? "That did not work" };
       return { error: null, id: (r.result as { id?: string } | undefined)?.id };
@@ -1235,22 +1258,24 @@ function App() {
   const confirmHost = useConfirmHost(phone);
   // V0.132: the picker reads the folders of the host it was opened for; an offline host says so, and no other host's
   // folders stand in.
-  const pickHost = folderPick?.host ?? "";
-  const pickId = hostIdByName(pickHost ? fullStore.hosts : store.hosts, pickHost); // V0.207: Settings may name a hidden host
-  const pickFs: FsApi = { fsList: (p) => api.fsList(pickId, p), fsRecent: () => api.fsRecent(pickId), fsRepos: () => api.fsRepos(pickId), fsMkdir: (a, b) => api.fsMkdir(pickId, a, b) };
-  const pickTitle = `${folderPick?.title ?? "Pick a folder"}${pickHost && multiHost(fullStore.hosts) ? ` on ${pickHost}` : ""}`;
-  const pickNote = hostOfflineNote(pickHost, fullStore.hosts, now);
+  // Slice 2b: by install id (V0.207: Settings may name a hidden host); a picker opened for no host says so.
+  const pickId = folderPick?.host;
+  const pickHost = fullStore.hostList.find((h) => h.id === pickId)?.name ?? "";
+  const noHost = () => Promise.reject(new Error("no host to read folders from"));
+  const pickFs: FsApi = pickId ? { fsList: (p) => api.fsList(pickId, p), fsRecent: () => api.fsRecent(pickId), fsRepos: () => api.fsRepos(pickId), fsMkdir: (a, b) => api.fsMkdir(pickId, a, b) } : { fsList: noHost, fsRecent: noHost, fsRepos: noHost, fsMkdir: noHost };
+  const pickTitle = `${folderPick?.title ?? "Pick a folder"}${pickHost && multiHost(fullStore.hostList) ? ` on ${pickHost}` : ""}`;
+  const pickNote = hostOfflineNote(pickId, fullStore.hostList, now);
   const pickBody = (autoFocus: boolean) =>
     pickNote ? (
       <div class="note fnote" role="alert">
         {pickNote}
       </div>
     ) : (
-      <FolderPicker key={pickHost} fs={pickFs} first={folderPick?.first} onPick={closeFolderPick} autoFocus={autoFocus} />
+      <FolderPicker key={pickId ?? ""} fs={pickFs} first={folderPick?.first} onPick={closeFolderPick} autoFocus={autoFocus} />
     );
   // V0.132: the hosts a new project or thread can live on (HostField, NewProjectStep).
-  const hostsCtx = useMemo(() => ({ hosts: store.hosts, now }), [store.hosts, Math.floor(now / 60_000)]);
-  const allHostsCtx = useMemo(() => ({ ...hostsCtx, hosts: fullStore.hosts }), [hostsCtx, fullStore.hosts]); // V0.207: Settings
+  const hostsCtx = useMemo(() => ({ hosts: store.hostList, now }), [store.hostList, Math.floor(now / 60_000)]);
+  const allHostsCtx = useMemo(() => ({ ...hostsCtx, hosts: fullStore.hostList }), [hostsCtx, fullStore.hostList]); // V0.207: Settings
   const folderPickView = folderPick
     ? phone ? (
         <BottomSheet onClose={() => closeFolderPick(null)} label={pickTitle} cls="fsheet" scrimCls="fscrim">
@@ -1297,8 +1322,9 @@ function App() {
     if (a.title) args.title = a.title;
     if (a.view) args.view = true;
     if (a.effort) args.effort = a.effort;
-    // V0.132: the host picked; else the project's; else the first, as the picker's default (the call names it).
-    const on = a.host ? hostIdByName(store.hosts, a.host) : a.projectId ? (recordOf(store.projects, a.projectId)?.hostId ?? "") : hostIdByName(store.hosts);
+    // V0.132: the host the form names (slice 2b: it always names one, else nothing starts); else the project's.
+    const on = a.host ?? (a.projectId ? recordOf(store.projects, a.projectId)?.hostId : undefined);
+    if (!on) return "Pick the host the thread starts on";
     const r = await api.command(on, "thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
@@ -1317,8 +1343,8 @@ function App() {
     return null;
   };
 
-  const adopt = async (ids: string[], host?: string): Promise<string | null> => {
-    const r = await api.command(hostIdByName(store.hosts, host), "t3.adopt", undefined, { t3Ids: ids }); // V0.139
+  const adopt = async (ids: string[], host: HostId): Promise<string | null> => {
+    const r = await api.command(host, "t3.adopt", undefined, { t3Ids: ids }); // V0.139
     if (!r.ok) return r.error ?? "Could not adopt";
     setDialog(null);
     cmds.notify(ids.length === 1 ? "Adopted 1 thread" : `Adopted ${ids.length} threads`);
@@ -1327,9 +1353,10 @@ function App() {
 
   // V0.83: Restart now on the update banner: Fyr's confirmation first, then the deploy stops waiting and switches.
   const restartNow = async () => {
-    const p = store.deploy;
-    if (!p || !(await confirmHost.ask(restartNowAsk(p, store.threads)))) return;
-    const r = await api.command(p.host ?? "", "host.deployNow"); // decision 0031: the host whose update it is
+    const p = bannerDeploy(store);
+    const host = asHostId(p?.host);
+    if (!p || !host || !(await confirmHost.ask(restartNowAsk(p, store.threads)))) return;
+    const r = await api.command(host, "host.deployNow"); // decision 0031: the host whose update it is
     if (!r.ok) cmds.notify(r.error ?? "Fyr could not restart now");
   };
 
@@ -1558,7 +1585,13 @@ function App() {
   }, [pendingOpen, store.threads]);
 
   // V0.50: Settings reloads the profiles after a provider changed.
-  const reloadProfiles = () => void api.profiles().then((ps) => ps.length && setStore((s) => ({ ...s, profiles: ps })));
+  // Slice 2b: each host's own, into that host's state.
+  const reloadProfiles = () => {
+    for (const h of fullStore.hostList) {
+      const id = h.id;
+      if (id && h.online) void api.profiles(id).then((ps) => ps.length && setStore((s) => setProfiles(s, id, ps)));
+    }
+  };
   // V0.119: the rail's bell opens Settings at This device (the Notifications dialog is gone).
   const pwaControls = (
     <PwaControls
@@ -1597,8 +1630,8 @@ function App() {
     <HostsContext.Provider value={allHostsCtx}>
     <Settings
       api={api}
-      front={store.host}
-      hosts={fullStore.hosts}
+      front={store.front.name}
+      hosts={fullStore.hostList}
       user={store.user}
       phone={!!phoneHeader}
       at={at}
@@ -1609,7 +1642,7 @@ function App() {
       clockKnown={store.loaded}
       device={settingsDevice}
       projects={fullStore.projects}
-      profiles={store.profiles}
+      profilesByHost={byHost}
       now={now}
       projectActions={{
         update: projectActions.update,
@@ -1747,12 +1780,13 @@ function App() {
 <HostsContext.Provider value={hostsCtx}>
 <HostMarksContext.Provider value={store.hostMarks}>
         <ConfirmProvider value={confirmHost.ask}>
-        <ProfilesContext.Provider value={store.profiles}>
+        <ProfilesContext.Provider value={byHost}>
         <Boundary name="Fyr">
         <PreviewViewer />
         <PhoneApp
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
           store={store}
+          profiles={byHost}
           allProjects={fullStore.projects}
           inbox={{ sec, rows, guest, searchable, all: filtered, unlock }}
           now={now}
@@ -1791,8 +1825,8 @@ function App() {
           projectActions={projectActions}
           status={
             <>
-              <StallBanner stalls={store.stalls} multiHost={store.hosts.length > 1} phone />
-              <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />
+              <StallBanner stalls={store.stalls} multiHost={store.hostList.length > 1} phone />
+              <DeployBanner p={bannerDeploy(store)} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />
             </>
           }
           overlay={
@@ -1804,7 +1838,7 @@ function App() {
         />
         {nav.sheet?.kind === "adopt" && (
           <AdoptDialog
-            load={(h) => api.t3Candidates(hostIdByName(store.hosts, h))}
+            load={(h) => api.t3Candidates(h)}
             now={now}
             onClose={navBack}
             onAdopt={async (ids, h) => {
@@ -1843,8 +1877,8 @@ function App() {
 
   return (
     <div class="shell">
-      <StallBanner stalls={store.stalls} multiHost={store.hosts.length > 1} />
-      <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} onRestartNow={() => void restartNow()} />
+      <StallBanner stalls={store.stalls} multiHost={store.hostList.length > 1} />
+      <DeployBanner p={bannerDeploy(store)} threads={store.threads} conn={store.conn} onRestartNow={() => void restartNow()} />
       {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
@@ -1853,9 +1887,9 @@ function App() {
 <HostsContext.Provider value={hostsCtx}>
 <HostMarksContext.Provider value={store.hostMarks}>
       <ConfirmProvider value={confirmHost.ask}>
-      <ProfilesContext.Provider value={store.profiles}>
+      <ProfilesContext.Provider value={byHost}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
-        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
+        <Rail sec={sec} active={activeSection} profiles={byHost} conn={store.conn} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}
@@ -1896,7 +1930,7 @@ function App() {
             now={now}
             onEarlier={earlier[view.id] ? () => loadEarlier(view.id) : undefined}
             onBack={closePeek}
-            profiles={store.profiles}
+            profiles={byHost}
             card={card}
             answerField={answerField}
             onCard={(cs) => decision && setCards((c) => ({ ...c, [decision.id]: cs }))}
@@ -1926,7 +1960,7 @@ function App() {
           // V0.status-home: no thread open: the status screen.
           <section class="th">
             <Boundary name="Status">
-              <HomeScreen sec={sec} projects={store.projects} profiles={store.profiles} hosts={store.hosts} now={now} loaded={store.loaded} onOpen={(id) => openThread(id, "open")} onAllNeeds={() => jump("needs")} keys={HOME_KEYS} />
+              <HomeScreen sec={sec} projects={store.projects} profiles={byHost} hosts={store.hostList} now={now} loaded={store.loaded} onOpen={(id) => openThread(id, "open")} onAllNeeds={() => jump("needs")} keys={HOME_KEYS} />
             </Boundary>
           </section>
         ) : (
@@ -1964,7 +1998,7 @@ function App() {
           )}
         </Pop>
       )}
-      {dialog === "new" && <NewThreadDialog onAddProject={projectActions.add} profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
+      {dialog === "new" && <NewThreadDialog onAddProject={projectActions.add} profiles={byHost} hosts={store.hostList} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
       {dialog === "picker" && (
         <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">
@@ -1986,9 +2020,9 @@ function App() {
         </Modal>
       )}
       {dialog === "handover" && handoverId && store.threads[handoverId] && (
-        <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m, e) => cmds.handover(handoverId, pr, m, e)} />
+        <HandoverDialog t={store.threads[handoverId]} profiles={profilesOn(rawStore, store.threads[handoverId].hostId)} onClose={() => setDialog(null)} onConfirm={(pr, m, e) => cmds.handover(handoverId, pr, m, e)} />
       )}
-      {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(hostIdByName(store.hosts, h))} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
+      {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(h)} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "changes" && (
         <Modal title="Changes" wide onClose={() => setDialog(null)}>
           <div class="db">
@@ -2024,7 +2058,7 @@ function App() {
   );
 }
 
-function tgtThread(s: Store, zone: Zone, view: { id: string } | null, sel: string | null): Thread | undefined {
+function tgtThread(s: View, zone: Zone, view: { id: string } | null, sel: string | null): Thread | undefined {
   const id = zone === "thread" && view ? view.id : sel;
   return id ? s.threads[id] : undefined;
 }

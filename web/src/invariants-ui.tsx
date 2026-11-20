@@ -4,8 +4,6 @@
 // buttons are 44 px (phone.css: touch); nothing else differs. The texts are invariants.ts's.
 import { useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import { hostIdByName } from "./hosts.ts";
-import { useHosts } from "./host-pick-ui.tsx";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { cardHead, cardWhen, fixState, invariantCards, linesLabel, type HostCard } from "./invariants.ts";
 
@@ -25,13 +23,13 @@ export function InvariantCards({ phone, now, onOpen }: { phone: boolean; now: nu
 
 function InvariantCardView({ c, hosts, now, onOpen }: { c: HostCard; hosts: number; now: number; onOpen?: (id: string) => void }) {
   const api = useApi();
-  const { hosts: known } = useHosts();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fix = fixState(c);
   const run = async (action: string) => {
+    if (!c.hostId) return setErr("This host reports no install id, so nothing can be sent to it until it updates");
     setBusy(true);
-    const r = await api.command(hostIdByName(known, c.host), action, undefined, { id: c.card.id });
+    const r = await api.command(c.hostId, action, undefined, { id: c.card.id });
     setBusy(false);
     setErr(r.ok ? null : (r.error ?? "That did not work"));
     refreshLoad();

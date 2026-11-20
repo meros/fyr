@@ -5,11 +5,12 @@
 // as before. Pure.
 import { dayTime } from "./format.ts";
 import type { HostInfo } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import type { AutoMergeRepo } from "./automerge.ts";
 
 export interface SettingsHost {
-  /** the host's install id, which every call names (decision 0031); "" for a host that reports none */
-  id: string;
+  /** the host's install id, which every call names (decision 0031); none for a host that reports none */
+  id?: HostId;
   /** the host's name, the key of its part; "" for the one part of a front with one host */
   name: string;
   /** the name shown */
@@ -26,8 +27,8 @@ export interface SettingsHost {
  *  the owner's host order (V0.132; the front sends hosts[] in it). */
 export function settingsHosts(hosts: Pick<HostInfo, "id" | "name" | "online" | "since">[] | undefined): SettingsHost[] {
   const hs = hosts ?? [];
-  if (hs.length <= 1) return [{ id: hs[0]?.id ?? "", name: "", label: hs[0]?.name ?? "", online: true }];
-  return hs.map((h) => ({ id: h.id ?? "", name: h.name, label: h.name, online: h.online, ...(h.since ? { since: h.since } : {}), ...(h.id ? {} : { noId: true as const }) }));
+  if (hs.length <= 1) return [{ ...(hs[0]?.id ? { id: hs[0].id } : {}), name: "", label: hs[0]?.name ?? "", online: true }];
+  return hs.map((h) => ({ ...(h.id ? { id: h.id } : {}), name: h.name, label: h.name, online: h.online, ...(h.since ? { since: h.since } : {}), ...(h.id ? {} : { noId: true as const }) }));
 }
 
 /** The line under a group's heading: "Online since 08:31", "Offline since 19:40", "Needs an update". */

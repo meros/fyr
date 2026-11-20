@@ -4,7 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hostsOffToIds, migrateStorage, moveHostKeys, moveRef, refFor, rotations, STORAGE_VERSION_KEY, type KVList } from "../src/storage-migrate.ts";
 import { draftStore } from "../src/drafts.ts";
-import { moveHostInStore, initialStore, resolveRef } from "../src/store.ts";
+import { moveHostInStore, initialStore, resolveRef, emptyHost, allThreads } from "../src/store.ts";
+import { hid } from "./helpers.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Thread } from "../src/types.ts";
 
@@ -22,10 +23,10 @@ function kv(init: Record<string, string> = {}): KVList & { m: Map<string, string
   };
 }
 
-const A = "AAAA-1111-AAAA-1111";
-const B = "BBBB-2222-BBBB-2222";
+const A = hid("AAAA-1111-AAAA-1111");
+const B = hid("BBBB-2222-BBBB-2222");
 const hosts: HostInfo[] = [{ name: "desk", online: true, id: A }, { name: "lab", online: true, id: B }, { name: "old-nuc", online: true }];
-const th = (host: string, rid: string) => ({ id: host ? `${host}/${rid}` : rid, rid, hostId: host });
+const th = (host: string, rid: string) => ({ id: host ? `${host}/${rid}` : rid, rid, hostId: hid(host) });
 // t_same is on both hosts; t_one only on A; p_web only on B; t_nuc on the host with no id
 const threads = [th(A, "t_same"), th(B, "t_same"), th(A, "t_one"), th("", "t_nuc")];
 const projects = [th(B, "p_web"), th(A, "p_same"), th(B, "p_same")];
@@ -83,7 +84,7 @@ test("hostsOffToIds: names to ids, ids stay, unknown names go", () => {
 });
 
 test("test 6: a rotated host's keys and refs move from the old id to the new one", () => {
-  const N = "NNNN-3333-NNNN-3333";
+  const N = hid("NNNN-3333-NNNN-3333");
   const s = kv({
     [`fyr.draft.${A}/t_one`]: "draft on A",
     [`fyr.draft.${B}/t_same`]: "draft on B",
@@ -107,10 +108,12 @@ test("test 6: a rotated host's keys and refs move from the old id to the new one
   assert.equal(moveRef(`${B}/t_one`, A, N), `${B}/t_one`);
 
   const t = { id: `${A}/t_one`, rid: "t_one", hostId: A } as Thread;
-  const st = { ...initialStore(), threads: { [t.id]: t, [`${B}/t_same`]: { id: `${B}/t_same` } as Thread }, events: { [t.id]: [{ seq: 1, subject: t.id } as never] }, resumeFrom: { [t.id]: 1 } };
+  const bt = { id: `${B}/t_same`, hostId: B } as Thread;
+  const st = { ...initialStore(), hosts: { [A]: { ...emptyHost(), threads: { [t.id]: t } }, [B]: { ...emptyHost(), threads: { [bt.id]: bt } } }, events: { [t.id]: [{ seq: 1, subject: t.id } as never] }, resumeFrom: { [t.id]: 1 } };
   const moved = moveHostInStore(st, A, N);
-  assert.deepEqual(Object.keys(moved.threads).sort(), [`${B}/t_same`, `${N}/t_one`]);
-  assert.equal(moved.threads[`${N}/t_one`].hostId, N);
+  assert.deepEqual(Object.keys(moved.hosts).sort(), [B, N].sort(), "slice 2b: the host's state moves to the new id");
+  assert.deepEqual(Object.keys(allThreads(moved)).sort(), [`${B}/t_same`, `${N}/t_one`]);
+  assert.equal(moved.hosts[N].threads[`${N}/t_one`].hostId, N);
   assert.equal((moved.events[`${N}/t_one`][0] as { subject: string }).subject, `${N}/t_one`);
   assert.deepEqual(moved.resumeFrom, { [`${N}/t_one`]: 1 });
   assert.equal(moveHostInStore(moved, A, N), moved, "nothing left to move");

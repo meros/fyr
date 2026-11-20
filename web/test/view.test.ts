@@ -5,12 +5,12 @@ import { PRESS_MAX, bridgeMessage, composerAnswers, defaultTab, showsDecision, l
 import { threadMenu } from "../src/menu.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { decodeThread } from "../src/decode.ts";
-import { thread } from "./helpers.ts";
+import { TH, thread } from "./helpers.ts";
 
 const live = { pageId: "a1", state: { headline: "Tests pass", steps: ["a"] }, updatedAt: "2026-11-14T09:00:00Z", checkedAt: "2026-11-14T09:00:00Z", headline: "Tests pass" };
 
 test("the view folds from the thread DTO; no page is no view", () => {
-  const t = decodeThread({ id: "t1", liveView: true, live, attention: { state: "done", section: "needs" } });
+  const t = decodeThread({ id: "t1", liveView: true, live, attention: { state: "done", section: "needs" } }, TH);
   assert.deepEqual(liveViewOf(t), live);
   assert.equal(liveViewOf(thread("t2", "done", "needs")), null);
   assert.equal(liveViewOf(thread("t3", "done", "needs", { live: { state: { headline: "x" } } })), null, "state without a page");

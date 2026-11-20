@@ -1,6 +1,7 @@
 // In-thread previews (SPEC 0.5 V0.19): the card model for a `preview` event, frame heights, and
 // which markdown image sources render inline. Pure.
 
+import type { HostId } from "./hostid.ts";
 import { attachmentUrl, type ContentUrls } from "./attach.ts";
 import { AGENT_ATTACHMENT, hostUrl } from "./urls.ts";
 
@@ -31,7 +32,7 @@ export const FRAME_MAX = 2000;
 const FRAME_DEFAULT = 400;
 
 /** Where an HTML page loads from on the host: a preview or a live view (V0.37), on the thread's host (V0.54). */
-export function previewUrl(host: string, id: string): string {
+export function previewUrl(host: HostId | undefined, id: string): string {
   return hostUrl(host, `/previews/${encodeURIComponent(id)}`);
 }
 
@@ -44,7 +45,7 @@ function num(v: unknown): number {
 }
 
 /** The card for a `preview` event, or null when the event is not usable. */
-export function previewCard(seq: number, at: string, data: unknown, host: string, urls: ContentUrls = hostUrls): PreviewCard | null {
+export function previewCard(seq: number, at: string, data: unknown, host: HostId | undefined, urls: ContentUrls = hostUrls): PreviewCard | null {
   const d = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
   const kind = d.kind === "html" ? "html" : d.kind === "image" ? "image" : null;
   const id = typeof d.attachmentId === "string" ? d.attachmentId : "";

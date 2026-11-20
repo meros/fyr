@@ -1,6 +1,7 @@
 // The host folder picker (SPEC 0.5 V0.42): one field (a word searches, a path browses and completes), then This
 // project, Recent, Repos found and Browse with breadcrumbs and New folder. A dialog on the desktop, a sheet on the phone.
 
+import type { HostId } from "./hostid.ts";
 import { createContext } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { FsDir, FsListing } from "./types.ts";
@@ -18,8 +19,8 @@ export interface PickOptions {
   title?: string;
   /** rows above Recent, e.g. the project's other folders */
   first?: { title: string; dirs: FsDir[] };
-  /** V0.132: the host whose folders it browses; missing: the front's first host (one host) */
-  host?: string;
+  /** V0.132: the host whose folders it browses, by install id; missing: nothing to browse (slice 2b: no default host) */
+  host?: HostId;
 }
 
 /** Opens the picker where it belongs (a dialog or a sheet); null when the owner closed it. */

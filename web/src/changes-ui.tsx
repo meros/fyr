@@ -3,6 +3,7 @@
 // V0.65: "New since you looked" next to "Whole branch", a Viewed checkbox per file, the agent's notes for
 // this version, and the look recorded when the owner leaves the tab.
 
+import type { HostId } from "./hostid.ts";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import { CiCount, placeNotes, useCiNotes } from "./ci-notes-ui.tsx"; // V0.66
@@ -44,7 +45,7 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export function ChangesView({ host, threadId, changes }: { host: string; threadId: string; changes?: Change[] }) {
+export function ChangesView({ host, threadId, changes }: { host: HostId; threadId: string; changes?: Change[] }) {
   const source = useApi();
   const [data, setData] = useState<ChangesDTO | null>(null);
   const [error, setError] = useState<string | null>(null);

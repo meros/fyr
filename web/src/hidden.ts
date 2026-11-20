@@ -5,7 +5,7 @@
 import { threadHost } from "./filters.ts";
 import type { HostInfo } from "./hosts.ts";
 import { linkProjects, projectOf, projectRecords } from "./projects.ts";
-import type { Store } from "./store.ts";
+import type { View } from "./store.ts";
 import type { Project, Thread } from "./types.ts";
 
 export const HIDDEN_KEY = "fyr.hidden";
@@ -77,9 +77,9 @@ export function projectIsHidden(p: Project, hidden: Hidden): boolean {
 }
 
 /** The store as this device shows it. Nothing hidden gives the same object back. */
-export function applyHidden(s: Store, hidden: Hidden): Store {
+export function applyHidden(s: View, hidden: Hidden): View {
   if (!hiddenCount(hidden)) return s;
-  const keys = hiddenHostKeys(s.hosts, hidden);
+  const keys = hiddenHostKeys(s.hostList, hidden);
   const threadGone = (t: Thread) => keys.has(threadHost(t)) || (!!t.hostId && keys.has(t.hostId)) || (() => {
     const p = projectOf(t, s.projects);
     return !!p && projectIsHidden(p, hidden);
@@ -87,13 +87,13 @@ export function applyHidden(s: Store, hidden: Hidden): Store {
   const threads: Record<string, Thread> = {};
   for (const t of Object.values(s.threads)) if (!threadGone(t)) threads[t.id] = t;
   // Decision 0034: a hidden host takes only its own record of a linked project; the others still show it.
-  const hosts = s.hosts.filter((h) => !keys.has(h.name));
+  const hostList = s.hostList.filter((h) => !keys.has(h.name));
   const shown = projectRecords(s.projects.filter((p) => !projectIsHidden(p, hidden))).filter((m) => !(m.host && keys.has(m.host)) && !(m.hostId && keys.has(m.hostId)));
   return {
     ...s,
     threads,
-    projects: linkProjects(shown, hosts),
-    hosts,
+    projects: linkProjects(shown, hostList),
+    hostList,
     stalls: s.stalls.filter((x) => !x.host || !keys.has(x.host)),
   };
 }

@@ -13,7 +13,7 @@ import { useApi } from "./api-context.ts";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
 import { SlideMark, reducedMotion } from "./motion-ui.tsx";
-import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
+import type { Decision, FyrEvent, PullRequest, TaskDTO, Thread } from "./types.ts";
 import { agentPrompt, buildConversation, findCall, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, type SubStep, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { currentDecision } from "./decode.ts";
@@ -25,7 +25,8 @@ import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { deskThreadMenu, type ThreadAction } from "./actions.ts";
-import { hostChip, hostOf, offlineLine, profilesOfHost, threadProvider } from "./hosts.ts";
+import { hostChip, offlineLine, profilesOf, threadProvider, type HostProfiles } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import { ThreadQuotaChip } from "./quota-ui.tsx";
 import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
@@ -69,7 +70,8 @@ export interface ThreadPaneProps {
   thread: Thread;
   mode: "open" | "peek";
   events: FyrEvent[] | undefined;
-  profiles: Profile[];
+  /** slice 2b: each host's profiles; the thread's provider is its own host's */
+  profiles: HostProfiles;
   card: CardState | null;
   answerField: AnswerField | null;
   onCard(cs: CardState): void;
@@ -112,9 +114,9 @@ export function ThreadPane(p: ThreadPaneProps) {
   useEffect(() => setPick(null), [t.id]); // another thread opens on its own default
   const hs = useHosts();
   // V0.139: the thread's provider is its host's (the same id on another host is another provider).
-  const profile = profilesOfHost(hostOf(t, hs.hosts), hs.hosts, p.profiles).find((x) => x.id === t.profile);
-  const provider = threadProvider(t, hs.hosts, p.profiles);
-  const hc = hostChip(t.host, hs.hosts, hs.now);
+  const profile = profilesOf(t, p.profiles).find((x) => x.id === t.profile);
+  const provider = threadProvider(t, p.profiles);
+  const hc = hostChip(t.hostId, hs.hosts, hs.now);
   const decision = currentDecision(t);
   const dock = dockRun(t);
   const st = t.attention.state;
@@ -198,7 +200,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           {/* V0.agent-pill: provider, model and effort in one pill; the model and the effort pick in place */}
           <AgentPill size="chip" segs={threadAgent(t, profile, provider, unavailableReason(t, "thread.setModel"), (a) => p.onRun("thread.setModel", a))} />
           {/* V0.quota-in-thread: what is left on the account this thread uses, where the owner works */}
-          <ThreadQuotaChip profile={t.profile} host={hostOf(t, hs.hosts)} name={provider.name} />
+          <ThreadQuotaChip profile={t.profile} host={t.host} name={provider.name} />
           {/* V0.98 (6): the newest open change's PR; Dismiss acts on the thread's main PR, so only when it is that one. */}
           {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") && headerPr(t)!.url === t.pr?.url ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(() => {
@@ -262,7 +264,7 @@ export interface ThreadTabBodyProps {
  *  (V0.19), Changes (V0.25, V0.59) and PR (V0.43). */
 export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
   const api = useApi();
-  const previews = useMemo(() => previewsOf(events ?? [], t.hostId ?? "", api), [events, t.hostId]);
+  const previews = useMemo(() => previewsOf(events ?? [], t.hostId, api), [events, t.hostId]);
   const viewAction = useViewAction(run, t.cwd);
   return (
     <>
@@ -285,7 +287,7 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
         <div class="chtab">
           <ChangeList t={t} onRun={run} />
           <CiNotesScope changes={t.changes}>
-            <ChangesView host={t.hostId ?? ""} threadId={t.id} changes={t.changes} />
+            <ChangesView host={t.hostId} threadId={t.id} changes={t.changes} />
           </CiNotesScope>
         </div>
       )}
@@ -481,9 +483,9 @@ export interface DeliveryActions {
 const DeliveryCtx = createContext<DeliveryActions | null>(null);
 
 /** V0.54: the thread's host: its attachments and previews load from there. */
-const HostContext = createContext<string | undefined>(undefined);
+const HostContext = createContext<HostId | undefined>(undefined);
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host, strip, cards }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string; strip?: ComponentChildren; cards?: { t: Thread; onRun(action: string, args?: Record<string, unknown>): unknown } }) {
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host, strip, cards }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: HostId; strip?: ComponentChildren; cards?: { t: Thread; onRun(action: string, args?: Record<string, unknown>): unknown } }) {
   const details = useToolDetails();
   const api = useApi();
   const outKey = outbox ? outbox.join(",") : null;
@@ -875,7 +877,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
 
 /** V0.45: "Handed over from Claude to Claude (acme) · 17:20", and how the context went over. */
 function HandoverDivider({ it }: { it: Extract<Item, { kind: "handover" }> }) {
-  const profiles = useContext(ProfilesContext);
+  const profiles = profilesOf({ hostId: useContext(HostContext) }, useContext(ProfilesContext)); // the thread's host's
   return (
     <div class="hodiv" role="separator">
       <span class="hot">
@@ -948,11 +950,11 @@ function CallRow({ c }: { c: ToolCall }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   const threadId = useContext(ThreadIdContext);
-  const hostId = useContext(HostContext) ?? "";
+  const hostId = useContext(HostContext);
   const [whole, setWhole] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const loadWhole = async () => {
-    if (!c.cutSeq) return;
+    if (!c.cutSeq || !hostId) return;
     setLoading(true);
     const ev = await api.fullEvent(hostId, threadId, c.cutSeq).catch(() => null);
     const text = ev ? fullOutputOf(ev, c.id) : null;
@@ -1234,7 +1236,7 @@ function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerPr
   const setText = answer ? answer.setText : setDraft;
   const disabled = !answer && !!sendReason;
   // V0.79: `/` at the start lists the agent's commands and skills (not in the answer field).
-  const slash = useSlash(answer || disabled ? null : { host: t.hostId ?? "", threadId: t.id }, text, setText, ta);
+  const slash = useSlash(answer || disabled ? null : { host: t.hostId, threadId: t.id }, text, setText, ta);
 
   useLayoutEffect(() => {
     const el = ta.current;

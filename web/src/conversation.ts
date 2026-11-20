@@ -1,5 +1,6 @@
 // Turns the event timeline into render items. Pure.
 
+import type { HostId } from "./hostid.ts";
 import { actionEventLine, changeEventLine } from "./offers.ts";
 import type { Failure, FyrEvent } from "./types.ts";
 import { taskEventText } from "./tasks.ts";
@@ -108,7 +109,7 @@ export interface BuildOptions {
   /** the thread's folder, for relative paths in labels */
   cwd?: string;
   /** V0.54: the thread's host, which serves its previews */
-  host?: string;
+  host?: HostId;
   /** #41: where previews load from (the Api's); the host's paths when absent */
   urls?: ContentUrls;
 }
@@ -187,11 +188,11 @@ function blocksOf(data: any): Block[] {
 }
 
 /** The thread's preview cards, in log order (for the filmstrip). */
-export function previewsOf(events: FyrEvent[], host?: string, urls?: ContentUrls): PreviewCard[] {
+export function previewsOf(events: FyrEvent[], host?: HostId, urls?: ContentUrls): PreviewCard[] {
   const out: PreviewCard[] = [];
   for (const e of events) {
     if (e.type !== "preview") continue;
-    const c = previewCard(e.seq, e.at, e.data, host ?? "", urls);
+    const c = previewCard(e.seq, e.at, e.data, host, urls);
     if (c) out.push(c);
   }
   return out;
@@ -347,7 +348,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break;
       }
       case "preview": {
-        const card = previewCard(e.seq, e.at, e.data, opts.host ?? "", opts.urls);
+        const card = previewCard(e.seq, e.at, e.data, opts.host, opts.urls);
         if (card) pushItem({ kind: "preview", key, card });
         break;
       }
