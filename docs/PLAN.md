@@ -33,7 +33,7 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 | #197 | The owner comes from config or a first-run step, not from the Tailscale login |
 | #200 | Public releases are read without `gh`; the release repo and key are config shown in Settings → Updates; the launchd label is neutral |
 | #434 | The Mac app: Fyr.app in a DMG (self-signed for now), registered with SMAppService, in a native window with notifications, plus a setup wizard that reaches a first thread. Owner decision, 20 Nov: in v1.0 |
-| new | Versioned releases: a `vX.Y.Z` tag and changelog beside `build-<sha>`, and a stable update channel that follows tags while main follows builds |
+| #447 | Versioned releases: a `vX.Y.Z` tag and changelog beside `build-<sha>`, and a stable update channel that follows tags while main follows builds |
 | #203 | README: the trust model (decision 0028) |
 | #30 | A real Claude login through Fyr, desktop and phone. A new user's first step, so it must work |
 | #259 | Settings → Hosts lists LAN candidates with Pair or Ignore, plus one real multicast run. Without a tailnet, this is how a second install appears |
@@ -52,8 +52,8 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 | Issue | What |
 |---|---|
 | #19 | A new message backgrounds the running Bash command (the CLI's `background_tasks` request) |
-| new | The no-progress signal: a run with no tool call for 20 min becomes blocked (the M4 leftover) |
-| new | One summary push when quiet hours end (A10; owner decision 20 Nov), and several pushes batched after 10 min away (the M4 leftovers) |
+| #448 | The no-progress signal: a run with no tool call for 20 min becomes blocked (the M4 leftover) |
+| #449 | One summary push when quiet hours end (A10; owner decision 20 Nov), and several pushes batched after 10 min away (the M4 leftovers) |
 | #26 | The folder chip in the header, and a tap that shows path, branch and Copy path |
 | #24 | Archive a project and its threads |
 | #61 | The desktop filmstrip folds like the phone's, with a hide for each thread |
@@ -65,15 +65,15 @@ An architecture review on 20 Nov (backend, web client, agent tools) found Solid 
 
 | Item | What | Size |
 |---|---|---|
-| new, blocks | **Instructions that fit the setup.** Build the agent's instructions from facts Fyr already has (git or not, a GitHub remote, gh signed in, OS, pkexec) and drop the advice that does not apply. A merge ask without GitHub says so. Put the key rules where subagents see them (MCP `instructions`) | M |
-| new, blocks | **One tool vocabulary.** The `gh pr merge` gate names `change_request`, not `effect_request`. Fold `effect_request` into `change_request` and make deploy owner-only (`fyr.deploy` is requestable by every project's agent). Fold `settle_when` into `watch`. Remove `slot_acquire`/`slot_release` and the `pr_link` alias. Retries of `change_request` and `watch` are idempotent. A test checks that every `mcp__fyr__X` in prompts, gates and feed is a registered tool | M |
-| new, blocks | **One action list for both fronts.** One `threadActions(t)` behind the desktop context menu, the ⋯ menu and the phone sheet, which have drifted apart (the phone lacks Unsettle, Unsnooze, Unarchive, Stop run, Copy link). A test checks every action is reachable on both fronts | M |
-| new, blocks | **Decision 0031 slice 2b in the client.** State for each host, a required host id, and no `hostIdByName` or first-host fallbacks (about 22 `hostId ?? ""` sites). Makes #372 a deletion | L |
-| new, blocks | **Rows grouped by a code from the host**, not by parsing the English reason (`web/src/rows.ts:50-113`) | S |
-| new, blocks | **SPEC 3 and 5.12 restated from the code.** The tool table names tools that do not exist (`change_revise`, …) and leaves out ones that do; the front's own vocabulary and the guard's runtime state are named exceptions to "every change goes through 5.1". This was Solid core's exit criterion | S |
-| new | **One versioned migration step at store open.** Drop migrations from before ~V0.100 and the `leakedFixture` hack, with a fixture test of an old database | M |
-| new | **The mock checked against a real host.** Record each command's attention change on a scratch fyrd and assert the mock does the same; the layout browser test runs on the mock | M |
-| new | **`internal/guard`.** One policy (`Tick → decisions`, admission included) over a `Mechanism` that `cgroup` implements and macOS implements with the process table. This moves the policy out of `engine/slots.go` and the closures out of `cmd/fyrd/main.go`. It follows the decision 0036 acceptance work and helps #236 and #198 | L |
+| #450, blocks | **Instructions that fit the setup.** Build the agent's instructions from facts Fyr already has (git or not, a GitHub remote, gh signed in, OS, pkexec) and drop the advice that does not apply. A merge ask without GitHub says so. Put the key rules where subagents see them (MCP `instructions`) | M |
+| #451, blocks | **One tool vocabulary.** The `gh pr merge` gate names `change_request`, not `effect_request`. Fold `effect_request` into `change_request` and make deploy owner-only (`fyr.deploy` is requestable by every project's agent). Fold `settle_when` into `watch`. Remove `slot_acquire`/`slot_release` and the `pr_link` alias. Retries of `change_request` and `watch` are idempotent. A test checks that every `mcp__fyr__X` in prompts, gates and feed is a registered tool | M |
+| #452, blocks | **One action list for both fronts.** One `threadActions(t)` behind the desktop context menu, the ⋯ menu and the phone sheet, which have drifted apart (the phone lacks Unsettle, Unsnooze, Unarchive, Stop run, Copy link). A test checks every action is reachable on both fronts | M |
+| #453, blocks | **Decision 0031 slice 2b in the client.** State for each host, a required host id, and no `hostIdByName` or first-host fallbacks (about 22 `hostId ?? ""` sites). Makes #372 a deletion | L |
+| #454, blocks | **Rows grouped by a code from the host**, not by parsing the English reason (`web/src/rows.ts:50-113`) | S |
+| #455, blocks | **SPEC 3 and 5.12 restated from the code.** The tool table names tools that do not exist (`change_revise`, …) and leaves out ones that do; the front's own vocabulary and the guard's runtime state are named exceptions to "every change goes through 5.1". This was Solid core's exit criterion | S |
+| #456 | **One versioned migration step at store open.** Drop migrations from before ~V0.100 and the `leakedFixture` hack, with a fixture test of an old database | M |
+| #457 | **The mock checked against a real host.** Record each command's attention change on a scratch fyrd and assert the mock does the same; the layout browser test runs on the mock | M |
+| #458 | **`internal/guard`.** One policy (`Tick → decisions`, admission included) over a `Mechanism` that `cgroup` implements and macOS implements with the process table. This moves the policy out of `engine/slots.go` and the closures out of `cmd/fyrd/main.go`. It follows the decision 0036 acceptance work and helps #236 and #198 | L |
 
 After v1.0: the Claude seam (`cli.Session` emitting Fyr events instead of `claude.Msg`) unless events reach the wire; the guard's state as records; splitting `settings-ui.tsx` and sharing the question card and composer between the fronts.
 
