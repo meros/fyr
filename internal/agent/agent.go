@@ -176,6 +176,11 @@ type session struct {
 	token  string
 	c      cli.Session
 	effort string // the --effort it started with (V0.50)
+	// sendMu keeps the owner's messages in order (V0.fix-flakes): send holds
+	// it from the turn's first-message decision to the write, so a second
+	// message sent while the first is between its record and its write
+	// cannot reach the CLI before it.
+	sendMu sync.Mutex
 	// live is true from the start of a turn until its result. A turn starts
 	// on a send or on its own (the CLI resumes after a background task), so
 	// the stream decides, not a count of sends (SPEC 6.2).

@@ -181,13 +181,9 @@ func TestHandoverFirstMessageListsOpenChanges(t *testing.T) {
 		t.Fatalf("event %+v", ev)
 	}
 	var first string
-	for _, e := range h.events(th.ID) {
-		if e.Type == "user" {
-			var d struct{ Text, From string }
-			json.Unmarshal(e.Data, &d)
-			if d.From == "handover" {
-				first = d.Text
-			}
+	for _, u := range h.handoverTexts(th.ID, 1) {
+		if text, ok := strings.CutPrefix(u, "handover|"); ok {
+			first = text
 		}
 	}
 	line := ""

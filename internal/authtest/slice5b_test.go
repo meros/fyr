@@ -94,6 +94,10 @@ func TestBothDirectionsBlockedShowsTheReasonAndAFlapGivesOneLink(t *testing.T) {
 	b.SetBlocked()
 	waitLink(t, a, ca, "b", func(l authtest.LinkOf) bool { return l.State == "up" })
 	waitLink(t, b, cb, "a", func(l authtest.LinkOf) bool { return l.State == "up" })
+	// The link up is not yet a's front following b again: its stream to b
+	// reconnects on its own retry, and until then a call says b is offline
+	// (V0.fix-flakes).
+	waitHost(t, a, ca, "b")
 	if r, err := a.Fyrd.Get("/api/commands?host=b", ca); err != nil || r.Status == 502 || r.Status == 503 {
 		t.Errorf("a's front to b after the flap: %v %v", err, r)
 	}

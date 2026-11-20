@@ -95,6 +95,8 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 			Log: []core.Event{{Type: "message.state", Data: map[string]any{"id": e.MessageID, "state": "lost"}}, {Type: "run.ended", Data: map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}}}})
 		return err
 	}
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
 	m.mu.Lock()
 	first := !s.live
 	s.live = true

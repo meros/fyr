@@ -344,6 +344,9 @@ type Leftovers struct {
 	// OnEnd hears what was ended and why, per thread, outside the lock.
 	OnEnd func(thread string, ended []Leftover, why string)
 	Logf  func(string, ...any)
+	// Signal sends the end's SIGTERM and SIGKILL; default syscall.Kill. A test
+	// records with it what the tracker itself ended (V0.fix-flakes).
+	Signal func(pid int, sig syscall.Signal) error
 
 	tick      sync.Mutex // one Tick at a time
 	mu        sync.Mutex
@@ -638,7 +641,7 @@ func (l *Leftovers) end(byThread map[string][]Leftover, why string) {
 	for th, xs := range byThread {
 		var done []Leftover
 		for _, x := range xs {
-			if endPIDs(proc, x.pids, x.starts, wait) > 0 {
+			if endPIDs(proc, x.pids, x.starts, wait, l.Signal) > 0 {
 				done = append(done, x)
 			}
 		}
@@ -659,9 +662,12 @@ func (l *Leftovers) end(byThread map[string][]Leftover, why string) {
 // endPIDs sends SIGTERM to each pid whose start time is still the one seen,
 // waits up to wait for them to go, then SIGKILLs the rest. It returns how many
 // it signalled. proc "-" skips the start-time check (no /proc).
-func endPIDs(proc string, ps []int, starts map[int]uint64, wait time.Duration) int {
+func endPIDs(proc string, ps []int, starts map[int]uint64, wait time.Duration, signal func(int, syscall.Signal) error) int {
 	if proc == "" {
 		proc = "/proc"
+	}
+	if signal == nil {
+		signal = syscall.Kill
 	}
 	same := func(p int) bool {
 		if p <= 1 || p == os.Getpid() {
@@ -675,7 +681,7 @@ func endPIDs(proc string, ps []int, starts map[int]uint64, wait time.Duration) i
 	}
 	var sent []int
 	for _, p := range ps {
-		if same(p) && syscall.Kill(p, syscall.SIGTERM) == nil {
+		if same(p) && signal(p, syscall.SIGTERM) == nil {
 			sent = append(sent, p)
 		}
 	}
@@ -696,7 +702,7 @@ func endPIDs(proc string, ps []int, starts map[int]uint64, wait time.Duration) i
 	}
 	for _, p := range sent {
 		if same(p) {
-			syscall.Kill(p, syscall.SIGKILL) // a frozen cgroup's process too
+			signal(p, syscall.SIGKILL) // a frozen cgroup's process too
 		}
 	}
 	return n
