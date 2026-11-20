@@ -145,14 +145,20 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 		if err := os.WriteFile(rf, b, 0o600); err != nil {
 			return nil, err
 		}
-		// The peer port is chosen by the kernel at the first start (a port found free
-		// beforehand can be taken by another test before fyrd binds it) and then kept for
-		// the restarts a test makes.
-		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile,
+		// The peer port is kept for the restarts a test makes, as a release keeps an
+		// install's: a reserved one, which no listen on :0 is handed while the install is
+		// down (V0.port-race). Released after the fyrd stops (cleanups run last first).
+		caller.PeerPort, err = m.reserve()
+		if err != nil {
+			return nil, err
+		}
+		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.PeerPort)), "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile,
 			"linkBackoffMillis": 100, "linkDialMillis": 700}
 		caller.resolveFile, caller.m = rf, m
 		if caller.Spec.HostListen {
-			caller.HostPort = freePort()
+			if caller.HostPort, err = m.reserve(); err != nil {
+				return nil, err
+			}
 			extra["hostListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.HostPort))
 		}
 		if len(caller.Spec.Block) > 0 { // before it starts: it never dials an earlier node's peer port, so no link is opened the other way before the block is set
@@ -163,23 +169,16 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 			return nil, err
 		}
 		m.cleanups = append(m.cleanups, caller.Fyrd.Stop)
-		r, err := caller.Fyrd.WaitRoster(30*time.Second, func(r *Roster) bool {
+		if _, err := caller.Fyrd.WaitRoster(30*time.Second, func(r *Roster) bool { // the peer port is up
 			for _, mm := range r.Members {
-				if mm.Self && mm.Port != 0 {
+				if mm.Self && mm.Port == caller.PeerPort {
 					return true
 				}
 			}
 			return false
-		})
-		if err != nil {
+		}); err != nil {
 			return nil, err
 		}
-		for _, mm := range r.Members {
-			if mm.Self {
-				caller.PeerPort = mm.Port
-			}
-		}
-		caller.Fyrd.opts.Extra["peerListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.PeerPort))
 	}
 	for _, n := range m.Nodes {
 		if len(n.Spec.Block) > 0 {
@@ -207,15 +206,14 @@ func (m *Mesh) Node(name string) *MeshNode {
 	return nil
 }
 
-// freePort asks the kernel for a port nobody holds now. A race with another process
-// is possible and harmless: the install then fails to start and the test says so.
-func freePort() int {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+// reserve is a port kept until the mesh closes (reservePort).
+func (m *Mesh) reserve() (int, error) {
+	p, release, err := reservePort()
 	if err != nil {
-		return 0
+		return 0, err
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
+	m.cleanups = append(m.cleanups, release)
+	return p, nil
 }
 
 // SetBlocked makes the named installs unreachable from this one: its dials to their

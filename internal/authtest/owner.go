@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"github.com/meros/fyr/internal/store"
 	"io"
-	"net"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -170,24 +168,4 @@ func HostLink(f *Fyrd, cookie, host string) (LinkOf, bool) {
 		}
 	}
 	return LinkOf{}, false
-}
-
-// PinPeerPort makes the install's next start listen on the peer port it has now, as a
-// configured peerPort does on a real machine (the address in everyone's roster stays
-// right across a restart).
-func (f *Fyrd) PinPeerPort() error {
-	r, err := f.Roster()
-	if err != nil {
-		return err
-	}
-	for _, m := range r.Members {
-		if m.Self && m.Port != 0 {
-			if f.opts.Extra == nil {
-				f.opts.Extra = map[string]any{}
-			}
-			f.opts.Extra["peerListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(m.Port))
-			return nil
-		}
-	}
-	return fmt.Errorf("no peer port to pin")
 }

@@ -52,6 +52,16 @@ type Live struct {
 	blackhole    net.Listener
 }
 
+// reservePort is a port kept until the fixture closes (the package's reservePort).
+func (l *Live) reservePort() (int, error) {
+	p, release, err := reservePort()
+	if err != nil {
+		return 0, err
+	}
+	l.cleanups = append(l.cleanups, release)
+	return p, nil
+}
+
 // NewLive builds the fixture and starts both fyrds. Close stops them.
 func NewLive() (l *Live, err error) {
 	l = &Live{OwnerLogin: "owner@example.com"}
@@ -249,18 +259,32 @@ func (l *Live) EnablePeers() (*Mac, error) {
 		os.WriteFile(p, b, 0o600)
 		return p
 	}
-	peerCfg := func(resolve string) map[string]any {
-		return map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": resolve, "rootCAs": pemFile, "linkBackoffMillis": 100, "linkDialMillis": 700}
+	// A real install's peer port is fixed, so the address in everyone's roster stays
+	// right across a restart: a reserved port, which no listen on :0 is handed while
+	// the install is down (V0.port-race).
+	peerCfg := func(resolve string) (map[string]any, error) {
+		port, err := l.reservePort()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), "peerEverySeconds": 1, "resolveFile": resolve, "rootCAs": pemFile, "linkBackoffMillis": 100, "linkDialMillis": 700}, nil
 	}
 	// The release restarts the laptop with a peer port; its data stays.
 	l.Laptop.Stop()
-	cfg := peerCfg(res("laptop", toMac.Addr))
+	cfg, err := peerCfg(res("laptop", toMac.Addr))
+	if err != nil {
+		return nil, err
+	}
 	l.Laptop, err = Start(Options{Name: "laptop", Data: laptopData, Tailscale: l.TS, Extra: cfg, Hosts: []HostEntry{{Name: "server", URL: l.Rec.URL}}})
 	if err != nil {
 		return nil, err
 	}
 	l.cleanups = append(l.cleanups, l.Laptop.Stop)
-	mac, err := Start(Options{Name: "mac", Data: macData, Tailscale: macTS, Extra: peerCfg(res("mac", toLaptop.Addr))})
+	macCfg, err := peerCfg(res("mac", toLaptop.Addr))
+	if err != nil {
+		return nil, err
+	}
+	mac, err := Start(Options{Name: "mac", Data: macData, Tailscale: macTS, Extra: macCfg})
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +331,11 @@ func (l *Live) AddTaggedInstall(mac *Mac) (*Mac, error) {
 	rf := filepath.Join(root, "resolve-box.json")
 	b, _ := json.Marshal(map[string]string{l.Self.Name: "127.0.0.1", mac.Node.Name: "127.0.0.1", boxNode.Name: "127.0.0.1"})
 	os.WriteFile(rf, b, 0o600)
-	box, err := Start(Options{Name: "box", Data: data, Tailscale: boxTS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": l.caFile, "linkBackoffMillis": 100, "linkDialMillis": 700}})
+	port, err := l.reservePort() // fixed, as EnablePeers' are
+	if err != nil {
+		return nil, err
+	}
+	box, err := Start(Options{Name: "box", Data: data, Tailscale: boxTS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": l.caFile, "linkBackoffMillis": 100, "linkDialMillis": 700}})
 	if err != nil {
 		return nil, err
 	}
