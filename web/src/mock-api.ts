@@ -395,6 +395,7 @@ export function createMockApi(scenario: string): Api {
               ],
               bad: { commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", why: "was not healthy" },
               repo: "meros/fyr",
+              key: { fingerprint: "SHA256:RPhCNjz0mCuohR8sdDkJ0bw4JXHzmNJAAZ/BR5C9uWM", builtIn: true }, // V0.release-without-gh
             }
           : { live: "nix-d8b9560", updates: null as unknown as [] },
       );

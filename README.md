@@ -57,7 +57,7 @@ Fyr is v0. Its author uses it every day, and it changes daily. Expect breaking c
 
 - **Linux or macOS.** NixOS has a module; macOS and other Linux (Debian, Ubuntu) have an install script.
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (`claude`), logged in with a Claude account or set up for an Anthropic-compatible endpoint. Fyr drives every agent through it. Other agent CLIs are not supported yet ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
-- **GitHub through [`gh`](https://cli.github.com/)**, logged in. Projects on other forges still run threads, without change tracking.
+- **GitHub through [`gh`](https://cli.github.com/)**, logged in, for the agents' pull requests and change tracking. Projects on other forges still run threads, without it. Installing and updating Fyr need no `gh`.
 - **Optional: [Tailscale](https://tailscale.com/)**, to open Fyr from your phone and to connect machines.
 
 ## Install
@@ -80,7 +80,7 @@ Fyr serves http://127.0.0.1:7777. The module also sets up the agents' cgroups an
 
 ### macOS
 
-You need Homebrew's `git`, `gh` (logged in) and `claude`, and Xcode's command line tools:
+You need `git`, `curl` and `claude`, and Xcode's command line tools (`gh` is for the agents' pull requests; the install needs no login):
 
 ```sh
 git clone https://github.com/meros/fyr && cd fyr
@@ -91,10 +91,10 @@ The script downloads the current signed release and starts a launchd agent on ht
 
 ### Linux without Nix (Debian, Ubuntu)
 
-You need systemd with cgroup v2, `git`, `gh` (logged in: `gh auth login`) and `claude`:
+You need systemd with cgroup v2, `git`, `curl` and `claude` (`gh` is for the agents' pull requests; the install needs no login):
 
 ```sh
-sudo apt install git gh   # gh: see cli.github.com if your release lacks it
+sudo apt install git curl gh   # gh: see cli.github.com if your release lacks it
 git clone https://github.com/meros/fyr && cd fyr
 scripts/install-linux.sh --print   # shows every file and command, changes nothing
 scripts/install-linux.sh

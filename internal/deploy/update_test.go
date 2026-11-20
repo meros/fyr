@@ -7,9 +7,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,7 +25,8 @@ import (
 const relSHA = "0123456789abcdef0123456789abcdef01234567"
 
 // fakeReleases serves deployable = sha and a release of it signed with
-// signKey; Key verifies with verifyKey.
+// another key than Key when signWithOther, from an httptest GitHub
+// (V0.release-without-gh: plain HTTPS, no gh).
 func fakeReleases(t *testing.T, sha string, signWithOther bool) *Releases {
 	t.Helper()
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
@@ -29,35 +35,104 @@ func fakeReleases(t *testing.T, sha string, signWithOther bool) *Releases {
 	if signWithOther {
 		sign = other
 	}
+	gh := newFakeGitHub(t, sha, sign)
+	r := gh.releases()
+	r.Key = base64.StdEncoding.EncodeToString(pub)
+	return r
+}
+
+// fakeGitHub is GitHub for the repo meros/fyr: the API's tag ref and
+// compare, and the download URLs of one release, build-<sha12>.
+type fakeGitHub struct {
+	sha   string
+	files map[string][]byte
+	srv   *httptest.Server
+	mu    sync.Mutex
+	asked []*http.Request
+	// handle, when set, answers first; false passes the request on.
+	handle func(w http.ResponseWriter, r *http.Request) bool
+}
+
+func newFakeGitHub(t *testing.T, sha string, sign ed25519.PrivateKey) *fakeGitHub {
+	t.Helper()
 	tgt := release.Here()
-	return &Releases{Key: base64.StdEncoding.EncodeToString(pub), Git: func(_ context.Context, args ...string) ([]byte, error) {
-		return []byte(sha + "\trefs/tags/deployable\n"), nil
-	}, Gh: func(_ context.Context, args ...string) ([]byte, error) {
-		a := strings.Join(args, " ")
-		switch {
-		case strings.Contains(a, "git/ref/tags/deployable"):
-			return []byte(sha + "\n"), nil
-		case strings.Contains(a, "/compare/"):
-			return []byte("diverged"), nil
-		case args[0] == "release" && args[1] == "download":
-			var dir string
-			for i, x := range args {
-				if x == "-D" {
-					dir = args[i+1]
-				}
-			}
-			b, _ := json.Marshal(release.Info{Commit: sha, Build: release.Short(sha)})
-			os.WriteFile(filepath.Join(dir, release.Manifest), b, 0o644)
-			os.WriteFile(filepath.Join(dir, release.Asset("fyrd", tgt)), []byte("#!/bin/sh\n"), 0o755)
-			os.WriteFile(filepath.Join(dir, release.Asset("fyr", tgt)), []byte("#!/bin/sh\n"), 0o755)
-			sums, _ := release.SumFile(dir, []string{release.Asset("fyr", tgt), release.Asset("fyrd", tgt), release.Manifest})
-			os.WriteFile(filepath.Join(dir, release.Sums), sums, 0o644)
-			sig, _ := release.Sign(base64.StdEncoding.EncodeToString(sign.Seed()), sums)
-			os.WriteFile(filepath.Join(dir, release.Sig), []byte(sig), 0o644)
-			return nil, nil
-		}
-		return nil, errors.New("unexpected gh " + a)
+	dir := t.TempDir()
+	b, _ := json.Marshal(release.Info{Commit: sha, Build: release.Short(sha)})
+	os.WriteFile(filepath.Join(dir, release.Manifest), b, 0o644)
+	os.WriteFile(filepath.Join(dir, release.Asset("fyrd", tgt)), []byte("#!/bin/sh\n"), 0o755)
+	os.WriteFile(filepath.Join(dir, release.Asset("fyr", tgt)), []byte("#!/bin/sh\n"), 0o755)
+	sums, _ := release.SumFile(dir, []string{release.Asset("fyr", tgt), release.Asset("fyrd", tgt), release.Manifest})
+	os.WriteFile(filepath.Join(dir, release.Sums), sums, 0o644)
+	sig, _ := release.Sign(base64.StdEncoding.EncodeToString(sign.Seed()), sums)
+	os.WriteFile(filepath.Join(dir, release.Sig), []byte(sig), 0o644)
+	g := &fakeGitHub{sha: sha, files: map[string][]byte{}}
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		g.files[e.Name()], _ = os.ReadFile(filepath.Join(dir, e.Name()))
+	}
+	g.srv = httptest.NewServer(http.HandlerFunc(g.serve))
+	t.Cleanup(g.srv.Close)
+	return g
+}
+
+func (g *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
+	g.mu.Lock()
+	g.asked = append(g.asked, r.Clone(context.Background()))
+	h := g.handle
+	g.mu.Unlock()
+	if h != nil && h(w, r) {
+		return
+	}
+	dl := "/meros/fyr/releases/download/" + release.Tag(g.sha) + "/"
+	switch p := r.URL.Path; {
+	case p == "/repos/meros/fyr/git/ref/tags/deployable":
+		fmt.Fprintf(w, `{"ref":"refs/tags/deployable","object":{"sha":%q,"type":"commit"}}`, g.sha)
+	case strings.HasPrefix(p, "/repos/meros/fyr/compare/"):
+		fmt.Fprint(w, `{"status":"diverged","ahead_by":0,"total_commits":0,"commits":[]}`)
+	case strings.HasPrefix(p, dl) && g.files[strings.TrimPrefix(p, dl)] != nil:
+		w.Write(g.files[strings.TrimPrefix(p, dl)])
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// requests is what the fake was asked, as "METHOD path".
+func (g *fakeGitHub) requests() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []string
+	for _, r := range g.asked {
+		out = append(out, r.Method+" "+r.URL.Path)
+	}
+	return out
+}
+
+// releases reads this fake: the API and downloads from it, deployable by
+// git ls-remote from it too.
+func (g *fakeGitHub) releases() *Releases {
+	return &Releases{API: g.srv.URL, Web: g.srv.URL, HTTP: g.srv.Client(), Git: func(_ context.Context, args ...string) ([]byte, error) {
+		return []byte(g.sha + "\trefs/tags/deployable\n"), nil
 	}}
+}
+
+// rtFunc is an http.RoundTripper.
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// onCompare answers GitHub's compare with answer(path) and passes the rest on.
+func onCompare(r *Releases, answer func(path string) string) *Releases {
+	next := r.HTTP.Transport
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	r.HTTP = &http.Client{Transport: rtFunc(func(q *http.Request) (*http.Response, error) {
+		if strings.Contains(q.URL.Path, "/compare/") {
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(answer(q.URL.Path))), Request: q}, nil
+		}
+		return next.RoundTrip(q)
+	})}
+	return r
 }
 
 // releaseRunner answers `fyrd version` with the release's id.
@@ -337,17 +412,15 @@ func TestUpdateRecordFailure(t *testing.T) {
 func TestUpdateRecordHasItsChangelog(t *testing.T) {
 	d, _, steps := newDeployer(t, "")
 	d.Live = "fedcba987654"
-	r := fakeReleases(t, relSHA, false)
-	gh := r.Gh
 	var asked string
 	c := func(n int) string { return strings.Repeat(string(rune('a'+n)), 40) }
-	r.Gh = func(ctx context.Context, args ...string) ([]byte, error) {
-		if a := strings.Join(args, " "); strings.Contains(a, "/compare/") && strings.Contains(a, "total_commits") {
-			asked = args[1]
-			return []byte("3\n" + c(0) + "\tFirst (#1)\n" + c(1) + "\tSecond\n" + c(2) + "\tThird (#3)\n"), nil
-		}
-		return gh(ctx, args...)
-	}
+	r := onCompare(fakeReleases(t, relSHA, false), func(path string) string {
+		asked = path
+		return `{"status":"ahead","ahead_by":3,"total_commits":3,"commits":[` +
+			`{"sha":"` + c(0) + `","commit":{"message":"First (#1)\n\nbody"}},` +
+			`{"sha":"` + c(1) + `","commit":{"message":"Second"}},` +
+			`{"sha":"` + c(2) + `","commit":{"message":"Third (#3)"}}]}`
+	})
 	d.Releases = r
 	d.Run = releaseRunner(steps)
 	d.Deploy(context.Background(), "", core.EffectReq{Action: "fyr.deploy", Args: map[string]any{"trigger": "deployable"}}, "")
@@ -355,7 +428,7 @@ func TestUpdateRecordHasItsChangelog(t *testing.T) {
 	if len(u) != 1 {
 		t.Fatalf("records %+v", u)
 	}
-	if asked != "repos/meros/fyr/compare/fedcba987654..."+relSHA {
+	if asked != "/repos/meros/fyr/compare/fedcba987654..."+relSHA {
 		t.Fatalf("compare asked %q", asked)
 	}
 	got := u[0]

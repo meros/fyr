@@ -53,11 +53,16 @@ func main() {
 			log.Fatal(err)
 		}
 	case "verify":
-		// verify DIR: check a downloaded release against the pinned key.
+		// verify DIR [KEY]: check a downloaded release against the built-in
+		// key, or a fork's (V0.release-without-gh).
 		if len(os.Args) < 3 {
-			log.Fatal("usage: fyrrelease verify DIR")
+			log.Fatal("usage: fyrrelease verify DIR [KEY]")
 		}
-		info, err := release.Verify(os.Args[2], release.PublicKey)
+		key := release.PublicKey
+		if len(os.Args) > 3 {
+			key = os.Args[3]
+		}
+		info, err := release.Verify(os.Args[2], key)
 		if err != nil {
 			log.Fatal(err)
 		}

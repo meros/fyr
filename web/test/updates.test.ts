@@ -1,7 +1,7 @@
 // SPEC V0.126 (#151): the update record's rows and the line over them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changeLines, changesLabel, updateRow, updateState } from "../src/updates.ts";
+import { changeLines, changesLabel, releaseSource, updateRow, updateState } from "../src/updates.ts";
 
 const now = Date.parse("2026-11-16T23:30:00");
 
@@ -40,4 +40,12 @@ test("V0.update-changelog a record's changelog: a count to open it, each commit'
   assert.equal(ls[1].title, "No PR here");
   assert.equal(ls[1].pr, undefined);
   assert.deepEqual(ls[2], { title: "and 3 older", url: "https://github.com/o/r/compare/d93e1ba4c5d6...3be8b2f47894aaaa", sha: "" });
+});
+
+test("V0.release-without-gh the release source row names the repo and the key's fingerprint, and a bad key", () => {
+  const fp = "SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU";
+  assert.deepEqual(releaseSource({ updates: [], repo: "meros/fyr", key: { fingerprint: fp, builtIn: true } }), { title: "meros/fyr", desc: `signed with ${fp} (built in)`, bad: false });
+  assert.deepEqual(releaseSource({ updates: [], repo: "fork/fyr", key: { fingerprint: fp, builtIn: false } }), { title: "fork/fyr", desc: `signed with ${fp} (updateKey)`, bad: false });
+  assert.deepEqual(releaseSource({ updates: [], repo: "fork/fyr", key: { error: "updateKey is not an ed25519 public key" } }), { title: "fork/fyr", desc: "updateKey is not an ed25519 public key", bad: true });
+  assert.equal(releaseSource({ updates: [] }), null); // an older host says neither
 });

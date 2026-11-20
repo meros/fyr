@@ -93,3 +93,24 @@ func TestParseSumsRefusesPaths(t *testing.T) {
 		t.Fatal("a path in SHA256SUMS passed")
 	}
 }
+
+// V0.release-without-gh: the key a host verifies with is named by its
+// fingerprint, the same for the same key and different for another.
+func TestFingerprint(t *testing.T) {
+	_, pub := keys(t)
+	_, other := keys(t)
+	a, err := Fingerprint(pub)
+	b, _ := Fingerprint(" " + pub + "\n")
+	c, _ := Fingerprint(other)
+	if err != nil || !strings.HasPrefix(a, "SHA256:") || len(a) != len("SHA256:")+43 || a != b || a == c {
+		t.Fatalf("fingerprints %q %q %q (%v)", a, b, c, err)
+	}
+	if _, err := Fingerprint(PublicKey); err != nil {
+		t.Fatalf("the built-in key: %v", err)
+	}
+	for _, bad := range []string{"", "not base64!", base64.StdEncoding.EncodeToString([]byte("short"))} {
+		if _, err := Fingerprint(bad); err == nil {
+			t.Fatalf("%q has a fingerprint", bad)
+		}
+	}
+}

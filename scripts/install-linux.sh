@@ -3,10 +3,10 @@
 # unit fyr.service that runs as you: the stand-in for the NixOS module
 # (nix/module.nix, decision 0007), as scripts/install-macos.sh is on a Mac
 # (V0.linux-without-nix). It builds nothing: it downloads the CI release the
-# tag `deployable` points at (decision 0027) with your gh login, checks its
-# SHA256SUMS, makes it the current build and keeps a copy as the seed. From
-# then on the running fyrd updates itself to each new release (signed,
-# verified, smoke-tested).
+# tag `deployable` points at (decision 0027) over HTTPS, with no gh login
+# (V0.release-without-gh), checks its SHA256SUMS, makes it the current build
+# and keeps a copy as the seed. From then on the running fyrd updates itself
+# to each new release (signed, verified, smoke-tested).
 #
 #	scripts/install-linux.sh [--print | --uninstall]
 #
@@ -69,13 +69,12 @@ warn() {
 
 [ -d /run/systemd/system ] || warn "systemd is not running here; this install needs it"
 [ -f /sys/fs/cgroup/cgroup.controllers ] || warn "no cgroup v2 at /sys/fs/cgroup; Fyr's agents need it (docs/HOST-SETUP.md)"
-for t in git gh claude sha256sum; do
-  command -v "$t" >/dev/null || warn "missing $t on PATH (git and gh: apt install git gh; claude: https://docs.anthropic.com/claude-code)"
+for t in git curl claude sha256sum; do
+  command -v "$t" >/dev/null || warn "missing $t on PATH (git and curl: apt install git curl; claude: https://docs.anthropic.com/claude-code)"
 done
-# Fyr reads its releases with gh until #200 (a public key in the config).
-if [ "$mode" = install ] && ! gh auth status >/dev/null 2>&1; then
-  warn "gh is not logged in: run gh auth login (Fyr reads its releases with it)"
-fi
+# The install and the updates read the public releases without gh
+# (V0.release-without-gh); the agents use gh for pull requests.
+command -v gh >/dev/null || echo "note: no gh on PATH; the install needs none, but agents need it (logged in) for pull requests" >&2
 
 case "$(uname -m)" in
   x86_64) target=linux-amd64 ;;
@@ -124,7 +123,7 @@ EOF
 User=$user
 Group=$group
 WorkingDirectory=$HOME
-# GH_TOKEN=... (mode 0600) for a private fork; without it, your gh login.
+# GH_TOKEN=... (mode 0600) for a private fork; a public one needs none.
 EnvironmentFile=-$HOME/.config/fyr/github.env
 # No PATH here: fyrd adds your login shell's PATH and the config's agentPath
 # to systemd's default for the agents (V0.linux-without-nix).
@@ -210,9 +209,21 @@ cgroups='{"enable": true, "serverMemoryLow": "1G", "agentsMemoryHigh": "40%", "a
 [ "$layout" = scope ] && cgroups="$cgroups, \"agentsSlice\": \"fyr-agents.slice\""
 cgroups="$cgroups}"
 
+# V0.release-without-gh: the release repo over HTTPS, no gh.
+base="https://github.com/$repo"
+deployable_sha() {
+  local out sha
+  out="$(git -c credential.helper= ls-remote --tags "$base.git" refs/tags/deployable)"
+  sha="$(awk '$2 == "refs/tags/deployable^{}" {print $1}' <<<"$out")"
+  [ -n "$sha" ] || sha="$(awk '$2 == "refs/tags/deployable" {print $1}' <<<"$out")"
+  [ "${#sha}" = 40 ] || { echo "no tag deployable in $base" >&2; return 1; }
+  echo "$sha"
+}
+
 if [ "$mode" = print ]; then
   echo
   echo "as $user: download the release of tag deployable in $repo for $target into $data/builds/<sha12>,"
+  echo "  by git ls-remote $base.git and curl $base/releases/download/build-<sha12>/ (no gh login),"
   echo "  check SHA256SUMS, link $data/current to it, copy fyrd to $data/seed and fyr to $data/launcher"
   echo "as $user: set \"cgroups\" in $cfg to $cgroups"
   for f in fyr.service fyr-agents.slice 50-fyr-agents.rules agents-pressure-chown; do
@@ -225,15 +236,18 @@ if [ "$mode" = print ]; then
 fi
 
 if [ "$mode" = install ]; then
-  sha="$(gh api "repos/$repo/git/ref/tags/deployable" --jq .object.sha)"
+  # The tag by git (no API call), an annotated tag's commit first; the
+  # assets from their public download URLs (V0.release-without-gh).
+  sha="$(deployable_sha)"
   short="${sha:0:12}"
   dl="$stage/release"
   mkdir -p "$dl"
-  echo "downloading release build-$short for $target"
-  gh release download "build-$short" -R "$repo" -D "$dl" \
-    -p "fyrd-$target" -p "fyr-$target" -p manifest.json -p SHA256SUMS -p SHA256SUMS.sig
+  echo "downloading release build-$short for $target from $repo"
+  for f in "fyrd-$target" "fyr-$target" manifest.json SHA256SUMS SHA256SUMS.sig; do
+    curl -fsSL --retry 3 -o "$dl/$f" "$base/releases/download/build-$short/$f"
+  done
   # The running fyrd verifies the signature of every later update; this
-  # first install trusts your gh login and checks the sums.
+  # first install trusts HTTPS to GitHub and checks the sums.
   (cd "$dl" && grep -E "  (fyrd-$target|fyr-$target|manifest.json)\$" SHA256SUMS | sha256sum -c -)
 
   build="$data/builds/$short"

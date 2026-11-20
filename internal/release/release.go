@@ -21,9 +21,31 @@ import (
 	"strings"
 )
 
-// PublicKey verifies every release. Its private half is the repo secret
+// PublicKey verifies every release unless the config names another key
+// (updateKey, V0.release-without-gh). Its private half is the repo secret
 // FYR_RELEASE_KEY; `go run ./cmd/fyrrelease keygen` makes a new pair.
 const PublicKey = "iXJ77L7f2XSk5YZtHIUqpjHl0/qmuh328YRyGP6Igyk="
+
+// ParseKey reads a base64 ed25519 public key.
+func ParseKey(pubB64 string) (ed25519.PublicKey, error) {
+	pub, err := base64.StdEncoding.DecodeString(strings.TrimSpace(pubB64))
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return nil, errors.New("bad release public key")
+	}
+	return ed25519.PublicKey(pub), nil
+}
+
+// Fingerprint names a base64 public key the way ssh-keygen -l does:
+// "SHA256:" and the unpadded base64 of the key's SHA-256
+// (V0.release-without-gh: Settings → Updates shows it).
+func Fingerprint(pubB64 string) (string, error) {
+	pub, err := ParseKey(pubB64)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(pub)
+	return "SHA256:" + base64.RawStdEncoding.EncodeToString(h[:]), nil
+}
 
 // Targets are the OS/architecture pairs CI builds.
 var Targets = []string{"linux-amd64", "linux-arm64", "darwin-arm64", "darwin-amd64"}
@@ -133,15 +155,15 @@ func Sign(privB64 string, data []byte) (string, error) {
 
 // VerifySig checks a base64 signature of data against a base64 public key.
 func VerifySig(pubB64 string, data []byte, sigB64 string) error {
-	pub, err := base64.StdEncoding.DecodeString(pubB64)
-	if err != nil || len(pub) != ed25519.PublicKeySize {
-		return errors.New("bad release public key")
+	pub, err := ParseKey(pubB64)
+	if err != nil {
+		return err
 	}
 	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(sigB64))
 	if err != nil || len(sig) != ed25519.SignatureSize {
 		return errors.New("bad signature encoding")
 	}
-	if !ed25519.Verify(ed25519.PublicKey(pub), data, sig) {
+	if !ed25519.Verify(pub, data, sig) {
 		return errors.New("signature does not match the release key")
 	}
 	return nil
