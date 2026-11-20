@@ -3,11 +3,14 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/core/coretest"
 )
 
 const goodCommit = "c0ffee1234567890c0ffee1234567890c0ffee12"
@@ -31,10 +34,30 @@ func (g *gate) check(_ context.Context, dir string) (string, string) {
 
 func (g *gate) calls() int { g.mu.Lock(); defer g.mu.Unlock(); return g.n }
 
+// onFyr makes the thread work in a Fyr checkout: only such a thread may ask to
+// deploy Fyr (V0.one-tool-vocabulary).
+func onFyr(t *testing.T, h *harness, id string) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, f := range []string{"cmd/fyrd/main.go", "docs/changes/README.md"} {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	coretest.Patch(h.e, id, func(th *core.Thread, _ time.Time) []core.Event {
+		th.Cwd = dir
+		return nil
+	})
+}
+
 func askDeployTool(t *testing.T, h *harness, id, dir string) {
 	t.Helper()
-	if out, isErr := callAs(t, h.e, id, "effect_request", map[string]any{"action": "fyr.deploy", "args": map[string]any{"dir": dir}, "reason": "ship"}); isErr {
-		t.Fatalf("effect_request: %s", out)
+	onFyr(t, h, id)
+	if out, isErr := callAs(t, h.e, id, "change_request", map[string]any{"ask": "fyr.deploy", "args": map[string]any{"dir": dir}, "reason": "ship"}); isErr {
+		t.Fatalf("change_request fyr.deploy: %s", out)
 	}
 }
 
@@ -162,4 +185,19 @@ func TestAutoDeployOneAtATime(t *testing.T) {
 	eventually(t, "the second deploy runs", func() bool { return len(deployCalls(h)) == 2 })
 	close(h.r.deploy)
 	eventually(t, "the second result landed", func() bool { return hasEvent(h.events(b), "effect.result", "Auto-approved by the auto-deploy setting") })
+}
+
+// V0.one-tool-vocabulary: a thread that is not on Fyr's own repo cannot ask
+// to deploy Fyr; the refusal names run_request.
+func TestFyrDeployAskOnlyOnFyrsRepo(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	out, isErr := callAs(t, h.e, id, "change_request", map[string]any{"ask": "fyr.deploy", "args": map[string]any{}})
+	if !isErr || out != core.NotFyrRepoText {
+		t.Fatalf("%v %q", isErr, out)
+	}
+	if th, _ := h.e.Thread(id); len(th.Decisions) != 0 {
+		t.Fatalf("an ask opened: %+v", th.Decisions)
+	}
 }

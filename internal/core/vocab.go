@@ -176,7 +176,7 @@ var goneKinds = map[ChangeKind]string{
 // goneAsks are the asks change_request no longer takes.
 var goneAsks = map[ChangeAsk]string{
 	"apply":   runInstead,
-	"deploy":  CodeOnlyReason + ": for a deploy the owner must approve, call run_request with the command and the why; to deploy Fyr itself, effect_request fyr.deploy.",
+	"deploy":  CodeOnlyReason + ": for a deploy the owner must approve, call run_request with the command and the why; to deploy Fyr itself from a thread on Fyr's own repo, change_request {ask: \"fyr.deploy\"}.",
 	"revert":  runInstead,
 	"review":  askInstead,
 	"approve": askInstead,
@@ -249,15 +249,21 @@ const (
 	FyrDeploy = "fyr.deploy"
 )
 
-// ChangeAsk is what change_request asks the owner (V0.59 (5)): merge only
-// since V0.changes-code-only. An old record may hold an open change.<ask>
+// ChangeAsk is what change_request asks the owner (V0.59 (5)): merge since
+// V0.changes-code-only, and Fyr's own deploy since V0.one-tool-vocabulary
+// (it was effect_request's). An old record may hold an open change.<ask>
 // of another word; its answer is reported as it was.
 type ChangeAsk string
 
-const AskMerge ChangeAsk = "merge"
+const (
+	AskMerge ChangeAsk = "merge"
+	// AskFyrDeploy deploys Fyr: only a thread on Fyr's own repo may ask,
+	// and it needs no change.
+	AskFyrDeploy ChangeAsk = "fyr.deploy"
+)
 
 // ChangeAsks are all asks, in the order the tool lists them.
-func ChangeAsks() []ChangeAsk { return []ChangeAsk{AskMerge} }
+func ChangeAsks() []ChangeAsk { return []ChangeAsk{AskMerge, AskFyrDeploy} }
 
 // TaskStatus is the state of a subagent or background task, as the CLI
 // reports it (V0.16). The CLI may report others; Fyr acts on running only.

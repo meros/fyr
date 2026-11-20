@@ -165,8 +165,8 @@ func TestMergeAskOnRedOrGreenHead(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		th, _, _, err = Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindEffectRequest, Thread: "t1",
-			Args: EffectRequest{ID: "d_merge", Action: FyrMerge, Args: map[string]any{"pr": askURL, "method": "squash"}}}, now)
+		th, _, _, err = Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeRequest, Thread: "t1",
+			Args: ChangeRequest{ID: "d_merge", Change: askURL, Ask: AskMerge, Args: map[string]any{"method": "squash"}}}, now)
 		return th, err
 	}
 	if _, err := ask(func(p *PR) { p.Checks, p.FailedChecks = ChecksFail, []string{"test"} }); err == nil || !strings.Contains(err.Error(), "CI failed on 7333251: test") {

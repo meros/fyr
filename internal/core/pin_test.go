@@ -73,15 +73,15 @@ func TestHidingDropsThePin(t *testing.T) {
 	}
 }
 
-// V0.106: a pinned thread never settles by itself. The agent's settle_when
-// and its watch with then "settle" stay recorded but do not fire while the
+// V0.106: a pinned thread never settles by itself. The agent's watch
+// workDone (once settle_when done) and its watch with then "settle" stay recorded but do not fire while the
 // pin holds; unpin drops them. The owner's Settle still settles it, and
 // removes the pin.
 func TestPinnedNeverAutoSettles(t *testing.T) {
 	th, v := &Thread{ID: "t_1", ActivityAt: ct0}, &View{SeenAt: ct0}
 	step(t, th, v, Input{Source: FromOwner, Kind: "thread.pin"}, ct0)
 	RunStarted(th, ct0)
-	step(t, th, v, Input{Source: FromAgent, Kind: KindSettleWhen, Thread: "t_1", Args: Args{"condition": "done"}}, ct0)
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Thread: "t_1", Args: RuleArmArgs{ID: "w_done", When: When{Kind: WhenWorkDone}, Then: "settle"}}, ct0)
 	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Thread: "t_1", Args: RuleArmArgs{ID: "w_idle", When: When{Kind: WhenIdleFor, Ms: 60_000}, Then: "settle"}}, ct0)
 	RunEnded(th, nil, ct0.Add(time.Minute))
 	step(t, th, v, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0.Add(time.Hour))

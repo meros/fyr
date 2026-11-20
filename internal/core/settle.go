@@ -113,7 +113,7 @@ func dropSettleDone(t *Thread) {
 }
 
 // autoSettle is a settle Rule that the owner did not arm: the agent's
-// settle_when or watch, or Fyr's own. It never fires while the thread is
+// watch (once also settle_when), or Fyr's own. It never fires while the thread is
 // pinned, and unpin drops it (V0.106). The owner's Settle, now or deferred
 // (when done, when merged), is the owner's press and still fires.
 func autoSettle(r Rule) bool { return r.Purpose == PurposeSettle && r.CreatedBy != ByOwner }

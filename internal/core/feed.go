@@ -556,11 +556,9 @@ func ranText(label, title string, ok bool, exit int, out string) string {
 
 // requestText is the sentence for the result of the agent's request.
 func requestText(action string, args map[string]any, ok, declined bool, text string) string {
-	tool, what := "effect_request", action
+	what := action // V0.one-tool-vocabulary: every ask is a change_request
 	if ask, isAsk := strings.CutPrefix(action, "change."); isAsk {
-		tool, what = "change_request", ask
-	} else if _, ok := args["change"]; ok {
-		tool = "change_request"
+		what = ask
 	}
 	status := "failed"
 	switch {
@@ -569,7 +567,7 @@ func requestText(action string, args map[string]any, ok, declined bool, text str
 	case declined:
 		status = "was declined by the owner"
 	}
-	return fmt.Sprintf("Your %s %s on %s %s%s.", tool, what, target(args), status, detail(text))
+	return fmt.Sprintf("Your change_request %s on %s %s%s.", what, target(args), status, detail(text))
 }
 
 // target names what an effect acted on.

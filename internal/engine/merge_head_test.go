@@ -15,7 +15,8 @@ import (
 // the one and moved the other.
 func TestMergeAskReadsThePRFirst(t *testing.T) {
 	const oldHead, newHead = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "b2c3d4e5f60718293a4b5c6d7e8f901234567890"
-	for _, tool := range []string{"change_request", "effect_request"} {
+	// V0.one-tool-vocabulary: by the change, or by the PR URL (once effect_request's).
+	for _, tool := range []string{"change", "pr"} {
 		t.Run(tool, func(t *testing.T) {
 			h := newHarness(t, time.Minute)
 			id := h.create("x")
@@ -36,10 +37,10 @@ func TestMergeAskReadsThePRFirst(t *testing.T) {
 			}
 			guardDeps(t, h.e) // V0.182: the read runs outside the engine's lock
 			args := map[string]any{"change": c.ID, "ask": "merge", "reason": "pushed the fix"}
-			if tool == "effect_request" {
-				args = map[string]any{"action": core.FyrMerge, "args": map[string]any{"pr": url}}
+			if tool == "pr" {
+				args["change"] = url
 			}
-			if out, isErr := callAs(t, h.e, id, tool, args); isErr {
+			if out, isErr := callAs(t, h.e, id, "change_request", args); isErr {
 				t.Fatalf("the ask was refused on the old read: %s", out)
 			}
 			th, _ := h.e.Thread(id)

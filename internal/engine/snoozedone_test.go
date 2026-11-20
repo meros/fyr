@@ -85,8 +85,8 @@ func TestSnoozeDoneFollowsTheSlotQueue(t *testing.T) {
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
-	callAs(t, e, b, "slot_acquire", map[string]any{"kind": "test"})
+	acquire(e, a, "test")
+	acquire(e, b, "test")
 	if th, _ := e.Thread(b); !th.SlotQueued {
 		t.Fatal("the record does not say queued")
 	}

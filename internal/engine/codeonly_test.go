@@ -108,7 +108,7 @@ func TestChangeToolsCodeOnly(t *testing.T) {
 	if got := enumOf(schemas["change_open"], "kind"); !slices.Equal(got, []string{"code"}) {
 		t.Fatalf("change_open kinds: %v", got)
 	}
-	if got := enumOf(schemas["change_request"], "ask"); !slices.Equal(got, []string{"merge"}) {
+	if got := enumOf(schemas["change_request"], "ask"); !slices.Equal(got, []string{"merge", "fyr.deploy"}) {
 		t.Fatalf("change_request asks: %v", got)
 	}
 	for _, n := range []string{"change_revise", "change_status", "change_attach", "change_unchanged"} {
@@ -118,9 +118,6 @@ func TestChangeToolsCodeOnly(t *testing.T) {
 		if callRaw(t, h.e, id, n) {
 			t.Errorf("%s still answers", n)
 		}
-	}
-	if _, listed := schemas["effect_request"]; !listed {
-		t.Error("effect_request went")
 	}
 	for _, d := range []string{ChangeOpenDesc, ChangeRequestDesc} {
 		if strings.Contains(d, "document or design finishes") || strings.Contains(d, "cluster, cloud") {

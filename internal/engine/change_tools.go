@@ -43,13 +43,9 @@ const changeRef = "The change: its id (c_…), its key, its PR URL, owner/repo#N
 const (
 	ChangeOpenDesc    = "Start a code change in its own git worktree (workspace: true, branch, repo?, after?): Fyr makes the worktree, returns its path and watches it. Or give Fyr a card for a code change it cannot see by itself: a branch you pushed some other way, or a PR you did not open with gh pr create. Fyr makes cards for your pushes and PRs itself. The same key, PR or branch returns the same change. Only code: a write the owner must approve (an apply, a deploy, a migration) is run_request; a document or a design to approve is ask."
 	ChangeUpdateDesc  = "Tell Fyr what only you know about a code change. Send only what changed; send nothing when nothing moved. Fyr reads PR state, checks, reviews, conflicts and the pushed head itself; if you send one of these, Fyr replies with the value it reads. abandoned takes the card off the board."
-	ChangeRequestDesc = "Ask the owner to merge a PR. It returns at once; the answer comes later as a [Fyr] line. Ask right after you push; Fyr shows the ask to the owner when CI is green on that head, closes it and tells you when CI fails or GitHub cannot merge, and merges the head the owner saw; never run gh pr merge."
+	ChangeRequestDesc = "Ask the owner for an effect Fyr runs: the one way to ask for a merge or a Fyr deploy. It returns at once; the answer comes later as a [Fyr] line. The same open ask made again returns the one already open. ask \"merge\" {change: the change, or the PR URL, args?: {method: squash|merge|rebase, head?: <commit SHA, default the head Fyr reads now>}}: ask right after you push; Fyr shows the ask to the owner when CI is green on that head, closes it and tells you when CI fails or GitHub cannot merge, and merges the head the owner saw; never run gh pr merge. ask \"fyr.deploy\" {args: {} or {dir: <Fyr checkout>, tests?: true}}, only from a thread on Fyr's own repo, no change needed: Fyr updates itself when CI publishes a green commit on main, so do not ask after a merge; args {} installs the newest CI release now; dir builds that checkout and switches to it to try it, which waits for the owner's press."
 	ChangeListDesc    = "Fyr's facts, one line per change, open changes only by default, at most 4,000 characters. id gives one change of this thread in full."
 )
-
-// alias marks a tool kept for one release (V0.101): hidden from the list,
-// still callable.
-func alias(of, desc string) string { return "Alias of " + of + " for one release. " + desc }
 
 func (e *Engine) changeTools(s *mcp.Server) {
 	e.offerTool(s)      // V0.60
@@ -132,11 +128,11 @@ func (e *Engine) changeTools(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "change_request",
 		Description: ChangeRequestDesc,
 		Schema: obj(map[string]any{
-			"change": str(changeRef),
+			"change": str(changeRef + " Not needed for fyr.deploy."),
 			"ask":    map[string]any{"type": "string", "enum": core.Names(core.ChangeAsks())},
 			"args":   map[string]any{"type": "object"},
 			"reason": str("One sentence for the owner: why now."),
-		}, "change", "ask"),
+		}, "ask"),
 		Call: func(ctx context.Context, th string, a map[string]any) (string, error) {
 			ask := core.ChangeAsk(sArg(a, "ask"))
 			args, _ := a["args"].(map[string]any)
@@ -149,17 +145,24 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			if ask == core.AskMerge {
 				e.readPRForMergeAsk(ctx, th)
 			}
-			id := NewID("d_")
 			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindChangeRequest, Thread: th,
-				Args: core.ChangeRequest{ID: id, Change: sArg(a, "change"), Ask: ask, Args: args, Reason: sArg(a, "reason")}})
+				Args: core.ChangeRequest{ID: NewID("d_"), Change: sArg(a, "change"), Ask: ask, Args: args, Reason: sArg(a, "reason"),
+					FyrRepo: ask == core.AskFyrDeploy && e.onFyrRepo(th)}})
 			if err != nil {
 				return "", err
 			}
-			if s := e.heldReply(th, id); s != "" {
+			r := out.(core.ChangeRequestReply)
+			if s := e.heldReply(th, r.ID); s != "" {
 				return s, nil
 			}
-			c := out.(core.Change)
-			return fmt.Sprintf("Asked the owner to %s %q. The answer arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not do it another way meanwhile.", ask, c.Title), nil
+			what := "deploy Fyr"
+			if r.Change != nil {
+				what = fmt.Sprintf("%s %q", ask, r.Change.Title)
+			}
+			if r.Again {
+				return fmt.Sprintf("Already asked: the owner has your ask to %s. The answer arrives in a later message starting with [Fyr]; do not ask again or do it another way.", what), nil
+			}
+			return fmt.Sprintf("Asked the owner to %s. The answer arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not do it another way meanwhile.", what), nil
 		}})
 
 	s.Add(mcp.Tool{Name: "change_list",
@@ -353,6 +356,23 @@ func revisionArg(v any) *core.Revision {
 		return nil
 	}
 	return &core.Revision{ID: sArg(m, "id"), Summary: sArg(m, "summary"), URL: sArg(m, "url"), By: core.ByAgent}
+}
+
+// onFyrRepo reports that the thread works on Fyr's own repo
+// (V0.one-tool-vocabulary): its folder, or its project's, is a Fyr checkout.
+// Only such a thread may ask to deploy Fyr.
+func (e *Engine) onFyrRepo(th string) bool {
+	t, ok := e.Thread(th)
+	if !ok {
+		return false
+	}
+	if t.Cwd != "" && isFyrCheckout(t.Cwd) {
+		return true
+	}
+	e.mu.Lock()
+	p := e.projects[t.ProjectID]
+	e.mu.Unlock()
+	return p != nil && p.Folder != "" && isFyrCheckout(p.Folder)
 }
 
 // heldReply is the tool's answer when the merge ask id waits for CI

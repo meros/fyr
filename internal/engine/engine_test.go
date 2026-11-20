@@ -431,12 +431,12 @@ func TestGateHookDeniesMerge(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("gate")
 	th := h.wait(id, "done", state(core.Done))
-	if !strings.Contains(th.Summary, "deny") || !strings.Contains(th.Summary, "effect_request") {
+	if !strings.Contains(th.Summary, "deny") || !strings.Contains(th.Summary, "mcp__fyr__change_request") {
 		t.Fatalf("summary %q", th.Summary)
 	}
 }
 
-// SPEC 0.5 V0.12, 5.10: effect_request → asking → approve runs once → the
+// SPEC 0.5 V0.12, 5.10: change_request merge on a PR URL → asking → approve runs once → the
 // agent gets the result in a new turn.
 func TestEffectMergeLoop(t *testing.T) {
 	h := newHarness(t, time.Minute)
@@ -461,7 +461,7 @@ func TestEffectMergeLoop(t *testing.T) {
 		t.Fatalf("first %+v second %+v", r1, r2)
 	}
 	th = h.wait(id, "agent got the result", func(t core.Thread, _ core.Attention) bool {
-		return strings.HasPrefix(t.Summary, "echo: [Fyr] Your effect_request pr.merge")
+		return strings.HasPrefix(t.Summary, "echo: [Fyr] Your change_request pr.merge")
 	})
 	if h.r.n() != 1 {
 		t.Fatalf("runner called %d times", h.r.n())

@@ -15,9 +15,10 @@ const deployCommit = "c0ffee1234567890c0ffee1234567890c0ffee12"
 func askDeploy(t *testing.T, now time.Time) *Thread {
 	t.Helper()
 	th := prThread(t, "https://github.com/acme/app/pull/88", now)
-	// V0.changes-code-only (5): a Fyr deploy is asked with effect_request.
-	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindEffectRequest, Thread: "t1",
-		Args: EffectRequest{ID: "d_deploy", Action: FyrDeploy, Args: map[string]any{"dir": "/src/fyr"}}}, now)
+	// V0.one-tool-vocabulary: a Fyr deploy is change_request fyr.deploy,
+	// from a thread on Fyr's own repo, and names no change.
+	th, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeRequest, Thread: "t1",
+		Args: ChangeRequest{ID: "d_deploy", Ask: AskFyrDeploy, Args: map[string]any{"dir": "/src/fyr"}, FyrRepo: true}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +55,7 @@ func TestAutoDeployApprovesTheAskAndBindsTheCommit(t *testing.T) {
 	if a, _ := d["answer"].(string); !strings.Contains(a, "Auto-approved") || !strings.Contains(a, "c0ffee1") {
 		t.Fatalf("answer %q", a)
 	}
-	// V0.changes-code-only (5): an effect_request deploy names no change,
+	// V0.changes-code-only (5): a deploy that names no change
 	// so no change carries the approval; the answer above says it.
 	if c := th.Changes[0]; c.AutoApproved != nil {
 		t.Fatalf("a change the deploy did not name says it: %+v", c.AutoApproved)
@@ -129,5 +130,17 @@ func TestAutoDeploySettingIsTheOwners(t *testing.T) {
 	res, err := ReduceHost(Input{Source: FromOwner, Kind: KindAutoDeploySet, Args: Args{"on": false}}, now)
 	if err != nil || len(res.Effects) != 1 || res.Effects[0].Kind != EffectAutoDeploySet || res.Effects[0].Request.Args["on"] != false {
 		t.Fatalf("res %+v %v", res, err)
+	}
+}
+
+// V0.one-tool-vocabulary: only a thread on Fyr's own repo may ask to deploy
+// Fyr; any other thread is told what to call instead.
+func TestFyrDeployOnlyFromFyrsRepo(t *testing.T) {
+	now := time.Date(2026, 11, 20, 13, 0, 0, 0, time.UTC)
+	th := prThread(t, "https://github.com/acme/app/pull/88", now)
+	_, _, _, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeRequest, Thread: "t1",
+		Args: ChangeRequest{ID: "d_deploy", Ask: AskFyrDeploy, Args: map[string]any{}}}, now)
+	if err == nil || err.Error() != NotFyrRepoText {
+		t.Fatalf("a deploy ask from another project: %v", err)
 	}
 }

@@ -200,21 +200,22 @@ func TestAgentThreadToolsAreAgentInputs(t *testing.T) {
 	}
 }
 
-// V0.106: the agent's settle_when on a pinned thread says it waits for the
-// owner.
+// V0.106: the agent's watch {workDone, then settle} (once settle_when done)
+// on a pinned thread says it waits for the owner.
 func TestSettleWhenOnAPinnedThreadSaysItWaits(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	a := h.create("coordinator")
 	h.wait(a, "done", state(core.Done))
 	b := h.create("other")
 	h.wait(b, "done", state(core.Done))
-	if out, _ := callAs(t, h.e, b, "settle_when", map[string]any{"condition": "done"}); strings.Contains(out, "pinned") {
+	done := map[string]any{"when": map[string]any{"kind": "workDone"}, "then": "settle"}
+	if out, _ := callAs(t, h.e, b, "watch", done); strings.Contains(out, "pinned") {
 		t.Fatalf("an unpinned thread got the pin note: %q", out)
 	}
 	if r := h.cmd("thread.pin", a, nil); !r.OK {
 		t.Fatalf("pin: %+v", r)
 	}
-	out, isErr := callAs(t, h.e, a, "settle_when", map[string]any{"condition": "done"})
+	out, isErr := callAs(t, h.e, a, "watch", done)
 	if isErr || !strings.Contains(out, "The owner pinned this thread") {
 		t.Fatalf("%v %q", isErr, out)
 	}

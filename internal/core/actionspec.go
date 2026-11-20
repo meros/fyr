@@ -10,8 +10,8 @@ package core
 // and ends them the same way for all three.
 // FyrEffects are the effects Fyr runs itself. Each has one Guard, used by
 // every way to start it: the owner's command (the registry's Available), the
-// press of a built-in offer, and the owner's yes to an agent's effect_request
-// or change_request. A PR effect asks the change that has the PR (#32).
+// press of a built-in offer, and the owner's yes to an agent's
+// change_request. A PR effect asks the change that has the PR (#32).
 // The registry stays the list of owner commands, each with Available (V0.5).
 // The agent hears the result of every fyr and script action (V0.60 (4)).
 
@@ -320,8 +320,6 @@ type FyrEffect struct {
 	Label string
 	// Ask is the change_request ask that requests it, or "".
 	Ask ChangeAsk
-	// Request: the agent may ask for it with effect_request (5.1 viaEffect).
-	Request bool
 	// OnPR: it acts on args.pr; the poller looks at the PR again after it.
 	OnPR bool
 	// Guard is why it cannot run now with these args, or "". It is checked
@@ -350,7 +348,7 @@ func (fx *FyrEffect) Blocked(t *Thread, args map[string]any) string {
 
 // FyrEffects are every effect Fyr runs, by id.
 var FyrEffects = map[string]*FyrEffect{
-	FyrMerge: {ID: FyrMerge, Label: "Merge PR", Ask: AskMerge, Request: true, OnPR: true, Guard: prGuard(true), Gate: checksWait, Timeout: 10 * time.Minute,
+	FyrMerge: {ID: FyrMerge, Label: "Merge PR", Ask: AskMerge, OnPR: true, Guard: prGuard(true), Gate: checksWait, Timeout: 10 * time.Minute,
 		Check: func(a map[string]any) error {
 			if err := needPR(a); err != nil {
 				return err
@@ -370,7 +368,9 @@ var FyrEffects = map[string]*FyrEffect{
 	FyrRerun: {ID: FyrRerun, Label: "Re-run failed checks", OnPR: true, Guard: prGuard(false), Check: needPR, Timeout: 10 * time.Minute},
 	// A deploy installs a release, or builds a checkout, then drains for up
 	// to 30 minutes (V0.13, decision 0027).
-	FyrDeploy: {ID: FyrDeploy, Label: "Deploy Fyr", Request: true, Timeout: 60 * time.Minute,
+	// Only a thread on Fyr's own repo may ask for it (V0.one-tool-vocabulary,
+	// reduceChangeRequest); the owner's own deploy is host.deploy.
+	FyrDeploy: {ID: FyrDeploy, Label: "Deploy Fyr", Ask: AskFyrDeploy, Timeout: 60 * time.Minute,
 		Guard: func(*Thread, map[string]any) string { return "" },
 		Check: func(a map[string]any) error {
 			if d, ok := a["dir"]; ok {

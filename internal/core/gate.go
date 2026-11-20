@@ -15,7 +15,7 @@ type GateRule struct {
 
 var GateRules = []GateRule{
 	{Tool: "Bash", Pattern: regexp.MustCompile(`(^|[;&|(\s])gh\s+pr\s+merge(\s|$)`),
-		Reason: "Fyr owns merges. Use mcp__fyr__effect_request with action pr.merge and args {pr, method}; the user approves it and Fyr reports the result."},
+		Reason: "Fyr owns merges. Call mcp__fyr__change_request {change: <the PR URL or the change>, ask: \"merge\", args?: {method}}; Fyr shows it to the owner when CI is green and reports the result."},
 	// V0.149: sudo waits for a password nobody can type here; sudo -n never asks.
 	// V0.prompt-fits-setup: the text holds where pkexec is missing too.
 	{Tool: "Bash", Pattern: regexp.MustCompile(`(?m)(^\s*|[;&|(]\s*)sudo(\s+-[^n\s]\S*)*(\s+[^-\s]|\s*$)`),
