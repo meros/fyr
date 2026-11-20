@@ -4256,6 +4256,24 @@ try {
     const a = await evaluate(STATE(k));
     check(a.expanded === "true" && a.clock, `${ctx}: ${k} opened without its clock (${JSON.stringify(a)})`);
   }
+  // V0.autoclose-clock: the clock shows the time left: a re-render that does not restart it (another section folds and opens again)
+  // leaves the pie where the deadline puts it, not drained by the time already gone. The harness reduces motion,
+  // which stops the clock; it runs here for the length of this check.
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+  await new Promise((r) => setTimeout(r, 3_000));
+  await evaluate(`(async () => {
+    const h = document.querySelector(${JSON.stringify(head("seen"))});
+    h?.click(); await new Promise((r) => requestAnimationFrame(r)); h?.click(); await new Promise((r) => requestAnimationFrame(r));
+  })()`);
+  for (const k of ["snoozed", "settled"]) {
+    const c = await evaluate(`(() => {
+      const a = document.querySelector(${JSON.stringify(`${head(k)} .ahc`)})?.getAnimations()[0];
+      if (!a) return null;
+      return { shown: a.effect.getComputedTiming().endTime - a.currentTime, real: ${t0 + 10_000} - Date.now() };
+    })()`);
+    check(c && Math.abs(c.shown - c.real) < 800, `${ctx}: ${k}'s clock shows ${Math.round(c?.shown)} ms left, the section closes in ${Math.round(c?.real)} ms`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
   for (const k of ["snoozed", "settled"]) {
     await waitFor(`${STATE(k)}.expanded === 'false'`, { timeout: 14_000, what: `${k} to close by itself` });
     check(!(await evaluate(STATE(k))).clock, `${ctx}: ${k} folded with its clock`);
@@ -6091,3 +6109,4 @@ if (failures.length) {
 }
 console.log(`layout test: ${checks} checks passed (${SCREENS.length} screens × ${SIZES.length} sizes)${timingSkipped ? `; ${timingSkipped} timing budgets skipped (FYR_LAYOUT_TIMING=0)` : ""}`);
 process.exit(0);
+
