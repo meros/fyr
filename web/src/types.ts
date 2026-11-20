@@ -90,6 +90,8 @@ export interface TaskDTO {
   /** V0.195: a command the agent left running, and since when the thread has used almost no CPU beside it. */
   background?: boolean;
   tool?: string;
+  /** V0.subagent-timeline: the Task/Agent call that started it */
+  toolUseId?: string;
   quietSince?: string;
 }
 

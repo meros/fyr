@@ -219,8 +219,11 @@ type Task struct {
 	// (a Monitor is a local_bash as well). QuietSince: the thread has used
 	// almost no CPU since then while this task ran; QuietTold: the agent
 	// was woken about it, which happens once per task.
-	Background bool       `json:"background,omitempty"`
-	Tool       string     `json:"tool,omitempty"`
+	Background bool   `json:"background,omitempty"`
+	Tool       string `json:"tool,omitempty"`
+	// V0.subagent-timeline: the tool_use id of the Task/Agent call that
+	// started it, so the agents strip opens that subagent's timeline.
+	ToolUseID  string     `json:"toolUseId,omitempty"`
 	QuietSince *time.Time `json:"quietSince,omitempty"`
 	QuietTold  bool       `json:"quietTold,omitempty"`
 }

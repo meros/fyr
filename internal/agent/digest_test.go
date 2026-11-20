@@ -87,6 +87,10 @@ func TestTaskFromSystem(t *testing.T) {
 			t.Errorf("case %d: %+v %q %v", i, k, ev, ok)
 		}
 	}
+	// V0.subagent-timeline: task_started names the Agent call (CLI 2.1.327).
+	if k, _, _ := taskFromSystem(M{"type": "system", "subtype": "task_started", "task_id": "a2", "tool_use_id": "toolu_1", "task_type": "local_agent"}); k.ToolUseID != "toolu_1" {
+		t.Errorf("tool use id %q", k.ToolUseID)
+	}
 	if _, _, ok := taskFromSystem(M{"type": "system", "subtype": "thinking_tokens"}); ok {
 		t.Error("thinking_tokens is not a task")
 	}

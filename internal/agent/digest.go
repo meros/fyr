@@ -119,6 +119,7 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 	case "task_started":
 		k.Description, k.Type, k.Status = str(m, "description"), str(m, "task_type"), core.TaskRunning
 		k.Background, _ = m["is_backgrounded"].(bool) // V0.195
+		k.ToolUseID = str(m, "tool_use_id")           // V0.subagent-timeline
 		return k, "started", true
 	case "task_progress":
 		k.Activity = core.TruncHead(firstLine(str(m, "description")), 120)

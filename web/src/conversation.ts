@@ -33,6 +33,25 @@ export interface ToolCall {
 /** One step of a subagent's timeline: a text it wrote, or tool calls it made one after another. */
 export type SubStep = { kind: "text"; text: string } | { kind: "calls"; calls: ToolCall[] };
 
+/** V0.subagent-timeline: the tool call with this id anywhere in the items, also inside a subagent's steps. */
+export function findCall(items: Item[], id: string): ToolCall | undefined {
+  const inCalls = (calls: ToolCall[]): ToolCall | undefined => {
+    for (const c of calls) {
+      if (c.id === id) return c;
+      for (const s of c.sub) {
+        const f = s.kind === "calls" ? inCalls(s.calls) : undefined;
+        if (f) return f;
+      }
+    }
+    return undefined;
+  };
+  for (const it of items) {
+    const f = it.kind === "tools" ? inCalls(it.calls) : undefined;
+    if (f) return f;
+  }
+  return undefined;
+}
+
 /** The prompt a Task/Agent call gave its subagent, "" when there is none. */
 export function agentPrompt(c: ToolCall): string {
   const p = (c.input as { prompt?: unknown } | null)?.prompt;

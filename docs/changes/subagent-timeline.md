@@ -1,4 +1,4 @@
-# V0.subagent-timeline: an opened subagent shows its prompt and everything it did, in order
+# V0.subagent-timeline: an opened subagent shows its prompt and everything it did, in order, from its Agent row and from the agents strip
 
 → V0.16. (owner, 20 Nov: "Maybe we should add support in fyr to see the subagent data?", then chose "Full timeline in order".)
 
@@ -9,3 +9,5 @@
 (3) **The prompt.** The `prompt` input of the Task/Agent call shows first, under a "Prompt" label, folded to three lines with its line breaks run together; a tap shows it whole with its line breaks. Desktop and phone share `AgentsRow` in `thread.tsx`, so both show the same.
 
 (4) **Thinking** stays hidden, as it is for the main agent.
+
+(5) **From the agents strip.** A task now carries `toolUseId`, the `tool_use_id` of the CLI's `task_started` (the Task/Agent call that started it). A strip row whose call is in the loaded conversation is a button: a tap opens the same timeline under the row, and the strip grows to hold it (at most 60 % of the screen, then it scrolls). A row whose call is not loaded (an earlier page) or that is not a subagent (a background command) stays a plain row. Desktop and phone share `AgentsStrip`.

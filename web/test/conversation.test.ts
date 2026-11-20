@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentPrompt, buildConversation, summarizeInput, toolRows } from "../src/conversation.ts";
+import { agentPrompt, buildConversation, findCall, summarizeInput, toolRows } from "../src/conversation.ts";
 import { renderMarkdown } from "../src/markdown.ts";
 
 let seq = 0;
@@ -56,6 +56,10 @@ test("a subagent's timeline keeps its texts and tool calls in order, and its pro
     ["text:Starting.", "calls:echo one,echo two", "text:Both printed.", "calls:x.ts", "text:Done: one, two."],
   );
   assert.equal(agentPrompt({ ...agent, input: { description: "x" } }), "");
+  // the agents strip finds the Agent call, and a call inside its timeline, by id
+  assert.equal(findCall(items, "a1"), agent);
+  assert.equal(findCall(items, "b2")?.summary, "echo two");
+  assert.equal(findCall(items, "nope"), undefined);
 });
 
 test("markdown escapes raw HTML and unsafe links", () => {

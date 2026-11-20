@@ -12,7 +12,7 @@ import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } fro
 import { createContext } from "preact";
 import { SlideMark } from "./motion-ui.tsx";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
-import { agentPrompt, buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, type SubStep, runLabel, fullOutputOf } from "./conversation.ts";
+import { agentPrompt, buildConversation, findCall, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, type SubStep, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
@@ -229,7 +229,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       </div>
       <UndeclaredStrip id={t.id} />
       <LeftoverStrip id={t.id} now={p.now} />
-      {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.events} cwd={t.cwd} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
       {/* V0.next-step-dock: what waits on the owner stands in one dock; a question or approval first, then a Run card */}
       {showsDecision(tab) && !decision && dock && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={p.onRun} onShow={(id) => showCard(id, tab, setTab)} />}
@@ -414,10 +414,15 @@ const TASK_ICON: Record<string, "working" | "settled" | "failed" | "seen"> = {
   stopped: "seen",
 };
 
-function TaskRow({ t, now }: { t: TaskDTO; now: number }) {
+/** V0.subagent-timeline: a row whose Agent call is in the loaded conversation opens that subagent's timeline under it. */
+function TaskRow({ t, now, call, open, onOpen }: { t: TaskDTO; now: number; call?: ToolCall; open?: boolean; onOpen?: () => void }) {
   const line = taskLine(t);
-  return (
-    <div class={`tk ${t.status}`} title={`${t.description}\n${line}`}>
+  const row = (
+    <div
+      class={`tk ${t.status}${call ? " click" : ""}`}
+      title={`${t.description}\n${line}`}
+      {...(call ? { role: "button", tabIndex: 0, "aria-expanded": !!open, onClick: onOpen, onKeyDown: (e: KeyboardEvent) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen?.()) } : {})}
+    >
       <StateIcon state={TASK_ICON[t.status] ?? "seen"} size={14} />
       <span class="tkt">
         <span class="tkd ell">{t.description || "Agent"}</span>
@@ -427,13 +432,39 @@ function TaskRow({ t, now }: { t: TaskDTO; now: number }) {
       <span class="tka">{relTime(t.startedAt, now)}</span>
     </div>
   );
+  if (!call || !open) return row;
+  return (
+    <>
+      {row}
+      <div class="sub tksub">
+        <SubTimeline c={call} />
+      </div>
+    </>
+  );
 }
 
 /** Running tasks always show; ended ones fold behind "N finished". On a phone the whole strip is one line until opened. */
-export function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
+export function AgentsStrip({ tasks, now, events, cwd }: { tasks: TaskDTO[]; now: number; events?: FyrEvent[]; cwd?: string }) {
   const [showEnded, setShowEnded] = useState(false);
   const [open, setOpen] = useState(false);
+  const [opened, setOpened] = useState<string | null>(null);
   const g = groupTasks(tasks);
+  // V0.subagent-timeline: the Agent calls the rows can open, from the loaded events (an earlier page may not have them).
+  const wanted = tasks.map((t) => t.toolUseId ?? "").join(",");
+  const calls = useMemo(() => {
+    const m = new Map<string, ToolCall>();
+    if (!wanted.replace(/,/g, "")) return m;
+    const items = buildConversation(events ?? [], { cwd });
+    for (const id of wanted.split(",")) {
+      const c = id ? findCall(items, id) : undefined;
+      if (c) m.set(id, c);
+    }
+    return m;
+  }, [events, wanted, cwd]);
+  const row = (t: TaskDTO) => {
+    const call = t.toolUseId ? calls.get(t.toolUseId) : undefined;
+    return <TaskRow t={t} now={now} key={t.id} call={call} open={opened === t.id} onOpen={() => setOpened(opened === t.id ? null : t.id)} />;
+  };
   return (
     <div class={`agents${open ? " open" : ""}`}>
       <button class="agsum ell" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -441,16 +472,14 @@ export function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
         <span class="ell">{agentsSummary(tasks)}</span>
         <span class="chev">{open ? "▾" : "▸"}</span>
       </button>
-      <div class="agrows">
-        {g.running.map((t) => (
-          <TaskRow t={t} now={now} key={t.id} />
-        ))}
+      <div class={`agrows${opened ? " deep" : ""}`}>
+        {g.running.map(row)}
         {g.ended.length > 0 && (
           <button class="tkmore" onClick={() => setShowEnded(!showEnded)} aria-expanded={showEnded}>
             {g.ended.length} finished {showEnded ? "▾" : "▸"}
           </button>
         )}
-        {showEnded && g.ended.map((t) => <TaskRow t={t} now={now} key={t.id} />)}
+        {showEnded && g.ended.map(row)}
       </div>
     </div>
   );
@@ -986,6 +1015,18 @@ function SubPrompt({ text }: { text: string }) {
   );
 }
 
+/** V0.subagent-timeline: a subagent's prompt, then its texts and tool calls in order; in an Agent row and in the agents strip. */
+function SubTimeline({ c }: { c: ToolCall }) {
+  return (
+    <>
+      <SubPrompt text={agentPrompt(c)} />
+      {c.sub.map((s: SubStep, i) =>
+        s.kind === "calls" ? <ToolCard key={i} calls={s.calls} nested /> : <div key={i} class="subtext prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(s.text) }} />,
+      )}
+    </>
+  );
+}
+
 function AgentsRow({ calls }: { calls: ToolCall[] }) {
   const [open, setOpen] = useState(false);
   const failed = calls.some((c) => c.isError);
@@ -1010,10 +1051,7 @@ function AgentsRow({ calls }: { calls: ToolCall[] }) {
               <div class="subh ell">
                 {c.description || c.summary} · {c.subMessages} {c.subMessages === 1 ? "message" : "messages"}
               </div>
-              <SubPrompt text={agentPrompt(c)} />
-              {c.sub.map((s: SubStep, i) =>
-                s.kind === "calls" ? <ToolCard key={i} calls={s.calls} nested /> : <div key={i} class="subtext prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(s.text) }} />,
-              )}
+              <SubTimeline c={c} />
             </div>
           ))}
         </div>
