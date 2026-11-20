@@ -37,6 +37,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     m.addItem(withTitle: "Show Log", action: #selector(showLog), keyEquivalent: "")
     m.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "")
     m.addItem(.separator())
+    m.addItem(withTitle: "Uninstall…", action: #selector(uninstall), keyEquivalent: "")
     m.addItem(withTitle: "Quit (Fyr keeps running)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
     item.menu = m
     if !Agent.paused { report(Agent.start()) }
@@ -110,7 +111,24 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
   @objc func openInBrowser() { window.openInBrowser() }
   @objc func settings() { window.show(path: "/?settings") }
   @objc func reload() { window.reload() }
-  @objc func showLog() { NSWorkspace.shared.open(URL(fileURLWithPath: "~/Library/Logs/fyr.log".expandingTilde)) }
+  @objc func showLog() { NSWorkspace.shared.open(URL(fileURLWithPath: Agent.log)) }
+
+  @objc func uninstall() {
+    let a = NSAlert()
+    a.alertStyle = .warning
+    a.messageText = "Uninstall Fyr?"
+    a.informativeText = "This stops Fyr and every running agent, removes Fyr from Login Items, turns off Fyr's Tailscale Serve if set, and moves Fyr.app to the Trash."
+    a.showsSuppressionButton = true
+    a.suppressionButton?.title = "Also remove Fyr's data and logs (\(Agent.data))"
+    a.suppressionButton?.state = .off
+    a.addButton(withTitle: "Uninstall")
+    a.addButton(withTitle: "Cancel")
+    guard a.runModal() == .alertFirstButtonReturn else { return }
+    let removeData = a.suppressionButton?.state == .on
+    Agent.uninstall(removeData: removeData)
+    Agent.trashSelf()
+    NSApp.terminate(nil)
+  }
 
   @objc func togglePause() {
     if Agent.paused {
@@ -180,9 +198,11 @@ func agentCommand(_ cmd: String) -> Never {
   case "unregister": // and out of Login Items: what an uninstall wants
     try? Agent.pause()
     try? SMAppService.mainApp.unregister()
+  case "uninstall": // full uninstall without UI (keeps data and bundle for scripts)
+    Agent.uninstall(removeData: false)
   case "status": break
   default:
-    FileHandle.standardError.write("usage: Fyr --agent register|unregister|status\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: Fyr --agent register|unregister|uninstall|status\n".data(using: .utf8)!)
     exit(64)
   }
   switch Agent.state {

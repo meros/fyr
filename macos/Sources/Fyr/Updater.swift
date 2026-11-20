@@ -53,16 +53,14 @@ final class Updater {
 
   struct Failure: Error, CustomStringConvertible { let description: String }
 
-  // update returns the new version when it swapped one in.
+  // update returns the new version when it swapped one in. It looks for the
+  // newest non-draft release carrying Fyr.app.zip (app-<sha12> or vX.Y.Z), so
+  // versioned releases (V0.versioned-releases) taking /releases/latest never
+  // stall shell updates.
   private func update() throws -> String? {
-    let latest = try json(URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!)
-    guard let tag = latest["tag_name"] as? String, tag.hasPrefix("app-") else { return nil }
-    let v = String(tag.dropFirst(4))
-    if v == version { return nil }
-    guard let assets = latest["assets"] as? [[String: Any]],
-      let zip = assets.first(where: { $0["name"] as? String == "Fyr.app.zip" })?["browser_download_url"] as? String,
-      let zipURL = URL(string: zip)
-    else { throw Failure(description: "\(tag) has no Fyr.app.zip") }
+    let releases = try jsonList(URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=30")!)
+    guard let picked = Self.pickRelease(releases) else { return nil }
+    if picked.version == version { return nil }
 
     // Unpack beside the bundle, on its volume, so the swap is a rename.
     let fm = FileManager.default
@@ -70,7 +68,7 @@ final class Updater {
     let work = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: here, create: true)
     defer { try? fm.removeItem(at: work) }
     let file = work.appendingPathComponent("Fyr.app.zip")
-    try Data(contentsOf: zipURL).write(to: file)
+    try Data(contentsOf: picked.zipURL).write(to: file)
     try run("/usr/bin/ditto", ["-x", "-k", file.path, work.path])
     let new = work.appendingPathComponent("Fyr.app")
 
@@ -78,16 +76,31 @@ final class Updater {
     // this build's certificate and bundle id.
     let req = "=identifier \"\(bundleID)\" and certificate root = H\"\(signer)\""
     try run("/usr/bin/codesign", ["--verify", "--strict", "--deep", "-R", req, new.path])
-    guard Bundle(url: new)?.infoDictionary?["CFBundleVersion"] as? String == v else {
-      throw Failure(description: "\(tag)'s app says another version")
+    guard Bundle(url: new)?.infoDictionary?["CFBundleVersion"] as? String == picked.version else {
+      throw Failure(description: "\(picked.tag)'s app says another version")
     }
     _ = try fm.replaceItemAt(here, withItemAt: new)
-    NSLog("Fyr: self-update: \(version) → \(v)")
+    NSLog("Fyr: self-update: \(version) → \(picked.version)")
     DispatchQueue.main.async { self.relaunch(here) }
-    return v
+    return picked.version
   }
 
-  private func json(_ u: URL) throws -> [String: Any] {
+  static func pickRelease(_ releases: [[String: Any]]) -> (tag: String, version: String, zipURL: URL)? {
+    for rel in releases {
+      if (rel["draft"] as? Bool) == true { continue }
+      guard let tag = rel["tag_name"] as? String,
+        let assets = rel["assets"] as? [[String: Any]],
+        let zip = assets.first(where: { $0["name"] as? String == "Fyr.app.zip" })?["browser_download_url"] as? String,
+        let zipURL = URL(string: zip)
+      else { continue }
+      let v = tag.hasPrefix("app-") ? String(tag.dropFirst(4)) : tag
+      guard !v.isEmpty else { continue }
+      return (tag, v, zipURL)
+    }
+    return nil
+  }
+
+  private func jsonList(_ u: URL) throws -> [[String: Any]] {
     var r = URLRequest(url: u, timeoutInterval: 30)
     r.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     var out: Result<Data, Error> = .failure(Failure(description: "no answer from \(u.host ?? "")"))
@@ -99,7 +112,7 @@ final class Updater {
       sem.signal()
     }.resume()
     sem.wait()
-    guard let j = try JSONSerialization.jsonObject(with: out.get()) as? [String: Any] else { throw Failure(description: "bad JSON") }
+    guard let j = try JSONSerialization.jsonObject(with: out.get()) as? [[String: Any]] else { throw Failure(description: "bad JSON") }
     return j
   }
 

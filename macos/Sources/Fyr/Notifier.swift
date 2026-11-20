@@ -122,12 +122,38 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     c.sound = .default
     let thread = p["threadId"] as? String ?? ""
     let host = p["host"] as? String ?? ""
+    let state = p["state"] as? String ?? ""
     let ref = thread.isEmpty ? "" : (host.isEmpty ? thread : "\(host)/\(thread)")
-    c.userInfo = ["ref": ref]
+    c.userInfo = ["ref": ref, "threadId": thread, "state": state]
     if !ref.isEmpty { c.threadIdentifier = ref }
-    if p["state"] as? String == "asking" { c.interruptionLevel = .timeSensitive }
+    if state == "asking" { c.interruptionLevel = .timeSensitive }
     let id = ref.isEmpty ? UUID().uuidString : ref
     UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+  }
+
+  // clear removes delivered notifications for threadId once the thread left
+  // the state they were shown for (pwa.ts clearThreadNotification, push.ts
+  // notificationIsStale).
+  func clear(threadId: String, state: String) {
+    guard !threadId.isEmpty else { return }
+    let center = UNUserNotificationCenter.current()
+    center.getDeliveredNotifications { list in
+      let ids = list.compactMap { n -> String? in
+        let info = n.request.content.userInfo
+        let tid = info["threadId"] as? String ?? ""
+        let ref = info["ref"] as? String ?? n.request.identifier
+        let matches = tid == threadId || ref == threadId || ref.hasSuffix("/\(threadId)")
+        guard matches else { return nil }
+        let shown = info["state"] as? String
+        return Self.isStale(shown: shown, current: state) ? n.request.identifier : nil
+      }
+      if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+    }
+  }
+
+  static func isStale(shown: String?, current state: String) -> Bool {
+    guard let shown, !shown.isEmpty else { return state != "asking" && state != "failed" }
+    return shown != state
   }
 
   // A click opens the thread in the window.

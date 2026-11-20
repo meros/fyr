@@ -170,7 +170,20 @@ int main(int argc, char **argv) {
 
 	if (_NSGetExecutablePath(exe, &size) != 0 || !realpath(exe, real))
 		return 71;
+	int trashed = strstr(real, "/.Trash/") != 0;
 	res = dirname(dirname(real)); /* .../Contents */
+	/* Decision 0037: an app moved to the Trash cleans up on its next start
+	 * instead of running fyrd from the Trash under KeepAlive. */
+	if (trashed) {
+		char *shell = 0;
+		fprintf(stderr, "fyr-host: bundle is in the Trash; unregistering\n");
+		if (asprintf(&shell, "%s/MacOS/Fyr", res) >= 0) {
+			char *uargs[] = {"Fyr", "--agent", "unregister", 0};
+			if (posix_spawn(&pid, shell, 0, 0, uargs, environ) == 0)
+				waitpid(pid, &st, 0);
+		}
+		return 0;
+	}
 	if (asprintf(&launcher, "%s/Resources/fyr", res) < 0 || asprintf(&seed, "%s/Resources/fyrd", res) < 0)
 		return 70;
 

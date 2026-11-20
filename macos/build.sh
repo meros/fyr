@@ -107,6 +107,7 @@ cat >"$c/Info.plist" <<EOF
   <key>NSHighResolutionCapable</key><true/>
   <key>FyrAgentPlist</key><string>$(xml "$label").plist</string>
   <key>FyrData</key><string>$(xml "$data")</string>
+  <key>FyrLog</key><string>$(xml "$log")</string>
   <key>FyrReplaces</key><array>$replaces_xml</array>
   <!-- The page is plain HTTP on fyr.localhost (decision 0037, spike): ATS
        blocks that even with NSAllowsLocalNetworking. -->

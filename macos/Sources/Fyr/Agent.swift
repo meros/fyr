@@ -9,8 +9,9 @@ enum Agent {
   static let plistName = info["FyrAgentPlist"] as? String ?? "fyr.agent.plist"
   static let label = (plistName as NSString).deletingPathExtension
   static var service: SMAppService { .agent(plistName: plistName) }
-  // The data folder, as the agent's plist gives it to fyr-host.
+  // The data folder and log file, as the agent's plist gives them to fyr-host.
   static let data = ((info["FyrData"] as? String) ?? "~/.local/share/fyr" as String).expandingTilde
+  static let log = ((info["FyrLog"] as? String) ?? "~/Library/Logs/fyr.log" as String).expandingTilde
   // The script install's launchd labels (scripts/install-macos.sh) that this
   // app takes over: the same data folder, so only one may run.
   static let replaces = info["FyrReplaces"] as? [String] ?? []
@@ -54,6 +55,48 @@ enum Agent {
   static func pause() throws {
     paused = true
     try service.unregister()
+  }
+
+  // uninstall unregisters both the background agent and Login Items, turns
+  // off Fyr's Tailscale Serve if configured, cleans up any leftover script
+  // install, and optionally removes Fyr's data and log (decision 0037).
+  static func uninstall(removeData: Bool) {
+    try? service.unregister()
+    try? SMAppService.mainApp.unregister()
+    replaceScriptInstall()
+    turnOffTailscaleServe()
+    if let id = Bundle.main.bundleIdentifier {
+      UserDefaults.standard.removePersistentDomain(forName: id)
+      UserDefaults.standard.synchronize()
+    }
+    if removeData {
+      let fm = FileManager.default
+      try? fm.removeItem(atPath: data)
+      try? fm.removeItem(atPath: log)
+    }
+  }
+
+  // trashSelf moves the running .app bundle to the Trash during uninstall.
+  static func trashSelf() {
+    let url = Bundle.main.bundleURL
+    guard url.pathExtension == "app" else { return }
+    try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+  }
+
+  private static func turnOffTailscaleServe() {
+    let candidates = [
+      "/opt/homebrew/bin/tailscale",
+      "/usr/local/bin/tailscale",
+      "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ]
+    guard let ts = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: ts)
+    p.arguments = ["serve", "--https=7443", "off"]
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    try? p.run()
+    p.waitUntilExit()
   }
 
   // replaceScriptInstall stops the script install's jobs, removes their
