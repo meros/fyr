@@ -184,7 +184,7 @@ const SettleRequestDesc = "Tell Fyr this thread's work is done, so it can leave 
 func (e *Engine) settleRequestTool() mcp.Tool {
 	return mcp.Tool{Name: "settle_request",
 		Description: SettleRequestDesc,
-		Schema:      obj(map[string]any{"why": str("One short line for the owner: what was done, for example \"PR #12 merged, the fix is live\".")}, "why"),
+		Schema:      obj(map[string]any{"why": str("A few words on why the work is done, not what the thread was about (the owner already sees its title): \"PR #12 merged\", \"question answered\", \"pushed to main\". The chip reads \"Settle: <why>\".")}, "why"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindSettleRequest, Thread: th,
 				Args: core.Args{"why": sArg(a, "why"), "auto": e.settlesOnRequest(th)}})
