@@ -164,6 +164,10 @@ type (
 	TaskArgs struct {
 		Task Task
 		Log  []Event
+		// ByStop: the task ended as stopped right after the owner's Stop,
+		// whose interrupt the CLI applies to every background task too
+		// (V0.stop-ends-background).
+		ByStop bool `json:",omitempty"`
 	}
 	// TaskQuietArgs is task.quiet's (V0.195): the tasks that sit quiet and
 	// since when. No Since: the thread uses CPU again.

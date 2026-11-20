@@ -1,0 +1,20 @@
+# V0.stop-ends-background: a background subagent's output is not a run of the thread, and a Stop that ends background tasks names them to the agent and shows them as stopped
+
+→ V0.16 (the agents strip), V0.21 (Stop), V0.133 (background work), V0.143. Amends how the agent manager decides that a turn started (SPEC 6.2).
+
+**What was reported.** A thread's agent started four background subagents and ended its turn. One reported. The owner moved the thread to another project. The three others were gone without a word: the agent kept saying they still ran, the strip said "4 agents finished", and SendMessage to them answered that they were stopped.
+
+**What the log shows.** The move was not the cause: `thread.setProject` only files the thread, and the process ran on with the same pid and session. Three seconds before the move, the owner pressed Stop (`thread.interrupt`). Fyr sent the CLI an interrupt. The CLI's interrupt ends every background task of the session, subagents included: `task_updated {status: killed}`, `task_notification {status: stopped}` and an empty `background_tasks_changed`, all before its answer to the interrupt. It tells the model nothing about that.
+
+The owner could press Stop because the thread read as Running, and only subagents were working. 1.5 s after the main turn's result, a subagent's `assistant` message (`parent_tool_use_id` set) arrived. The agent manager took every `assistant` message as the start of a turn, so it recorded `run.started {by: agent}`. No result was going to end that run, because the main agent was idle.
+
+**The change.**
+
+1. **Only the main agent starts a turn.** An `assistant` message with a `parent_tool_use_id` is a subagent's, and it no longer opens a run (`internal/agent/turn.go`, `fromSubagent`). `system init` and the main agent's own messages still do, so a turn the CLI starts by itself after a background task still counts (V0.133). While only background agents work, the thread is not Running and Stop is not offered. The Waiting reason and the agents strip say what runs (V0.195).
+2. **killed is stopped.** The CLI's status `killed` (from its interrupt or TaskStop) is recorded as `stopped`, never under a word the timeline reads as finished (`taskStatus`, `internal/agent/digest.go`).
+3. **The agent is told.** The agent manager notes when it sent an interrupt. A task that ends as stopped within 5 s of it (the CLI kills them within milliseconds) is observed with `ByStop`. The notice rule `task.stopped` (Next: it goes out with the owner's next message or the next tool call, and never wakes an agent the owner just stopped) says: *The owner's Stop also ended your background agent "…" (task …) before it finished: its result will not come and SendMessage cannot reach it. Start it again if that work should go on.* It is said once per task. A task the agent stopped itself, or one that finished, says nothing. A restart (V0.143) already names the tasks it ended.
+4. **The strip says stopped** (desktop and phone, one component, `AgentsStrip`). The summary reads "4 agents: 1 finished, 3 stopped" instead of "4 agents finished", and the fold is "1 finished, 3 stopped". The icon is the stopped one when any ended stopped, and the failed one when any failed. A stopped or failed row's line starts with "Stopped" or "Failed", because the CLI's summary of a stopped agent is only its description.
+
+**Not changed.** Moving a thread to another project does not touch its process, so background work keeps running. Fyr cannot keep the CLI's interrupt from killing background agents. Point 3 makes sure the agent knows.
+
+**Tests.** `internal/engine/stopbackground_test.go`: TestSubagentOutputIsNotARun and TestStopNamesTheBackgroundAgentsItEnded. Both fail without the fix, the first with "a background subagent's message started a run of the thread". They use the fake CLI's new `agentwork`, which kills its agent on an interrupt the way claude does. Also `internal/core/feed_test.go` (row `task.stopped`) and `web/test/tasks.test.ts`.

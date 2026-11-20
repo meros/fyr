@@ -193,7 +193,12 @@ type session struct {
 	// the stream decides, not a count of sends (SPEC 6.2).
 	live      bool
 	interrupt bool
-	asks      map[string]chan core.Effect // decision id → answer
+	// stopAt: when Fyr last sent the CLI an interrupt (the owner's Stop).
+	// The CLI's interrupt also kills every background task; a task that
+	// ends as stopped within stopWindow of it was ended by that Stop
+	// (V0.stop-ends-background).
+	stopAt time.Time
+	asks   map[string]chan core.Effect // decision id → answer
 	// adopted: Decisions an adopted process had open (V0.90), whose
 	// request the runner has not asked again yet.
 	adopted map[string]bool

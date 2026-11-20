@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentsSummary, compactCount, groupTasks, liveLine, orderTasks, taskEventText, taskLine, taskStats, visibleTasks, waitLine, workingLine } from "../src/tasks.ts";
+import { agentsIcon, agentsSummary, compactCount, endedLabel, groupTasks, liveLine, orderTasks, taskEventText, taskLine, taskStats, visibleTasks, waitLine, workingLine } from "../src/tasks.ts";
 import { clockTime } from "../src/format.ts";
 import type { TaskDTO, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -42,12 +42,21 @@ test("strip summary, stats and lines", () => {
   const ts = [task("a", "running", 1, { activity: "Running build", updatedAt: at(5) }), task("b", "running", 2, { activity: "Reading", updatedAt: at(4) })];
   assert.equal(agentsSummary(ts), "2 agents · Running build");
   assert.equal(agentsSummary([task("a", "completed", 1)]), "1 agent finished");
+  // V0.stop-ends-background: agents the owner's Stop ended are not "finished".
+  const stopped = [task("a", "completed", 1), task("b", "stopped", 2), task("c", "stopped", 3)];
+  assert.equal(agentsSummary(stopped), "3 agents: 1 finished, 2 stopped");
+  assert.equal(endedLabel(stopped), "1 finished, 2 stopped");
+  assert.equal(agentsIcon(stopped), "seen");
+  assert.equal(agentsIcon([task("a", "completed", 1)]), "settled");
   assert.equal(taskStats({ ...ts[0], toolUses: 14, tokens: 143218 }), "14 tools · 143k");
   assert.equal(taskStats({ ...ts[0], toolUses: 9999, tokens: 12_345_678 }), "10k tools · 12.3M");
   assert.equal(taskStats({ ...ts[0], toolUses: 1 }), "1 tool");
   assert.equal(compactCount(980), "980");
   assert.equal(taskLine(task("c", "completed", 1, { summary: "Design delivered" })), "Design delivered");
   assert.equal(taskLine(task("d", "stopped", 1)), "Stopped");
+  // V0.stop-ends-background: the CLI's summary of a stopped agent is its description; it reads as stopped, not done.
+  assert.equal(taskLine(task("e", "stopped", 1, { description: "Audit sources", summary: "Audit sources" })), "Stopped");
+  assert.equal(taskLine(task("f", "failed", 1, { description: "Build", summary: "exit 2" })), "Failed · exit 2");
 });
 
 test("task events become log lines", () => {

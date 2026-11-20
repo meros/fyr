@@ -41,7 +41,7 @@ import { LiveViewPanel } from "./view-ui.tsx";
 import { rememberTab } from "./desk-history.ts";
 import { TAB_LABEL, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
-import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
+import { agentsIcon, agentsSummary, endedLabel, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, useViewAction } from "./offers-ui.tsx";
@@ -451,7 +451,7 @@ function TaskRow({ t, now, call, open, onOpen }: { t: TaskDTO; now: number; call
   );
 }
 
-/** Running tasks always show; ended ones fold behind "N finished". On a phone the whole strip is one line until opened. */
+/** Running tasks always show; ended ones fold behind "N finished" ("1 finished, 3 stopped"). On a phone the whole strip is one line until opened. */
 export function AgentsStrip({ tasks, now, events, cwd }: { tasks: TaskDTO[]; now: number; events?: FyrEvent[]; cwd?: string }) {
   const [showEnded, setShowEnded] = useState(false);
   const [open, setOpen] = useState(false);
@@ -476,7 +476,7 @@ export function AgentsStrip({ tasks, now, events, cwd }: { tasks: TaskDTO[]; now
   return (
     <div class={`agents${open ? " open" : ""}`}>
       <button class="agsum ell" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <StateIcon state={g.running.length ? "waiting" : "settled"} size={14} />
+        <StateIcon state={agentsIcon(tasks)} size={14} />
         <span class="ell">{agentsSummary(tasks)}</span>
         <span class="chev">{open ? "▾" : "▸"}</span>
       </button>
@@ -484,7 +484,7 @@ export function AgentsStrip({ tasks, now, events, cwd }: { tasks: TaskDTO[]; now
         {g.running.map(row)}
         {g.ended.length > 0 && (
           <button class="tkmore" onClick={() => setShowEnded(!showEnded)} aria-expanded={showEnded}>
-            {g.ended.length} finished {showEnded ? "▾" : "▸"}
+            {endedLabel(g.ended)} {showEnded ? "▾" : "▸"}
           </button>
         )}
         {showEnded && g.ended.map(row)}
