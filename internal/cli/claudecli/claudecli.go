@@ -41,6 +41,62 @@ type Adapter struct{}
 
 func (Adapter) ID() string { return ID }
 
+func (Adapter) DefaultBinary() string    { return "claude" }
+func (Adapter) DefaultConfigDir() string { return "~/.claude" }
+
+// FastModel picks a provider's Haiku model for system jobs (V0.115, V0.117).
+func (Adapter) FastModel(models []cli.Model, modelEnv map[string]string, isEndpoint bool) string {
+	for _, m := range models {
+		if strings.Contains(strings.ToLower(m.ID), "haiku") {
+			return m.ID
+		}
+	}
+	if m := modelEnv["ANTHROPIC_DEFAULT_HAIKU_MODEL"]; m != "" {
+		return m
+	}
+	if !isEndpoint {
+		for _, m := range Models {
+			if strings.Contains(strings.ToLower(m.ID), "haiku") {
+				return m.ID
+			}
+		}
+	}
+	return ""
+}
+
+func (Adapter) LoginSpec(base []string, configDir string, token bool) cli.LoginSpec {
+	k := LoginFolder
+	if token {
+		k = LoginToken
+	}
+	args, term := LoginArgs(k)
+	return cli.LoginSpec{
+		Binary:    "claude",
+		Args:      args,
+		Terminal:  term,
+		Env:       LoginEnv(base, configDir),
+		Throwaway: token,
+	}
+}
+
+func (Adapter) ParseLogin(buf []byte, done bool) cli.LoginOut {
+	o := ParseLogin(buf, done)
+	return cli.LoginOut{URL: o.URL, Prompt: o.Prompt, Token: o.Token, Line: o.Line, Retry: o.Retry}
+}
+
+func (Adapter) RedactLogin(s string) string { return Redact(s) }
+
+func (Adapter) LoginNeed(configDir string, token bool) string {
+	if token {
+		return "This account logs in with a token. Press Log in to get one here (Fyr keeps it), or paste a token from `claude setup-token` as its key."
+	}
+	cmd := "claude"
+	if configDir != "" {
+		cmd = "CLAUDE_CONFIG_DIR=" + configDir + " claude"
+	}
+	return "Press Log in to sign in to this account here. Or run `" + cmd + "` in a terminal on this host and type /login."
+}
+
 func (Adapter) Caps() cli.Caps {
 	return cli.Caps{Auth: []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth}, Efforts: Efforts, Models: Models}
 }

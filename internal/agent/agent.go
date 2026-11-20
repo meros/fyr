@@ -22,6 +22,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/agycli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
@@ -37,17 +38,25 @@ func authOf(p provider.Profile) cli.Auth {
 	return cli.Auth{Kind: cli.CLILogin, ConfigDir: p.ConfigDir}
 }
 
+// cliID normalizes a profile's CLI adapter id ("" is claude).
+func cliID(id string) string {
+	if id == "" {
+		return claudecli.ID
+	}
+	return id
+}
+
 // adapter is the CLI adapter a profile runs on.
 func (m *Manager) adapter(p provider.Profile) (cli.Adapter, error) {
-	id := p.CLI
-	if id == "" {
-		id = claudecli.ID
-	}
+	id := cliID(p.CLI)
 	if a, ok := m.cfg.Adapters[id]; ok {
 		return a, nil
 	}
-	if id == claudecli.ID {
+	switch id {
+	case claudecli.ID:
 		return claudecli.Adapter{}, nil
+	case agycli.ID:
+		return agycli.Adapter{}, nil
 	}
 	return nil, fmt.Errorf("no CLI adapter %q", id)
 }

@@ -17,17 +17,17 @@ import (
 // CheckEvery is how often the host checks each provider by itself (V0.120).
 const CheckEvery = 24 * time.Hour
 
-// cliTimeout bounds a Claude login's check: the CLI may need a second start
+// cliTimeout bounds a CLI login's check: the CLI may need a second start
 // while its own model list arrives (claudecli.ListModels).
 const cliTimeout = 40 * time.Second
 
-// listModels asks the provider: its endpoint's /v1/models with its key, or,
-// for a Claude login, the CLI with that login.
+// listModels asks the provider: its Anthropic-compatible endpoint's /v1/models
+// with its key, or the provider's CLI adapter (ModelLister).
 func (r *Registry) listModels(ctx context.Context, p Provider, key string) (claudecli.Listing, error) {
 	if r.ListModels != nil {
 		return r.ListModels(ctx, p, key)
 	}
-	if p.Auth.Kind == cli.APIKey && p.Endpoint.BaseURL != "" {
+	if p.Auth.Kind == cli.APIKey && p.Endpoint.BaseURL != "" && (p.CLI == "" || p.CLI == claudecli.ID) {
 		c := r.Client
 		if c == nil {
 			c = &http.Client{}
@@ -41,7 +41,11 @@ func (r *Registry) listModels(ctx context.Context, p Provider, key string) (clau
 	}
 	ctx, cancel := context.WithTimeout(ctx, cliTimeout)
 	defer cancel()
-	l := cli.Launch{Binary: r.LoginBinary, Dir: os.TempDir(), Auth: cli.Auth{Kind: p.Auth.Kind, ConfigDir: r.dir(p.Auth.ConfigDir)},
+	dir := ""
+	if p.Auth.ConfigDir != "" || p.CLI == "" || p.CLI == claudecli.ID {
+		dir = r.dirFor(p.CLI, p.Auth.ConfigDir)
+	}
+	l := cli.Launch{Binary: r.LoginBinary, Dir: os.TempDir(), Auth: cli.Auth{Kind: p.Auth.Kind, ConfigDir: dir},
 		Endpoint: p.Endpoint}
 	if l.Auth.Kind == cli.CLILogin && (p.TokenLogin || key != "") {
 		l.Key = key
@@ -49,7 +53,11 @@ func (r *Registry) listModels(ctx context.Context, p Provider, key string) (clau
 	if l.Auth.Kind == cli.APIKey {
 		l.Key = key
 	}
-	return claudecli.Adapter{}.ListModels(ctx, l)
+	ad := AdapterFor(p.CLI)
+	if ml, ok := ad.(cli.ModelLister); ok {
+		return ml.ListModels(ctx, l)
+	}
+	return cli.Listing{Models: ad.Caps().Models}, nil
 }
 
 func (r *Registry) isChecking(id string) bool {

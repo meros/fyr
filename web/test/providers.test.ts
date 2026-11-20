@@ -22,6 +22,9 @@ test("model ids from a text field", () => {
 test("where a provider is", () => {
   assert.equal(whereText({ kind: "claude-account" }), "~/.claude");
   assert.equal(whereText({ kind: "claude-account", configDir: "~/.claude-acme" }), "~/.claude-acme");
+  assert.equal(whereText({ kind: "agy-account" }), "~/.gemini");
+  assert.equal(whereText({ kind: "agy-account", configDir: "~/.gemini-work" }), "~/.gemini-work");
+  assert.equal(whereText({ kind: "endpoint", cli: "agy" }), "Gemini API");
   assert.equal(whereText({ kind: "endpoint", baseURL: "https://openrouter.ai/api" }), "openrouter.ai");
 });
 
@@ -39,6 +42,10 @@ test("effort shows only when the model takes it", () => {
 test("the Add provider form", () => {
   assert.deepEqual(createArgs({ ...EMPTY_FORM }), { error: "Give it a name" });
   assert.deepEqual(createArgs({ ...EMPTY_FORM, name: "Work", configDir: "~/.claude-work" }), { args: { kind: "claude-account", name: "Work", configDir: "~/.claude-work" } });
+  assert.deepEqual(createArgs({ ...EMPTY_FORM, kind: "agy-account", name: "Antigravity", configDir: "~/.gemini-work" }), { args: { kind: "agy-account", name: "Antigravity", configDir: "~/.gemini-work" } });
+  assert.deepEqual(createArgs({ ...EMPTY_FORM, kind: "endpoint", cli: "agy", name: "Gemini API", key: " gk " }), { args: { kind: "endpoint", cli: "agy", name: "Gemini API", key: "gk" } });
+  assert.deepEqual(createArgs({ ...EMPTY_FORM, kind: "endpoint", cli: "agy", name: "Gemini Proxy", baseURL: "not-a-url" }), { error: "The base URL starts with https://" });
+  assert.deepEqual(createArgs({ ...EMPTY_FORM, kind: "endpoint", cli: "agy", name: "Gemini Proxy", baseURL: "https://proxy.example" }), { args: { kind: "endpoint", cli: "agy", name: "Gemini Proxy", baseURL: "https://proxy.example" } });
   const ep = { ...EMPTY_FORM, kind: "endpoint" as const, name: "Router" };
   assert.deepEqual(createArgs(ep), { error: "The base URL starts with https://" });
   assert.deepEqual(createArgs({ ...ep, baseURL: "https://openrouter.ai/api" }), { args: { kind: "endpoint", name: "Router", baseURL: "https://openrouter.ai/api" } }, "V0.120: model ids are optional; Fyr asks the endpoint");
@@ -80,8 +87,10 @@ test("the list row's line: kind, where, model count", () => {
   const m = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `m${i}` }));
   assert.equal(listLine({ kind: "claude-account", models: m(3) }), "Claude account · ~/.claude · 3 models");
   assert.equal(listLine({ kind: "claude-account", tokenLogin: true, models: m(1) }), "Claude account · token login · 1 model");
-  assert.equal(listLine({ kind: "endpoint", baseURL: "https://api.deepseek.com/anthropic", models: m(2) }), "Endpoint · api.deepseek.com · 2 models");
-  assert.equal(listLine({ kind: "endpoint", baseURL: "https://x.io", models: [] }), "Endpoint · x.io · no models");
+  assert.equal(listLine({ kind: "agy-account", models: m(2) }), "Antigravity account · ~/.gemini · 2 models");
+  assert.equal(listLine({ kind: "endpoint", cli: "agy", models: m(2) }), "Antigravity (API key) · Gemini API · 2 models");
+  assert.equal(listLine({ kind: "endpoint", baseURL: "https://api.deepseek.com/anthropic", models: m(2) }), "Claude (custom endpoint) · api.deepseek.com · 2 models");
+  assert.equal(listLine({ kind: "endpoint", baseURL: "https://x.io", models: [] }), "Claude (custom endpoint) · x.io · no models");
 });
 
 test("the usage sentence per quota kind", () => {
@@ -191,7 +200,7 @@ test("V0.120 (2): turning models on and off; the default stays on; a hand id can
 test("V0.120 (4): the Providers row adds the New count", () => {
   assert.equal(newCount(dto()), 1);
   assert.equal(listLine(dto()), "Claude account · ~/.claude · 3 of 6 models on · 1 new", "found live 16 Nov: the row shows what the provider reports");
-  assert.equal(listLine({ kind: "endpoint", baseURL: "https://openrouter.ai/api", models: [{ id: "m0" }], catalog: Array.from({ length: 380 }, (_, i) => ({ id: `m${i}`, firstSeen: "" })) }), "Endpoint · openrouter.ai · 1 of 380 models on");
+  assert.equal(listLine({ kind: "endpoint", baseURL: "https://openrouter.ai/api", models: [{ id: "m0" }], catalog: Array.from({ length: 380 }, (_, i) => ({ id: `m${i}`, firstSeen: "" })) }), "Claude (custom endpoint) · openrouter.ai · 1 of 380 models on");
 });
 
 test("V0.120 (5): a model in use that is off shows as (off) in its picker, and nowhere else", () => {

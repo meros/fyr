@@ -93,15 +93,17 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
         case "provider.import": {
           const f = found.find((x) => x.id === a.foundId);
           if (!f || get(f.id)) return fail("already imported");
-          list.push({ id: f.id, name: f.name, kind: f.kind, cli: "claude", auth: f.kind === "endpoint" ? "api-key" : "cli-login", configDir: f.configDir, baseURL: f.baseURL, models: f.models, efforts: EFFORTS, quota: f.quotaKind ?? "none", status: f.status, keySet: !!f.keyFrom, keyLast4: f.keyFrom ? "9a8b" : undefined, imported: f.source, threads: 0 });
+          const cli = f.cli ?? (f.kind === "agy-account" ? "agy" : "claude");
+          list.push({ id: f.id, name: f.name, kind: f.kind, cli, auth: f.kind === "endpoint" ? "api-key" : "cli-login", configDir: f.configDir, baseURL: f.baseURL, models: f.models, efforts: EFFORTS, quota: f.quotaKind ?? "none", status: f.status, keySet: !!f.keyFrom, keyLast4: f.keyFrom ? "9a8b" : undefined, imported: f.source, threads: 0 });
           return { ok: true };
         }
         case "provider.create": {
           const name = String(a.name ?? "").trim();
           const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "provider";
           if (get(id)) return fail(`a provider ${id} exists`);
-          const kind = a.kind === "endpoint" ? "endpoint" : "claude-account";
-          const p: ProviderDTO = { id, name, kind, cli: "claude", auth: kind === "endpoint" ? "api-key" : "cli-login", configDir: a.configDir as string | undefined, baseURL: a.baseURL as string | undefined, models: models(a.models) ?? (kind === "endpoint" ? [] : CLAUDE_MODELS), efforts: EFFORTS, quota: kind === "endpoint" ? "none" : "anthropic-oauth", status: kind === "endpoint" ? "needs-key" : "needs-login", keySet: false, threads: 0 };
+          const kind = a.kind === "endpoint" ? "endpoint" : a.kind === "agy-account" ? "agy-account" : "claude-account";
+          const cli = kind === "agy-account" || a.cli === "agy" ? "agy" : "claude";
+          const p: ProviderDTO = { id, name, kind, cli, auth: kind === "endpoint" ? "api-key" : "cli-login", configDir: a.configDir as string | undefined, baseURL: a.baseURL as string | undefined, models: models(a.models) ?? (kind === "endpoint" ? [] : CLAUDE_MODELS), efforts: EFFORTS, quota: kind === "claude-account" ? "anthropic-oauth" : "none", status: kind === "endpoint" ? "needs-key" : "needs-login", keySet: false, canLogin: kind !== "endpoint", threads: 0 };
           p.defaultModel = p.models[0]?.id;
           if (a.key) keys.set(id, String(a.key));
           keyed(p);

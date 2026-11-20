@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/meros/fyr/internal/cli"
-	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
 )
@@ -79,29 +77,28 @@ func (m *Manager) SystemPrint(ctx context.Context, job, system, prompt string) (
 	return pr.Print(ctx, l, system, prompt)
 }
 
-// HaikuModel is a provider's Haiku model: one in its list or its model
-// caps, else the model its endpoint names for Haiku, else, on a Claude login
-// (the claude CLI with no endpoint), the CLI's own Haiku (V0.117: a stored
-// login's list can lack it), else "".
+// HaikuModel is a provider's default fast/small model for system jobs:
+// Haiku on Claude (V0.117), Flash on Antigravity, delegated to the adapter's
+// cli.Defaults.FastModel.
 func HaikuModel(p provider.Profile) string {
-	ids := append([]string(nil), p.Models...)
+	seen := map[string]bool{}
+	var ms []cli.Model
+	for _, id := range p.Models {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ms = append(ms, cli.Model{ID: id})
+		}
+	}
 	for _, m := range p.ModelCaps {
-		ids = append(ids, m.ID)
-	}
-	for _, id := range ids {
-		if strings.Contains(strings.ToLower(id), "haiku") {
-			return id
+		if m.ID != "" && !seen[m.ID] {
+			seen[m.ID] = true
+			ms = append(ms, m)
 		}
 	}
-	if m := p.Endpoint.ModelEnv["ANTHROPIC_DEFAULT_HAIKU_MODEL"]; m != "" {
-		return m
-	}
-	if (p.CLI == "" || p.CLI == claudecli.ID) && p.Endpoint.BaseURL == "" && p.Auth.Kind != cli.APIKey {
-		for _, m := range claudecli.Models {
-			if strings.Contains(strings.ToLower(m.ID), "haiku") {
-				return m.ID
-			}
-		}
+	ad := provider.AdapterFor(p.CLI)
+	if d, ok := ad.(cli.Defaults); ok {
+		isEndpoint := p.Endpoint.BaseURL != "" || p.Auth.Kind == cli.APIKey
+		return d.FastModel(ms, p.Endpoint.ModelEnv, isEndpoint)
 	}
 	return ""
 }
