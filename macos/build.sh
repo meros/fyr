@@ -7,11 +7,14 @@
 #
 #	macos/build.sh [--bin DIR] [--dmg] [--out DIR]
 #
-# Signing: FYR_SIGN_IDENTITY (a certificate's name or SHA-1, with
-# FYR_SIGN_KEYCHAIN and FYR_SIGN_KEYCHAIN_PASSWORD when it is in a keychain
-# of its own, as in CI) signs every binary,
-# so macOS ties a permission to the certificate and it survives builds.
-# Without it the app is signed ad hoc, for development.
+# Signing: FYR_SIGN_P12 (a .p12 file, with FYR_SIGN_P12_PASSWORD) signs every
+# binary with its certificate, through a keychain made for the build and
+# deleted after it; CI and the owner's own builds use "Fyr Local Signing"
+# (decision 0037), so macOS ties a permission to the certificate and it
+# survives builds. FYR_SIGN_IDENTITY (a name or SHA-1, with FYR_SIGN_KEYCHAIN
+# and FYR_SIGN_KEYCHAIN_PASSWORD for a keychain of its own) signs with an
+# identity already in a keychain. Without either the app is signed ad hoc,
+# for development. FYR_VERSION names the build (default: the release's).
 #
 # The names, for a second, test install beside the real one:
 #	FYR_BUNDLE_ID (fyr.app), FYR_LABEL (fyr.agent), FYR_DATA (~/.local/share/fyr),
@@ -56,7 +59,7 @@ if [ -z "$bin" ]; then
     curl -fsSL -o "$bin/$f" "https://github.com/$repo/releases/download/build-$short/$f"
   done
   (cd "$bin" && grep -E '  fyrd?-darwin-(arm64|amd64)$' SHA256SUMS | shasum -a 256 -c - >/dev/null)
-  version="$short"
+  version="${FYR_VERSION:-$short}"
 else
   version="${FYR_VERSION:-dev}"
 fi
@@ -143,6 +146,19 @@ cat >"$c/Library/LaunchAgents/$label.plist" <<EOF
 EOF
 plutil -lint -s "$c/Info.plist" "$c/Library/LaunchAgents/$label.plist"
 
+# A .p12: a keychain of the build's own, which the EXIT trap deletes.
+if [ -n "${FYR_SIGN_P12:-}" ]; then
+  FYR_SIGN_KEYCHAIN="$tmp/sign.keychain-db"
+  FYR_SIGN_KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+  security create-keychain -p "$FYR_SIGN_KEYCHAIN_PASSWORD" "$FYR_SIGN_KEYCHAIN"
+  security unlock-keychain -p "$FYR_SIGN_KEYCHAIN_PASSWORD" "$FYR_SIGN_KEYCHAIN"
+  security set-keychain-settings "$FYR_SIGN_KEYCHAIN" # no auto-lock during the build
+  security import "$FYR_SIGN_P12" -k "$FYR_SIGN_KEYCHAIN" -P "${FYR_SIGN_P12_PASSWORD:-}" -T /usr/bin/codesign >/dev/null
+  security set-key-partition-list -S apple-tool:,apple: -s -k "$FYR_SIGN_KEYCHAIN_PASSWORD" "$FYR_SIGN_KEYCHAIN" >/dev/null
+  FYR_SIGN_IDENTITY="$(security find-identity -p codesigning "$FYR_SIGN_KEYCHAIN" | awk '$2 ~ /^[0-9A-F]{40}$/ {print $2; exit}')"
+  [ -n "$FYR_SIGN_IDENTITY" ] || { echo "no signing identity in $FYR_SIGN_P12" >&2; exit 1; }
+fi
+
 # codesign finds an identity only on the user's keychain search list
 # (`--keychain` alone does not do, decision 0037's spike): add the signing
 # keychain for the signing and put the list back as it was.
@@ -153,7 +169,7 @@ if [ -n "${FYR_SIGN_KEYCHAIN:-}" ]; then
     [ -n "$k" ] && keychains+=("$k")
   done < <(security list-keychains -d user)
   [ ${#keychains[@]} -gt 0 ] || { echo "cannot read the keychain search list" >&2; exit 1; }
-  trap 'security list-keychains -d user -s "${keychains[@]}"; rm -rf "$tmp"' EXIT
+  trap 'security list-keychains -d user -s "${keychains[@]}"; [ -z "${FYR_SIGN_P12:-}" ] || security delete-keychain "$FYR_SIGN_KEYCHAIN" 2>/dev/null; rm -rf "$tmp"' EXIT
   security list-keychains -d user -s "${keychains[@]}" "$FYR_SIGN_KEYCHAIN"
   if [ -n "${FYR_SIGN_KEYCHAIN_PASSWORD:-}" ]; then # a locked one fails with errSecInternalComponent
     security unlock-keychain -p "$FYR_SIGN_KEYCHAIN_PASSWORD" "$FYR_SIGN_KEYCHAIN"
@@ -169,6 +185,7 @@ sign=(codesign --force --timestamp=none -s "${FYR_SIGN_IDENTITY:--}")
 codesign --verify --strict --deep "$app"
 if [ -n "${FYR_SIGN_KEYCHAIN:-}" ]; then
   security list-keychains -d user -s "${keychains[@]}"
+  [ -z "${FYR_SIGN_P12:-}" ] || security delete-keychain "$FYR_SIGN_KEYCHAIN"
   trap 'rm -rf "$tmp"' EXIT
 fi
 echo "built $app ($version, $(codesign -dv "$app" 2>&1 | sed -n 's/^Signature=//p;s/^Authority=//p' | head -1 || echo ad hoc))"
