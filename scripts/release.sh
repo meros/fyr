@@ -57,7 +57,15 @@ for t in linux-amd64 linux-arm64 darwin-arm64 darwin-amd64; do
 done
 run=""
 if [ -n "${GITHUB_RUN_ID:-}" ]; then run="${GITHUB_SERVER_URL:-https://github.com}/$repo/actions/runs/$GITHUB_RUN_ID"; fi
-go run ./cmd/fyrrelease pack -commit "$sha" -dir "$out" -src . \
+# Built into a folder of its own and run from there, not with `go run`:
+# Go 1.24+ runs a `go run` binary from its build cache, and on the
+# self-hosted runner that cache lives in a systemd CacheDirectory where an
+# entry could not be executed ("fork/exec …-d/fyrrelease: permission
+# denied"), which failed the release of main several times on 20 Nov
+# (V0.release-tool-built).
+tools="$(mktemp -d)"
+GOOS= GOARCH= go build -o "$tools/fyrrelease" ./cmd/fyrrelease
+"$tools/fyrrelease" pack -commit "$sha" -dir "$out" -src . \
   -go "$(go env GOVERSION)" -node "$(node --version)" -run "$run" -version "$version"
 
 if [ -n "$version" ]; then
