@@ -241,6 +241,8 @@ func TestLauncherRollsBackToSeed(t *testing.T) {
 	link(t, data, "next", "b")
 	l := seedLauncher(t, data, "deploy")
 	l.maxStarts = 2 // seed (deploys) → b (crashes) → rollback
+	// b's start on a busy runner can outlast the 500 ms default; its crash must land in probation (V0.flaky-rollback-seed).
+	l.Probation = 5 * time.Second
 	l.Run()
 	if _, err := os.Lstat(filepath.Join(data, "current")); err == nil {
 		t.Fatalf("current still points at %s after a crash with no previous", target(data, "current"))
