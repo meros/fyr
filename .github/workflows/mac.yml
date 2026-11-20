@@ -1,0 +1,66 @@
+# Fyr.app (decision 0037, V0.mac-ci) on the self-hosted Mac runner (label `macos`, the owner's Mac): a push to main
+# that changes the app's own sources builds Fyr.app and Fyr.dmg, signed with "Fyr Local Signing", and publishes them
+# as the release app-<sha12>, GitHub's latest, so https://github.com/<repo>/releases/latest/download/Fyr.dmg is the
+# download link. The fyr and fyrd inside are the seed from the release `deployable` points at; an installed app
+# updates fyrd itself, so a change to fyrd alone builds no new app. Only pushes to main run here, never a PR, so no
+# fork's code reaches this runner. When the Mac sleeps the run waits for it. Start a run by hand with
+# `gh workflow run mac.yml`.
+name: mac
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "macos/**"
+      - ".github/workflows/mac.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-main
+  cancel-in-progress: false
+
+jobs:
+  app:
+    runs-on: [self-hosted, macos]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: build and sign Fyr.app and Fyr.dmg
+        env:
+          P12: ${{ secrets.FYR_MAC_SIGN_P12 }}
+          FYR_SIGN_P12_PASSWORD: ${{ secrets.FYR_MAC_SIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/fyr-app"
+          rm -rf "$out" && mkdir -p "$out"
+          [ -n "$P12" ] || { echo "the secret FYR_MAC_SIGN_P12 is not set" >&2; exit 1; }
+          printf '%s' "$P12" | base64 -D >"$RUNNER_TEMP/sign.p12"
+          trap 'rm -f "$RUNNER_TEMP/sign.p12"' EXIT
+          FYR_VERSION="${GITHUB_SHA:0:12}" FYR_SIGN_P12="$RUNNER_TEMP/sign.p12" macos/build.sh --dmg --out "$out"
+          codesign -d -r- "$out/Fyr.app" 2>&1 | grep -q 'certificate' || { echo "Fyr.app is not signed with the certificate" >&2; exit 1; }
+          (cd "$out" && ditto -c -k --keepParent Fyr.app Fyr.app.zip && shasum -a 256 Fyr.dmg Fyr.app.zip >SHA256SUMS)
+          echo "OUT=$out" >>"$GITHUB_ENV"
+      - name: publish the release app-<sha12>
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="app-${GITHUB_SHA:0:12}"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" -R "$GITHUB_REPOSITORY" --clobber "$OUT/Fyr.dmg" "$OUT/Fyr.app.zip" "$OUT/SHA256SUMS"
+          else
+            gh release create "$tag" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fyr.app ${GITHUB_SHA:0:12}" --latest \
+              --notes "Fyr.app for macOS 13+, signed with Fyr's own certificate (no Developer ID yet): the first open needs right-click, Open. It installs fyrd and keeps it up to date." \
+              "$OUT/Fyr.dmg" "$OUT/Fyr.app.zip" "$OUT/SHA256SUMS"
+          fi
+          # Keep the newest three app releases.
+          gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("app-"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
+            while read -r old; do gh release delete "$old" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true; done
