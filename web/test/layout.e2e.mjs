@@ -531,7 +531,7 @@ const LONG_FIT = `(() => {
       if (cs.overflowX === 'visible') continue;
       const b = a.getBoundingClientRect();
       // The project chips, the header's chips (V0.phone-chips-scroll) and a message's table are sideways scrollers by design.
-      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, .m-chipsd, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
+      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, .m-chips, .m-chipsd, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
       break;
     }
   }
@@ -893,7 +893,7 @@ function harness(t) {
       await evaluate(`${sheetItem(word)}?.click()`);
       await waitFor(`!${sheetItem(word)} && !!document.querySelector('.m-sheet')`, { what: `the ${s.sheet} sheet` });
     } else if (s.sheet === "details") {
-      await tapCenter(".m-chipsd", "!!document.querySelector('.m-sheet')");
+      await tapCenter(".m-chipsd .m-chip.st", "!!document.querySelector('.m-sheet')");
     } else if (s.sheet === "project" || s.sheet === "newproject") {
       await tapCenter(".m-pjb", "!!document.querySelector('.m-sheet .pli.new')");
       if (s.sheet === "newproject") await tapCenter(".m-sheet .pli.new", "!!document.querySelector('.m-sheet .pform input')");
@@ -6179,6 +6179,41 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.quota-in-thread phon
     const d = await evaluate(`(() => { const c = document.querySelector('.m-sheet .m-qrow .lcard'); return c ? { rows: [...c.querySelectorAll('dt')].map((x) => x.textContent + ': ' + x.nextElementSibling.textContent), age: c.querySelector('.lcsrc')?.textContent ?? '', right: c.getBoundingClientRect().right <= innerWidth + 0.5 } : null; })()`);
     check(!!d && /^5 hours: \d+ % used/.test(d.rows[0]) && /resets /.test(d.rows[0]) && /^7 days: /.test(d.rows[1]) && /(Read|From the last run,) .* ago/.test(d.age) && d.right, `${ctx}: Details does not list the windows, their resets and the age (${JSON.stringify(d)})`);
     await shot(`quota-in-thread-phone-${w}.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+// V0.phone-chips-scroll: the phone header scrolls as one chip rail with a compact agent pill; Details stacks the
+// provider band above full-width 48 px model and effort pickers so long names never squeeze; New thread fills its row.
+for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.phone-chips-scroll phone ${w}`, async ({ evaluate, openScreen, tapCenter }) => {
+  const ctx = `V0.phone-chips-scroll phone ${w}x${ht}`;
+  try {
+    await openScreen({ url: "?mock=rail&hosts=2&open=t_mapperf", ready: "!!document.querySelector('.m-chips .agp')" }, w, ht);
+    const hdr = await evaluate(`(() => {
+      const bar = document.querySelector('.m-chips'), d = document.querySelector('.m-chipsd'), agp = d.querySelector('.agp');
+      const vtxt = agp.querySelector('.ags.agv .agt'), mtxt = agp.querySelector('.ags.agm .agt');
+      return {
+        barScroll: getComputedStyle(bar).overflowX,
+        dScroll: getComputedStyle(d).overflowX,
+        providerHidden: getComputedStyle(vtxt).display === 'none',
+        modelFull: mtxt.scrollWidth <= mtxt.clientWidth + 1 && mtxt.clientWidth > 20,
+      };
+    })()`);
+    check(hdr.barScroll === "auto" && hdr.dScroll === "visible" && hdr.providerHidden && hdr.modelFull, `${ctx}: header chips wrong (${JSON.stringify(hdr)})`);
+    await tapCenter(".m-chipsd .m-chip.st", "!!document.querySelector('.m-sheet .agp')");
+    const det = await evaluate(`(() => {
+      const agp = document.querySelector('.m-sheet .agp'), ar = agp.getBoundingClientRect();
+      const seg = (s) => { const e = agp.querySelector(s), r = e.getBoundingClientRect(), t = e.querySelector('.agt'); return { top: r.top, bottom: r.bottom, w: r.width, h: r.height, cut: t.scrollWidth > t.clientWidth + 1 }; };
+      return { arW: ar.width, kvsW: document.querySelector('.m-sheet .m-kvs').clientWidth - 40, v: seg('.ags.agv'), m: seg('.ags.agm'), e: seg('.ags.age') };
+    })()`);
+    check(det.arW >= det.kvsW - 2 && det.m.top >= det.v.bottom - 0.5 && det.m.h >= 44 && det.e.h >= 44 && !det.v.cut && !det.m.cut && !det.e.cut, `${ctx}: Details agent pill cramped (${JSON.stringify(det)})`);
+    await openScreen({ url: "?mock=rail&hosts=2&new", ready: "!!document.querySelector('.m-new .agp')" }, w, ht);
+    const nw = await evaluate(`(() => {
+      const agp = document.querySelector('.m-new .agp'), ar = agp.getBoundingClientRect();
+      const sum = [...agp.children].reduce((a, c) => a + c.getBoundingClientRect().width, 0);
+      return { gap: Math.round(ar.width - sum) };
+    })()`);
+    check(nw.gap <= 4, `${ctx}: New thread agent pill leaves ${nw.gap} px dead space`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }

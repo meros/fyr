@@ -1691,11 +1691,11 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
           <ThreadQuotaRow profile={t.profile} host={t.host} name={threadProvider(t, p.profiles).name} />
           {row("Folder", t.cwd)}
           {t.branch && row("Branch", t.branch)}
-          {/* V0.agent-pill: the desktop header's pill, at a finger's size; the model and the effort pick in place */}
-          {row(
-            "Agent",
-            <AgentPill size="field" phone segs={threadAgent(t, prof, threadProvider(t, p.profiles), reason("thread.setModel"), (a) => void p.commands.run("thread.setModel", [t.id], a))} />,
-          )}
+          {/* V0.agent-pill: the desktop header's pill, at a finger's size; full width in Details so provider, model and effort never squeeze */}
+          <div class="m-kvrow m-agrow">
+            <span class="k">Agent</span>
+            <AgentPill size="field" phone segs={threadAgent(t, prof, threadProvider(t, p.profiles), reason("thread.setModel"), (a) => void p.commands.run("thread.setModel", [t.id], a))} />
+          </div>
           {t.pr &&
             row(
               "PR",
