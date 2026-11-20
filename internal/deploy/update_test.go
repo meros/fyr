@@ -331,3 +331,48 @@ func TestUpdateRecordFailure(t *testing.T) {
 		t.Fatal("the record lists no logs")
 	}
 }
+
+// V0.update-changelog: a release's record lists the commits since the build that runs, newest first, by one compare
+// from the live build's commit.
+func TestUpdateRecordHasItsChangelog(t *testing.T) {
+	d, _, steps := newDeployer(t, "")
+	d.Live = "fedcba987654"
+	r := fakeReleases(t, relSHA, false)
+	gh := r.Gh
+	var asked string
+	c := func(n int) string { return strings.Repeat(string(rune('a'+n)), 40) }
+	r.Gh = func(ctx context.Context, args ...string) ([]byte, error) {
+		if a := strings.Join(args, " "); strings.Contains(a, "/compare/") && strings.Contains(a, "total_commits") {
+			asked = args[1]
+			return []byte("3\n" + c(0) + "\tFirst (#1)\n" + c(1) + "\tSecond\n" + c(2) + "\tThird (#3)\n"), nil
+		}
+		return gh(ctx, args...)
+	}
+	d.Releases = r
+	d.Run = releaseRunner(steps)
+	d.Deploy(context.Background(), "", core.EffectReq{Action: "fyr.deploy", Args: map[string]any{"trigger": "deployable"}}, "")
+	u := d.Updates()
+	if len(u) != 1 {
+		t.Fatalf("records %+v", u)
+	}
+	if asked != "repos/meros/fyr/compare/fedcba987654..."+relSHA {
+		t.Fatalf("compare asked %q", asked)
+	}
+	got := u[0]
+	if got.From != "fedcba987654" || got.ChangesAll != 3 || len(got.Changes) != 3 || got.Changes[0].Title != "Third (#3)" || got.Changes[2].Commit != c(0) {
+		t.Fatalf("changelog %+v", got)
+	}
+}
+
+// V0.update-changelog: the list keeps the newest changesKeep and counts them all; lines that are not a commit drop.
+func TestParseChangesKeepsTheNewest(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("noise\n")
+	for i := 0; i < changesKeep+5; i++ {
+		b.WriteString(strings.Repeat("0", 38) + string("0123456789abcdef"[i/16]) + string("0123456789abcdef"[i%16]) + "\tc" + strings.Repeat("x", i) + "\n")
+	}
+	cs, n := parseChanges(b.String(), true)
+	if n != changesKeep+5 || len(cs) != changesKeep || cs[0].Title != "c"+strings.Repeat("x", changesKeep+4) {
+		t.Fatalf("n=%d len=%d first=%q", n, len(cs), cs[0].Title)
+	}
+}

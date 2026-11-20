@@ -3,8 +3,10 @@ package deploy
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -29,7 +31,21 @@ type Update struct {
 	EndedAt   time.Time `json:"endedAt,omitzero"`
 	Phases    []Phase   `json:"phases,omitempty"`
 	Logs      []string  `json:"logs,omitempty"`
+	// V0.update-changelog: what this update brings over what ran before it: the commits since (newest first, at
+	// most changesKeep) and how many there are in all; From is the commit it was counted from.
+	From       string   `json:"from,omitempty"`
+	Changes    []Change `json:"changes,omitempty"`
+	ChangesAll int      `json:"changesAll,omitempty"`
 }
+
+// Change is one commit of an update's changelog: its sha and the first line of its message.
+type Change struct {
+	Commit string `json:"commit"`
+	Title  string `json:"title"`
+}
+
+// changesKeep bounds the commits kept per record (the record lives in one kv value of 50 records).
+const changesKeep = 40
 
 // Phase is one step of an update and when it began.
 type Phase struct {
@@ -173,4 +189,64 @@ func firstLine(s string) string {
 		}
 	}
 	return s
+}
+
+// liveCommit is the commit of the build that runs now: the record of the newest installed update of the live build,
+// else the live build id when it is a short sha (a release build is builds/<sha12>); "" when neither says.
+func (d *Deployer) liveCommit() string {
+	live := d.live()
+	if live == "" {
+		return ""
+	}
+	recMu.Lock()
+	list := d.readLog()
+	recMu.Unlock()
+	for _, u := range list {
+		if u.Build == live && u.Result == UpdateLive && u.Commit != "" {
+			return u.Commit
+		}
+	}
+	if len(live) == 12 && isHex(live) {
+		return live
+	}
+	return ""
+}
+
+// recordChanges notes the changelog of an update in its record: the commits from what runs now up to commit, read
+// by list (newest first, at most changesKeep, and the count of all). Best effort: when the list cannot be read, or
+// nothing runs that it can count from, the record has none.
+func (d *Deployer) recordChanges(prog *Progress, commit string, list func(from, to string) ([]Change, int, error)) {
+	from := d.liveCommit()
+	if from == "" || commit == "" || sameCommit(from, commit) {
+		return
+	}
+	cs, all, err := list(from, commit)
+	if err != nil {
+		log.Printf("changelog %s..%s: %v", short7(from), short7(commit), err)
+		return
+	}
+	d.edit(prog.Build, prog.start, func(u *Update) { u.From, u.Changes, u.ChangesAll = from, cs, all })
+}
+
+// parseChanges reads "sha<TAB>title" lines, oldest first when oldestFirst, into a newest-first list of at most
+// changesKeep, and the count of all.
+func parseChanges(out string, oldestFirst bool) ([]Change, int) {
+	var cs []Change
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		sha, title, ok := strings.Cut(l, "\t")
+		if !ok || !isSHA(sha) {
+			continue
+		}
+		cs = append(cs, Change{Commit: sha, Title: title})
+	}
+	if oldestFirst {
+		for i, j := 0, len(cs)-1; i < j; i, j = i+1, j-1 {
+			cs[i], cs[j] = cs[j], cs[i]
+		}
+	}
+	all := len(cs)
+	if len(cs) > changesKeep {
+		cs = cs[:changesKeep]
+	}
+	return cs, all
 }

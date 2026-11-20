@@ -19,6 +19,16 @@ export interface UpdateRecord {
   endedAt?: string;
   phases?: UpdatePhase[];
   logs?: string[];
+  // V0.update-changelog: the commits this update brings over what ran before it (from), newest first, and how many
+  // there are in all (the record keeps the newest few).
+  from?: string;
+  changes?: UpdateChange[];
+  changesAll?: number;
+}
+
+export interface UpdateChange {
+  commit: string;
+  title: string;
 }
 
 export interface UpdatesView {
@@ -27,6 +37,7 @@ export interface UpdatesView {
   bad?: { commit: string; why: string };
   live?: string;
   github?: GitHubView; // V0.173
+  repo?: string; // V0.update-changelog: owner/name the releases come from, for the changelog's links
 }
 
 const RESULT: Record<string, string> = { inProgress: "in progress", installed: "installed", failed: "failed", rolledBack: "rolled back" };
@@ -59,6 +70,26 @@ export function updateRow(u: UpdateRecord, now: number): { title: string; desc: 
   const bits = [TRIGGER[u.trigger] ?? u.trigger, when(u.startedAt, now), took(u.startedAt, u.endedAt)].filter(Boolean);
   const fail = u.result === "failed" || u.result === "rolledBack";
   return { title: `${what} · ${result}`, desc: fail && u.reason ? `${bits.join(" · ")} · ${u.reason}` : bits.join(" · "), fail };
+}
+
+/** V0.update-changelog: the toggle of a record's changelog, "3 changes", or "" when the record has none. */
+export function changesLabel(u: UpdateRecord): string {
+  const n = Math.max(u.changesAll ?? 0, u.changes?.length ?? 0);
+  return n ? `${n} change${n === 1 ? "" : "s"}` : "";
+}
+
+/** V0.update-changelog: a record's changelog as lines: the commit's title without its "(#N)", the PR it landed in, and
+ *  links to both on GitHub; the last line says how many older ones the record does not keep. */
+export function changeLines(u: UpdateRecord, repo = "meros/fyr"): { title: string; url: string; pr?: number; prUrl?: string; sha: string }[] {
+  const base = `https://github.com/${repo}`;
+  const out: { title: string; url: string; pr?: number; prUrl?: string; sha: string }[] = (u.changes ?? []).map((c) => {
+    const m = /\s*\(#(\d+)\)\s*$/.exec(c.title);
+    const pr = m ? Number(m[1]) : undefined;
+    return { title: m ? c.title.slice(0, m.index) : c.title, url: `${base}/commit/${c.commit}`, sha: short(c.commit), ...(pr ? { pr, prUrl: `${base}/pull/${pr}` } : {}) };
+  });
+  const older = (u.changesAll ?? 0) - out.length;
+  if (older > 0 && u.from && u.commit) out.push({ title: `and ${older} older`, url: `${base}/compare/${u.from}...${u.commit}`, sha: "" });
+  return out;
 }
 
 /** The line over the list: what runs, and whether auto-update waits for a local build. */

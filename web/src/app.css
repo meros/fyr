@@ -1164,6 +1164,15 @@ label.sr{cursor:pointer}
 .sr-d{font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;overflow-wrap:anywhere}
 .sr-d.err{color:var(--signal-ink)}
 .sr-d2{display:block}
+/* V0.update-changelog: an update's changelog under its row, one commit a line; desktop and phone share it */
+.sr-d .upd-chb{font:inherit;padding:0}
+.upd-ch{display:block;margin:6px 0 2px;padding-left:10px;border-left:2px solid var(--line)}
+.upd-ch>span{display:block;padding:2px 0;color:var(--ink)}
+.upd-ch a{color:inherit;text-decoration:none}
+.upd-ch a:hover{text-decoration:underline}
+.upd-ch .upd-pr,.upd-ch .upd-older{color:var(--ink-muted)}
+.set.phone .sr-d .upd-chb{padding:0;font-size:inherit} /* keeps the phone .lnk's 44px touch height, sits in the line's text */
+.set.phone .upd-ch>span{padding:6px 0} /* touch: each line is a link, so it gets a finger's height on the phone */
 .sr-d .qline.bare{display:block}
 .sr.bad{box-shadow:inset 2px 0 0 var(--signal-ink)}
 .sr-e{display:flex;align-items:center;gap:8px;flex:none;max-width:60%;min-width:0}

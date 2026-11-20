@@ -36,7 +36,7 @@ import { useAsk } from "./confirm-ui.tsx";
 import type { Profile, Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
-import { githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
+import { changeLines, changesLabel, githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
 import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
@@ -1627,6 +1627,7 @@ function UpdatesGroup({ d }: { d: Data }) {
   const env = useSet();
   const [err, setErr] = useState<string | null>(null);
   const [all, setAll] = useState(false);
+  const [open, setOpen] = useState<string | null>(null); // V0.update-changelog: the record whose changelog is open
   const v = d.updates!;
   const now = Date.now();
   const list = all ? v.updates : v.updates.slice(0, 8);
@@ -1645,13 +1646,23 @@ function UpdatesGroup({ d }: { d: Data }) {
       {!v.updates.length && <Empty text="No updates yet on this host." />}
       {list.map((u) => {
         const r = updateRow(u, now);
+        const key = `${u.build}-${u.startedAt}`;
+        const ch = changesLabel(u);
         return (
           <Row
-            key={`${u.build}-${u.startedAt}`}
+            key={key}
             title={r.title}
             desc={
               <>
                 {r.desc}
+                {ch && (
+                  <>
+                    {" · "}
+                    <button type="button" class="lnk upd-chb" aria-expanded={open === key} onClick={() => setOpen(open === key ? null : key)}>
+                      {ch}
+                    </button>
+                  </>
+                )}
                 {(u.logs ?? []).map((n) => (
                   <>
                     {" · "}
@@ -1660,6 +1671,25 @@ function UpdatesGroup({ d }: { d: Data }) {
                     </a>
                   </>
                 ))}
+                {open === key && (
+                  <span class="upd-ch" role="list" aria-label={`Changes in ${r.title}`}>
+                    {changeLines(u, v.repo).map((c) => (
+                      <span role="listitem" key={c.url}>
+                        <a href={c.url} target="_blank" rel="noopener noreferrer" class={c.sha ? undefined : "upd-older"}>
+                          {c.title}
+                        </a>
+                        {c.prUrl && (
+                          <>
+                            {" "}
+                            <a href={c.prUrl} target="_blank" rel="noopener noreferrer" class="upd-pr">
+                              #{c.pr}
+                            </a>
+                          </>
+                        )}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </>
             }
             class={r.fail ? "bad" : undefined}
