@@ -457,6 +457,10 @@ func resultNotices(r Reduced) []Notice {
 			out = append(out, Notice{About: "thread", Key: fmt.Sprintf("result:thread:%v", d["action"]),
 				What: fmt.Sprintf("The owner chose Not now for %q; do not ask again unless they ask.", str(d["why"]))})
 		case ev.Type == "action" && d["dismissed"] == true:
+		case ev.Type == EventActionLong: // V0.run-long-notice: the result replaces it while queued
+			root, _ := d["root"].(bool)
+			out = append(out, Notice{About: "thread", Key: fmt.Sprintf("result:thread:%v", d["action"]),
+				What: requestLongText(str(d["why"]), root)})
 		case ev.Type == "action" && d["ended"] == true && d["request"] == true:
 			ok, _ := d["ok"].(bool)
 			exit, _ := d["exit"].(int)

@@ -141,3 +141,46 @@ func TestLiveScriptStreams(t *testing.T) {
 		t.Fatalf("streamed: %q", seen)
 	}
 }
+
+// V0.run-long-notice: a run request that still runs after LongRunAfter
+// tells the agent it started; one that ends before says only its result.
+func TestRunRequestLongRunTellsStart(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	callAs(t, h.e, id, "run_request", map[string]any{"command": "make test", "why": "Run the tests"})
+	callAs(t, h.e, id, "run_request", map[string]any{"command": "ls", "why": "List it"})
+	th, _ := h.e.Thread(id)
+	long, short := findOffer(th.Offers, "run-1"), findOffer(th.Offers, "run-2")
+
+	release := make(chan struct{})
+	h.e.LongRunAfter = 10 * time.Millisecond
+	h.e.LiveScripts = func(ctx context.Context, dir string, a []string, out func(string)) (string, int, error) {
+		<-release
+		return "ok\n", 0, nil
+	}
+	if r := h.cmdID("p1", "action.run", id, core.Args{"on": "thread", "action": "run-1", "digest": long.Digest}); !r.OK {
+		t.Fatalf("press: %+v", r)
+	}
+	eventually(t, "the long run tells that it started", func() bool { return hasEvent(h.events(id), core.EventActionLong, `"run-1"`) })
+	close(release)
+	eventually(t, "the long run ended", func() bool {
+		th, _ := h.e.Thread(id)
+		return len(th.Runs) == 1 && !th.Runs[0].Running
+	})
+
+	h.e.LongRunAfter = time.Hour // the short run ends long before
+	h.e.LiveScripts = func(ctx context.Context, dir string, a []string, out func(string)) (string, int, error) {
+		return "", 0, nil
+	}
+	if r := h.cmdID("p2", "action.run", id, core.Args{"on": "thread", "action": "run-2", "digest": short.Digest}); !r.OK {
+		t.Fatalf("press: %+v", r)
+	}
+	eventually(t, "the short run ended", func() bool {
+		th, _ := h.e.Thread(id)
+		return len(th.Runs) == 2 && !th.Runs[1].Running
+	})
+	if hasEvent(h.events(id), core.EventActionLong, `"run-2"`) {
+		t.Fatal("a short run told that it started")
+	}
+}
