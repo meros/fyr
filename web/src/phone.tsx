@@ -64,6 +64,8 @@ import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList, ThreadQuotaFigure, useThreadQuotaCard } from "./quota-ui.tsx";
 import { CardView } from "./card-ui.tsx";
+import { ArrivedBar } from "./arrived-bar.tsx";
+import { type AnswerMove, arrive } from "./arrived.ts";
 import { HostMark } from "./host-mark-ui.tsx";
 import { hostOf, hostTag, offlineLine, profilesOfHost, threadProvider, type HostInfo } from "./hosts.ts";
 
@@ -169,6 +171,9 @@ export interface PhoneOpen {
   onCard(fn: (cs: CardState) => CardState): void;
   submitAsk(d: Decision): Promise<boolean>;
   allow(d: Decision, ok: boolean): Promise<boolean>;
+  /** V0.arrived-from: the answer that moved the owner to this thread, as on the desktop */
+  arrival: AnswerMove | null;
+  setArrival(a: AnswerMove | null): void;
 }
 
 /** The inbox list's own state: open and expanded sections, selection mode and the picked rows. */
@@ -970,6 +975,19 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           </div>
         )}
       </div>
+      {/* V0.arrived-from: shown with the card open too, since the card is what the owner answers next */}
+      {p.open.arrival && p.open.arrival.to === t.id && (
+        <ArrivedBar
+          phone
+          a={p.open.arrival}
+          onBack={() => {
+            const from = p.open.arrival!.from;
+            p.open.setArrival(null);
+            p.nav.replace({ screen: { name: "thread", id: from }, sheet: null });
+          }}
+          onDismiss={() => p.open.setArrival(null)}
+        />
+      )}
       {!cardOpen && <UndeclaredStrip id={t.id} />}
       {!cardOpen && <LeftoverStrip id={t.id} now={p.now} />}
       {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.open.events} cwd={t.cwd} />}
@@ -998,7 +1016,14 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
       )}
       {!decision && nextOffer && (
         <div class="m-abar">
-          <button class="m-bt p" onClick={() => (setNextOffer(null), p.nav.replace({ screen: { name: "thread", id: nextOffer.id }, sheet: null }))}>
+          <button
+            class="m-bt p"
+            onClick={() => {
+              setNextOffer(null);
+              p.open.setArrival(arrive({ id: t.id, title: t.title }, nextOffer.id, p.inbox.sec.needs.map((x) => x.id)));
+              p.nav.replace({ screen: { name: "thread", id: nextOffer.id }, sheet: null });
+            }}
+          >
             <span class="ell">Next: {nextOffer.title} ›</span>
           </button>
         </div>
