@@ -1,0 +1,17 @@
+# V0.ask-cancel: the question card can be cancelled, stepped back and a question skipped
+
+→ V0.ask-tool, V0.text-ask-nudge, 13.2, U5, decision 0020. Amends 13.2 (the card's keys and what a send carries) and API-v0's `thread.answer`.
+
+(1) **Why.** The card was a trap. A question the owner could not or did not want to answer could only be answered, and a card with a bad or a second question held the thread in Your move, blocked `thread.send` ("Answer the open question first") and kept the agent waiting for an answer nobody was going to give. The only ways out were to answer something false or to archive the thread. A multi-question card made that worse: the send needed an answer to every question, so one unanswerable question hid the ones the owner did care about.
+
+(2) **Skip a question.** A question can be left without an answer. `S` (and the footer's Skip, the phone's tile under the options) marks it skipped, drops what it held and moves the card on to the next question that still needs an answer; answering it again, or picking an option, takes the skip back. The card sends the answered questions and names the skipped ones: `thread.answer {decisionId, answers, skipped}`. The answer the agent reads keeps the card's shape, `Question → (skipped)`, followed by one sentence: decide it yourself if you can, or go on without it, and do not ask it again as it is. At least one question must be answered: skipping every question leaves the card with nothing to send, and its button says Cancel.
+
+(3) **Cancel the card.** `⇧Esc`, the footer's Cancel on the desktop and the phone's ✕ in the card head close the card without an answer (`thread.cancelAsk {decisionId}`). The agent hears it in a `[Fyr]` notice that names the questions, so it is not left waiting and does not re-ask them as they stand. The owner's Cancel is not an answer: a question a run waits on (the CLI's own AskUserQuestion) is withdrawn in the process instead, and its tool call hears a deny.
+
+(4) **Go back.** `⇧Tab` and `←` step to the previous question, `Tab` and `→` to the next; the desktop got a visible Back (the phone already had its previous questions with Change) so the step needs no key. A skipped question is shown as skipped when the owner comes back to it, with Unskip on the same control.
+
+(5) **Both fronts.** The keys, the footer and the progress line are the desktop's; the phone shows the same three controls as its own: the ✕ in the card head, and Back and Skip as 44 px targets under the options. Its Answer bar keeps naming the outcome: "Answer 1, skip 1", or "Cancel question" when nothing is answered.
+
+(6) **What the agent reads.** `AskDesc` and nothing else tells it that a card may come back in part or not at all; the skip sentence and the cancel notice are in `internal/core/ask.go`, and the feed rules are in `internal/core/feed.go`. A skipped question reaches the CLI's own AskUserQuestion as the answer `(skipped)`.
+
+Tests: `internal/core/ask_test.go` (TestAnswerSkipsTheQuestionTheOwnerLeftOut, TestAnswerRefusesABadSkip, TestCancelAskClosesTheCardAndTellsTheAgent, TestCancelAskWithdrawsTheQuestionARunWaitsOn, TestCancelAskRefusesWhatIsNotAQuestion); `internal/engine/ask_test.go` (TestAskSkipAndCancel); `internal/agent/answer_test.go` (TestCancelAskWithdrawsTheWaitingQuestion, TestAnswerCarriesASkippedQuestion); `web/test/question.test.ts`, `web/test/mobile.test.ts`; `web/test/layout.e2e.mjs` (V0.ask-cancel, both fronts).

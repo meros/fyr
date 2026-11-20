@@ -1090,7 +1090,7 @@ html.list-resizing iframe{pointer-events:none}
 .hodiv small{font-weight:400;color:var(--ink-faint)}
 
 /* SPEC U15: the question card's footer: progress and one button that says what it does */
-.ask .askf{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:10px}
+.ask .askf{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px}
 .ask .askf .askp{margin-right:auto;font:400 12px/16px var(--ui);color:var(--ink-muted)}
 
 /* SPEC 0.5 V0.48, V0.196: the clock that runs down to Snoozed or Settled closing by itself, on both fronts */
@@ -1963,3 +1963,10 @@ button.chip.wake:hover{color:var(--ink)}
    padding inside a native menulist and cut the text of a 34 px field; with no native look the field's own padding and
    line height hold. The chevron is two gradients, so it takes the theme's ink without an image. */
 :root select:not([multiple]){appearance:none;-webkit-appearance:none;padding-right:28px;background-image:linear-gradient(45deg,transparent 50%,var(--ink-muted) 50%),linear-gradient(135deg,var(--ink-muted) 50%,transparent 50%);background-position:calc(100% - 15px) 55%,calc(100% - 10px) 55%;background-size:5px 5px;background-repeat:no-repeat;text-overflow:ellipsis}
+
+/* V0.ask-cancel: the question card's quiet controls: Cancel in the header, Back and Skip in the footer */
+.ask .ahx{flex:none;height:22px;padding:0 7px;border-radius:6px;font:500 12px/16px var(--ui);color:var(--ink-muted)}
+.ask .ahx:hover{background:var(--raised);color:var(--ink)}
+.ask .askf .askb{flex:none;height:30px;padding:0 8px;border-radius:8px;font:500 13px/18px var(--ui);color:var(--ink-muted)}
+.ask .askf .askb:hover{background:var(--sunken);color:var(--ink)}
+.ask .askf .askb.on{color:var(--harbour)}

@@ -11,15 +11,25 @@ export interface CardState {
   other: (string | null)[];
   /** the Other field of the active question is open */
   otherOpen: boolean;
+  /** V0.ask-cancel: the owner skipped the question: no answer, and the agent is told so */
+  skipped: boolean[];
+}
+
+/** What a card sends: the questions the owner answered, and the ones left without an answer. */
+export interface Submit {
+  answers: Record<string, string>;
+  skipped: string[];
 }
 
 export interface KeyResult {
   state: CardState;
   handled: boolean;
-  /** all answers, when Enter submits */
-  submit?: Record<string, string>;
+  /** the answers and skips, when Enter submits */
+  submit?: Submit;
   /** the UI should focus the Other text field */
   focusOther?: boolean;
+  /** V0.ask-cancel: Shift+Esc closes the card without an answer */
+  cancel?: boolean;
 }
 
 export function questionsOf(d: Decision): Question[] {
@@ -34,6 +44,7 @@ export function initCard(d: Decision): CardState {
     picks: Array.from({ length: n }, () => []),
     other: Array.from({ length: n }, () => null),
     otherOpen: false,
+    skipped: Array.from({ length: n }, () => false),
   };
 }
 
@@ -51,15 +62,37 @@ export function answerOf(cs: CardState, d: Decision, i: number): string | null {
   return picks[0] ?? null;
 }
 
+/** V0.ask-cancel: the question has an answer or was skipped, so the card does not wait on it. */
+export function settledOf(cs: CardState, d: Decision, i: number): boolean {
+  return answerOf(cs, d, i) !== null || !!cs.skipped[i];
+}
+
+/** The answers, or null while a question has neither an answer nor a skip. */
 export function answersOf(cs: CardState, d: Decision): Record<string, string> | null {
   const qs = questionsOf(d);
   const out: Record<string, string> = {};
   for (let i = 0; i < qs.length; i++) {
     const a = answerOf(cs, d, i);
-    if (a === null) return null;
+    if (a === null) {
+      if (!cs.skipped[i]) return null;
+      continue;
+    }
     out[qs[i].question] = a;
   }
   return out;
+}
+
+/** V0.ask-cancel: the questions the owner left without an answer. */
+export function skippedOf(cs: CardState, d: Decision): string[] {
+  return questionsOf(d)
+    .filter((_, i) => !!cs.skipped[i] && answerOf(cs, d, i) === null)
+    .map((q) => q.question);
+}
+
+/** What the card sends, or null while a question has neither an answer nor a skip. */
+export function submitOf(cs: CardState, d: Decision): Submit | null {
+  const answers = answersOf(cs, d);
+  return answers ? { answers, skipped: skippedOf(cs, d) } : null;
 }
 
 function replaceAt<T>(arr: T[], i: number, v: T): T[] {
@@ -74,29 +107,54 @@ export function pick(cs: CardState, d: Decision, opt: number): CardState {
   const q = qs[cs.index];
   if (!q || opt < 0 || opt >= q.options.length) return cs;
   const label = q.options[opt].label;
+  const skipped = replaceAt(cs.skipped, cs.index, false); // an answer takes the skip back
   if (q.multiSelect) {
     const cur = cs.picks[cs.index];
     const next = cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label];
-    return { ...cs, picks: replaceAt(cs.picks, cs.index, next) };
+    return { ...cs, picks: replaceAt(cs.picks, cs.index, next), skipped };
   }
   return {
     ...cs,
     picks: replaceAt(cs.picks, cs.index, [label]),
     other: replaceAt(cs.other, cs.index, null),
     otherOpen: false,
+    skipped,
     index: Math.min(cs.index + 1, qs.length - 1),
   };
 }
 
+/**
+ * V0.ask-cancel: skip the active question (dropping what it holds) and move on to the next one that
+ * still needs an answer, or take the skip back.
+ */
+export function skip(cs: CardState, d: Decision): CardState {
+  const qs = questionsOf(d);
+  if (!qs[cs.index]) return cs;
+  const i = cs.index;
+  if (cs.skipped[i]) return { ...cs, skipped: replaceAt(cs.skipped, i, false) };
+  const next: CardState = {
+    ...closeOther(cs),
+    picks: replaceAt(cs.picks, i, []),
+    other: replaceAt(cs.other, i, null),
+    skipped: replaceAt(cs.skipped, i, true),
+  };
+  for (let k = 1; k <= qs.length; k++) {
+    const j = (i + k) % qs.length;
+    if (j !== i && !settledOf(next, d, j)) return { ...next, index: j };
+  }
+  return next;
+}
+
 export function openOther(cs: CardState): CardState {
   const other = cs.other[cs.index] ?? "";
-  return { ...cs, otherOpen: true, other: replaceAt(cs.other, cs.index, other) };
+  return { ...cs, otherOpen: true, other: replaceAt(cs.other, cs.index, other), skipped: replaceAt(cs.skipped, cs.index, false) };
 }
 
 export function setOther(cs: CardState, d: Decision, text: string): CardState {
   const q = questionsOf(d)[cs.index];
   const picks = q && !q.multiSelect && text ? replaceAt(cs.picks, cs.index, []) : cs.picks;
-  return { ...cs, picks, other: replaceAt(cs.other, cs.index, text === "" ? null : text) };
+  const skipped = text ? replaceAt(cs.skipped, cs.index, false) : cs.skipped;
+  return { ...cs, picks, skipped, other: replaceAt(cs.other, cs.index, text === "" ? null : text) };
 }
 
 export function closeOther(cs: CardState): CardState {
@@ -110,10 +168,17 @@ export function goTo(cs: CardState, d: Decision, index: number): CardState {
   return { ...closeOther(cs), index };
 }
 
+/** V0.ask-cancel: to the previous question. */
+export function back(cs: CardState, d: Decision): CardState {
+  return goTo(cs, d, cs.index - 1);
+}
+
 /**
  * Keys: 1-9 pick (single-select advances, multi-select toggles), 0 opens Other, Enter submits when every
- * question is answered (from the Other field, Enter moves to the next unanswered question first),
- * Tab / Shift+Tab move between questions. `inOther` is true when the key comes from the Other field.
+ * question is answered or skipped (from the Other field, Enter moves to the next unanswered question first),
+ * Tab / Shift+Tab and ← / → move between questions, Shift+S skips the question being shown, and Shift+Esc
+ * cancels the card (V0.ask-cancel). `inOther` is true when the key comes from the Other field, where keys
+ * are text.
  */
 export function cardKey(cs: CardState, d: Decision, key: string, opts: { shift?: boolean; inOther?: boolean } = {}): KeyResult {
   const qs = questionsOf(d);
@@ -129,12 +194,18 @@ export function cardKey(cs: CardState, d: Decision, key: string, opts: { shift?:
     return { state: pick(cs, d, opt), handled: true };
   }
   if (key === "0") return { state: openOther(cs), handled: true, focusOther: true };
+  if (opts.shift && (key === "s" || key === "S")) return { state: skip(cs, d), handled: true };
+  if (opts.shift && key === "Escape") return { state: cs, handled: true, cancel: true };
   if (key === "Tab") return { state: goTo(cs, d, cs.index + (opts.shift ? -1 : 1)), handled: true };
+  if (key === "ArrowRight") return { state: goTo(cs, d, cs.index + 1), handled: true };
+  if (key === "ArrowLeft") return { state: back(cs, d), handled: cs.index > 0 };
   if (key === "Enter") {
-    const all = answersOf(cs, d);
-    if (all) return { state: closeOther(cs), handled: true, submit: all };
-    // Move to the first unanswered question.
-    const next = qs.findIndex((_, i) => answerOf(cs, d, i) === null);
+    const st = submitState(cs, d);
+    // A card with no answer at all sends nothing: Enter cancels it, as its button does.
+    if (st.act === "submit") return { state: closeOther(cs), handled: true, submit: submitOf(cs, d)! };
+    if (st.act === "cancel") return { state: closeOther(cs), handled: true, cancel: true };
+    // Move to the first question that still needs an answer.
+    const next = qs.findIndex((_, i) => !settledOf(cs, d, i));
     return { state: goTo(cs, d, next), handled: true };
   }
   return { state: cs, handled: false };
@@ -153,25 +224,37 @@ export function chooseOther(cs: CardState, d: Decision): CardState {
   return q && !q.multiSelect ? { ...opened, picks: replaceAt(opened.picks, cs.index, []) } : opened;
 }
 
-/** SPEC U15: what the card's button does now: nothing yet, the next open question, or send. */
-export function submitState(cs: CardState, d: Decision): { label: string; act: "none" | "next" | "submit"; answered: number; total: number } {
+/** SPEC U15: what the card's button does now: nothing yet, the next open question, send, or cancel
+ *  (V0.ask-cancel: every question skipped sends nothing, so the card can only be cancelled). */
+export function submitState(cs: CardState, d: Decision): { label: string; act: "none" | "next" | "submit" | "cancel"; answered: number; skipped: number; total: number } {
   const qs = questionsOf(d);
-  const done = qs.map((_, i) => answerOf(cs, d, i) !== null);
-  const answered = done.filter(Boolean).length;
+  const answered = qs.filter((_, i) => answerOf(cs, d, i) !== null).length;
+  const skipped = qs.filter((_, i) => answerOf(cs, d, i) === null && !!cs.skipped[i]).length;
   const total = qs.length;
-  if (answered === total) return { label: total === 1 ? "Send answer" : `Send ${total} answers`, act: "submit", answered, total };
-  if (done[cs.index]) return { label: "Next question", act: "next", answered, total };
-  return { label: "Pick an answer", act: "none", answered, total };
+  if (answered + skipped === total) {
+    if (answered === 0) return { label: "Cancel question", act: "cancel", answered, skipped, total };
+    if (skipped > 0) return { label: answered === 1 ? "Send answer" : `Send ${answered} answers`, act: "submit", answered, skipped, total };
+    return { label: total === 1 ? "Send answer" : `Send ${total} answers`, act: "submit", answered, skipped, total };
+  }
+  if (settledOf(cs, d, cs.index)) return { label: "Next question", act: "next", answered, skipped, total };
+  return { label: "Pick an answer", act: "none", answered, skipped, total };
 }
 
-/** The first question without an answer, after the current one (wrapping). */
+/** The first question without an answer or a skip, after the current one (wrapping). */
 export function nextOpen(cs: CardState, d: Decision): number {
   const n = questionsOf(d).length;
   for (let k = 1; k <= n; k++) {
     const i = (cs.index + k) % n;
-    if (answerOf(cs, d, i) === null) return i;
+    if (!settledOf(cs, d, i)) return i;
   }
   return cs.index;
+}
+
+/** The line the card shows of its progress (V0.ask-cancel adds the skips). */
+export function progressText(st: { answered: number; skipped: number; total: number }): string {
+  if (st.total === 1) return st.answered ? "Answered" : st.skipped ? "Skipped" : "";
+  const s = `${st.answered} of ${st.total} answered`;
+  return st.skipped ? `${s} · ${st.skipped} skipped` : s;
 }
 
 /** Send the answer, then open the next thread that needs you, only when the host took it (as the phone does). */

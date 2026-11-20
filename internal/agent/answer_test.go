@@ -64,3 +64,40 @@ func TestAnswerRacesProcessExit(t *testing.T) {
 		wg.Wait()
 	}
 }
+
+// V0.ask-cancel: cancelling a question a run waits on puts a cancel on its
+// channel, so the tool call hears a deny and the run goes on.
+func TestCancelAskWithdrawsTheWaitingQuestion(t *testing.T) {
+	m := New(rlHost{}, Config{})
+	_, ch := askSession(m, "t1", "d1")
+	if err := m.cancelAsk("t1", "d1"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case e := <-ch:
+		if e.Kind != core.EffectCancel {
+			t.Fatalf("sent %+v", e)
+		}
+	default:
+		t.Fatal("nothing was sent to the waiting question")
+	}
+	// A question with no process (asked with Fyr's tool) has nothing to tell.
+	if err := m.cancelAsk("t1", "d_gone"); err != nil {
+		t.Fatalf("a question with no process: %v", err)
+	}
+}
+
+// A skipped question reaches the waiting tool call marked, not as an answer
+// the owner gave.
+func TestAnswerCarriesASkippedQuestion(t *testing.T) {
+	m := New(rlHost{}, Config{})
+	_, ch := askSession(m, "t1", "d1")
+	e := core.Effect{Kind: core.EffectAnswer, DecisionID: "d1", Answers: map[string]string{"A?": "x"}, Skipped: []string{"B?"}}
+	if err := m.answer("t1", e); err != nil {
+		t.Fatal(err)
+	}
+	got := <-ch
+	if len(got.Skipped) != 1 || got.Skipped[0] != "B?" || got.Answers["A?"] != "x" {
+		t.Fatalf("sent %+v", got)
+	}
+}

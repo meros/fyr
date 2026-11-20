@@ -35,8 +35,11 @@ type Effect struct {
 	Attachments []string          `json:"attachments,omitempty"`
 	DecisionID  string            `json:"decisionId,omitempty"`
 	Answers     map[string]string `json:"answers,omitempty"`
-	Allow       bool              `json:"allow,omitempty"`
-	Model       string            `json:"model,omitempty"`
+	// Skipped are the questions of an ask the owner left unanswered on
+	// purpose (V0.ask-cancel).
+	Skipped []string `json:"skipped,omitempty"`
+	Allow   bool     `json:"allow,omitempty"`
+	Model   string   `json:"model,omitempty"`
 	// Effort is the effort level of a setModel (V0.50); nil leaves it.
 	Effort *string `json:"effort,omitempty"`
 	// Profile is the target of a handover (V0.45).
@@ -304,7 +307,14 @@ func register(a *Action) {
 					continue
 				}
 				if ef.Kind == EffectAnswered && ef.Asked != nil { // V0.ask-tool
-					answered(&res, *ef.Asked, ef.Answers)
+					answered(&res, *ef.Asked, ef.Answers, ef.Skipped)
+					continue
+				}
+				if ef.Kind == EffectCancelled && ef.Asked != nil { // V0.ask-cancel
+					cancelled(&res, *ef.Asked)
+					if !ef.Asked.Async { // a run waits in its tool call: withdraw it there
+						res.Effects = append(res.Effects, Effect{Kind: EffectCancel, DecisionID: ef.DecisionID})
+					}
 					continue
 				}
 				res.Effects = append(res.Effects, ef)
@@ -339,13 +349,33 @@ func init() {
 			e := Effect{Kind: EffectAnswer, DecisionID: id}
 			if d.Kind == DecisionAsk {
 				raw, _ := a["answers"].(map[string]any)
+				// V0.ask-cancel: a question may be sent unanswered, named in skipped.
+				skip := map[string]bool{}
+				for _, s := range stringsOf(a["skipped"]) {
+					skip[s] = true
+				}
 				e.Answers = map[string]string{}
 				for _, q := range d.Questions {
 					s, _ := raw[q.Question].(string)
+					if skip[q.Question] {
+						if strings.TrimSpace(s) != "" {
+							return nil, fmt.Errorf("%w: question %q is answered and skipped", ErrBadArgs, q.Question)
+						}
+						e.Skipped = append(e.Skipped, q.Question)
+						continue
+					}
 					if strings.TrimSpace(s) == "" {
 						return nil, fmt.Errorf("%w: question %q has no answer", ErrBadArgs, q.Question)
 					}
 					e.Answers[q.Question] = s
+				}
+				for s := range skip {
+					if !slices.Contains(e.Skipped, s) {
+						return nil, fmt.Errorf("%w: %q is not a question of this card", ErrBadArgs, s)
+					}
+				}
+				if len(e.Answers) == 0 {
+					return nil, fmt.Errorf("%w: a card needs an answer to at least one question; cancel it to close it without one", ErrBadArgs)
 				}
 				e.Allow = true
 				if d.Async { // V0.ask-tool: nobody waits in a tool call
@@ -371,6 +401,41 @@ func init() {
 			}
 			v.SeenAt = now
 			return []Effect{e}, nil
+		}})
+
+	// V0.ask-cancel: the owner closes a question card without answering it.
+	// The agent hears it, so it is not left waiting; a run that waits in the
+	// tool call hears a deny.
+	register(&Action{Name: "thread.cancelAsk", Label: "Cancel question",
+		Available: func(t *Thread, _ *View, _ time.Time) string {
+			for _, d := range t.Decisions {
+				if d.Kind == DecisionAsk {
+					return ""
+				}
+			}
+			return "No question to cancel"
+		},
+		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+			id := a.Str("decisionId")
+			idx := -1
+			for i, d := range t.Decisions {
+				if d.ID == id {
+					idx = i
+				}
+			}
+			if idx < 0 {
+				return nil, fmt.Errorf("%w: no open decision %q", ErrBadArgs, id)
+			}
+			d := t.Decisions[idx]
+			if d.Kind != DecisionAsk {
+				return nil, fmt.Errorf("%w: %q is not a question; answer it instead", ErrBadArgs, id)
+			}
+			t.Decisions = append(t.Decisions[:idx:idx], t.Decisions[idx+1:]...)
+			if len(t.Decisions) == 0 {
+				t.Decisions = nil
+			}
+			v.SeenAt = now
+			return []Effect{{Kind: EffectCancelled, DecisionID: id, Asked: &d}}, nil
 		}})
 
 	register(&Action{Name: "thread.interrupt", Label: "Stop run", Key: "Escape",

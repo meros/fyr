@@ -48,7 +48,7 @@ import { colorVar, findProject, projectName, projectOf, recordOf } from "./proje
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
-import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
+import { answerOf, back, goTo, pickStay, chooseOther, questionsOf, setOther, settledOf, skip, type CardState } from "./question.ts";
 import { ADVANCE_MS, activeSection, allowCommit, askCommit, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, swipeAvail, swipeArmed, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
@@ -172,6 +172,8 @@ export interface PhoneOpen {
   card: CardState | null;
   onCard(fn: (cs: CardState) => CardState): void;
   submitAsk(d: Decision): Promise<boolean>;
+  /** V0.ask-cancel: close the question card without an answer */
+  cancelAsk(d: Decision): Promise<boolean>;
   allow(d: Decision, ok: boolean): Promise<boolean>;
   /** V0.arrived-from: the answer that moved the owner to this thread, as on the desktop */
   arrival: AnswerMove | null;
@@ -1020,7 +1022,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
         />
       )}
       {decision && decision.kind === "ask" && p.open.card && p.open.card.decisionId === decision.id && (
-        <MAsk d={decision} card={p.open.card} onCard={p.open.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.open.submitAsk(decision).then(afterAnswer)} />
+        <MAsk d={decision} card={p.open.card} onCard={p.open.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.open.submitAsk(decision).then(afterAnswer)} cancel={() => void p.open.cancelAsk(decision)} />
       )}
       {decision && decision.kind !== "ask" && (
         <MAllow d={decision} t={t} host={t.host ?? ""} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} commit={(ok) => p.open.allow(decision, ok).then(afterAnswer)} />
@@ -1104,12 +1106,17 @@ function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: strin
 
 // ---- decisions ----
 
-function CardHead({ children, collapsed, onCollapse }: { children: ComponentChildren; collapsed: boolean; onCollapse(): void }) {
+function CardHead({ children, collapsed, onCollapse, onCancel }: { children: ComponentChildren; collapsed: boolean; onCollapse(): void; onCancel?(): void }) {
   return (
     <div class="m-ah" onClick={onCollapse}>
       <StateIcon state="asking" size={14} />
       {children}
       <span class="sp" />
+      {onCancel && (
+        <button class="b44 m-ahx" aria-label="Cancel the question" title="Cancel the question" onClick={(e) => (e.stopPropagation(), onCancel())}>
+          {I.close}
+        </button>
+      )}
       <button class="b44" aria-label={collapsed ? "Show the question" : "Show the conversation"} onClick={(e) => (e.stopPropagation(), onCollapse())}>
         {collapsed ? I.up : I.down}
       </button>
@@ -1117,7 +1124,7 @@ function CardHead({ children, collapsed, onCollapse }: { children: ComponentChil
   );
 }
 
-function MAsk({ d, card, onCard, collapsed, onCollapse, submit }: { d: Decision; card: CardState; onCard(fn: (cs: CardState) => CardState): void; collapsed: boolean; onCollapse(): void; submit(): void }) {
+function MAsk({ d, card, onCard, collapsed, onCollapse, submit, cancel }: { d: Decision; card: CardState; onCard(fn: (cs: CardState) => CardState): void; collapsed: boolean; onCollapse(): void; submit(): void; cancel(): void }) {
   const qs = questionsOf(d);
   const q = qs[card.index];
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1153,6 +1160,7 @@ function MAsk({ d, card, onCard, collapsed, onCollapse, submit }: { d: Decision;
   const commit = askCommit(card, d);
   const picks = card.picks[card.index] ?? [];
   const otherOn = card.other[card.index] !== null || card.otherOpen;
+  const passed = settledOf(card, d, card.index) && !picks.length && !otherOn;
 
   const tap = (i: number) => {
     const idx = card.index;
@@ -1164,18 +1172,19 @@ function MAsk({ d, card, onCard, collapsed, onCollapse, submit }: { d: Decision;
   };
   const onCommit = () => {
     if (commit.act === "submit") submit();
+    else if (commit.act === "cancel") cancel();
     else if (commit.act === "next") onCard((cs) => goTo(cs, d, cs.index + 1));
   };
 
   return (
     <>
       <div class={`m-ask${collapsed ? " collapsed" : ""}`}>
-        <CardHead collapsed={collapsed} onCollapse={onCollapse}>
+        <CardHead collapsed={collapsed} onCollapse={onCollapse} onCancel={cancel}>
           <b>{step.text}</b>
           {step.dots && qs.length > 1 && (
             <span class="m-dots">
               {qs.map((_, i) => (
-                <i class={i === card.index ? "on" : answerOf(card, d, i) !== null ? "done" : ""} />
+                <i class={i === card.index ? "on" : settledOf(card, d, i) ? "done" : ""} />
               ))}
             </span>
           )}
@@ -1187,7 +1196,7 @@ function MAsk({ d, card, onCard, collapsed, onCollapse, submit }: { d: Decision;
             {qs.slice(0, card.index).map((pq, i) => (
               <div class="m-prev">
                 <b>{i + 1}</b>
-                <span class="ell">{answerOf(card, d, i) ?? "Not answered"}</span>
+                <span class="ell">{answerOf(card, d, i) ?? (card.skipped[i] ? "Skipped" : "Not answered")}</span>
                 <button class="ed" onClick={() => onCard((cs) => goTo(cs, d, i))} aria-label={`Change the answer to: ${pq.question}`}>
                   Change
                 </button>
@@ -1240,6 +1249,18 @@ function MAsk({ d, card, onCard, collapsed, onCollapse, submit }: { d: Decision;
                   }}
                 />
               )}
+            </div>
+            {/* V0.ask-cancel: Back to the question before, and Skip to leave this one for the agent */}
+            <div class="m-asknav">
+              {card.index > 0 && (
+                <button class="m-navb" onClick={() => onCard((cs) => back(cs, d))}>
+                  {I.back}
+                  Back
+                </button>
+              )}
+              <button class={`m-navb${passed ? " on" : ""}`} onClick={() => onCard((cs) => skip(cs, d))}>
+                {passed ? "Unskip" : "Skip this question"}
+              </button>
             </div>
           </div>
         )}

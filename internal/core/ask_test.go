@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -60,6 +61,96 @@ func TestAskSurvivesTheProcess(t *testing.T) {
 	ProcessLost(th, "exit", "gone", ct0)
 	if len(th.Decisions) != 1 || th.Decisions[0].ID != "d_1" {
 		t.Fatalf("after the process went: %+v", th.Decisions)
+	}
+}
+
+// V0.ask-cancel: a question may be sent unanswered, named in skipped: the
+// agent is told which one, so it does not take the gap for an answer.
+func TestAnswerSkipsTheQuestionTheOwnerLeftOut(t *testing.T) {
+	th := feedThread()
+	th, _ = fstep(t, th, askIn("d_1", Question{Question: "Which database?"}, Question{Question: "What is the key?"}), ct0)
+	th, res := fstep(t, th, Input{Source: FromOwner, Kind: "thread.answer", Args: Args{
+		"decisionId": "d_1", "answers": map[string]any{"Which database?": "SQLite"}, "skipped": []any{"What is the key?"},
+	}}, ct0)
+	if len(th.Decisions) != 0 {
+		t.Fatalf("still open: %+v", th.Decisions)
+	}
+	for _, e := range res.Effects {
+		if e.Kind == EffectAnswer || e.Kind == EffectAnswered {
+			t.Fatalf("an answer effect left for a question nobody waits on: %+v", e)
+		}
+	}
+	n := queued(t, th, "result:ask:d_1")
+	want := "The owner answered your questions:\nWhich database? → SQLite\nWhat is the key? → (skipped)\n" +
+		"A question marked (skipped) was left without an answer on purpose: decide it yourself if you can, or go on without it; do not ask it again as it is."
+	if n.What != want || n.Urgency != Wake || !wakes(res) {
+		t.Fatalf("notice %+v\nwant %q", n, want)
+	}
+}
+
+func TestAnswerRefusesABadSkip(t *testing.T) {
+	th := feedThread()
+	th, _ = fstep(t, th, askIn("d_1", Question{Question: "A?"}, Question{Question: "B?"}), ct0)
+	for name, args := range map[string]Args{
+		"answered and skipped": {"decisionId": "d_1", "answers": map[string]any{"A?": "x", "B?": "y"}, "skipped": []any{"B?"}},
+		"not a question":       {"decisionId": "d_1", "answers": map[string]any{"A?": "x"}, "skipped": []any{"C?"}},
+		"nothing answered":     {"decisionId": "d_1", "answers": map[string]any{}, "skipped": []any{"A?", "B?"}},
+	} {
+		if _, _, _, err := Reduce(th, nil, Input{Source: FromOwner, Kind: "thread.answer", Thread: th.ID, Args: args}, ct0); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// V0.ask-cancel: cancelling closes the card without an answer, and the
+// agent is told, so it is not left waiting for one.
+func TestCancelAskClosesTheCardAndTellsTheAgent(t *testing.T) {
+	th := feedThread()
+	th, _ = fstep(t, th, askIn("d_1", Question{Question: "Which database?"}, Question{Question: "What is the key?"}), ct0)
+	th, res := fstep(t, th, Input{Source: FromOwner, Kind: "thread.cancelAsk", Args: Args{"decisionId": "d_1"}}, ct0)
+	if len(th.Decisions) != 0 {
+		t.Fatalf("still open: %+v", th.Decisions)
+	}
+	for _, e := range res.Effects {
+		if e.Kind == EffectCancel {
+			t.Fatalf("a cancel went to a process nobody waits in: %+v", e)
+		}
+	}
+	n := queued(t, th, "result:ask:d_1")
+	if !strings.Contains(n.What, "cancelled your question") || !strings.Contains(n.What, "Which database?") || n.Urgency != Wake || !wakes(res) {
+		t.Fatalf("notice %+v", n)
+	}
+	if !slices.ContainsFunc(th.Feed.Queue, func(n Notice) bool { return n.Key == "result:ask:d_1" }) {
+		t.Fatalf("the agent is not told: %+v", th.Feed.Queue)
+	}
+}
+
+// A question the CLI's AskUserQuestion waits on is withdrawn in the
+// process: its tool call hears a deny and the run goes on.
+func TestCancelAskWithdrawsTheQuestionARunWaitsOn(t *testing.T) {
+	th := feedThread()
+	th.Decisions = append(th.Decisions, Decision{ID: "d_cli", Kind: DecisionAsk, Assignee: Owner, Questions: []Question{{Question: "Go on?"}}})
+	th, res := fstep(t, th, Input{Source: FromOwner, Kind: "thread.cancelAsk", Args: Args{"decisionId": "d_cli"}}, ct0)
+	if len(th.Decisions) != 0 {
+		t.Fatalf("still open: %+v", th.Decisions)
+	}
+	if !slices.ContainsFunc(res.Effects, func(e Effect) bool { return e.Kind == EffectCancel && e.DecisionID == "d_cli" }) {
+		t.Fatalf("the process is not told: %+v", res.Effects)
+	}
+	// The process hears it; the card's close is in the log, and the agent
+	// reads the deny, so no notice wakes it.
+	for _, n := range th.Feed.Queue {
+		if n.Key == "result:ask:d_cli" {
+			t.Fatalf("a notice for a question the process hears: %+v", n)
+		}
+	}
+}
+
+func TestCancelAskRefusesWhatIsNotAQuestion(t *testing.T) {
+	th := feedThread()
+	th.Decisions = append(th.Decisions, Decision{ID: "d_appr", Kind: DecisionApproval, Assignee: Owner, Tool: "Bash"})
+	if _, _, _, err := Reduce(th, nil, Input{Source: FromOwner, Kind: "thread.cancelAsk", Thread: th.ID, Args: Args{"decisionId": "d_appr"}}, ct0); err == nil {
+		t.Error("an approval was cancelled as a question")
 	}
 }
 

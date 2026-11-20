@@ -39,6 +39,10 @@
       "name": "thread.archive"
     },
     {
+      "label": "Cancel question",
+      "name": "thread.cancelAsk"
+    },
+    {
       "label": "Cancel wake-up",
       "name": "thread.cancelWake"
     },
@@ -277,6 +281,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelAsk": "No question to cancel",
         "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -328,6 +333,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelAsk": "No question to cancel",
         "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -397,6 +403,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelAsk": "No question to cancel",
         "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -451,6 +458,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelAsk": "No question to cancel",
         "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -501,6 +509,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelAsk": "No question to cancel",
         "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -555,6 +564,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelAsk": "No question to cancel",
         "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",

@@ -511,3 +511,10 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 /* V0.wakeups-via-watch: the wake chip stands right of the scrolling chips in its own 44 px tap target (as .m-pjb) */
 .m-wakeb{flex:0 1 auto;max-width:42%}
 .m-wakeb .m-chip.wake{max-width:100%}
+
+/* V0.ask-cancel: Back and Skip under the options: 44 px targets, like every control on the card */
+.m-asknav{display:flex;gap:8px;margin-top:2px}
+.m-navb{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 14px;border:1px solid var(--line);border-radius:12px;font:500 15px/20px var(--ui);color:var(--ink-muted);background:var(--raised);white-space:nowrap}
+.m-navb.on{color:var(--harbour);border-color:var(--harbour);background:var(--harbour-wash)}
+.m-navb svg{flex:none}
+.m-ahx{color:var(--ink-muted)}

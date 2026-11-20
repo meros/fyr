@@ -30,7 +30,8 @@ export function keyHints(c: HintContext): Hint[] {
   }
   const h: Hint[] = [];
   if (c.zone === "thread" && c.view === "open" && c.card === "ask") {
-    h.push(["1–4", c.cardMulti ? "toggle" : "pick"], ["0", "other"], ["Tab", "next question"], ["⏎", "answer"]);
+    // V0.ask-cancel: back a question, skip it, or close the card without an answer.
+    h.push(["1–4", c.cardMulti ? "toggle" : "pick"], ["0", "other"], ["Tab/⇧Tab", "next/back"], ["⇧S", "skip"], ["⇧Esc", "cancel question"], ["⏎", "answer"]);
   } else if (c.zone === "thread" && c.view === "open" && (c.card === "approval" || c.card === "effect")) {
     h.push(["1", c.card === "approval" ? "allow" : "approve"], ["2", c.card === "approval" ? "deny" : "decline"]);
   }

@@ -22,7 +22,7 @@ import { stateLabel } from "./rows.ts";
 import { clockTime, duration, relTime } from "./format.ts";
 import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { dividerLine, rungDone } from "./handover.ts";
-import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
+import { back, pick, progressText, questionsOf, goTo, settledOf, skip, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { deskThreadMenu, type ThreadAction } from "./actions.ts";
 import { hostChip, offlineLine, profilesOf, threadProvider, type HostProfiles } from "./hosts.ts";
@@ -67,6 +67,8 @@ export interface AnswerField {
 export interface ThreadPaneProps {
   /** U15: send the answers of the open question card */
   onSubmitAsk?(d: Decision): void;
+  /** V0.ask-cancel: close the open question card without an answer */
+  onCancelAsk?(d: Decision): void;
   thread: Thread;
   mode: "open" | "peek";
   events: FyrEvent[] | undefined;
@@ -238,7 +240,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
       {/* V0.next-step-dock: what waits on the owner stands in one dock; a question or approval first, then a Run card */}
       {showsDecision(tab) && !decision && dock && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={p.onRun} onShow={(id) => showCard(id, tab, setTab)} />}
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} onCancelAsk={p.onCancelAsk} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} onRestart={() => p.onRun("thread.restart")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );
@@ -869,7 +871,8 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
     case "task":
       return <QuietLine icon={it.started ? "working" : TASK_ICON[it.status] ?? "settled"} line={it.text} fail={it.status === "failed"} />;
     case "answer":
-      return <QuietLine icon="settled" line={`Answered: ${it.text}`} />;
+      // V0.ask-cancel: a cancelled card says so, and its questions are one tap away.
+      return it.cancelled ? <QuietLine icon="seen" line="Question cancelled" full={it.text} /> : <QuietLine icon="settled" line={`Answered: ${it.text}`} />;
     case "handover":
       return <HandoverDivider it={it} />;
   }
@@ -1071,6 +1074,8 @@ interface CardProps {
   onAllow(d: Decision, allow: boolean): void;
   /** U15: send the answers of an ask card */
   onSubmitAsk?(d: Decision): void;
+  /** V0.ask-cancel: close the card without an answer */
+  onCancelAsk?(d: Decision): void;
   /** the thread's PR, to name it in a merge card */
   pr?: PullRequest | null;
 }
@@ -1141,6 +1146,11 @@ function AskCard(p: CardProps & { card: CardState }) {
   if (!q) return null;
   const picks = card.picks[card.index] ?? [];
   const other = card.other[card.index];
+  const passed = settledOf(card, d, card.index) && picks.length === 0 && !other;
+  // U15: always a visible way to finish (Enter still works). V0.ask-cancel: Back (⇧Tab, ←), Skip (⇧S)
+  // and Cancel (⇧Esc) sit beside it, and the button sends, moves on, or cancels what the card holds.
+  const st = submitState(card, d);
+  const primary = () => (st.act === "submit" ? p.onSubmitAsk?.(d) : st.act === "cancel" ? p.onCancelAsk?.(d) : st.act === "next" && p.onCard(goTo(card, d, nextOpen(card, d))));
   return (
     <div class="ask">
       <div class="ah">
@@ -1151,8 +1161,11 @@ function AskCard(p: CardProps & { card: CardState }) {
         <span class="ell">{asker(d)}</span>
         <span class="ml">
           {p.more > 0 && `+${p.more} more · `}
-          <kbd>Tab</kbd> multi-select next
+          <kbd>Tab</kbd> next question
         </span>
+        <button class="ahx" title="Cancel the question without answering it (⇧Esc)" onClick={() => p.onCancelAsk?.(d)}>
+          Cancel
+        </button>
       </div>
       <div class="ab">
         <div class="q">{q.question}</div>
@@ -1170,25 +1183,21 @@ function AskCard(p: CardProps & { card: CardState }) {
             <span class="d">{other ?? ""}</span>
           </button>
         </div>
-        {(() => {
-          // U15: always a visible way to finish (Enter still works).
-          const st = submitState(card, d);
-          return (
-            <div class="askf">
-              <span class="askp">
-                {st.total > 1 ? `${st.answered} of ${st.total} answered` : st.answered ? "Answered" : ""}
-              </span>
-              <button
-                class={`btn ${st.act === "submit" ? "p" : ""}`}
-                disabled={st.act === "none"}
-                onClick={() => (st.act === "submit" ? p.onSubmitAsk?.(d) : st.act === "next" && p.onCard(goTo(card, d, nextOpen(card, d))))}
-              >
-                {st.label}
-                {st.act === "submit" && <kbd>↵</kbd>}
-              </button>
-            </div>
-          );
-        })()}
+        <div class="askf">
+          <span class="askp">{progressText(st)}</span>
+          {card.index > 0 && (
+            <button class="askb" title="Previous question (⇧Tab or ←)" onClick={() => p.onCard(back(card, d))}>
+              ‹ Back
+            </button>
+          )}
+          <button class={`askb${passed ? " on" : ""}`} title={passed ? "Take the skip back (⇧S)" : "Leave this question without an answer (⇧S)"} onClick={() => p.onCard(skip(card, d))}>
+            {passed ? "Unskip" : "Skip"}
+          </button>
+          <button class={`btn ${st.act === "submit" || st.act === "cancel" ? "p" : ""}`} disabled={st.act === "none"} onClick={primary}>
+            {st.label}
+            {st.act === "submit" && <kbd>↵</kbd>}
+          </button>
+        </div>
       </div>
     </div>
   );
