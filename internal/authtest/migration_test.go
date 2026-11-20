@@ -194,9 +194,8 @@ var steps = []step{
 		if err := l.BlockDial("mac", l.Self.Name, port); err != nil {
 			t.Fatal(err)
 		}
-		if err := migMac.Fyrd.PinPeerPort(); err != nil { // a real install's peerPort is fixed
-			t.Fatal(err)
-		}
+		// the Mac's peer port is fixed (EnablePeers), as a real install's: the laptop's
+		// roster still has it right after the restart
 		if err := migMac.Fyrd.Restart(); err != nil {
 			t.Fatal(err)
 		}

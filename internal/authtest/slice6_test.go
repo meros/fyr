@@ -146,7 +146,9 @@ func TestASpoofedAnswerIsNeverFollowed(t *testing.T) {
 	bus := filepath.Join(t.TempDir(), "lan.json")
 	lan.File(bus)
 	a := lanInstall(t, "a", bus, nil)
-	b := lanInstall(t, "b", bus, nil)
+	// b's peer port is fixed (it comes back at its own address): a reserved one, which
+	// no listen on :0 is handed while b is down (V0.port-race)
+	b := lanInstall(t, "b", bus, map[string]any{"peerListen": authtest.ReservedListen(t)})
 	lan.Advertise(a.id, a.addr())
 	lan.Advertise(b.id, b.addr())
 	if out, err := b.Fyr("pair", lanInvite(t, a), "-addr", a.addr()); err != nil {
@@ -154,9 +156,6 @@ func TestASpoofedAnswerIsNeverFollowed(t *testing.T) {
 	}
 	waitOthersLAN(t, a, "b")
 	waitOthersLAN(t, b, "a")
-	if err := b.PinPeerPort(); err != nil {
-		t.Fatal(err)
-	}
 	oldB := b.addr()
 
 	var hits, plain atomic.Int64
