@@ -2,7 +2,7 @@
 // Each front adds only its wrapper (selection, swipes); the phone sets its own sizes in phone.css.
 
 import type { ComponentChildren } from "preact";
-import { useContext } from "preact/hooks";
+import { useContext, useMemo } from "preact/hooks";
 import type { Change, ChangeNeed, Thread } from "./types.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
@@ -56,9 +56,12 @@ export function hideUse(running: boolean, use: () => void): Record<string, unkno
   return running ? { onPointerDown: use, onPointerMove: use, onKeyDown: use } : {};
 }
 
-/** V0.48, V0.196: the small clock in the header of a section that closes by itself; it restarts on use. */
+/** V0.48, V0.196, V0.autoclose-clock: the small clock in the header of a section that closes by itself; it restarts on use. Its duration
+ *  is read once per deadline: the list re-renders on every store update, and a new animation-duration on a running
+ *  animation rescales the time already gone, so the clock would drain faster than the section closes. */
 export function HideClock({ at }: { at: number }) {
-  return <span key={at} class="ahc" style={{ "--ah": `${Math.max(0, (at - Date.now()) / 1000)}s` }} title="Closes by itself" aria-hidden="true" />;
+  const left = useMemo(() => Math.max(0, (at - Date.now()) / 1000), [at]);
+  return <span key={at} class="ahc" style={{ "--ah": `${left}s` }} title="Closes by itself" aria-hidden="true" />;
 }
 
 /** V0.section-heads: what a section header shows, on both fronts: the fold chevron, the section's icon, its name and its
