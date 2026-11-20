@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -43,6 +44,11 @@ type Releases struct {
 	Token func() string
 	Now   func() time.Time // tests
 	state apiState
+	// Channel is the config's updateChannel (V0.versioned-releases): "" or
+	// "main", "stable", or a version to pin to.
+	Channel string
+	mu      sync.Mutex
+	tags    map[string]string // commit → the version tag the channel found it under
 }
 
 // Name is owner/name of the repo the releases come from (V0.update-changelog: the changelog links to it).
@@ -71,47 +77,25 @@ func (r *Releases) repo() string {
 	return r.Repo
 }
 
-// Deployable is the commit the tag `deployable` points at: CI's newest
-// green, published commit. V0.173: read with git ls-remote, which costs no
-// GitHub API call; the API only when git cannot say.
+// Deployable is the commit the host's channel points at
+// (V0.versioned-releases): on main, the tag `deployable` (CI's newest green,
+// published commit); on stable, the newest version release's commit; pinned,
+// that version's.
 func (r *Releases) Deployable(ctx context.Context) (string, error) {
-	if sha, err := r.lsRemote(ctx); err == nil {
+	sha, _, err := r.wanted(ctx)
+	return sha, err
+}
+
+// mainHead is the commit the tag `deployable` points at. V0.173: read with
+// git ls-remote, which costs no GitHub API call; the API only when git
+// cannot say.
+func (r *Releases) mainHead(ctx context.Context) (string, error) {
+	sha, err := r.lsRemote(ctx, release.Deployable)
+	if err == nil {
 		return sha, nil
-	} else {
-		log.Printf("deployable by git: %v; asking the API", err)
 	}
-	b, err := r.api(ctx, "repos/"+r.repo()+"/git/ref/tags/"+release.Deployable)
-	if err != nil {
-		return "", fmt.Errorf("reading %s: %w", release.Deployable, err)
-	}
-	var ref struct {
-		Object struct {
-			SHA  string `json:"sha"`
-			Type string `json:"type"`
-			URL  string `json:"url"`
-		} `json:"object"`
-	}
-	if err := json.Unmarshal(b, &ref); err != nil {
-		return "", fmt.Errorf("reading %s: %w", release.Deployable, err)
-	}
-	sha := ref.Object.SHA
-	if ref.Object.Type == "tag" { // an annotated tag: its commit
-		tb, err := r.api(ctx, "repos/"+r.repo()+"/git/tags/"+sha)
-		if err != nil {
-			return "", fmt.Errorf("reading %s: %w", release.Deployable, err)
-		}
-		var tag struct {
-			Object struct {
-				SHA string `json:"sha"`
-			} `json:"object"`
-		}
-		json.Unmarshal(tb, &tag)
-		sha = tag.Object.SHA
-	}
-	if !isSHA(sha) {
-		return "", fmt.Errorf("%s points at %q", release.Deployable, sha)
-	}
-	return sha, nil
+	log.Printf("deployable by git: %v; asking the API", err)
+	return r.tagCommit(ctx, release.Deployable)
 }
 
 func isSHA(s string) bool {
@@ -128,7 +112,7 @@ func isSHA(s string) bool {
 
 // lsRemote reads the tag with git ls-remote; an annotated tag's commit is
 // its peeled (^{}) line.
-func (r *Releases) lsRemote(ctx context.Context) (string, error) {
+func (r *Releases) lsRemote(ctx context.Context, tag string) (string, error) {
 	git := r.Git
 	if git == nil {
 		git = func(ctx context.Context, args ...string) ([]byte, error) {
@@ -139,7 +123,7 @@ func (r *Releases) lsRemote(ctx context.Context) (string, error) {
 			return cmd.Output()
 		}
 	}
-	ref := "refs/tags/" + release.Deployable
+	ref := "refs/tags/" + tag
 	// No credential helper (V0.release-without-gh): a public repo needs
 	// none, and a private one fails here and is read by the API with the
 	// token.
@@ -235,15 +219,21 @@ func (r *Releases) fetch(ctx context.Context, sha, dir string) (release.Info, er
 	t := release.Here()
 	fyrd, fyr := release.Asset("fyrd", t), release.Asset("fyr", t)
 	names := []string{fyrd, fyr, release.Manifest, release.Sums, release.Sig}
-	if err := r.download(ctx, release.Tag(sha), names, dir); err != nil {
-		return release.Info{}, fmt.Errorf("downloading %s from %s: %w", release.Tag(sha), r.repo(), err)
+	tag := r.releaseTag(sha) // V0.versioned-releases: a version's release on stable or pinned
+	if err := r.download(ctx, tag, names, dir); err != nil {
+		return release.Info{}, fmt.Errorf("downloading %s from %s: %w", tag, r.repo(), err)
 	}
 	info, err := release.Verify(dir, r.key(), fyrd, fyr)
 	if err != nil {
-		return info, fmt.Errorf("release %s did not verify: %w", release.Tag(sha), err)
+		return info, fmt.Errorf("release %s did not verify: %w", tag, err)
 	}
 	if info.Commit != sha {
-		return info, fmt.Errorf("release %s is for commit %s, not %s", release.Tag(sha), release.Short(info.Commit), release.Short(sha))
+		return info, fmt.Errorf("release %s is for commit %s, not %s", tag, release.Short(info.Commit), release.Short(sha))
+	}
+	if release.IsVersion(tag) && info.Version != tag {
+		// The signed manifest names the version, so a release cannot be
+		// passed off as another version of the same commit.
+		return info, fmt.Errorf("release %s says it is version %q", tag, info.Version)
 	}
 	for from, to := range map[string]string{fyrd: "fyrd", fyr: "fyr"} {
 		if err := os.Rename(filepath.Join(dir, from), filepath.Join(dir, to)); err != nil {

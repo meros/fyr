@@ -1794,10 +1794,10 @@ function mockHostsRaw(now: number, labTrusted: boolean) {
   return [
     { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777", machine: "laptop", os: "linux", link: { state: "up", via: "pipe" },
       // V0.host-updates: runs the newest release
-      update: { running: "c705ef5365660a8f", build: "c705ef5", wanted: "c705ef5365660a8f", behind: 0, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "installed", startedAt: iso(now - 3 * 3600_000 - 120_000), endedAt: iso(now - 3 * 3600_000) } } },
+      update: { running: "c705ef5365660a8f", build: "c705ef5", version: "v1.0.0", channel: "stable", wanted: "c705ef5365660a8f", behind: 0, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "installed", startedAt: iso(now - 3 * 3600_000 - 120_000), endedAt: iso(now - 3 * 3600_000) } } },
     { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778", machine: "server", os: "linux",
       // V0.host-updates: three commits behind; its last update rolled back and the release is held back
-      update: { running: "9b1e04a77d2c", build: "9b1e04a", wanted: "c705ef5365660a8f", behind: 3, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "rolledBack", reason: "exited with code 1 after 2s", startedAt: iso(now - 50 * 60_000), endedAt: iso(now - 48 * 60_000) }, bad: { commit: "c705ef5365660a8f", why: "exited with code 1 after 2s", at: iso(now - 48 * 60_000) } } },
+      update: { running: "9b1e04a77d2c", build: "9b1e04a", channel: "main", wanted: "c705ef5365660a8f", behind: 3, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "rolledBack", reason: "exited with code 1 after 2s", startedAt: iso(now - 50 * 60_000), endedAt: iso(now - 48 * 60_000) }, bad: { commit: "c705ef5365660a8f", why: "exited with code 1 after 2s", at: iso(now - 48 * 60_000) } } },
     { name: "lab", online: true, since: iso(now - 40 * 60_000), id: "B7LA-4QZE-9KDF-3HXW", url: "http://100.64.0.7:7778", machine: "desktop", os: "darwin", ...(labTrusted ? {} : { idWas: "AX2C-7RTM-8PLQ-6VYD" }),
       // V0.132: lab's own providers, so a thread started there offers them
       profiles: [

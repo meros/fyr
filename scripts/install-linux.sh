@@ -2,13 +2,20 @@
 # Installs Fyr on a Linux without Nix (Debian, Ubuntu) as the systemd system
 # unit fyr.service that runs as you: the stand-in for the NixOS module
 # (nix/module.nix, decision 0007), as scripts/install-macos.sh is on a Mac
-# (V0.linux-without-nix). It builds nothing: it downloads the CI release the
-# tag `deployable` points at (decision 0027) over HTTPS, with no gh login
-# (V0.release-without-gh), checks its SHA256SUMS, makes it the current build
-# and keeps a copy as the seed. From then on the running fyrd updates itself
-# to each new release (signed, verified, smoke-tested).
+# (V0.linux-without-nix). It builds nothing: it downloads a CI release
+# (decision 0027) over HTTPS, with no gh login (V0.release-without-gh),
+# checks its SHA256SUMS, makes it the current build and keeps a copy as the
+# seed. From then on the running fyrd updates itself to each new release of
+# its channel (signed, verified, smoke-tested).
 #
-#	scripts/install-linux.sh [--print | --uninstall]
+#	scripts/install-linux.sh [--print | --uninstall] [--channel stable|main|vX.Y.Z] [--version vX.Y.Z]
+#
+# V0.versioned-releases: the channel is the config's updateChannel. A new
+# install follows `stable` (the newest version release, vX.Y.Z, not a
+# prerelease); an existing config keeps its own (none is `main`: every green
+# commit of main, the release `deployable` points at). --channel sets it.
+# --version installs that version and, without --channel, pins the host to
+# it (it stays there until you change the channel).
 #
 # Run it as the user Fyr runs as, not as root. Your part (the release in
 # ~/.local/share/fyr, the cgroups keys in ~/.config/fyr/config.json) runs as
@@ -22,11 +29,36 @@
 set -euo pipefail
 
 mode=install
-case "${1:-}" in
-  "") ;;
-  --print) mode=print ;;
-  --uninstall) mode=uninstall ;;
-  *) echo "usage: $0 [--print | --uninstall]" >&2; exit 64 ;;
+channel=""      # --channel
+want_version="" # --version
+usage() {
+  echo "usage: $0 [--print | --uninstall] [--channel stable|main|vX.Y.Z] [--version vX.Y.Z]" >&2
+  exit 64
+}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --print) mode=print ;;
+    --uninstall) mode=uninstall ;;
+    --channel | --version)
+      [ $# -ge 2 ] || usage
+      if [ "$1" = --channel ]; then channel="$2"; else want_version="$2"; fi
+      shift
+      ;;
+    --channel=*) channel="${1#--channel=}" ;;
+    --version=*) want_version="${1#--version=}" ;;
+    *) usage ;;
+  esac
+  shift
+done
+# A version tag: vX.Y.Z, or vX.Y.Z-rc.N for a prerelease.
+is_version() { [[ "$1" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; }
+if [ -n "$want_version" ] && ! is_version "$want_version"; then
+  echo "--version $want_version is not a version (vX.Y.Z or vX.Y.Z-rc.N)" >&2
+  exit 64
+fi
+case "$channel" in
+  "" | main | stable) ;;
+  *) is_version "$channel" || { echo "--channel $channel is not stable, main or a version (vX.Y.Z)" >&2; exit 64; } ;;
 esac
 
 if [ "$(id -u)" = 0 ]; then
@@ -211,21 +243,59 @@ cgroups="$cgroups}"
 
 # V0.release-without-gh: the release repo over HTTPS, no gh.
 base="https://github.com/$repo"
-deployable_sha() {
+# tag_sha prints the commit of tag $1, an annotated tag's commit first.
+tag_sha() {
   local out sha
-  out="$(git -c credential.helper= ls-remote --tags "$base.git" refs/tags/deployable)"
-  sha="$(awk '$2 == "refs/tags/deployable^{}" {print $1}' <<<"$out")"
-  [ -n "$sha" ] || sha="$(awk '$2 == "refs/tags/deployable" {print $1}' <<<"$out")"
-  [ "${#sha}" = 40 ] || { echo "no tag deployable in $base" >&2; return 1; }
+  out="$(git -c credential.helper= ls-remote --tags "$base.git" "refs/tags/$1")"
+  sha="$(awk -v t="refs/tags/$1^{}" '$2 == t {print $1}' <<<"$out")"
+  [ -n "$sha" ] || sha="$(awk -v t="refs/tags/$1" '$2 == t {print $1}' <<<"$out")"
+  [ "${#sha}" = 40 ] || { echo "no tag $1 in $base" >&2; return 1; }
   echo "$sha"
 }
+# newest_stable prints the newest version tag vX.Y.Z (no -prerelease) whose
+# release is published: a tag whose CI run has not finished has no files yet.
+newest_stable() {
+  local t
+  for t in $(git -c credential.helper= ls-remote --tags "$base.git" 'refs/tags/v*' | awk '{print $2}' |
+    sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|v\1|p' | sort -t. -k1.2,1nr -k2,2nr -k3,3nr); do
+    if curl -fsSL -o /dev/null "$base/releases/download/$t/manifest.json" 2>/dev/null; then
+      echo "$t"
+      return 0
+    fi
+  done
+  echo "no stable release (vX.Y.Z) in $base yet; --channel main installs main's newest build" >&2
+  return 1
+}
+
+# V0.versioned-releases: the channel the config gets. --channel; else a
+# --version pins; else a new install follows stable; else the config keeps
+# its own (none is main).
+had_channel=""
+[ -s "$cfg" ] && had_channel="$(sed -n 's/.*"updateChannel"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | sed -n 1p)"
+set_channel="$channel"
+[ -n "$set_channel" ] || set_channel="$want_version"
+[ -n "$set_channel" ] || [ -s "$cfg" ] || set_channel=stable
+follow="${set_channel:-${had_channel:-main}}"
+# The release to install: --version's, else the channel's.
+pick="${want_version:-$follow}"
+case "$pick" in
+  main) what="the release build-<sha12> of tag deployable (main's newest green commit)" ;;
+  stable) what="the newest stable version (vX.Y.Z, not a prerelease)" ;;
+  *) what="version $pick" ;;
+esac
+if [ -n "$set_channel" ]; then
+  echo "channel: $follow (updateChannel $set_channel in $cfg)"
+else
+  echo "channel: $follow (kept from $cfg)"
+fi
 
 if [ "$mode" = print ]; then
   echo
-  echo "as $user: download the release of tag deployable in $repo for $target into $data/builds/<sha12>,"
-  echo "  by git ls-remote $base.git and curl $base/releases/download/build-<sha12>/ (no gh login),"
+  echo "as $user: download $what in $repo for $target into $data/builds/<sha12>,"
+  echo "  by git ls-remote $base.git and curl $base/releases/download/<tag>/ (no gh login),"
   echo "  check SHA256SUMS, link $data/current to it, copy fyrd to $data/seed and fyr to $data/launcher"
   echo "as $user: set \"cgroups\" in $cfg to $cgroups"
+  [ -z "$set_channel" ] || echo "as $user: set \"updateChannel\" in $cfg to \"$set_channel\""
   for f in fyr.service fyr-agents.slice 50-fyr-agents.rules agents-pressure-chown; do
     [ "$layout" = scope ] || [ "$f" = fyr.service ] || continue
     echo
@@ -238,17 +308,31 @@ fi
 if [ "$mode" = install ]; then
   # The tag by git (no API call), an annotated tag's commit first; the
   # assets from their public download URLs (V0.release-without-gh).
-  sha="$(deployable_sha)"
+  case "$pick" in
+    main)
+      sha="$(tag_sha deployable)"
+      tag="build-${sha:0:12}"
+      ;;
+    stable)
+      tag="$(newest_stable)"
+      sha="$(tag_sha "$tag")"
+      ;;
+    *)
+      tag="$pick"
+      sha="$(tag_sha "$tag")"
+      ;;
+  esac
   short="${sha:0:12}"
   dl="$stage/release"
   mkdir -p "$dl"
-  echo "downloading release build-$short for $target from $repo"
+  echo "downloading release $tag ($short) for $target from $repo"
   for f in "fyrd-$target" "fyr-$target" manifest.json SHA256SUMS SHA256SUMS.sig; do
-    curl -fsSL --retry 3 -o "$dl/$f" "$base/releases/download/build-$short/$f"
+    curl -fsSL --retry 3 -o "$dl/$f" "$base/releases/download/$tag/$f"
   done
   # The running fyrd verifies the signature of every later update; this
   # first install trusts HTTPS to GitHub and checks the sums.
   (cd "$dl" && grep -E "  (fyrd-$target|fyr-$target|manifest.json)\$" SHA256SUMS | sha256sum -c -)
+  grep -q "\"commit\": *\"$sha\"" "$dl/manifest.json" || { echo "release $tag is not for commit $sha" >&2; exit 1; }
 
   build="$data/builds/$short"
   mkdir -p "$build" "$data/seed" "$data/launcher"
@@ -262,12 +346,14 @@ if [ "$mode" = install ]; then
 
   mkdir -p "$(dirname "$cfg")"
   if [ ! -s "$cfg" ]; then
-    printf '{\n  "cgroups": %s\n}\n' "$cgroups" >"$cfg"
+    printf '{\n  "updateChannel": "%s",\n  "cgroups": %s\n}\n' "$set_channel" "$cgroups" >"$cfg"
   elif command -v python3 >/dev/null; then
-    python3 - "$cfg" "$cgroups" "$layout" <<'PY'
+    python3 - "$cfg" "$cgroups" "$layout" "$set_channel" <<'PY'
 import json, sys
-p, want, layout = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+p, want, layout, channel = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3], sys.argv[4]
 c = json.load(open(p))
+if channel:
+    c["updateChannel"] = channel  # V0.versioned-releases
 g = c.get("cgroups") or {}
 for k, v in want.items():
     g.setdefault(k, v)
@@ -282,8 +368,9 @@ open(p, "a").write("\n")
 PY
   else
     echo "$cfg exists and python3 is missing: set \"cgroups\" in it to $cgroups by hand" >&2
+    [ -z "$set_channel" ] || echo "  and \"updateChannel\" to \"$set_channel\"" >&2
   fi
-  echo "release $short is current in $data; config $cfg"
+  echo "release $tag ($short) is current in $data; config $cfg"
 fi
 
 echo "the system part, with sudo:"
@@ -302,7 +389,7 @@ root systemctl restart fyr.service
 
 [ "$mode" = print ] && exit 0
 echo "started fyr.service; open http://127.0.0.1:7777 · log: journalctl -u fyr, $data/daemon.log"
-echo "fyrd installs each new release by itself (Settings → Auto-update)"
+echo "fyrd installs each new release of the $follow channel by itself (Settings → Auto-update)"
 if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
   echo "tailnet: to reach Fyr from your phone, publish it once: sudo tailscale serve --bg --https=7443 unix:$data/serve.sock"
 fi

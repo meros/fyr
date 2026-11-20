@@ -2,6 +2,7 @@
 package scripts
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,13 +21,19 @@ func printInstall(t *testing.T, pk string) (string, string) {
 // printInstallPath is printInstall with path after the fake pkaction.
 func printInstallPath(t *testing.T, pk, path string) (string, string) {
 	t.Helper()
+	return printInstallArgs(t, pk, path, t.TempDir())
+}
+
+// printInstallArgs runs install-linux.sh --print with args in home.
+func printInstallArgs(t *testing.T, pk, path, home string, args ...string) (string, string) {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("install-linux.sh is for Linux")
 	}
 	if os.Getuid() == 0 {
 		t.Skip("the script refuses root")
 	}
-	bin, home := t.TempDir(), t.TempDir()
+	bin := t.TempDir()
 	stub := "#!/bin/sh\nexit 1\n"
 	if pk != "" {
 		stub = "#!/bin/sh\necho pkaction version " + pk + "\n"
@@ -34,7 +41,7 @@ func printInstallPath(t *testing.T, pk, path string) (string, string) {
 	if err := os.WriteFile(filepath.Join(bin, "pkaction"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", "install-linux.sh", "--print")
+	cmd := exec.Command("bash", append([]string{"install-linux.sh", "--print"}, args...)...)
 	cmd.Env = append(os.Environ(), "HOME="+home, "PATH="+bin+":"+path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -118,7 +125,7 @@ func TestInstallLinuxNeedsNoGh(t *testing.T) {
 	}
 	out, _ := printInstallPath(t, "124", noGh)
 	for _, want := range []string{
-		"by git ls-remote https://github.com/meros/fyr.git and curl https://github.com/meros/fyr/releases/download/build-<sha12>/ (no gh login)",
+		"by git ls-remote https://github.com/meros/fyr.git and curl https://github.com/meros/fyr/releases/download/<tag>/ (no gh login)",
 		"the install needs none",
 		"GH_TOKEN=... (mode 0600) for a private fork; a public one needs none.",
 	} {
@@ -138,6 +145,75 @@ func TestInstallLinuxNeedsNoGh(t *testing.T) {
 	for _, not := range []string{"gh api", "gh release", "gh auth"} {
 		if strings.Contains(string(src), not) {
 			t.Errorf("install-linux.sh still runs %q", not)
+		}
+	}
+}
+
+// V0.versioned-releases: a new install follows stable; an existing config
+// keeps its channel (none is main, so a host installed before channels does
+// not change); --channel sets it; --version installs a version and pins to
+// it unless --channel says otherwise.
+func TestInstallLinuxChannel(t *testing.T) {
+	path := os.Getenv("PATH")
+	withConfig := func(body string) string {
+		home := t.TempDir()
+		os.MkdirAll(filepath.Join(home, ".config", "fyr"), 0o755)
+		os.WriteFile(filepath.Join(home, ".config", "fyr", "config.json"), []byte(body), 0o644)
+		return home
+	}
+	for _, c := range []struct {
+		name string
+		home string
+		args []string
+		want []string
+		not  []string
+	}{
+		{"new install", t.TempDir(), nil,
+			[]string{"channel: stable (updateChannel stable", "download the newest stable version (vX.Y.Z, not a prerelease)", `set "updateChannel" in`},
+			[]string{"deployable"}},
+		{"existing config without a channel", withConfig(`{"cgroups": {}}`), nil,
+			[]string{"channel: main (kept from", "the release build-<sha12> of tag deployable"},
+			[]string{`set "updateChannel"`}},
+		{"existing config on stable", withConfig(`{"updateChannel": "stable"}`), nil,
+			[]string{"channel: stable (kept from", "the newest stable version"},
+			[]string{`set "updateChannel"`}},
+		{"--channel main", t.TempDir(), []string{"--channel", "main"},
+			[]string{"channel: main (updateChannel main", "tag deployable", `set "updateChannel" in`},
+			nil},
+		{"--version pins", withConfig(`{}`), []string{"--version", "v1.2.3"},
+			[]string{"channel: v1.2.3 (updateChannel v1.2.3", "download version v1.2.3 in meros/fyr", `to "v1.2.3"`},
+			nil},
+		{"--version with --channel stable", t.TempDir(), []string{"--version=v1.0.0-rc.1", "--channel=stable"},
+			[]string{"channel: stable (updateChannel stable", "download version v1.0.0-rc.1", `to "stable"`},
+			nil},
+	} {
+		out, _ := printInstallArgs(t, "124", path, c.home, c.args...)
+		for _, w := range c.want {
+			if !strings.Contains(out, w) {
+				t.Errorf("%s: missing %q in\n%s", c.name, w, out)
+			}
+		}
+		for _, n := range c.not {
+			if strings.Contains(out, n) {
+				t.Errorf("%s: unexpected %q in\n%s", c.name, n, out)
+			}
+		}
+	}
+}
+
+// V0.versioned-releases: a channel or version that is neither is refused
+// before anything runs.
+func TestInstallLinuxBadChannel(t *testing.T) {
+	if runtime.GOOS != "linux" || os.Getuid() == 0 {
+		t.Skip("install-linux.sh runs on Linux as a user")
+	}
+	for _, args := range [][]string{{"--channel", "beta"}, {"--version", "1.2.3"}, {"--version", "v1.2"}, {"--channel"}} {
+		cmd := exec.Command("bash", append([]string{"install-linux.sh", "--print"}, args...)...)
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+		out, err := cmd.CombinedOutput()
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.ExitCode() != 64 {
+			t.Errorf("%v: %v\n%s", args, err, out)
 		}
 	}
 }

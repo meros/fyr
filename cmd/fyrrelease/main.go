@@ -4,7 +4,8 @@
 //	fyrrelease keygen                      print a new private and public key
 //	fyrrelease pack -commit SHA -dir DIR   write manifest.json, SHA256SUMS and
 //	                                       SHA256SUMS.sig (key in $FYR_RELEASE_KEY)
-//	                                       for the files already in DIR
+//	                                       for the files already in DIR; -version vX.Y.Z
+//	                                       names a version release (V0.versioned-releases)
 package main
 
 import (
@@ -45,11 +46,15 @@ func main() {
 		goV := fl.String("go", "", "go version")
 		nodeV := fl.String("node", "", "node version")
 		run := fl.String("run", "", "CI run URL")
+		ver := fl.String("version", "", "the version tag (vX.Y.Z) of a version release; empty for a build of main")
 		fl.Parse(os.Args[2:])
 		if len(*commit) != 40 || *dir == "" {
 			log.Fatal("pack needs -commit (40 hex) and -dir")
 		}
-		if err := pack(*commit, *dir, *src, *goV, *nodeV, *run); err != nil {
+		if *ver != "" && !release.IsVersion(*ver) {
+			log.Fatalf("-version %q is not vX.Y.Z or vX.Y.Z-pre", *ver)
+		}
+		if err := pack(*commit, *dir, *src, *goV, *nodeV, *run, *ver); err != nil {
 			log.Fatal(err)
 		}
 	case "verify":
@@ -72,7 +77,7 @@ func main() {
 	}
 }
 
-func pack(commit, dir, src, goV, nodeV, run string) error {
+func pack(commit, dir, src, goV, nodeV, run, ver string) error {
 	key := os.Getenv("FYR_RELEASE_KEY")
 	if key == "" {
 		return fmt.Errorf("FYR_RELEASE_KEY is empty")
@@ -82,7 +87,7 @@ func pack(commit, dir, src, goV, nodeV, run string) error {
 		return fmt.Errorf("server sum: %w", err)
 	}
 	info := release.Info{Commit: commit, Build: release.Short(commit), ServerSum: sum, Go: goV, Node: nodeV, Run: run,
-		Time: time.Now().UTC().Format(time.RFC3339)}
+		Time: time.Now().UTC().Format(time.RFC3339), Version: ver}
 	if s, err := release.SumFile(src, []string{"flake.lock"}); err == nil && len(s) >= 64 {
 		info.FlakeLock = string(s[:64])
 	}

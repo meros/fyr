@@ -39,6 +39,22 @@ export interface UpdatesView {
   github?: GitHubView; // V0.173
   repo?: string; // V0.update-changelog: owner/name the releases come from, for the changelog's links
   key?: ReleaseKey; // V0.release-without-gh: the key releases are verified with
+  version?: string; // V0.versioned-releases: the running build's vX.Y.Z; empty on main
+  channel?: string; // V0.versioned-releases: main, stable or a pinned vX.Y.Z; missing from an older host
+}
+
+/** V0.versioned-releases: the channel in words: "stable channel", "main channel", "pinned to v1.2.3". */
+export function channelLabel(channel: string | undefined): string {
+  if (!channel) return "";
+  return channel === "main" || channel === "stable" ? `${channel} channel` : `pinned to ${channel}`;
+}
+
+/** V0.versioned-releases: what a host runs, short: its version, else its build on main, with the channel:
+ *  "v1.0.0 · stable channel", "c705ef536566 · main channel". Empty when the host says neither. */
+export function versionLabel(v: { version?: string; build?: string; channel?: string }): string {
+  const what = v.version || v.build || "";
+  const ch = channelLabel(v.channel);
+  return [what, ch].filter(Boolean).join(" · ");
 }
 
 /** V0.release-without-gh: the key a host verifies releases with (config updateKey, else the built-in one). */
@@ -113,7 +129,11 @@ export function updateState(v: UpdatesView): string {
   if (v.paused) {
     return `A local build${v.paused.branch ? ` of ${v.paused.branch}` : ""} runs (${v.paused.build}). Auto-update waits until a release contains it, or until you go back to the release.`;
   }
-  return v.live ? `Fyr runs ${v.live}.` : "";
+  if (!v.live) return "";
+  // V0.versioned-releases: the version and the channel, when the host says them.
+  const runs = v.version ? `${v.version} (build ${v.live})` : v.live;
+  const ch = channelLabel(v.channel);
+  return `Fyr runs ${runs}${ch ? ` · ${ch}` : ""}.`;
 }
 
 // SPEC V0.173: what this host's fyrd spent of the account's GitHub API limit, and what the account has left (shared by
@@ -161,4 +181,11 @@ export function githubPause(v: GitHubView): { title: string; desc: string } | nu
   if (!p) return null;
   const what = p.resource === "graphql" ? "PR reads" : "Polls";
   return { title: `${what} wait until ${hhmm(p.until)}`, desc: `${p.why[0].toUpperCase()}${p.why.slice(1)}. Merges and updates still run.` };
+}
+
+/** V0.versioned-releases: the status screen's version line, one per host that says its update state: "Fyr v1.0.0 ·
+ *  stable channel" for one host, each host's name for several (as the strip names hosts only when there are several). */
+export function hostVersions(hosts: { name: string; update?: { version?: string; build?: string; channel?: string } }[]): string[] {
+  const with_ = hosts.filter((h) => h.update && versionLabel(h.update));
+  return with_.map((h) => `${with_.length > 1 ? h.name : "Fyr"} ${versionLabel(h.update!)}`);
 }

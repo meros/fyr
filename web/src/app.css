@@ -1822,6 +1822,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .st-sys{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 36px;border-top:1px solid var(--line);background:var(--surface);color:var(--ink-muted);font-size:12px}
 .st-host .hm{width:120px}
 .st-q{min-width:0}
+.st-ver{min-width:0;font-variant-numeric:tabular-nums}
 .st-keys{display:flex;gap:10px;margin-left:auto;color:var(--ink-faint);font-size:11px}
 .home.phone .st-body{padding:16px;max-width:none}
 .home.phone .st-day{font-size:22px;line-height:28px}

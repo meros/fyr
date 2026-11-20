@@ -5,6 +5,7 @@
 //
 //	fyr [-data DIR] [fyrd flags…]
 //	fyr install BUILD_DIR   make BUILD_DIR/fyrd the current build
+//	fyr --version           the launcher's version and the current build's (V0.versioned-releases)
 //	fyr open [-app]         sign this machine's browser in and open Fyr (V0.130)
 //	fyr auth status|observe|enforce [way]   the modes of the ways in (V0.157)
 //	fyr device add|approve CODE|revoke ID|list   the signed-in devices (V0.157)
@@ -36,6 +37,11 @@ func main() {
 	data := fl.String("data", filepath.Join(home, ".local", "share", "fyr"), "data directory")
 	seed := fl.String("seed", "", "known-good fyrd to run when there is no current build or when pinned")
 	args := os.Args[1:]
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version" || args[0] == "version") {
+		fl.Parse(args[1:])
+		os.Stdout.WriteString(versionLines(*data))
+		return
+	}
 	if len(args) > 0 && args[0] == "install" {
 		fl.Parse(args[1:])
 		if fl.NArg() != 1 {

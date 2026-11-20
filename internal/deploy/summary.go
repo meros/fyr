@@ -18,7 +18,7 @@ type HostUpdate struct {
 	// checkout HEAD); Build is its build id.
 	Running string `json:"running,omitempty"`
 	Build   string `json:"build,omitempty"`
-	// Wanted is where `deployable` pointed when this host last read it.
+	// Wanted is where the channel (`deployable` on main) pointed when this host last read it.
 	Wanted string `json:"wanted,omitempty"`
 	// Behind is how many commits Wanted is ahead of Running; -1 when not
 	// known (not read yet, or GitHub could not say).
@@ -30,6 +30,11 @@ type HostUpdate struct {
 	Bad *BadMark `json:"bad,omitempty"`
 	// Paused: a local build runs, and auto-update waits for it (#159).
 	Paused bool `json:"paused,omitempty"`
+	// Version is the running build's version (vX.Y.Z), empty for a build of
+	// main; Channel is the update channel the host follows: main, stable or
+	// a pinned version (V0.versioned-releases).
+	Version string `json:"version,omitempty"`
+	Channel string `json:"channel,omitempty"`
 }
 
 // BadMark is a release marked bad on this host.
@@ -146,6 +151,10 @@ func (d *Deployer) Summary() HostUpdate {
 		s.Bad = m
 	}
 	s.Paused = d.PausedBy() != nil
+	s.Version = d.LiveVersion
+	if d.Releases != nil {
+		s.Channel = d.Releases.ChannelName()
+	}
 	return s
 }
 

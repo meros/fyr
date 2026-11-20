@@ -3,6 +3,7 @@
 import { clockTime, dayTime } from "./format.ts";
 import type { Profile } from "./types.ts";
 import type { DeployProgress } from "./deploy.ts";
+import { channelLabel } from "./updates.ts";
 
 export interface HostInfo {
   name: string;
@@ -41,6 +42,9 @@ export interface HostUpdate {
   last?: { build: string; commit?: string; result: string; reason?: string; startedAt: string; endedAt?: string; local?: boolean };
   bad?: { commit: string; why: string; at?: string };
   paused?: boolean;
+  /** V0.versioned-releases: the running build's vX.Y.Z (empty on main) and the channel it follows */
+  version?: string;
+  channel?: string;
 }
 
 export interface HostLink {
@@ -118,6 +122,8 @@ function decodeUpdate(u: Record<string, unknown>): HostUpdate {
     ...(last ? { last } : {}),
     ...(bad ? { bad } : {}),
     ...(u.paused === true ? { paused: true } : {}),
+    ...(str(u.version) ? { version: str(u.version) } : {}),
+    ...(str(u.channel) ? { channel: str(u.channel) } : {}),
   };
 }
 
@@ -145,7 +151,8 @@ const RESULT_WORDS: Record<string, string> = { inProgress: "in progress", instal
 /** V0.host-updates: the rows of a host's Updates group on its page: what runs, the newest release, the last update. */
 export function updateRows(u: HostUpdate, now: number): { title: string; desc: string; bad?: boolean }[] {
   const rows: { title: string; desc: string; bad?: boolean }[] = [];
-  rows.push({ title: "Runs", desc: [u.running ? short7(u.running) : "", u.build && !u.build.startsWith(short7(u.running)) ? `build ${u.build}` : "", u.paused ? "a local build; auto-update waits for a release that contains it" : ""].filter(Boolean).join(" · ") || "Not known" });
+  // V0.versioned-releases: the version first, the channel after the build.
+  rows.push({ title: "Runs", desc: [u.version ?? "", u.running ? short7(u.running) : "", u.build && !u.build.startsWith(short7(u.running)) ? `build ${u.build}` : "", channelLabel(u.channel), u.paused ? "a local build; auto-update waits for a release that contains it" : ""].filter(Boolean).join(" · ") || "Not known" });
   if (u.wanted) {
     const how = u.behind > 0 ? `${u.behind} commit${u.behind === 1 ? "" : "s"} ahead of what runs` : u.behind === 0 ? "runs here" : "";
     rows.push({ title: "Newest release", desc: [short7(u.wanted), how].filter(Boolean).join(" · ") });
