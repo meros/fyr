@@ -11,6 +11,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -100,9 +101,25 @@ func (b *Book) Load() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.loadLocked()
+	// V0.freeze-fast-class-name: a filter learned before names no work.
+	var kept []Added
+	for _, a := range b.added {
+		if a.Learned && Trivial(a.Pattern) {
+			log.Printf("heavy: dropped the learned class %q: a filter or wrapper, not the command that did the work", a.Name)
+			continue
+		}
+		kept = append(kept, a)
+	}
+	if len(kept) != len(b.added) {
+		b.added = kept
+		b.save(addedKey, b.added)
+	}
 	// Commands seen often enough before V0.209 waited for the owner's press.
 	var keep []Suggestion
 	for _, x := range b.sugg {
+		if Trivial(x.Pattern) {
+			continue
+		}
 		if x.Seen < LearnAfter || !b.learnLocked(x) {
 			keep = append(keep, x)
 		}
@@ -287,12 +304,26 @@ func (b *Book) Remove(pattern string) bool {
 }
 
 // trivial commands are never what made an episode heavy; git, gh and the like
-// are usually just the last thing the thread ran.
-var trivial = regexp.MustCompile(`^(?:cd|source|\.|export|set|echo|true|:|unset|pushd|popd|mkdir|rm|cat|ls|git|gh|sleep|wait|tail|head|grep|rg|curl|ssh)(?:\s|$)`)
+// are usually just the last thing the thread ran. V0.freeze-fast-class-name:
+// nor is a filter at the end of a pipeline (`| tail -8`, `| cut -c1-100`) or a
+// wrapper left bare; on 20 Nov a learned "cut" held a diagnostic grep as a job.
+var trivial = regexp.MustCompile(`^(?:cd|source|\.|export|set|echo|true|:|unset|pushd|popd|mkdir|rm|cat|ls|git|gh|sleep|wait|tail|head|grep|egrep|fgrep|rg|curl|ssh|cut|sed|awk|wc|sort|uniq|tee|tr|less|more|column|jq|time|timeout|nice|ionice|env)(?:\s|$)`)
+
+// redirect is a redirection among a command's words (`2>&1`, `>log`): from it
+// on the words are not arguments.
+var redirect = regexp.MustCompile(`^\d*[<>]`)
+
+// Trivial says a learned pattern names no work of its own: a filter, a
+// wrapper or one of the trivial commands (V0.freeze-fast-class-name).
+func Trivial(pattern string) bool {
+	return trivial.MatchString(strings.TrimSpace(strings.ReplaceAll(pattern, `\`, "")))
+}
 
 // Suggest is the pattern and the kind to learn for a command: the program
 // and the first argument that is not a flag, of the last segment that is not
-// a cd or a source, escaped (V0.164 4.6).
+// a cd or a source, escaped (V0.164 4.6). V0.freeze-fast-class-name: the
+// segments come without their wrappers (sh -c, nix develop -c, nice, env), the
+// filters are skipped, and a line of filters alone teaches nothing.
 func Suggest(cmd string) (pattern, kind string) {
 	segs := segments(message.ReplaceAllString(cmd, " ''"))
 	var pick string
@@ -308,6 +339,9 @@ func Suggest(cmd string) (pattern, kind string) {
 	prog := f[0]
 	arg := ""
 	for _, a := range f[1:] {
+		if redirect.MatchString(a) {
+			break
+		}
 		if !strings.HasPrefix(a, "-") {
 			arg = a
 			break

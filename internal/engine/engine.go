@@ -181,6 +181,7 @@ type Engine struct {
 	guardLast    map[string]guardLine // under mu: the guard's log lines, to say a repeat once a minute
 	guardShort   bool                 // under mu: memory was short at the last tick
 	guardSince   time.Time            // under mu: since when it is short
+	guardTrig    time.Time            // under mu: the PSI trigger's last firing (V0.freeze-fast-class-name)
 	guardEvents  []slots.GuardEvent   // under mu: the guard's last decisions, for the front
 	guardPub     atomic.Pointer[slots.Guard]
 	ranks        atomic.Pointer[map[string]int] // V0.project-priority: thread id → its project's rank, the non-zero ones

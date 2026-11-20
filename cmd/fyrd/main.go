@@ -387,7 +387,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			}
 			return 0, false
 		},
-		UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, ServicePatterns: svcBook.Edit, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
+		UndeclaredFlagNow: sampler.FlagNow, // V0.freeze-fast-class-name
+		UndeclaredEmpty:   groups.UndeclaredEmpty, HeavyRemove: book.Remove, ServicePatterns: svcBook.Edit, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
 				if f.Thread == thread && groups.FreezeUndeclared(thread, sampler.Roots(f)) {
@@ -627,7 +628,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			case <-t.C:
 				eng.Tick()
 			case <-guardWake:
-				sampler.Tick() // fresh signals for the guard
+				sampler.Triggered() // V0.freeze-fast-class-name: a critical stall for TriggerFresh
+				sampler.Tick()      // fresh signals for the guard
 				eng.GuardNow()
 			}
 		}

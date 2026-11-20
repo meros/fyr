@@ -146,6 +146,7 @@ type Sampler struct {
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
+	trig   atomic.Int64         // the PSI trigger's last firing, unix ns; 0 for none (V0.freeze-fast-class-name)
 	at     time.Time
 	last   Load
 	usage  map[string]uint64 // cgroup name ("" is agents/) → usage_usec at `at`
@@ -364,7 +365,18 @@ func (s *Sampler) Signals() slots.Signals {
 	if l.Agents != nil {
 		sig.AgentsMem = l.Agents.Memory
 	}
+	// V0.freeze-fast-class-name: a fresh trigger is a critical stall for
+	// admission's hold and the guard alike, whatever avg10 says yet.
+	if ns := s.trig.Load(); ns != 0 {
+		sig = sig.Fresh(time.Unix(0, ns), s.now())
+	}
 	return sig
+}
+
+// Triggered notes that the PSI trigger on the agents' memory.pressure fired
+// now: for slots.TriggerFresh Signals reads the agents' stall as critical.
+func (s *Sampler) Triggered() {
+	s.trig.Store(s.now().UnixNano())
 }
 
 // ThreadMemory is thread's memory at the last read (its cgroup, or its

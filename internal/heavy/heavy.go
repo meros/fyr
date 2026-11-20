@@ -150,8 +150,9 @@ var (
 	heredoc = regexp.MustCompile(`<<-?\s*['"]?(\w+)['"]?`)
 	split   = regexp.MustCompile("&&|\\|\\||[;|\n()]|\\$\\(|`")
 	// wrap is what runs a command without being it: an assignment, timeout,
-	// time, nice, env, exec, command, npx, nix develop -c, sh -c, a quote.
-	wrap = regexp.MustCompile(`^(?:\w+=\S*\s+|timeout\s+(?:-\S+\s+)*\S+\s+|time\s+|nice\s+(?:-n\s*-?\d+\s+)?|env\s+|exec\s+|command\s+|npx\s+|nix\s+develop\s+(?:\S+\s+)*?-c\s+|(?:ba)?sh\s+-l?c\s+|['"])`)
+	// time, nice, ionice (V0.freeze-fast-class-name), env, exec, command, npx,
+	// nix develop -c, sh -c, a quote.
+	wrap = regexp.MustCompile(`^(?:\w+=\S*\s+|timeout\s+(?:-\S+\s+)*\S+\s+|time\s+|nice\s+(?:-n\s*-?\d+\s+|-\d+\s+)?|ionice\s+(?:-[cnpt]\s*\d*\s+)*|env\s+|exec\s+|command\s+|npx\s+|nix\s+develop\s+(?:\S+\s+)*?-c\s+|(?:ba)?sh\s+-l?c\s+|['"])`)
 )
 
 // script is the "-c " (sh -c, bash -lc, nix develop -c) that makes the

@@ -25,6 +25,10 @@ type Signals struct {
 	// AgentsStall is the level of the agents' own memory stall; "" where it
 	// cannot be read apart from the host's (V0.load-tuning).
 	AgentsStall Stall
+	// Triggered: the PSI trigger on the agents' memory.pressure fired
+	// within TriggerFresh, so AgentsStall reads critical whatever avg10 says
+	// (V0.freeze-fast-class-name).
+	Triggered bool
 	// CPU and Memory are the agents' capacity (V0.142); 0 when unknown.
 	CPU    float64
 	Memory uint64
@@ -73,6 +77,21 @@ func (s Signals) Critical() (bool, string) {
 		return true, "the agents' memory stalls (critical)"
 	}
 	return false, ""
+}
+
+// TriggerFresh is how long a firing of the PSI trigger (10 % full stall in
+// 2 s, the critical level) counts as the agents' critical stall, whatever
+// avg10 says: avg10 lags it by tens of seconds (V0.freeze-fast-class-name; on
+// 20 Nov the trigger fired at 07:32:12 and avg10 read critical at 07:33:01).
+const TriggerFresh = 20 * time.Second
+
+// Fresh applies a trigger that fired at at: within TriggerFresh of now the
+// agents' stall is critical. A zero at is no trigger.
+func (s Signals) Fresh(at, now time.Time) Signals {
+	if !at.IsZero() && !now.Before(at) && now.Sub(at) < TriggerFresh {
+		s.Triggered, s.AgentsStall = true, StallCritical
+	}
+	return s
 }
 
 // OomdNearMargin is how close (percentage points) the unit's stall may come
