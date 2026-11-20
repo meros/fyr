@@ -1,6 +1,6 @@
 # Installing and running Fyr
 
-The [README](../README.md) has the short install for NixOS, macOS and from source. This page covers the rest: configuration, the phone, more machines and updates.
+The [README](../README.md) has the short install for NixOS, macOS, Linux without Nix and from source. This page covers the rest: configuration, the phone, more machines and updates.
 
 ## Files
 
@@ -10,6 +10,7 @@ The [README](../README.md) has the short install for NixOS, macOS and from sourc
 | `~/.config/fyr/github.env` | Optional `GH_TOKEN=…` (mode 0600) for reading releases from a private fork; without it the `gh` login is used. |
 | `~/.local/share/fyr/` | Data: the database, the builds (`current`, `previous`), logs and the owner socket. |
 | `~/Library/Logs/fyr.log` | The log on macOS. On Linux: `journalctl -u fyr`. |
+| `/etc/systemd/system/fyr.service`, `fyr-agents.slice`, `/etc/polkit-1/rules.d/50-fyr-agents.rules`, `/usr/local/lib/fyr/agents-pressure-chown` | Linux without Nix: what `scripts/install-linux.sh` writes as root ([below](#linux-without-nix)). |
 
 On NixOS, `services.fyr` writes the configuration: every option of the module is documented in [`nix/module.nix`](../nix/module.nix).
 
@@ -26,6 +27,35 @@ The keys you are most likely to set in `config.json`:
 | `slots` | `2` | The share of the host heavy jobs may use before they queue: 2 is half the host per job, as a starting point that Fyr then learns per job class |
 | `role` | `"both"` | `host` (runs agents), `front` (serves the app for `hosts`), or `both` |
 | `updateEveryMinutes` | `60` | How often the host checks for a new release |
+| `agentPath` | none | Folders put first on the agents' `PATH` (`~/` is your home folder), read at start |
+| `cgroups` | absent: off | The agents' cgroups and budget. The NixOS module and `install-linux.sh` set it; see [HOST-SETUP](HOST-SETUP.md) |
+
+**The agents' `PATH`** is, in this order: `agentPath`, the `PATH` fyrd started with (the unit's), the `PATH` of your login shell (`$SHELL -l`, read once at start; a profile that takes more than 5 s is skipped and logged), then those of `~/.local/bin`, `~/.nix-profile/bin`, `/etc/profiles/per-user/<you>/bin`, `/run/wrappers/bin` and `/run/current-system/sw/bin` that exist. Each folder appears once, where it first comes. So a tool your login shell finds, the agents find; restart Fyr after you change your profile.
+
+## Linux without Nix
+
+`scripts/install-linux.sh` is the NixOS module's stand-in on Debian, Ubuntu and other systemd Linux (V0.linux-without-nix). Run it as the user Fyr and its agents run as; it refuses root.
+
+**What runs as you:** the download of the release that the tag `deployable` points at (with your `gh` login, checked against `SHA256SUMS`) into `~/.local/share/fyr/builds/<sha12>`, the `current` link, the seed (`seed/fyrd`) and the launcher (`launcher/fyr`); and the `cgroups` keys in `~/.config/fyr/config.json` (other keys are kept; with no `python3` and an existing file, it tells you what to add).
+
+**What needs root**, run with `sudo`, each command printed first:
+
+| File | What |
+|---|---|
+| `/etc/systemd/system/fyr.service` | A system unit with `User=` you: it starts at boot without a login. It runs `~/.local/share/fyr/launcher/fyr -data ~/.local/share/fyr -seed …/seed/fyrd`, reads `~/.config/fyr/github.env` if it is there, and sets no `PATH` (fyrd builds the agents' `PATH`, above). |
+| `/etc/systemd/system/fyr-agents.slice` | The agents' budget (`MemoryHigh=40%`, `MemoryMax=46%`, `MemorySwapMax=30%`) and systemd-oomd's rule (80 %), the module's defaults. |
+| `/etc/polkit-1/rules.d/50-fyr-agents.rules` | Lets you `start` and `set-property` units named `fyr-agent-….scope` and `fyr-deploy-….scope`, nothing else. |
+| `/usr/local/lib/fyr/agents-pressure-chown` | Run as root before each start of the unit: hands you the slice's `memory.pressure`, for the guard's PSI trigger. |
+
+Then `systemctl daemon-reload`, `enable` and `restart fyr.service`. These are the module's files (`nix/module.nix`); a change to one goes to the other.
+
+**The layout follows polkit.** A polkit that reads JavaScript rules (0.106 and later: Debian 12, Ubuntu 24.04) gets the four files above: fyrd alone in `fyr.service`, each thread in a scope of `fyr-agents.slice` ([HOST-SETUP](HOST-SETUP.md)). With an older polkit (Ubuntu 22.04's 0.105) or none, the script writes the V0.80 unit instead: `Delegate=cpu memory`, fyrd splits it into `server/` and `agents/<thread>/`, and there is no slice or rule. Install `polkitd` 0.106 or later and run the script again to move to the slice.
+
+**Run it again** whenever you like: it installs the current release, rewrites the root files and restarts the unit (which ends running agent turns). `--print` shows every file and command and changes nothing: no download, no `sudo`. `--uninstall` stops the unit and removes the root files; `~/.local/share/fyr` and `~/.config/fyr` stay.
+
+**Updates** are the updater's ([below](#updates)). It reads releases with `gh` until #200, so keep `gh` logged in (or put `GH_TOKEN` in `github.env`).
+
+**The phone over Tailscale:** run `tailscale serve --bg --https=7443 unix:$HOME/.local/share/fyr/serve.sock` once as root (the module's `tailnet.enable` does the same). The script prints it when Tailscale is up.
 
 ## The phone
 
@@ -62,4 +92,5 @@ To try a branch, an agent asks Fyr to deploy its checkout (`fyr.deploy {dir}`). 
 
 - **NixOS:** remove `services.fyr`, then remove `~/.local/share/fyr` if you do not want the data.
 - **macOS:** `scripts/install-macos.sh --uninstall`.
+- **Linux without Nix:** `scripts/install-linux.sh --uninstall`, then remove `~/.local/share/fyr` and `~/.config/fyr` if you do not want the data.
 - **From source:** stop `fyr`, then remove `~/.local/share/fyr` and `~/.config/fyr`.

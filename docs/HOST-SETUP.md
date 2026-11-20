@@ -27,7 +27,7 @@ swapDevices = [ { device = "/dev/disk/by-label/swap"; } ];  # or a swap file
 
 ### The agents' slice and systemd-oomd
 
-With `services.fyr.cgroups.agentsUnit` (the default, V0.agents-unit, decision 0036 (B)) the module splits Fyr in two:
+With `services.fyr.cgroups.agentsUnit` (the default, V0.agents-unit, decision 0036 (B)) the module splits Fyr in two. On a Linux without Nix, `scripts/install-linux.sh` writes the same unit, slice, polkit rule and `ExecStartPre` helper when polkit reads JavaScript rules, else the V0.80 unit ([INSTALL](INSTALL.md#linux-without-nix)); what follows holds for both:
 
 ```
 system.slice/fyr.service          fyrd and its launcher: root's, not delegated,
