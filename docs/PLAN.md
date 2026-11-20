@@ -11,7 +11,7 @@ The original goal of v1 was "the owner works only in Fyr". It has been met for w
 | Solid core | Closed | Exit met. |
 | Two machines | Done, ready to close | #21 and #22 shipped, along with per-host providers, models, update state and LAN pairing. #30 (a real login) moves to v1.0. |
 | Projects and workspaces | Done except two | Worktrees for each change (decision 0019: #375, #376, #354), and threads are filed by folder. Archiving a project (#24) and the folder in the header (#26) move to v1.0. |
-| Conversation and live view | Done except two | Missed read events fixed (#29), and the View-tab reply shipped (#20). #19 (background on a new message) moves to v1.0. The live-view cost (#17) goes to the owner. |
+| Conversation and live view | Done except two | Missed read events fixed (#29), and the View-tab reply shipped (#20). #19 (background on a new message) moves to v1.0. The live-view cost (#17) becomes a one-off query after v1.0. |
 | M4 Calm machine | Done past its scope | The guard far exceeds the plan: decision 0036 slices 0–6, adaptive admission, freeze and thaw, kill and rerun for opted-in classes, invariants with a Fix it card, a simulation over 17 scenarios. A forced memory hog is frozen and shown, not hidden. Not built: batching several pushes into one, the no-progress signal, one summary push when quiet hours end, and the policy file. The policy file is superseded by async effects, where the agent asks and the owner approves: Run cards, merge asks and the heavy-command gate. |
 | M5 Cut-over | Met | Weeks of daily work only in Fyr. Removing the T3 code (#68) moves to v1.0. |
 | Mesh | Later | After v1.0. |
@@ -20,7 +20,7 @@ The original goal of v1 was "the owner works only in Fyr". It has been met for w
 
 **Exit criterion.** Someone follows only the README and `docs/INSTALL.md`:
 - on a fresh Ubuntu machine without Nix or Tailscale;
-- on a fresh macOS user account.
+- on a fresh macOS user account, from `Fyr.dmg` without a terminal.
 
 On each, they install a signed, versioned `v1.0.0` release, log in to Claude through Fyr, pair a phone on the LAN, and take a thread to a merged PR. The install updates itself to `v1.0.1` without `gh auth`. The owner's own daily use runs a week on the release candidate with no regression.
 
@@ -32,6 +32,7 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 | #198 | Resource defaults are a share of the machine, not 13G/14G and 4 cores; fyrd logs the budget it chose |
 | #197 | The owner comes from config or a first-run step, not from the Tailscale login |
 | #200 | Public releases are read without `gh`; the release repo and key are config shown in Settings → Updates; the launchd label is neutral |
+| #434 | The Mac app: Fyr.app in a DMG (self-signed for now), registered with SMAppService, in a native window with notifications, plus a setup wizard that reaches a first thread. Owner decision, 20 Nov: in v1.0 |
 | new | Versioned releases: a `vX.Y.Z` tag and changelog beside `build-<sha>`, and a stable update channel that follows tags while main follows builds |
 | #203 | README: the trust model (decision 0028) |
 | #30 | A real Claude login through Fyr, desktop and phone. A new user's first step, so it must work |
@@ -60,7 +61,7 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 
 ### Order
 
-1. **A and B together, Linux first.** #199 → #198 → #197 → #200 → versioned releases. In parallel: #372, #68, #156, which need no install work.
+1. **A and B together, Linux first.** #199 → #198 → #197 → #200 → versioned releases → #434 (it builds on #200 and on versioned releases; the Swift shell can start earlier on the owner's Mac runner). In parallel: #372, #68, #156, which need no install work.
 2. **The fresh-machine runs** (#30, #259, #236), on a VM and a new Mac account. A failure becomes an issue in this milestone.
 3. **Track C** fills the gaps while 1 and 2 wait on review and CI.
 4. **`v1.0.0-rc1`**: the owner runs it for a week. Then **`v1.0.0`**.
@@ -69,8 +70,7 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 
 | Milestone | Scope |
 |---|---|
-| v1.1 Mac app | Fyr.app, a DMG and a setup wizard (#434) |
-| v1.x Polish | Mobile pass with an adversarial review (#59); the bug button (#63); a mini conversation beside a running stack, as an experiment (#52) |
+| v1.x Polish | Mobile pass with an adversarial review (#59); the bug button (#63); a mini conversation beside a running stack, as an experiment (#52); one query over stored turn usage to measure what a live view costs (#17) |
 | Mesh | Hosts dial each other (decision 0021, point 8): facts and idempotent relayed commands, a host reachable through a third, and a thread move designed as a record protocol with one writer at each step. Exit: a host two hops away is reached through a third; no record has two writers; a thread moved between hosts leaves one record and arrives as one |
 
 ## Closed
