@@ -263,6 +263,11 @@ func TestAutoProjectMigration(t *testing.T) {
 	os.MkdirAll(app, 0o755)
 	b := h.cmd("thread.create", "", core.Args{"cwd": app, "text": "y"})
 	c := h.cmd("thread.create", "", core.Args{"cwd": home, "text": "z"})
+	// V0.flaky-auto-migration: both runs end before the store is written
+	// behind the engine's back; a run that ends later writes its thread again,
+	// without the project set below.
+	h.wait(b.ThreadID, "done", state(core.Done))
+	h.wait(c.ThreadID, "done", state(core.Done))
 	put := func(p *core.Project) {
 		h.e.st.Write(func(tx *store.Tx) error { return tx.PutProject(p) })
 	}
