@@ -7,6 +7,8 @@ package peerlink
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -352,4 +354,155 @@ func TestAnOlderPeerHasNoLink(t *testing.T) {
 		s := a.mesh.Status(k.ID())
 		return s.Err != nil && s.Err.Kind == ErrOlderVersion
 	})
+}
+
+// V0.peerlink-replace-drain: a late link from the smaller id replaces one both
+// sides already use. Each side switches when it registers the new link, so for a
+// while one side has moved and the other still sends on the old link. The old link
+// closes only when both are done with it: a request the other side has open on it,
+// or starts before it switches, is answered. The order is set by hand: who
+// registers when, and a handler that holds a request open.
+func TestAReplacedLinkDrainsBothWays(t *testing.T) {
+	small, big := key(t), key(t)
+	if big.ID() < small.ID() {
+		small, big = big, small
+	}
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	handler := func(self *identity.Key) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/held" {
+				entered <- struct{}{}
+				<-release
+			}
+			w.Write([]byte(self.ID() + " served"))
+		})
+	}
+	meshOf := func(self, peer *identity.Key) *Mesh {
+		return New(Config{Key: self, Members: func() []Peer { return []Peer{{ID: peer.ID(), Key: peer.Public}} }})
+	}
+	ms, mb := meshOf(small, big), meshOf(big, small)
+	send := func(m *Mesh, to *identity.Key, path string) (string, error) {
+		req, _ := http.NewRequest("GET", "http://x"+path, nil)
+		resp, err := m.Transport(to.ID(), 0).RoundTrip(req)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		return string(b), err
+	}
+
+	// the first link, opened by the bigger id: both sides use it
+	old1b, old1s := linkBetween(t, big, small, handler(big), handler(small))
+	mb.register(old1b)
+	ms.register(old1s)
+
+	// big has a request open on it, held in small's handler
+	held := make(chan error, 1)
+	go func() {
+		got, err := send(mb, small, "/held")
+		if err == nil && got != small.ID()+" served" {
+			err = errors.New("answer " + got)
+		}
+		held <- err
+	}()
+	<-entered
+
+	// the smaller id's link comes up; small registers it first
+	new2s, new2b := linkBetween(t, small, big, handler(small), handler(big))
+	ms.register(new2s)
+	if ms.linkFor(big.ID()) != new2s || !old1s.Draining() {
+		t.Fatal("small did not move to the smaller id's link")
+	}
+	select {
+	case <-old1s.Done():
+		t.Fatal("small closed the replaced link while big still had a request open on it")
+	case <-time.After(time.Second):
+	}
+	// big has not moved: a request it starts now still goes on the old link
+	if got, err := send(mb, small, "/x"); err != nil || got != small.ID()+" served" {
+		t.Fatalf("big's new request on the old link: %q %v", got, err)
+	}
+	// small's requests go on the new one
+	if got, err := send(ms, big, "/x"); err != nil || got != big.ID()+" served" {
+		t.Fatalf("small's request: %q %v", got, err)
+	}
+	close(release)
+	if err := <-held; err != nil {
+		t.Fatalf("big's held request: %v", err)
+	}
+
+	// big moves too: both sides are done with the old link and it closes, well
+	// before the 5 s limit
+	mb.register(new2b)
+	for _, l := range []*Link{old1s, old1b} {
+		select {
+		case <-l.Done():
+		case <-time.After(3 * time.Second):
+			t.Fatal("the replaced link stayed open after both sides moved")
+		}
+	}
+	if new2s.Draining() || new2b.Draining() {
+		t.Fatal("the new link drains")
+	}
+	if got, err := send(mb, small, "/x"); err != nil || got != small.ID()+" served" {
+		t.Fatalf("big -> small on the new link: %q %v", got, err)
+	}
+	if got, err := send(ms, big, "/x"); err != nil || got != big.ID()+" served" {
+		t.Fatalf("small -> big on the new link: %q %v", got, err)
+	}
+}
+
+// V0.peerlink-replace-drain: a peer whose hello did not say it announces (an older
+// install) is not waited for; the replaced link closes once no request is open on
+// it either way, the peer's held one too, and long before the 5 s limit (the
+// tunnel is not a request).
+func TestAReplacedLinkToAnOlderPeer(t *testing.T) {
+	self, peer := key(t), key(t)
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/held" {
+			entered <- struct{}{}
+			<-release
+		}
+		w.Write([]byte("ok"))
+	})
+	m := New(Config{Key: self, Members: func() []Peer { return []Peer{{ID: peer.ID(), Key: peer.Public}} }})
+	old, theirs := linkBetween(t, self, peer, h, h) // opened here
+	old.setPeerDrains(false)
+	m.register(old)
+	held := make(chan error, 1)
+	go func() {
+		resp, err := theirs.RoundTrip(mustReq("/held"))
+		if err == nil {
+			_, err = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		held <- err
+	}()
+	<-entered
+	newer, _ := linkBetween(t, self, peer, h, h)
+	newer.setPeerDrains(false)
+	m.register(newer) // the same dialer: the newer replaces the older
+	if !old.Draining() {
+		t.Fatal("the older link does not drain")
+	}
+	select {
+	case <-old.Done():
+		t.Fatal("closed while it served the peer's request")
+	case <-time.After(500 * time.Millisecond):
+	}
+	start := time.Now()
+	close(release)
+	if err := <-held; err != nil {
+		t.Fatalf("the held request: %v", err)
+	}
+	select {
+	case <-old.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("the replaced link stayed open with nothing on it")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("closed after %v", d)
+	}
 }

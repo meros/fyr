@@ -20,12 +20,6 @@ import (
 func pair(t *testing.T) (dialer, acceptor *Link, dk, ak *identity.Key) {
 	t.Helper()
 	dk, ak = key(t), key(t)
-	ln, _ := net.Listen("tcp", "127.0.0.1:0")
-	pl, err := Listen(ln, ak)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { pl.Close() })
 	ah := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pub, _ := Caller(r)
 		w.Write([]byte("acceptor-served " + identity.IDOf(pub) + " " + r.URL.Path))
@@ -44,28 +38,47 @@ func pair(t *testing.T) (dialer, acceptor *Link, dk, ak *identity.Key) {
 		}
 		w.Write([]byte("dialer-served " + identity.IDOf(pub) + " " + r.URL.Path))
 	})
+	dl, al := linkBetween(t, dk, ak, dh, ah)
+	return dl, al, dk, ak
+}
+
+// linkBetween makes a link opened by dk to ak over TLS on loopback, each side
+// serving the other's requests with its handler. Both say in the hello that they
+// announce the end of a replaced link (V0.peerlink-replace-drain).
+func linkBetween(t *testing.T, dk, ak *identity.Key, dh, ah http.Handler) (dl, al *Link) {
+	t.Helper()
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	pl, err := Listen(ln, ak)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pl.Close() })
 	got := make(chan *Link, 1)
 	go func() {
 		lc := <-Links(pl)
 		c := lc.Conn
-		readHello(c)
-		writeHello(c, hello{V: 2, OK: true})
-		got <- NewAcceptorLink(c, ak.ID(), identity.IDOf(lc.Key), lc.Key, ah)
+		h, _ := readHello(c)
+		writeHello(c, hello{V: 2, OK: true, Drain: true})
+		l := NewAcceptorLink(c, ak.ID(), identity.IDOf(lc.Key), lc.Key, ah)
+		l.setPeerDrains(h.Drain)
+		got <- l
 	}()
 	d := &Dialer{Key: dk}
 	conn, proto, err := d.DialLink(context.Background(), ak.ID(), ln.Addr().String())
 	if err != nil || proto != ALPN2 {
 		t.Fatalf("dial: %v %q", err, proto)
 	}
-	writeHello(conn, hello{V: 2})
-	if h, err := readHello(conn); err != nil || !h.OK {
+	writeHello(conn, hello{V: 2, Drain: true})
+	h, err := readHello(conn)
+	if err != nil || !h.OK {
 		t.Fatalf("hello: %+v %v", h, err)
 	}
-	dl, err := NewDialerLink(conn, dk.ID(), ak.ID(), ak.Public, dh)
+	dl, err = NewDialerLink(conn, dk.ID(), ak.ID(), ak.Public, dh)
 	if err != nil {
 		t.Fatal(err)
 	}
-	al := <-got
+	dl.setPeerDrains(h.Drain)
+	al = <-got
 	for _, l := range []*Link{dl, al} {
 		select {
 		case <-l.Ready():
@@ -74,7 +87,7 @@ func pair(t *testing.T) (dialer, acceptor *Link, dk, ak *identity.Key) {
 		}
 	}
 	t.Cleanup(func() { dl.Close(); al.Close() })
-	return dl, al, dk, ak
+	return dl, al
 }
 
 func get(t *testing.T, l *Link, path string) string {

@@ -34,12 +34,24 @@ const (
 const tunnelPath = "/link/tunnel"
 const pingPath = "/link/ping"
 
+// drainedPath is the announcement that the sender is done with a replaced link:
+// it sends no new request on it and has none open (V0.peerlink-replace-drain).
+const drainedPath = "/link/drained"
+
+// errDraining is a request refused before it was sent, because the link it was
+// given has been replaced since; the mesh sends it on the new one.
+var errDraining = errors.New("the link was replaced")
+
 // hello is the one line each side sends before HTTP/2 starts, so the acceptor can
 // say why it will not take the link (the dialer would see only a closed connection).
 type hello struct {
 	V      int    `json:"v"`
 	OK     bool   `json:"ok,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	// Drain: this side announces when it is done with a replaced link, and closes
+	// one only after the peer's announcement (V0.peerlink-replace-drain). An older
+	// peer sends no such field.
+	Drain bool `json:"drain,omitempty"`
 }
 
 func writeHello(c net.Conn, h hello) error {
@@ -89,6 +101,24 @@ type Link struct {
 	ready   chan struct{}
 	cancel  context.CancelFunc
 	closers []func()
+
+	// V0.peerlink-replace-drain: starting counts the requests between RoundTrip
+	// and the session taking them; serving the peer's requests this side answers;
+	// peerDone is closed when the peer announced it is done with the link.
+	starting   int
+	tunnel     int // 1 on the dialer's side: the tunnel is a request of its outer session
+	serving    atomic.Int64
+	peerDrains bool
+	peerDone   chan struct{}
+	doneOnce   sync.Once
+}
+
+// setPeerDrains records that the peer said in its hello it announces the end of
+// a replaced link (V0.peerlink-replace-drain).
+func (l *Link) setPeerDrains(v bool) {
+	l.mu.Lock()
+	l.peerDrains = v
+	l.mu.Unlock()
 }
 
 // Done is closed when the link is closed.
@@ -137,28 +167,75 @@ func (l *Link) Draining() bool {
 	return l.drain
 }
 
-// InFlight is the requests this side has open on the link.
+// InFlight is the requests this side has open on the link, the tunnel not
+// counted (with it, a link this side opened never drained before the limit).
 func (l *Link) InFlight() int {
 	l.mu.Lock()
-	out := l.out
+	out, n := l.out, l.starting
+	tunnel := l.tunnel
 	l.mu.Unlock()
-	if out == nil {
-		return 0
+	if out != nil {
+		n += max(out.InFlight()-tunnel, 0)
 	}
-	return out.InFlight()
+	return n
 }
 
-// RoundTrip sends a request to the peer over the link.
+// Serving is the peer's requests this side is answering on the link.
+func (l *Link) Serving() int { return int(l.serving.Load()) }
+
+// RoundTrip sends a request to the peer over the link. A link that drains takes
+// none: the request was picked before the link was replaced, and nothing of it
+// has been sent (V0.peerlink-replace-drain).
 func (l *Link) RoundTrip(r *http.Request) (*http.Response, error) {
 	l.mu.Lock()
 	out := l.out
-	l.mu.Unlock()
 	if out == nil {
+		l.mu.Unlock()
 		return nil, errors.New("the link is not up")
 	}
+	if l.drain {
+		l.mu.Unlock()
+		return nil, errDraining
+	}
+	l.starting++ // counted from here, so a drain cannot miss it
+	l.mu.Unlock()
+	defer func() {
+		l.mu.Lock()
+		l.starting--
+		l.mu.Unlock()
+	}()
+	return l.send(out, r)
+}
+
+func (l *Link) send(out *http.ClientConn, r *http.Request) (*http.Response, error) {
 	r2 := r.Clone(r.Context())
 	r2.URL.Scheme, r2.URL.Host, r2.Host = "http", "peer.link", ""
 	return out.RoundTrip(r2)
+}
+
+// peerAnnounces: the peer's hello said it announces the end of a replaced link.
+func (l *Link) peerAnnounces() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.peerDrains
+}
+
+// announce tells the peer this side is done with the link (it drains and has no
+// request open on it). It goes past the drain check: it is the last request.
+func (l *Link) announce(ctx context.Context) error {
+	l.mu.Lock()
+	out := l.out
+	l.mu.Unlock()
+	if out == nil {
+		return errors.New("the link is not up")
+	}
+	req, _ := http.NewRequestWithContext(ctx, "POST", "http://peer.link"+drainedPath, nil)
+	resp, err := l.send(out, req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 func h2cProtocols() *http.Protocols {
@@ -289,16 +366,25 @@ type plain struct{ net.Conn }
 func newLink(conn net.Conn, local, peerID string, peerKey ed25519.PublicKey, dialer string) (*Link, context.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	l := &Link{PeerID: peerID, PeerKey: peerKey, Dialer: dialer, Local: local, Since: time.Now(), conn: conn,
-		done: make(chan struct{}), ready: make(chan struct{}), cancel: cancel}
+		done: make(chan struct{}), ready: make(chan struct{}), peerDone: make(chan struct{}), cancel: cancel}
 	return l, ctx
 }
 
-func pingHandler(next http.Handler) http.Handler {
+// handler answers the link's own requests (the ping, the peer's announcement that
+// it is done with the link) and counts the peer's others while they are served.
+func (l *Link) handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == pingPath {
+		switch r.URL.Path {
+		case pingPath:
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case drainedPath:
+			l.doneOnce.Do(func() { close(l.peerDone) })
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		l.serving.Add(1)
+		defer l.serving.Add(-1)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -355,8 +441,11 @@ func NewDialerLink(conn net.Conn, local, peerID string, peerKey ed25519.PublicKe
 		l.Close()
 		return nil, errors.New("the peer refused the tunnel: " + resp.Status)
 	}
+	l.mu.Lock()
+	l.tunnel = 1
+	l.mu.Unlock()
 	tun := &duplex{r: resp.Body, w: pw, closeFn: l.Close}
-	srv := newServer(pingHandler(h), peerKey)
+	srv := newServer(l.handler(h), peerKey)
 	ln := newOnce(tun)
 	go srv.Serve(ln)
 	l.onClose(func() { srv.Close(); ln.Close(); tun.Close() })
@@ -400,7 +489,7 @@ func NewAcceptorLink(conn net.Conn, local, peerID string, peerKey ed25519.Public
 		}
 		tun.Close() // no write after the handler returns
 	})
-	mux.Handle("/", pingHandler(h))
+	mux.Handle("/", l.handler(h))
 	srv := newServer(mux, peerKey)
 	srv.Handler = mux
 	ln := newOnce(conn)
