@@ -5558,9 +5558,10 @@ for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) sect
   const phone = front === "phone";
   // A real press (a user gesture, so the Fullscreen API may run): a tap on the phone, a mouse click on the desktop.
   // The point is taken once it holds still for two frames: entries under content-visibility: auto take their real
-  // height as they draw, so the card can move just after a layer closes.
+  // height as they draw, so the card can move just after a layer closes. It must also hit the button itself
+  // (elementFromPoint), not a layer that is still closing above it: a press there missed (V0.fix-flakes).
   const press = async (sel) => {
-    const c = await evaluate(`new Promise((done) => { let last = '', n = 0, f = 0; const step = () => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return done(null); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); const p = [r.left + r.width / 2, r.top + r.height / 2]; const k = p.join(','); if ((k === last && ++n >= 2) || ++f > 120) return done(p); if (k !== last) n = 0; last = k; requestAnimationFrame(step); }; step(); })`);
+    const c = await evaluate(`new Promise((done) => { let last = '', n = 0, f = 0; const step = () => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return done(null); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); const p = [r.left + r.width / 2, r.top + r.height / 2]; const hit = document.elementFromPoint(p[0], p[1]); const k = p.join(',') + (hit && el.contains(hit) ? '' : ' covered'); if ((k === last && !k.endsWith('covered') && ++n >= 2) || ++f > 120) return done(p); if (k !== last) n = 0; last = k; requestAnimationFrame(step); }; step(); })`);
     if (!c) throw new Error(`no element ${sel}`);
     if (phone) {
       await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: c[0], y: c[1] }] });
@@ -5636,6 +5637,9 @@ try {
   check(noApi.covers && !noApi.fs, `${ctx}: without the Fullscreen API the HTML preview does not cover the screen (${JSON.stringify(noApi)})`);
   await evaluate(`history.back()`);
   await waitFor(`!document.querySelector('.pv.isfs')`, { soft: true });
+  // As after every other leave above: the card returns to its place in the thread and the layout moves for a few
+  // frames, so the next press waits for it to settle; a press taken mid-move missed the image's button (V0.fix-flakes).
+  await settle();
   await press(".pv.image .pv-fs");
   await waitFor(COVERS(".pv-full"), { soft: true });
   const noApiImg = await evaluate(`({ covers: ${COVERS(".pv-full")}, r: (() => { const r = document.querySelector('.pv-full')?.getBoundingClientRect(); return r ? [r.left, r.top, r.width, r.height] : null; })(), ...${STATE} })`);
