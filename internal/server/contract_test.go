@@ -96,6 +96,17 @@ func TestStateContractFixture(t *testing.T) {
 		}
 	}
 	post(`{"commandId":"k8","action":"thread.create","args":{"cwd":"` + work + `","text":"a thread in a quiet project"}}`)
+	// V0.row-group-code: a thread in Needs you carries the code of the
+	// owner's move and the two parts of its reason.
+	post(`{"commandId":"k9","action":"thread.create","args":{"cwd":"` + src + `","text":"a thread that asks to run a command"}}`)
+	for _, d := range e.Snapshot() {
+		if d.Title == "a thread that asks to run a command" {
+			coretest.Patch(e, d.ID, func(t *core.Thread, _ time.Time) []core.Event {
+				t.Offers = append(t.Offers, core.ActionSpec{ID: "run-1", Label: "Run", On: core.OnThread, Run: core.RunScript, Argv: core.RunArgv("ls"), Request: true, Command: "ls", Why: "Mount the SD card", By: core.ByAgent})
+				return nil
+			})
+		}
+	}
 	r := do(t, "GET", hs.URL+"/api/state", "", nil, "")
 	var v any
 	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {

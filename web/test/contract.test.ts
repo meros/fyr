@@ -10,6 +10,7 @@ import { applySnapshot, flatOrder, initialStore, sections, unavailableReason, up
 import { colorName, filterByProject, matchProjects, newProjectDraft, projectName, projectOf, projectSubtitle, resolveIcon } from "../src/projects.ts";
 import { relTime, whenLabel } from "../src/format.ts";
 import { decodeProject, decodeThread } from "../src/decode.ts";
+import { blockedReason, needsGroup } from "../src/rows.ts";
 import { hideQuiet, nextQuietEnd, quietLine, quietList, quietNote } from "../src/quiet.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/host-state.json", import.meta.url), "utf8"));
@@ -64,6 +65,10 @@ function render(state: any) {
     assert.equal(typeof t.title, "string");
     assert.equal(typeof t.cwd, "string");
     assert.ok(t.attention && typeof t.attention.section === "string", "attention");
+    if (t.attention.section === "needs") {
+      assert.equal(typeof needsGroup(t), "string");
+      blockedReason(t);
+    }
   }
   for (const p of s.projects) {
     assert.equal(typeof p.name, "string");
@@ -87,6 +92,15 @@ test("the host fixture has the edge cases (a thread with no project, an icon wit
   // V0.46: a project in its quiet hours and its thread carry quietUntil.
   assert.ok(fixture.projects.some((p: any) => Array.isArray(p.quiet) && quietList(p.quiet).length === p.quiet.length && p.quietUntil), "a quiet project, its quiet hours a list");
   assert.ok(fixture.threads.some((t: any) => t.quietUntil), "a thread in quiet hours");
+  // V0.row-group-code: a thread in Needs you carries the host's group code and the two parts of its reason.
+  const run = fixture.threads.find((t: any) => t.attention.section === "needs");
+  assert.deepEqual(
+    { group: run?.attention.group, word: run?.attention.word, subject: run?.attention.subject },
+    { group: "approve", word: "Run", subject: "Mount the SD card" },
+  );
+  const row = decodeThread(run);
+  assert.equal(needsGroup(row), "approve");
+  assert.deepEqual(blockedReason(row), { word: "Run", what: "Mount the SD card" });
 });
 
 test("SPEC 0.5 V0.55: decode keeps a new-project prefill with a name and drops one without", () => {

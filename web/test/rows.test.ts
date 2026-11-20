@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rowMeta, rowProjectName, rowState, stateNamesPr, trimEcho, clipName } from "../src/rows.ts";
+import { blockedReason, rowMeta, rowProjectName, rowState, stateNamesPr, trimEcho, clipName } from "../src/rows.ts";
 import type { Decision } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -67,7 +67,20 @@ test("a row's PR chip is left out when the state word names that PR", () => {
   assert.equal(stateNamesPr({ ...asking({ kind: "ask" }), pr: { number: 12 } as never }), false);
 });
 
-test("a Needs you reason puts its short word first and the change on the line", () => {
+test("V0.row-group-code: a Needs you row puts the host's word first and its subject on the line", () => {
+  const blocked = (reason: string, word?: string, subject?: string) =>
+    thread("b", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason, group: "approve", word, subject } });
+  const t = blocked("Placement rows load in one read: Merge", "Merge", "Placement rows load in one read");
+  assert.equal(rowState(t), "Merge");
+  assert.ok(rowMeta(t).startsWith("Placement rows load in one read"));
+  assert.deepEqual(blockedReason(blocked("Run: install the hook", "Run", "install the hook")), { word: "Run", what: "install the hook" });
+  assert.deepEqual(blockedReason(blocked("Run: ", "Run")), { word: "Run", what: "" });
+  // With a code and no word the reason is one line; its words are never split.
+  assert.equal(rowState(blocked("Run: install the hook")), "Run: install the hook");
+});
+
+// Remove with the legacy fallback in rows.ts (#372).
+test("a Needs you reason from a host before V0.row-group-code puts its short word first and the change on the line", () => {
   const ch = [{ id: "c", title: "Placement rows load in one read" }] as never;
   const t = thread("b", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Placement rows load in one read: Merge" }, changes: ch });
   assert.equal(rowState(t), "Merge");

@@ -33,7 +33,7 @@ test("V0.settle-request: a project asks unless set to auto, and saves ask as nul
 
 test("V0.settle-offer-your-move: a settle offer is in Your move under Approve, and its row reads Settle", () => {
   const t = thread("s", "blocked", "needs", {
-    attention: { state: "blocked", section: "needs", reason: "Settle: PR #12 merged" },
+    attention: { state: "blocked", section: "needs", reason: "Settle: PR #12 merged", group: "approve", word: "Settle", subject: "PR #12 merged" },
     settleAsk: { at: "2026-11-19T10:00:00Z", why: "PR #12 merged" },
   });
   assert.equal(needsGroup(t), "approve");

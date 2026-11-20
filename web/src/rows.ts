@@ -46,17 +46,11 @@ export const NEEDS_GROUPS = [
 export type NeedsGroup = (typeof NEEDS_GROUPS)[number]["key"];
 
 /** V0.your-move: a question to answer, something to say yes to (an approval, a merge, a ready PR, a command to run), or
- *  something broken. Reads only what the host computed. */
+ *  something broken. V0.row-group-code: the host sends the group as a code; the row never reads the reason's words. */
 export function needsGroup(t: Thread): NeedsGroup {
-  const st = t.attention.state;
-  if (st === "asking") return t.decisions.length === 0 || t.decisions.some((d) => d.kind === "ask") ? "answer" : "approve";
-  if (st === "blocked") {
-    if (t.attention.reason?.startsWith("Run: ")) return "approve"; // V0.149 (5): the host's words for a run request
-    if (t.settleAsk && t.attention.reason?.startsWith("Settle: ")) return "approve"; // V0.settle-offer-your-move
-    const needs = t.changes.flatMap((c) => (c.need && !c.need.muted ? [c.need] : []));
-    if (needs.length > 0 && needs.every((n) => n.cause === "ready")) return "approve";
-  }
-  return "unblock";
+  const g = t.attention.group;
+  if (g) return NEEDS_GROUPS.some((x) => x.key === g) ? g : "unblock";
+  return legacyNeedsGroup(t);
 }
 
 export function needsGroupRank(t: Thread): number {
@@ -95,18 +89,38 @@ export function rowState(t: Thread): string {
   return blockedReason(t)?.word ?? (t.attention.reason || stateLabel(st));
 }
 
-/** V0.row-calm: the host's Needs you reason is "<change title>: <need>" (V0.101) , "Run: <why>" (V0.149) or "Settle: <why>"
- *  (V0.settle-offer-your-move). The row
- *  puts the short word ("Merge", "Run") in the state's place and the rest on the line, so a long change title in the
- *  state colour does not fill the line. */
+/** V0.row-calm: the row puts the short word ("Merge", "Run", "Settle") in the state's place and the rest on the line,
+ *  so a long change title in the state colour does not fill the line. V0.row-group-code: the host sends both parts. */
 export function blockedReason(t: Pick<Thread, "attention" | "changes">): { word: string; what: string } | null {
-  const r = t.attention.reason;
-  if (t.attention.state !== "blocked" || !r) return null;
+  const a = t.attention;
+  if (a.state !== "blocked" || !a.reason) return null;
+  if (a.word) return { word: a.word, what: a.subject ?? "" };
+  return a.group ? null : legacyBlockedReason(t);
+}
+
+// A host before V0.row-group-code sends no attention.group, word or subject: during an update a newer front may read
+// an older host (a front reads several hosts). These two read its reason's words as before. Remove them one release
+// after V0.row-group-code, with the old routes (#372).
+
+function legacyNeedsGroup(t: Thread): NeedsGroup {
+  const st = t.attention.state;
+  if (st === "asking") return t.decisions.length === 0 || t.decisions.some((d) => d.kind === "ask") ? "answer" : "approve";
+  if (st === "blocked") {
+    if (t.attention.reason?.startsWith("Run: ")) return "approve";
+    if (t.settleAsk && t.attention.reason?.startsWith("Settle: ")) return "approve";
+    const needs = t.changes.flatMap((c) => (c.need && !c.need.muted ? [c.need] : []));
+    if (needs.length > 0 && needs.every((n) => n.cause === "ready")) return "approve";
+  }
+  return "unblock";
+}
+
+function legacyBlockedReason(t: Pick<Thread, "attention" | "changes">): { word: string; what: string } | null {
+  const r = t.attention.reason ?? "";
   const i = r.indexOf(": ");
   if (i < 0) return null;
   const head = r.slice(0, i);
   const tail = r.slice(i + 2);
-  if (head === "Run" || head === "Settle") return { word: head, what: tail }; // V0.settle-offer-your-move: "Settle: <why>"
+  if (head === "Run" || head === "Settle") return { word: head, what: tail };
   if ((t.changes ?? []).some((c) => c.title === head) && tail) return { word: tail, what: head };
   return null;
 }
