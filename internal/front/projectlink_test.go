@@ -300,4 +300,26 @@ func TestProjectSharedPriority(t *testing.T) {
 	if code, _ := shared("normal", `"priority":null`); code != 200 || prio(a, onA) != "" || prio(b, onB) != "" {
 		t.Fatalf("normal: a=%q b=%q", prio(a, onA), prio(b, onB))
 	}
+	// V0.linked-agent-settle: what an agent's settle_request does is shared
+	// the same way; null is ask.
+	ags := func(h *settingsHost, ref string) string {
+		for _, p := range h.eng.Projects() {
+			if strings.HasSuffix(ref, "/"+p.ID) {
+				return p.AgentSettle
+			}
+		}
+		return "?"
+	}
+	if code, rep := shared("ags-bad", `"agentSettle":"sometimes"`); code != 400 {
+		t.Fatalf("a bad agentSettle: %d %v", code, rep)
+	}
+	if code, _ := shared("ags-auto", `"agentSettle":"auto"`); code != 200 || ags(a, onA) != "auto" || ags(b, onB) != "auto" {
+		t.Fatalf("auto: a=%q b=%q", ags(a, onA), ags(b, onB))
+	}
+	if code, _ := shared("ags-name", `"name":"Fyr 3"`); code != 200 || ags(b, onB) != "auto" {
+		t.Fatalf("a rename dropped it: %q", ags(b, onB))
+	}
+	if code, _ := shared("ags-ask", `"agentSettle":null`); code != 200 || ags(a, onA) != "" || ags(b, onB) != "" {
+		t.Fatalf("ask: a=%q b=%q", ags(a, onA), ags(b, onB))
+	}
 }

@@ -53,8 +53,8 @@ type Project struct {
 	// 0034): records with one link are one project to the owner. "" is an
 	// ordinary project. Each record stays its own host's.
 	Link string `json:"link,omitempty"`
-	// SharedAt stamps the values the members share: name, colour, glyph icon
-	// and quiet hours. The newest stamp in a link wins (decision 0034).
+	// SharedAt stamps the values the members share: name, colour, glyph icon,
+	// quiet hours, priority and agentSettle (V0.linked-agent-settle). The newest stamp in a link wins (decision 0034).
 	SharedAt time.Time `json:"sharedAt,omitzero"`
 }
 
@@ -445,7 +445,7 @@ func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{Reply: map[string]any{"id": p.ID, "kept": true}}, nil
 	}
 	shared := Args{}
-	for _, k := range []string{"name", "color", "icon", "quiet", "priority"} {
+	for _, k := range []string{"name", "color", "icon", "quiet", "priority", "agentSettle"} { // V0.linked-agent-settle
 		if v, ok := a[k]; ok {
 			shared[k] = v
 		}

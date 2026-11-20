@@ -62,3 +62,20 @@ func TestVProjectPriorityShared(t *testing.T) {
 		t.Fatalf("shared normal: %v %+v", err, p)
 	}
 }
+
+// V0.linked-agent-settle: a linked project shares what an agent's
+// settle_request does; null is ask.
+func TestVLinkedAgentSettleShared(t *testing.T) {
+	t0 := time.Unix(100, 0).UTC()
+	const link = "l_0123456789abcdef"
+	ps := map[string]*Project{"p1": {ID: "p1", Name: "a", Link: link}}
+	_, p, _, err := ReduceProject(ps, nil, Input{Source: FromOwner, Kind: KindProjectShared, Args: Args{"id": "p1", "link": link, "at": t0.Format(time.RFC3339Nano), "name": "a", "agentSettle": "auto"}}, t0)
+	if err != nil || !p.SettlesOnRequest() {
+		t.Fatalf("shared auto: %v %+v", err, p)
+	}
+	ps["p1"] = p
+	_, p, _, err = ReduceProject(ps, nil, Input{Source: FromOwner, Kind: KindProjectShared, Args: Args{"id": "p1", "link": link, "at": t0.Add(time.Second).Format(time.RFC3339Nano), "name": "a", "agentSettle": nil}}, t0)
+	if err != nil || p.AgentSettle != "" {
+		t.Fatalf("shared ask: %v %+v", err, p)
+	}
+}
