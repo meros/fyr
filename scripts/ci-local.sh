@@ -32,6 +32,18 @@ status() { # state description
 }
 
 status pending "make test on $(hostname)"
+
+# One gate at a time on this host (V0.fix-flakes): two make tests at once load the machine until timing-sensitive
+# tests fail that pass alone. The lock is held until this script exits; a second gate waits for it, with its status
+# pending meanwhile.
+lock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/fyr-ci-local.lock" # one path for a shell and the service alike
+exec 9>>"$lock"
+if ! flock -n 9; then
+	echo "ci-local: another gate runs; waiting" >&2
+	status pending "waiting for another gate on $(hostname)"
+	flock 9
+	status pending "make test on $(hostname)"
+fi
 log=$(mktemp -t fyr-ci-local.XXXXXX.log)
 started=$(date +%s)
 set +e
@@ -40,7 +52,7 @@ set +e
 		nix develop --command make test &&
 		nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact \
 			--log-opts="origin/main..$sha" .
-} 2>&1 | tee "$log"
+} 9>&- 2>&1 | tee "$log" # 9>&-: nothing the gate starts (a detached Chrome) keeps the lock
 rc=${PIPESTATUS[0]}
 set -e
 took=$(($(date +%s) - started))
