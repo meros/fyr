@@ -7,6 +7,7 @@ import ServiceManagement
 final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
   let window = Window()
   let notifier = Notifier()
+  let updater = Updater()
   var item: NSStatusItem!
   var atLogin = false
   let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -34,6 +35,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     m.addItem(stateItem)
     m.addItem(pauseItem)
     m.addItem(withTitle: "Show Log", action: #selector(showLog), keyEquivalent: "")
+    m.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "")
     m.addItem(.separator())
     m.addItem(withTitle: "Quit (Fyr keeps running)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
     item.menu = m
@@ -44,7 +46,26 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     notifier.open = { [weak self] path in self?.window.show(path: path) }
     window.notifier = notifier
     notifier.start()
-    if !atLogin { window.show() }
+    // V0.mac-selfupdate: the new build starts with --updated and keeps the
+    // window as the old one had it.
+    updater.relaunch = { [weak self] url in
+      let shown = self?.window.isVisible ?? false
+      let p = Process()
+      p.executableURL = URL(fileURLWithPath: "/bin/sh")
+      p.arguments = ["-c", "sleep 1; /usr/bin/open -n \"$0\" --args --updated \(shown ? "--show" : "")", url.path]
+      try? p.run()
+      NSApp.terminate(nil)
+    }
+    updater.start()
+    if !atLogin && (!args.contains("--updated") || args.contains("--show")) { window.show() }
+  }
+
+  @objc func checkUpdates() {
+    updater.check { said in
+      let a = NSAlert()
+      a.messageText = said
+      a.runModal()
+    }
   }
 
   // A click on the Dock icon or a second open of the app shows the window.

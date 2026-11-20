@@ -105,6 +105,29 @@ static char *loginPath(void) {
 	return a + 10;
 }
 
+/* stable drops the PATH entries that live only as long as one shell: fnm's
+ * per-shell folders (fnm_multishells), which it removes later, and puts its
+ * default Node in their place (V0.mac-selfupdate). */
+static char *stable(char *path) {
+	static char out[8192];
+	char *fnm = 0, *tok, *save;
+	size_t n = 0;
+	int dropped = 0;
+	out[0] = 0;
+	for (tok = strtok_r(path, ":", &save); tok; tok = strtok_r(0, ":", &save)) {
+		if (strstr(tok, "/fnm_multishells/")) {
+			dropped = 1;
+			continue;
+		}
+		n += snprintf(out + n, sizeof out - n, "%s%s", n ? ":" : "", tok);
+		if (n >= sizeof out)
+			return path;
+	}
+	if (dropped && asprintf(&fnm, "%s/.local/share/fnm/aliases/default/bin", home) >= 0 && access(fnm, X_OK) == 0)
+		snprintf(out + n, sizeof out - n, "%s%s", n ? ":" : "", fnm);
+	return out;
+}
+
 int main(int argc, char **argv) {
 	int sigs[] = {SIGTERM, SIGINT, SIGHUP};
 	char exe[PATH_MAX], real[PATH_MAX], *res, *launcher, *seed, *data = 0, *logf = 0, *path, *base;
@@ -154,7 +177,7 @@ int main(int argc, char **argv) {
 	base = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 	if ((path = loginPath()) != 0) {
 		char *p;
-		if (asprintf(&p, "%s:%s", path, base) < 0)
+		if (asprintf(&p, "%s:%s", stable(path), base) < 0)
 			return 70;
 		setenv("PATH", p, 1);
 	} else {
