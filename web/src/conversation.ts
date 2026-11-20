@@ -26,8 +26,17 @@ export interface ToolCall {
   subMessages: number;
   /** V0.38: the host cut this output; the event with this seq has it whole */
   cutSeq?: number;
-  subCalls: ToolCall[];
-  subTexts: string[];
+  /** V0.subagent-timeline: what the subagent did, in the order it happened: its texts and runs of its tool calls */
+  sub: SubStep[];
+}
+
+/** One step of a subagent's timeline: a text it wrote, or tool calls it made one after another. */
+export type SubStep = { kind: "text"; text: string } | { kind: "calls"; calls: ToolCall[] };
+
+/** The prompt a Task/Agent call gave its subagent, "" when there is none. */
+export function agentPrompt(c: ToolCall): string {
+  const p = (c.input as { prompt?: unknown } | null)?.prompt;
+  return typeof p === "string" ? p.trim() : "";
 }
 
 /** SPEC 0.5 V0.33: where a message is on its way to the agent; "" for messages from before tracking. */
@@ -206,8 +215,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
     startedAt: at,
     durationMs: null,
     subMessages: 0,
-    subCalls: [],
-    subTexts: [],
+    sub: [],
   });
 
   for (const e of events) {
@@ -273,11 +281,13 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
             if (b.type === "tool_use") {
               const c = newCall(b, at);
               calls.set(c.id, c);
-              host.subCalls.push(c);
+              const last = host.sub[host.sub.length - 1];
+              if (last?.kind === "calls") last.calls.push(c);
+              else host.sub.push({ kind: "calls", calls: [c] });
             } else if (b.type === "tool_result") {
               finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
             } else if (b.type === "text" && d.type === "assistant" && b.text?.trim()) {
-              host.subTexts.push(b.text);
+              host.sub.push({ kind: "text", text: b.text });
             }
           }
           break;

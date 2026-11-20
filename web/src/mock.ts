@@ -150,7 +150,7 @@ function askEvents(id: string, now: number): FyrEvent[] {
     e("msg", assistantText("I traced it to `FilterSheet.tsx`: the sheet closes on `pointerdown` on the backdrop, and the lasso starts on the same event.")),
     e("msg", toolUse("tu1", "Read", { file_path: "src/map/FilterSheet.tsx" })),
     e("msg", toolResult("tu1"), 400),
-    e("msg", toolUse("tu2", "Task", { description: "explore gestures", prompt: "Explore how other sheets close" })),
+    e("msg", toolUse("tu2", "Task", { description: "explore gestures", prompt: "Explore how the other sheets in src/ui close: which event closes each one (pointerdown, click, swipe), and whether any of them starts a gesture on the same event.\n\nRead the code, do not change it. Report one line per sheet, then a recommendation for FilterSheet." })),
     e("msg", assistantText("Looking at the other sheets.", "tu2")),
     e("msg", toolUse("tu2a", "Grep", { pattern: "onPointerDown" }, "tu2")),
     e("msg", toolResult("tu2a", false, "tu2")),

@@ -12,7 +12,7 @@ import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } fro
 import { createContext } from "preact";
 import { SlideMark } from "./motion-ui.tsx";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
-import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
+import { agentPrompt, buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, type SubStep, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
@@ -974,6 +974,18 @@ function CallRow({ c }: { c: ToolCall }) {
   );
 }
 
+/** V0.subagent-timeline: the prompt a subagent was given: three lines, a tap shows it whole (desktop and phone alike). */
+function SubPrompt({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  return (
+    <div class={`subprompt prose${open ? " open" : ""}`} onClick={() => setOpen(!open)} title={open ? "Fold the prompt" : "Show the whole prompt"}>
+      <span class="subpl">Prompt</span>
+      {text}
+    </div>
+  );
+}
+
 function AgentsRow({ calls }: { calls: ToolCall[] }) {
   const [open, setOpen] = useState(false);
   const failed = calls.some((c) => c.isError);
@@ -998,8 +1010,10 @@ function AgentsRow({ calls }: { calls: ToolCall[] }) {
               <div class="subh ell">
                 {c.description || c.summary} · {c.subMessages} {c.subMessages === 1 ? "message" : "messages"}
               </div>
-              {c.subCalls.length > 0 && <ToolCard calls={c.subCalls} nested />}
-              {c.subTexts.length > 0 && <div class="subtext prose">{c.subTexts[c.subTexts.length - 1]}</div>}
+              <SubPrompt text={agentPrompt(c)} />
+              {c.sub.map((s: SubStep, i) =>
+                s.kind === "calls" ? <ToolCard key={i} calls={s.calls} nested /> : <div key={i} class="subtext prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(s.text) }} />,
+              )}
             </div>
           ))}
         </div>
