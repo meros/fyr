@@ -3,6 +3,7 @@ package cgroup
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 )
 
 func TestDarwinLoadavgParse(t *testing.T) {
@@ -79,5 +80,60 @@ func TestDarwinSamplerReadsSysctl(t *testing.T) {
 	}
 	if v, ok := Burst(); !ok || v < 1 {
 		t.Fatalf("burst %v %v", v, ok)
+	}
+}
+
+// V0.mac-swap-stall: the swap traffic is the Mac's memory stall.
+func TestDarwinSwapTrafficIsTheStall(t *testing.T) {
+	const mb = 1 << 20
+	for _, c := range []struct {
+		in, out float64
+		want    Stall
+	}{
+		{15 * mb, 0, StallOK},          // calm: other programs read a little back
+		{1 * mb, 190 * mb, StallHigh},  // a job spills into swap
+		{290 * mb, 20 * mb, StallHigh}, // read back, little pushed out
+		{250 * mb, 230 * mb, StallWorst},
+	} {
+		if got := swapStall(c.in, c.out); got != c.want {
+			t.Fatalf("in %.0f out %.0f MB/s: %s, want %s", c.in/mb, c.out/mb, got, c.want)
+		}
+	}
+	if worseStall(StallHigh, StallOK) != StallHigh || worseStall(StallOK, StallWorst) != StallWorst {
+		t.Fatal("worse")
+	}
+}
+
+func TestDarwinSwapMeterReadsRates(t *testing.T) {
+	var in, out uint64
+	m := &swapMeter{counts: func() (uint64, uint64, uint64, bool) { return in, out, 16384, true }}
+	t0 := time.Unix(1000, 0)
+	if r := m.read(t0); r != (swapRates{}) {
+		t.Fatalf("first read %+v", r)
+	}
+	in, out = 6400, 64000 // 100 MB in, 1000 MB out over 10 s
+	r := m.read(t0.Add(10 * time.Second))
+	if r.in != 6400*16384/10 || r.out != 64000*16384/10 || !r.outRecent {
+		t.Fatalf("%+v", r)
+	}
+	if r2 := m.read(t0.Add(12 * time.Second)); r2 != r { // within the window: the last rates
+		t.Fatalf("%+v, want %+v", r2, r)
+	}
+	r = m.read(t0.Add(20 * time.Second)) // no traffic since
+	if r.in != 0 || r.out != 0 || !r.outRecent {
+		t.Fatalf("quiet %+v", r)
+	}
+	if r = m.read(t0.Add(75 * time.Second)); r.outRecent {
+		t.Fatalf("a minute later %+v", r)
+	}
+	in = 0 // a counter that went back starts again
+	if r = m.read(t0.Add(80 * time.Second)); r.in != 0 || r.out != 0 {
+		t.Fatalf("reset %+v", r)
+	}
+}
+
+func TestDarwinSwapMeterReadsThisHost(t *testing.T) {
+	if _, _, _, ok := hostSwap.counts(); !ok {
+		t.Fatal("no swap counters")
 	}
 }
