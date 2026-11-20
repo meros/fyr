@@ -13,7 +13,7 @@ The original goal of v1 was "the owner works only in Fyr". It has been met for w
 | Projects and workspaces | Done except two | Worktrees for each change (decision 0019: #375, #376, #354), and threads are filed by folder. Archiving a project (#24) and the folder in the header (#26) move to v1.0. |
 | Conversation and live view | Done except two | Missed read events fixed (#29), and the View-tab reply shipped (#20). #19 (background on a new message) moves to v1.0. The live-view cost (#17) becomes a one-off query after v1.0. |
 | M4 Calm machine | Done past its scope | The guard far exceeds the plan: decision 0036 slices 0–6, adaptive admission, freeze and thaw, kill and rerun for opted-in classes, invariants with a Fix it card, a simulation over 17 scenarios. A forced memory hog is frozen and shown, not hidden. Not built: batching several pushes into one, the no-progress signal, one summary push when quiet hours end, and the policy file. The policy file is superseded by async effects, where the agent asks and the owner approves: Run cards, merge asks and the heavy-command gate. |
-| M5 Cut-over | Met. Of the original checklist, A6 is accepted as built ("Since you looked" on the status screen; owner decision 20 Nov) | Weeks of daily work only in Fyr. Removing the T3 code (#68) moves to v1.0. |
+| M5 Cut-over | Met. Of the original checklist, A6 is accepted as built ("Since you looked" on the status screen); ⌘1–9 stable slots (A4) and the Android share target (A3) are dropped; the paste chip and the photo picker stay (owner decisions 20 Nov) | Weeks of daily work only in Fyr. Removing the T3 code (#68) moves to v1.0. |
 | Mesh | Later | After v1.0. |
 
 ## v1.0: a stranger can install it, and it stays put
