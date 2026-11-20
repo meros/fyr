@@ -74,7 +74,7 @@ A size in percent is a share of the machine: of the RAM for `memory.high` and `m
 
 ## macOS
 
-There are no cgroups, PSI or oomd. Fyr reads `kern.memorystatus_level`, the page counts and the run queue (V0.mac-load-signals) and pauses work with SIGSTOP. Nothing needs setting. Keep enough free disk for the system's own swap files.
+There are no cgroups, PSI or oomd. Fyr reads `kern.memorystatus_level`, the page counts, the swap traffic as the memory stall (V0.mac-swap-stall) and the run queue (V0.mac-load-signals) and pauses work with SIGSTOP. Nothing needs setting. Keep enough free disk for the system's own swap files.
 
 ## Checking a host
 
