@@ -166,15 +166,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // or the server closes.
 func (s *Server) stream(w http.ResponseWriter, r *http.Request, tok string) {
 	rc := http.NewResponseController(w)
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n")); err != nil {
-		return
-	}
-	if rc.Flush() != nil {
-		return
-	}
+	// V0.mcp-stream-count: the stream counts before its first event goes out,
+	// so a client that has read it is never told it is not connected.
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -189,6 +182,15 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, tok string) {
 		}
 		s.mu.Unlock()
 	}()
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n")); err != nil {
+		return
+	}
+	if rc.Flush() != nil {
+		return
+	}
 	tick := time.NewTicker(Keepalive)
 	defer tick.Stop()
 	for {
