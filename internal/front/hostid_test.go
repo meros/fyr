@@ -52,13 +52,15 @@ func TestFrontPinsHostIDs(t *testing.T) {
 		h := hostRow(t, f.URL, "a")
 		return h != nil && h["id"] == "AAAA-AAAA-AAAA-AAAA" && h["idWas"] == nil
 	})
-	resp, _ := http.Get(f.URL + "/api/state")
+	resp, _ := http.Get(f.URL + "/api/front/state")
 	var top struct {
-		HostID string `json:"hostId"`
+		Front struct {
+			ID string `json:"id"`
+		} `json:"front"`
 	}
 	decodeJSON(t, resp, &top)
-	if top.HostID != "FFFF-FFFF-FFFF-FFFF" {
-		t.Fatalf("the front's own id: %q", top.HostID)
+	if top.Front.ID != "FFFF-FFFF-FFFF-FFFF" {
+		t.Fatalf("the front's own id: %q", top.Front.ID)
 	}
 	f.stop()
 
@@ -71,7 +73,7 @@ func TestFrontPinsHostIDs(t *testing.T) {
 	})
 
 	// The stream tells the client when the owner trusts it.
-	req, _ := http.NewRequest("GET", g.URL+"/api/stream", nil)
+	req, _ := http.NewRequest("GET", g.URL+"/api/front/stream", nil)
 	sresp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -92,10 +94,10 @@ func TestFrontPinsHostIDs(t *testing.T) {
 		}
 	}()
 
-	if code, rep := post(t, g.URL+"/api/command", `{"commandId":"h1","action":"front.hostId","args":{"host":"nope"}}`); code != 400 {
+	if code, rep := post(t, g.URL+"/api/front/command", `{"commandId":"h1","action":"front.hostId","args":{"host":"nope"}}`); code != 404 || rep["code"] != "no-host" {
 		t.Fatalf("unknown host: %d %v", code, rep)
 	}
-	code, rep := post(t, g.URL+"/api/command", `{"commandId":"h2","action":"front.hostId","args":{"host":"a"}}`)
+	code, rep := post(t, g.URL+"/api/front/command", `{"commandId":"h2","action":"front.hostId","args":{"host":"BBBB-BBBB-BBBB-BBBB"}}`)
 	if code != 200 || rep["ok"] != true {
 		t.Fatalf("%d %v", code, rep)
 	}
@@ -136,7 +138,7 @@ func TestFrontHostIDOfflineAndOld(t *testing.T) {
 	if r := hostRow(t, g.URL, "a"); r == nil || r["online"] == true || r["id"] != "AAAA-AAAA-AAAA-AAAA" {
 		t.Fatalf("offline row %v", r)
 	}
-	if code, _ := post(t, g.URL+"/api/command", `{"action":"front.hostId","args":{"host":"a"}}`); code != 409 {
+	if code, _ := post(t, g.URL+"/api/front/command", `{"action":"front.hostId","args":{"host":"AAAA-AAAA-AAAA-AAAA"}}`); code != 409 {
 		t.Fatalf("trusting an id never reported: %d", code)
 	}
 	old := hostWithID(t, "old", "")

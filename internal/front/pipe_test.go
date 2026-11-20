@@ -23,13 +23,13 @@ func TestV129FrontFollowsAHostOverAPipe(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 	eng := engine.New(st)
 	ln := pipe.New()
-	hs := &http.Server{Handler: (&server.Server{Engine: eng, BuildID: "host-build", Host: "desk"}).Handler()}
+	hs := &http.Server{Handler: (&server.Server{Engine: eng, BuildID: "host-build", Host: "desk", ID: testID("desk")}).Handler()}
 	go hs.Serve(ln)
 	t.Cleanup(func() { hs.Shutdown(context.Background()) })
 
 	fs := newFront(t, HostConfig{Name: "desk", URL: LocalURL, Dial: ln.Dial})
 	online(t, fs.URL, 1)
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
+	code, rep := post(t, hostURL(t, fs.URL, "desk")+"/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
 	id, _ := rep["threadId"].(string)
 	if code != 200 || id == "" {
 		t.Fatalf("create through the pipe: %d %v", code, rep)

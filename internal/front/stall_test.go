@@ -80,15 +80,16 @@ func TestV181StalledLocalHostIsOfflineAndTheFrontStaysUp(t *testing.T) {
 	srv := newHost(t, "srv")
 	fs := newFront(t, HostConfig{Name: "desk", URL: LocalURL, Dial: desk.ln.Dial}, HostConfig{Name: "srv", URL: srv.hs.URL})
 	online(t, fs.URL, 2)
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi","host":"desk"}}`)
+	framed := threadFrames(t, fs.URL)
+	code, rep := post(t, fs.URL+"/api/h/"+idDesk+"/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
 	deskThread, _ := rep["threadId"].(string)
 	if code != 200 || deskThread == "" {
 		t.Fatalf("create on desk: %d %v", code, rep)
 	}
-	eventually(t, "desk's thread in the front", func() bool { return threadOf(getState(t, fs.URL), deskThread) != nil })
+	framed(deskThread) // in the front's cache
 
 	// A browser's stream, open across the stall.
-	req, _ := http.NewRequest("GET", fs.URL+"/api/stream", nil)
+	req, _ := http.NewRequest("GET", fs.URL+"/api/front/stream", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -120,10 +121,6 @@ func TestV181StalledLocalHostIsOfflineAndTheFrontStaysUp(t *testing.T) {
 			hs := frontHosts(t, fs.URL)
 			return !hs["desk"].Online && hs["srv"].Online
 		})
-		d := threadOf(getState(t, fs.URL), deskThread)
-		if d == nil || d["hostOffline"] == nil {
-			t.Fatalf("desk's thread is not marked offline (%s): %v", why, d)
-		}
 		// the pipe is up; the host is what is stuck, and says so
 		if h := frontHosts(t, fs.URL)["desk"]; !strings.HasPrefix(h.Error, "stalled: ") {
 			t.Fatalf("desk's error (%s): %+v", why, h)
@@ -141,7 +138,7 @@ func TestV181StalledLocalHostIsOfflineAndTheFrontStaysUp(t *testing.T) {
 			t.Fatalf("a command for the stalled desk (%s): %d %s", why, code, b)
 		}
 		// the other host is served as before
-		code, rep := post(t, fs.URL+"/api/command", `{"commandId":"s-`+why+`","action":"thread.create","args":{"cwd":"/tmp","text":"hi","host":"srv"}}`)
+		code, rep := post(t, hostURL(t, fs.URL, "srv")+"/command", `{"commandId":"s-`+why+`","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
 		if code != 200 || rep["threadId"] == nil {
 			t.Fatalf("srv while desk is stalled (%s): %d %v", why, code, rep)
 		}
@@ -150,10 +147,6 @@ func TestV181StalledLocalHostIsOfflineAndTheFrontStaysUp(t *testing.T) {
 		t.Helper()
 		desk.stuck.Store(false)
 		eventually(t, "desk back ("+why+")", func() bool { return frontHosts(t, fs.URL)["desk"].Online })
-		eventually(t, "desk's thread unmarked ("+why+")", func() bool {
-			d := threadOf(getState(t, fs.URL), deskThread)
-			return d != nil && d["hostOffline"] == nil
-		})
 	}
 
 	// (1) A call answered with the deadline's 503.
@@ -186,13 +179,17 @@ func TestV181StalledLocalHostIsOfflineAndTheFrontStaysUp(t *testing.T) {
 			if !ok {
 				t.Fatal("the browser's stream ended during the stall")
 			}
-			// a thread or a patch of it: "hostOffline":"<since>" when it goes, null when it is back
-			if strings.HasPrefix(fr, "thread") && strings.Contains(fr, deskThread) {
-				switch {
-				case strings.Contains(fr, `"hostOffline":"`):
-					sawOff = true
-				case sawOff && (strings.Contains(fr, `"hostOffline":null`) || !strings.Contains(fr, `"hostOffline"`)):
-					sawOn = true
+			// the hosts frame: desk offline when it goes, online when it is back
+			if data, ok := strings.CutPrefix(fr, "hosts "); ok {
+				var m struct{ Hosts []stallHostRow }
+				json.Unmarshal([]byte(data), &m)
+				for _, h := range m.Hosts {
+					switch {
+					case h.Name == "desk" && !h.Online:
+						sawOff = true
+					case h.Name == "desk" && sawOff:
+						sawOn = true
+					}
 				}
 			}
 		default:

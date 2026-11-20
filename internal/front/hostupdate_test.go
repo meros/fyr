@@ -12,7 +12,7 @@ import (
 // shows on that host's row in hosts[], for Settings → Hosts on every device.
 func TestHostUpdateShowsOnItsRow(t *testing.T) {
 	a, b := newHost(t, "a"), newHost(t, "b")
-	f := startFront(t, Options{Local: "a"}, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	f := startFront(t, Options{}, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	eventually(t, "b online", func() bool { r := hostRow(t, f.URL, "b"); return r != nil && r["online"] == true })
 	eventually(t, "b's update on its row", func() bool {
 		// sent again until the front's stream of b has subscribed

@@ -75,7 +75,7 @@ func ownerFronts(t *testing.T, n *authtest.MeshNode) (cookie string) {
 }
 
 func hostsOnline(n *authtest.MeshNode, cookie string) map[string]bool {
-	r, err := n.Fyrd.Get("/api/state", cookie)
+	r, err := n.Fyrd.Get("/api/front/state", cookie)
 	if err != nil || r.Status != 200 {
 		return nil
 	}
@@ -117,7 +117,7 @@ func TestTwoInstallsOfOneUserPairAndFollowEachOther(t *testing.T) {
 	waitHost(t, a, ca, "b")
 	waitHost(t, b, cb, "a")
 	// a call through a's front reaches b's host over the link
-	if r, err := a.Fyrd.Get("/api/commands?host=b", ca); err != nil || r.Status == 502 || r.Status == 503 {
+	if r, err := a.Fyrd.Get(a.Fyrd.HostPath(ca, "b", "/commands"), ca); err != nil || r.Status == 502 || r.Status == 503 {
 		t.Fatalf("a call through a's front to b: %v %d %s", err, r.Status, r.Body)
 	}
 	r, _ := a.Fyrd.Roster()

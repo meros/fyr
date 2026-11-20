@@ -19,13 +19,10 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,7 +31,6 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/authn"
-	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/stream"
@@ -100,9 +96,6 @@ type Options struct {
 	// CacheDir keeps the last state per host across a restart (V0.54);
 	// empty keeps it in memory only.
 	CacheDir string
-	// Local is the host in this process (role both): its deploy is this
-	// front's own update, shown as the banner (V0.54). Empty: the first host.
-	Local string
 	// Store keeps the owner's settings that span the hosts (V0.121: the
 	// project order); nil keeps none.
 	Store KV
@@ -130,9 +123,7 @@ type Front struct {
 	streams   streams
 	// authTicks counts rule 3's looks at the modes (a test waits for some).
 	authTicks atomic.Int64
-	// oldRouteUses counts calls to the routes without a host prefix (decision 0031 2.8).
-	oldRouteUses atomic.Int64
-	subMu        sync.Mutex
+	subMu     sync.Mutex
 	// links: the hosts followed, copy on write (a found host joins while the
 	// front runs, V0.123); read with all().
 	links atomic.Pointer[[]*link]
@@ -141,24 +132,19 @@ type Front struct {
 	runMu  sync.Mutex
 	runCtx context.Context
 	runWG  *sync.WaitGroup
-	hub    *stream.Hub
-	// hub2 is /api/front/stream: each frame of a host carries host: <id> (decision 0031 2.4).
-	hub2 *stream.Hub
+	// hub is /api/front/stream: each frame of a host carries host: <id> (decision 0031 2.4).
+	hub *stream.Hub
 	// shown: the host of the thread each device last said it shows (the focus's off).
 	shown map[string]*link
 	// client is the web client served and its build (V0.13); a client-only
 	// deploy swaps it (V0.81).
 	client atomic.Pointer[clientBuild]
 
-	mu       sync.Mutex // guards the caches of every link and objs
+	mu       sync.Mutex // guards the caches of every link
 	presence *notify.Presence
 	// noticed: per host and thread, the number of its last change of
 	// attention state, so a waiting push knows it is still the newest.
 	noticed map[string]uint64
-	// objs: the host of an attachment or preview the front has routed by
-	// ?host= or ?thread=, or uploaded (V0.54), so a preview's own files
-	// reach the same host.
-	objs map[string]*link
 	// order is the owner's project order (V0.121); receipts the replies of
 	// the front's own commands by commandId.
 	order    []string
@@ -194,8 +180,6 @@ type link struct {
 	probing atomic.Bool
 
 	raw      map[string]map[string]any // the host's thread DTOs, host revs
-	pub      map[string]map[string]any // what the browser gets: stamped, front revs
-	known    map[string]bool           // thread ids learned from command replies
 	projects []map[string]any
 	env      map[string]any // the rest of the host's state: actions, profiles, deploy, user, host
 	// reported is the name the host reports (env["host"]), kept apart so
@@ -230,7 +214,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 	if opt.NotifyDelay <= 0 {
 		opt.NotifyDelay = notify.Delay
 	}
-	f := &Front{opt: opt, hub: stream.NewHub(), hub2: stream.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
+	f := &Front{opt: opt, hub: stream.NewHub(), presence: &notify.Presence{}}
 	c := &clientBuild{build: opt.BuildID, web: opt.Web, h: http.NotFoundHandler()}
 	if opt.Web != nil {
 		c.h = webClient(opt.Web)
@@ -323,7 +307,7 @@ func (f *Front) newLink(h HostConfig) *link {
 	selfClient := *client
 	selfClient.Transport = actorTransport{rt: lt, self: self}
 	l := &link{cfg: h, base: u, lt: lt, client: &selfClient, raw: map[string]map[string]any{},
-		pub: map[string]map[string]any{}, known: map[string]bool{}, settings: map[string]settingsRead{}}
+		settings: map[string]settingsRead{}}
 	l.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(l.base)
@@ -399,15 +383,6 @@ func (f *Front) Run(ctx context.Context) {
 	f.runMu.Unlock()
 	wg.Wait()
 	f.save(time.Now(), true) // the last state, whatever the gap
-}
-
-// isLocal: this link's deploy is the front's own update.
-func (f *Front) isLocal(l *link) bool {
-	if f.opt.Local != "" {
-		return l.name() == f.opt.Local
-	}
-	ls := f.all()
-	return len(ls) > 0 && ls[0] == l
 }
 
 // name is the configured name, else the name the host reports.
@@ -611,11 +586,6 @@ func (f *Front) load(l *link, st map[string]any) {
 			f.noticeLocked(l, old, m)
 		}
 	}
-	for id := range l.pub {
-		if raw[id] == nil {
-			delete(l.pub, id) // gone from the host
-		}
-	}
 	l.raw = raw
 	l.dirty = true
 	l.projects = nil
@@ -629,9 +599,6 @@ func (f *Front) load(l *link, st map[string]any) {
 		f.opt.Logf("front: host %s online (%d threads)", l.name(), len(raw))
 	}
 	l.online, l.since, l.err = true, time.Now(), ""
-	for id := range raw {
-		f.publishLocked(l, id)
-	}
 	f.catchUpLocked(l)      // V0.132
 	f.catchUpMarksLocked(l) // V0.171
 	f.syncLinksLocked()     // decision 0034
@@ -689,8 +656,8 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 				}
 			}
 			l.projects, l.dirty = kept, true
+			f.publishFrameLocked(l, "project", data)
 			f.mu.Unlock()
-			f.hub.Publish("project", data)
 			return
 		}
 		sp := f.stampProject(l, p)
@@ -705,10 +672,9 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		}
 		l.dirty = true
 		f.syncLinksLocked() // decision 0034
+		// The host's own project; the frame names its host by id.
+		f.publishFrameLocked(l, "project", data)
 		f.mu.Unlock()
-		if b, err := json.Marshal(sp); err == nil {
-			f.hub.Publish("project", b)
-		}
 	case "hostMarks": // V0.171: the host keeps newer host marks
 		if d, err := decode(data); err == nil {
 			f.mu.Lock()
@@ -742,38 +708,30 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 			f.mu.Unlock()
 		}
 	case "deploy":
-		// V0.54: a deploy is per host (V0.24's drain runs on the host). Only
-		// the local host's is this front's own update and its banner; another
-		// host's shows on that host's row (hosts[].deploy).
+		// V0.54: a deploy is per host (V0.24's drain runs on the host). Every
+		// host's goes out with its id; the client's banner is the one of the
+		// host the front runs in (decision 0031 2.6).
 		if d, err := decode(data); err == nil {
 			f.mu.Lock()
 			l.env["deploy"] = d
 			l.dirty = true
 			f.mu.Unlock()
 		}
-		if f.isLocal(l) {
-			f.hub.Publish(ev, data)
-		}
+		f.publishFrame(l, ev, data)
 	case "stall":
 		// V0.147: every host's stall shows, named by its host.
 		if d, err := decode(data); err == nil {
 			f.mu.Lock()
 			l.env["stall"] = d
 			l.dirty = true
-			name := l.name()
+			f.publishFrameLocked(l, ev, data) // named by its host's id
 			f.mu.Unlock()
-			m := maps.Clone(d)
-			m["host"] = name
-			if b, err := json.Marshal(m); err == nil {
-				f.hub.Publish(ev, b)
-			}
 			// V0.181: a host that reports a stall and then does not answer
 			// is offline until it does.
 			what, _ := d["what"].(string)
 			f.suspect(l, "the host reported a stall: "+what)
 		}
 	default: // event and anything newer: the client ignores what it does not know
-		f.hub.Publish(ev, data)
 		f.publishFrame(l, ev, data)
 	}
 }
@@ -792,60 +750,9 @@ func (f *Front) take(l *link, m map[string]any) {
 	}
 	f.noticeLocked(l, old, m)
 	l.raw[id] = m
-	delete(l.known, id)
-	f.publishLocked(l, id)
 	if b, err := json.Marshal(m); err == nil { // the host's own thread, whole
 		f.publishFrameLocked(l, "thread", b)
 	}
-}
-
-// publishLocked stamps a thread with its host (and hostOffline while the
-// host is unreachable) and sends it to the browsers when it changed. The rev
-// is the host's, raised past the last published one when only the stamp
-// changed, so the client's keep-the-higher rule and ?since= hold (V0.51).
-func (f *Front) publishLocked(l *link, id string) {
-	raw := l.raw[id]
-	if raw == nil {
-		return
-	}
-	doc := make(map[string]any, len(raw)+2)
-	for k, v := range raw {
-		doc[k] = v
-	}
-	doc["host"] = l.name()
-	if !l.online {
-		doc["hostOffline"] = l.since.UTC().Format(time.RFC3339)
-	}
-	prev := l.pub[id]
-	if prev != nil && sameExceptRev(prev, doc) {
-		return
-	}
-	rev := revOf(raw)
-	if prev != nil && revOf(prev)+1 > rev {
-		rev = revOf(prev) + 1
-	}
-	doc["rev"] = json.Number(strconv.FormatInt(rev, 10))
-	l.pub[id] = doc
-	l.dirty = true
-	if b, err := json.Marshal(doc); err == nil {
-		f.hub.Publish("thread", b)
-	}
-}
-
-func sameExceptRev(a, b map[string]any) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, av := range a {
-		if k == "rev" {
-			continue
-		}
-		bv, ok := b[k]
-		if !ok || !reflect.DeepEqual(av, bv) {
-			return false
-		}
-	}
-	return true
 }
 
 // setOffline marks a host unreachable: its threads stay, marked read-only.
@@ -866,15 +773,13 @@ func (f *Front) setOffline(l *link, err error) {
 	if err != nil && !errors.Is(err, io.EOF) {
 		l.err = err.Error()
 	}
-	for id := range l.raw {
-		f.publishLocked(l, id)
-	}
-	f.publishHostsLocked()
+	f.publishHostsLocked() // the client reads "offline, read-only" from hosts[]
 }
 
-// Handler serves the browser API (unchanged, plus host stamps) and the client.
+// Handler serves the browser API (/api/h/<id>/… and /api/front/…, decision
+// 0031) and the client.
 func (f *Front) Handler() http.Handler {
-	inner := f.browserRules(f.withAuth(f.withDeprecation(f.mux())))
+	inner := f.browserRules(f.withAuth(f.mux()))
 	return refuseActor(f.refuseTailscale(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// the owner's login may arrive after the start (a tagged install's, by sync)
 		httpguard.Browser(f.ownerLogin(), inner).ServeHTTP(w, r)
@@ -897,23 +802,18 @@ func (f *Front) serveStream(hub *stream.Hub) http.HandlerFunc {
 	}
 }
 
-// mux is the browser API's routes.
+// mux is the browser API's routes: a host's calls by its install id in the
+// path, the front's own under /api/front/, and nothing else under /api/
+// (decision 0031 2.8, V0.old-routes-end): there is no default host.
 func (f *Front) mux() *routeMux {
 	mux := &routeMux{ServeMux: http.NewServeMux()}
-	mux.HandleFunc("GET /api/state", f.state)
-	mux.HandleFunc("GET /api/stream", f.serveStream(f.hub))
-	mux.HandleFunc("GET /api/front/stream", f.serveStream(f.hub2))
+	mux.HandleFunc("GET /api/front/stream", f.serveStream(f.hub))
 	mux.HandleFunc("GET /api/front/state", f.frontState)
 	mux.HandleFunc("POST /api/front/command", f.frontCommandRoute)
+	// V0.54, V0.85: device data lives on the front: presence (the shown
+	// thread's host raises its weight) and push.
 	mux.HandleFunc("POST /api/front/presence", f.presenceRoute2)
 	mux.HandleFunc(hostPrefix+"{id}/{rest...}", f.hostRoute) // decision 0031: the one handler of a host's calls
-	mux.HandleFunc("GET /api/threads/{id}", f.thread)
-	mux.HandleFunc("/api/threads/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
-		f.forward(principalOf(r), w, r, f.owner(r.PathValue("id")))
-	})
-	mux.HandleFunc("POST /api/command", f.command)
-	// V0.54: device data lives on the front: presence and push.
-	presenceRoute(mux, f.presence, f.focus) // V0.85: the shown thread's host raises its weight
 	if f.opt.Push != nil {
 		pushRoutes(mux, f.opt.Push, func(r *http.Request, endpoint string) {
 			if p, ok := signedIn(r); ok { // a revoke drops what this device's session subscribed
@@ -923,31 +823,7 @@ func (f *Front) mux() *routeMux {
 	}
 	f.authAPI(mux) // Settings → Devices (decision 0030 3.4)
 	f.peerAPI(mux) // Settings → Hosts: the roster, the invite (3.6)
-	mux.HandleFunc("POST /api/attachments", f.upload)
-	mux.HandleFunc("GET /api/attachments/{id}", f.lookup)
-	mux.HandleFunc("GET /api/previews/{id}", f.lookup)
-	mux.HandleFunc("GET /api/previews/{id}/{path...}", f.lookup)
-	// V0.116: a project's icon lives on the project's host.
-	mux.HandleFunc("/api/projects/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
-		l := f.projectOwner(r.PathValue("id"))
-		if l == nil {
-			http.NotFound(w, r)
-			return
-		}
-		f.forward(principalOf(r), w, r, l)
-	})
-	mux.HandleFunc("GET /api/quota", f.quota)
-	mux.HandleFunc("GET /api/load", f.hostLoad)
-	mux.HandleFunc("GET /api/profiles", f.profiles)
-	for _, p := range settingsPaths { // V0.127: a host's settings, also while it is offline
-		mux.HandleFunc("GET "+p, f.settingsRead)
-	}
-	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		if f.badHost(w, r) {
-			return
-		}
-		f.forward(principalOf(r), w, r, f.byName(r.URL.Query().Get("host")))
-	})
+	mux.HandleFunc("/api/", notAHostRoute)
 	mux.HandleFunc("/mcp", http.NotFound) // agents talk to their host
 	if f.opt.WellKnown != nil {           // V0.123: who this install is, for the pairing
 		mux.Handle("GET /.well-known/fyr", peer.WellKnownHandler(f.opt.WellKnown))
@@ -958,461 +834,11 @@ func (f *Front) mux() *routeMux {
 	return mux
 }
 
-// byName is the host with that name; "" is the first host in the owner's
-// order (V0.132). A name the
-// front does not follow is nil (V0.127): a call meant for one host never
-// goes to another.
-func (f *Front) byName(name string) *link {
-	if name != "" {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		for _, l := range f.all() {
-			if l.name() == name {
-				return l
-			}
-		}
-		return nil
-	}
-	f.mu.Lock()
-	ls := f.orderedLocked()
-	f.mu.Unlock()
-	if len(ls) == 0 {
-		return nil
-	}
-	return ls[0]
-}
-
-// owner is the host that runs a thread (the id-to-host map), else the first.
-func (f *Front) owner(id string) *link {
-	f.mu.Lock()
-	for _, l := range f.all() {
-		if l.raw[id] != nil || l.known[id] {
-			f.mu.Unlock()
-			return l
-		}
-	}
-	f.mu.Unlock()
-	return f.byName("")
-}
-
-func (f *Front) projectOwner(id string) *link {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, l := range f.all() {
-		for _, p := range l.projects {
-			if p["id"] == id {
-				return l
-			}
-		}
-	}
-	return nil
-}
-
-// noHost refuses a call that names a host this front does not follow (V0.127).
-func noHost(w http.ResponseWriter, name string) {
-	api.WriteJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": fmt.Sprintf("this front follows no host %s", name)})
-}
-
-// badHost refuses a call whose ?host= names a host the front does not
-// follow; true when it did.
-func (f *Front) badHost(w http.ResponseWriter, r *http.Request) bool {
-	if h := r.URL.Query().Get("host"); h != "" && f.byName(h) == nil {
-		noHost(w, h)
-		return true
-	}
-	return false
-}
-
-// unavailable answers for a host that cannot take the call now.
-func (f *Front) unavailable(w http.ResponseWriter, l *link) bool {
-	if l == nil {
-		api.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "this front has no hosts"})
-		return true
-	}
-	f.mu.Lock()
-	on, since, name := l.online, l.since, l.name()
-	f.mu.Unlock()
-	if on {
-		return false
-	}
-	api.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false,
-		"error": fmt.Sprintf("%s is offline since %s; its threads are read-only", name, since.Local().Format("15:04"))})
-	return true
-}
-
-// forward sends the browser's request to a host as p (decision 0030 3.3): there
-// is no form without a principal. The proxy takes it from the request's
-// context.
-func (f *Front) forward(p authn.Principal, w http.ResponseWriter, r *http.Request, l *link) {
-	if f.unavailable(w, l) {
-		return
-	}
-	l.proxy.ServeHTTP(w, r.WithContext(authn.With(r.Context(), p)))
-}
-
-// state merges the hosts' states. The records are per host and stamped;
-// the rest (V0.54): actions are the same everywhere (the first host's);
-// profiles are per host (0015), listed per host in hosts[].profiles and
-// merged by id at the top (the first host's wins), so a thread on any host
-// finds its profile; deploy is per host in hosts[].deploy, and the top-level
-// deploy is the local host's (this front's own update).
-func (f *Front) state(w http.ResponseWriter, r *http.Request) {
-	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
-	f.mu.Lock()
-	st := api.State[map[string]any, map[string]any, any]{Now: time.Now().UTC(), User: core.Owner, BuildID: f.client.Load().build, Host: f.opt.Name, HostID: f.opt.ID,
-		Threads: []map[string]any{}, Projects: []map[string]any{}, Profiles: []any{}, Hosts: []api.Host{}, Partial: since > 0}
-	seenProfile := map[any]bool{}
-	var actions any
-	for _, l := range f.orderedLocked() { // V0.132: hosts[] in the owner's order
-		for _, d := range l.pub {
-			if since <= 0 || revOf(d) > since {
-				st.Threads = append(st.Threads, d)
-			}
-		}
-		st.Projects = append(st.Projects, l.projects...)
-		h := f.hostLocked(l)
-		if ps, ok := l.env["profiles"].([]any); ok {
-			for _, p := range ps {
-				pm, _ := p.(map[string]any)
-				if pm == nil || seenProfile[pm["id"]] {
-					continue
-				}
-				seenProfile[pm["id"]] = true
-				st.Profiles = append(st.Profiles, p)
-			}
-		}
-		if d := l.env["deploy"]; d != nil && f.isLocal(l) {
-			st.Deploy = d
-		}
-		if m, ok := l.env["stall"].(map[string]any); ok { // V0.147
-			c := maps.Clone(m)
-			c["host"] = l.name()
-			st.Stalls = append(st.Stalls, c)
-		}
-		if actions == nil && l.env["actions"] != nil {
-			actions = l.env["actions"]
-		}
-		st.Hosts = append(st.Hosts, h)
-	}
-	st.Actions = actionsOf(actions)
-	st.ProjectOrder = f.order
-	if ms := f.shownMarksLocked(); len(ms) > 0 { // V0.171: by host install id
-		st.HostMarks = ms
-	}
-	b, err := json.Marshal(st)
-	f.mu.Unlock()
-	if err != nil {
-		api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
-		return
-	}
-	api.WriteJSON(w, 200, json.RawMessage(b))
-}
-
-// actionsOf reads the action list a host sent (decoded JSON).
-func actionsOf(v any) []api.Action {
-	out := []api.Action{}
-	if b, err := json.Marshal(v); err == nil {
-		json.Unmarshal(b, &out)
-	}
-	if out == nil {
-		out = []api.Action{}
-	}
-	return out
-}
-
-func (f *Front) thread(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	f.mu.Lock()
-	var b []byte
-	for _, l := range f.all() {
-		if d := l.pub[id]; d != nil {
-			b, _ = json.Marshal(d)
-		}
-	}
-	f.mu.Unlock()
-	if b == nil {
-		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
-		return
-	}
-	api.WriteJSON(w, 200, json.RawMessage(b))
-}
-
-// command sends a command to the host that owns its record (V0.51). The
-// client's commandId goes along unchanged, so a retry stays exactly once.
-func (f *Front) command(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<20))
-	if err != nil {
-		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad body: " + err.Error()})
-		return
-	}
-	var c struct {
-		CommandID string         `json:"commandId"`
-		Action    string         `json:"action"`
-		ThreadID  string         `json:"threadId"`
-		Args      map[string]any `json:"args"`
-	}
-	if err := json.Unmarshal(body, &c); err != nil {
-		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
-		return
-	}
-	if c.Action == KindProjectOrder { // V0.121: the front's own, no host's
-		f.orderCommand(w, c.CommandID, c.Args)
-		return
-	}
-	if c.Action == KindHostMark { // V0.171: the owner's, written to every host
-		f.hostMarkCommand(w, c.CommandID, c.Args)
-		return
-	}
-	if c.Action == KindHostOrder { // V0.132: the owner's, written to every host
-		f.hostOrderCommand(w, c.CommandID, c.Args)
-		return
-	}
-	if c.Action == KindHostID { // V0.124: the front's own, no host's
-		f.hostIDCommand(w, c.CommandID, c.Args)
-		return
-	}
-	var l *link
-	host, _ := c.Args["host"].(string)
-	pid, _ := c.Args["id"].(string)
-	if !strings.HasPrefix(c.Action, "project.") {
-		pid, _ = c.Args["projectId"].(string) // thread.create in a project (V0.54)
-	}
-	switch {
-	case c.ThreadID != "":
-		l = f.owner(c.ThreadID)
-	case host != "":
-		if l = f.byName(host); l == nil {
-			noHost(w, host)
-			return
-		}
-	case pid != "":
-		if l = f.projectOwner(pid); l == nil {
-			l = f.byName("")
-		}
-	default:
-		l = f.byName("")
-	}
-	if f.unavailable(w, l) {
-		return
-	}
-	req, _ := http.NewRequestWithContext(r.Context(), "POST", l.base.String()+"/api/command", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Fyr", "1")
-	setActor(req, principalOf(r), f.opt.ID, originOf(r))
-	resp, err := l.client.Do(req)
-	if err != nil {
-		api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-	out, _ := io.ReadAll(resp.Body)
-	var rep struct {
-		OK       bool   `json:"ok"`
-		ThreadID string `json:"threadId"`
-	}
-	if json.Unmarshal(out, &rep) == nil && rep.OK && rep.ThreadID != "" {
-		f.mu.Lock()
-		if l.raw[rep.ThreadID] == nil {
-			l.known[rep.ThreadID] = true // until the stream brings it
-		}
-		f.mu.Unlock()
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	w.Write(out)
-}
-
-// target is the host a call names: ?thread= (the thread's host) or ?host=;
-// nil when it names none.
-func (f *Front) target(r *http.Request) *link {
-	q := r.URL.Query()
-	if id := q.Get("thread"); id != "" {
-		return f.owner(id)
-	}
-	if h := q.Get("host"); h != "" {
-		return f.byName(h)
-	}
-	return nil
-}
-
-// remember notes the host of an attachment or preview id.
-func (f *Front) remember(id string, l *link) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.objs) > 10000 {
-		clear(f.objs)
-	}
-	f.objs[id] = l
-}
-
-// upload stores a file on the host the client names (the thread's, or the
-// host a new thread will start on), else the first host (V0.54).
-func (f *Front) upload(w http.ResponseWriter, r *http.Request) {
-	if f.badHost(w, r) {
-		return
-	}
-	l := f.target(r)
-	if l == nil {
-		l = f.byName("")
-	}
-	if f.unavailable(w, l) {
-		return
-	}
-	rec := &recorder{ResponseWriter: w}
-	l.proxy.ServeHTTP(rec, r.WithContext(authn.With(r.Context(), principalOf(r))))
-	var m struct {
-		ID string `json:"id"`
-	}
-	if rec.status < 300 && json.Unmarshal(rec.body.Bytes(), &m) == nil && m.ID != "" {
-		f.remember(m.ID, l)
-	}
-}
-
-// recorder keeps a copy of a small reply (an upload's id) while passing it on.
-type recorder struct {
-	http.ResponseWriter
-	status int
-	body   bytes.Buffer
-}
-
-func (r *recorder) WriteHeader(code int) {
-	r.status = code
-	r.ResponseWriter.WriteHeader(code)
-}
-
-func (r *recorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = 200
-	}
-	if r.body.Len() < 64<<10 {
-		r.body.Write(b)
-	}
-	return r.ResponseWriter.Write(b)
-}
-
-// lookup serves an attachment or preview from its host (V0.54): the one the
-// client names with ?thread= or ?host=, else the one the front learned for
-// that id (an upload, or the preview page whose files these are), else the
-// first host. No host is tried in turn.
-func (f *Front) lookup(w http.ResponseWriter, r *http.Request) {
-	if f.badHost(w, r) {
-		return
-	}
-	id := r.PathValue("id")
-	l := f.target(r)
-	if l != nil {
-		f.remember(id, l)
-	} else {
-		f.mu.Lock()
-		l = f.objs[id]
-		f.mu.Unlock()
-	}
-	if l == nil {
-		l = f.byName("")
-	}
-	f.forward(principalOf(r), w, r, l)
-}
-
-// quota merges the provider quota of every online host (V0.54): profiles
-// are per host (0015); a profile id on two hosts shows the first's. With
-// ?host= it is that host's only.
-func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
-	if f.badHost(w, r) {
-		return
-	}
-	if l := f.target(r); l != nil {
-		f.forward(principalOf(r), w, r, l)
-		return
-	}
-	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile", true))
-}
-
-// hostLoad joins the load of every online host (V0.80), one entry per host.
-func (f *Front) hostLoad(w http.ResponseWriter, r *http.Request) {
-	if f.badHost(w, r) {
-		return
-	}
-	if l := f.target(r); l != nil {
-		f.forward(principalOf(r), w, r, l)
-		return
-	}
-	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/load", "host", false))
-}
-
-// profiles asks each online host for its profiles (#42), merged by id with
-// the first host's winning, as in the state.
-func (f *Front) profiles(w http.ResponseWriter, r *http.Request) {
-	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/profiles", "id", false))
-}
-
-// gather GETs a list from each online host and joins them in host order,
-// keeping the first item for each value of key. perHost (V0.127, the quota): each item is stamped with its
-// host and kept once per host, so the same provider id on two hosts is two
-// items.
-func (f *Front) gather(ctx context.Context, path, key string, perHost bool) []map[string]any {
-	var on []*link
-	f.mu.Lock()
-	for _, l := range f.all() {
-		if l.online {
-			on = append(on, l)
-		}
-	}
-	f.mu.Unlock()
-	parts := make([][]map[string]any, len(on))
-	var wg sync.WaitGroup
-	for i, l := range on {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var q []map[string]any
-			if err := f.get(ctx, l, path, &q); err == nil {
-				if perHost {
-					for _, x := range q {
-						x["host"] = l.name()
-					}
-				}
-				parts[i] = q
-			}
-		}()
-	}
-	wg.Wait()
-	out := []map[string]any{}
-	seen := map[any]bool{}
-	for _, p := range parts {
-		for _, q := range p {
-			k := q[key]
-			if perHost {
-				k = fmt.Sprint(q["host"], "\x00", q[key])
-			}
-			if !seen[k] {
-				seen[k] = true
-				out = append(out, q)
-			}
-		}
-	}
-	return out
-}
-
 // focusCall is one focus message: the thread of a host, on or off.
 type focusCall struct {
 	l   *link
 	id  string
 	off bool
-}
-
-// focus forwards a presence beat to the hosts it concerns (V0.85): off for
-// the thread the device showed before, on for the one it shows now. It runs
-// in the background; the beat's answer does not wait for a host. The old
-// route finds the host by the thread's id; /api/front/presence names it.
-func (f *Front) focus(device, prev, thread string) {
-	var calls []focusCall
-	if prev != "" && prev != thread {
-		calls = append(calls, focusCall{f.owner(prev), prev, true})
-	}
-	if thread != "" {
-		calls = append(calls, focusCall{f.owner(thread), thread, false})
-	}
-	f.sendFocus(device, calls)
 }
 
 func (f *Front) sendFocus(device string, calls []focusCall) {
@@ -1444,6 +870,3 @@ func (f *Front) sendFocus(device string, calls []focusCall) {
 		}
 	}()
 }
-
-// OldRouteUses is how many calls came to a route outside /api/h/ and /api/front/.
-func (f *Front) OldRouteUses() int64 { return f.oldRouteUses.Load() }

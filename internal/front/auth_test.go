@@ -95,7 +95,7 @@ func TestV130ServeSocketMintsATailnetSession(t *testing.T) {
 	f, st := authFront(t)
 	h := httpguard.ViaServe(f.Handler())
 	req := func(c *http.Cookie) *http.Request {
-		r := httptest.NewRequest("GET", "http://desk.tail.ts.net/api/state", nil)
+		r := httptest.NewRequest("GET", "http://desk.tail.ts.net/api/front/state", nil)
 		r.Host = "desk.tail.ts.net"
 		r.Header.Set("Tailscale-User-Login", "me@example.com")
 		r.Header.Set("User-Agent", "Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/140.0 Mobile")
@@ -142,7 +142,7 @@ func TestServeSocketMakesOneDevicePerBrowser(t *testing.T) {
 	}
 	// Without tailscaled (this front) the node is unknown: each such request
 	// still gets its own session, as before.
-	if resp := get("/api/state", "Go-http-client/2.0"); resp.StatusCode != 200 || sessionCookie(resp) == nil {
+	if resp := get("/api/front/state", "Go-http-client/2.0"); resp.StatusCode != 200 || sessionCookie(resp) == nil {
 		t.Fatalf("an API request through Serve: %d", resp.StatusCode)
 	}
 }
@@ -151,7 +151,7 @@ func TestServeSocketMakesOneDevicePerBrowser(t *testing.T) {
 // mode the request is still served (and logged).
 func TestV130HeaderOverTCPMintsNothing(t *testing.T) {
 	f, st := authFront(t)
-	r := httptest.NewRequest("GET", "http://desk.tail.ts.net/api/state", nil)
+	r := httptest.NewRequest("GET", "http://desk.tail.ts.net/api/front/state", nil)
 	r.Host = "desk.tail.ts.net"
 	r.Header.Set("Tailscale-User-Login", "me@example.com")
 	resp := serveOne(f.Handler(), r)
@@ -163,7 +163,7 @@ func TestV130HeaderOverTCPMintsNothing(t *testing.T) {
 // SPEC V0.130 (4): fyr.localhost is a loopback name for the guard.
 func TestV130FyrLocalhostPassesTheGuard(t *testing.T) {
 	f, _ := authFront(t)
-	resp := serveOne(f.Handler(), httptest.NewRequest("GET", "http://fyr.localhost:7777/api/state", nil))
+	resp := serveOne(f.Handler(), httptest.NewRequest("GET", "http://fyr.localhost:7777/api/front/state", nil))
 	if resp.StatusCode != 200 {
 		t.Fatalf("fyr.localhost: %d", resp.StatusCode)
 	}

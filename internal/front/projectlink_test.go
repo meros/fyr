@@ -1,9 +1,7 @@
 package front
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -28,19 +26,15 @@ func projectOn(t *testing.T, front string, h *settingsHost, id, name string) str
 	return ref
 }
 
-// frontSees reports whether the front's copy of the project has this link.
+// frontSees reports whether the project, read through the front under its
+// host's prefix, has this link.
 func frontSees(t *testing.T, front, ref, link string) bool {
 	t.Helper()
-	resp, err := http.Get(front + "/api/state")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
+	host, id, _ := strings.Cut(ref, "/")
 	var st struct {
 		Projects []struct{ ID, Link string }
 	}
-	json.NewDecoder(resp.Body).Decode(&st)
-	_, id, _ := strings.Cut(ref, "/")
+	getDoc(t, front+"/api/h/"+host+"/state", &st)
 	for _, p := range st.Projects {
 		if p.ID == id {
 			return p.Link == link

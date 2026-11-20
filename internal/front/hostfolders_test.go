@@ -31,9 +31,10 @@ func TestFrontCreatesOnTheChosenHost(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
+	bu := hostURL(t, fs.URL, "b")
 
 	// The picker reads b's home, not a's.
-	_, _, body := read(t, fs.URL+"/api/fs/list?path="+b.home+"&host=b")
+	_, _, body := read(t, bu+"/fs/list?path="+b.home)
 	if !strings.Contains(body, "only-on-b") || strings.Contains(body, "only-on-a") {
 		t.Fatalf("b's folders: %s", body)
 	}
@@ -41,14 +42,14 @@ func TestFrontCreatesOnTheChosenHost(t *testing.T) {
 		t.Fatalf("no host read b's folders: %s", body)
 	}
 	// New folder on b.
-	code, out := postFS(t, fs.URL+"/api/fs/mkdir?host=b", `{"parent":"`+b.home+`","name":"lab-notes"}`)
+	code, out := postFS(t, bu+"/fs/mkdir", `{"parent":"`+b.home+`","name":"lab-notes"}`)
 	if code != 200 || !strings.Contains(out, filepath.Join(b.home, "lab-notes")) {
 		t.Fatalf("mkdir on b: %d %s", code, out)
 	}
 
 	// New project on b, in that folder.
 	folder := filepath.Join(b.home, "lab-notes")
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"np","action":"project.create","args":{"host":"b","name":"Lab notes","folder":"`+folder+`"}}`)
+	code, rep := post(t, bu+"/command", `{"commandId":"np","action":"project.create","args":{"name":"Lab notes","folder":"`+folder+`"}}`)
 	if code != 200 {
 		t.Fatalf("project.create on b: %d %v", code, rep)
 	}
@@ -62,13 +63,13 @@ func TestFrontCreatesOnTheChosenHost(t *testing.T) {
 		return pid != ""
 	})
 
-	// A thread in that project goes to b by the project alone; one in a folder of b names b.
-	code, rep = post(t, fs.URL+"/api/command", `{"commandId":"t1","action":"thread.create","args":{"projectId":"`+pid+`","cwd":"`+folder+`","text":"in the project"}}`)
+	// A thread in that project and one in a folder of b, both on b's prefix.
+	code, rep = post(t, bu+"/command", `{"commandId":"t1","action":"thread.create","args":{"projectId":"`+pid+`","cwd":"`+folder+`","text":"in the project"}}`)
 	t1, _ := rep["threadId"].(string)
 	if code != 200 || t1 == "" {
 		t.Fatalf("thread in b's project: %d %v", code, rep)
 	}
-	code, rep = post(t, fs.URL+"/api/command", `{"commandId":"t2","action":"thread.create","args":{"host":"b","cwd":"`+filepath.Join(b.home, "only-on-b")+`","text":"no project"}}`)
+	code, rep = post(t, bu+"/command", `{"commandId":"t2","action":"thread.create","args":{"cwd":"`+filepath.Join(b.home, "only-on-b")+`","text":"no project"}}`)
 	t2, _ := rep["threadId"].(string)
 	if code != 200 || t2 == "" {
 		t.Fatalf("thread in a folder of b: %d %v", code, rep)
@@ -94,15 +95,16 @@ func TestFrontFoldersOfAnOfflineHost(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
+	bu := hostURL(t, fs.URL, "b")
 	b.setDown(true)
 	eventually(t, "b offline", func() bool { return getState(t, fs.URL).Hosts[1]["online"] == false })
-	code, _, body := read(t, fs.URL+"/api/fs/list?path="+a.home+"&host=b")
+	code, _, body := read(t, bu+"/fs/list?path="+a.home)
 	var e struct{ Error string }
 	json.Unmarshal([]byte(body), &e)
 	if code != http.StatusServiceUnavailable || !strings.Contains(e.Error, "b is offline") || strings.Contains(body, "only-on-a") {
 		t.Fatalf("folders of offline b: %d %s", code, body)
 	}
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"np","action":"project.create","args":{"host":"b","name":"X","folder":"`+a.home+`"}}`)
+	code, rep := post(t, bu+"/command", `{"commandId":"np","action":"project.create","args":{"name":"X","folder":"`+a.home+`"}}`)
 	if code != http.StatusServiceUnavailable || len(a.eng.Projects()) != 0 {
 		t.Fatalf("project.create on offline b: %d %v", code, rep)
 	}

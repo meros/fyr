@@ -79,16 +79,9 @@ test("V0.row-group-code: a Needs you row puts the host's word first and its subj
   assert.equal(rowState(blocked("Run: install the hook")), "Run: install the hook");
 });
 
-// Remove with the legacy fallback in rows.ts (#372).
-test("a Needs you reason from a host before V0.row-group-code puts its short word first and the change on the line", () => {
-  const ch = [{ id: "c", title: "Placement rows load in one read" }] as never;
-  const t = thread("b", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Placement rows load in one read: Merge" }, changes: ch });
-  assert.equal(rowState(t), "Merge");
-  assert.ok(rowMeta(t).startsWith("Placement rows load in one read"));
+test("V0.old-routes-end: a Needs you reason without the host's word (a host before V0.row-group-code) is shown as it is", () => {
   const run = thread("r", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Run: install the hook" } });
-  assert.equal(rowState(run), "Run");
-  const other = thread("o", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Waiting: for CI" } });
-  assert.equal(rowState(other), "Waiting: for CI");
+  assert.equal(rowState(run), "Run: install the hook");
 });
 
 test("a long project name is cut in the text, short ones stay whole", () => {

@@ -30,7 +30,7 @@ func TestSetClientSwapsWithoutRestart(t *testing.T) {
 	if b := get("/"); b != "v1" {
 		t.Fatalf("index %q", b)
 	}
-	resp, err := http.Get(hs.URL + "/api/stream")
+	resp, err := http.Get(hs.URL + "/api/front/stream")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,10 +57,10 @@ func TestSetClientSwapsWithoutRestart(t *testing.T) {
 	if b := get("/"); b != "v2" {
 		t.Fatalf("index after the switch %q", b)
 	}
-	if b := get("/api/state"); !strings.Contains(b, `"buildId":"b2"`) {
+	if b := get("/api/front/state"); !strings.Contains(b, `"buildId":"b2"`) {
 		t.Fatalf("state %s", b)
 	}
-	r2, err := http.Get(hs.URL + "/api/stream")
+	r2, err := http.Get(hs.URL + "/api/front/stream")
 	if err != nil {
 		t.Fatal(err)
 	}

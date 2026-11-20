@@ -68,7 +68,6 @@ export function decodeState(raw: unknown, host: HostId): DecodedState {
     ...s,
     now: str(s.now),
     user: str(s.user),
-    host: str(s.host),
     threads: arr(s.threads).map((t) => decodeThread(t, host)).filter((t) => t.id),
     projects: arr(s.projects).map(decodeProject),
     actions: arr(s.actions),

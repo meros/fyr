@@ -4,26 +4,26 @@ import { HOME_LOOK_DEFAULT_MS, HOME_LOOK_MAX_MS, homeLog, homeMoves, homeNeeds, 
 import { homeUrl } from "../src/desk-history.ts";
 import { parseUrl, urlFor } from "../src/nav.ts";
 import type { Change, Offer } from "../src/types.ts";
-import { thread } from "./helpers.ts";
+import { needsThread, thread } from "./helpers.ts";
 
 const at = (m: number) => new Date(Date.UTC(2026, 10, 19, 9, m)).toISOString();
 const merge: Offer = { id: "fyr.merge", label: "Merge", run: "fyr", effect: "pr.merge", by: "observed", digest: "d1" } as Offer;
 const ch = (p: Partial<Change>): Change => ({ id: "c", key: "k", kind: "code", title: "x", phase: "review", phaseBy: "agent", createdAt: at(0), updatedAt: at(0), ...p });
 
 test("V0.status-home: Your move keeps the inbox's groups, Answer before Approve before Unblock, then the newest", () => {
-  const ask = thread("ask", "asking", "needs", { decisions: [{ id: "d", kind: "ask", questions: [{ question: "Which?", options: [] }] }], activityAt: at(1) });
-  const fail = thread("fail", "failed", "needs", { failure: { class: "x", message: "boom" }, activityAt: at(9) });
-  const old = thread("fail-old", "failed", "needs", { failure: { class: "x", message: "boom" }, activityAt: at(2) });
+  const ask = needsThread("ask", "asking", "answer", { decisions: [{ id: "d", kind: "ask", questions: [{ question: "Which?", options: [] }] }], activityAt: at(1) });
+  const fail = needsThread("fail", "failed", "unblock", { failure: { class: "x", message: "boom" }, activityAt: at(9) });
+  const old = needsThread("fail-old", "failed", "unblock", { failure: { class: "x", message: "boom" }, activityAt: at(2) });
   const work = thread("work", "working", "working");
   assert.deepEqual(homeNeeds([fail, work, old, ask, ask]).map((t) => t.id), ["ask", "fail", "fail-old"]);
 });
 
 test("V0.status-home: a thread with one green PR merges from the status screen; the others open the thread", () => {
-  const ready = thread("ready", "blocked", "needs", {
+  const ready = needsThread("ready", "blocked", "approve", {
     changes: [ch({ id: "c1", ready: "Merge", pr: { url: "https://github.com/o/r/pull/7", number: 7, head: "abc1234", state: "OPEN" }, offers: [merge], need: { cause: "ready", head: "abc1234" } })],
   });
-  const ask = thread("ask", "asking", "needs", { decisions: [{ id: "d", kind: "ask", questions: [{ question: "Which?", options: [] }] }] });
-  const broke = thread("broke", "failed", "needs", { failure: { class: "x", message: "boom" } });
+  const ask = needsThread("ask", "asking", "answer", { decisions: [{ id: "d", kind: "ask", questions: [{ question: "Which?", options: [] }] }] });
+  const broke = needsThread("broke", "failed", "unblock", { failure: { class: "x", message: "boom" } });
   const [m1, m2, m3] = homeMoves([ready, ask, broke], []);
   assert.equal(m1.verb, "Merge");
   assert.deepEqual(m1.merge?.args, { on: "c1", action: "fyr.merge", digest: "d1", head: "abc1234" });

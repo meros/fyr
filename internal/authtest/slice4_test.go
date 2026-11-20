@@ -139,7 +139,7 @@ func TestATaggedInstallServesNoTailnetBrowserUntilPaired(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sv.Close()
-	r := status(t, sv.URL, authtest.Request{Path: "/api/state"})
+	r := status(t, sv.URL, authtest.Request{Path: "/api/front/state"})
 	if r.Status != 403 || r.Session() != "" {
 		t.Fatalf("an unpaired tagged install through Serve: %d session %q (want 403 and none)", r.Status, r.Session())
 	}
@@ -149,7 +149,7 @@ func TestATaggedInstallServesNoTailnetBrowserUntilPaired(t *testing.T) {
 	}
 	end := time.Now().Add(30 * time.Second)
 	for {
-		r = status(t, sv.URL, authtest.Request{Path: "/api/state"})
+		r = status(t, sv.URL, authtest.Request{Path: "/api/front/state"})
 		if r.Status == 200 && r.Session() != "" {
 			break
 		}

@@ -2,7 +2,6 @@
 // nothing stops on the host. Unlike the inbox filters (V0.169), which narrow the list for a moment, a hidden record
 // leaves the whole front: inbox, filters, Changes, pickers and this device's notifications. Settings keeps listing it,
 // because that is where it comes back. Pure.
-import { threadHost } from "./filters.ts";
 import type { HostInfo } from "./hosts.ts";
 import { linkProjects, projectOf, projectRecords } from "./projects.ts";
 import type { View } from "./store.ts";
@@ -80,7 +79,7 @@ export function projectIsHidden(p: Project, hidden: Hidden): boolean {
 export function applyHidden(s: View, hidden: Hidden): View {
   if (!hiddenCount(hidden)) return s;
   const keys = hiddenHostKeys(s.hostList, hidden);
-  const threadGone = (t: Thread) => keys.has(threadHost(t)) || (!!t.hostId && keys.has(t.hostId)) || (() => {
+  const threadGone = (t: Thread) => keys.has(t.hostId) || (() => {
     const p = projectOf(t, s.projects);
     return !!p && projectIsHidden(p, hidden);
   })();

@@ -14,10 +14,9 @@ import { hideQuiet, quietLocked, reachable } from "./quiet.ts";
 import { isOpen, sectionOf, type SectionKey } from "./store.ts";
 import type { Project, Thread } from "./types.ts";
 
-/** V0.169: the hosts turned off, remembered per device; it replaces V0.134's one host (`fyr.hostFilter`, dropped).
- *  V0.client-refs: a JSON list of install ids (a name only for a host that reports no id); names migrate once. */
+/** V0.169: the hosts turned off, remembered per device. V0.client-refs: a JSON list of install ids (a name only for a
+ *  host that reports no id). */
 export const HOSTS_OFF_KEY = "fyr.hostsOff";
-export const OLD_HOST_FILTER_KEY = "fyr.hostFilter";
 
 export interface FilterSel {
   /** the hosts turned off; none is the default (every host on, no host filter) */
@@ -86,9 +85,9 @@ export function hostKey(h: Pick<HostInfo, "id" | "name">): string {
   return h.id || h.name;
 }
 
-/** The key of the host a thread runs on (hostKey). */
-export function threadHostKey(t: Pick<Thread, "host" | "hostId">): string {
-  return t.hostId || threadHost(t);
+/** The key of the host a thread runs on (hostKey): its install id, which every thread in the store has (V0.client-per-host). */
+export function threadHostKey(t: Pick<Thread, "hostId">): string {
+  return t.hostId;
 }
 
 function hostOk(t: Thread, off: readonly string[]): boolean {

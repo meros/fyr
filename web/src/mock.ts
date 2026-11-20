@@ -1043,9 +1043,13 @@ function mockTree(extra: string[]): { dirs: Set<string>; repos: Set<string> } {
   return { dirs, repos };
 }
 
+/** The fixture's one state: the hosts' records together, and the front's own host (its name, install id and machine), which
+ *  mock-api.ts splits into one state per host as the real front's hosts send them. */
+export type MockState = StateDTO & { host?: string; hostId?: string; machine?: string };
+
 export interface MockServer {
   buildId: string;
-  state(): StateDTO;
+  state(): MockState;
   subscribe(h: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void }): void;
   command(commandId: string, action: string, threadId: string | undefined, args: Record<string, unknown>): CommandReply;
   events(threadId: string, after: number, limit: number): FyrEvent[];
@@ -1528,7 +1532,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
           { id: "work", name: "Claude (work account)", color: "#2f6fb0", models: ["claude-sonnet-5-5"], defaultModel: "claude-sonnet-5-5" },
         ],
         projects: projects.map(withQuiet),
-      } as StateDTO;
+      } as MockState;
     },
     subscribe(h) {
       sub = h;

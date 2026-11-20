@@ -41,13 +41,13 @@ var steps = []step{
 	// fixture's two cookies, the phone with no cookie and fyr open all still
 	// get in (checks run after the step), and a browser with no session does not.
 	{"slice 2: fyr auth enforce browser", func(t *testing.T, l *authtest.Live) {
-		if r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state"}); err != nil || r.Status != 200 {
+		if r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state"}); err != nil || r.Status != 200 {
 			t.Fatalf("the phone in observe: %v %d", err, r.Status)
 		}
 		if out, err := l.Laptop.Fyr("auth", "enforce"); err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
-		if r, err := l.Laptop.Get("/api/state", ""); err != nil || r.Status != 401 {
+		if r, err := l.Laptop.Get("/api/front/state", ""); err != nil || r.Status != 401 {
 			t.Fatalf("enforce, a browser with no session: %v %d (want 401)", err, r.Status)
 		}
 	}},
@@ -55,7 +55,7 @@ var steps = []step{
 		if out, err := l.Laptop.Fyr("auth", "observe"); err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
-		if r, err := l.Laptop.Get("/api/state", ""); err != nil || r.Status != 200 {
+		if r, err := l.Laptop.Get("/api/front/state", ""); err != nil || r.Status != 200 {
 			t.Fatalf("observe again, a browser with no session: %v %d (want 200)", err, r.Status)
 		}
 	}},
@@ -215,7 +215,7 @@ var steps = []step{
 				break
 			}
 			if time.Now().After(end) {
-				rr, _ := migMac.Fyrd.Get("/api/state", macCookie)
+				rr, _ := migMac.Fyrd.Get("/api/front/state", macCookie)
 				t.Fatalf("the Mac's front does not see the laptop (it cannot dial it): %+v\n%.600s\n%s", ml, rr.Body, migMac.Fyrd.Log())
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -247,7 +247,7 @@ func checks(t *testing.T, l *authtest.Live, n int) {
 	// 1. The fixture's two cookies still get the API on the laptop's loopback
 	//    port (the laptop's browser) ...
 	for name, c := range map[string]string{"local": l.Local, "tailnet": l.Tailnet} {
-		r, err := l.Laptop.Get("/api/state", c)
+		r, err := l.Laptop.Get("/api/front/state", c)
 		if err != nil || r.Status != 200 {
 			t.Errorf("the %s cookie on loopback: %v %d", name, err, r.Status)
 		}
@@ -255,18 +255,18 @@ func checks(t *testing.T, l *authtest.Live, n int) {
 	// ... and through Serve (the phone): a session that is known is not
 	// minted again, which is how the front shows it recognised the cookie.
 	for name, c := range map[string]string{"local": l.Local, "tailnet": l.Tailnet} {
-		r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state", Cookie: c})
+		r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state", Cookie: c})
 		if err != nil || r.Status != 200 || r.Session() != "" {
 			t.Errorf("the %s cookie through Serve: %v %d (minted %q; want 200, a known session)", name, err, r.Status, r.Session())
 		}
 	}
 	// 2. The phone's path with no cookie: the owner's node signs in and the
 	//    session it gets works.
-	r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state"})
+	r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state"})
 	if err != nil || r.Status != 200 || r.Session() == "" {
 		t.Fatalf("the phone through Serve with no cookie: %v %d session %q", err, r.Status, r.Session())
 	}
-	if r2, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state", Cookie: r.Session()}); err != nil || r2.Status != 200 {
+	if r2, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state", Cookie: r.Session()}); err != nil || r2.Status != 200 {
 		t.Errorf("the new phone session: %v %d", err, r2.Status)
 	}
 	// 3. The front still follows its host.
@@ -276,14 +276,14 @@ func checks(t *testing.T, l *authtest.Live, n int) {
 	// 4. `fyr open` over owner.sock mints a session.
 	if session := fyrOpen(t, l); session == "" {
 		t.Error("fyr open minted no session")
-	} else if r, err := l.Laptop.Get("/api/state", session); err != nil || r.Status != 200 {
+	} else if r, err := l.Laptop.Get("/api/front/state", session); err != nil || r.Status != 200 {
 		t.Errorf("the session fyr open minted: %v %d", err, r.Status)
 	}
 	// 4b. From slice 1: what the front sent its host names who acted, and
 	//     carries no browser credential.
 	if n >= 1 {
 		mark := l.Rec.Mark()
-		if _, err := l.Laptop.Get("/api/commands?host=server", l.Local); err != nil { // forwarded to the server host as this device
+		if _, err := l.Laptop.Get(l.Laptop.HostPath(l.Local, "server", "/commands"), l.Local); err != nil { // forwarded to the server host as this device
 			t.Fatalf("a call to the server host: %v", err)
 		}
 		var sawDevice bool

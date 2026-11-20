@@ -5054,7 +5054,8 @@ try {
   const foldedAll = await evaluate(`({ s: ${STATE}, pinned: document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-pinned .m-mv" : "#sec-pinned [data-id]")}).length })`);
   check(foldedAll.s.projects.length < one.projects.length && foldedAll.s.projects.reduce((a, c) => a + c.n, 0) <= foldedAll.pinned, `${ctx}: folding the sections does not take their projects' chips away (${JSON.stringify({ before: one.projects.map((c) => c.name), after: foldedAll.s.projects, pinned: foldedAll.pinned })})`);
   await evaluate(`localStorage.removeItem('fyr.sectionOpen')`); // V0.186: the folds outlive a reload; the rest starts unfolded
-  // 2. Two hosts: the switch, all on, in the owner's order, above the projects. 5: the old key is dropped.
+  // 2. Two hosts: the switch, all on, in the owner's order, above the projects. 5: V0.134's old key filters nothing
+  //    (V0.old-routes-end: it is no longer removed; nothing reads it).
   await go("?mock=rail&hosts=2&hostOrder=host-b,desk", { "fyr.hostFilter": "desk" });
   const two = await evaluate(STATE);
   check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => c.on && Number(c.n) >= 1), `${ctx}: the host switch (${JSON.stringify(two.hosts)})`);
@@ -5063,7 +5064,7 @@ try {
   // V0.170: the segments carry the host's mark (an offline host's with its ring).
   check(two.hosts[0]?.dot === "hmark off:server" && two.hosts[1]?.dot === "hmark:laptop", `${ctx}: the hosts' marks (${JSON.stringify(two.hosts.map((c) => c.dot))})`);
   check(two.order === true && two.fits, `${ctx}: the host row is not above the project row, or a row runs past the edge (${JSON.stringify({ order: two.order, fits: two.fits })})`);
-  check(two.old === null && two.stored === null && two.rows > 2, `${ctx}: V0.134's one-host filter still applies (${JSON.stringify({ old: two.old, stored: two.stored, rows: two.rows })})`);
+  check(two.stored === null && two.rows > 2, `${ctx}: V0.134's one-host filter still applies (${JSON.stringify({ old: two.old, stored: two.stored, rows: two.rows })})`);
   if (phone) check(two.hosts.every((c) => c.h >= 36) && two.projects.every((c) => c.h >= 32), `${ctx}: a host segment under 36 px or a chip under 32 px on the phone`);
   await shot(`host-rows-${phone ? "phone" : "desktop"}.png`);
   // 3. host-b off: its threads go, its projects fall out of row 2, remembered; desk is the last one on.
@@ -5492,9 +5493,8 @@ try {
   const G = `(() => { const g = [...document.querySelectorAll('${phone ? ".m-list" : ".ib .list"} .guest')]; return { n: g.length, text: g[0]?.textContent ?? '', tag: g[0]?.querySelector('.gst')?.textContent ?? null, sel: g[0]?.getAttribute('aria-selected') ?? null, section: g[0]?.closest('[id^="sec-"],[id^="m-sec-"]')?.id ?? null, id: g[0]?.dataset.id ?? null }; })()`;
   const threadReady = phone ? "!!document.querySelector('.m-thread, .qgate')" : "!!document.querySelector('.th .tt, .qgate')";
   const project = "F7QK-2M9X-AB34-CD56/p_web";
-  // V0.client-refs (decision 0031 4.2): a device that kept the host turned off by its name, before fyr.storage = 2,
-  // keeps it off: the name becomes the host's install id once.
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.storage": "1", "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": project }, threadReady);
+  // V0.client-refs: the host turned off is kept by its install id (V0.old-routes-end: a name is no longer migrated).
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["M3RS-QX7P-5LKA-2WNE"]', "fyr.projectFilter": project }, threadReady);
   if (phone) {
     await evaluate(`history.back()`);
     await waitFor("!!document.querySelector('.m-list')", { soft: true });

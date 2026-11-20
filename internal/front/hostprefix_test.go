@@ -153,7 +153,7 @@ func startFakes(t *testing.T, cache string, hosts ...*fakeHost) (*Front, *httpte
 	t.Cleanup(func() { cancel(); fs.CloseClientConnections(); fs.Close() })
 	eventually(t, "every host online", func() bool {
 		var st struct{ Hosts []struct{ Online bool } }
-		getJSON(t, fs.URL+"/api/state", &st) // the old route, so the helper works before and after
+		getJSON(t, fs.URL+"/api/front/state", &st)
 		n := 0
 		for _, h := range st.Hosts {
 			if h.Online {
@@ -255,7 +255,7 @@ func probedPaths(name string, hs ...*fakeHost) []string {
 	return out
 }
 
-// Test 2 (first half): an unknown id is 404 no-host and reaches no host.
+// Test 2 (an unknown id, with the reads of each kind): 404 no-host, reaching no host.
 func TestUnknownHostIsNotFoundAndReachesNoHost(t *testing.T) {
 	one, two := newFakeHost(t, "one", idOne), newFakeHost(t, "two", idTwo)
 	_, fs := startFakes(t, "", one, two)
@@ -442,37 +442,72 @@ func TestFrontStreamNamesTheHostOnEveryFrame(t *testing.T) {
 	}
 }
 
-// Test 2 (counting): the old routes behave as before, say so, and are counted;
-// the new ones are not.
-func TestOldRoutesAreDeprecatedAndCounted(t *testing.T) {
-	one := newFakeHost(t, "one", idOne)
-	f, fs := startFakes(t, "", one)
-	n0 := f.OldRouteUses()
-	for _, p := range []string{"/api/h/" + idOne + "/threads/t_same", "/api/front/state"} {
-		resp, err := http.Get(fs.URL + p)
-		if err != nil {
-			t.Fatal(err)
+// Test 2, whole (decision 0031 Part 3, V0.old-routes-end): no default host.
+// Every route of the front's mux is a host's by id (/api/h/<id>/), the
+// front's own (/api/front/), or no API at all; any other /api/ path is 404
+// and reaches no host, whichever host is first; an unknown id is 404 no-host
+// and reaches no host. Each fake host counts the requests that reach it.
+func TestNoDefaultHost(t *testing.T) {
+	one, two := newFakeHost(t, "one", idOne), newFakeHost(t, "two", idTwo)
+	f, fs := startFakes(t, "", one, two)
+
+	// The table: every pattern the mux has.
+	for _, pat := range f.RoutePatterns() {
+		path := pat
+		if _, p, ok := strings.Cut(pat, " "); ok {
+			path = p
 		}
-		resp.Body.Close()
-		if resp.Header.Get("Deprecation") != "" {
-			t.Errorf("%s is marked deprecated", p)
-		}
-	}
-	if f.OldRouteUses() != n0 {
-		t.Errorf("a new route was counted as an old one")
-	}
-	for _, p := range []string{"/api/state", "/api/threads/t_same", "/api/providers"} {
-		resp, err := http.Get(fs.URL + p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != 200 || resp.Header.Get("Deprecation") != "true" {
-			t.Errorf("%s: %d, Deprecation %q", p, resp.StatusCode, resp.Header.Get("Deprecation"))
+		switch {
+		case strings.HasPrefix(path, hostPrefix), strings.HasPrefix(path, frontPrefix):
+		case path == "/api/": // the 404 below
+		case path == "/", path == "/mcp", path == "/.well-known/fyr": // not the browser API
+		default:
+			t.Errorf("route %q is neither a host's by id nor the front's", pat)
 		}
 	}
-	if got := f.OldRouteUses() - n0; got != 3 {
-		t.Errorf("oldRouteUses grew by %d, want 3", got)
+
+	// The paths of the old routes (and a few that never were), each method:
+	// 404 no-route, and no host hears of them.
+	old := []string{"/api/state", "/api/stream", "/api/command", "/api/threads/t_same", "/api/threads/t_same/events",
+		"/api/attachments", "/api/attachments/a_one", "/api/previews/p1/", "/api/previews/p1/app.js", "/api/projects/p_same/icon",
+		"/api/quota", "/api/load", "/api/profiles", "/api/providers", "/api/providers/found", "/api/systemAgents",
+		"/api/autoDeploy", "/api/autoMerge", "/api/updates", "/api/presence", "/api/push/key", "/api/auth/state",
+		"/api/peer/state", "/api/fs/list?path=/", "/api/state?host=one", "/api/command?host=two", "/api/h/", "/api/front/nope"}
+	for _, p := range old {
+		code, _, b := probeGet(t, fs.URL+p)
+		var out struct {
+			OK   bool
+			Code string
+		}
+		json.Unmarshal(b, &out)
+		if code != 404 || out.OK || out.Code != "no-route" {
+			t.Errorf("GET %s: %d %s", p, code, b)
+		}
+		if code, b := probePost(t, fs.URL+p, `{"commandId":"c-old","action":"thread.create","args":{"host":"one"}}`); code != 404 && code != 405 {
+			t.Errorf("POST %s: %d %s", p, code, b)
+		}
+	}
+
+	// An unknown id: 404 no-host, for a read and a command.
+	for _, p := range []string{"/state", "/threads/t_same", "/command", "/previews/p1/app.js"} {
+		code, _, b := probeGet(t, fs.URL+"/api/h/ZZZZ-9999-ZZZZ-9999"+p)
+		var out struct{ Code string }
+		json.Unmarshal(b, &out)
+		if code != 404 || out.Code != "no-host" {
+			t.Errorf("unknown id, GET %s: %d %s", p, code, b)
+		}
+		if code, b := probePost(t, fs.URL+"/api/h/ZZZZ-9999-ZZZZ-9999"+p, `{"action":"thread.create"}`); code != 404 {
+			t.Errorf("unknown id, POST %s: %d %s", p, code, b)
+		}
+	}
+	if n := len(one.probed()) + len(two.probed()); n != 0 {
+		t.Errorf("%d requests without a known host id reached a host: %v %v", n, one.probed(), two.probed())
+	}
+
+	// And the prefix still reaches the host it names, so the zero above is not
+	// a probe that never counts.
+	if code, _, _ := probeGet(t, fs.URL+"/api/h/"+idTwo+"/threads/t_same"); code != 200 || len(two.probed()) != 1 || len(one.probed()) != 0 {
+		t.Errorf("the named host: %d, one %d two %d", code, len(one.probed()), len(two.probed()))
 	}
 }
 

@@ -30,7 +30,7 @@ func TestV130ServeSocketProxiesWithThePublicHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server.Server{Engine: engine.New(st), BuildID: "host-build", Host: "desk", OwnerLogin: owner,
+	s := &server.Server{Engine: engine.New(st), BuildID: "host-build", Host: "desk", ID: testID("desk"), OwnerLogin: owner,
 		Attach: &attach.Store{Dir: t.TempDir()}}
 	hs := httptest.NewServer(s.PipeHandler()) // decision 0030: a front reaches its host through the pipe or the peer listener, which read Fyr-Origin
 	t.Cleanup(func() { hs.Close(); st.Close() })
@@ -43,6 +43,7 @@ func TestV130ServeSocketProxiesWithThePublicHost(t *testing.T) {
 	sv := httptest.NewServer(httpguard.ServeSocket("desk.tail.ts.net:7443", f.Handler()))
 	t.Cleanup(func() { cancel(); lo.Close(); sv.Close() })
 	online(t, lo.URL, 1)
+	P := "/api/h/" + testID("desk") // the host's prefix (decision 0031)
 
 	// viaServe sends what tailscaled sends on the socket: Host localhost and
 	// the login; fh is its X-Forwarded-Host, "" for none.
@@ -65,40 +66,40 @@ func TestV130ServeSocketProxiesWithThePublicHost(t *testing.T) {
 		return r
 	}
 
-	r := viaServe("POST", "/api/attachments", "", "text/html", "<p>hi</p>")
+	r := viaServe("POST", P+"/attachments", "", "text/html", "<p>hi</p>")
 	var up struct{ ID string }
 	json.NewDecoder(r.Body).Decode(&up)
 	r.Body.Close()
 	if r.StatusCode != 200 || up.ID == "" {
 		t.Fatalf("upload through Serve: %d %+v", r.StatusCode, up)
 	}
-	r = viaServe("GET", "/api/attachments/"+up.ID, "", "", "")
+	r = viaServe("GET", P+"/attachments/"+up.ID, "", "", "")
 	if b, _ := io.ReadAll(r.Body); r.StatusCode != 200 || string(b) != "<p>hi</p>" {
 		t.Fatalf("the upload read back through Serve: %d %q", r.StatusCode, b)
 	}
 
 	for _, c := range []struct{ fh, want string }{
-		{"", "https://desk.tail.ts.net:7443/api/previews/" + up.ID + "/ "},
-		{"phone.tail.ts.net:7443", "https://phone.tail.ts.net:7443/api/previews/" + up.ID + "/ "},
-		{"evil.example", "https://desk.tail.ts.net:7443/api/previews/" + up.ID + "/ "}, // not a ts.net name
+		{"", "https://desk.tail.ts.net:7443" + P + "/previews/" + up.ID + "/ "},
+		{"phone.tail.ts.net:7443", "https://phone.tail.ts.net:7443" + P + "/previews/" + up.ID + "/ "},
+		{"evil.example", "https://desk.tail.ts.net:7443" + P + "/previews/" + up.ID + "/ "}, // not a ts.net name
 	} {
-		r := viaServe("GET", "/api/previews/"+up.ID, c.fh, "", "")
+		r := viaServe("GET", P+"/previews/"+up.ID, c.fh, "", "")
 		if csp := r.Header.Get("Content-Security-Policy"); r.StatusCode != 200 || !strings.Contains(csp, "script-src "+c.want) {
 			t.Fatalf("preview through Serve (X-Forwarded-Host %q): %d %q", c.fh, r.StatusCode, csp)
 		}
 	}
 
 	// Loopback: the browser's own Host, http, as before.
-	req, _ := http.NewRequest("GET", lo.URL+"/api/previews/"+up.ID, nil)
+	req, _ := http.NewRequest("GET", lo.URL+P+"/previews/"+up.ID, nil)
 	r, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if csp := r.Header.Get("Content-Security-Policy"); r.StatusCode != 200 || !strings.Contains(csp, "script-src http://"+strings.TrimPrefix(lo.URL, "http://")+"/api/previews/"+up.ID+"/ ") {
+	if csp := r.Header.Get("Content-Security-Policy"); r.StatusCode != 200 || !strings.Contains(csp, "script-src http://"+strings.TrimPrefix(lo.URL, "http://")+P+"/previews/"+up.ID+"/ ") {
 		t.Fatalf("preview over loopback: %d %q", r.StatusCode, csp)
 	}
 	// The identity header over loopback with a foreign Host is still refused.
-	req, _ = http.NewRequest("GET", lo.URL+"/api/previews/"+up.ID, nil)
+	req, _ = http.NewRequest("GET", lo.URL+P+"/previews/"+up.ID, nil)
 	req.Host = "localhost"
 	req.Header.Set("Tailscale-User-Login", owner)
 	if r, err := http.DefaultClient.Do(req); err != nil || r.StatusCode != 403 {

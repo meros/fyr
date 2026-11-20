@@ -8,11 +8,9 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 )
 
@@ -62,7 +60,6 @@ func (f *Front) SetClient(build string, web fs.FS) error {
 	}
 	f.client.Store(&clientBuild{build: build, web: web, h: webClient(web)})
 	f.hub.DropAll()
-	f.hub2.DropAll()
 	return nil
 }
 
@@ -86,10 +83,10 @@ func noCacheIndex(next http.Handler) http.Handler {
 // pushRoutes serves the Web Push endpoints (V0.15) for p: a host's before
 // decision 0016, a front's since V0.54 (the front holds the device data).
 func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string)) {
-	both(mux, "GET", "/push/key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/front/push/key", func(w http.ResponseWriter, r *http.Request) {
 		api.WriteJSON(w, 200, map[string]string{"publicKey": p.PublicKey()})
 	})
-	both(mux, "POST", "/push/subscribe", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/push/subscribe", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Subscription push.Subscription `json:"subscription"`
 			Device       string            `json:"device"`
@@ -107,7 +104,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		}
 		api.WriteJSON(w, 200, map[string]any{"ok": true})
 	})
-	both(mux, "POST", "/push/unsubscribe", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/push/unsubscribe", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
@@ -118,7 +115,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		p.Unsubscribe(b.Endpoint)
 		api.WriteJSON(w, 200, map[string]any{"ok": true})
 	})
-	both(mux, "POST", "/push/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/push/status", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
@@ -126,7 +123,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		api.WriteJSON(w, 200, map[string]bool{"known": b.Endpoint != "" && p.Known(b.Endpoint)})
 	})
 	// V0.207: what this device hides, so its pushes leave those out.
-	both(mux, "POST", "/push/hidden", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/push/hidden", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Endpoint string `json:"endpoint"`
 			push.Hidden
@@ -143,7 +140,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		api.WriteJSON(w, 200, map[string]any{"ok": known})
 	})
 	// V0.notification-polish: what this device wants to be told about.
-	both(mux, "POST", "/push/prefs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/push/prefs", func(w http.ResponseWriter, r *http.Request) {
 		b := struct {
 			Endpoint string `json:"endpoint"`
 			push.Prefs
@@ -161,7 +158,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 	})
 	// The test goes to the device that asked (V0.notification-polish); a
 	// client from before that names none and reaches every device.
-	both(mux, "POST", "/push/test", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/push/test", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
@@ -174,25 +171,5 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 			n = p.Notify(core.Owner, pl)
 		}
 		api.WriteJSON(w, 200, map[string]int{"delivered": n})
-	})
-}
-
-// presenceRoute records which thread each device shows (V0.20); onBeat,
-// when set, hears each beat with the thread the device showed before (V0.85).
-func presenceRoute(mux muxer, p *notify.Presence, onBeat ...func(device, prev, thread string)) {
-	mux.HandleFunc("POST /api/presence", func(w http.ResponseWriter, r *http.Request) {
-		var b struct {
-			ThreadID string `json:"threadId"`
-			Device   string `json:"device"`
-		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&b); err != nil || b.Device == "" {
-			http.Error(w, "threadId and device are required", 400)
-			return
-		}
-		prev := p.Beat(b.Device, b.ThreadID, time.Now())
-		for _, f := range onBeat {
-			f(b.Device, prev, b.ThreadID)
-		}
-		w.WriteHeader(http.StatusNoContent)
 	})
 }

@@ -8,9 +8,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
 
-	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 )
 
@@ -72,7 +70,7 @@ func TestPushEndpoints(t *testing.T) {
 	pushRoutes(mux, fp, nil)
 	hs := httptest.NewServer(httpguard.Browser("", mux))
 	defer hs.Close()
-	r := do(t, "GET", hs.URL+"/api/push/key", "", nil, "")
+	r := do(t, "GET", hs.URL+"/api/front/push/key", "", nil, "")
 	var k map[string]string
 	json.NewDecoder(r.Body).Decode(&k)
 	if k["publicKey"] != "BPUB" {
@@ -80,21 +78,21 @@ func TestPushEndpoints(t *testing.T) {
 	}
 	h := map[string]string{"X-Fyr": "1"}
 	body := `{"subscription":{"endpoint":"https://push/e1","keys":{"p256dh":"p","auth":"a"}},"device":"phone"}`
-	if r := do(t, "POST", hs.URL+"/api/push/subscribe", "", nil, body); r.StatusCode != 403 {
+	if r := do(t, "POST", hs.URL+"/api/front/push/subscribe", "", nil, body); r.StatusCode != 403 {
 		t.Fatalf("subscribe without X-Fyr: %d", r.StatusCode)
 	}
-	if r := do(t, "POST", hs.URL+"/api/push/subscribe", "", h, body); r.StatusCode != 200 || fp.subs["https://push/e1"] != "owner/phone" {
+	if r := do(t, "POST", hs.URL+"/api/front/push/subscribe", "", h, body); r.StatusCode != 200 || fp.subs["https://push/e1"] != "owner/phone" {
 		t.Fatalf("subscribe: %d %v", r.StatusCode, fp.subs)
 	}
 	// V0.207: what the device hides reaches the pusher.
 	hide := `{"endpoint":"https://push/e1","hosts":["lab"],"projects":[{"host":"desk","id":"p1"}]}`
-	if r := do(t, "POST", hs.URL+"/api/push/hidden", "", h, hide); r.StatusCode != 200 {
+	if r := do(t, "POST", hs.URL+"/api/front/push/hidden", "", h, hide); r.StatusCode != 200 {
 		t.Fatalf("hidden: %d", r.StatusCode)
 	}
 	if len(fp.hidden.Hosts) != 1 || fp.hidden.Hosts[0] != "lab" || len(fp.hidden.Projects) != 1 || fp.hidden.Projects[0].ID != "p1" {
 		t.Fatalf("hidden: %+v", fp.hidden)
 	}
-	r = do(t, "POST", hs.URL+"/api/push/test", "", h, "")
+	r = do(t, "POST", hs.URL+"/api/front/push/test", "", h, "")
 	var res map[string]int
 	json.NewDecoder(r.Body).Decode(&res)
 	if res["delivered"] != 1 {
@@ -102,23 +100,23 @@ func TestPushEndpoints(t *testing.T) {
 	}
 	// V0.notification-polish: the test goes to the device that asked, and a
 	// device says whether it wants finished threads (on when it says nothing).
-	r = do(t, "POST", hs.URL+"/api/push/test", "", h, `{"endpoint":"https://push/e1"}`)
+	r = do(t, "POST", hs.URL+"/api/front/push/test", "", h, `{"endpoint":"https://push/e1"}`)
 	res = nil
 	json.NewDecoder(r.Body).Decode(&res)
 	if res["delivered"] != 1 || len(fp.one) != 1 || fp.one[0] != "https://push/e1" {
 		t.Fatalf("test to one device: %v %v", res, fp.one)
 	}
-	if r := do(t, "POST", hs.URL+"/api/push/prefs", "", h, `{"endpoint":"https://push/e1","finished":false}`); r.StatusCode != 200 || fp.prefs == nil || fp.prefs.Finished {
+	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"endpoint":"https://push/e1","finished":false}`); r.StatusCode != 200 || fp.prefs == nil || fp.prefs.Finished {
 		t.Fatalf("prefs off: %d %+v", r.StatusCode, fp.prefs)
 	}
-	if r := do(t, "POST", hs.URL+"/api/push/prefs", "", h, `{"endpoint":"https://push/e1"}`); r.StatusCode != 200 || !fp.prefs.Finished {
+	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"endpoint":"https://push/e1"}`); r.StatusCode != 200 || !fp.prefs.Finished {
 		t.Fatalf("prefs without a choice: %d %+v", r.StatusCode, fp.prefs)
 	}
-	if r := do(t, "POST", hs.URL+"/api/push/prefs", "", h, `{"finished":false}`); r.StatusCode != 400 {
+	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"finished":false}`); r.StatusCode != 400 {
 		t.Fatalf("prefs without an endpoint: %d", r.StatusCode)
 	}
 	known := func() bool {
-		r := do(t, "POST", hs.URL+"/api/push/status", "", h, `{"endpoint":"https://push/e1"}`)
+		r := do(t, "POST", hs.URL+"/api/front/push/status", "", h, `{"endpoint":"https://push/e1"}`)
 		var k map[string]bool
 		json.NewDecoder(r.Body).Decode(&k)
 		return k["known"]
@@ -126,7 +124,7 @@ func TestPushEndpoints(t *testing.T) {
 	if !known() {
 		t.Fatal("status: a stored subscription is not known")
 	}
-	do(t, "POST", hs.URL+"/api/push/unsubscribe", "", h, `{"endpoint":"https://push/e1"}`)
+	do(t, "POST", hs.URL+"/api/front/push/unsubscribe", "", h, `{"endpoint":"https://push/e1"}`)
 	if len(fp.subs) != 0 || known() {
 		t.Fatal("unsubscribe")
 	}
@@ -145,24 +143,5 @@ func TestPWAFiles(t *testing.T) {
 	r = do(t, "GET", hs.URL+"/sw.js", "", nil, "")
 	if r.Header.Get("Cache-Control") != "no-cache" || !strings.Contains(r.Header.Get("Content-Type"), "javascript") {
 		t.Fatalf("sw headers %v", r.Header)
-	}
-}
-
-// SPEC 0.5 V0.20: a presence beat marks a thread as watched.
-func TestPresenceEndpoint(t *testing.T) {
-	p := &notify.Presence{}
-	mux := http.NewServeMux()
-	presenceRoute(mux, p)
-	hs := httptest.NewServer(httpguard.Browser("", mux))
-	defer hs.Close()
-	if r := do(t, "POST", hs.URL+"/api/presence", "", map[string]string{"X-Fyr": "1"}, `{"threadId":"t1","device":"d1"}`); r.StatusCode != 204 {
-		t.Fatalf("status %d", r.StatusCode)
-	}
-	if !p.Watched("t1", time.Now()) {
-		t.Fatal("not watched after a beat")
-	}
-	do(t, "POST", hs.URL+"/api/presence", "", map[string]string{"X-Fyr": "1"}, `{"threadId":"","device":"d1"}`)
-	if p.Watched("t1", time.Now()) {
-		t.Fatal("still watched after the client stopped showing it")
 	}
 }
