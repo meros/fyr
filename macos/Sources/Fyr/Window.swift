@@ -10,6 +10,7 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
   private var web: WKWebView!
   private var signingIn = false
   private var paints: [NSKeyValueObservation] = []
+  private var line: NSView?
 
   // The origin of the last one-time link, e.g. http://fyr.localhost:7777.
   private var origin: URL? {
@@ -56,7 +57,15 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     paints = [
       web.observe(\.underPageBackgroundColor) { [weak self] _, _ in self?.paint() },
     ]
-    w.contentView = web
+    // A hairline under the title bar in the page's --line: the container
+    // shows through the one point above the page.
+    let box = NSView(frame: web.frame)
+    box.wantsLayer = true
+    web.frame = NSRect(x: 0, y: 0, width: box.bounds.width, height: box.bounds.height - 1)
+    web.autoresizingMask = [.width, .height]
+    box.addSubview(web)
+    line = box
+    w.contentView = box
     w.delegate = self
     w.isReleasedWhenClosed = false
     w.setFrameAutosaveName("Fyr") // the size and place are restored
@@ -66,7 +75,20 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     if let o = origin { web.load(URLRequest(url: o)) } else { signIn() }
   }
 
-  private func paint() { window?.backgroundColor = web.underPageBackgroundColor }
+  private func paint() {
+    window?.backgroundColor = web.underPageBackgroundColor
+    line?.layer?.backgroundColor = NSColor.separatorColor.cgColor
+    web.evaluateJavaScript("getComputedStyle(document.documentElement).getPropertyValue('--line').trim()") { [weak self] v, _ in
+      if let c = (v as? String).flatMap(Self.hex) { self?.line?.layer?.backgroundColor = c }
+    }
+  }
+
+  // hex reads "#rrggbb", the form the page's colour tokens take.
+  static func hex(_ s: String) -> CGColor? {
+    guard s.count == 7, s.hasPrefix("#"), let n = UInt32(s.dropFirst(), radix: 16) else { return nil }
+    return CGColor(
+      srgbRed: CGFloat(n >> 16 & 255) / 255, green: CGFloat(n >> 8 & 255) / 255, blue: CGFloat(n & 255) / 255, alpha: 1)
+  }
 
   // signIn waits up to 30 s for fyrd (it may be starting) and loads a
   // one-time link from the owner socket.
@@ -145,6 +167,8 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     if (e as NSError).code == NSURLErrorCancelled { return }
     signIn() // fyrd is down or moved to another port: the owner socket knows
   }
+
+  func webView(_ w: WKWebView, didFinish n: WKNavigation!) { paint() }
 
   func webViewWebContentProcessDidTerminate(_ w: WKWebView) { w.reload() }
 
