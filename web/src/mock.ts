@@ -399,20 +399,6 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
-  // V0.wakeups-via-watch: an agent that set a wake-up for tomorrow 06:00; the row and the header show it.
-  {
-    const six = new Date(now);
-    six.setDate(six.getDate() + 1);
-    six.setHours(6, 0, 0, 0);
-    add(
-      base("t_wake", "Watch the nightly import", now, 25, {
-        project: "acme/collector",
-        summary: "The fix is deployed; I check tomorrow's run at 06:00.",
-        wakes: [{ rule: "w_nightly", at: iso(six.getTime()), note: "Check the 03:00 nightly import ran every source\nand report the counts" }],
-        unavailable: NOT_RUNNING,
-      }),
-    );
-  }
   // V0.43: an open PR that is ready to merge (the PR tab's Merge dialog).
   add(
     base("t_s2", "Nix flake update", now, 115, {
@@ -656,15 +642,10 @@ function railFixture(now: number): Fixture {
       pr: { url: "https://github.com/acme/web/pull/88", repo: "acme/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
       unavailable: quiet,
     }),
-    // V0.wakeups-via-watch: a finished thread that waits on the agent's wake-up tomorrow 06:00 (the row and the header say so)
-    base("t_wake", "Watch the nightly import", now, 25, {
-      attention: { state: "done", section: "seen", reason: "" },
-      summary: "The fix is deployed; I check tomorrow's run at 06:00.",
-      wakes: [{ rule: "w_nightly", at: iso(new Date(new Date(now).setHours(30, 0, 0, 0)).getTime()), note: "Check the 03:00 nightly import ran every source\nand report the counts" }],
-      unavailable: quiet,
-    }),
     base("t_triage", "Triage sprint issues", now, 60, {
       project: "acme/ops",
+      // V0.wakeups-via-watch: the agent set a wake-up for tomorrow 06:00; the row and the header show it
+      wakes: [{ rule: "w_triage", at: iso(new Date(new Date(now).setHours(30, 0, 0, 0)).getTime()), note: "Check which of the 6 issues got an owner\nand ping the rest" }],
       // V0.120 (5): its model was turned off since; it shows as "opus 5.4 (off)" until another is picked.
       model: "claude-opus-5-4",
       attention: { state: "done", section: "seen", reason: "" },
