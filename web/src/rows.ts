@@ -36,25 +36,18 @@ export function stateLabel(s: AttentionState): string {
   return LABEL[s] ?? s;
 }
 
-/** V0.210: the thread is in Needs you only because Fyr read a question in the agent's text. */
-export function textAskShown(t: Pick<Thread, "attention" | "textAsk">): boolean {
-  return t.attention.state === "blocked" && !!t.textAsk && t.attention.reason === t.textAsk.question;
-}
-
-/** V0.your-move: what the owner has to do, the groups of Your move in their order. Questions Fyr only read in the text come
- *  last, as decision 0033 asks: they are an inference, the others are facts. */
+/** V0.your-move: what the owner has to do, the groups of Your move in their order. (V0.text-ask-nudge: a question Fyr
+ *  only read in the agent's text is no longer a group; Fyr tells the agent, which asks on a card.) */
 export const NEEDS_GROUPS = [
   { key: "answer", label: "Answer" },
   { key: "approve", label: "Approve" },
   { key: "unblock", label: "Unblock" },
-  { key: "text", label: "Questions in text" },
 ] as const;
 export type NeedsGroup = (typeof NEEDS_GROUPS)[number]["key"];
 
 /** V0.your-move: a question to answer, something to say yes to (an approval, a merge, a ready PR, a command to run), or
  *  something broken. Reads only what the host computed. */
 export function needsGroup(t: Thread): NeedsGroup {
-  if (textAskShown(t)) return "text";
   const st = t.attention.state;
   if (st === "asking") return t.decisions.length === 0 || t.decisions.some((d) => d.kind === "ask") ? "answer" : "approve";
   if (st === "blocked") {
@@ -88,7 +81,6 @@ export function needsHeads(rows: Thread[]): Record<string, string> {
 /** The bold word: the open decision's kind while asking, else the attention reason or the state. */
 export function rowState(t: Thread): string {
   const st = t.attention.state;
-  if (textAskShown(t)) return "Question in text"; // V0.210: says that this is Fyr's reading; the line says what
   if (st === "asking") {
     const d = currentDecision(t);
     if (d?.kind === "ask") {
@@ -147,7 +139,6 @@ export function trimEcho(state: string, meta: string): string {
 /** The line after it. `keys`: a failed row names the retry key (the desktop has a keyboard). */
 export function rowMeta(t: Thread, o: { keys?: boolean } = {}): string {
   const st = t.attention.state;
-  if (textAskShown(t)) return t.textAsk!.question;
   const d = currentDecision(t);
   if (st === "asking" && d) {
     // The asker is named on the card (U25); the row keeps the question, as the design draws it.

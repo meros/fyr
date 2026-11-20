@@ -52,11 +52,10 @@ type Thread struct {
 	// QuietMerge is the change whose auto-approved merge is the thread's
 	// latest news (V0.200): no push for it. A new ask or message clears it.
 	QuietMerge string `json:"quietMerge,omitempty"`
-	// TextAsk is a question Fyr read in the agent's text (V0.210), and
-	// TextAskCleared the run count when it was last cleared: a judgment of
-	// that run or an earlier one no longer counts.
-	TextAsk        *TextAsk `json:"textAsk,omitempty"`
-	TextAskCleared int      `json:"textAskCleared,omitempty"`
+	// TextNudged is the run count (RunEnds) whose text Fyr last read as a
+	// question and told the agent so (V0.text-ask-nudge): the run after it is
+	// the agent's answer, and is not read again.
+	TextNudged int `json:"textNudged,omitempty"`
 	// Changes are the thread's change records (V0.59, decision 0018). A PR
 	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`

@@ -25,20 +25,18 @@ test("V0.your-move: each cause lands in its group", () => {
   assert.equal(needsGroup(blocked("f", "Run: rebuild")), "approve");
   assert.equal(needsGroup(blocked("g", "PR: failed", { changes: [need("ready"), need("failure")] })), "unblock");
   assert.equal(needsGroup(thread("h", "failed", "needs")), "unblock");
-  assert.equal(needsGroup(blocked("i", "Which?", { textAsk: { question: "Which?", at: "", run: 1 } })), "text");
 });
 
 test("V0.your-move: rows sort by group and each group is labelled once", () => {
   const ts = [
     thread("fail", "failed", "needs"),
     thread("merge", "asking", "needs", { decisions: [merge] }),
-    blocked("read", "Which?", { textAsk: { question: "Which?", at: "", run: 1 } }),
     thread("q1", "asking", "needs", { decisions: [ask], activityAt: "2026-11-18T10:00:00Z" }),
     thread("q2", "asking", "needs", { decisions: [ask], activityAt: "2026-11-18T09:00:00Z" }),
   ];
   const rows = sections(Object.fromEntries(ts.map((t) => [t.id, t]))).needs;
-  assert.deepEqual(rows.map((t) => t.id), ["q2", "q1", "merge", "fail", "read"]);
-  assert.deepEqual(needsHeads(rows), { q2: "Answer", merge: "Approve", fail: "Unblock", read: "Questions in text" });
+  assert.deepEqual(rows.map((t) => t.id), ["q2", "q1", "merge", "fail"]);
+  assert.deepEqual(needsHeads(rows), { q2: "Answer", merge: "Approve", fail: "Unblock" });
 });
 
 test("V0.your-move: a row that left Your move and keeps its place starts no group", () => {

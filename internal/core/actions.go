@@ -178,9 +178,6 @@ func sendAction(name, label string) *Action {
 				return nil, fmt.Errorf("%w: empty message", ErrBadArgs)
 			}
 			t.QuietMerge = "" // V0.200: whoever wrote wants to hear the answer
-			if a.Str("from") == "" {
-				clearTextAsk(t) // V0.210: the owner answered; another agent's message is no answer
-			}
 			if name == "thread.create" {
 				t.Cwd = a.Str("cwd")
 				if t.Cwd == "" {

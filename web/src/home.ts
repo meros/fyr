@@ -27,7 +27,7 @@ export interface HomeMove {
   merge?: GreenMerge;
 }
 
-/** The threads whose move it is, in Your move's order: the group (Answer, Approve, Unblock, Questions in text), then
+/** The threads whose move it is, in Your move's order: the group (Answer, Approve, Unblock), then
  *  the newest activity. Pinned ones included: a pin does not make a question go away. */
 export function homeNeeds(threads: Thread[]): Thread[] {
   const seen = new Set<string>();
@@ -48,7 +48,7 @@ export function homeMoves(needs: Thread[], projects: Project[]): HomeMove[] {
     const g = needsGroup(t);
     const greens = greenMerges(boardItems({ [t.id]: t }, projects));
     const merge = g === "approve" && greens.length === 1 ? greens[0] : undefined;
-    const verb = merge ? "Merge" : g === "answer" || g === "text" ? "Answer" : g === "approve" ? "Review" : "Open";
+    const verb = merge ? "Merge" : g === "answer" ? "Answer" : g === "approve" ? "Review" : "Open";
     return { thread: t, state: rowState(t), meta: rowMeta(t), verb, ...(merge ? { merge } : {}) };
   });
 }

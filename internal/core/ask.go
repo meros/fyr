@@ -126,17 +126,24 @@ func askAnswerText(answer string) string {
 	return "The owner answered your question: " + answer
 }
 
-// TextQuestionText is the notice of a turn that ended with a question in
-// its text (V0.210): Fyr showed it, and the agent learns to ask with the
-// tool.
-const TextQuestionText = "Fyr read a question for the owner at the end of your last message. A question in text is easy to miss: the thread looks finished. Whenever the owner must answer or choose before the work can go on, call mcp__fyr__ask {questions}: Fyr shows a question card, and the answer arrives as a [Fyr] message."
+// TextQuestionText is the nudge of a turn that ended with a question in its
+// text (V0.text-ask-nudge): the owner sees nothing of Fyr's reading, so the
+// agent asks on a card, offers a chip, or ends its turn.
+func TextQuestionText(q string) string {
+	return "Fyr read the end of your last message as a question for the owner (\"" + q + "\"), but you asked no card, so the owner may miss it: the thread looks finished. " +
+		"If the owner must answer or choose before the work can go on, call mcp__fyr__ask with it now. " +
+		"If it was an optional offer, use mcp__fyr__offer_action or mcp__fyr__run_request {optional: true}. " +
+		"If nothing waits on the owner, end your turn without writing anything more."
+}
 
-// textQuestionNotices: Fyr read a question in the agent's text. It goes out
-// with the owner's next message and never wakes the agent.
+// textQuestionNotices: Fyr read a question in the agent's text. It wakes the
+// agent once (the rule's budget bounds it; TextNudged keeps the answer from
+// being read again).
 func textQuestionNotices(r Reduced) []Notice {
 	for _, ev := range r.Events {
-		if ev.Type == "textAsk.raised" {
-			return []Notice{{About: "thread", Key: "text-question", What: TextQuestionText}}
+		if ev.Type == EventTextAskNudged {
+			d, _ := ev.Data.(map[string]any)
+			return []Notice{{About: "thread", Key: "text-question", What: TextQuestionText(str(d["question"]))}}
 		}
 	}
 	return nil

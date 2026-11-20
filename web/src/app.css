@@ -1378,8 +1378,6 @@ label.sr{cursor:pointer}
 .chcond li.fail{color:var(--signal-ink)}
 .chcond li.pending{color:var(--ink-muted)}
 .chneed{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font:500 12px/16px var(--ui);color:var(--ink);padding:6px 8px;border-radius:8px;background:var(--beam-wash)}
-.chneed.textask{margin:6px 0 4px;max-width:680px}
-.chneed.textask .txq{color:var(--ink-muted);font-weight:400}
 .chneed.muted{background:none;padding:0;color:var(--ink-muted);font-weight:400}
 .chneed .chnq{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
 /* A label an agent wrote can be any length: the button wraps inside its card and keeps every word. */

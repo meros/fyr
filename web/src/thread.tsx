@@ -42,7 +42,7 @@ import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
-import { ChangeList, TextAskLine, useViewAction } from "./offers-ui.tsx";
+import { ChangeList, useViewAction } from "./offers-ui.tsx";
 import { DockRun, NextSteps, ProseCommand, RunCardAt, RunCards, showCard } from "./runcard-ui.tsx";
 import { cardShows, cardsKey, dockRun, placeCards, requests, splitProse, waitingRuns } from "./runcard.ts";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
@@ -603,8 +603,6 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
               </div>
             </Boundary>
           ))}
-          {/* V0.header-one-block: a question Fyr read in the newest message stands under it, not in the header */}
-          {cards && <TextAskLine t={cards.t} onRun={cards.onRun} />}
           {/* V0.next-step-chips: the optional next steps, under the newest message */}
           <Boundary name="The next steps">
             <NextSteps />

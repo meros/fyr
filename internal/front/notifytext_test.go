@@ -51,12 +51,6 @@ func TestPushSaysWhatTheRowSays(t *testing.T) {
 		{"a failure", th(core.Failed, "API error 500", func(x *core.Thread) { x.Failure = &core.Failure{Message: "API error 500"} }), "Failed · API error 500"},
 		{"a ready pull request", th(core.Blocked, "Add login: Merge", nil), "Add login: Merge"},
 		{"a command to run", th(core.Blocked, "Run: install the driver", nil), "Run: install the driver"},
-		{"a question in text", th(core.Blocked, "Shall I also fix the phone?", func(x *core.Thread) {
-			x.TextAsk = &core.TextAsk{Question: "Shall I also fix the phone?"}
-		}), "Question in text · Shall I also fix the phone?"},
-		{"a text question behind another cause", th(core.Blocked, "Add login: Merge", func(x *core.Thread) {
-			x.TextAsk = &core.TextAsk{Question: "Shall I also fix the phone?"}
-		}), "Add login: Merge"},
 		{"finished", th(core.Done, "", func(x *core.Thread) { x.Summary = "Both tests pass." }), "Done · Both tests pass."},
 		{"finished without a last line", th(core.Done, "", nil), "Done"},
 	} {

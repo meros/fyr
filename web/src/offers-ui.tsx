@@ -92,22 +92,6 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
   );
 }
 
-/** V0.210: a question Fyr read in the agent's text, on both fronts: what Fyr read, and the press that says it is not one.
- *  V0.header-one-block: under the agent's newest message, beside the next-step chips, not in the header. */
-export function TextAskLine({ t, onRun }: { t: Thread; onRun: Run }) {
-  if (!t.textAsk) return null;
-  return (
-    <div class="chneed textask" role="status">
-      <span class="chnq">
-        <span class="txq">Fyr read this as a question:</span> {t.textAsk.question}
-      </span>
-      <button class="btn sm" title="Take it out of Needs you" onClick={() => onRun("thread.notQuestion")}>
-        Not a question
-      </button>
-    </div>
-  );
-}
-
 /** The view's actions run through its page (fyr.run, data-action); the owner confirms a script or a fyr action
  *  first, as on a button (V0.68 (8)), so a page cannot run one by itself. */
 export function useViewAction(onRun: Run, cwd?: string) {

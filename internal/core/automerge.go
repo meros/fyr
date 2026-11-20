@@ -199,9 +199,6 @@ func PushQuiet(t *Thread, state State, on func(repo string) bool) bool {
 	case Done:
 		return autoMerged(t) != nil
 	case Blocked:
-		if textAskOnly(t, on) { // V0.210: Fyr's own reading never pushes
-			return true
-		}
 		c := autoMerged(t)
 		if c == nil || t.Unresponsive != nil {
 			return false
