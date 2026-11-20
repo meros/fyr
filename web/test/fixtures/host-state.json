@@ -39,6 +39,10 @@
       "name": "thread.archive"
     },
     {
+      "label": "Cancel wake-up",
+      "name": "thread.cancelWake"
+    },
+    {
       "label": "Changes seen",
       "name": "thread.changesSeen"
     },
@@ -247,6 +251,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
@@ -315,6 +320,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
@@ -368,6 +374,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
@@ -417,6 +424,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
@@ -470,6 +478,7 @@
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
+        "thread.cancelWake": "No wake-up is set",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",

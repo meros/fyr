@@ -124,6 +124,10 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if r := ciWait(t); r != "" {
 		return Attention{Waiting, WorkingSec, r}
 	}
+	// V0.watch-waits: the agent's own armed watch is work still coming.
+	if s := WatchWaitText(t, now); s != "" {
+		return Attention{Waiting, WorkingSec, s}
+	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
 		return Attention{Done, SeenSec, ""}
 	}

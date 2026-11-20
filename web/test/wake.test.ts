@@ -10,11 +10,11 @@ test("no wake-up, no chip", () => {
   assert.equal(wakeChip({ wakes: [] }, Date.now()), null);
 });
 
-test("today: the time and the first line of its prompt", () => {
+test("today: the time alone; the prompt only in the title (V0.watch-waits)", () => {
   const now = local(2026, 10, 20, 1, 0);
   const at = new Date(local(2026, 10, 20, 6, 0)).toISOString();
   const c = wakeChip({ wakes: [{ rule: "w_1", at, note: "Check the deploy\nthen report on #12" }] }, now)!;
-  assert.equal(c.text, "wakes 06:00 · Check the deploy");
+  assert.equal(c.text, "wakes 06:00");
   assert.equal(c.rule, "w_1");
   assert.match(c.title, /then report on #12/, "the full prompt in the title");
 });
@@ -25,6 +25,6 @@ test("another day: the date too; no prompt: the time alone; more than one: the s
   const later = new Date(local(2026, 10, 22, 6, 0)).toISOString();
   const day = new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   const c = wakeChip({ wakes: [{ rule: "w_1", at }, { rule: "w_2", at: later, note: "x" }] }, now)!;
-  assert.equal(c.text, `wakes ${day} 06:00`);
+  assert.equal(c.text, `wakes ${day} 06:00 +1`);
   assert.match(c.title, /\+1 more/);
 });
