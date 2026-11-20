@@ -1897,3 +1897,17 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .agsep{flex:none;align-self:stretch;width:1px;margin:0 2px;background:var(--line)}
 .ags .agmn{font-family:var(--mono);font-weight:400;font-size:13px}
 .agp.field .ags.agv{flex:1 1 auto}
+/* V0.load-invariants: a broken load invariant, a card at the top of Needs you (invariants-ui.tsx, both fronts) */
+.invc-list{display:flex;flex-direction:column;gap:8px;padding:6px 12px 8px}
+.invc{border:1px solid var(--line);border-left:3px solid var(--signal-ink);border-radius:8px;background:var(--sunken);padding:8px 10px;font:400 12px/17px var(--ui);color:var(--ink-muted);min-width:0}
+.invc-h{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+.invc-t{font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.invc-w{flex:none}
+.invc-s{color:var(--ink);margin-top:2px}
+.invc-e{font-family:var(--mono);font-size:11px;overflow-wrap:anywhere;margin-top:4px}
+.invc-l summary{cursor:pointer;margin-top:4px}
+.invc-l pre{max-height:180px;overflow:auto;font:400 11px/15px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0}
+.invc-n{margin-top:4px}
+.invc-n .err{color:var(--signal-ink)}
+.invc-a{display:flex;gap:6px;margin-top:6px}
+.invc .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}

@@ -47,6 +47,34 @@ export interface Guard {
   events: GuardEvent[] | null;
   threads?: GuardThread[];
   rerun?: GuardRerun[];
+  /** V0.load-invariants: the open cards and each invariant's violations */
+  invariants?: Invariants;
+}
+
+/** V0.load-invariants: a load invariant's violation, a card in Needs you until Fix it or Dismiss. */
+export interface InvariantCard {
+  id: string;
+  /** the invariant in one sentence */
+  text: string;
+  at: string;
+  /** the signals and the facts of the violation */
+  evidence: string;
+  /** the guard's log lines of the ten minutes before */
+  lines?: string[];
+}
+
+export interface InvariantStat {
+  id: string;
+  text: string;
+  count: number;
+  last?: string;
+}
+
+export interface Invariants {
+  cards?: InvariantCard[];
+  stats: InvariantStat[];
+  /** the Fyr checkout Fix it starts its thread in; absent when the host has none */
+  fixDir?: string;
 }
 
 /** How far back the chart looks. */

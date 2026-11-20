@@ -61,6 +61,36 @@ type Guard struct {
 	// Rerun is each rerunnable class the guard killed in the last hour
 	// (V0.rerun-classes): how often, and until when it is frozen instead.
 	Rerun []GuardRerun `json:"rerun,omitempty"`
+	// Invariants are the load invariants (V0.load-invariants): the open
+	// cards and each invariant's violations.
+	Invariants *Invariants `json:"invariants,omitempty"`
+}
+
+// InvariantCard is a load invariant's violation as the owner's Needs you
+// shows it (V0.load-invariants): the invariant in one sentence, when, the
+// signals, and the guard's log lines of the ten minutes before.
+type InvariantCard struct {
+	ID       string    `json:"id"`
+	Text     string    `json:"text"`
+	At       time.Time `json:"at"`
+	Evidence string    `json:"evidence"`
+	Lines    []string  `json:"lines,omitempty"`
+}
+
+// InvariantStat is one invariant's violations so far and the last one.
+type InvariantStat struct {
+	ID    string     `json:"id"`
+	Text  string     `json:"text"`
+	Count int        `json:"count"`
+	Last  *time.Time `json:"last,omitempty"`
+}
+
+// Invariants is the load invariants' view. FixDir is the Fyr checkout a
+// card's Fix it starts its thread in, "" when the host has none.
+type Invariants struct {
+	Cards  []InvariantCard `json:"cards,omitempty"`
+	Stats  []InvariantStat `json:"stats"`
+	FixDir string          `json:"fixDir,omitempty"`
 }
 
 // GuardRerun is one rerunnable class's kills in the last hour.

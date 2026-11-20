@@ -228,6 +228,9 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 	}
 	g.Tree.logf("guard: job limit thread=%s cgroup=%s class=%q high=%s cpu=%s why=%s learned_peak=%s learned_demand=%.2f agents_mem=%s/%s was=%s",
 		thread, kind, s.class, mbOr(high), cpuOr(cpu), why, inMB(s.size.Peak), s.size.Demand, inMB(used), inMB(budget), was)
+	if g.Limited != nil { // V0.load-invariants
+		g.Limited(thread, s.class, why, high, budget, s.size.Runs)
+	}
 }
 
 func mbOr(v string) string {

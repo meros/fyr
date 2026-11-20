@@ -74,8 +74,12 @@ type JobGroups struct {
 	// N is the host's `slots` setting: a class under slots.LearnRuns runs is
 	// sized no smaller than the prior, 1/N of the agents (V0.admission-memory).
 	// 0 sizes it as learned.
-	N     int
-	sized map[string]sizedJob
+	N int
+	// Limited hears each `guard: job limit` written (V0.load-invariants):
+	// the memory.high ("max" or bytes), why, the agents' budget and the
+	// class's runs. Optional.
+	Limited func(thread, class, why, high string, budget uint64, runs int)
+	sized   map[string]sizedJob
 }
 
 // undeclaredDir is the name of a thread's undeclared-work cgroup, beside job/

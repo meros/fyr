@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -31,7 +32,8 @@ func openHost(cfg config, data, t3DB string, kept map[string]bool) *host {
 		log.Fatal(err)
 	}
 	eng := engine.New(st)
-	eng.Kept = kept // V0.90
+	log.SetOutput(io.MultiWriter(log.Writer(), eng.LogTap())) // V0.load-invariants: a card shows the guard's last lines
+	eng.Kept = kept                                           // V0.90
 	for _, r := range cfg.ScratchRoots {
 		eng.ScratchRoots = append(eng.ScratchRoots, hostfs.ExpandHome(r, home()))
 	}

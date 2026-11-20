@@ -5,6 +5,7 @@ import type { Profile, Thread } from "./types.ts";
 import type { FilterSel, HostChip, ProjectChip } from "./filters.ts";
 import { LoadRail } from "./load-ui.tsx";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
+import { InvariantCards } from "./invariants-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
@@ -270,6 +271,7 @@ export function Inbox(p: InboxProps) {
                 {hideAt !== undefined && <HideClock at={hideAt} />}
                 {hint && <span class="h ell">{hint}</span>}
               </div>
+              {s.key === "needs" && <InvariantCards phone={false} now={p.now} onOpen={p.onClick} />}
               {shown.map((t) =>
                 s.key === "needs" ? (
                   <Fragment key={t.id}>

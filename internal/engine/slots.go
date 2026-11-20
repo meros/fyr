@@ -232,7 +232,8 @@ func (e *Engine) sweepSlots() {
 	e.syncSlotQueue()
 	e.heavierThanPredicted(s)
 	e.freezeGuard(s)
-	e.memoryGuard(s) // V0.guard-tidy: after the freeze, which told its thread already
+	e.memoryGuard(s)    // V0.guard-tidy: after the freeze, which told its thread already
+	e.checkInvariants() // V0.load-invariants
 	e.publishGuard(e.Now())
 	e.adaptBudget(s)
 	// Decision 0029 S2: the conditions change without a release.
@@ -456,6 +457,7 @@ const guardKeep = 60
 
 // guardRecord adds a decision to the history the front shows (decision 0032).
 func (e *Engine) guardRecord(ev slots.GuardEvent, sig slots.Signals) {
+	e.invEvent(ev, sig) // V0.load-invariants
 	if sig.Headroom != nil {
 		h := *sig.Headroom
 		ev.Headroom = &h
@@ -507,6 +509,7 @@ func (e *Engine) publishGuard(now time.Time) {
 		g.Threads = append(g.Threads, t)
 	}
 	e.mu.Unlock()
+	g.Invariants = e.invariantView() // V0.load-invariants
 	slices.SortFunc(g.Threads, func(a, b slots.GuardThread) int { return strings.Compare(a.Thread, b.Thread) })
 	e.guardPub.Store(g)
 }

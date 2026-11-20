@@ -25,6 +25,7 @@ import { GuardChart } from "./guard-ui.tsx";
 import { guardLog, guardSummary, rerunRows } from "./guard.ts";
 import { clockTime } from "./format.ts";
 import { leftoverRows, tempRows } from "./leftovers.ts";
+import { invariantRows } from "./invariants.ts";
 import { addedRows, parseThreshold, thresholdError, thresholdRows, undeclaredRows } from "./undeclared.ts";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
@@ -1341,7 +1342,24 @@ function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps
       <LeftoverGroups h={h} host={host} api={api} focus={focus} />
       {h.provider && <UndeclaredGroups h={h} host={host} api={api} />}
       {h.provider && <MeasuredJobs h={h} host={host} api={api} env={env} />}
+      <InvariantGroup h={h} host={host} />
     </>
+  );
+}
+
+/** V0.load-invariants: the load guard's invariants, each with its last violation and how often it broke. A broken one
+ *  is a card in Needs you (invariants-ui.tsx). Desktop and phone share it; absent from a host before it. */
+function InvariantGroup({ h, host }: { h: HostLoad; host: string }) {
+  const und = useUnd();
+  const rows = invariantRows(h, und.now());
+  if (!rows.length) return null;
+  const broken = rows.filter((r) => r.desc !== "never broken").length;
+  return (
+    <Group label="Load invariants" title="Load invariants" fold={{ id: `${host}:invariants`, open: false, summary: broken ? `${broken} of ${rows.length} broken` : `${rows.length} held` }} foot="Fyr checks these on each tick of the memory guard. A broken one writes an invariant line to fyrd's log and, at most once a day, a card in Needs you with the evidence; its Fix it starts a thread in this host's Fyr checkout. Fyr never starts the fix by itself.">
+      {rows.map((r) => (
+        <Row key={r.id} class="invrow" title={r.id} mono desc={`${r.text} ${r.desc}.`} />
+      ))}
+    </Group>
   );
 }
 
