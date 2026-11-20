@@ -419,6 +419,8 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 		return m.feed(threadID)
 	case core.EffectAnswer:
 		return m.answer(threadID, e)
+	case core.EffectCancel: // V0.ask-cancel: the owner closed a question a run waits on
+		return m.cancelAsk(threadID, e.DecisionID)
 	case core.EffectInterrupt:
 		return m.doInterrupt(threadID)
 	case core.EffectStop:

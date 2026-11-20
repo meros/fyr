@@ -474,6 +474,8 @@ func resultNotices(r Reduced) []Notice {
 			exit, _ := d["exit"].(int)
 			out = append(out, Notice{About: aboutOn(d["on"]), Key: fmt.Sprintf("result:%v:%v", d["on"], d["action"]),
 				What: ranText(fmt.Sprint(d["label"]), fmt.Sprint(d["title"]), ok, exit, str(d["output"]))})
+		case ev.Type == "decision.closed" && d["cancelled"] == true && d["asked"] == true: // V0.ask-cancel
+			out = append(out, Notice{About: "thread", Key: "result:ask:" + str(d["id"]), What: askCancelText(str(d["answer"]))})
 		case ev.Type == "decision.closed" && d["asked"] == true: // V0.ask-tool
 			out = append(out, Notice{About: "thread", Key: "result:ask:" + str(d["id"]), What: askAnswerText(str(d["answer"]))})
 		case ev.Type == "decision.closed" && d["gate"] == true: // V0.136

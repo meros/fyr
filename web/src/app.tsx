@@ -52,7 +52,7 @@ import { useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, afterSettle, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { type AnswerMove, arrive, arrivalOnOpen } from "./arrived.ts";
-import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
+import { answerThenNext, cardKey, goTo, initCard, setOther, submitOf, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { escapeTarget, parsePage, type PageRef } from "./settings-nav.ts";
 import { Settings, type SettingsDevice, type SettingsProps } from "./settings-ui.tsx";
@@ -1000,17 +1000,24 @@ function App() {
   const submitAsk = (d: Decision) => {
     const cs = cards[d.id];
     if (!cs || !view) return;
-    const answers = answersOf(cs, d);
-    if (!answers) return;
+    const send = submitOf(cs, d);
+    if (!send) return;
     const id = view.id;
     const from = { id, title: store.threads[id]?.title ?? "" };
     void answerThenNext(
-      () => cmds.run("thread.answer", [id], { decisionId: d.id, answers }),
+      // V0.ask-cancel: a question the owner skipped goes with the card, named, so the agent hears it.
+      () => cmds.run("thread.answer", [id], { decisionId: d.id, answers: send.answers, ...(send.skipped.length ? { skipped: send.skipped } : {}) }),
       () => {
         const to = nextNeeding(1, id);
         if (to) setArrival(arrive(from, to, sec.needs.map((t) => t.id)));
       },
     );
+  };
+
+  /** V0.ask-cancel: close the card without answering; the agent hears why it has no answer. */
+  const cancelAsk = (d: Decision) => {
+    if (!view) return;
+    void cmds.run("thread.cancelAsk", [view.id], { decisionId: d.id });
   };
 
   /** Enter in the answer field: the text answers the active question, then submit or move on. */
@@ -1019,6 +1026,7 @@ function App() {
     const r = cardKey(card, decision, "Enter", { inOther: true });
     setCards((c) => ({ ...c, [decision.id]: r.state }));
     if (r.submit) submitAsk(decision);
+    if (r.cancel) cancelAsk(decision);
   };
   const answerField =
     decision?.kind === "ask" && card && view?.mode === "open"
@@ -1438,6 +1446,7 @@ function App() {
           setCards((c) => ({ ...c, [decision.id]: r.state }));
           if (r.focusOther) document.getElementById("composer")?.focus();
           if (r.submit) submitAsk(decision);
+          if (r.cancel) cancelAsk(decision);
           return;
         }
       } else if ((decision.kind === "approval" || decision.kind === "effect") && (k === "1" || k === "2")) {
@@ -1789,10 +1798,11 @@ function App() {
             onCard: (fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c)),
             submitAsk: async (d) => {
               const cs = cards[d.id];
-              const answers = cs ? answersOf(cs, d) : null;
-              if (!answers || !view) return false;
-              return (await cmds.run("thread.answer", [view.id], { decisionId: d.id, answers })) > 0;
+              const send = cs ? submitOf(cs, d) : null;
+              if (!send || !view) return false;
+              return (await cmds.run("thread.answer", [view.id], { decisionId: d.id, answers: send.answers, ...(send.skipped.length ? { skipped: send.skipped } : {}) })) > 0;
             },
+            cancelAsk: async (d) => (view ? (await cmds.run("thread.cancelAsk", [view.id], { decisionId: d.id })) > 0 : false),
             allow: async (d, ok) => (view ? (await cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
             arrival: arrivedHere,
             setArrival,
@@ -1924,6 +1934,7 @@ function App() {
             onCard={(cs) => decision && setCards((c) => ({ ...c, [decision.id]: cs }))}
             onAllow={allow}
             onSubmitAsk={submitAsk}
+            onCancelAsk={cancelAsk}
             arrived={arrivedHere ? { a: arrivedHere, onBack: () => (setArrival(null), openThread(arrivedHere.from, "open")), onDismiss: () => setArrival(null) } : undefined}
             onRun={(a, args) => {
               if (a === "thread.settle") return settle(view.id);

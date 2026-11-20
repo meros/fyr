@@ -1341,12 +1341,23 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       }
       case "thread.answer": {
         const d = t.decisions?.find((x) => x.id === args.decisionId);
-        const ans = args.answers ? Object.values(args.answers as Record<string, string>).join(" · ") : args.allow ? "Allowed" : "Denied";
-        emit(t.id, "decision.closed", { id: args.decisionId, answer: ans });
+        // V0.ask-cancel: a question the owner skipped is named, not answered.
+        const pairs = [...Object.entries((args.answers as Record<string, string>) ?? {}).map(([q, a]) => `${q} → ${a}`)];
+        for (const q of (args.skipped as string[] | undefined) ?? []) pairs.push(`${q} → (skipped)`);
+        const ans = pairs.length ? pairs.join("\n") : args.allow ? "Allowed" : "Denied";
+        emit(t.id, "decision.closed", { id: args.decisionId, answer: ans, ...((args.skipped as string[] | undefined)?.length ? { skipped: args.skipped } : {}) });
         if (d?.kind === "effect" && args.allow) emit(t.id, "effect.result", { action: d.effect?.action, ok: true, text: "Merged #4170 with squash." });
         // V0.101: an answered or declined ask leaves Needs you.
         put(t, { decisions: (t.decisions ?? []).filter((x) => x.id !== args.decisionId), changes: (t.changes ?? []).map((x) => (x.need?.ask && x.need.ask === args.decisionId ? { ...x, need: undefined } : x)) });
         runFor(t.id, "Thanks, continuing with that answer. (mock)");
+        break;
+      }
+      case "thread.cancelAsk": {
+        // V0.ask-cancel: the card closes without an answer, and the agent hears it.
+        const d = t.decisions?.find((x) => x.id === args.decisionId);
+        emit(t.id, "decision.closed", { id: args.decisionId, answer: (d?.questions ?? []).map((q) => q.question).join("\n"), cancelled: true, asked: true });
+        put(t, { decisions: (t.decisions ?? []).filter((x) => x.id !== args.decisionId), attention: { state: "seen", section: "seen", reason: "" } });
+        runFor(t.id, "Understood, I'll go on without an answer. (mock)");
         break;
       }
       case "thread.interrupt":

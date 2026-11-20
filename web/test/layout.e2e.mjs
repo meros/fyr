@@ -4202,6 +4202,58 @@ try {
 }
 });
 
+// V0.ask-cancel: the question card steps back to a question, skips one, and closes without an answer, on both
+// fronts. The mock's t_ask card has two questions.
+for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.ask-cancel ${front}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
+  const ctx = `V0.ask-cancel ${front}`;
+  const phone = front === "phone";
+try {
+  if (phone) await openScreen({ url: "?mock=1&open=t_ask", ready: "!!document.querySelector('.m-ask')" }, w, hh);
+  else {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=1&open=t_ask`, "!!document.querySelector('.th .ask .askf')");
+  }
+  const head = phone ? ".m-ask" : ".th .ask";
+  // What the card shows: its question, its progress, its quiet controls, and (phone) the step dots.
+  const CARD = `(() => { const a = document.querySelector('${head}'); if (!a) return null;
+    const t = (s) => (a.querySelector(s)?.textContent ?? '').replace('↵', '').trim();
+    return { n: t('.ah .qn') || t('.m-ah b'), progress: t('.askf .askp') || t('.m-abar .m-bt'),
+      nav: [...a.querySelectorAll('.askf .askb, .m-navb')].map((b) => (b.textContent ?? '').trim()),
+      done: a.querySelectorAll('.m-dots i.done').length }; })()`;
+  const backBtn = phone ? ".m-ask .m-navb:first-child" : `.th .ask .askf .askb`;
+  const skipBtn = phone ? ".m-ask .m-navb:last-child" : `.th .ask .askf .askb`;
+  const a = await evaluate(CARD);
+  check(!!a && /Question 1 of 2/.test(a.n), `${ctx}: the card does not open on the first of two questions (${JSON.stringify(a)})`);
+  check(!!a && a.nav.some((x) => /Skip/.test(x)) && !a.nav.some((x) => /Back/.test(x)), `${ctx}: the first question offers no Skip, or a Back with nothing before it (${JSON.stringify(a?.nav)})`);
+  // Skip the first question: the card moves on, and the question it passed is marked.
+  // Skip sits under the options, past the fold of a long question, so it is scrolled to before the press.
+  if (phone) await evaluate(`(() => { const b = document.querySelector('${skipBtn}'); b?.scrollIntoView({ block: 'center' }); b?.click(); })()`);
+  else await evaluate(`[...document.querySelectorAll('${skipBtn}')].find((b) => /Skip/.test(b.textContent))?.click()`);
+  const moved = await waitFor(`(() => { const a = document.querySelector('${head}'); if (!a) return false;
+    const passedInProgress = /1 skipped/.test(a.querySelector('.askf .askp')?.textContent ?? '');
+    return /Question 2 of 2/.test(a.textContent) && (${phone} ? a.querySelectorAll('.m-dots i.done').length === 1 : passedInProgress); })()`, { soft: true });
+  check(moved, `${ctx}: Skip does not move to the next question and mark the one it passed (${JSON.stringify(await evaluate(CARD))})`);
+  // Back to the skipped question, which now offers to take the skip back.
+  if (phone) await evaluate(`(() => { const b = document.querySelector('${backBtn}'); b?.scrollIntoView({ block: 'center' }); b?.click(); })()`);
+  else await evaluate(`document.querySelector('${backBtn}')?.click()`);
+  const back = await waitFor(`(() => { const a = document.querySelector('${head}'); if (!a) return false;
+    return /Question 1 of 2/.test(a.textContent) && [...a.querySelectorAll('.askf .askb, .m-navb')].some((b) => /Unskip/.test(b.textContent)); })()`, { soft: true });
+  check(back, `${ctx}: Back does not return to the skipped question with a way to take the skip back (${JSON.stringify(await evaluate(CARD))})`);
+  // Cancel: the card closes without an answer, and the log says so.
+  if (phone) await evaluate(`document.querySelector(".m-ask .m-ahx")?.click()`);
+  else await evaluate(`document.querySelector('.th .ask .ah .ahx')?.click()`);
+  const gone = await waitFor(`!document.querySelector('${head}')`, { soft: true });
+  check(gone, `${ctx}: the card stays after Cancel`);
+  await settle();
+  const logged = await waitFor(`[...document.querySelectorAll('.ql')].some((x) => /Question cancelled/.test(x.textContent))`, { soft: true });
+  check(logged, `${ctx}: the log does not say the question was cancelled`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // V0.48: Settled opened from its header shows a clock; the rail's g5 keeps it open without one. The section
 // "V0.196 auto-close" below waits out the 10 s.
 section('V0.48', async (h) => {

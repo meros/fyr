@@ -18,6 +18,14 @@ const (
 	// EffectAnswered is the owner's answer to a question nobody waits on in
 	// a tool call: the reduce logs it, and the agent feed tells the agent.
 	EffectAnswered EffectKind = "answered"
+	// EffectCancelled is the owner closing a question card without an answer
+	// (V0.ask-cancel): the reduce logs it, and the agent feed tells the agent.
+	// A question a run waits on is withdrawn in the process instead
+	// (EffectCancel).
+	EffectCancelled EffectKind = "cancelled"
+	// SkippedAnswer is the answer logged for a question the owner skipped
+	// (V0.ask-cancel): no answer, and the agent is told so.
+	SkippedAnswer = "(skipped)"
 
 	// The limits of one ask: the card shows one question at a time with its
 	// options in a row of four.
@@ -109,21 +117,71 @@ func cleanQuestions(in []Question) ([]Question, error) {
 	return out, nil
 }
 
-// answered logs the owner's answer to a question asked with Fyr's tool.
-func answered(res *Result, d Decision, answers map[string]string) {
+// stringsOf is the non-empty strings of a JSON list of arguments.
+func stringsOf(v any) []string {
+	raw, _ := v.([]any)
+	out := make([]string, 0, len(raw))
+	for _, x := range raw {
+		if s, ok := x.(string); ok && strings.TrimSpace(s) != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// answered logs the owner's answer to a question asked with Fyr's tool. A
+// question the owner skipped is logged as skipped, so the agent does not
+// take it for an answer (V0.ask-cancel).
+func answered(res *Result, d Decision, answers map[string]string, skipped []string) {
+	skip := map[string]bool{}
+	for _, q := range skipped {
+		skip[q] = true
+	}
 	var lines []string
 	for _, q := range d.Questions {
-		lines = append(lines, q.Question+" → "+answers[q.Question])
+		a := SkippedAnswer
+		if !skip[q.Question] {
+			a = answers[q.Question]
+		}
+		lines = append(lines, q.Question+" → "+a)
 	}
-	res.Events = append(res.Events, Event{"decision.closed", map[string]any{"id": d.ID, "answer": strings.Join(lines, "\n"), "asked": true}})
+	data := map[string]any{"id": d.ID, "answer": strings.Join(lines, "\n"), "asked": true}
+	if len(skipped) > 0 {
+		data["skipped"] = skipped
+	}
+	res.Events = append(res.Events, Event{"decision.closed", data})
+}
+
+// cancelled logs a question card the owner closed without answering it
+// (V0.ask-cancel): the agent is told, since it waits on no tool call.
+func cancelled(res *Result, d Decision) {
+	var qs []string
+	for _, q := range d.Questions {
+		qs = append(qs, q.Question)
+	}
+	res.Events = append(res.Events, Event{"decision.closed", map[string]any{
+		"id": d.ID, "answer": strings.Join(qs, "\n"), "cancelled": true, "asked": d.Async,
+	}})
 }
 
 // askAnswerText is the agent's notice of the owner's answer.
 func askAnswerText(answer string) string {
+	s := "The owner answered your question: "
 	if strings.Contains(answer, "\n") {
-		return "The owner answered your questions:\n" + answer
+		s = "The owner answered your questions:\n"
 	}
-	return "The owner answered your question: " + answer
+	s += answer
+	if strings.Contains(answer, " → "+SkippedAnswer) {
+		s += "\nA question marked " + SkippedAnswer + " was left without an answer on purpose: decide it yourself if you can, or go on without it; do not ask it again as it is."
+	}
+	return s
+}
+
+// askCancelText is the agent's notice of a question card the owner closed
+// without answering: the agent is not left waiting for an answer.
+func askCancelText(questions string) string {
+	return "The owner cancelled your question without answering it:\n" + questions +
+		"\nDecide it yourself if you can, or stop and say what you need; do not ask it again as it is."
 }
 
 // TextQuestionText is the nudge of a turn that ended with a question in its

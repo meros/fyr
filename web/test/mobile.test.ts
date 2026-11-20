@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { activeSection, allowCommit, askCommit, stepLabel, stripCount } from "../src/mobile.ts";
-import { chooseOther, goTo, initCard, pickStay, setOther } from "../src/question.ts";
+import { chooseOther, goTo, initCard, pickStay, setOther, skip } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
 const d: Decision = {
@@ -67,4 +67,14 @@ test("the active strip segment follows the scroll", () => {
   assert.equal(activeSection(tops, 0), "needs");
   assert.equal(activeSection(tops, 398), "working");
   assert.equal(activeSection(tops, 1000), "seen");
+});
+
+// V0.ask-cancel: a skipped question counts as passed, and a card with no answer at all can only be cancelled.
+test("the commit button names a skip, and cancels when nothing is answered", () => {
+  let cs = skip(initCard(d), d);
+  assert.deepEqual(askCommit(cs, d), { label: "Answer · 1 of 2 left", enabled: false, act: "none" });
+  cs = pickStay(goTo(cs, d, 1), d, 1);
+  assert.deepEqual(askCommit(cs, d), { label: "Answer 1, skip 1", enabled: true, act: "submit" });
+  const both = skip(skip(initCard(d), d), d);
+  assert.deepEqual(askCommit(both, d), { label: "Cancel question", enabled: true, act: "cancel" });
 });

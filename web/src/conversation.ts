@@ -93,7 +93,7 @@ export type Item = (
   | { kind: "note"; key: string; text: string; line: string }
   /** V0.164 (N9): what Fyr told the agent about heavy work it did not ask for; `text` is the whole notice */
   | { kind: "undeclared"; key: string; text: string; line: string }
-  | { kind: "answer"; key: string; text: string }
+  | { kind: "answer"; key: string; text: string; cancelled?: boolean }
   | { kind: "preview"; key: string; card: PreviewCard }
   | { kind: "task"; key: string; text: string; status: string; started: boolean }
   /** V0.45: the thread moved to another profile */
@@ -421,7 +421,9 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         if (str(e.data?.leftovers)) pushItem({ kind: "note", key, text: str(e.data?.leftovers), line: str(e.data?.leftovers).replace(/^Fyr /, "") }); // shown as "Fyr: ended …"
         break;
       case "decision.closed":
-        if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
+        // V0.ask-cancel: a card the owner closed without an answer is its own line, not an answer.
+        if (e.data?.cancelled === true) pushItem({ kind: "answer", key, text: str(e.data?.answer), cancelled: true });
+        else if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
         break;
       default:
         break; // decision.opened and unknown types are not shown in the log

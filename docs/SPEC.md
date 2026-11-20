@@ -1938,8 +1938,11 @@ type HoursBody = {
 - **Questions are the main kind (0.2).**
   - The card shows every question of one AskUserQuestion. One question is active at a time, marked with a focus bar ("Question 1 of 2").
   - `1`–`4` pick an option. In a single-select question, a pick moves to the next question. In a multi-select question, `1`–`4` toggle and Tab moves on.
+  - `Tab` / `⇧Tab` and `→` / `←` move between the questions; the card offers a Back once a question comes before it (V0.ask-cancel).
   - Each question has an option `0` "Other…", which opens an inline field (the composer, U15).
-  - Enter sends all answers when every question is answered. Then the next row that needs the user opens (`n`).
+  - `⇧S` (the card's Skip) leaves the question without an answer and moves on to the next one that needs one. A skip is sent as `(skipped)`, so the agent tells a gap from an answer; at least one question must be answered, and a card with nothing answered can only be cancelled (V0.ask-cancel).
+  - Enter sends the answers and the skips when every question is answered or skipped. Then the next row that needs the user opens (`n`).
+  - `⇧Esc` (the card's Cancel) closes the card without an answer; the agent is told it was cancelled and does not wait, and a question a run waits on is withdrawn in its tool call (V0.ask-cancel).
   - The same card works from a phone push (U22).
 - **Docking.** The card docks above the composer, at the end of the conversation.
 - **What every card shows:**

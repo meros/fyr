@@ -58,12 +58,15 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 	delete(s.reqs, reqID)
 	m.mu.Unlock()
 	if !ok || ans.Kind == core.EffectCancel {
-		return claude.Msg{"behavior": "deny", "message": "The question was withdrawn."}
+		return claude.Msg{"behavior": "deny", "message": "The owner closed the question without answering it."}
 	}
 	if d.Kind == core.DecisionAsk {
 		answers := map[string]any{}
 		for k, v := range ans.Answers {
 			answers[k] = v
+		}
+		for _, q := range ans.Skipped { // V0.ask-cancel: a question the owner left without an answer
+			answers[q] = core.SkippedAnswer
 		}
 		in := copyMap(input)
 		in["answers"] = answers
@@ -101,10 +104,13 @@ func (m *Manager) answer(threadID string, e core.Effect) error {
 		return fmt.Errorf("the question was already answered")
 	}
 	text := ""
-	if e.Answers != nil {
+	if e.Answers != nil || len(e.Skipped) > 0 {
 		parts := []string{}
 		for q, a := range e.Answers {
 			parts = append(parts, q+" → "+a)
+		}
+		for _, q := range e.Skipped { // V0.ask-cancel
+			parts = append(parts, q+" → "+core.SkippedAnswer)
 		}
 		text = strings.Join(parts, "\n")
 	} else if e.Allow {
@@ -113,6 +119,34 @@ func (m *Manager) answer(threadID string, e core.Effect) error {
 		text = "denied"
 	}
 	m.observe(threadID, core.KindRecord, []core.Event{{Type: "decision.closed", Data: map[string]any{"id": e.DecisionID, "answer": text}}})
+	return nil
+}
+
+// cancelAsk withdraws a question the owner cancelled from the run that
+// waits on it (V0.ask-cancel): its tool call hears a deny and goes on. An
+// ask asked with Fyr's tool has no process, and its card is already closed.
+func (m *Manager) cancelAsk(threadID, id string) error {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	var ch chan core.Effect
+	if s != nil {
+		ch = s.asks[id]
+	}
+	sent := false
+	if ch != nil {
+		select {
+		case ch <- core.Effect{Kind: core.EffectCancel}:
+			sent = true
+		default:
+		}
+	}
+	m.mu.Unlock()
+	if ch == nil {
+		return nil // nobody waits in a tool call: the reduce closed the card
+	}
+	if !sent {
+		return fmt.Errorf("the question was already answered")
+	}
 	return nil
 }
 

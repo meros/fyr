@@ -2,7 +2,7 @@
 
 import { describeEffect } from "./effects.ts";
 import type { Decision } from "./types.ts";
-import { answerOf, questionsOf, type CardState } from "./question.ts";
+import { answerOf, questionsOf, settledOf, type CardState } from "./question.ts";
 
 /** Single-select picks move on after this delay; multi-select and the last question never do. */
 export const ADVANCE_MS = 250;
@@ -13,17 +13,24 @@ export interface Commit {
   label: string;
   enabled: boolean;
   /** what the button does */
-  act: "submit" | "next" | "none";
+  act: "submit" | "next" | "none" | "cancel";
 }
 
-/** The sticky commit button always names its result (README, Decisions). */
+/** The sticky commit button always names its result (README, Decisions). V0.ask-cancel: a skipped
+ *  question counts as passed, and a card with no answer at all can only be cancelled. */
 export function askCommit(cs: CardState, d: Decision): Commit {
   const qs = questionsOf(d);
   const n = qs.length;
-  const left = qs.filter((_, i) => answerOf(cs, d, i) === null).length;
-  if (left === 0) return { label: n === 1 ? "Answer" : `Answer ${n} questions`, enabled: true, act: "submit" };
+  const answered = qs.filter((_, i) => answerOf(cs, d, i) !== null).length;
+  const left = qs.filter((_, i) => !settledOf(cs, d, i)).length;
+  const skipped = n - left - answered;
+  if (left === 0) {
+    if (answered === 0) return { label: "Cancel question", enabled: true, act: "cancel" };
+    const label = n === 1 ? "Answer" : skipped ? `Answer ${answered}, skip ${skipped}` : `Answer ${n} questions`;
+    return { label, enabled: true, act: "submit" };
+  }
   const q = qs[cs.index];
-  const cur = answerOf(cs, d, cs.index) !== null;
+  const cur = settledOf(cs, d, cs.index);
   const autoAdvances = q && !q.multiSelect && cs.other[cs.index] === null;
   if (cur && cs.index < n - 1 && !autoAdvances) return { label: "Next question", enabled: true, act: "next" };
   return { label: n === 1 ? "Answer" : `Answer · ${left} of ${n} left`, enabled: false, act: "none" };
