@@ -45,6 +45,7 @@ import { placeOf, steadyThreads, stillRows, trackArrivals, type FinishHold, type
 import { useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, afterSettle, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
+import { type AnswerMove, arrive, arrivalOnOpen } from "./arrived.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { escapeTarget, parsePage, type PageRef } from "./settings-nav.ts";
@@ -462,6 +463,10 @@ function App() {
   gatedRef.current = gate.gated;
   admittedRef.current = gate.admitted;
   const gatedThread = gate.gated && wantId ? store.threads[wantId] : undefined;
+  // V0.arrived-from: after an answer moved the owner on, the next thread says where they came from until they leave it.
+  const [arrival, setArrival] = useState<AnswerMove | null>(null);
+  useEffect(() => setArrival((a) => arrivalOnOpen(a, wantId)), [wantId]);
+  const arrivedHere = arrival && arrival.to === wantId ? arrival : null;
   // V0.192: the current thread punches through what hides it: the filters and quiet hours add its row in its own place
   // (`rows`), a folded section draws it alone (`guest`). `sec` stays what the filters let through, for every count.
   const current = sel ? listThreads[sel] : undefined;
@@ -988,7 +993,14 @@ function App() {
     const answers = answersOf(cs, d);
     if (!answers) return;
     const id = view.id;
-    void answerThenNext(() => cmds.run("thread.answer", [id], { decisionId: d.id, answers }), () => nextNeeding(1, id));
+    const from = { id, title: store.threads[id]?.title ?? "" };
+    void answerThenNext(
+      () => cmds.run("thread.answer", [id], { decisionId: d.id, answers }),
+      () => {
+        const to = nextNeeding(1, id);
+        if (to) setArrival(arrive(from, to, sec.needs.map((t) => t.id)));
+      },
+    );
   };
 
   /** Enter in the answer field: the text answers the active question, then submit or move on. */
@@ -1013,13 +1025,15 @@ function App() {
     void cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok });
   };
 
-  const nextNeeding = (dir: 1 | -1, from?: string | null) => {
+  /** Opens the next (or previous) thread that needs the owner; returns its id. */
+  const nextNeeding = (dir: 1 | -1, from?: string | null): string | undefined => {
     const list = sec.needs.map((t) => t.id).filter((id) => id !== from);
     if (!list.length) return;
     const cur = from ?? sel;
     const i = cur ? list.indexOf(cur) : -1;
     const j = i < 0 ? (dir === 1 ? 0 : list.length - 1) : (i + dir + list.length) % list.length;
     openThread(list[j], "open");
+    return list[j];
   };
 
   // ---- the thread list (V0.40): hideable, hidden by default in a narrow window ----
@@ -1753,6 +1767,8 @@ function App() {
               return (await cmds.run("thread.answer", [view.id], { decisionId: d.id, answers })) > 0;
             },
             allow: async (d, ok) => (view ? (await cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
+            arrival: arrivedHere,
+            setArrival,
           }}
           list={{ sectionOpen, toggleSection, nameSection, hideAt: hideShown, sectionUsed, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
           device={{
@@ -1881,6 +1897,7 @@ function App() {
             onCard={(cs) => decision && setCards((c) => ({ ...c, [decision.id]: cs }))}
             onAllow={allow}
             onSubmitAsk={submitAsk}
+            arrived={arrivedHere ? { a: arrivedHere, onBack: () => (setArrival(null), openThread(arrivedHere.from, "open")), onDismiss: () => setArrival(null) } : undefined}
             onRun={(a, args) => {
               if (a === "thread.settle") return settle(view.id);
               if (a === "thread.archive") return archive([view.id]);
