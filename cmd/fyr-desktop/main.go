@@ -39,6 +39,7 @@ type app struct {
 	prefsPath string
 
 	mu     sync.Mutex
+	saveMu sync.Mutex
 	prefs  desktop.Prefs
 	origin atomic.Value // string: the origin the window signed in to
 
@@ -121,11 +122,8 @@ func (a *app) start() {
 				return
 			}
 			a.prefs.Endpoint, a.prefs.PushOff = ep, off
-			p := a.prefs
 			a.mu.Unlock()
-			if err := p.Save(a.prefsPath); err != nil {
-				log.Printf("fyr-desktop: %v", err)
-			}
+			a.persist()
 		},
 		Show: a.show, Up: a.feedUp}
 	go a.device.Run(ctx)
@@ -133,6 +131,19 @@ func (a *app) start() {
 		shellLoad(o + "/") // the session it has; a 401 asks for a link
 	} else {
 		go a.signIn()
+	}
+}
+
+// persist writes the newest prefs. Saves are one at a time and each writes
+// what holds when it runs, so a slow save of an older copy never wins.
+func (a *app) persist() {
+	a.saveMu.Lock()
+	defer a.saveMu.Unlock()
+	a.mu.Lock()
+	p := a.prefs
+	a.mu.Unlock()
+	if err := p.Save(a.prefsPath); err != nil {
+		log.Printf("fyr-desktop: %v", err)
 	}
 }
 
@@ -151,11 +162,8 @@ func (a *app) signIn() {
 		a.origin.Store(o)
 		a.mu.Lock()
 		a.prefs.Origin = o
-		p := a.prefs
 		a.mu.Unlock()
-		if err := p.Save(a.prefsPath); err != nil {
-			log.Printf("fyr-desktop: %v", err)
-		}
+		a.persist()
 	}
 	a.offline.Store(false)
 	shellLoad(u)
@@ -294,11 +302,8 @@ func goWindowSize(w, h, maximized C.int) {
 		g.Width, g.Height = the.prefs.Window.Width, the.prefs.Window.Height
 	}
 	the.prefs.Window = g
-	p := the.prefs
 	the.mu.Unlock()
-	if err := p.Save(the.prefsPath); err != nil {
-		log.Printf("fyr-desktop: %v", err)
-	}
+	the.persist()
 }
 
 //export goMenu
