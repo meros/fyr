@@ -13,7 +13,7 @@ The original goal of v1 was "the owner works only in Fyr". It has been met for w
 | Projects and workspaces | Done except two | Worktrees for each change (decision 0019: #375, #376, #354), and threads are filed by folder. Archiving a project (#24) and the folder in the header (#26) move to v1.0. |
 | Conversation and live view | Done except two | Missed read events fixed (#29), and the View-tab reply shipped (#20). #19 (background on a new message) moves to v1.0. The live-view cost (#17) becomes a one-off query after v1.0. |
 | M4 Calm machine | Done past its scope | The guard far exceeds the plan: decision 0036 slices 0–6, adaptive admission, freeze and thaw, kill and rerun for opted-in classes, invariants with a Fix it card, a simulation over 17 scenarios. A forced memory hog is frozen and shown, not hidden. Not built: batching several pushes into one, the no-progress signal, one summary push when quiet hours end, and the policy file. The policy file is superseded by async effects, where the agent asks and the owner approves: Run cards, merge asks and the heavy-command gate. |
-| M5 Cut-over | Met | Weeks of daily work only in Fyr. Removing the T3 code (#68) moves to v1.0. |
+| M5 Cut-over | Met. Of the original checklist, A6 is accepted as built ("Since you looked" on the status screen; owner decision 20 Nov) | Weeks of daily work only in Fyr. Removing the T3 code (#68) moves to v1.0. |
 | Mesh | Later | After v1.0. |
 
 ## v1.0: a stranger can install it, and it stays put
@@ -53,7 +53,7 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 |---|---|
 | #19 | A new message backgrounds the running Bash command (the CLI's `background_tasks` request) |
 | new | The no-progress signal: a run with no tool call for 20 min becomes blocked (the M4 leftover) |
-| new | One summary push when quiet hours end, and several pushes batched after 10 min away (the M4 leftovers) |
+| new | One summary push when quiet hours end (A10; owner decision 20 Nov), and several pushes batched after 10 min away (the M4 leftovers) |
 | #26 | The folder chip in the header, and a tap that shows path, branch and Copy path |
 | #24 | Archive a project and its threads |
 | #61 | The desktop filmstrip folds like the phone's, with a hide for each thread |
@@ -61,16 +61,16 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 
 ### Track D: Solid core 2 (the model a stranger's setup meets)
 
-An architecture review on 20 Nov (backend, web client, agent tools) found Solid core mostly holds. Every runtime change still goes through one reducer, nothing reads `Thread.PR`, and the layering is clean. Three things have drifted: the agents' tools, the client's action list, and the spec. The resource guard has no single owner. Which rows block v1.0 is the owner's call; the order below is by value to a stranger's install.
+An architecture review on 20 Nov (backend, web client, agent tools) found Solid core mostly holds. Every runtime change still goes through one reducer, nothing reads `Thread.PR`, and the layering is clean. Three things have drifted: the agents' tools, the client's action list, and the spec. The resource guard has no single owner. Owner decision, 20 Nov: the first six rows block v1.0 (fitted instructions, one tool vocabulary, one action list, slice 2b, host group codes, the spec restated). The last three are should-haves.
 
 | Item | What | Size |
 |---|---|---|
-| new | **Instructions that fit the setup.** Build the agent's instructions from facts Fyr already has (git or not, a GitHub remote, gh signed in, OS, pkexec) and drop the advice that does not apply. A merge ask without GitHub says so. Put the key rules where subagents see them (MCP `instructions`) | M |
-| new | **One tool vocabulary.** The `gh pr merge` gate names `change_request`, not `effect_request`. Fold `effect_request` into `change_request` and make deploy owner-only (`fyr.deploy` is requestable by every project's agent). Fold `settle_when` into `watch`. Remove `slot_acquire`/`slot_release` and the `pr_link` alias. Retries of `change_request` and `watch` are idempotent. A test checks that every `mcp__fyr__X` in prompts, gates and feed is a registered tool | M |
-| new | **One action list for both fronts.** One `threadActions(t)` behind the desktop context menu, the ⋯ menu and the phone sheet, which have drifted apart (the phone lacks Unsettle, Unsnooze, Unarchive, Stop run, Copy link). A test checks every action is reachable on both fronts | M |
-| new | **Decision 0031 slice 2b in the client.** State for each host, a required host id, and no `hostIdByName` or first-host fallbacks (about 22 `hostId ?? ""` sites). Makes #372 a deletion | L |
-| new | **Rows grouped by a code from the host**, not by parsing the English reason (`web/src/rows.ts:50-113`) | S |
-| new | **SPEC 3 and 5.12 restated from the code.** The tool table names tools that do not exist (`change_revise`, …) and leaves out ones that do; the front's own vocabulary and the guard's runtime state are named exceptions to "every change goes through 5.1". This was Solid core's exit criterion | S |
+| new, blocks | **Instructions that fit the setup.** Build the agent's instructions from facts Fyr already has (git or not, a GitHub remote, gh signed in, OS, pkexec) and drop the advice that does not apply. A merge ask without GitHub says so. Put the key rules where subagents see them (MCP `instructions`) | M |
+| new, blocks | **One tool vocabulary.** The `gh pr merge` gate names `change_request`, not `effect_request`. Fold `effect_request` into `change_request` and make deploy owner-only (`fyr.deploy` is requestable by every project's agent). Fold `settle_when` into `watch`. Remove `slot_acquire`/`slot_release` and the `pr_link` alias. Retries of `change_request` and `watch` are idempotent. A test checks that every `mcp__fyr__X` in prompts, gates and feed is a registered tool | M |
+| new, blocks | **One action list for both fronts.** One `threadActions(t)` behind the desktop context menu, the ⋯ menu and the phone sheet, which have drifted apart (the phone lacks Unsettle, Unsnooze, Unarchive, Stop run, Copy link). A test checks every action is reachable on both fronts | M |
+| new, blocks | **Decision 0031 slice 2b in the client.** State for each host, a required host id, and no `hostIdByName` or first-host fallbacks (about 22 `hostId ?? ""` sites). Makes #372 a deletion | L |
+| new, blocks | **Rows grouped by a code from the host**, not by parsing the English reason (`web/src/rows.ts:50-113`) | S |
+| new, blocks | **SPEC 3 and 5.12 restated from the code.** The tool table names tools that do not exist (`change_revise`, …) and leaves out ones that do; the front's own vocabulary and the guard's runtime state are named exceptions to "every change goes through 5.1". This was Solid core's exit criterion | S |
 | new | **One versioned migration step at store open.** Drop migrations from before ~V0.100 and the `leakedFixture` hack, with a fixture test of an old database | M |
 | new | **The mock checked against a real host.** Record each command's attention change on a scratch fyrd and assert the mock does the same; the layout browser test runs on the mock | M |
 | new | **`internal/guard`.** One policy (`Tick → decisions`, admission included) over a `Mechanism` that `cgroup` implements and macOS implements with the process table. This moves the policy out of `engine/slots.go` and the closures out of `cmd/fyrd/main.go`. It follows the decision 0036 acceptance work and helps #236 and #198 | L |
