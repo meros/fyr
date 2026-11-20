@@ -698,7 +698,11 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	// elevated for ThawAfterOK and it fits under the cap.
 	if len(keep) > 0 && len(thaws) == 0 && !okSince.IsZero() && now.Sub(okSince) >= ThawAfterOK && now.Sub(lastWake) >= WakeEvery {
 		f := keep[0]
-		if ok, why := wakeable(f, sig, capNow); ok {
+		var resident uint64 // V0.wake-once: what of the agents' memory is the frozen thread's own
+		if e.SlotMem != nil {
+			resident = e.SlotMem(f.owner)
+		}
+		if ok, why := wakeable(f, sig, capNow, resident); ok {
 			keep = keep[1:]
 			thaws = append(thaws, thawing{f: f, holding: true, woke: why})
 			e.mu.Lock()
@@ -849,15 +853,21 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 // decision 0036 E3): the agents' memory plus f's memory at its freeze is under
 // the cap; without a cap (the stall never went critical) the headroom rule
 // already held. The text says why, for the log.
-func wakeable(f frozenJob, sig slots.Signals, cap uint64) (bool, string) {
+//
+// V0.wake-once: resident is the frozen thread's memory now. Its pages stay
+// charged to the agents while they are in RAM, so they come out of the
+// agents' memory before the job's memory at the freeze is added: counted
+// twice, a job still in RAM could never fit.
+func wakeable(f frozenJob, sig slots.Signals, cap, resident uint64) (bool, string) {
 	if cap == 0 {
 		return true, "memory fine for 30 s"
 	}
 	if sig.AgentsMem == 0 {
 		return true, "stall below elevated for 30 s (agents' memory unknown)"
 	}
-	need := sig.AgentsMem + f.mem
-	words := fmt.Sprintf("agents=%s + its %s %s cap=%s", slots.GB(float64(sig.AgentsMem)), slots.GB(float64(f.mem)), "%s", slots.GB(float64(cap)))
+	others := sig.AgentsMem - min(resident, sig.AgentsMem)
+	need := others + f.mem
+	words := fmt.Sprintf("agents=%s + its %s %s cap=%s", slots.GB(float64(others)), slots.GB(float64(f.mem)), "%s", slots.GB(float64(cap)))
 	if need < cap {
 		return true, "fits: " + fmt.Sprintf(words, "<") + ", stall below elevated for 30 s"
 	}
