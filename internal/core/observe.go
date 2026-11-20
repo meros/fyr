@@ -160,6 +160,9 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		if k.Tool != "" {
 			cur.Tool = k.Tool
 		}
+		if k.ToolUseID != "" {
+			cur.ToolUseID = k.ToolUseID
+		}
 		cur.UpdatedAt = now
 		if ended {
 			t.ActivityAt = now

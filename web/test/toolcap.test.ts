@@ -15,8 +15,7 @@ const call = (id: string, isError = false): ToolCall => ({
   startedAt: 0,
   durationMs: 0,
   subMessages: 0,
-  subCalls: [],
-  subTexts: [],
+  sub: [],
 });
 const ids = (rows: ReturnType<typeof capCalls>) => rows.map((r) => (r.kind === "more" ? `+${r.count}` : r.call.id));
 

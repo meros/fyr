@@ -335,7 +335,7 @@ func TestMarkSeenUpTo(t *testing.T) {
 // in Working; it becomes done when they end.
 func TestBackgroundTasksMakeWaiting(t *testing.T) {
 	th, v := &Thread{ActivityAt: at(1)}, &View{SeenAt: at(0)}
-	TaskObserved(th, Task{ID: "a1", Description: "Design mobile", Status: "running"}, at(1))
+	TaskObserved(th, Task{ID: "a1", Description: "Design mobile", Status: "running", ToolUseID: "toolu_1"}, at(1))
 	if a := Compute(th, v, at(2)); a.State != Waiting || a.Section != WorkingSec || a.Reason != "1 agent" {
 		t.Fatalf("got %+v", a)
 	}
@@ -343,7 +343,7 @@ func TestBackgroundTasksMakeWaiting(t *testing.T) {
 	if a := Compute(th, v, at(4)); a.State != Done {
 		t.Fatalf("got %+v", a)
 	}
-	if th.Tasks[0].Description != "Design mobile" || th.Tasks[0].Activity != "Delivered" {
+	if th.Tasks[0].Description != "Design mobile" || th.Tasks[0].Activity != "Delivered" || th.Tasks[0].ToolUseID != "toolu_1" {
 		t.Fatalf("update lost fields: %+v", th.Tasks[0])
 	}
 	RunStarted(th, at(5))

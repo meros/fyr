@@ -972,7 +972,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
       </div>
       {!cardOpen && <UndeclaredStrip id={t.id} />}
       {!cardOpen && <LeftoverStrip id={t.id} now={p.now} />}
-      {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.open.events} cwd={t.cwd} />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
       ) : (

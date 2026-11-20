@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, summarizeInput, toolRows } from "../src/conversation.ts";
+import { agentPrompt, buildConversation, findCall, summarizeInput, toolRows } from "../src/conversation.ts";
 import { renderMarkdown } from "../src/markdown.ts";
 
 let seq = 0;
@@ -30,8 +30,36 @@ test("tool calls group, subagent messages fold under their Task, errors and run 
   assert.equal(tools.calls[0].isError, true);
   assert.equal(tools.calls[0].summary, "yarn test");
   assert.equal(tools.calls[1].subMessages, 3);
-  assert.equal(tools.calls[1].subCalls[0].summary, "a.ts");
-  assert.equal(tools.calls[1].subCalls[0].done, true);
+  const steps = tools.calls[1].sub;
+  assert.equal(steps[0].kind === "calls" && steps[0].calls[0].summary, "a.ts");
+  assert.equal(steps[0].kind === "calls" && steps[0].calls[0].done, true);
+});
+
+test("a subagent's timeline keeps its texts and tool calls in order, and its prompt", () => {
+  const items = buildConversation([
+    msg("assistant", [{ type: "tool_use", id: "a1", name: "Agent", input: { description: "check", prompt: "  Run echo one and echo two.  " } }]),
+    msg("assistant", [{ type: "text", text: "Starting." }], "a1"),
+    msg("assistant", [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "echo one" } }], "a1"),
+    msg("user", [{ type: "tool_result", tool_use_id: "b1" }], "a1"),
+    msg("assistant", [{ type: "tool_use", id: "b2", name: "Bash", input: { command: "echo two" } }], "a1"),
+    msg("user", [{ type: "tool_result", tool_use_id: "b2" }], "a1"),
+    msg("assistant", [{ type: "thinking", thinking: "hidden" }], "a1"),
+    msg("assistant", [{ type: "text", text: "Both printed." }], "a1"),
+    msg("assistant", [{ type: "tool_use", id: "b3", name: "Read", input: { file_path: "x.ts" } }], "a1"),
+    msg("assistant", [{ type: "text", text: "Done: one, two." }], "a1"),
+    msg("user", [{ type: "tool_result", tool_use_id: "a1", content: "Done: one, two." }]),
+  ]);
+  const agent = (items[0] as Extract<(typeof items)[0], { kind: "tools" }>).calls[0];
+  assert.equal(agentPrompt(agent), "Run echo one and echo two.");
+  assert.deepEqual(
+    agent.sub.map((s) => (s.kind === "text" ? `text:${s.text}` : `calls:${s.calls.map((c) => c.summary).join(",")}`)),
+    ["text:Starting.", "calls:echo one,echo two", "text:Both printed.", "calls:x.ts", "text:Done: one, two."],
+  );
+  assert.equal(agentPrompt({ ...agent, input: { description: "x" } }), "");
+  // the agents strip finds the Agent call, and a call inside its timeline, by id
+  assert.equal(findCall(items, "a1"), agent);
+  assert.equal(findCall(items, "b2")?.summary, "echo two");
+  assert.equal(findCall(items, "nope"), undefined);
 });
 
 test("markdown escapes raw HTML and unsafe links", () => {
@@ -44,7 +72,7 @@ test("markdown escapes raw HTML and unsafe links", () => {
 });
 
 test("consecutive Task calls fold into one subagents row; Edit shows a diff stat", () => {
-  const call = (id: string, name: string) => ({ id, name, summary: "", label: name, description: "", input: {}, output: "", isError: false, done: true, startedAt: 0, durationMs: 1, subMessages: 0, subCalls: [], subTexts: [] });
+  const call = (id: string, name: string) => ({ id, name, summary: "", label: name, description: "", input: {}, output: "", isError: false, done: true, startedAt: 0, durationMs: 1, subMessages: 0, sub: [] });
   const rows = toolRows([call("1", "Read"), call("2", "Task"), call("3", "Task"), call("4", "Agent"), call("5", "Bash"), call("6", "Task")]);
   assert.deepEqual(rows.map((r) => (r.kind === "agents" ? `agents:${r.calls.length}` : r.call.name)), ["Read", "agents:3", "Bash", "agents:1"]);
   assert.equal(summarizeInput("Edit", { file_path: "a.ts", old_string: "x\ny", new_string: "z" }), "a.ts +1 −2");
