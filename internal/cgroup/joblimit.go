@@ -248,6 +248,13 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 	}
 }
 
+// LimitSettled is whether a `guard: job limit` decision rests on a class
+// learned from slots.LearnRuns runs (V0.limit-raised-settled): its learned
+// limit, and a raise of it, are not sized below the prior.
+func LimitSettled(why string, runs int) bool {
+	return (why == "learned" || why == "raised") && runs >= slots.LearnRuns
+}
+
 // OwnStallLift is the job's own memory full stall (avg10, percent) at which
 // its memory.high lifts (V0.sim-fixes (2)): the job throttles itself into the
 // stall V0.job-limits meant to avoid. StallCritical, as for the agents.
