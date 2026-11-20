@@ -176,6 +176,14 @@ if [ -n "${FYR_SIGN_KEYCHAIN:-}" ]; then
   fi
 fi
 
+# V0.mac-selfupdate: the app pins the certificate it is signed with, and
+# accepts an update only when macOS finds it signed by the same one. A name,
+# not a hash, or ad hoc signing pins nothing, and that build never updates.
+if [[ "${FYR_SIGN_IDENTITY:-}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+  plutil -replace FyrSigner -string "$(tr 'A-F' 'a-f' <<<"$FYR_SIGN_IDENTITY")" "$c/Info.plist"
+fi
+plutil -replace FyrRepo -string "$repo" "$c/Info.plist"
+
 # Inner binaries first, then the bundle.
 sign=(codesign --force --timestamp=none -s "${FYR_SIGN_IDENTITY:--}")
 "${sign[@]}" -i "$bundle_id.host" "$c/MacOS/fyr-host"
