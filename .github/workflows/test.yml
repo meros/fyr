@@ -4,18 +4,34 @@
 # save paid minutes). Runs queue on the one runner; a newer push replaces a run still waiting, so the newest main is
 # what gets tested and released. A PR's gate is pr.yml on the same runner. Start a run by hand with
 # `gh workflow run test.yml`.
+#
+# V0.versioned-releases: a pushed version tag (vX.Y.Z, or vX.Y.Z-rc.N for a prerelease), or
+# `gh workflow run test.yml -f version=vX.Y.Z [-f commit=SHA]`, runs the same gate on that commit and publishes the
+# release vX.Y.Z (scripts/release.sh with FYR_VERSION) instead of a build release; `deployable` does not move. Only
+# people with write access can push a tag or dispatch a run, and a fork's push never runs here.
 name: test
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Publish this version (vX.Y.Z or vX.Y.Z-rc.N) instead of a build release; empty for main's build"
+        required: false
+        default: ""
+      commit:
+        description: "With a version: the commit on main to release (default: main's head, or the tag's commit)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: test-main
+  # main's runs share one group; each version has its own, so a tag never replaces a waiting run of main.
+  group: test-${{ (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || inputs.version || 'main' }}
   cancel-in-progress: false # a waiting run is replaced by a newer push; a running one finishes (it may be releasing)
 
 jobs:
@@ -26,9 +42,10 @@ jobs:
       contents: write
       actions: read
     steps:
+      # main's newest head; a version tag's commit; a dispatched version's commit (default main).
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ (startsWith(github.ref, 'refs/tags/v') && github.ref) || inputs.commit || 'main' }}
           fetch-depth: 0
       # Go public (#196): no secret enters the history; .gitleaks.toml allows only the test placeholders.
       - name: gitleaks over the full history
@@ -43,11 +60,13 @@ jobs:
       - name: nix build .#fyr
         run: nix build .#fyr --no-link --print-build-logs
       # #158: a green main publishes signed fyr and fyrd binaries as the release build-<sha12> and moves the tag
-      # `deployable` forward to it. Hosts auto-update only to that.
+      # `deployable` forward to it. Hosts on the main channel auto-update only to that. V0.versioned-releases: a
+      # version run publishes the release vX.Y.Z of its commit instead, rebuilt with the version in the binaries.
       - name: build, sign and publish
         env:
           FYR_RELEASE_KEY: ${{ secrets.FYR_RELEASE_KEY }}
           GH_TOKEN: ${{ github.token }}
+          FYR_VERSION: ${{ (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || inputs.version }}
         run: |
           GITHUB_SHA=$(git rev-parse HEAD)
           export GITHUB_SHA

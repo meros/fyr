@@ -49,3 +49,22 @@ test("V0.release-without-gh the release source row names the repo and the key's 
   assert.deepEqual(releaseSource({ updates: [], repo: "fork/fyr", key: { error: "updateKey is not an ed25519 public key" } }), { title: "fork/fyr", desc: "updateKey is not an ed25519 public key", bad: true });
   assert.equal(releaseSource({ updates: [] }), null); // an older host says neither
 });
+
+test("V0.versioned-releases: Settings → Updates and the status screen name the version and the channel", async () => {
+  const { channelLabel, versionLabel, hostVersions } = await import("../src/updates.ts");
+  const { decodeHosts, updateRows } = await import("../src/hosts.ts");
+  assert.equal(updateState({ updates: [], live: "c705ef536566", version: "v1.0.0", channel: "stable" }), "Fyr runs v1.0.0 (build c705ef536566) · stable channel.");
+  assert.equal(updateState({ updates: [], live: "c705ef536566", channel: "main" }), "Fyr runs c705ef536566 · main channel.");
+  assert.equal(updateState({ updates: [], live: "c705ef536566", version: "v1.0.0-rc.1", channel: "v1.0.0-rc.1" }), "Fyr runs v1.0.0-rc.1 (build c705ef536566) · pinned to v1.0.0-rc.1.");
+  assert.equal(channelLabel(undefined), "");
+  assert.equal(versionLabel({ build: "c705ef5", channel: "main" }), "c705ef5 · main channel");
+  assert.equal(versionLabel({}), "");
+  const hosts = decodeHosts([
+    { name: "laptop", online: true, update: { running: "c705ef5365660a8f", build: "c705ef5", version: "v1.0.0", channel: "stable", behind: 0 } },
+    { name: "server", online: true, update: { running: "9b1e04a77d2c", build: "9b1e04a", channel: "main", behind: 0 } },
+    { name: "old", online: true },
+  ]);
+  assert.deepEqual(hostVersions(hosts), ["laptop v1.0.0 · stable channel", "server 9b1e04a · main channel"]);
+  assert.deepEqual(hostVersions(hosts.slice(0, 1)), ["Fyr v1.0.0 · stable channel"]);
+  assert.equal(updateRows(hosts[0].update!, Date.now())[0].desc, "v1.0.0 · c705ef5 · stable channel");
+});

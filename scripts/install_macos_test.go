@@ -26,8 +26,9 @@ func TestInstallMacosLabelAndNoGh(t *testing.T) {
 		`for l in "${old_labels[@]}" "$label"; do`, // --uninstall
 		`for l in "${old_labels[@]}"; do`,          // install, before the bootstrap
 		`rm -f "$agents/$l.plist"`,
-		`curl -fsSL --retry 3 -o "$dl/$f" "$base/releases/download/build-$short/$f"`,
-		`ls-remote --tags "$base.git" refs/tags/deployable`,
+		`curl -fsSL --retry 3 -o "$dl/$f" "$base/releases/download/$tag/$f"`,
+		`ls-remote --tags "$base.git" "refs/tags/$1"`,
+		`sha="$(tag_sha deployable)"`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("install-macos.sh lacks %q", want)
@@ -40,5 +41,39 @@ func TestInstallMacosLabelAndNoGh(t *testing.T) {
 	}
 	if i, j := strings.LastIndex(src, `for l in "${old_labels[@]}"; do`), strings.LastIndex(src, `launchctl bootstrap "$domain" "$plist"`); i < 0 || j < i {
 		t.Error("the old labels are not stopped before the new agent is bootstrapped")
+	}
+}
+
+// V0.versioned-releases: install-macos.sh takes the same --channel and
+// --version as install-linux.sh, and --print says which release and channel
+// it would install without touching anything.
+func TestInstallMacosChannelPrint(t *testing.T) {
+	run := func(home string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("bash", append([]string{"install-macos.sh", "--print"}, args...)...)
+		cmd.Env = append(os.Environ(), "HOME="+home)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+		return string(out)
+	}
+	home := t.TempDir()
+	if out := run(home); !strings.Contains(out, "channel: stable (updateChannel stable") || !strings.Contains(out, "the newest stable version") {
+		t.Errorf("new install:\n%s", out)
+	}
+	if out := run(home, "--version", "v1.2.3"); !strings.Contains(out, "download version v1.2.3") || !strings.Contains(out, `"updateChannel" in `+home+`/.config/fyr/config.json to "v1.2.3"`) {
+		t.Errorf("--version:\n%s", out)
+	}
+	if es, _ := os.ReadDir(home); len(es) != 0 {
+		t.Fatalf("--print wrote into HOME: %v", es)
+	}
+	os.MkdirAll(home+"/.config/fyr", 0o755)
+	os.WriteFile(home+"/.config/fyr/config.json", []byte(`{"wellKnownListen": "127.0.0.1:7779"}`), 0o644)
+	if out := run(home); !strings.Contains(out, "channel: main (kept from") || strings.Contains(out, `set "updateChannel"`) {
+		t.Errorf("existing config:\n%s", out)
+	}
+	if out := run(home, "--channel", "stable"); !strings.Contains(out, "channel: stable (updateChannel stable") {
+		t.Errorf("--channel stable:\n%s", out)
 	}
 }

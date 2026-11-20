@@ -22,6 +22,19 @@ import (
 // buildID is set with -ldflags "-X main.buildID=…"; else from VCS info.
 var buildID = ""
 
+// version is the release's vX.Y.Z, set with -ldflags "-X main.version=…"
+// when CI builds a version tag (V0.versioned-releases); empty on main.
+var version = ""
+
+// versionLine is what `fyrd --version` prints: the version and the build,
+// or the build alone on main.
+func versionLine() string {
+	if version != "" {
+		return "fyrd " + version + " (build " + BuildID() + ")"
+	}
+	return "fyrd " + BuildID() + " (main)"
+}
+
 func BuildID() string {
 	if buildID != "" {
 		return buildID
@@ -65,9 +78,12 @@ type config struct {
 	// is how often a host reads it; 0 is 60. UpdateKey is the base64
 	// ed25519 public key a release must be signed with; empty is the
 	// built-in release.PublicKey (V0.release-without-gh: a fork signs with
-	// its own). Both are read at start.
+	// its own). UpdateChannel is "main" (follow `deployable`; empty is main),
+	// "stable" (the newest version release) or a version to pin to
+	// (V0.versioned-releases). All are read at start.
 	UpdateRepo         string             `json:"updateRepo,omitempty"`
 	UpdateKey          string             `json:"updateKey,omitempty"`
+	UpdateChannel      string             `json:"updateChannel,omitempty"`
 	UpdateQuietMinutes int                `json:"updateQuietMinutes,omitempty"`
 	UpdateEveryMinutes int                `json:"updateEveryMinutes,omitempty"`
 	OwnerLogin         string             `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)

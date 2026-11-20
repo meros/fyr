@@ -65,6 +65,9 @@ type Deployer struct {
 	// Live is the build id of this daemon (a commit, maybe with -dirty-…).
 	// A deploy of an older commit is refused (SPEC 0.5 V0.24).
 	Live string
+	// LiveVersion is this daemon's version (vX.Y.Z) when CI built it from a
+	// version tag, else "" (V0.versioned-releases).
+	LiveVersion string
 	// LiveDir holds the running fyrd and its server.sum (V0.81); empty is
 	// the folder of this executable.
 	LiveDir string

@@ -1794,7 +1794,7 @@ for (const [w, hh, phone] of [[1280, 700, false], [1280, 900, false], [390, 844,
   const ctx = `V0.119 settings closes ${phone ? "phone" : `desktop ${w}x${hh}`}`;
 try {
   // Both hosts' Updates: desk's list and the null host's line (it runs nix-d8b9560), and no crash card.
-  const UPD = `/Fyr runs c705ef536566/.test(document.body.textContent) && /Fyr runs nix-d8b9560/.test(document.body.textContent) && !document.querySelector('.crash')`;
+  const UPD = `/Fyr runs v1\\.0\\.0 \\(build c705ef536566\\) · stable channel/.test(document.body.textContent) && /Fyr runs nix-d8b9560/.test(document.body.textContent) && !document.querySelector('.crash')`;
   if (phone) {
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: true });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });

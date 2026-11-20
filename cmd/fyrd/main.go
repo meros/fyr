@@ -69,6 +69,11 @@ func main() {
 		cgroup.LoadProbe(os.Stdout)
 		return
 	}
+	if cmd == "serve" && len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
+		// V0.versioned-releases: the version, or the build on main.
+		os.Stdout.WriteString(versionLine() + "\n")
+		return
+	}
 	if cmd == "version" {
 		// V0.81: the deployer reads a new build's id before a client-only switch.
 		os.Stdout.WriteString(BuildID() + "\n")
@@ -519,7 +524,13 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	go ghMeter.Run(ctx, github.Gh)
 	// V0.release-without-gh: releases are read over HTTPS, no gh; a token
 	// (github.env, else gh's login when gh is there) is optional.
-	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Key: cfg.UpdateKey, Token: deploy.TokenFromEnv(), HTTP: &http.Client{Timeout: 15 * time.Minute}}
+	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Key: cfg.UpdateKey, Channel: cfg.UpdateChannel, Token: deploy.TokenFromEnv(), HTTP: &http.Client{Timeout: 15 * time.Minute}}
+	dep.LiveVersion = version
+	// V0.versioned-releases: the channel; a bad one follows main, said once.
+	if _, err := deploy.ParseChannel(cfg.UpdateChannel); err != nil {
+		log.Printf("%v: following main", err)
+	}
+	log.Printf("update channel %s; this is %s", dep.Releases.ChannelName(), versionLine())
 	if fp, builtIn, err := dep.Releases.KeyInfo(); err != nil {
 		log.Printf("updateKey in the config is not an ed25519 public key (%v): no release will verify", err)
 	} else {
@@ -673,7 +684,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// V0.126 (#151): the update record, the pause and the bad release.
 		Updates: func() any {
 			bad, why := dep.Bad()
-			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView(), "repo": dep.Releases.Name(), "key": releaseKey(dep.Releases)}
+			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView(), "repo": dep.Releases.Name(), "key": releaseKey(dep.Releases), "version": version, "channel": dep.Releases.ChannelName()}
 		},
 		UpdateLog:   dep.UpdateLog,
 		UpdateState: func() any { return dep.Summary() }, // V0.host-updates

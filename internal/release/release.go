@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -88,6 +89,9 @@ type Info struct {
 	FlakeLock string `json:"flakeLock,omitempty"`
 	Time      string `json:"time,omitempty"`
 	Run       string `json:"run,omitempty"`
+	// Version is the release's vX.Y.Z when CI built it from a version tag
+	// (V0.versioned-releases); empty for a build release of main.
+	Version string `json:"version,omitempty"`
 }
 
 // SumFile hashes files (names relative to dir) into SHA256SUMS lines.
@@ -221,4 +225,85 @@ func Verify(dir, pub string, want ...string) (Info, error) {
 		return info, fmt.Errorf("%s names no full commit", Manifest)
 	}
 	return info, nil
+}
+
+// Semver is a version tag, vMAJOR.MINOR.PATCH with an optional -prerelease
+// (V0.versioned-releases): v1.0.0, v1.0.0-rc.1.
+type Semver struct {
+	Major, Minor, Patch int
+	Pre                 string
+}
+
+// ParseVersion reads a version tag; false when tag is not one (build-<sha>,
+// deployable, a branch name).
+func ParseVersion(tag string) (Semver, bool) {
+	var v Semver
+	rest, ok := strings.CutPrefix(tag, "v")
+	if !ok {
+		return v, false
+	}
+	core, pre, hasPre := strings.Cut(rest, "-")
+	if hasPre {
+		if pre == "" {
+			return v, false
+		}
+		for _, id := range strings.Split(pre, ".") {
+			if id == "" || strings.Trim(id, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-") != "" {
+				return v, false
+			}
+		}
+	}
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return v, false
+	}
+	var n [3]int
+	for i, p := range parts {
+		if p == "" || strings.Trim(p, "0123456789") != "" || len(p) > 1 && p[0] == '0' || len(p) > 9 {
+			return v, false
+		}
+		n[i], _ = strconv.Atoi(p)
+	}
+	return Semver{Major: n[0], Minor: n[1], Patch: n[2], Pre: pre}, true
+}
+
+// IsVersion reports whether tag is a version tag (vX.Y.Z or vX.Y.Z-pre).
+func IsVersion(tag string) bool { _, ok := ParseVersion(tag); return ok }
+
+// Prerelease reports whether the version has a -prerelease part (v1.0.0-rc.1).
+func (v Semver) Prerelease() bool { return v.Pre != "" }
+
+// Less orders versions as semver does: by the numbers, a prerelease before
+// its release, prerelease identifiers numerically when both are numbers.
+func (v Semver) Less(o Semver) bool {
+	if v.Major != o.Major {
+		return v.Major < o.Major
+	}
+	if v.Minor != o.Minor {
+		return v.Minor < o.Minor
+	}
+	if v.Patch != o.Patch {
+		return v.Patch < o.Patch
+	}
+	if v.Pre == "" || o.Pre == "" {
+		return v.Pre != "" && o.Pre == ""
+	}
+	a, b := strings.Split(v.Pre, "."), strings.Split(o.Pre, ".")
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] == b[i] {
+			continue
+		}
+		x, xerr := strconv.Atoi(a[i])
+		y, yerr := strconv.Atoi(b[i])
+		switch {
+		case xerr == nil && yerr == nil:
+			return x < y
+		case xerr == nil:
+			return true // numbers sort before words
+		case yerr == nil:
+			return false
+		}
+		return a[i] < b[i]
+	}
+	return len(a) < len(b)
 }

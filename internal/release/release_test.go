@@ -114,3 +114,28 @@ func TestFingerprint(t *testing.T) {
 		}
 	}
 }
+
+// V0.versioned-releases: version tags and their order.
+func TestParseVersionAndOrder(t *testing.T) {
+	for _, bad := range []string{"", "v", "1.2.3", "v1.2", "v1.2.3.4", "v01.2.3", "v1.2.3-", "v1.2.3-rc..1", "build-0123456789ab", "deployable", "v1.2.x"} {
+		if IsVersion(bad) {
+			t.Errorf("%q is a version", bad)
+		}
+	}
+	order := []string{"v0.9.9", "v1.0.0-alpha", "v1.0.0-rc.1", "v1.0.0-rc.2", "v1.0.0-rc.10", "v1.0.0-rc1", "v1.0.0", "v1.0.1", "v1.2.0", "v1.10.0", "v2.0.0"}
+	for i := range order {
+		a, ok := ParseVersion(order[i])
+		if !ok {
+			t.Fatalf("%q is not a version", order[i])
+		}
+		if (a.Pre != "") != strings.Contains(order[i], "-") || a.Prerelease() != strings.Contains(order[i], "-") {
+			t.Errorf("%q prerelease %v", order[i], a.Prerelease())
+		}
+		for j := range order {
+			b, _ := ParseVersion(order[j])
+			if a.Less(b) != (i < j) {
+				t.Errorf("%s < %s is %v", order[i], order[j], a.Less(b))
+			}
+		}
+	}
+}

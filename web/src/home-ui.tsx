@@ -13,6 +13,7 @@ import { projectOf } from "./projects.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { SECTIONS, type Sections } from "./store.ts";
 import { clockTime, relTime } from "./format.ts";
+import { hostVersions } from "./updates.ts";
 import type { Profile, Project, Thread } from "./types.ts";
 
 const LOOK_KEY = "fyr.home.lookedAt";
@@ -311,7 +312,8 @@ function RunTile({ t, p }: { t: Thread; p: HomeProps }) {
 function SystemStrip({ hosts, profiles, keys }: { hosts: HostInfo[]; profiles: Profile[]; keys?: [string, string][] }) {
   const strip = stripHosts(useLoad(), hosts);
   const quotas = useQuotas();
-  if (!strip.length && !quotas.length && !keys?.length) return null;
+  const versions = hostVersions(hosts); // V0.versioned-releases
+  if (!strip.length && !quotas.length && !keys?.length && !versions.length) return null;
   // One host is not named, as on the rail (V0.140).
   const several = strip.length > 1;
   return (
@@ -324,6 +326,11 @@ function SystemStrip({ hosts, profiles, keys }: { hosts: HostInfo[]; profiles: P
       {quotas.map((q) => (
         <span class="st-q">
           <QuotaLine q={q} name={profiles.find((x) => x.id === q.profile)?.name ?? q.profile} bare={false} />
+        </span>
+      ))}
+      {versions.map((v) => (
+        <span class="st-ver" key={v}>
+          {v}
         </span>
       ))}
       {keys && keys.length > 0 && (
