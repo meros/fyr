@@ -180,11 +180,11 @@ func (f *Front) projectLinkCommand(w http.ResponseWriter, commandID string, args
 		}
 		stored, failed := []string{}, []linkFail{}
 		var last error
+		// Every named host is written, also one this front already shows with
+		// the link: its copy of the record is a frame behind the host, so the
+		// host may not have it (V0.link-writes-through-a-stale-copy). The
+		// write is the same reduce for a record that has the link already.
 		for _, t := range targets {
-			if t.linked == link {
-				stored = append(stored, t.host)
-				continue
-			}
 			if err := f.writeLink(context.Background(), t, link, commandID+":"+t.host); err != nil {
 				f.opt.Logf("front: project link on %s: %v", t.l.name(), err)
 				failed, last = append(failed, linkFail{t.host, err.Error()}), err
@@ -226,10 +226,10 @@ func (f *Front) projectUnlinkCommand(w http.ResponseWriter, commandID string, ar
 		if err != nil {
 			return refusal(code, err)
 		}
-		if t.linked != "" {
-			if err := f.writeLink(context.Background(), t, "", commandID+":"+t.host); err != nil {
-				return refusal(502, err)
-			}
+		// Written even when this front shows the record without a link: its
+		// copy is a frame behind the host (V0.link-writes-through-a-stale-copy).
+		if err := f.writeLink(context.Background(), t, "", commandID+":"+t.host); err != nil {
+			return refusal(502, err)
 		}
 		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"ref": ref}}
 	})
