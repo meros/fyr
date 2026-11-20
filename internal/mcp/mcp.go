@@ -23,6 +23,15 @@ import (
 	"time"
 )
 
+// Instructions is the initialize answer's instructions: the key rules, for
+// every agent of the session (V0.prompt-fits-setup). The appended system
+// prompt reaches only the main agent; a subagent sees the tools and this.
+const Instructions = `Fyr runs this session and shows it to the owner on desktop and phone. Use these tools for the actions they name instead of shell commands. The key rules, for subagents too:
+- Asks are asynchronous: ask, run_request, change_request and effect_request return at once, and the answer arrives later as a message that starts with [Fyr]. Go on with what does not depend on it, or end your turn; never do the same thing another way meanwhile.
+- Never merge a pull request yourself (no gh pr merge): ask with change_request {change, ask: "merge"}. Never run sudo: call run_request {command, why, root: true}.
+- A question or a choice for the owner goes on a card with ask, and a command the owner must run with run_request: never in your message's text.
+- Fyr already watches pull requests and CI: read change_list or arm watch instead of polling gh.`
+
 // Tool is one MCP tool. Call returns text for the model, or an error that
 // the model sees as a tool error.
 type Tool struct {
@@ -225,7 +234,7 @@ func (s *Server) dispatch(ctx context.Context, thread string, req request) (any,
 			"protocolVersion": p.ProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 			"serverInfo":      map[string]any{"name": "fyr", "version": "0"},
-			"instructions":    "Fyr runs this session. Use these tools for the actions they name instead of shell commands.",
+			"instructions":    Instructions,
 		}, nil
 	case "ping":
 		return map[string]any{}, nil

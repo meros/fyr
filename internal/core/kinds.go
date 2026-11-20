@@ -703,6 +703,9 @@ func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
 		if _, ok := a.Args["pr"].(string); !ok && fx.OnPR && c.PRURL() != "" {
 			a.Args["pr"] = c.PRURL()
 		}
+		if pr, _ := a.Args["pr"].(string); fx.OnPR && pr == "" {
+			return Result{}, errors.New(noPRText(c))
+		}
 		if err := canRequest(r.T, fx, a.Args); err != nil {
 			return Result{}, err
 		}

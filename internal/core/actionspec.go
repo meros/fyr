@@ -392,6 +392,16 @@ func FyrEffectFor(ask ChangeAsk) *FyrEffect {
 	return nil
 }
 
+// noPRText is why a merge ask on c cannot be made, and what to do instead
+// (V0.prompt-fits-setup): its repository has no GitHub remote, or it has no
+// pull request yet.
+func noPRText(c *Change) string {
+	if repo := RecordRepo(c); repo != "" && !strings.HasPrefix(repo, "github.com/") {
+		return fmt.Sprintf("%q has no GitHub pull request to merge: its repository (%s) has no GitHub remote, so Fyr cannot merge it. Do not merge it yourself: say the work is done and the owner lands the branch; for a command they must run, call mcp__fyr__run_request.", c.Title, repo)
+	}
+	return fmt.Sprintf("%q has no GitHub pull request yet. Push the branch and open one (gh pr create), then ask again; Fyr links it by itself. If this project has no GitHub remote, Fyr cannot merge here: say the work is done and the owner lands the branch.", c.Title)
+}
+
 func needPR(a map[string]any) error {
 	if pr, _ := a["pr"].(string); pr == "" {
 		return errors.New("args.pr must be a GitHub pull request URL")

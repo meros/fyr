@@ -235,13 +235,7 @@ func (e *Engine) rootPrompt() string {
 	if time.Since(e.rootAt) < 30*time.Second && !e.rootAt.IsZero() {
 		return e.rootWhy
 	}
-	_, err := exec.LookPath("pkexec")
-	if err != nil {
-		if _, err2 := os.Stat("/run/wrappers/bin/pkexec"); err2 == nil {
-			err = nil
-		}
-	}
-	e.rootWhy, e.rootAt = rootPromptFrom(myProcessNames(), err == nil), time.Now()
+	e.rootWhy, e.rootAt = rootPromptFrom(myProcessNames(), proc.PkexecInstalled()), time.Now()
 	return e.rootWhy
 }
 
