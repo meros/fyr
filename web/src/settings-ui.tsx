@@ -42,6 +42,7 @@ import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtit
 import { quietNote } from "./quiet.ts";
 import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
 import { FINISHED_DESC, pushRow, type PushPrefs, type PushStatus } from "./push.ts";
+import { isNativePush, openNativeNotificationSettings } from "./pwa.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
 import { hiddenCount, hostIsHidden, lastShownHost, projectIsHidden, setHostShown, setProjectShown, type Hidden } from "./hidden.ts";
@@ -2330,7 +2331,8 @@ function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; us
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const details = useToolDetailsPref();
-  const row = pushRow(d.push, d.pushReason, tested);
+  const native = isNativePush();
+  const row = pushRow(d.push, d.pushReason, tested, native);
   useEffect(() => {
     if (!tested) return;
     const t = setTimeout(() => setTested(false), 5000);
@@ -2362,6 +2364,11 @@ function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; us
               {row.test && (
                 <button type="button" class="btn" disabled={busy} onClick={(e) => (e.preventDefault(), void test())}>
                   Send test
+                </button>
+              )}
+              {d.push === "denied" && native && (
+                <button type="button" class="btn" onClick={(e) => (e.preventDefault(), openNativeNotificationSettings())}>
+                  Open System Settings
                 </button>
               )}
               <Switch on={row.on} label="Notifications" disabled={row.disabled || busy} onChange={(on) => void toggle(on)} />

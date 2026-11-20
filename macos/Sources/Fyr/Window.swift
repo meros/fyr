@@ -260,6 +260,9 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     case "status": n.status(reply)
     case "on": n.turnOn(reply)
     case "off": n.turnOff(reply)
+    case "settings":
+      n.openSettings()
+      reply(["on": false])
     case "clear":
       if let body = m.body as? [String: Any],
         let threadId = body["threadId"] as? String,

@@ -206,7 +206,7 @@ export function openTargets<W extends { url: string }>(wins: W[], origin: string
 }
 
 /** V0.119: Settings → This device → Notifications: the row's line under its label, and its switch. */
-export function pushRow(status: PushStatus, reason: string | null, tested: boolean): { desc: string; error: boolean; disabled: boolean; on: boolean; test: boolean } {
+export function pushRow(status: PushStatus, reason: string | null, tested: boolean, native = false): { desc: string; error: boolean; disabled: boolean; on: boolean; test: boolean } {
   // V0.notification-polish: the line says what arrives; FINISHED_DESC, shown while they are on, says what never does.
   const plain = "When a thread needs you: a question, an approval, a failure.";
   switch (status) {
@@ -215,7 +215,15 @@ export function pushRow(status: PushStatus, reason: string | null, tested: boole
     case "off":
       return { desc: plain, error: false, disabled: false, on: false, test: false };
     case "denied":
-      return { desc: "Blocked for this site. Allow them in the browser's site settings, then reload Fyr.", error: true, disabled: true, on: false, test: false };
+      return {
+        desc: native
+          ? "Blocked in System Settings. Allow notifications for Fyr in System Settings → Notifications, then reload Fyr."
+          : "Blocked for this site. Allow them in the browser's site settings, then reload Fyr.",
+        error: true,
+        disabled: true,
+        on: false,
+        test: false,
+      };
     case "unsupported":
       return { desc: reason ?? "Notifications are not available in this browser.", error: false, disabled: true, on: false, test: false };
   }

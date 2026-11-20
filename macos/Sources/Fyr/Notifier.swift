@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import UserNotifications
 
@@ -66,8 +67,20 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
   }
 
   func turnOn(_ reply: @escaping ([String: Any]) -> Void) {
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { ok, _ in
-      guard ok else { return reply(["on": false, "denied": true]) }
+    let center = UNUserNotificationCenter.current()
+    center.requestAuthorization(options: [.alert, .sound, .badge]) { ok, err in
+      guard ok else {
+        center.getNotificationSettings { st in
+          if st.authorizationStatus == .denied {
+            reply(["on": false, "denied": true])
+          } else if let err {
+            reply(["on": false, "error": err.localizedDescription])
+          } else {
+            reply(["on": false, "denied": true])
+          }
+        }
+        return
+      }
       DispatchQueue.global().async {
         self.off = false
         do {
@@ -77,6 +90,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         } catch {
           reply(["on": false, "error": "\(error)"])
         }
+      }
+    }
+  }
+
+  // openSettings opens macOS System Settings → Notifications so the owner
+  // can allow Fyr when macOS has blocked notifications for the app.
+  func openSettings() {
+    DispatchQueue.main.async {
+      if let u = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+        NSWorkspace.shared.open(u)
       }
     }
   }

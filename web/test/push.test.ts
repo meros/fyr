@@ -139,4 +139,6 @@ test("V0.mac-notify: Fyr.app's window has no Web Push and still turns notificati
   const wk: PushEnv = { secure: true, serviceWorker: false, pushManager: false, notification: false, ios: false, standalone: false };
   assert.match(unsupportedReason(wk) ?? "", /does not support/);
   assert.equal(unsupportedReason({ ...wk, native: true }), null);
+  assert.match(pushRow("denied", null, false, true).desc, /System Settings/);
+  assert.match(pushRow("denied", null, false, false).desc, /browser's site settings/);
 });
