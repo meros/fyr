@@ -113,8 +113,11 @@ type Tree struct {
 	deploySeq atomic.Int64
 	probeSeq  atomic.Int64 // V0.probe-scope: the slowdown probe's scopes
 	logf      func(string, ...any)
-	mu        sync.Mutex
-	refs      map[string]int
+	// cacheMu guards cache: the agents' page-cache reclaim (V0.cache-reclaim).
+	cacheMu sync.Mutex
+	cache   cacheReclaim
+	mu      sync.Mutex
+	refs    map[string]int
 	// focus: per device, the thread (cgroup name) it shows and the last
 	// beat (V0.85); raised: the cgroups written at focusWeight.
 	focus  map[string]focusBeat

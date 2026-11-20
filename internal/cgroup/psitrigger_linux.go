@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -22,6 +23,7 @@ func watchPressure(ctx context.Context, file, trigger string, wake func()) error
 		unix.Close(fd)
 		return fmt.Errorf("write trigger: %w", err)
 	}
+	gate := newStallGate(file, trigger) // V0.psi-stale-fire
 	go func() {
 		defer unix.Close(fd)
 		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLPRI}}
@@ -40,7 +42,11 @@ func watchPressure(ctx context.Context, file, trigger string, wake func()) error
 				return // the cgroup went away
 			}
 			if fds[0].Revents&unix.POLLPRI != 0 {
-				wake()
+				if ok, grew := gate.real(); !ok {
+					log.Printf("guard: PSI trigger fired with %d ms of the agents' stall since it was set or last fired: not a stall, dropped", grew/1000)
+				} else {
+					wake()
+				}
 				// One event per window at most from the kernel; a short
 				// pause keeps a storm of them from spinning.
 				time.Sleep(200 * time.Millisecond)

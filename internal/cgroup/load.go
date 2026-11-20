@@ -257,6 +257,7 @@ func (s *Sampler) Tick() {
 		s.Services.Tick(s.Tree, ids)
 	}
 	s.detect(l)
+	s.Tree.ReclaimCache(s.now())               // V0.cache-reclaim: cache goes before memory.high throttles a task
 	s.Tree.SplitThreads()                      // V0.job-limits: each thread's CLI in its cli/ leaf
 	s.Tree.ShadowThreadBudget(s.threadHolds()) // decision 0032 slice 3, V0.share-shadow: measured, not enforced
 	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
