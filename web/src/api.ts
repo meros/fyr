@@ -22,6 +22,7 @@ import type { HostLoad } from "./load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { AutoDeploySetting, AutoMergeRepo } from "./automerge.ts";
 import type { UpdatesView } from "./updates.ts";
+import type { SetupReport } from "./setup.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
 import { reloadIfSignedOut } from "./signout.ts";
@@ -120,6 +121,8 @@ export interface Api {
   autoDeploy(host: HostId): Promise<HostRead<AutoDeploySetting>>;
   /** V0.126 (#151): the update record and whether a local build pauses auto-update. */
   updates(host: HostId): Promise<HostRead<UpdatesView>>;
+  /** Decision 0037: the host's setup wizard checks derived from real host state. */
+  setup?(host: HostId): Promise<HostRead<SetupReport>>;
   /** V0.157: Settings → Devices: the signed-in devices, the ones that wait, the browser way in's mode. */
   authState(): Promise<AuthState>;
   /** V0.157: approve (code or id), deny, revoke, add (a one-time link and its QR code), mode (browser way in). */
@@ -581,6 +584,7 @@ function createHttpApi(): Api {
     autoMerge: (host) => hostGet<AutoMergeRepo[]>(host, "/autoMerge"),
     autoDeploy: (host) => hostGet<AutoDeploySetting>(host, "/autoDeploy"),
     updates: (host) => hostGet<UpdatesView>(host, "/updates"),
+    setup: (host) => hostGet<SetupReport>(host, "/setup"),
     systemAgents: (host) => hostGet<SystemAgentsView>(host, "/systemAgents"),
     authState: () => getJson<AuthState>(frontPath("/auth/state")),
     // A front may send null for an empty list (a nil Go slice): the page reads lists.

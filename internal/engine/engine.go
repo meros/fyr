@@ -572,6 +572,16 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 		if err := e.UpdateNow(); err != nil {
 			return fail(409, err.Error())
 		}
+	case core.EffectHostSetupFix:
+		if e.SetupFix == nil {
+			return fail(409, "This host does not run setup fixes")
+		}
+		action, _ := ef.Request.Args["action"].(string)
+		res, err := e.SetupFix(action, ef.Request.Args)
+		if err != nil {
+			return fail(400, err.Error())
+		}
+		reply.Result = res
 	case core.EffectInvariantFix: // V0.load-invariants: the owner's Fix it
 		id, _ := ef.Request.Args["id"].(string)
 		r := e.invariantFix(id)

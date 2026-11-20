@@ -206,6 +206,9 @@ export function createMockApi(scenario: string): Api {
         setTimeout(() => onMarks?.(marks), 0);
         return { ok: true, result: { thread: "t_setup" } };
       }
+      if (action === "host.setupFix") {
+        return { ok: true, result: { ok: true } };
+      }
       if (action === "front.hostMark") {
         // V0.171: as the front: one host's mark by its id; V0.208: a changed field is the owner's, an emptied one too.
         const id = String(args?.id ?? "");
@@ -417,6 +420,23 @@ export function createMockApi(scenario: string): Api {
         if (m) (m.mode = body.mode as "observe" | "enforce"), (m.hand = body.mode === "observe");
       } else if (action === "add") return { ok: true, url: "https://desk.tail1234.ts.net:7443/auth/once#k3Jd8sLq0pXn2VwTzYbHrA", svg: MOCK_QR };
       return { ok: true };
+    },
+    async setup(host) {
+      return read(nameOf(host), (h) => ({
+        os: "darwin",
+        host: String(h),
+        done: 6,
+        total: 6,
+        ready: true,
+        steps: [
+          { id: "machine", title: "This Mac", status: "ok" as const, reason: "macOS, Command Line Tools and disk space are ready" },
+          { id: "claude", title: "Claude", status: "ok" as const, reason: "Claude Code is ready (1 provider)" },
+          { id: "github", title: "GitHub", status: "ok" as const, reason: "Signed in as owner" },
+          { id: "project", title: "First project", status: "ok" as const, reason: "3 projects set up" },
+          { id: "phone", title: "Phone", status: "ok" as const, optional: true, reason: "Reachable on https://desk.tail1234.ts.net:7443" },
+          { id: "peers", title: "Other installs", status: "ok" as const, optional: true, reason: "Paired with 1 other install" },
+        ],
+      }));
     },
     // V0.126: a host that updated twice and rolled one release back (desk); another host never updated itself and sends
     // null for the list, as an older fyrd on a NixOS host did (the owner's Settings could not close, 17 Nov).

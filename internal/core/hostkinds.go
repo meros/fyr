@@ -20,6 +20,8 @@ const (
 	// KindUpdateNow is the owner's Update now / Back to release (V0.126):
 	// install the newest CI release at once, ending a local build's pause.
 	KindUpdateNow = "host.updateNow"
+	// KindHostSetupFix runs one setup wizard fix action on the host (decision 0037).
+	KindHostSetupFix = "host.setupFix"
 )
 
 // KindRefreshModels asks a provider for its models now (V0.120).
@@ -37,6 +39,8 @@ const (
 	EffectDeployNow EffectKind = "deploy.now"
 	// EffectUpdateNow starts the install of the newest release (V0.126).
 	EffectUpdateNow EffectKind = "update.now"
+	// EffectHostSetupFix runs a setup wizard fix action on the host (decision 0037).
+	EffectHostSetupFix EffectKind = "host.setupFix"
 )
 
 // Adopted is a thread T3 adoption made, its owner's view and its history
@@ -67,6 +71,8 @@ func init() {
 	RegisterKind(&InputKind{Name: KindUpdateNow, On: RecHost, From: ownerOnly, Await: true, Reduce: func(Rec, Input, time.Time) (Result, error) {
 		return Result{Effects: []Effect{{Kind: EffectUpdateNow}}}, nil
 	}})
+	// Decision 0037: the setup wizard's fixes are owner-only host commands.
+	RegisterKind(&InputKind{Name: KindHostSetupFix, On: RecHost, From: ownerOnly, Await: true, Reduce: command(EffectHostSetupFix)})
 	RegisterKind(&InputKind{Name: KindCancelMessage, From: ownerOnly, Await: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 		id := mapArgs(in).Str("messageId")
 		if id == "" {

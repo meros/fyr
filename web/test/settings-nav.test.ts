@@ -17,6 +17,7 @@ test("the six pages, in order (V0.125: Hosts between Projects and This device; V
       ["hosts", "Hosts"],
       ["devices", "Devices"],
       ["device", "This device"],
+      ["setup", "Setup"],
     ],
   );
 });

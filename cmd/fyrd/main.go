@@ -49,6 +49,7 @@ import (
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/runner"
 	"github.com/meros/fyr/internal/server"
+	"github.com/meros/fyr/internal/setup"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
@@ -122,6 +123,8 @@ func main() {
 		os.Setenv("PATH", agent.AgentPath(agent.PathInput{Config: cfg.AgentPath, Unit: os.Getenv("PATH"), Login: login,
 			Home: home(), User: u, Exists: agent.DirExists}))
 	}
+	// Decision 0037: tools installed by the setup wizard (e.g. gh into <data>/tools).
+	setup.EnsureToolsOnPath(filepath.Join(*data, "tools"))
 	cfg.override(*listen, *ownerLogin, *role, *hostsFlag, *hostListen)
 	if *peersFlag != "" || len(cfg.Peers) > 0 {
 		log.Printf("peers: ignored; the old discovery is gone, installs pair instead (fyr pair; V0.retire-discovery)")
@@ -586,7 +589,59 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}()
 		return nil
 	}
-	eng.DeployDeps = engine.DeployDeps{DeployGate: deployGate, DeployBusy: dep.Busy, DeployNow: dep.DeployNow /* V0.83: the owner's Restart now */, UpdateNow: updateNow}
+	var peerEnvPtr atomic.Pointer[peer.Env]
+	serveTarget := "unix:" + auth.SocketPath(data, auth.ServeSocket)
+	if runtime.GOOS == "darwin" {
+		if cfg.WellKnownListen != "" {
+			serveTarget = "http://" + cfg.WellKnownListen
+		} else {
+			serveTarget = ""
+		}
+	}
+	setupChecker := &setup.Checker{
+		OS:          runtime.GOOS,
+		Arch:        runtime.GOARCH,
+		Host:        hostName,
+		Home:        home(),
+		Data:        data,
+		ServeTarget: serveTarget,
+		TLSOn:       cfg.TLS.Cert != "" && cfg.TLS.Key != "",
+		Providers: func() []setup.ProviderInfo {
+			views := reg.List()
+			out := make([]setup.ProviderInfo, len(views))
+			for i, v := range views {
+				out[i] = setup.ProviderInfo{ID: v.ID, Name: v.Name, Status: v.Status}
+			}
+			return out
+		},
+		Projects: func() int { return len(eng.Projects()) },
+		Tailscale: func() setup.TailscaleInfo {
+			sock := cfg.tsSocket()
+			if !tailnet.Available(sock) {
+				return setup.TailscaleInfo{}
+			}
+			_, dns, _ := tailnet.Self(sock)
+			return setup.TailscaleInfo{Available: true, DNSName: dns}
+		},
+		Peers: func(ctx context.Context) setup.PeerInfo {
+			pe := peerEnvPtr.Load()
+			if pe == nil {
+				return setup.PeerInfo{}
+			}
+			members := pe.Members()
+			paired := 0
+			for _, m := range members {
+				if !m.Self {
+					paired++
+				}
+			}
+			return setup.PeerInfo{Paired: paired, Candidates: len(pe.Candidates(ctx))}
+		},
+	}
+	eng.DeployDeps = engine.DeployDeps{DeployGate: deployGate, DeployBusy: dep.Busy, DeployNow: dep.DeployNow /* V0.83: the owner's Restart now */, UpdateNow: updateNow,
+		SetupFix: func(action string, args map[string]any) (any, error) {
+			return setupChecker.Fix(context.Background(), action, args)
+		}}
 	go watcher.Run(ctx)
 	ghView := func() github.MeterView { v := ghMeter.View(); v.Paused = ghBudget.Paused(); return v }
 	prDetails := &github.Details{Gh: gh} // V0.43: the PR tab's details, cached 30 s
@@ -688,6 +743,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		},
 		UpdateLog:   dep.UpdateLog,
 		UpdateState: func() any { return dep.Summary() }, // V0.host-updates
+		Setup:       func(ctx context.Context) any { return setupChecker.Check(ctx) }, // decision 0037
 		Focus: func(device, thread string, on bool) { // V0.85
 			if on {
 				tree.Focus(device, thread, time.Now())
@@ -743,7 +799,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	old := &oldListeners{}
 	if cfg.Role == "host" {
 		srvs.serve(ln, deploy.Health(hostHandler, health...))
-		newPeerSide(cfg, data, hostName, key).start(ctx, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
+		ps := newPeerSide(cfg, data, hostName, key)
+		peerEnvPtr.Store(ps.envOrNil())
+		ps.start(ctx, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
@@ -754,6 +812,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		hosts := append([]front.HostConfig{{Name: hostName, URL: front.LocalURL, Dial: link.Dial}}, cfg.Hosts...)
 		fe = startFront(ctx, frontParts{cfg: cfg, webFS: webFS, name: hostName, data: data, key: key, st: h.st, auth: authStore,
 			hosts: hosts, local: hostName, hostURL: hostURL(cfg.HostListen)}, srv, old)
+		peerEnvPtr.Store(fe.peer)
 		fr := fe.fr
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }

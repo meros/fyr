@@ -82,6 +82,9 @@ type DeployDeps struct {
 	// UpdateNow runs host.updateNow's effect (V0.126): install the newest
 	// release now.
 	UpdateNow func() error
+	// SetupFix runs host.setupFix's effect (decision 0037): one setup wizard
+	// fix action on this host.
+	SetupFix func(action string, args map[string]any) (any, error)
 }
 
 // SlotDeps are the heavy-job measures and controls beside the pool

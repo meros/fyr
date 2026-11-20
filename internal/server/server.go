@@ -85,6 +85,8 @@ type Server struct {
 	// UpdateState is this host's update state for its fronts
 	// (V0.host-updates); nil sends none.
 	UpdateState func() any
+	// Setup reports this host's setup wizard checks (decision 0037). Optional.
+	Setup func(ctx context.Context) any
 }
 
 // Providers is what the provider endpoints need (*provider.Registry
@@ -209,6 +211,14 @@ func (s *Server) routes(mcp bool) http.Handler {
 	// V0.111: the owner's auto-deploy setting.
 	mux.HandleFunc("GET /api/systemAgents", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.SystemAgentsView()) }) // V0.115
 	mux.HandleFunc("GET /api/autoDeploy", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.AutoDeploy()) })
+	// Decision 0037: the host's setup wizard checks (real host state, never a stored flag).
+	mux.HandleFunc("GET /api/setup", func(w http.ResponseWriter, r *http.Request) {
+		if s.Setup == nil {
+			api.WriteJSON(w, 200, map[string]any{"ready": true, "done": 0, "total": 0, "steps": []any{}})
+			return
+		}
+		api.WriteJSON(w, 200, s.Setup(r.Context()))
+	})
 	// V0.126 (#151): the update record and the logs kept with each build.
 	mux.HandleFunc("GET /api/updates", func(w http.ResponseWriter, r *http.Request) {
 		if s.Updates == nil {
