@@ -1970,3 +1970,31 @@ button.chip.wake:hover{color:var(--ink)}
 .ask .askf .askb{flex:none;height:30px;padding:0 8px;border-radius:8px;font:500 13px/18px var(--ui);color:var(--ink-muted)}
 .ask .askf .askb:hover{background:var(--sunken);color:var(--ink)}
 .ask .askf .askb.on{color:var(--harbour)}
+
+/* V0.setup-wizard: the "Set up · X of 6" inbox card and Settings → Setup wizard (decision 0037) */
+.setup-card{display:flex;flex-direction:column;gap:4px;width:calc(100% - 16px);margin:8px 8px 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer}
+.setup-card:hover{background:var(--raised)}
+.setup-card.phone{width:calc(100% - 24px);margin:8px 12px 4px;min-height:44px}
+.setup-card-h{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 13px/18px var(--ui)}
+.setup-card-go{color:var(--harbour);font-weight:500}
+.setup-card-sub{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.setup-wiz{display:flex;flex-direction:column;gap:10px}
+.setup-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.setup-prog{font:600 13px/18px var(--ui);color:var(--ink-muted)}
+.setup-step{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:6px}
+.setup-step-h{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 14px/20px var(--ui)}
+.setup-pill{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:999px;background:var(--sunken);color:var(--ink-muted)}
+.setup-pill.ok{color:var(--ok, #16a34a)}
+.setup-pill.fix{color:var(--harbour)}
+.setup-pill.miss{color:var(--warn, #d97706)}
+.setup-why{margin:0;font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.setup-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+.setup-box{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:8px;background:var(--sunken);font:400 13px/18px var(--ui)}
+.setup-list{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.setup-repo{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--sunken)}
+.setup-repo-info{display:flex;flex-direction:column;min-width:0;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.setup-repo-info strong{font:500 13px/18px var(--ui);color:var(--ink);overflow:hidden;text-overflow:ellipsis}
+.setup-qr{align-items:center;text-align:center}
+.setup-qr-svg svg{width:180px;height:180px;background:#fff;padding:8px;border-radius:8px}
+.setup-qr-url{font-size:11px;word-break:break-all;color:var(--ink-muted)}
+.setup-err{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px}

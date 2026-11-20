@@ -53,6 +53,7 @@ import { ADVANCE_MS, activeSection, allowCommit, askCommit, stepLabel, stripCoun
 import { LONG_PRESS_MS, idle, longPressCancelled, swipeAvail, swipeArmed, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
 import { hostsNeed, settingsNeed, type PageRef } from "./settings-nav.ts";
+import { SetupInboxCard } from "./setup-ui.tsx";
 import { useProvidersNeed } from "./settings-ui.tsx";
 import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
@@ -517,6 +518,14 @@ function MInbox(p: PhoneProps) {
         </div>
       )}
       <div class="m-list" ref={listRef} onScroll={onScroll}>
+        {!p.list.selecting && (
+          <SetupInboxCard
+            hosts={p.store.hostList}
+            projectCount={p.store.projects.length}
+            phone
+            onOpen={() => p.nav.go({ screen: { name: "settings", page: "setup" }, sheet: null })}
+          />
+        )}
         {!p.list.selecting && <FilterEmpty f={p.filters} cls="m-fempty" />}
         {p.inbox.rows.pinned.length > 0 && (
           // V0.104: the desktop's pinned block, above every section and always open.

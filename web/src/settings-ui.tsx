@@ -44,6 +44,8 @@ import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type Pro
 import { FINISHED_DESC, pushRow, type PushPrefs, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
+import { SetupPage } from "./setup-ui.tsx";
+import { setupBadge, setupSummary, type SetupReport } from "./setup.ts";
 import { hiddenCount, hostIsHidden, lastShownHost, projectIsHidden, setHostShown, setProjectShown, type Hidden } from "./hidden.ts";
 import { PeersPanel, usePeerState } from "./peers-ui.tsx";
 import { devicesNeed, devicesSummary } from "./devices.ts";
@@ -114,7 +116,7 @@ export interface ProjectActions {
 }
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct">>;
+  api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "setup" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct">>;
   /** decision 0031 2.6: the name of the front this browser is connected through, for This device only */
   front: string;
   /** V0.51: the front's hosts with their state, the front's own among them */
@@ -141,6 +143,8 @@ export interface SettingsProps {
   /** the first state has arrived, so `now` is the host's clock (V0.120: the page's check on open waits for it) */
   clockKnown?: boolean;
   projectActions: ProjectActions;
+  /** Decision 0037: open a newly created first thread from the Setup wizard */
+  onOpenThread?(id: string): void;
 }
 
 const OFFLINE = () => `No connection to Fyr. Settings show what was last read and cannot be changed until it is back.`;
@@ -344,6 +348,16 @@ export function Settings(p: SettingsProps) {
   const data = useSettingsData(p, sv.mark);
   const peers = usePeerState(p.api, p.at?.page === "hosts"); // V0.159: the installs panel of Hosts
   const auth = useAuthState(p.api, true); // V0.157: Devices, read by the page and by the nav's line
+  const [setupRep, setSetupRep] = useState<SetupReport | null>(null);
+  const setupHostId = (p.hosts ?? []).find((h) => h.online && h.id)?.id;
+  useEffect(() => {
+    if (!setupHostId || !p.api.setup) return;
+    let alive = true;
+    void p.api.setup(setupHostId).then((r) => alive && setSetupRep(r.data)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [p.api, setupHostId, p.at?.page]);
   const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
   // V0.127: the nav's lines count every host; an offline host Fyr has never read is left out.
   // A host with no install id (older than V0.124) cannot be addressed (decision 0031): nothing is read from it.
@@ -357,8 +371,9 @@ export function Settings(p: SettingsProps) {
     hosts: hostsSummary(p.hosts),
     devices: devicesSummary(auth.s),
     device: deviceSummary(p.device.push, p.device.theme, hiddenCount(p.device.hidden)),
+    setup: setupSummary(setupRep),
   };
-  const badges: Partial<Record<PageId, number>> = { providers: navBadge(provs, blocked), hosts: hostsNeed(p.hosts), devices: devicesNeed(auth.s) };
+  const badges: Partial<Record<PageId, number>> = { providers: navBadge(provs, blocked), hosts: hostsNeed(p.hosts), devices: devicesNeed(auth.s), setup: setupBadge(setupRep) };
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
   const [reordering, setReordering] = useState(false);
@@ -621,6 +636,12 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       return { title: "Devices", lede: "Who is signed in to this install, and how a new device gets in.", body: <DevicesPage api={{ authState: p.api.authState, authAct: p.api.authAct }} now={p.now} st={auth} /> };
     case "device":
       return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} front={p.front} hosts={p.hosts ?? []} projects={p.projects} /> };
+    case "setup":
+      return {
+        title: "Setup",
+        lede: "Checked live from this host — never a stored done flag.",
+        body: <SetupPage api={p.api} host={(p.hosts ?? []).find((h) => h.online && h.id)?.id} go={go} onOpenThread={p.onOpenThread} />,
+      };
   }
 }
 

@@ -84,6 +84,7 @@ type frontParts struct {
 // the peer port as it is now; done closes once its cache is written at the end.
 type runningFront struct {
 	fr        *front.Front
+	peer      *peer.Env
 	wellKnown func() peer.WellKnown
 	done      chan struct{}
 }
@@ -113,7 +114,7 @@ func startFront(ctx context.Context, p frontParts, srv *server.Server, old *oldL
 			}
 		},
 		WellKnown: wellKnownNow}, p.hosts)
-	rf := &runningFront{fr: fr, wellKnown: wellKnownNow, done: make(chan struct{})}
+	rf := &runningFront{fr: fr, peer: ps.envOrNil(), wellKnown: wellKnownNow, done: make(chan struct{})}
 	go func() { fr.Run(ctx); close(rf.done) }()
 	ps.start(ctx, srv, fr, p.auth, old)
 	return rf
