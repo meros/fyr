@@ -17,8 +17,9 @@ var GateRules = []GateRule{
 	{Tool: "Bash", Pattern: regexp.MustCompile(`(^|[;&|(\s])gh\s+pr\s+merge(\s|$)`),
 		Reason: "Fyr owns merges. Use mcp__fyr__effect_request with action pr.merge and args {pr, method}; the user approves it and Fyr reports the result."},
 	// V0.149: sudo waits for a password nobody can type here; sudo -n never asks.
+	// V0.prompt-fits-setup: the text holds where pkexec is missing too.
 	{Tool: "Bash", Pattern: regexp.MustCompile(`(?m)(^\s*|[;&|(]\s*)sudo(\s+-[^n\s]\S*)*(\s+[^-\s]|\s*$)`),
-		Reason: "sudo cannot ask for a password in Fyr and would hang. Call mcp__fyr__run_request {command, why, root: true} without sudo: the owner presses Run as root, Fyr runs it through pkexec and sends you the exit code and the output."},
+		Reason: "sudo cannot ask for a password in Fyr and would hang. Call mcp__fyr__run_request {command, why, root: true} without sudo: the owner presses Run as root and Fyr sends you the exit code and the output (a host without pkexec has the owner run it themselves)."},
 }
 
 // Gate returns a deny reason for a tool call, or "" to allow it.

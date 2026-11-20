@@ -290,6 +290,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 	{Name: "textquestion", Urgency: Wake, Budget: true, OnReduce: textQuestionNotices}, // V0.ask-tool, V0.text-ask-nudge
 	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},                     // V0.settle-merge-fixes (1)
+	{Name: "setup", Urgency: Next, OnReduce: setupNotices},                             // V0.prompt-fits-setup
 }
 
 // EventSlot is the event of a slot for a heavy job that became the

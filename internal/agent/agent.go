@@ -74,7 +74,11 @@ type Config struct {
 	// RunDir holds each starting CLI's MCP config (V0.129 (1)): a 0600 file,
 	// removed once the CLI has started. Empty is the system's temp folder.
 	RunDir string
-	Prompt string // appended system prompt
+	// Prompt is the appended system prompt: "" builds the Fyr block from the
+	// setup the agent starts in (V0.prompt-fits-setup), "-" is none.
+	Prompt string
+	// Setup reads that setup for a folder; nil is HostSetup.
+	Setup func(dir string) Setup
 	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
 	Attachments func(id string) (attach.Meta, error)
 	// OnRateLimit gets a session's rate_limit_info with its profile id (V0.44); optional.
@@ -301,8 +305,8 @@ func New(host Host, cfg Config) *Manager {
 	if cfg.PressureMaxWait == 0 {
 		cfg.PressureMaxWait = 15 * time.Minute
 	}
-	if cfg.Prompt == "" {
-		cfg.Prompt = FyrPrompt
+	if cfg.Setup == nil {
+		cfg.Setup = HostSetup
 	}
 	// V0.129 (1): a config left by a start that a crash cut short holds a
 	// dead token; nothing is starting yet, so every one goes.
@@ -589,16 +593,6 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		}
 	}
 	s.timers = len(l.DisallowedTools) == 0
-	prompt := m.cfg.Prompt
-	if prompt == "-" {
-		prompt = ""
-	}
-	s.changeTools = m.cfg.MCPURL != "" // V0.62
-	s.viewTools = m.cfg.MCPURL != ""   // V0.107
-	if t.ViewOn() && m.cfg.MCPURL != "" {
-		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
-	}
-	l.SystemPrompt = prompt
 	if m.cfg.LogDir != "" {
 		os.MkdirAll(m.cfg.LogDir, 0o700)
 		f, err := os.OpenFile(filepath.Join(m.cfg.LogDir, threadID+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -619,6 +613,25 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 			return nil, fmt.Errorf("working directory: %w", err)
 		}
 	}
+	prompt, ghNotice := m.cfg.Prompt, ""
+	switch prompt {
+	case "-":
+		prompt = ""
+	case "":
+		// V0.prompt-fits-setup: the block fits this host and this folder,
+		// read once the folder is back.
+		st := m.cfg.Setup(t.Cwd)
+		prompt = Prompt(st)
+		if st.GitHub && st.GH != "" {
+			ghNotice = GHNotice(st.GH)
+		}
+	}
+	s.changeTools = m.cfg.MCPURL != "" // V0.62
+	s.viewTools = m.cfg.MCPURL != ""   // V0.107
+	if t.ViewOn() && m.cfg.MCPURL != "" {
+		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
+	}
+	l.SystemPrompt = prompt
 	// The CLI connects its MCP servers while it starts, before initialize,
 	// so the token must be valid before the process exists (SPEC 16.2).
 	if s.token != "" {
@@ -686,6 +699,11 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	// V0.79: the commands and skills the composer offers.
 	if cmds := commandsOf(answer); cmds != nil && m.cfg.OnCommands != nil {
 		m.cfg.OnCommands(threadID, p.ID, t.Cwd, cmds)
+	}
+	if ghNotice != "" && m.host != nil {
+		// V0.prompt-fits-setup: one [Fyr] line, said once while it holds;
+		// not under the caller's locks.
+		go m.host.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindSetup, Thread: threadID, Args: ghNotice})
 	}
 	return s, nil
 }

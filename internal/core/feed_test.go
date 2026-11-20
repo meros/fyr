@@ -307,6 +307,21 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
 			}
 		},
+		// V0.prompt-fits-setup: gh is not signed in: one line at the next
+		// tool call, not again while it stays the same.
+		"setup": func(t *testing.T) {
+			th := feedThread()
+			in := Input{Source: Observer(ObsProcess), Kind: KindSetup, Args: "gh is not signed in on this host"}
+			th, res := fstep(t, th, in, ct0)
+			if n := queued(t, th, "setup"); n.Urgency != Next || n.What != "gh is not signed in on this host" || wakes(res) {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+			th.Feed.Queue = nil
+			th, _ = fstep(t, th, in, ct0)
+			if len(th.Feed.Queue) != 0 {
+				t.Fatalf("told twice: %+v", th.Feed.Queue)
+			}
+		},
 	}
 	for _, r := range NoticeRules {
 		f := rows[r.Name]
