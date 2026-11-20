@@ -102,14 +102,21 @@ func main() {
 		log.Printf("launcher: pid %d, runner %q", os.Getppid(), le.Runner)
 	}
 	os.MkdirAll(*data, 0o700)
-	// A systemd unit has a minimal PATH; agents need the user's tools.
+	cfg := loadConfig(*cfgPath, filepath.Join(*t3Dir, "settings.json"))
+	// A systemd unit has a minimal PATH; agents need the user's tools: the
+	// config's agentPath, the login shell's PATH (V0.linux-without-nix) and
+	// the profile folders that exist (decision 0007).
 	if u := os.Getenv("USER"); u != "" || home() != "" {
 		if u == "" {
 			u = filepath.Base(home())
 		}
-		os.Setenv("PATH", agent.UserPath(os.Getenv("PATH"), home(), u, agent.DirExists))
+		login, err := agent.LoginPath(agent.LoginShell(u), 5*time.Second)
+		if err != nil {
+			log.Printf("agent PATH: no login shell PATH (%v); the unit's PATH and agentPath only", err)
+		}
+		os.Setenv("PATH", agent.AgentPath(agent.PathInput{Config: cfg.AgentPath, Unit: os.Getenv("PATH"), Login: login,
+			Home: home(), User: u, Exists: agent.DirExists}))
 	}
-	cfg := loadConfig(*cfgPath, filepath.Join(*t3Dir, "settings.json"))
 	cfg.override(*listen, *ownerLogin, *role, *hostsFlag, *hostListen)
 	if *peersFlag != "" || len(cfg.Peers) > 0 {
 		log.Printf("peers: ignored; the old discovery is gone, installs pair instead (fyr pair; V0.retire-discovery)")

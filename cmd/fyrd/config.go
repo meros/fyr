@@ -74,6 +74,9 @@ type config struct {
 	// ScanRoots: extra folders the folder picker scans for git repositories,
 	// two levels deep (V0.42); `~` is the home folder.
 	ScanRoots []string `json:"scanRoots"`
+	// AgentPath: folders put first on the agents' PATH, before the unit's
+	// and the login shell's (V0.linux-without-nix); `~/` is the home folder.
+	AgentPath []string `json:"agentPath"`
 	// Quota: per profile id, where its provider allowance is read (V0.44);
 	// wins over the profile's own quota.
 	Quota map[string]*quota.Spec `json:"quota"`

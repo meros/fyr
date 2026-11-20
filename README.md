@@ -55,7 +55,7 @@ Fyr is v0. Its author uses it every day, and it changes daily. Expect breaking c
 
 ## Requirements
 
-- **Linux or macOS.** NixOS has a module, macOS has an install script, and on other Linux you build from source.
+- **Linux or macOS.** NixOS has a module; macOS and other Linux (Debian, Ubuntu) have an install script.
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (`claude`), logged in with a Claude account or set up for an Anthropic-compatible endpoint. Fyr drives every agent through it. Other agent CLIs are not supported yet ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
 - **GitHub through [`gh`](https://cli.github.com/)**, logged in. Projects on other forges still run threads, without change tracking.
 - **Optional: [Tailscale](https://tailscale.com/)**, to open Fyr from your phone and to connect machines.
@@ -88,6 +88,19 @@ scripts/install-macos.sh
 ```
 
 The script downloads the current signed release and starts a launchd agent on http://127.0.0.1:7777. It also adds `~/Applications/Fyr.app`, which you can open from Spotlight or the Dock. `scripts/install-macos.sh --uninstall` removes both.
+
+### Linux without Nix (Debian, Ubuntu)
+
+You need systemd with cgroup v2, `git`, `gh` (logged in: `gh auth login`) and `claude`:
+
+```sh
+sudo apt install git gh   # gh: see cli.github.com if your release lacks it
+git clone https://github.com/meros/fyr && cd fyr
+scripts/install-linux.sh --print   # shows every file and command, changes nothing
+scripts/install-linux.sh
+```
+
+Run it as yourself, not as root. It downloads the current signed release into `~/.local/share/fyr` as you, then asks `sudo` for the system part, showing each command: the unit `fyr.service` (it runs as you), the agents' slice, a polkit rule and a small helper. Fyr serves http://127.0.0.1:7777 and updates itself. `scripts/install-linux.sh --uninstall` removes the unit and the root files. [`docs/INSTALL.md`](docs/INSTALL.md#linux-without-nix) has the details.
 
 ### From source
 
