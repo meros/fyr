@@ -95,6 +95,12 @@ export function createMockApi(scenario: string): Api {
     if (!startHosts.length) return deskId;
     return (startHosts.find((h) => h.name === (name || "desk"))?.id ?? ("\u0000" + (name ?? ""))) as HostId;
   };
+  // A front with one host and no list keeps the fixtures' ids bare (the layout test names them in its selectors), so
+  // what names a thread (an event's subject, a load's or a slot's owner, a command's reply) stays bare there too: a ref
+  // of desk's id would match no thread. With several hosts every id is a ref, as the real front's are.
+  const refHost = (host: HostId): string => (startHosts.length ? host : "");
+  const evOf = <E extends Parameters<typeof stampEvent>[0]>(e: E, host: HostId) => (startHosts.length ? stampEvent(e, host) : e);
+  const loadOf = (l: HostLoad, host: HostId): HostLoad => (startHosts.length ? stampLoad(l, host) : { ...l, hostId: host });
   const nameOf = (id: string): string => {
     const hs = mockHostList();
     if (!hs.length) return "";
@@ -145,7 +151,7 @@ export function createMockApi(scenario: string): Api {
         profiles: h.profiles ?? st.profiles,
         actions: st.actions,
         // V0.39: the update in the fixture is desk's, the host the front runs in
-        deploy: h.id === deskId && st.deploy ? stampDeploy(st.deploy, h.id) : null,
+        deploy: h.id === deskId && st.deploy ? (startHosts.length ? stampDeploy(st.deploy, h.id) : { ...st.deploy, host: h.id }) : null,
         ...(h.id === deskId && st.stall ? { stall: { ...(st.stall as object), host: h.name } } : {}),
       };
     }
@@ -307,7 +313,7 @@ export function createMockApi(scenario: string): Api {
           const x = stampT(t);
           if (x) h.thread(x);
         },
-        event: (e) => h.event(stampEvent(e, idOfName(server.state().threads.find((t) => t.id === e.subject)?.host))),
+        event: (e) => h.event(evOf(e, idOfName(server.state().threads.find((t) => t.id === e.subject)?.host))),
         project: (p) => {
           const x = stampP(p);
           if (x) h.project?.(x);
@@ -352,13 +358,14 @@ export function createMockApi(scenario: string): Api {
     },
     async command(host, action, tid, a) {
       // The host knows its own ids: a ref goes in bare and the ids in the reply come back as refs, as api.ts does.
-      const r = await mockCommand(host, action, tid ? bare(host, tid) : tid, unrefDeep(host, a));
+      const rh = refHost(host);
+      const r = await mockCommand(host, action, tid ? bare(rh, tid) : tid, unrefDeep(rh, a));
       if (!r.ok) return r;
       return {
         ...r,
-        ...(r.threadId ? { threadId: ref(host, r.threadId) } : {}),
-        ...(r.result && typeof r.result.id === "string" && action.startsWith("project.") ? { result: { ...r.result, id: ref(host, r.result.id) } } : {}),
-        ...(r.result && action === "host.slotOrder" && Array.isArray((r.result as { waiting?: unknown }).waiting) ? { result: stampSlots(r.result as never, host) as never } : {}),
+        ...(r.threadId ? { threadId: ref(rh, r.threadId) } : {}),
+        ...(r.result && typeof r.result.id === "string" && action.startsWith("project.") ? { result: { ...r.result, id: ref(rh, r.result.id) } } : {}),
+        ...(r.result && action === "host.slotOrder" && Array.isArray((r.result as { waiting?: unknown }).waiting) ? { result: (startHosts.length ? stampSlots(r.result as never, host) : r.result) as never } : {}),
       };
     },
     async providers(host) {
@@ -483,7 +490,7 @@ export function createMockApi(scenario: string): Api {
       return h?.profiles ?? server.state().profiles;
     },
     async events(host, threadId, after = 0, limit = 400) {
-      return server.events(bare(host, threadId), after, limit).map((e) => stampEvent(e, host));
+      return server.events(bare(refHost(host), threadId), after, limit).map((e) => evOf(e, host));
     },
     async thread() {
       return null; // the mock sends whole threads
@@ -492,8 +499,8 @@ export function createMockApi(scenario: string): Api {
       return null; // the mock never cuts
     },
     async eventsBefore(host, threadId, before, limit = 400) {
-      const all = server.events(bare(host, threadId), 0, 1_000_000).filter((e) => e.seq < before);
-      return all.slice(Math.max(0, all.length - limit)).map((e) => stampEvent(e, host));
+      const all = server.events(bare(refHost(host), threadId), 0, 1_000_000).filter((e) => e.seq < before);
+      return all.slice(Math.max(0, all.length - limit)).map((e) => evOf(e, host));
     },
     async t3Candidates(host) {
       const r = hostFor(nameOf(host)); // V0.139: only desk has T3 in the mock
@@ -557,7 +564,7 @@ export function createMockApi(scenario: string): Api {
     async load() {
       // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).
       const l = JSON.parse(JSON.stringify(load)) as HostLoad[];
-      if (!mockHostList().length || !l.length) return l.map((x) => stampLoad(x, idOfName(x.host)));
+      if (!mockHostList().length || !l.length) return l.map((x) => loadOf(x, idOfName(x.host)));
       return [{ ...l[0], host: "desk" }, { ...l[0], host: "lab", cores: 16, load: [1.4, 1.1, 0.9], threads: [], slots: undefined }].map((x) => stampLoad(x as HostLoad, idOfName(x.host)));
     },
     async boardVisit() {
