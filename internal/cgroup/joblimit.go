@@ -105,6 +105,35 @@ func jobLimits(z JobSize, budget, used uint64, cores float64, lifted bool) (high
 	return high, cpu, why
 }
 
+// unknownHigh is the memory.high kept for a job of a class not learned yet,
+// given high, the agents' free memory at the move (jobLimits). V0.freeze-charge:
+// on 19 Nov at 20:48 the guard moved work into undeclared/ while 73 MB were
+// free, and that became its memory.high: after the thaw every allocation was
+// throttled. Undeclared work is moved only by the guard, to freeze it, so
+// always when memory is short and the free memory least: it gets no limit
+// (the freeze bounds it, and after the thaw the guard's next tick does). Its
+// pages stay charged to cli/ besides,
+// so a limit there would count only what it allocates after the thaw. A job
+// moved into job/ is never limited below the prior, 1/N of the agents, as
+// admission counts it (decision 0029 section 2).
+func (g *JobGroups) unknownHigh(high string, budget uint64, cores float64, undeclared bool) (string, string) {
+	if undeclared {
+		return "max", "unknown-frozen"
+	}
+	if g.N <= 0 || budget == 0 || high == "max" {
+		return high, "unknown"
+	}
+	p := slots.Prior(slots.Signals{CPU: cores, Memory: budget}, g.N).Mem
+	if n, err := strconv.ParseUint(high, 10, 64); err == nil && n >= p {
+		return high, "unknown"
+	}
+	if p >= budget {
+		return "max", "prior"
+	}
+	page := uint64(os.Getpagesize())
+	return strconv.FormatUint(max(p/page*page, page), 10), "prior"
+}
+
 // agentsNow is the agents' memory budget, its use, its cores and whether the
 // swap valve is open.
 func (g *JobGroups) agentsNow() (budget, used uint64, cores float64, lifted bool) {
@@ -138,6 +167,9 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 		// free memory once, here. used counts the job itself, so sizing it again
 		// each tick would shrink its limit as it grows.
 		if h, c, w := jobLimits(z, budget, used, cores, false); w != "learned" {
+			if w == "unknown" {
+				h, w = g.unknownHigh(h, budget, cores, undeclared)
+			}
 			s.kept, s.keptHigh, s.keptCPU, s.keptWhy = true, h, c, w
 		}
 	}

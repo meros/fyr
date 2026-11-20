@@ -127,27 +127,84 @@ func (g *JobGroups) reclaimFrozen(thread string) uint64 {
 	if g.nearOomd(thread) {
 		return 0
 	}
-	var moved uint64
-	for _, d := range g.frozenDirs(thread) {
-		room := g.swapRoom()
+	var moved, held, rss uint64
+	dirs := g.frozenDirs(thread)
+	for _, d := range dirs {
 		anon, _ := readKey(filepath.Join(d, "memory.stat"), "anon")
-		want := min(anon, room)
-		if want < reclaimMin {
+		held += anon
+		rss += g.anonRSS(procsUnder(d))
+		moved += reclaimDir(d, min(anon, g.swapRoom()))
+	}
+	if len(dirs) == 0 || rss <= held {
+		return moved
+	}
+	// V0.freeze-charge: the kernel leaves a page charged to the cgroup that
+	// first touched it, so work that grew in cli/ before fyrd moved it holds
+	// its memory there (19 Nov 20:48: 11.6 GB frozen in undeclared/, which
+	// held nothing). cli/ is asked for the frozen work's anonymous memory its
+	// own cgroups do not hold, and never more than cli/ holds beyond its own
+	// processes (the CLI and its MCP servers). The frozen pages are the
+	// coldest in cli/: the reclaim takes them first (measured in
+	// TestRealFreezeChargeReclaimsCLIsCharge), while the CLI runs on.
+	cli := filepath.Join(g.threadDir(thread), CLIDir)
+	anon, _ := readKey(filepath.Join(cli, "memory.stat"), "anon")
+	own := g.anonRSS(pids(filepath.Join(cli, "cgroup.procs")))
+	if anon <= own {
+		return moved
+	}
+	return moved + reclaimDir(cli, min(rss-held, anon-own, g.swapRoom()))
+}
+
+// reclaimDir asks cgroup d to move want bytes of anonymous memory to swap and
+// reports what d gave up; nothing under reclaimMin.
+func reclaimDir(d string, want uint64) uint64 {
+	if want < reclaimMin {
+		return 0
+	}
+	before := readBytes(filepath.Join(d, "memory.current"))
+	// swappiness=200 reclaims anonymous memory only, which leaves the
+	// page cache the running work shares; a kernel before 6.13 refuses
+	// the key. A partial reclaim answers EAGAIN, which is fine.
+	v := strconv.FormatUint(want, 10)
+	if err := reclaim(d, v+" swappiness=200"); err != nil && strings.Contains(err.Error(), "invalid argument") {
+		reclaim(d, v)
+	}
+	if after := readBytes(filepath.Join(d, "memory.current")); after < before {
+		return before - after
+	}
+	return 0
+}
+
+// procsUnder are the processes of cgroup d and of the units under it.
+func procsUnder(d string) []int {
+	in := pids(filepath.Join(d, "cgroup.procs"))
+	for _, u := range unitDirs(d) {
+		in = append(in, pids(filepath.Join(u, "cgroup.procs"))...)
+	}
+	return in
+}
+
+// anonRSS is the resident memory of ps that is not file-backed or shared
+// (statm resident less shared), summed: pages two of them share count twice,
+// which the callers bound by what a cgroup holds.
+func (g *JobGroups) anonRSS(ps []int) uint64 {
+	var sum uint64
+	for _, p := range ps {
+		b, err := os.ReadFile(filepath.Join(g.proc(), strconv.Itoa(p), "statm"))
+		if err != nil {
 			continue
 		}
-		before := readBytes(filepath.Join(d, "memory.current"))
-		// swappiness=200 reclaims anonymous memory only, which leaves the
-		// page cache the running work shares; a kernel before 6.13 refuses
-		// the key. A partial reclaim answers EAGAIN, which is fine.
-		v := strconv.FormatUint(want, 10)
-		if err := reclaim(d, v+" swappiness=200"); err != nil && strings.Contains(err.Error(), "invalid argument") {
-			reclaim(d, v)
+		f := strings.Fields(string(b))
+		if len(f) < 3 {
+			continue
 		}
-		if after := readBytes(filepath.Join(d, "memory.current")); after < before {
-			moved += before - after
+		res, _ := strconv.ParseUint(f[1], 10, 64)
+		shared, _ := strconv.ParseUint(f[2], 10, 64)
+		if res > shared {
+			sum += (res - shared) * uint64(pageSize())
 		}
 	}
-	return moved
+	return sum
 }
 
 // nearOomd says the unit oomd watches for the agents stalls within
