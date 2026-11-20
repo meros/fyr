@@ -689,7 +689,7 @@ function railFixture(now: number): Fixture {
         activity: waiting ? "" : act,
         subagents: subs,
         tasks: waiting && MOCK_BGWAIT
-          ? [task("dq1", "Wait for both experiments to finish", "running", now, 35, { type: "local_bash", background: true, tool: "Bash", quietSince: min(12) })]
+          ? [task("dq1", "Wait for both experiments to finish", "running", now, 35.5, { type: "local_bash", background: true, tool: "Bash", quietSince: min(12) })] // 35.5: mid-minute, so the front's clock (the host's, less the reply's delay) reads "35 min", not "34" under load (V0.fix-flakes)
           : waiting
           ? [
               task("dt1", "Design mobile translation", "running", now, m, { activity: "Running build", toolUses: 14, tokens: 143_218 }),
@@ -1875,7 +1875,7 @@ export function withLeftovers(list: HostLoad[], mode: string, now = railNow(Date
     { id: "37777@104", thread: "t_0ld", orphan: true, pid: 37777, name: "engine.test", command: "/tmp/go-build1/b001/engine.test -test.run=TestX", procs: 1, rss: 8e6, started: ago(360), seen: ago(1), endsAt: ago(-1) },
   ];
   const temps: Temp[] = [
-    { path: "/home/me/fyr/.claude/worktrees/map-perf", kind: "worktree", thread: "t_mapperf", bytes: 412e6, safe: true, removeAt: new Date(Date.now() + 5 * 3600_000).toISOString() },
+    { path: "/home/me/fyr/.claude/worktrees/map-perf", kind: "worktree", thread: "t_mapperf", bytes: 412e6, safe: true, removeAt: ago(-5 * 60) }, // V0.fix-flakes: on the mock's clock, as every time above; Date.now() read "in 1 min" before 09:32
     { path: "/home/me/fyr/.claude/worktrees/nix-bump", kind: "worktree", thread: "t_nix", bytes: 3e6, safe: false, why: "2 commits not pushed" },
   ];
   return [{ ...h, leftovers, temps }, ...rest];
