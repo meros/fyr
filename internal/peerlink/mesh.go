@@ -409,7 +409,7 @@ func (m *Mesh) dial(ctx context.Context, p Peer, addr string) (*Link, error) {
 		conn.Close()
 		return nil, &LinkErr{Kind: ErrOlderVersion, Text: "it speaks only fyr-peer/1: followed one way until it is updated"}
 	}
-	if err := writeHello(conn, hello{V: 2}); err != nil {
+	if err := writeHello(conn, hello{V: 2, Drain: true}); err != nil {
 		conn.Close()
 		return nil, err
 	}
@@ -435,6 +435,7 @@ func (m *Mesh) dial(ctx context.Context, p Peer, addr string) (*Link, error) {
 	if err != nil {
 		return nil, err
 	}
+	l.setPeerDrains(h.Drain)
 	select {
 	case <-l.Ready():
 		return l, nil
@@ -473,11 +474,12 @@ func (m *Mesh) Accept(lc *LinkConn) {
 			c.Close()
 			return
 		}
-		if err := writeHello(c, hello{V: 2, OK: true}); err != nil {
+		if err := writeHello(c, hello{V: 2, OK: true, Drain: true}); err != nil {
 			c.Close()
 			return
 		}
 		l := NewAcceptorLink(c, m.cfg.Key.ID(), p.ID, lc.Key, m.cfg.Handler)
+		l.setPeerDrains(h.Drain)
 		select {
 		case <-l.Ready():
 			m.register(l)
@@ -492,8 +494,8 @@ func (m *Mesh) Accept(lc *LinkConn) {
 // membership re-checked after, so one that comes up while a removal merges is
 // closed too. When two links are up for one peer, the one opened by the install
 // with the smaller id wins (a newer one from the same dialer replaces an older);
-// the loser takes no new requests and is closed when its own have drained, or
-// after 5 s.
+// the loser takes no new requests and is closed when both sides are done with it
+// (drainAndClose), or after 5 s.
 func (m *Mesh) register(l *Link) {
 	m.mu.Lock()
 	old := m.links[l.PeerID]
@@ -566,11 +568,37 @@ func openedBy(l *Link, self string) string {
 	return "them"
 }
 
+// drainAndClose ends a link that lost (V0.peerlink-replace-drain). The two sides
+// move to the new link each when it registers it, so the peer may still send on
+// the old one after this side has moved: closing when this side's own requests end
+// cut the peer's off ("unexpected EOF"). This side sends nothing new on it
+// (RoundTrip refuses) and waits for its own requests to end. Then, to a peer
+// whose hello said it announces, it says it is done and waits for the peer to say
+// the same; an older peer is not told, and the link waits for the requests it
+// serves to end instead. 5 s is the limit either way, as before.
 func drainAndClose(l *Link) {
 	end := time.Now().Add(5 * time.Second)
-	for time.Now().Before(end) && l.InFlight() > 0 {
-		time.Sleep(50 * time.Millisecond)
+	until := func(cond func() bool) {
+		for !cond() && time.Now().Before(end) {
+			select {
+			case <-l.Done():
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
 	}
+	until(func() bool { return l.InFlight() == 0 })
+	if l.peerAnnounces() {
+		ctx, cancel := context.WithDeadline(context.Background(), end)
+		l.announce(ctx) // an error is a link the peer closed already
+		cancel()
+		select {
+		case <-l.peerDone:
+		case <-l.Done():
+		case <-time.After(time.Until(end)):
+		}
+	}
+	until(func() bool { return l.Serving() == 0 })
 	l.Close()
 }
 
@@ -609,11 +637,17 @@ func (m *Mesh) Close(id string) {
 // (the whois link) can use it.
 func (m *Mesh) Transport(id string, wait time.Duration) http.RoundTripper {
 	return roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		l, err := m.pick(r.Context(), id, wait)
-		if err != nil {
-			return nil, err
+		for try := 0; ; try++ {
+			l, err := m.pick(r.Context(), id, wait)
+			if err != nil {
+				return nil, err
+			}
+			resp, err := l.RoundTrip(r)
+			if errors.Is(err, errDraining) && try < 3 {
+				continue // replaced between pick and send; nothing was sent: the new link takes it
+			}
+			return resp, err
 		}
-		return l.RoundTrip(r)
 	})
 }
 
