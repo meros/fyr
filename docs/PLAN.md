@@ -59,6 +59,24 @@ On each, they install a signed, versioned `v1.0.0` release, log in to Claude thr
 | #61 | The desktop filmstrip folds like the phone's, with a hide for each thread |
 | #55 | Jump to the previous or next owner message and to the cards that need the owner |
 
+### Track D: Solid core 2 (the model a stranger's setup meets)
+
+An architecture review on 20 Nov (backend, web client, agent tools) found Solid core mostly holds. Every runtime change still goes through one reducer, nothing reads `Thread.PR`, and the layering is clean. Three things have drifted: the agents' tools, the client's action list, and the spec. The resource guard has no single owner. Which rows block v1.0 is the owner's call; the order below is by value to a stranger's install.
+
+| Item | What | Size |
+|---|---|---|
+| new | **Instructions that fit the setup.** Build the agent's instructions from facts Fyr already has (git or not, a GitHub remote, gh signed in, OS, pkexec) and drop the advice that does not apply. A merge ask without GitHub says so. Put the key rules where subagents see them (MCP `instructions`) | M |
+| new | **One tool vocabulary.** The `gh pr merge` gate names `change_request`, not `effect_request`. Fold `effect_request` into `change_request` and make deploy owner-only (`fyr.deploy` is requestable by every project's agent). Fold `settle_when` into `watch`. Remove `slot_acquire`/`slot_release` and the `pr_link` alias. Retries of `change_request` and `watch` are idempotent. A test checks that every `mcp__fyr__X` in prompts, gates and feed is a registered tool | M |
+| new | **One action list for both fronts.** One `threadActions(t)` behind the desktop context menu, the ⋯ menu and the phone sheet, which have drifted apart (the phone lacks Unsettle, Unsnooze, Unarchive, Stop run, Copy link). A test checks every action is reachable on both fronts | M |
+| new | **Decision 0031 slice 2b in the client.** State for each host, a required host id, and no `hostIdByName` or first-host fallbacks (about 22 `hostId ?? ""` sites). Makes #372 a deletion | L |
+| new | **Rows grouped by a code from the host**, not by parsing the English reason (`web/src/rows.ts:50-113`) | S |
+| new | **SPEC 3 and 5.12 restated from the code.** The tool table names tools that do not exist (`change_revise`, …) and leaves out ones that do; the front's own vocabulary and the guard's runtime state are named exceptions to "every change goes through 5.1". This was Solid core's exit criterion | S |
+| new | **One versioned migration step at store open.** Drop migrations from before ~V0.100 and the `leakedFixture` hack, with a fixture test of an old database | M |
+| new | **The mock checked against a real host.** Record each command's attention change on a scratch fyrd and assert the mock does the same; the layout browser test runs on the mock | M |
+| new | **`internal/guard`.** One policy (`Tick → decisions`, admission included) over a `Mechanism` that `cgroup` implements and macOS implements with the process table. This moves the policy out of `engine/slots.go` and the closures out of `cmd/fyrd/main.go`. It follows the decision 0036 acceptance work and helps #236 and #198 | L |
+
+After v1.0: the Claude seam (`cli.Session` emitting Fyr events instead of `claude.Msg`) unless events reach the wire; the guard's state as records; splitting `settings-ui.tsx` and sharing the question card and composer between the fronts.
+
 ### Order
 
 1. **A and B together, Linux first.** #199 → #198 → #197 → #200 → versioned releases → #434 (it builds on #200 and on versioned releases; the Swift shell can start earlier on the owner's Mac runner). In parallel: #372, #68, #156, which need no install work.
