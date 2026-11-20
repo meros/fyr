@@ -137,10 +137,10 @@ func TestLocalBuildSmokesAndPauses(t *testing.T) {
 	if d.PausedBy() == nil {
 		t.Fatal("a local build did not pause auto-update")
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.reports) != 1 || !strings.Contains(h.reports[0], "auto-update is paused") {
-		t.Fatalf("reports %v", h.reports)
+	// The pause comes before the report (V0.deploy-report-flake): wait
+	// for the report itself.
+	if r := h.reportsAfter(1); len(r) != 1 || !strings.Contains(r[0], "auto-update is paused") {
+		t.Fatalf("reports %v", r)
 	}
 }
 

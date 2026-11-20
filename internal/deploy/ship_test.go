@@ -61,11 +61,13 @@ func TestV082DeployRecordsCommitAndShips(t *testing.T) {
 	if s.Commit != "c0ffee" || s.Remote != "git@github.com:meros/fyr.git" || s.Build == "" || !s.Contains("m71") || s.Contains("m99") {
 		t.Fatalf("shipped %+v", s)
 	}
-	time.Sleep(20 * time.Millisecond)
-	h2.mu.Lock()
-	defer h2.mu.Unlock()
-	if len(h2.reports) != 1 || !strings.HasPrefix(h2.reports[0], "t1 ok") || len(h.reports) != 0 {
-		t.Fatalf("reports %v %v", h.reports, h2.reports)
+	// The thread hears of it after the ship (V0.deploy-report-flake): wait
+	// for the report itself, not a fixed sleep.
+	r2 := h2.reportsAfter(1)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(r2) != 1 || !strings.HasPrefix(r2[0], "t1 ok") || len(h.reports) != 0 {
+		t.Fatalf("reports %v %v", h.reports, r2)
 	}
 }
 
