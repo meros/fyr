@@ -390,6 +390,12 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 
 .convo{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;scrollbar-width:thin}
 .convo-in{margin-top:auto;display:flex;flex-direction:column;gap:12px;padding:12px 24px;min-width:0}
+/* V0.scroll-to-bottom: away from the end, a round arrow floats over the conversation's bottom right corner.
+   A zero-height sticky row at the end of the scroller: it pins to the bottom edge and takes no room. */
+.cv-end{position:sticky;bottom:0;height:0;flex:none;display:flex;justify-content:flex-end;padding:0 16px;pointer-events:none;z-index:2}
+.cv-endb{pointer-events:auto;transform:translateY(calc(-100% - 12px));width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line-strong);background:var(--raised);color:var(--ink);box-shadow:0 2px 8px rgb(0 0 0/.15);cursor:pointer;padding:0}
+.cv-endb:hover{background:var(--select)}
+.cv-endb:focus-visible{outline:2px solid var(--harbour);outline-offset:2px}
 .you{align-self:flex-end;max-width:72%;padding:8px 12px;border-radius:14px 14px 4px 14px;background:var(--select);color:var(--ink);font:400 14px/21px var(--ui);white-space:pre-wrap;--knock:var(--select)}
 /* V0.33: delivery. A message and its quiet delivery word; unread ones are dimmed after "Agent is here". */
 .youw{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0}

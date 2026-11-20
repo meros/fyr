@@ -12,7 +12,7 @@ import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useApi } from "./api-context.ts";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
-import { SlideMark } from "./motion-ui.tsx";
+import { SlideMark, reducedMotion } from "./motion-ui.tsx";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
 import { agentPrompt, buildConversation, findCall, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, type SubStep, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
@@ -527,17 +527,29 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   const entries = useMemo(() => pace(items, { details }), [items, details]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // V0.scroll-to-bottom: away from the end, an arrow takes you back there (desktop and phone).
+  const [away, setAway] = useState(false);
 
   const check = () => {
     const el = ref.current;
     if (!el) return;
     const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
     stick.current = atEnd;
+    setAway(!atEnd);
     onAtEnd(atEnd);
+  };
+
+  const toEnd = () => {
+    const el = ref.current;
+    if (!el) return;
+    stick.current = true;
+    setAway(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
   useLayoutEffect(() => {
     stick.current = true;
+    setAway(false);
   }, [threadId]);
 
   useLayoutEffect(() => {
@@ -547,6 +559,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
     // layout of the whole conversation on every update); away from the bottom, nothing moves.
     if (stick.current) {
       el.scrollTop = 1e9;
+      setAway(false);
       onAtEnd(true);
     }
   }, [all, threadId, followCards]);
@@ -627,6 +640,13 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
           ))}
         </DeliveryCtx.Provider>
       </div>
+      {away && (
+        <div class="cv-end">
+          <button type="button" class="cv-endb" aria-label="Scroll to the newest message" title="Scroll to the newest message" onClick={toEnd}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></svg>
+          </button>
+        </div>
+      )}
     </div>
     </RunCards.Provider>
     </HostContext.Provider>
