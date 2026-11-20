@@ -27,6 +27,7 @@ let
     cgroups = {
       enable = true;
       inherit (cfg.cgroups) serverMemoryLow agentsMemoryHigh agentsMemoryMax agentsMemorySwapMax;
+    } // lib.optionalAttrs (cfg.cgroups.agentsCpuCores != null) {
       agentsCpuMax = "${toString (cfg.cgroups.agentsCpuCores * 100000)} 100000";
     } // lib.optionalAttrs cfg.cgroups.agentsUnit {
       agentsSlice = agentsSlice;
@@ -245,9 +246,12 @@ in
         description = "HTTPS port on the tailnet. Only the owner's Tailscale login is served.";
       };
     };
+    # V0.agents-budget-share (#198): every memory default is a share of the
+    # machine (systemd and fyrd read "40%" against the RAM, or the swap for
+    # a swap limit), never a size that suits one machine.
     memoryHigh = lib.mkOption {
       type = lib.types.str;
-      default = "13G";
+      default = "40%";
       description = ''
         MemoryHigh of the whole unit when `cgroups.enable` is off. With
         cgroups the limits sit on agents/ only, so the daemon is never
@@ -256,7 +260,7 @@ in
     };
     memoryMax = lib.mkOption {
       type = lib.types.str;
-      default = "14G";
+      default = "46%";
       description = "MemoryMax of the whole unit when `cgroups.enable` is off.";
     };
     # V0.agents-unit (decision 0036 (B), #221), the default: fyrd runs alone
@@ -266,14 +270,13 @@ in
     # (Delegate=yes, so fyrd makes job/ and undeclared/ in it, and
     # memory.oom.group=1, so oomd ends a whole thread), a self-deploy's
     # commands in fyr-deploy-<n>.scope. The budget and the oomd rule sit on
-    # fyr-agents.slice. A machine-wide QoS script may rewrite the CPU cap at
+    # fyr-agents.slice. A host's own tooling may rewrite the CPU cap at
     #   /sys/fs/cgroup/fyr.slice/fyr-agents.slice/cpu.max
     #
-    # With agentsUnit off, SPEC 0.5 V0.80, after T3's launcher (t3code.nix in
-    # the machine's config): the unit delegates cpu and memory, fyrd moves
-    # itself into server/ and starts every agent CLI in agents/<thread id>/,
-    # the deploy's build and tests in agents/self-deploy/, and the budget sits
-    # on agents/ (the QoS script's path is then
+    # With agentsUnit off, SPEC 0.5 V0.80: the unit delegates cpu and memory,
+    # fyrd moves itself into server/ and starts every agent CLI in
+    # agents/<thread id>/, the deploy's build and tests in agents/self-deploy/,
+    # and the budget sits on agents/ (the CPU cap is then
     # /sys/fs/cgroup/system.slice/fyr.service/agents/cpu.max).
     cgroups = {
       enable = lib.mkOption {
@@ -322,18 +325,29 @@ in
         '';
       };
       agentsCpuCores = lib.mkOption {
-        type = lib.types.ints.positive;
-        default = 4;
-        description = "CPU cap of the agents (the slice, or agents/), in cores: every thread together, the deploy included.";
+        type = lib.types.nullOr lib.types.ints.positive;
+        default = null;
+        example = 4;
+        description = ''
+          CPU cap of the agents (the slice, or agents/), in cores: every thread
+          together, the deploy included. null, the default, is no cap: the
+          agents' low cpu.weight already gives the desktop and fyrd the CPU
+          first, and the machine's core count is not known when the
+          configuration is built (V0.agents-budget-share).
+        '';
       };
       agentsMemoryHigh = lib.mkOption {
         type = lib.types.str;
-        default = "13G";
-        description = "memory.high of the agents (the slice, or agents/): the kernel throttles the agents past it.";
+        default = "40%";
+        description = ''
+          memory.high of the agents (the slice, or agents/): the kernel
+          throttles the agents past it. A percentage is a share of the RAM;
+          a size ("12G") is taken as it is.
+        '';
       };
       agentsMemoryMax = lib.mkOption {
         type = lib.types.str;
-        default = "14G";
+        default = "46%";
         description = "memory.max of the agents (the slice, or agents/): the kernel OOM-kills past it (a whole thread with agentsUnit). Keep the gap to memoryHigh narrow.";
       };
       # V0.share-shadow: the thread share is gone; the option stays so a
@@ -346,10 +360,12 @@ in
       };
       agentsMemorySwapMax = lib.mkOption {
         type = lib.types.str;
-        default = "16G";
+        default = "30%";
         description = ''
-          memory.swap.max of the agents (the slice, or agents/). T3's notes (2026-11-13): an 8 GiB cap left
-          the agents stalling between high and max; 24G spilled swap onto disk.
+          memory.swap.max of the agents (the slice, or agents/). A percentage
+          is a share of the swap. Too small a cap leaves the agents stalling
+          between memory.high and memory.max; no cap lets their cold pages
+          fill the disk swap.
         '';
       };
     };
@@ -470,8 +486,9 @@ in
     # PartOf=fyr.service, so stopping the unit stops its agents as before).
     systemd.slices.fyr-agents = lib.mkIf agentsUnit {
       description = "Fyr's agents (V0.agents-unit)";
-      sliceConfig = {
+      sliceConfig = lib.optionalAttrs (cfg.cgroups.agentsCpuCores != null) {
         CPUQuota = "${toString (cfg.cgroups.agentsCpuCores * 100)}%";
+      } // {
         MemoryHigh = cfg.cgroups.agentsMemoryHigh;
         MemoryMax = cfg.cgroups.agentsMemoryMax;
         MemorySwapMax = cfg.cgroups.agentsMemorySwapMax;

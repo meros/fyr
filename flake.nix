@@ -92,6 +92,9 @@
             hosts = [ { name = "host-a"; url = "http://host-a:7778"; } ];
           };
           unit = mkSys { cgroups.agentsUnit = false; };
+          # V0.agents-budget-share: a host that sets a CPU cap gets it on both layouts.
+          capped = mkSys { cgroups.agentsCpuCores = 4; };
+          cappedConf = builtins.fromJSON (builtins.unsafeDiscardStringContext capped.config.environment.etc."fyr/config.json".text);
           unitFyr = unit.config.systemd.services.fyr.serviceConfig;
           unitConf = builtins.fromJSON (builtins.unsafeDiscardStringContext unit.config.environment.etc."fyr/config.json".text);
           slice = sys.config.systemd.slices.fyr-agents.sliceConfig;
@@ -124,13 +127,15 @@
         # user start Fyr's scopes only.
         assert !(fyr ? Delegate) && fyr.MemoryLow == "1G" && fyr.ManagedOOMPreference == "omit" && fyr.OOMScoreAdjust < 0;
         assert !(fyr ? MemoryMax) && !(fyr ? MemoryHigh);
-        assert slice.CPUQuota == "400%" && slice.MemoryHigh == "13G" && slice.MemoryMax == "14G" && slice.MemorySwapMax == "16G";
+        # V0.agents-budget-share (#198): the defaults are shares of the machine, and no CPU cap.
+        assert !(slice ? CPUQuota) && slice.MemoryHigh == "40%" && slice.MemoryMax == "46%" && slice.MemorySwapMax == "30%";
+        assert capped.config.systemd.slices.fyr-agents.sliceConfig.CPUQuota == "400%" && cappedConf.cgroups.agentsCpuMax == "400000 100000";
         assert slice.ManagedOOMMemoryPressure == "kill" && slice.ManagedOOMMemoryPressureLimit == "80%";
         assert nixpkgs.lib.hasInfix "fyr-(agent|deploy)-" sys.config.security.polkit.extraConfig;
         assert nixpkgs.lib.hasInfix ''subject.user == "u"'' sys.config.security.polkit.extraConfig;
         assert conf.cgroups.agentsSlice == "fyr-agents.slice" && nixpkgs.lib.hasSuffix "/bin/systemd-run" conf.cgroups.systemdRun;
-        assert removeAttrs conf.cgroups [ "agentsSlice" "systemdRun" "systemctl" ] == { enable = true; serverMemoryLow = "1G"; agentsCpuMax = "400000 100000";
-          agentsMemoryHigh = "13G"; agentsMemoryMax = "14G"; agentsMemorySwapMax = "16G"; };
+        assert removeAttrs conf.cgroups [ "agentsSlice" "systemdRun" "systemctl" ] == { enable = true; serverMemoryLow = "1G";
+          agentsMemoryHigh = "40%"; agentsMemoryMax = "46%"; agentsMemorySwapMax = "30%"; };
         # V0.psi-trigger-slice: before fyrd starts, root hands the slice's
         # memory.pressure to the user (fyrd's PSI trigger, V0.guard-wake); the
         # slice is started first so its cgroup exists.
