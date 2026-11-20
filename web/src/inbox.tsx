@@ -1,4 +1,4 @@
-// Rail and inbox list, as design/directions/04-rail.html draws them.
+// Rail and inbox list, as the rail direction (decision 0006) draws them.
 
 import { Fragment, type ComponentChildren, type Ref } from "preact";
 import type { Profile, Thread } from "./types.ts";

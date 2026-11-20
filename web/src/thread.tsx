@@ -1,5 +1,5 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
-// (design/directions/04-rail.html).
+// (the rail direction (decision 0006)).
 
 import { ArrivedBar } from "./arrived-bar.tsx";
 import type { AnswerMove } from "./arrived.ts";

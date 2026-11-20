@@ -1,6 +1,6 @@
 // Package claude is a Go-native client for the control protocol of the
 // `claude` CLI (`--input-format stream-json --output-format stream-json`).
-// The spike in spikes/protocol/go proved each message used here.
+// Each message used here was proved against the real CLI before it was used.
 package claude
 
 import (
