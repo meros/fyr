@@ -52,6 +52,7 @@ export function needsGroup(t: Thread): NeedsGroup {
   if (st === "asking") return t.decisions.length === 0 || t.decisions.some((d) => d.kind === "ask") ? "answer" : "approve";
   if (st === "blocked") {
     if (t.attention.reason?.startsWith("Run: ")) return "approve"; // V0.149 (5): the host's words for a run request
+    if (t.settleAsk && t.attention.reason?.startsWith("Settle: ")) return "approve"; // V0.settle-offer-your-move
     const needs = t.changes.flatMap((c) => (c.need && !c.need.muted ? [c.need] : []));
     if (needs.length > 0 && needs.every((n) => n.cause === "ready")) return "approve";
   }
@@ -94,7 +95,8 @@ export function rowState(t: Thread): string {
   return blockedReason(t)?.word ?? (t.attention.reason || stateLabel(st));
 }
 
-/** V0.row-calm: the host's Needs you reason is "<change title>: <need>" (V0.101) or "Run: <why>" (V0.149). The row
+/** V0.row-calm: the host's Needs you reason is "<change title>: <need>" (V0.101) , "Run: <why>" (V0.149) or "Settle: <why>"
+ *  (V0.settle-offer-your-move). The row
  *  puts the short word ("Merge", "Run") in the state's place and the rest on the line, so a long change title in the
  *  state colour does not fill the line. */
 export function blockedReason(t: Pick<Thread, "attention" | "changes">): { word: string; what: string } | null {
@@ -104,7 +106,7 @@ export function blockedReason(t: Pick<Thread, "attention" | "changes">): { word:
   if (i < 0) return null;
   const head = r.slice(0, i);
   const tail = r.slice(i + 2);
-  if (head === "Run") return { word: head, what: tail };
+  if (head === "Run" || head === "Settle") return { word: head, what: tail }; // V0.settle-offer-your-move: "Settle: <why>"
   if ((t.changes ?? []).some((c) => c.title === head) && tail) return { word: tail, what: head };
   return null;
 }

@@ -114,6 +114,11 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if a := PendingRequest(t); a != nil {
 		return Attention{Blocked, NeedsYou, "Run: " + a.Why}
 	}
+	// V0.settle-offer-your-move: the agent offers to settle once its run
+	// ended; the owner's move is Settle, or a message that clears it.
+	if t.SettleAsk != nil {
+		return Attention{Blocked, NeedsYou, SettleOfferText(t.SettleAsk)}
+	}
 	// V0.ci-wait-moves: CI the thread waits on moves without the owner, so
 	// the thread is not Finished while it runs.
 	if r := ciWait(t); r != "" {
@@ -158,4 +163,13 @@ func ciWait(t *Thread) string {
 		}
 	}
 	return ""
+}
+
+// SettleOfferText is the Your move line of a settle offer
+// (V0.settle-offer-your-move): "Settle: <why>", the chip's words.
+func SettleOfferText(a *SettleAsk) string {
+	if a.Why == "" {
+		return "Settle: the agent is done"
+	}
+	return "Settle: " + a.Why
 }
