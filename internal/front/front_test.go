@@ -108,6 +108,16 @@ func frontKnows(url, ref string) bool {
 	return code == 200
 }
 
+// testFront is the Front behind a newFront URL.
+func testFront(t *testing.T, url string) *Front {
+	t.Helper()
+	v, ok := testFronts.Load(url)
+	if !ok {
+		t.Fatalf("no front at %s", url)
+	}
+	return v.(*Front)
+}
+
 func post(t *testing.T, url, body string) (int, map[string]any) {
 	req, _ := http.NewRequest("POST", url, strings.NewReader(body))
 	req.Header.Set("X-Fyr", "1")
