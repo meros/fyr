@@ -146,6 +146,11 @@ static gboolean on_permission(WebKitWebView *v, WebKitPermissionRequest *r, gpoi
 	return TRUE;
 }
 
+typedef struct {
+	WebKitScriptMessageReply *reply;
+	JSCContext *ctx;
+} bridge_reply;
+
 // fyrPush: the page's notification settings for this device (web/src/pwa.ts,
 // V0.mac-notify), answered by Go with { on, endpoint?, error? }. Only
 // Fyr's own page may ask.
@@ -156,8 +161,12 @@ static gboolean on_bridge(WebKitUserContentManager *m, JSCValue *v, WebKitScript
 		return TRUE;
 	}
 	char *json = jsc_value_to_json(v, 0);
-	webkit_script_message_reply_ref(reply); // until Go answers
-	goBridge(json ? json : "{}", reply);
+	// The answer is made in the message's own context: a value made in
+	// another one reaches the page as an empty object.
+	bridge_reply *b = g_new0(bridge_reply, 1);
+	b->reply = webkit_script_message_reply_ref(reply); // until Go answers
+	b->ctx = g_object_ref(jsc_value_get_context(v));
+	goBridge(json ? json : "{}", b);
 	g_free(json);
 	return TRUE;
 }
@@ -308,19 +317,18 @@ typedef struct {
 	void *p;
 } shell_op;
 
-static JSCContext *reply_ctx;
-
 static void reply(shell_op *o) {
-	WebKitScriptMessageReply *r = o->p;
+	bridge_reply *b = o->p;
 	if (o->op == OP_REPLY) {
-		if (!reply_ctx) reply_ctx = jsc_context_new();
-		JSCValue *v = jsc_value_new_from_json(reply_ctx, o->a);
-		webkit_script_message_reply_return_value(r, v);
+		JSCValue *v = jsc_value_new_from_json(b->ctx, o->a);
+		webkit_script_message_reply_return_value(b->reply, v);
 		g_object_unref(v);
 	} else {
-		webkit_script_message_reply_return_error_message(r, o->a);
+		webkit_script_message_reply_return_error_message(b->reply, o->a);
 	}
-	webkit_script_message_reply_unref(r);
+	webkit_script_message_reply_unref(b->reply);
+	g_object_unref(b->ctx);
+	g_free(b);
 }
 
 static void close_note(guint32 id) {
