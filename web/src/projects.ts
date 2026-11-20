@@ -152,6 +152,7 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
         icon: newest.icon,
         quiet: newest.quiet,
         priority: newest.priority,
+        agentSettle: newest.agentSettle, // V0.linked-agent-settle
         image: pic?.image,
         ...(pic ? { imageFrom: { id: pic.id!, hostId: pic.hostId! } } : {}),
         members,
@@ -187,7 +188,7 @@ export function memberOn(p: Project | undefined, hostId: string | undefined): Pr
 export function splitSharedPatch<T extends Record<string, unknown>>(patch: T): { shared: Partial<T>; own: Partial<T> } {
   const shared: Partial<T> = {};
   const own: Partial<T> = {};
-  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet", "priority"].includes(String(k)) ? shared : own)[k] = patch[k];
+  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet", "priority", "agentSettle"].includes(String(k)) ? shared : own)[k] = patch[k];
   return { shared, own };
 }
 
