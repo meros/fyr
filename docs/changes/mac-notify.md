@@ -1,0 +1,13 @@
+# V0.mac-notify: Fyr.app is a push device of its own, reading its pushes over the owner socket and showing them as macOS notifications
+
+→ decision 0037 ("Notifications"); builds on V0.mac-shell, V0.15 (Web Push), V0.207 (what a device hides) and V0.notification-polish (per-device choices).
+
+Why: Fyr.app's window is a WKWebView, which has no Web Push, so the Mac app got no notifications. Decision 0037 has the app post them itself, under the same rules as push.
+
+1. **A native device is a subscription.** Its endpoint is `native:<id>` and it has no keys, so `/push/subscribe` (which needs keys) cannot make one. `Pusher.Notify` treats it like any other device: what it hides, whether it wants finished threads, presence and quiet hours all apply. Its pushes do not go to a push service. They wait in a queue in fyrd that keeps the newest push per thread, at most 20 for 12 hours, as a push service keeps them for an offline device. Unsubscribing removes the queue and ends its stream.
+2. **The owner socket serves the app.** `POST /push/native {endpoint, device}` stores the device and returns its endpoint; an endpoint the store still knows is kept, so the device's settings survive restarts of the app. `GET /push/native/stream?endpoint=` sends the waiting pushes, then each new one, as one JSON line each (a `push.Payload`), with an empty line every 30 s. A second reader replaces the first.
+3. **The app reads the stream** and posts a notification for each push, as the service worker does: one per thread (a newer push replaces it), with title and body from the payload, and a question as time-sensitive. A click opens `/?open=<host>/<thread>` in the window. Notifications show while the app is in front too: fyrd already leaves out the thread the owner is looking at. The app reconnects after a pause when fyrd restarts, and stores itself again when fyrd forgot it.
+4. **The app starts at login** (`SMAppService.mainApp`), so notifications arrive with the window closed. Started at login, it stays in the menu bar without opening the window. `Fyr --agent unregister` also takes it out of Login Items.
+5. **Settings → Notifications works in the window.** The shell answers the page on `window.webkit.messageHandlers.fyrPush` (`status`, `on`, `off`). `pwa.ts` uses that bridge, when it is there, in place of the service worker's subscription: the bell's state, turning it on (macOS asks for permission once), off (the app stops reading, then the page removes the device), the test push, what the device hides, and finished threads. In a browser nothing changes.
+
+Not yet: closing a thread's notification when it is read elsewhere (`clearThreadNotification` closes only the service worker's), and the Dock badge.

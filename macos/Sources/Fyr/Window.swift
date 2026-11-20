@@ -5,7 +5,8 @@ import WebKit
 // origin it signed in on before; a 401 there (enforce mode, no session)
 // asks the owner socket for a one-time link, so a new session is minted only
 // when the old one is gone. Links to other origins open in the browser.
-final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
+  var notifier: Notifier?
   private var window: NSWindow?
   private var web: WKWebView!
   private var signingIn = false
@@ -42,6 +43,7 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
   private func make() {
     let cfg = WKWebViewConfiguration()
     cfg.websiteDataStore = .default() // the session cookie and the page's own storage persist
+    cfg.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "fyrPush") // V0.mac-notify
     web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: cfg)
     web.navigationDelegate = self
     web.uiDelegate = self
@@ -224,6 +226,25 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     a.addButton(withTitle: "OK")
     a.addButton(withTitle: "Cancel")
     a.beginSheetModal(for: window!) { completionHandler($0 == .alertFirstButtonReturn ? field.stringValue : nil) }
+  }
+
+  // MARK: WKScriptMessageHandlerWithReply
+
+  // fyrPush: the page's notification settings for this device (pwa.ts),
+  // answered by the notifier. Only Fyr's own pages may ask.
+  func userContentController(
+    _ uc: WKUserContentController, didReceive m: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void
+  ) {
+    guard let n = notifier, let u = m.frameInfo.request.url, isFyr(u), let op = (m.body as? [String: Any])?["op"] as? String else {
+      return replyHandler(nil, "not available")
+    }
+    let reply: ([String: Any]) -> Void = { r in DispatchQueue.main.async { replyHandler(r, nil) } }
+    switch op {
+    case "status": n.status(reply)
+    case "on": n.turnOn(reply)
+    case "off": n.turnOff(reply)
+    default: replyHandler(nil, "unknown op \(op)")
+    }
   }
 
   // MARK: NSWindowDelegate

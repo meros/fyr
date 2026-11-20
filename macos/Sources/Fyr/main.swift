@@ -6,9 +6,17 @@ import ServiceManagement
 // serves desktop and phone alike.
 final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
   let window = Window()
+  let notifier = Notifier()
   var item: NSStatusItem!
+  var atLogin = false
   let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
   let pauseItem = NSMenuItem(title: "Pause Fyr", action: #selector(togglePause), keyEquivalent: "")
+
+  // macOS says in the open event whether it started the app as a login item.
+  func applicationWillFinishLaunching(_ n: Notification) {
+    let e = NSAppleEventManager.shared().currentAppleEvent
+    atLogin = e?.eventID == kAEOpenApplication && e?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+  }
 
   func applicationDidFinishLaunching(_ n: Notification) {
     let args = CommandLine.arguments
@@ -30,7 +38,13 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     m.addItem(withTitle: "Quit (Fyr keeps running)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
     item.menu = m
     if !Agent.paused { report(Agent.start()) }
-    window.show()
+    // V0.mac-notify: the app starts at login, so notifications arrive with
+    // the window closed; at login it stays in the menu bar.
+    if SMAppService.mainApp.status != .enabled { try? SMAppService.mainApp.register() }
+    notifier.open = { [weak self] path in self?.window.show(path: path) }
+    window.notifier = notifier
+    notifier.start()
+    if !atLogin { window.show() }
   }
 
   // A click on the Dock icon or a second open of the app shows the window.
@@ -142,7 +156,9 @@ func agentCommand(_ cmd: String) -> Never {
   switch cmd {
   case "register":
     if case .failed(let why) = Agent.start() { FileHandle.standardError.write("register: \(why)\n".data(using: .utf8)!) }
-  case "unregister": try? Agent.pause()
+  case "unregister": // and out of Login Items: what an uninstall wants
+    try? Agent.pause()
+    try? SMAppService.mainApp.unregister()
   case "status": break
   default:
     FileHandle.standardError.write("usage: Fyr --agent register|unregister|status\n".data(using: .utf8)!)
