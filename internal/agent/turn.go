@@ -99,7 +99,11 @@ func (m *Manager) read(s *session) {
 
 func (m *Manager) handle(s *session, msg claude.Msg) {
 	typ, _ := msg["type"].(string)
-	if typ == "assistant" || (typ == "system" && msg["subtype"] == "init") {
+	// V0.stop-ends-background: only the main agent starts a turn. A
+	// background subagent writes between turns too; read as a run, it put
+	// the thread in Running and offered Stop, and the CLI's interrupt kills
+	// every background task.
+	if (typ == "assistant" && !fromSubagent(msg)) || (typ == "system" && msg["subtype"] == "init") {
 		m.turnStarted(s)
 	}
 	switch typ {
@@ -139,11 +143,17 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		if k, ev, ok := taskFromSystem(msg); ok {
 			k.Tool = s.digest.taskTool(msg)
+			byStop := false
+			if ev == "ended" && k.Status == core.TaskStopped {
+				m.mu.Lock()
+				byStop = !s.stopAt.IsZero() && time.Since(s.stopAt) < stopWindow
+				m.mu.Unlock()
+			}
 			var evs []core.Event
 			if ev != "" {
 				evs = append(evs, core.Event{Type: "task", Data: map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})
 			}
-			m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k, Log: evs})
+			m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k, Log: evs, ByStop: byStop})
 			return
 		}
 		if msg["subtype"] == "init" {
@@ -249,6 +259,17 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.armIdle(s)
 		go m.feed(s.thread) // the agent is idle: what waits starts a turn
 	}
+}
+
+// stopWindow is how long after an interrupt a task that ends as stopped
+// counts as ended by it: the CLI kills them before it answers the
+// interrupt, within milliseconds.
+const stopWindow = 5 * time.Second
+
+// fromSubagent: a stream message of a subagent, not of the main agent.
+func fromSubagent(msg claude.Msg) bool {
+	p, _ := msg["parent_tool_use_id"].(string)
+	return p != ""
 }
 
 // noteForced marks a forced turn that did more than update the view.

@@ -73,21 +73,47 @@ export function taskStats(t: TaskDTO): string {
   return parts.join(" · ");
 }
 
-/** What the task is doing now, or how it ended. */
+/** What the task is doing now, or how it ended. V0.stop-ends-background: a stopped or failed task says so first; the
+ * CLI's summary of a stopped agent is only its description, which reads as a finished one. */
 export function taskLine(t: TaskDTO): string {
   if (t.status === "running") {
     if (t.quietSince) return `No CPU use since ${clockTime(t.quietSince)}`;
     return t.activity || (t.background ? "Running" : "Starting");
   }
-  return t.summary || t.activity || (t.status === "completed" ? "Finished" : t.status === "failed" ? "Failed" : "Stopped");
+  if (t.status === "completed") return t.summary || t.activity || "Finished";
+  const word = t.status === "failed" ? "Failed" : "Stopped";
+  const why = t.summary && t.summary !== t.description ? t.summary : "";
+  return why ? `${word} · ${why}` : word;
+}
+
+/** V0.stop-ends-background: how the ended tasks ended, "3 finished" or "1 finished, 3 stopped". */
+export function endedLabel(ended: TaskDTO[]): string {
+  const n = (s: TaskDTO["status"]) => ended.filter((t) => t.status === s).length;
+  const parts = [
+    [n("completed"), "finished"],
+    [n("stopped"), "stopped"],
+    [n("failed"), "failed"],
+  ].filter(([c]) => c) as [number, string][];
+  return parts.map(([c, w]) => `${c} ${w}`).join(", ");
+}
+
+/** The strip's icon: waiting while one runs, else how the ended ones went (a stopped one is not settled work). */
+export function agentsIcon(tasks: TaskDTO[] | null | undefined): "waiting" | "settled" | "failed" | "seen" {
+  const g = groupTasks(tasks);
+  if (g.running.length) return "waiting";
+  if (g.ended.some((t) => t.status === "failed")) return "failed";
+  if (g.ended.some((t) => t.status === "stopped")) return "seen";
+  return "settled";
 }
 
 /** "2 agents · Running build": the running count and the newest running task's activity. */
 export function agentsSummary(tasks: TaskDTO[] | null | undefined): string {
-  const running = groupTasks(tasks).running;
+  const { running, ended } = groupTasks(tasks);
   if (!running.length) {
     const n = (tasks ?? []).length;
-    return n ? `${agentsLabel(n)} finished` : "";
+    if (!n) return "";
+    // V0.stop-ends-background: agents a Stop ended never read as finished.
+    return ended.every((t) => t.status === "completed") ? `${agentsLabel(n)} finished` : `${agentsLabel(n)}: ${endedLabel(ended)}`;
   }
   const newest = [...running].sort((a, b) => ts(b.updatedAt) - ts(a.updatedAt))[0];
   const label = runningLabel(running);

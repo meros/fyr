@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/core"
@@ -137,6 +138,7 @@ func (m *Manager) doInterrupt(threadID string) error {
 	s := m.sessions[threadID]
 	if s != nil {
 		s.interrupt = true
+		s.stopAt = time.Now()
 	}
 	m.mu.Unlock()
 	if s == nil {

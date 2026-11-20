@@ -287,6 +287,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
 	{Name: "slot", Urgency: Wake, OnReduce: slotNotices},
 	{Name: "task.quiet", Urgency: Wake, Budget: true, OnReduce: taskQuietNotices}, // V0.195
+	{Name: "task.stopped", Urgency: Next, OnReduce: taskStopNotices},              // V0.stop-ends-background
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 	{Name: "textquestion", Urgency: Wake, Budget: true, OnReduce: textQuestionNotices}, // V0.ask-tool, V0.text-ask-nudge
 	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},                     // V0.settle-merge-fixes (1)

@@ -13,6 +13,12 @@
 //	crash    exits with code 3 during the run
 //	agentbg  starts a background agent, ends its turn, and reports the
 //	         agent's progress and completion with the CLI's task messages
+//	agentwork starts a background agent and ends its turn; the agent then
+//	         writes its own assistant messages (parent_tool_use_id set)
+//	         every 50 ms until an interrupt, which kills it with the CLI's
+//	         task_updated killed, task_notification stopped and an empty
+//	         background_tasks_changed, before the interrupt's control
+//	         response, as claude does (V0.stop-ends-background)
 //	bg       ends its turn, then starts a second turn on its own (as the CLI
 //	         does when a background task finishes) with no user message
 //	bgwait N starts a background task, ends its turn, and N ms later
@@ -104,6 +110,9 @@ var (
 	// closed: stdin closed; eof is closed with it; bgwg: background tasks
 	// the exit waits for.
 	closed atomic.Bool
+	// bgAgent is the running background agent of agentwork, killed by
+	// the next interrupt (V0.stop-ends-background).
+	bgAgent atomic.Bool
 	// deaf: the fake reads nothing more (V0.143).
 	deaf atomic.Bool
 	eof  = make(chan struct{})
@@ -348,6 +357,11 @@ func Main() {
 				case interrupt <- struct{}{}:
 				default:
 				}
+				if bgAgent.Swap(false) {
+					write(msg{"type": "system", "subtype": "task_updated", "task_id": "ag2", "patch": msg{"status": "killed"}})
+					write(msg{"type": "system", "subtype": "task_notification", "task_id": "ag2", "tool_use_id": "tu_ag2", "status": "stopped", "summary": "Audit sources"})
+					write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{}})
+				}
 			}
 			resp := msg{}
 			if req["subtype"] == "cancel_async_message" {
@@ -532,6 +546,19 @@ func turn(text string) (took []queued) {
 			write(msg{"type": "system", "subtype": "task_progress", "task_id": "ag1", "description": "Running build", "usage": msg{"tool_uses": 3, "total_tokens": 1200}})
 			time.Sleep(300 * time.Millisecond)
 			write(msg{"type": "system", "subtype": "task_notification", "task_id": "ag1", "status": "completed", "summary": "Design delivered"})
+		}()
+	case "agentwork":
+		bgAgent.Store(true)
+		write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{msg{"task_id": "ag2", "task_type": "local_agent", "description": "Audit sources"}}})
+		write(msg{"type": "system", "subtype": "task_started", "task_id": "ag2", "tool_use_id": "tu_ag2", "description": "Audit sources", "task_type": "local_agent", "is_backgrounded": true})
+		assistant(msg{"type": "text", "text": "agent launched"})
+		result(false, "success", "turn 1")
+		go func() {
+			for bgAgent.Load() && !closed.Load() {
+				time.Sleep(50 * time.Millisecond)
+				write(msg{"type": "assistant", "session_id": session, "parent_tool_use_id": "tu_ag2",
+					"message": msg{"role": "assistant", "content": []any{msg{"type": "text", "text": "reading sources"}}}})
+			}
 		}()
 	case "bg":
 		assistant(msg{"type": "text", "text": "started a background task"})

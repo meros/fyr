@@ -137,19 +137,29 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 		return k, "", true
 	case "task_updated":
 		p, _ := m["patch"].(map[string]any)
-		k.Status = core.TaskStatus(str(p, "status"))
+		k.Status = taskStatus(str(p, "status"))
 		if k.Status == "" || k.Status == core.TaskRunning {
 			return k, "", k.Status != ""
 		}
 		return k, "ended", true
 	case "task_notification":
-		k.Status, k.Summary = core.TaskStatus(str(m, "status")), core.TruncHead(firstLine(str(m, "summary")), 200)
+		k.Status, k.Summary = taskStatus(str(m, "status")), core.TruncHead(firstLine(str(m, "summary")), 200)
 		if k.Status == "" {
 			k.Status = core.TaskCompleted
 		}
 		return k, "ended", true
 	}
 	return k, "", false
+}
+
+// taskStatus maps the CLI's status words to Fyr's: the CLI says killed
+// for a task its interrupt or TaskStop ended (V0.stop-ends-background),
+// which is stopped, never finished.
+func taskStatus(s string) core.TaskStatus {
+	if s == "killed" {
+		return core.TaskStopped
+	}
+	return core.TaskStatus(s)
 }
 
 // taskTool names the tool that started a task (V0.195): the CLI reports a

@@ -85,6 +85,31 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("told twice: %+v", th.Feed.Queue)
 			}
 		},
+		// V0.stop-ends-background: the owner's Stop also killed a background
+		// agent. Told with the next message (Next, never a wake: the owner
+		// just stopped the agent), once; a task the agent stopped itself
+		// (no ByStop) or that finished says nothing.
+		"task.stopped": func(t *testing.T) {
+			th := feedThread()
+			th.Tasks = []Task{
+				{ID: "a1", Description: "Audit sources A–G", Type: "local_agent", Status: TaskRunning, Background: true},
+				{ID: "a2", Description: "Own stop", Type: "local_agent", Status: TaskRunning, Background: true},
+			}
+			stop := func(id string, by bool) Input {
+				return Input{Source: Observer(ObsProcess), Kind: KindTask, Args: TaskArgs{Task: Task{ID: id, Status: TaskStopped}, ByStop: by}}
+			}
+			th, res := fstep(t, th, stop("a1", true), ct0)
+			n := queued(t, th, "task.stopped:a1")
+			if n.Urgency != Next || wakes(res) || !strings.Contains(n.What, `background agent "Audit sources A–G" (task a1)`) || !strings.Contains(n.What, "Start it again") {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+			th.Feed.Queue = nil
+			th, _ = fstep(t, th, stop("a1", true), ct0) // the CLI's task_notification after task_updated
+			th, _ = fstep(t, th, stop("a2", false), ct0)
+			if len(th.Feed.Queue) != 0 {
+				t.Fatalf("told for a repeat or the agent's own stop: %+v", th.Feed.Queue)
+			}
+		},
 		// The result of an effect the agent asked for, or of an action
 		// anyone pressed on its records: wake.
 		"result": func(t *testing.T) {
