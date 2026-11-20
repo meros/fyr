@@ -7,20 +7,46 @@ package provider
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/agycli"
 	"github.com/meros/fyr/internal/cli/claudecli"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/quota"
 )
 
 // The kinds the UI shows.
 const (
-	KindAccount  = "claude-account" // a cli-login
-	KindEndpoint = "endpoint"       // an api-key with an endpoint
+	KindAccount    = "claude-account" // a Claude cli-login
+	KindAgyAccount = "agy-account"    // an Antigravity (agy) cli-login
+	KindEndpoint   = "endpoint"       // an api-key with an endpoint
 )
+
+// AdapterFor returns the built-in CLI adapter for cliID ("" is claude).
+func AdapterFor(cliID string) cli.Adapter {
+	if cliID == agycli.ID {
+		return agycli.Adapter{}
+	}
+	return claudecli.Adapter{}
+}
+
+func defaultBinary(cliID string) string {
+	if d, ok := AdapterFor(cliID).(cli.Defaults); ok {
+		return d.DefaultBinary()
+	}
+	return "claude"
+}
+
+func defaultConfigDir(cliID string) string {
+	if d, ok := AdapterFor(cliID).(cli.Defaults); ok {
+		return d.DefaultConfigDir()
+	}
+	return "~/.claude"
+}
 
 // Statuses.
 const (
@@ -64,13 +90,18 @@ type Provider struct {
 	TriedAt   time.Time `json:"triedAt,omitzero"`
 }
 
-// Kind is the UI's word for the auth.
+// Kind is the UI's word for the auth and CLI.
 func (p Provider) Kind() string {
 	if p.Auth.Kind == cli.APIKey {
 		return KindEndpoint
 	}
+	if p.CLI == agycli.ID {
+		return KindAgyAccount
+	}
 	return KindAccount
 }
+
+func (p Provider) binary() string { return defaultBinary(p.CLI) }
 
 // SecretName is the provider's name in the secret store.
 func SecretName(id string) string { return id + ".key" }
@@ -116,7 +147,7 @@ func (p Provider) quotaSpec() *quota.Spec {
 	kind := p.QuotaKind
 	if kind == "" {
 		switch {
-		case p.Auth.Kind == cli.CLILogin:
+		case p.Auth.Kind == cli.CLILogin && (p.CLI == "" || p.CLI == claudecli.ID):
 			kind = quota.KindAnthropic
 		case strings.Contains(p.Endpoint.BaseURL, "openrouter.ai"):
 			kind = quota.KindOpenRouter
@@ -143,13 +174,19 @@ func (p Provider) identity(home string) string {
 	if p.Auth.Kind == cli.CLILogin {
 		dir := p.Auth.ConfigDir
 		if dir == "" {
-			dir = "~/.claude"
+			dir = defaultConfigDir(p.CLI)
+		}
+		if p.CLI != "" && p.CLI != claudecli.ID {
+			return p.CLI + ":" + filepath.Clean(hostfs.ExpandHome(dir, home))
 		}
 		return quota.Identity(quota.Resolve(quota.Profile{Spec: &quota.Spec{Kind: quota.KindAnthropic, ConfigDir: dir}}, home))
 	}
 	src := "secret:" + p.Auth.Secret
 	if p.KeyRef != "" {
 		src = p.KeyRef
+	}
+	if p.CLI != "" && p.CLI != claudecli.ID {
+		return p.CLI + ":" + p.Kind() + ":" + src + "@" + p.Endpoint.BaseURL
 	}
 	return p.Kind() + ":" + src + "@" + p.Endpoint.BaseURL
 }
@@ -165,16 +202,16 @@ func (p Provider) Profile(key func() (string, error), permissionMode string) Pro
 	if def == "" && len(ids) > 0 {
 		def = ids[0]
 	}
-	return Profile{ID: p.ID, Name: p.Name, Binary: "claude", Color: p.Color, Models: ids, DefaultModel: def,
+	return Profile{ID: p.ID, Name: p.Name, Binary: p.binary(), Color: p.Color, Models: ids, DefaultModel: def,
 		PermissionMode: permissionMode, Quota: p.quotaSpec(), ConfigDir: p.Auth.ConfigDir,
 		CLI: p.CLI, Auth: p.Auth, Endpoint: p.Endpoint, Key: key, KeyRequired: p.Auth.Kind == cli.APIKey || p.TokenLogin,
 		ModelCaps: p.Models, DefaultEffort: p.DefaultEffort}
 }
 
 // modelsFor gives each id its name and effort levels: the catalog's
-// (V0.120), else a known claude model's on a Claude login; other ids get
-// none.
-func modelsFor(ids []string, endpoint bool, catalog ...CatalogModel) []cli.Model {
+// (V0.120), else a known model of the adapter; other ids get none.
+func modelsFor(cliID string, ids []string, endpoint bool, catalog ...CatalogModel) []cli.Model {
+	known := AdapterFor(cliID).Caps().Models
 	out := []cli.Model{}
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -186,8 +223,8 @@ func modelsFor(ids []string, endpoint bool, catalog ...CatalogModel) []cli.Model
 		m := cli.Model{ID: id}
 		if c, ok := (Provider{Catalog: catalog}).catalogModel(id); ok && !c.Manual {
 			m = cli.Model{ID: id, Name: c.Name, Efforts: c.Efforts}
-		} else if !endpoint {
-			for _, k := range claudecli.Models {
+		} else if !endpoint || cliID == agycli.ID {
+			for _, k := range known {
 				if k.ID == id {
 					m = k
 				}

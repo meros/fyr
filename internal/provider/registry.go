@@ -12,6 +12,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/agycli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/secrets"
@@ -119,7 +120,15 @@ func (r *Registry) put(p Provider, pos int) error {
 // copies the key into the secret store; otherwise the provider reads it
 // where it was found.
 func (r *Registry) importFound(f Found, copyKey bool) (Provider, error) {
-	p := Provider{ID: f.ID, Name: f.Name, Color: f.Color, CLI: claudecli.ID, Models: f.Models, DefaultModel: f.Default,
+	cliID := f.CLI
+	if cliID == "" {
+		if f.Kind == KindAgyAccount {
+			cliID = agycli.ID
+		} else {
+			cliID = claudecli.ID
+		}
+	}
+	p := Provider{ID: f.ID, Name: f.Name, Color: f.Color, CLI: cliID, Models: f.Models, DefaultModel: f.Default,
 		QuotaKind: f.QuotaKind, Imported: f.Source, CreatedAt: time.Now().UTC()}
 	if p.Models == nil {
 		p.Models = []cli.Model{}
@@ -230,7 +239,7 @@ func (r *Registry) Profiles() []Profile {
 func (r *Registry) QuotaProfiles() []quota.Profile {
 	out := []quota.Profile{}
 	for _, p := range r.Providers() {
-		out = append(out, quota.Profile{ID: p.ID, Binary: "claude", Spec: p.quotaSpec(), Identity: p.identity(r.Home), Key: r.keyFn(p.ID)})
+		out = append(out, quota.Profile{ID: p.ID, Binary: p.binary(), Spec: p.quotaSpec(), Identity: p.identity(r.Home), Key: r.keyFn(p.ID)})
 	}
 	return out
 }
@@ -238,28 +247,29 @@ func (r *Registry) QuotaProfiles() []quota.Profile {
 // status is ready, needs-login or needs-key, with what to do.
 func (r *Registry) status(p Provider) (string, string) {
 	_, kerr := r.key(p)
+	ad := AdapterFor(p.CLI)
 	switch p.Auth.Kind {
 	case cli.APIKey:
 		if kerr != nil {
 			return NeedsKey, "Paste the API key for " + p.Name + "."
 		}
 	case cli.CLILogin:
-		if kerr == nil || (!p.TokenLogin && (claudecli.Adapter{}).LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: r.dir(p.Auth.ConfigDir)})) {
+		if kerr == nil || (!p.TokenLogin && ad.LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: r.dirFor(p.CLI, p.Auth.ConfigDir)})) {
 			return Ready, ""
 		}
-		if p.TokenLogin {
-			return NeedsLogin, "This account logs in with a token. Press Log in to get one here (Fyr keeps it), or paste a token from `claude setup-token` as its key."
+		if ln, ok := ad.(cli.Loginer); ok {
+			return NeedsLogin, ln.LoginNeed(p.Auth.ConfigDir, p.TokenLogin)
 		}
-		cmd := "claude"
-		if p.Auth.ConfigDir != "" {
-			cmd = "CLAUDE_CONFIG_DIR=" + p.Auth.ConfigDir + " claude"
-		}
-		return NeedsLogin, "Press Log in to sign in to this account here. Or run `" + cmd + "` in a terminal on this host and type /login."
+		return NeedsLogin, "Sign in to this account on this host."
 	}
 	return Ready, ""
 }
 
-func (r *Registry) dir(d string) string { return Host{Home: r.Home}.dir(d) }
+func (r *Registry) dir(d string) string { return r.dirFor(claudecli.ID, d) }
+
+func (r *Registry) dirFor(cliID, d string) string {
+	return Host{Home: r.Home}.dirFor(cliID, d)
+}
 
 // DTO is what clients see of a provider: never a secret, only whether one
 // is set and its last 4 characters.
@@ -304,9 +314,10 @@ func (r *Registry) List() []DTO {
 	out := []DTO{}
 	now := time.Now()
 	for _, p := range r.Providers() {
+		ad := AdapterFor(p.CLI)
 		d := DTO{ID: p.ID, Name: p.Name, Kind: p.Kind(), CLI: p.CLI, Color: p.Color, Auth: string(p.Auth.Kind), ConfigDir: p.Auth.ConfigDir,
 			BaseURL: p.Endpoint.BaseURL, ModelEnv: p.Endpoint.ModelEnv, Models: p.Models, DefaultModel: p.DefaultModel,
-			DefaultEffort: p.DefaultEffort, Efforts: claudecli.Efforts, Quota: p.quotaSpec().Kind, Imported: p.Imported, TokenLogin: p.TokenLogin}
+			DefaultEffort: p.DefaultEffort, Efforts: ad.Caps().Efforts, Quota: p.quotaSpec().Kind, Imported: p.Imported, TokenLogin: p.TokenLogin}
 		// The login first: a status read after it sees what a finished login left.
 		d.Login = r.login(p.ID)
 		d.Status, d.Need = r.status(p)
@@ -319,7 +330,8 @@ func (r *Registry) List() []DTO {
 		if r.InUse != nil {
 			d.Threads = r.InUse(p.ID)
 		}
-		d.CanLogin = p.Auth.Kind == cli.CLILogin
+		_, hasLogin := ad.(cli.Loginer)
+		d.CanLogin = p.Auth.Kind == cli.CLILogin && hasLogin
 		d.Catalog = catalogDTO(p.Catalog, now)
 		if !p.CheckedAt.IsZero() {
 			t := p.CheckedAt
@@ -495,13 +507,28 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 	}
 	if create {
 		kind, _ := str("kind")
+		if v, ok := str("cli"); ok && v != "" {
+			switch v {
+			case claudecli.ID, agycli.ID:
+				p.CLI = v
+			default:
+				return p, fmt.Errorf("unknown CLI %q", v)
+			}
+		}
 		switch kind {
 		case KindAccount:
 			p.Auth.Kind = cli.CLILogin
+			p.CLI = claudecli.ID
+		case KindAgyAccount:
+			p.Auth.Kind = cli.CLILogin
+			p.CLI = agycli.ID
 		case KindEndpoint:
 			p.Auth.Kind = cli.APIKey
+			if p.CLI == "" {
+				p.CLI = claudecli.ID
+			}
 		default:
-			return p, fmt.Errorf("kind must be %s or %s", KindAccount, KindEndpoint)
+			return p, fmt.Errorf("kind must be %s, %s or %s", KindAccount, KindAgyAccount, KindEndpoint)
 		}
 		p.ID, _ = str("id")
 		if p.ID == "" {
@@ -512,12 +539,12 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 		}
 	}
 	if v, ok := str("configDir"); ok {
-		p.Auth.ConfigDir = tildeHome(v, r.Home)
+		p.Auth.ConfigDir = tildeHomeFor(v, r.Home, defaultConfigDir(p.CLI))
 	}
 	if v, ok := str("baseURL"); ok {
 		p.Endpoint.BaseURL = strings.TrimRight(v, "/")
 	}
-	if p.Auth.Kind == cli.APIKey && p.Endpoint.BaseURL == "" && create {
+	if p.Auth.Kind == cli.APIKey && p.Endpoint.BaseURL == "" && p.CLI != agycli.ID && create {
 		return p, errors.New("an endpoint needs a base URL")
 	}
 	if m, ok := a["modelEnv"].(map[string]any); ok {
@@ -528,6 +555,7 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 			}
 		}
 	}
+	ad := AdapterFor(p.CLI)
 	_, setsDefault := a["defaultModel"].(string)
 	if raw, ok := a["models"].([]any); ok {
 		var ids []string
@@ -540,14 +568,14 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 				ids = append(ids, s)
 			}
 		}
-		next := modelsFor(ids, p.Auth.Kind == cli.APIKey, p.Catalog...)
+		next := modelsFor(p.CLI, ids, p.Auth.Kind == cli.APIKey, p.Catalog...)
 		// V0.120: the default is always on; the owner stars another first.
 		if !create && !setsDefault && p.DefaultModel != "" && hasModel(p.Models, p.DefaultModel) && !hasModel(next, p.DefaultModel) {
 			return p, errors.New("Star another model first.")
 		}
 		p = setOn(p, next, time.Now().UTC())
-	} else if create && p.Auth.Kind == cli.CLILogin {
-		p.Models = modelsFor(ids(claudecli.Models), false)
+	} else if create && (p.Auth.Kind == cli.CLILogin || p.CLI == agycli.ID) {
+		p.Models = modelsFor(p.CLI, ids(ad.Caps().Models), p.Auth.Kind == cli.APIKey)
 	}
 	if raw, ok := a["forget"].([]any); ok {
 		var ids []string
@@ -571,7 +599,7 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 		}
 	}
 	if v, ok := str("defaultEffort"); ok {
-		if v != "" && !contains(claudecli.Efforts, v) {
+		if v != "" && !contains(ad.Caps().Efforts, v) {
 			return p, fmt.Errorf("unknown effort %q", v)
 		}
 		p.DefaultEffort = v

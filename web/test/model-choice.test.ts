@@ -58,6 +58,9 @@ test("Hand over takes the same model, else the same family, else the target's de
   assert.equal(nearestModel("claude-sonnet-4-6", acme), "claude-sonnet-5-5");
   assert.equal(nearestModel("claude-opus-5-5", glm), "glm-4.6");
   assert.equal(nearestModel("claude-opus-5-5", bare), "");
+  const agy: Profile = { id: "agy", name: "Antigravity", color: "", models: ["gemini-4-neon", "gemini-3.8-flash"], defaultModel: "gemini-4-neon" };
+  assert.equal(nearestModel("gemini-4-flash", agy), "gemini-3.8-flash");
+  assert.equal(nearestModel("gemini-3.9-neon", agy), "gemini-4-neon");
 });
 
 test("the effort is the same when the model takes it, else the nearest, else the default", () => {

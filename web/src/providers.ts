@@ -9,10 +9,12 @@ export interface ProviderModel {
   efforts?: string[];
 }
 
+export type ProviderKind = "claude-account" | "agy-account" | "endpoint";
+
 export interface ProviderDTO {
   id: string;
   name: string;
-  kind: "claude-account" | "endpoint";
+  kind: ProviderKind;
   cli: string;
   color?: string;
   auth: string;
@@ -70,7 +72,8 @@ export interface LoginDTO {
 export interface FoundDTO {
   id: string;
   name: string;
-  kind: "claude-account" | "endpoint";
+  kind: ProviderKind;
+  cli?: string;
   source: string;
   configDir?: string;
   baseURL?: string;
@@ -90,19 +93,23 @@ export const STATUS_TEXT: Record<ProviderDTO["status"], string> = {
   "needs-key": "Needs a key",
 };
 
-export function kindLabel(kind: string): string {
-  return kind === "endpoint" ? "Endpoint" : "Claude account";
+export function kindLabel(kind: string, cli?: string): string {
+  if (kind === "endpoint") return cli === "agy" ? "Antigravity (API key)" : "Claude (custom endpoint)";
+  if (kind === "agy-account") return "Antigravity account";
+  return "Claude account";
 }
 
-/** "~/.claude" for the main account, the folder otherwise, or the endpoint's host. */
-export function whereText(p: { kind: string; configDir?: string; baseURL?: string; tokenLogin?: boolean }): string {
+/** "~/.claude" or "~/.gemini" for the main account, the folder otherwise, or the endpoint's host. */
+export function whereText(p: { kind: string; cli?: string; configDir?: string; baseURL?: string; tokenLogin?: boolean }): string {
   if (p.kind === "endpoint") {
+    if (!p.baseURL && p.cli === "agy") return "Gemini API";
     try {
       return p.baseURL ? new URL(p.baseURL).host : "no endpoint";
     } catch {
       return p.baseURL ?? "";
     }
   }
+  if (p.kind === "agy-account") return p.configDir || "~/.gemini";
   if (p.tokenLogin) return "token login"; // V0.50: the token is the account, not the folder
   return p.configDir || "~/.claude";
 }
@@ -150,7 +157,8 @@ export function startEffort(p: Profile | undefined, model: string, asked = ""): 
 }
 
 export interface ProviderForm {
-  kind: "claude-account" | "endpoint";
+  kind: ProviderKind;
+  cli?: "claude" | "agy";
   name: string;
   configDir: string;
   baseURL: string;
@@ -165,15 +173,21 @@ export function createArgs(f: ProviderForm): { args: Record<string, unknown> } |
   const name = f.name.trim();
   if (!name) return { error: "Give it a name" };
   const args: Record<string, unknown> = { kind: f.kind, name };
+  if (f.kind === "endpoint" && f.cli) args.cli = f.cli;
   const models = parseModelIds(f.models);
   if (models.length) args.models = models;
-  if (f.kind === "claude-account") {
+  if (f.kind === "claude-account" || f.kind === "agy-account") {
     if (f.configDir.trim()) args.configDir = f.configDir.trim();
     return { args };
   }
   const url = f.baseURL.trim();
-  if (!/^https?:\/\/\S+$/.test(url)) return { error: "The base URL starts with https://" };
-  args.baseURL = url;
+  if (f.cli === "agy") {
+    if (url && !/^https?:\/\/\S+$/.test(url)) return { error: "The base URL starts with https://" };
+    if (url) args.baseURL = url;
+  } else {
+    if (!/^https?:\/\/\S+$/.test(url)) return { error: "The base URL starts with https://" };
+    args.baseURL = url;
+  }
   // V0.120: optional; Fyr asks the endpoint for its models as soon as it is added.
   if (f.key.trim()) args.key = f.key.trim();
   return { args };
@@ -197,16 +211,21 @@ export function loginButton(p: Pick<ProviderDTO, "canLogin" | "status" | "tokenL
 }
 
 /** V0.53: what the login is doing, in a line. */
-export function loginLine(l: LoginDTO): string {
+export function loginLine(l: LoginDTO, cli?: string): string {
+  const isAgy = cli === "agy";
   switch (l.state) {
     case "starting":
-      return "Starting claude…";
+      return isAgy ? "Starting agy…" : "Starting claude…";
     case "waiting":
       return "Open the sign-in page, sign in, then paste the code it shows here.";
     case "checking":
       return "Checking the code…";
     case "done":
-      return l.kind === "token" ? "Logged in. Fyr keeps the token on this host." : "Logged in. Claude keeps the login in this account's folder.";
+      return l.kind === "token"
+        ? "Logged in. Fyr keeps the token on this host."
+        : isAgy
+          ? "Logged in. Antigravity keeps the login in this account's folder."
+          : "Logged in. Claude keeps the login in this account's folder.";
     case "cancelled":
       return "Login cancelled.";
     case "timeout":
@@ -219,13 +238,13 @@ export function loginLine(l: LoginDTO): string {
 // ---- V0.119: the Providers page and a provider's page ----
 
 /** The list row's line: "Claude account · ~/.claude · 3 models". */
-export function listLine(p: { kind: string; configDir?: string; baseURL?: string; tokenLogin?: boolean; models: unknown[]; catalog?: CatalogModel[] }): string {
+export function listLine(p: { kind: string; cli?: string; configDir?: string; baseURL?: string; tokenLogin?: boolean; models: unknown[]; catalog?: CatalogModel[] }): string {
   const n = p.models.length;
   const fresh = newCount(p);
   // V0.120: once checked, how many of what the provider reports are on (found live 16 Nov: "3 models" hid it).
   const total = modelParts({ models: p.models as ProviderModel[], catalog: p.catalog }).total;
   const count = p.catalog?.length ? `${n} of ${total} models on` : n ? `${n} model${n === 1 ? "" : "s"}` : "no models";
-  return `${kindLabel(p.kind)} · ${whereText(p)} · ${count}${fresh ? ` · ${fresh} new` : ""}`;
+  return `${kindLabel(p.kind, p.cli)} · ${whereText(p)} · ${count}${fresh ? ` · ${fresh} new` : ""}`;
 }
 
 const USAGE: Record<string, string> = {

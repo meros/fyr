@@ -25,11 +25,7 @@ func ListArgs() []string {
 // Listing is what a login's CLI reported: the catalog to keep (its list plus
 // Fyr's own), the ids the CLI itself named, and a note when the answer is
 // only Fyr's known list.
-type Listing struct {
-	Models   []cli.Model
-	Reported []string
-	Note     string
-}
+type Listing = cli.Listing
 
 // NoteKnownList says that the CLI named only its short aliases.
 const NoteKnownList = "Claude answered with its short names only (its own list was not ready), so this is Fyr's known list. Refresh in a minute."

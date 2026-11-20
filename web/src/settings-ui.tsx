@@ -681,7 +681,7 @@ function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): void; grou
         <Skeleton rows={3} label="Loading the providers" />
       ) : none ? (
         <Group>
-          <Empty title="No providers yet" text="A provider is a Claude login or an API endpoint that threads run on." />
+          <Empty title="No providers yet" text="A provider is a Claude or Antigravity login, or an API endpoint that threads run on." />
         </Group>
       ) : (
         <Group label="Providers">
@@ -721,7 +721,7 @@ function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): void; grou
               error={importErr?.id === f.id ? importErr.text : null}
               desc={
                 <>
-                  {kindLabel(f.kind)} · {f.keyFrom ? `key from ${f.keyFrom}` : f.source}
+                  {kindLabel(f.kind, f.cli)} · {f.keyFrom ? `key from ${f.keyFrom}` : f.source}
                   {f.note && <span class="sr-d2">{f.note}</span>}
                 </>
               }
@@ -902,7 +902,7 @@ function LoginGroup({ p, run }: { p: ProviderDTO; run: Run }) {
           )}
         />
       )}
-      {p.auth !== "none" && <KeyRow p={p} run={run} />}
+      {p.auth !== "none" && p.kind !== "agy-account" && <KeyRow p={p} run={run} />}
     </Group>
   );
 }
@@ -1156,7 +1156,7 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
   const send = () => void run("provider.loginCode", { id: p.id, code }).then((e) => (setErr(e), !e && setCode("")));
   return (
     <div class={`login ${l.state}`} aria-live="polite">
-      <div class="setd">{loginLine(l)}</div>
+      <div class="setd">{loginLine(l, p.cli)}</div>
       {((active && l.message) || err) && (
         <div class="seterr" role="alert">
           {err ?? l.message}
@@ -1224,35 +1224,51 @@ function AddProvider(p: { /** slice 2b: the host the provider is added on, whose
     setBusy(false);
     if (e) setErr(e);
   };
+  const kindKey = f.kind === "endpoint" && f.cli === "agy" ? "agy-endpoint" : f.kind;
+  const setKindKey = (v: string) => {
+    if (v === "agy-endpoint") setF({ ...f, kind: "endpoint", cli: "agy" });
+    else setF({ ...f, kind: v as ProviderForm["kind"], cli: undefined });
+  };
   return (
     <>
       <Group>
-        <Row title="Kind" stack end={<Seg label="Kind" value={f.kind} options={(["claude-account", "endpoint"] as const).map((k) => ({ value: k, label: kindLabel(k) }))} onChange={(k) => setF({ ...f, kind: k })} />} />
+        <Row
+          title="Kind"
+          stack
+          end={
+            <select aria-label="Kind" value={kindKey} disabled={env.readOnly} onChange={(e) => setKindKey((e.target as HTMLSelectElement).value)}>
+              <option value="claude-account">{kindLabel("claude-account")}</option>
+              <option value="agy-account">{kindLabel("agy-account")}</option>
+              <option value="agy-endpoint">{kindLabel("endpoint", "agy")}</option>
+              <option value="endpoint">{kindLabel("endpoint")}</option>
+            </select>
+          }
+        />
         <Row col>
           <label class="fld">
             <span>Name</span>
-            <input value={f.name} onInput={set("name")} placeholder={f.kind === "endpoint" ? "OpenRouter" : "Claude (work)"} disabled={env.readOnly} />
+            <input value={f.name} onInput={set("name")} placeholder={kindKey === "agy-endpoint" ? "Gemini API" : f.kind === "endpoint" ? "OpenRouter" : f.kind === "agy-account" ? "Antigravity" : "Claude (work)"} disabled={env.readOnly} />
           </label>
         </Row>
-        {f.kind === "claude-account" ? (
+        {f.kind === "claude-account" || f.kind === "agy-account" ? (
           <Row col>
             <label class="fld">
-              <span>Config folder (empty: ~/.claude)</span>
+              <span>Config folder (empty: {f.kind === "agy-account" ? "~/.gemini" : "~/.claude"})</span>
               <div class="setkey">
-                <input value={f.configDir} onInput={set("configDir")} placeholder="~/.claude-work" disabled={env.readOnly} />
+                <input value={f.configDir} onInput={set("configDir")} placeholder={f.kind === "agy-account" ? "~/.gemini-work" : "~/.claude-work"} disabled={env.readOnly} />
                 <button type="button" class="btn" disabled={env.readOnly} onClick={() => void picker.pick({ title: "Config folder", ...(p.host ? { host: p.host } : {}) }).then((d) => d && setF({ ...f, configDir: d }))}>
                   Choose…
                 </button>
               </div>
             </label>
-            <span class="sr-d">After adding it, press Log in on its page: Fyr runs claude's login in this folder and shows the sign-in link there.</span>
+            <span class="sr-d">After adding it, press Log in on its page: Fyr runs {f.kind === "agy-account" ? "agy" : "claude"}'s login in this folder and shows the sign-in link there.</span>
           </Row>
         ) : (
           <>
             <Row col>
               <label class="fld">
-                <span>Base URL</span>
-                <input value={f.baseURL} onInput={set("baseURL")} placeholder="https://openrouter.ai/api" inputMode="url" disabled={env.readOnly} />
+                <span>Base URL{f.cli === "agy" ? " (optional: Gemini API)" : ""}</span>
+                <input value={f.baseURL} onInput={set("baseURL")} placeholder={f.cli === "agy" ? "https://generativelanguage.googleapis.com" : "https://openrouter.ai/api"} inputMode="url" disabled={env.readOnly} />
               </label>
             </Row>
             <Row col>
@@ -1266,7 +1282,7 @@ function AddProvider(p: { /** slice 2b: the host the provider is added on, whose
         )}
         <Row col>
           <label class="fld">
-            <span>Model ids, one per line{f.kind === "claude-account" ? " (empty: Claude's list)" : " (optional: Fyr asks the endpoint for its list)"}</span>
+            <span>Model ids, one per line{f.kind === "claude-account" ? " (empty: Claude's list)" : f.kind === "agy-account" || f.cli === "agy" ? " (empty: Antigravity's list)" : " (optional: Fyr asks the endpoint for its list)"}</span>
             <textarea rows={3} class="mono" value={f.models} onInput={set("models")} disabled={env.readOnly} />
           </label>
         </Row>
