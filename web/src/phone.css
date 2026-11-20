@@ -511,3 +511,5 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 /* V0.wakeups-via-watch: the wake chip stands right of the scrolling chips in its own 44 px tap target (as .m-pjb) */
 .m-wakeb{flex:0 1 auto;max-width:42%}
 .m-wakeb .m-chip.wake{max-width:100%}
+/* V0.mac-shell: the phone layout in a narrow Fyr.app window keeps the title bar's strip free (app.css, .mac-app) */
+html.mac-app .m-app{padding-top:var(--mac-titlebar,0px)}
