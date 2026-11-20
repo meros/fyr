@@ -1,18 +1,14 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"syscall"
-	"time"
 
 	"github.com/meros/fyr/internal/auth"
+	"github.com/meros/fyr/internal/desktop"
 )
 
 // open signs this machine's browser in to Fyr (SPEC V0.130 (1), decision
@@ -35,24 +31,9 @@ func open(data string, app bool) error {
 	return syscall.Exec(bin, cmd, os.Environ())
 }
 
-// onceURL asks the owner socket for a one-time link.
-func onceURL(sock string) (string, error) {
-	c := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
-		}}}
-	resp, err := c.Post("http://owner/session/once", "application/json", nil)
-	if err != nil {
-		return "", fmt.Errorf("Fyr does not answer on %s (is it running, as this user?): %w", sock, err)
-	}
-	defer resp.Body.Close()
-	var out struct{ URL, Error string }
-	json.NewDecoder(resp.Body).Decode(&out)
-	if resp.StatusCode != 200 || out.URL == "" {
-		return "", fmt.Errorf("Fyr refused: %s %s", resp.Status, out.Error)
-	}
-	return out.URL, nil
-}
+// onceURL asks the owner socket for a one-time link (the desktop app asks
+// the same way, decision 0038).
+func onceURL(sock string) (string, error) { return desktop.Owner{Socket: sock}.Once() }
 
 // browserCommand is the command that opens u: FYR_BROWSER (a binary) when
 // set, else Chrome or Chromium (--app=u for an app window) or the system's

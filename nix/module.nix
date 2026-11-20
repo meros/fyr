@@ -369,6 +369,29 @@ in
         '';
       };
     };
+
+    # Decision 0038: the Linux app.
+    desktop = {
+      enable = lib.mkEnableOption ''
+        Fyr's Linux app (decision 0038): Fyr in its own window, a tray item
+        (Open, Open in Browser, Pause or Resume, Show Log, Quit) and the
+        desktop's notifications for what needs you. The service user may
+        then stop, start and restart fyr.service without a password, which
+        is what Pause and Resume do'';
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.fyr-desktop;
+        description = "Provides fyr-desktop, its .desktop file and icon.";
+      };
+      autostart = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Start the app at login in the tray, without its window
+          (fyr-desktop -background), so notifications arrive from the start.
+        '';
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -381,7 +404,7 @@ in
       "services.fyr.cgroups.threadMemoryHighPercent is ignored: Fyr no longer sets a thread's memory.high (V0.share-shadow).";
     networking.firewall.allowedTCPPorts = lib.mkIf (cfg.openFirewall && cfg.peerPort != null) [ cfg.peerPort ];
     networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkIf (cfg.hostPort != null && cfg.hostListen == null) [ cfg.hostPort ];
-    environment.systemPackages = [ cfg.package ];
+    environment.systemPackages = [ cfg.package ] ++ lib.optional cfg.desktop.enable cfg.desktop.package; # 0038: the Linux app
     environment.etc."fyr/config.json".text = configJSON;
 
     # Tailscale Serve keeps its config in tailscaled; this unit sets it at boot
@@ -506,8 +529,8 @@ in
     # StartTransientUnit and SetUnitProperties (src/core/dbus-util.c,
     # bus_verify_manage_units_async_impl). A scope runs no command of its
     # own; it only takes processes in.
-    security.polkit.enable = lib.mkIf agentsUnit (lib.mkDefault true);
-    security.polkit.extraConfig = lib.mkIf agentsUnit ''
+    security.polkit.enable = lib.mkIf (agentsUnit || cfg.desktop.enable) (lib.mkDefault true);
+    security.polkit.extraConfig = lib.mkMerge [ (lib.mkIf agentsUnit ''
       // Fyr (services.fyr.cgroups.agentsUnit): the agents' scopes.
       polkit.addRule(function (action, subject) {
         if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == ${builtins.toJSON cfg.user}) {
@@ -517,6 +540,31 @@ in
           }
         }
       });
-    '';
+    '')
+    # Decision 0038: the app's Pause and Resume, and nothing else of the unit.
+    (lib.mkIf cfg.desktop.enable ''
+      // Fyr (services.fyr.desktop): Pause and Resume in the tray.
+      polkit.addRule(function (action, subject) {
+        if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == ${builtins.toJSON cfg.user}) {
+          var unit = action.lookup("unit"), verb = action.lookup("verb");
+          if (unit == "fyr.service" && (verb == "start" || verb == "stop" || verb == "restart")) {
+            return polkit.Result.YES;
+          }
+        }
+      });
+    '') ];
+
+    environment.etc."xdg/autostart/io.github.meros.Fyr.desktop" = lib.mkIf (cfg.desktop.enable && cfg.desktop.autostart) {
+      text = ''
+        [Desktop Entry]
+        Type=Application
+        Name=Fyr
+        Comment=Fyr in the tray, with its notifications
+        Exec=${lib.getExe cfg.desktop.package} -background
+        Icon=io.github.meros.Fyr
+        Terminal=false
+        X-GNOME-Autostart-enabled=true
+      '';
+    };
   };
 }

@@ -74,6 +74,7 @@ func TestInstallLinuxScopeLayout(t *testing.T) {
 		"---- fyr-agents.slice",
 		"MemoryHigh=40%",
 		`/^fyr-(agent|deploy)-[A-Za-z0-9_.-]+\.scope$/`,
+		`unit == "fyr.service" && (verb == "start" || verb == "stop" || verb == "restart")`, // decision 0038: Pause and Resume
 		`"agentsSlice": "fyr-agents.slice"`,
 		"root: install -D -m 0644",
 		"root: systemctl restart fyr.service",

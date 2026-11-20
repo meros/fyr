@@ -53,6 +53,30 @@
           meta.mainProgram = "fyr";
         };
 
+        # The Linux app (decision 0038): Fyr's window, tray item and
+        # notifications. cgo with GTK, WebKitGTK and Ayatana AppIndicator; it
+        # talks to the fyrd the module (services.fyr.desktop) or
+        # scripts/install-linux.sh runs, through the owner socket.
+        fyr-desktop = pkgs.buildGoModule {
+          pname = "fyr-desktop";
+          version = "0-${rev}";
+          src = ./.;
+          inherit (fyr) vendorHash;
+          subPackages = [ "cmd/fyr-desktop" ];
+          env.CGO_ENABLED = 1;
+          ldflags = [ "-s" "-w" ];
+          nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook3 ];
+          buildInputs = with pkgs; [ gtk3 webkitgtk_4_1 libayatana-appindicator glib-networking ];
+          # Its logic is tested with the rest (internal/desktop, go test ./internal/...).
+          doCheck = false;
+          postInstall = ''
+            install -Dm644 cmd/fyr-desktop/io.github.meros.Fyr.desktop $out/share/applications/io.github.meros.Fyr.desktop
+            install -Dm644 design/logo/lighthouse-512.png $out/share/icons/hicolor/512x512/apps/io.github.meros.Fyr.png
+          '';
+          meta.mainProgram = "fyr-desktop";
+          meta.platforms = pkgs.lib.platforms.linux;
+        };
+
         default = fyr;
       });
 
@@ -61,6 +85,12 @@
           # nodejs is nixpkgs' current LTS (the Makefile refuses any other).
           packages = with pkgs; [ go nodejs gnumake git gh sqlite ];
           CGO_ENABLED = "0";
+        };
+        # `nix develop .#desktop`: build and run cmd/fyr-desktop with
+        # CGO_ENABLED=1 go build ./cmd/fyr-desktop.
+        desktop = pkgs.mkShell {
+          packages = with pkgs; [ go gnumake git pkg-config gtk3 webkitgtk_4_1 libayatana-appindicator glib-networking ];
+          CGO_ENABLED = "1";
         };
       });
 
@@ -83,6 +113,7 @@
           };
           sys = mkSys {
             tailnet.enable = true; scanRoots = [ "~/git" ];
+            desktop.enable = true;
             quota.claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek"; };
           };
           # V0.54: host-b as docs/API-v0.md configures it: a host on its
@@ -147,6 +178,12 @@
         # V0.80 with agentsUnit off: the unit delegates cpu and memory; the budget is fyrd's to write on agents/.
         assert unitFyr.Delegate == "cpu memory" && unitFyr.MemoryLow == "1G" && !(unitFyr ? ManagedOOMPreference);
         assert !(unitConf.cgroups ? agentsSlice) && !(unit.config.systemd.slices ? fyr-agents);
+        # Decision 0038: the app, its autostart in the tray, and polkit for Pause and Resume only.
+        assert builtins.any (p: (p.pname or "") == "fyr-desktop") sys.config.environment.systemPackages;
+        assert nixpkgs.lib.hasInfix "fyr-desktop -background" sys.config.environment.etc."xdg/autostart/io.github.meros.Fyr.desktop".text;
+        assert nixpkgs.lib.hasInfix ''unit == "fyr.service" && (verb == "start" || verb == "stop" || verb == "restart")'' sys.config.security.polkit.extraConfig;
+        assert !(nixpkgs.lib.hasInfix "fyr.service" unit.config.security.polkit.extraConfig);
+        assert !(unit.config.environment.etc ? "xdg/autostart/io.github.meros.Fyr.desktop");
         nixpkgs.legacyPackages.x86_64-linux.runCommand "fyr-module-check" { } "touch $out";
 
       nixosModules.fyr = import ./nix/module.nix self;

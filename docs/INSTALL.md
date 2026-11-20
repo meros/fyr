@@ -47,7 +47,7 @@ The keys you are most likely to set in `config.json`:
 |---|---|
 | `/etc/systemd/system/fyr.service` | A system unit with `User=` you: it starts at boot without a login. It runs `~/.local/share/fyr/launcher/fyr -data ~/.local/share/fyr -seed …/seed/fyrd`, reads `~/.config/fyr/github.env` if it is there, and sets no `PATH` (fyrd builds the agents' `PATH`, above). |
 | `/etc/systemd/system/fyr-agents.slice` | The agents' budget (`MemoryHigh=40%`, `MemoryMax=46%`, `MemorySwapMax=30%`) and systemd-oomd's rule (80 %), the module's defaults. |
-| `/etc/polkit-1/rules.d/50-fyr-agents.rules` | Lets you `start` and `set-property` units named `fyr-agent-….scope` and `fyr-deploy-….scope`, nothing else. |
+| `/etc/polkit-1/rules.d/50-fyr-agents.rules` | Lets you `start` and `set-property` units named `fyr-agent-….scope` and `fyr-deploy-….scope`, and `start`, `stop` and `restart` `fyr.service` (the Linux app's Pause and Resume), nothing else. |
 | `/usr/local/lib/fyr/agents-pressure-chown` | Run as root before each start of the unit: hands you the slice's `memory.pressure`, for the guard's PSI trigger. |
 
 Then `systemctl daemon-reload`, `enable` and `restart fyr.service`. These are the module's files (`nix/module.nix`); a change to one goes to the other.
@@ -59,6 +59,16 @@ Then `systemctl daemon-reload`, `enable` and `restart fyr.service`. These are th
 **Updates** are the updater's ([below](#updates)). It needs no `gh` login for a public release repo.
 
 **The phone over Tailscale:** run `tailscale serve --bg --https=7443 unix:$HOME/.local/share/fyr/serve.sock` once as root (the module's `tailnet.enable` does the same). The script prints it when Tailscale is up.
+
+## The Linux app
+
+On a Linux desktop Fyr can run as its own app instead of a browser tab (decision 0038): a window that stays signed in, a tray item (Open, Open in Browser, Pause or Resume, Show Log, Quit) and the desktop's own notifications, with the same settings as a phone's (Settings → Notifications in the window). On NixOS:
+
+```nix
+services.fyr.desktop.enable = true;
+```
+
+It installs `fyr-desktop`, starts it in the tray at login, and lets you pause and resume `fyr.service` from the tray without a password (`install-linux.sh`'s polkit rule does the same). GNOME shows tray items only with the AppIndicator extension; the window and the notifications work without it. Elsewhere, build it with `nix build .#fyr-desktop`, or with `CGO_ENABLED=1 go build ./cmd/fyr-desktop` and the GTK 3, WebKitGTK 4.1 and libayatana-appindicator development packages. fyrd's updates need nothing from the app: it reconnects after each one.
 
 ## The phone
 
