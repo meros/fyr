@@ -15,19 +15,18 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
-	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/pty"
 )
 
-// SPEC 0.5 V0.53: login through Fyr. For a Claude account Fyr runs the
-// CLI's own login and shows its link in Settings; the owner signs in in the
-// browser and pastes the code back. A token account runs `claude
-// setup-token` in a private throwaway folder and the token goes straight
-// into the secret store; any other account runs `claude auth login` in its
-// own config folder, where the CLI keeps and refreshes its login. The
-// output is read in memory only: it is never logged, stored or sent to a
-// client, except the sign-in link and a redacted error line.
+// SPEC 0.5 V0.53: login through Fyr. For a CLI-login account Fyr runs the
+// adapter's own login (cli.Loginer) and shows its link in Settings; the owner
+// signs in in the browser and pastes the code back. A token login runs in a
+// private throwaway folder and the token goes straight into the secret store;
+// a folder login runs in the account's own config folder, where the CLI keeps
+// and refreshes its login. The output is read in memory only: it is never
+// logged, stored or sent to a client, except the sign-in link and a redacted
+// error line.
 
 // LoginTimeout ends a login nobody finishes.
 const LoginTimeout = 10 * time.Minute
@@ -63,7 +62,9 @@ func (d LoginDTO) Active() bool {
 
 type loginRun struct {
 	mu       sync.Mutex
-	kind     claudecli.LoginKind
+	kind     string
+	adapter  cli.Adapter
+	loginer  cli.Loginer
 	state    string
 	url      string
 	msg      string
@@ -80,7 +81,7 @@ type loginRun struct {
 func (l *loginRun) dto() LoginDTO {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return LoginDTO{Kind: string(l.kind), State: l.state, URL: l.url, Message: l.msg, Expires: l.expires}
+	return LoginDTO{Kind: l.kind, State: l.state, URL: l.url, Message: l.msg, Expires: l.expires}
 }
 
 func (l *loginRun) active() bool { return l.dto().Active() }
@@ -117,7 +118,12 @@ func (r *Registry) startLogin(id string) api.Reply {
 		return api.Reply{Error: "no provider " + id, Status: 404}
 	}
 	if p.Auth.Kind != cli.CLILogin {
-		return fail(errors.New(p.Name + " is not a Claude account; paste its key instead"))
+		return fail(errors.New(p.Name + " is not a CLI login account; paste its key instead"))
+	}
+	ad := AdapterFor(p.CLI)
+	ln, ok := ad.(cli.Loginer)
+	if !ok {
+		return fail(errors.New(p.Name + " cannot sign in through Fyr"))
 	}
 	r.lmu.Lock()
 	if r.logins == nil {
@@ -127,11 +133,11 @@ func (r *Registry) startLogin(id string) api.Reply {
 		r.lmu.Unlock()
 		return api.Reply{Error: "A login for " + p.Name + " is already running", Status: 409}
 	}
-	kind := claudecli.LoginFolder
+	kind := "folder"
 	if p.TokenLogin {
-		kind = claudecli.LoginToken
+		kind = "token"
 	}
-	l := &loginRun{kind: kind, state: LoginStarting, expires: time.Now().Add(r.loginTimeout())}
+	l := &loginRun{kind: kind, adapter: ad, loginer: ln, state: LoginStarting, expires: time.Now().Add(r.loginTimeout())}
 	r.logins[id] = l
 	r.lmu.Unlock()
 	if err := r.runLogin(p, l); err != nil {
@@ -145,20 +151,19 @@ func (r *Registry) startLogin(id string) api.Reply {
 }
 
 func (r *Registry) runLogin(p Provider, l *loginRun) error {
-	args, terminal := claudecli.LoginArgs(l.kind)
 	// Where the CLI runs. A token account's folder may hold another
 	// account's login (V0.50), so setup-token runs in a private throwaway
 	// folder and never touches it; a folder account logs in in its own
-	// folder ("" is the CLI's default, ~/.claude).
+	// folder ("" is the CLI's default).
 	var dir, cwd, tmp string
-	if l.kind == claudecli.LoginToken {
+	if l.kind == "token" {
 		t, err := os.MkdirTemp(r.LoginTemp, "fyr-login-")
 		if err != nil {
 			return fmt.Errorf("could not make a folder for the login: %w", err)
 		}
 		tmp, dir, cwd = t, t, t
 	} else {
-		cwd = r.dir(p.Auth.ConfigDir)
+		cwd = r.dirFor(p.CLI, p.Auth.ConfigDir)
 		if err := os.MkdirAll(cwd, 0o700); err != nil {
 			return fmt.Errorf("could not make the config folder: %w", err)
 		}
@@ -166,19 +171,20 @@ func (r *Registry) runLogin(p Provider, l *loginRun) error {
 			dir = cwd
 		}
 	}
-	bin := r.LoginBinary
-	if bin == "" {
-		bin = "claude"
-	}
 	base := r.LoginEnv
 	if base == nil {
 		base = launchenv.Scrub(os.Environ()) // #167
 	}
-	cmd := exec.Command(bin, args...)
-	cmd.Env = claudecli.LoginEnv(base, dir)
+	spec := l.loginer.LoginSpec(base, dir, l.kind == "token")
+	bin := r.LoginBinary
+	if bin == "" {
+		bin = spec.Binary
+	}
+	cmd := exec.Command(bin, spec.Args...)
+	cmd.Env = spec.Env
 	cmd.Dir = cwd
 	var out io.ReadCloser
-	if terminal {
+	if spec.Terminal {
 		m, err := pty.Start(cmd, 400, 40)
 		if err != nil {
 			os.RemoveAll(tmp)
@@ -203,7 +209,7 @@ func (r *Registry) runLogin(p Provider, l *loginRun) error {
 			pw.Close()
 			os.RemoveAll(tmp)
 			if errors.Is(err, exec.ErrNotFound) {
-				return errors.New("claude is not installed on this host")
+				return errors.New(spec.Binary + " is not installed on this host")
 			}
 			return fmt.Errorf("could not start the login: %w", err)
 		}
@@ -258,7 +264,7 @@ func (r *Registry) watchLogin(id string, l *loginRun, cmd *exec.Cmd, out io.Read
 	}
 	out.Close()
 	werr := cmd.Wait()
-	if !stored && l.kind == claudecli.LoginToken {
+	if !stored && l.kind == "token" {
 		stored = r.readLogin(id, l, buf, true)
 	}
 	if tmp != "" {
@@ -272,13 +278,13 @@ func (r *Registry) watchLogin(id string, l *loginRun, cmd *exec.Cmd, out io.Read
 		l.state, l.msg = LoginCancelled, ""
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		l.state, l.msg = LoginTimedOut, fmt.Sprintf("The login timed out after %d minutes. Start it again.", int(r.loginTimeout().Minutes()))
-	case l.kind == claudecli.LoginFolder && werr == nil && (claudecli.Adapter{}).LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: cwd}):
+	case l.kind == "folder" && werr == nil && l.adapter.LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: cwd}):
 		l.state, l.msg = LoginDone, ""
 	default:
-		msg := claudecli.ParseLogin(buf[min(l.mark, len(buf)):], true).Line
+		msg := l.loginer.ParseLogin(buf[min(l.mark, len(buf)):], true).Line
 		if msg == "" {
 			msg = "The login ended without signing in."
-			if l.kind == claudecli.LoginToken {
+			if l.kind == "token" {
 				msg = "claude setup-token ended without a token."
 			}
 		}
@@ -294,11 +300,11 @@ func (r *Registry) watchLogin(id string, l *loginRun, cmd *exec.Cmd, out io.Read
 // readLogin updates the login from the output so far; true once a token
 // is in the secret store.
 func (r *Registry) readLogin(id string, l *loginRun, buf []byte, done bool) bool {
-	o := claudecli.ParseLogin(buf, done)
+	o := l.loginer.ParseLogin(buf, done)
 	if o.Token != "" {
 		if err := r.storeToken(id, o.Token); err != nil {
 			l.mu.Lock()
-			l.msg = "The token could not be stored: " + claudecli.Redact(err.Error())
+			l.msg = "The token could not be stored: " + l.loginer.RedactLogin(err.Error())
 			l.mu.Unlock()
 			return false
 		}
@@ -315,7 +321,7 @@ func (r *Registry) readLogin(id string, l *loginRun, buf []byte, done bool) bool
 	}
 	if l.state == LoginChecking {
 		// After the code: an error line means it can be tried again.
-		after := claudecli.ParseLogin(buf[min(l.mark, len(buf)):], false)
+		after := l.loginer.ParseLogin(buf[min(l.mark, len(buf)):], false)
 		if after.Line != "" {
 			l.state, l.msg = LoginWaiting, after.Line
 			if after.Retry && l.terminal {

@@ -56,10 +56,12 @@ export function modelChoices(profiles: Profile[], picked?: { profile: string; mo
   return out;
 }
 
-/** "opus" of "claude-opus-5-5"; "" for an id that names no family. */
+/** "opus" of "claude-opus-5-5", "flash" of "gemini-3.8-flash", "neon" of "gemini-4-neon"; "" for an id that names no family. */
 function family(id: string): string {
   const r = /^claude-([a-z]+)-\d/.exec(id);
-  return r ? r[1] : "";
+  if (r) return r[1];
+  const g = /^gemini-(?:[\d.]+-)?([a-z]+)/.exec(id);
+  return g ? g[1] : "";
 }
 
 /** The model a thread on `from` gets on `to`: the same id when `to` offers it, else the first of the same family in the

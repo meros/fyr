@@ -53,10 +53,15 @@ export function providerOptions(v: SystemAgentsView): Option[] {
   ];
 }
 
-/** The models to pick on a provider ("" is the default provider): its Haiku first, then its models. */
+/** The models to pick on a provider ("" is the default provider): its fast model (Haiku / Flash) first, then its models. */
 export function modelOptions(v: SystemAgentsView, profile: string): Option[] {
   const p = providerOf(v, profile);
-  const haiku = p?.haiku ? `Haiku (${p.haiku})` : `Haiku (none on ${p?.name || p?.id || "this provider"})`;
+  const haiku =
+    p?.haiku && !p.haiku.toLowerCase().includes("haiku")
+      ? `Fast (${p.haiku})`
+      : p?.haiku
+        ? `Haiku (${p.haiku})`
+        : `Haiku (none on ${p?.name || p?.id || "this provider"})`;
   return [{ value: "", label: haiku }, ...(p?.models ?? []).map((m) => ({ value: m, label: m }))];
 }
 

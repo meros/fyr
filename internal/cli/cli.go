@@ -132,6 +132,61 @@ type Reattacher interface {
 	Reattach(p runner.Pipe, log io.Writer, h Handlers) (Session, error)
 }
 
+// SessionReattacher is a Reattacher that also takes the thread's known
+// session id and model when reattaching to a kept process (e.g. ACP).
+type SessionReattacher interface {
+	ReattachSession(p runner.Pipe, sessionID, model string, log io.Writer, h Handlers) (Session, error)
+}
+
+// Listing is what a CLI reported when asked for its models (V0.120): the
+// catalog to keep, the ids the CLI itself named, and an optional note when
+// the answer fell back to Fyr's known list.
+type Listing struct {
+	Models   []Model
+	Reported []string
+	Note     string
+}
+
+// ModelLister is an adapter that can ask its CLI which models it offers.
+type ModelLister interface {
+	ListModels(ctx context.Context, l Launch) (Listing, error)
+}
+
+// LoginSpec says how to run an interactive CLI login through Fyr (V0.53).
+type LoginSpec struct {
+	Binary    string   // CLI binary name when no test override is set
+	Args      []string // command arguments
+	Terminal  bool     // needs a pseudo-terminal
+	Env       []string // full scrubbed process environment
+	Throwaway bool     // run in a private temp folder and store the printed token
+}
+
+// LoginOut is what Fyr reads from a login process's output so far (V0.53).
+type LoginOut struct {
+	URL    string // sign-in link to show the owner
+	Prompt bool   // waiting for pasted code
+	Token  string // printed long-lived token, if any (Throwaway logins)
+	Line   string // last redacted error line worth showing
+	Retry  bool   // terminal waits for Enter to retry
+}
+
+// Loginer is an adapter that supports signing in through Fyr's Settings UI.
+type Loginer interface {
+	LoginSpec(base []string, configDir string, token bool) LoginSpec
+	ParseLogin(buf []byte, done bool) LoginOut
+	RedactLogin(s string) string
+	LoginNeed(configDir string, token bool) string
+}
+
+// Defaults lets an adapter declare its binary name, default config folder
+// (tilde form, e.g. "~/.claude" or "~/.gemini"), and fast system-agent model
+// (e.g. Haiku for Claude, Flash for Antigravity).
+type Defaults interface {
+	DefaultBinary() string
+	DefaultConfigDir() string
+	FastModel(models []Model, modelEnv map[string]string, isEndpoint bool) string
+}
+
 // Adapter is one agent CLI.
 type Adapter interface {
 	ID() string

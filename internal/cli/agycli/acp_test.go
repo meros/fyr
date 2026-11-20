@@ -1,0 +1,737 @@
+package agycli
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/meros/fyr/internal/claude"
+	"github.com/meros/fyr/internal/cli"
+)
+
+// TestMain lets this test binary double as a real subprocess fake `agy` ACP
+// server when FYR_FAKE_AGY=1, proving the process boundary, JSON-RPC framing,
+// permissions, queuing, cancellation, model switching, Print, and ListModels.
+func TestMain(m *testing.M) {
+	if os.Getenv("FYR_FAKE_AGY") == "1" {
+		runFakeACP()
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func runFakeACP() {
+	if logPath := os.Getenv("FYR_FAKE_AGY_ARGS"); logPath != "" {
+		_ = os.WriteFile(logPath, []byte(strings.Join(os.Args[1:], "\n")), 0o600)
+	}
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	write := func(v any) {
+		b, _ := json.Marshal(v)
+		fmt.Println(string(b))
+	}
+	sid := "agy-sess-1"
+	curModel := "gemini-4-neon"
+	curEffort := "high"
+	var lastSysPrompt string
+	var lastMCP []any
+	var permCounter int
+
+	modelsPayload := map[string]any{
+		"availableModels": []any{
+			map[string]any{"modelId": "gemini-4-neon-low", "name": "Gemini 4 Neon (Low)"},
+			map[string]any{"modelId": "gemini-4-neon-high", "name": "Gemini 4 Neon (High)"},
+			map[string]any{"modelId": "gemini-4-neon-xhigh", "name": "Gemini 4 Neon (XHigh)"},
+			map[string]any{"modelId": "gemini-3.8-flash-low", "name": "Gemini 3.8 Flash (Low)"},
+			map[string]any{"modelId": "gemini-3.8-flash-medium", "name": "Gemini 3.8 Flash (Medium)"},
+			map[string]any{"modelId": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)"},
+		},
+		"currentModelId": "gemini-4-neon-high",
+	}
+	cfgOpts := func() []any {
+		return []any{
+			map[string]any{
+				"id": "model", "category": "model", "type": "select", "currentValue": curModel,
+				"options": []any{
+					map[string]any{"value": "gemini-4-neon", "name": "Gemini 4 Neon"},
+					map[string]any{"value": "gemini-3.8-flash", "name": "Gemini 3.8 Flash"},
+					map[string]any{"value": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)"},
+				},
+			},
+			map[string]any{
+				"id": "thought_level", "category": "thought_level", "type": "select", "currentValue": curEffort,
+				"options": []any{
+					map[string]any{"value": "low", "name": "Low"},
+					map[string]any{"value": "medium", "name": "Medium"},
+					map[string]any{"value": "high", "name": "High"},
+					map[string]any{"value": "xhigh", "name": "Extra"},
+				},
+			},
+		}
+	}
+	modes := map[string]any{
+		"currentModeId": "default",
+		"availableModes": []any{
+			map[string]any{"id": "default", "name": "Default"},
+			map[string]any{"id": "auto", "name": "Auto"},
+			map[string]any{"id": "plan", "name": "Plan"},
+		},
+	}
+
+	readPermReply := func(wantID string) string {
+		for sc.Scan() {
+			var r map[string]any
+			if json.Unmarshal(sc.Bytes(), &r) != nil {
+				continue
+			}
+			if fmt.Sprint(r["id"]) == wantID {
+				res, _ := r["result"].(map[string]any)
+				out, _ := res["outcome"].(map[string]any)
+				opt, _ := out["optionId"].(string)
+				return opt
+			}
+		}
+		return ""
+	}
+
+	for sc.Scan() {
+		var msg map[string]any
+		if json.Unmarshal(sc.Bytes(), &msg) != nil {
+			continue
+		}
+		method, _ := msg["method"].(string)
+		id := msg["id"]
+		params, _ := msg["params"].(map[string]any)
+		switch method {
+		case "initialize":
+			write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
+				"protocolVersion": 1,
+				"agentInfo":       map[string]any{"name": "Fake AGY ACP", "version": "1.5.13"},
+			}})
+		case "session/new", "session/resume":
+			if method == "session/resume" {
+				if s, _ := params["sessionId"].(string); s != "" {
+					sid = s
+				}
+			}
+			if m, _ := params["_meta"].(map[string]any); m != nil {
+				if a, _ := m["antigravity"].(map[string]any); a != nil {
+					if sp, _ := a["systemPrompt"].(map[string]any); sp != nil {
+						lastSysPrompt, _ = sp["append"].(string)
+					}
+				}
+			}
+			lastMCP, _ = params["mcpServers"].([]any)
+			write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+				"sessionId": sid,
+				"update": map[string]any{
+					"sessionUpdate": "available_commands_update",
+					"availableCommands": []any{
+						map[string]any{"name": "plan", "description": "Plan carefully"},
+						map[string]any{"name": "compact", "description": "Compact context"},
+					},
+				},
+			}})
+			write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
+				"sessionId": sid, "models": modelsPayload, "modes": modes, "configOptions": cfgOpts(),
+			}})
+		case "session/set_config_option":
+			if params["configId"] == "model" {
+				curModel, _ = params["value"].(string)
+			}
+			if params["configId"] == "thought_level" {
+				curEffort, _ = params["value"].(string)
+			}
+			write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"configOptions": cfgOpts()}})
+		case "session/set_model":
+			curModel, _ = params["modelId"].(string)
+			write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
+		case "session/set_mode":
+			write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
+		case "session/close":
+			write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
+		case "session/prompt":
+			prompt, _ := params["prompt"].([]any)
+			var text string
+			hasImage := false
+			for _, x := range prompt {
+				b, _ := x.(map[string]any)
+				if b["type"] == "text" {
+					text += fmt.Sprint(b["text"])
+				}
+				if b["type"] == "image" {
+					hasImage = true
+				}
+			}
+			switch {
+			case strings.HasPrefix(text, "tool:"):
+				cmd := strings.TrimPrefix(text, "tool:")
+				permCounter++
+				pid := fmt.Sprintf("p%d", permCounter)
+				write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": sid,
+					"update": map[string]any{
+						"sessionUpdate": "tool_call", "toolCallId": "tc1", "name": "run_command",
+						"args": map[string]any{"CommandLine": cmd, "toolSummary": "Run test cmd"}, "status": "in_progress",
+					},
+				}})
+				write(map[string]any{"jsonrpc": "2.0", "id": pid, "method": "session/request_permission", "params": map[string]any{
+					"sessionId": sid,
+					"toolCall": map[string]any{
+						"toolCallId": "tc1", "name": "run_command",
+						"args": map[string]any{"CommandLine": cmd},
+					},
+					"options": []any{
+						map[string]any{"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+						map[string]any{"optionId": "deny", "name": "Deny", "kind": "reject_once"},
+					},
+				}})
+				choice := readPermReply(pid)
+				st := "completed"
+				out := "ran:" + cmd
+				if choice != "allow" {
+					st = "failed"
+					out = "denied:" + cmd
+				}
+				write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": sid,
+					"update": map[string]any{
+						"sessionUpdate": "tool_call_update", "toolCallId": "tc1", "name": "run_command",
+						"status": st, "content": []any{map[string]any{"type": "content", "content": map[string]any{"type": "text", "text": out}}},
+					},
+				}})
+				write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": sid,
+					"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "done:" + choice}},
+				}})
+				write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "end_turn"}})
+			case strings.HasPrefix(text, "fyr-mcp"):
+				permCounter++
+				pid := fmt.Sprintf("p%d", permCounter)
+				write(map[string]any{"jsonrpc": "2.0", "id": pid, "method": "session/request_permission", "params": map[string]any{
+					"sessionId": sid,
+					"toolCall":  map[string]any{"toolCallId": "tc_mcp", "name": "mcp_fyr_change_list", "args": map[string]any{}},
+					"options": []any{
+						map[string]any{"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+						map[string]any{"optionId": "deny", "name": "Deny", "kind": "reject_once"},
+					},
+				}})
+				choice := readPermReply(pid)
+				write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": sid,
+					"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "mcp:" + choice}},
+				}})
+				write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "end_turn"}})
+			case text == "slow":
+				// Wait for session/cancel notification.
+				for sc.Scan() {
+					var m2 map[string]any
+					if json.Unmarshal(sc.Bytes(), &m2) == nil && m2["method"] == "session/cancel" {
+						write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "cancelled"}})
+						break
+					}
+				}
+			default:
+				reply := fmt.Sprintf("model=%s effort=%s sys=%s mcp=%d img=%v echo=%s",
+					curModel, curEffort, lastSysPrompt, len(lastMCP), hasImage, text)
+				write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": sid,
+					"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": reply[:10]}},
+				}})
+				write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": sid,
+					"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": reply[10:]}},
+				}})
+				write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "end_turn"}})
+			}
+		}
+	}
+}
+
+func fakeLaunch(t *testing.T) cli.Launch {
+	t.Helper()
+	return cli.Launch{
+		Binary: os.Args[0],
+		Dir:    t.TempDir(),
+		Auth:   cli.Auth{Kind: cli.CLILogin},
+		Env:    []string{"FYR_FAKE_AGY=1"},
+	}
+}
+
+func TestEnvAndArgs(t *testing.T) {
+	a := Adapter{}
+	if a.ID() != "agy" || !cli.Accepts(a, cli.CLILogin) || !cli.Accepts(a, cli.APIKey) {
+		t.Fatalf("caps: %+v", a.Caps())
+	}
+	env, err := a.Env(cli.Launch{Auth: cli.Auth{Kind: cli.CLILogin}})
+	if err != nil || len(env) != 0 {
+		t.Fatalf("cli-login: %v %v", env, err)
+	}
+	env, err = a.Env(cli.Launch{
+		Auth:     cli.Auth{Kind: cli.APIKey},
+		Key:      "gk-123",
+		Endpoint: cli.Endpoint{BaseURL: "https://gemini.example", ModelEnv: map[string]string{"Z": "1", "A": "2"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"GEMINI_API_KEY=gk-123", "GOOGLE_GEMINI_BASE_URL=https://gemini.example", "A=2", "Z=1"}
+	if !slices.Equal(env, want) {
+		t.Fatalf("env %v want %v", env, want)
+	}
+	if _, err := a.Env(cli.Launch{Auth: cli.Auth{Kind: cli.APIKey}}); err == nil {
+		t.Fatal("api-key without key must fail")
+	}
+	gotArgs := strings.Join(Args(cli.Launch{
+		Auth:           cli.Auth{ConfigDir: "/cfg/.gemini"},
+		AddDirs:        []string{"/extra"},
+		PermissionMode: "bypassPermissions",
+	}, ""), " ")
+	if gotArgs != "acp --stdio --gemini-dir /cfg/.gemini --add-dir /extra --dangerously-skip-permissions" {
+		t.Fatalf("args: %q", gotArgs)
+	}
+}
+
+func TestACPLifecycleMCPSystemPromptAndImages(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, "mcp.json")
+	os.WriteFile(mcpPath, []byte(`{"mcpServers":{"fyr":{"type":"http","url":"http://127.0.0.1:9999/mcp","headers":{"Authorization":"Bearer tok"}}}}`), 0o600)
+	argsPath := filepath.Join(dir, "args")
+
+	l := fakeLaunch(t)
+	l.Env = append(l.Env, "FYR_FAKE_AGY_ARGS="+argsPath)
+	l.Model = "gemini-3.8-flash"
+	l.Effort = "medium"
+	l.SystemPrompt = "SYS_BLOCK"
+	l.MCPConfigFile = mcpPath
+	l.AllowedTools = []string{"mcp__fyr__*"}
+
+	sess, err := Adapter{}.Start(l, cli.Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ans, err := sess.Initialize(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, _ := ans["response"].(cli.Msg)
+	if inner["session_id"] != "agy-sess-1" {
+		t.Fatalf("init answer: %+v", ans)
+	}
+	if cmds, _ := inner["commands"].([]any); len(cmds) != 2 {
+		t.Fatalf("commands: %+v", inner["commands"])
+	}
+
+	if err := sess.SendUser([]cli.Msg{
+		{"type": "image", "source": cli.Msg{"type": "base64", "media_type": "image/png", "data": "AAAA"}},
+		{"type": "text", "text": "hello"},
+	}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	var gotInit, gotAssistant, gotResult cli.Msg
+	var states []string
+	for msg := range sess.Out() {
+		switch msg["type"] {
+		case "command_lifecycle":
+			states = append(states, fmt.Sprint(msg["state"]))
+		case "system":
+			if msg["subtype"] == "init" {
+				gotInit = msg
+			}
+		case "assistant":
+			gotAssistant = msg
+		case "result":
+			gotResult = msg
+			sess.Close()
+		}
+	}
+	if !slices.Equal(states, []string{"started", "completed"}) {
+		t.Fatalf("lifecycle: %v", states)
+	}
+	if gotInit["session_id"] != "agy-sess-1" || gotInit["model"] != "gemini-3.8-flash" {
+		t.Fatalf("init msg: %+v", gotInit)
+	}
+	wantText := "model=gemini-3.8-flash effort=medium sys=SYS_BLOCK mcp=1 img=true echo=hello"
+	if gotResult["result"] != wantText {
+		t.Fatalf("result: %q want %q", gotResult["result"], wantText)
+	}
+	msgInner, _ := gotAssistant["message"].(cli.Msg)
+	blocks, _ := msgInner["content"].([]any)
+	if len(blocks) != 1 || blocks[0].(cli.Msg)["text"] != wantText {
+		t.Fatalf("chunked text should buffer into one assistant msg: %+v", gotAssistant)
+	}
+}
+
+func TestACPPermissionsGateAndAllowedMCP(t *testing.T) {
+	l := fakeLaunch(t)
+	l.AllowedTools = []string{"mcp__fyr__*"}
+	var asked []string
+	var gated []string
+	sess, err := Adapter{}.Start(l, cli.Handlers{
+		Hook: func(id string, in cli.Msg) cli.Msg {
+			if id == "gate" {
+				ti, _ := in["tool_input"].(map[string]any)
+				cmd, _ := ti["command"].(string)
+				gated = append(gated, cmd)
+				if strings.Contains(cmd, "gh pr merge") {
+					return cli.Msg{"hookSpecificOutput": cli.Msg{"permissionDecision": "deny", "permissionDecisionReason": "Fyr owns merges"}}
+				}
+			}
+			return nil
+		},
+		CanUseTool: func(req cli.Msg) cli.Msg {
+			asked = append(asked, fmt.Sprint(req["tool_name"]))
+			return cli.Msg{"behavior": "allow"}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := sess.Initialize(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	readResult := func() cli.Msg {
+		for msg := range sess.Out() {
+			if msg["type"] == "result" {
+				return msg
+			}
+		}
+		t.Fatal("channel closed before result")
+		return nil
+	}
+
+	// 1. Gated Bash command denied by PreToolUse hook without asking CanUseTool.
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "tool:gh pr merge 1"}}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if r := readResult(); r["result"] != "done:deny" {
+		t.Fatalf("expected gate deny, got %+v", r)
+	}
+	if len(asked) != 0 {
+		t.Fatalf("gate should have denied before CanUseTool: %v", asked)
+	}
+
+	// 2. Normal Bash command goes through CanUseTool as "Bash".
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "tool:echo hi"}}, "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if r := readResult(); r["result"] != "done:allow" {
+		t.Fatalf("expected allow, got %+v", r)
+	}
+	if !slices.Equal(asked, []string{"Bash"}) {
+		t.Fatalf("asked: %v", asked)
+	}
+
+	// 3. Fyr MCP tool matches AllowedTools and is auto-allowed without asking.
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "fyr-mcp"}}, "u3"); err != nil {
+		t.Fatal(err)
+	}
+	if r := readResult(); r["result"] != "mcp:allow" {
+		t.Fatalf("expected auto-allow for fyr mcp tool, got %+v", r)
+	}
+	if len(asked) != 1 {
+		t.Fatalf("fyr mcp tool should not have asked owner: %v", asked)
+	}
+}
+
+func TestACPQueueCancelAndInterrupt(t *testing.T) {
+	l := fakeLaunch(t)
+	sess, err := Adapter{}.Start(l, cli.Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := sess.Initialize(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Start a slow turn, queue a second message, cancel it, then interrupt the slow turn.
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "slow"}}, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	// Wait until m1 starts.
+	for msg := range sess.Out() {
+		if msg["type"] == "command_lifecycle" && msg["command_uuid"] == "m1" && msg["state"] == "started" {
+			break
+		}
+	}
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "second"}}, "m2"); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := sess.CancelMessage(ctx, "m2")
+	if err != nil || !ok {
+		t.Fatalf("cancel m2: %v %v", ok, err)
+	}
+	if err := sess.Interrupt(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var gotCancelled, gotInterrupted bool
+	for msg := range sess.Out() {
+		if msg["type"] == "command_lifecycle" && msg["command_uuid"] == "m2" && msg["state"] == "cancelled" {
+			gotCancelled = true
+		}
+		if msg["type"] == "result" && msg["subtype"] == "interrupted" {
+			gotInterrupted = true
+			break
+		}
+	}
+	if !gotCancelled || !gotInterrupted {
+		t.Fatalf("cancelled=%v interrupted=%v", gotCancelled, gotInterrupted)
+	}
+}
+
+func TestPrintAndListModels(t *testing.T) {
+	l := fakeLaunch(t)
+	l.Model = "gemini-3.8-flash"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := Adapter{}.Print(ctx, l, "TITLE_SYS", "hello world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "sys=TITLE_SYS") || !strings.Contains(out, "echo=hello world") || !strings.Contains(out, "model=gemini-3.8-flash") {
+		t.Fatalf("print: %q", out)
+	}
+	lst, err := Adapter{}.ListModels(ctx, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lst.Models) != 3 {
+		t.Fatalf("models: %+v", lst.Models)
+	}
+	if lst.Models[0].ID != "gemini-4-neon" || !slices.Equal(lst.Models[0].Efforts, []string{"low", "high", "xhigh"}) {
+		t.Fatalf("first model: %+v", lst.Models[0])
+	}
+	if lst.Models[1].ID != "gemini-3.8-flash" || !slices.Equal(lst.Models[1].Efforts, []string{"low", "medium"}) {
+		t.Fatalf("second model: %+v", lst.Models[1])
+	}
+	if lst.Models[2].ID != "gpt-oss-120b-medium" || len(lst.Models[2].Efforts) != 0 {
+		t.Fatalf("third model: %+v", lst.Models[2])
+	}
+}
+
+func TestSessionsLoggedInAndCopy(t *testing.T) {
+	home := t.TempDir()
+	g1 := filepath.Join(home, ".gemini-a")
+	g2 := filepath.Join(home, ".gemini-b")
+	a1 := cli.Auth{Kind: cli.CLILogin, ConfigDir: g1}
+	a2 := cli.Auth{Kind: cli.CLILogin, ConfigDir: g2}
+	if LoggedIn(a1) {
+		t.Fatal("empty dir should not be logged in")
+	}
+	d1 := SessionsDir(a1)
+	d2 := SessionsDir(a2)
+	os.MkdirAll(filepath.Join(d1, "cache"), 0o700)
+	os.WriteFile(filepath.Join(d1, "cache", "onboarding.json"), []byte(`{"onboardingComplete":true}`), 0o600)
+	if !LoggedIn(a1) {
+		t.Fatal("onboardingComplete should report logged in")
+	}
+	os.MkdirAll(filepath.Join(d1, "conversations"), 0o700)
+	os.MkdirAll(filepath.Join(d1, "brain", "s1", "logs"), 0o700)
+	db := filepath.Join(d1, "conversations", "s1.db")
+	os.WriteFile(db, []byte("sqlite-bytes"), 0o600)
+	os.WriteFile(db+"-wal", []byte("wal-bytes"), 0o600)
+	os.WriteFile(filepath.Join(d1, "brain", "s1", "logs", "transcript.jsonl"), []byte("{}\n"), 0o600)
+
+	found := SessionFile(d1, "/work", "s1")
+	if found != db {
+		t.Fatalf("session file: %q", found)
+	}
+	if SessionFile(d1, "/work", "../escape") != "" {
+		t.Fatal("path traversal must return empty")
+	}
+	if err := CopySession(found, d1, d2, "s1"); err != nil {
+		t.Fatal(err)
+	}
+	if SessionFile(d2, "/work", "s1") == "" {
+		t.Fatal("copied session db missing")
+	}
+	if _, err := os.Stat(filepath.Join(d2, "conversations", "s1.db-wal")); err != nil {
+		t.Fatal("copied wal missing")
+	}
+	if _, err := os.Stat(filepath.Join(d2, "brain", "s1", "logs", "transcript.jsonl")); err != nil {
+		t.Fatal("copied brain tree missing")
+	}
+}
+
+func TestParseLoginAndTools(t *testing.T) {
+	url := "https://accounts.google.com/o/oauth2/auth?client_id=abc&state=xyz"
+	out := "Open this link in a browser to log in with Google:\n\n  " + url + "\n\nThen paste the authorization code, or the full URL of the page you land on, and press Enter:\n"
+	o := ParseLogin([]byte(out))
+	if o.URL != url || !o.Prompt || o.Line != "" {
+		t.Fatalf("parse login: %+v", o)
+	}
+	o2 := ParseLogin([]byte("login cancelled: no authorization code was entered\n"))
+	if !strings.Contains(o2.Line, "login cancelled") {
+		t.Fatalf("parse login err: %+v", o2)
+	}
+	args, term := LoginArgs("/cfg/.gemini")
+	if term || strings.Join(args, " ") != "acp --login --gemini-dir /cfg/.gemini" {
+		t.Fatalf("login args: %v term=%v", args, term)
+	}
+	name, in := translateToolCall("call_mcp_tool", map[string]any{"ServerName": "fyr", "ToolName": "change_open", "Arguments": map[string]any{"title": "x"}}, []string{"fyr"})
+	if name != "mcp__fyr__change_open" || in["title"] != "x" {
+		t.Fatalf("call_mcp_tool: %q %+v", name, in)
+	}
+	name, _ = translateToolCall("mcp_fyr_settle_request", map[string]any{"why": "done"}, []string{"fyr"})
+	if name != "mcp__fyr__settle_request" {
+		t.Fatalf("eager mcp: %q", name)
+	}
+	name, in = translateToolCall("run_command", map[string]any{"CommandLine": "go test ./..."}, nil)
+	if name != "Bash" || in["command"] != "go test ./..." {
+		t.Fatalf("run_command: %q %+v", name, in)
+	}
+	name, in = translateToolCall("ask_question", map[string]any{
+		"questions": []any{map[string]any{"question": "Pick one?", "options": []any{"A", "B"}, "is_multi_select": true}},
+	}, nil)
+	if name != "AskUserQuestion" {
+		t.Fatalf("ask_question: %q %+v", name, in)
+	}
+	qs, _ := in["questions"].([]any)
+	q0, _ := qs[0].(map[string]any)
+	opts, _ := q0["options"].([]any)
+	if q0["multiSelect"] != true || len(opts) != 2 || opts[0].(map[string]any)["label"] != "A" {
+		t.Fatalf("ask_question shape: %+v", in)
+	}
+}
+
+type fakePipe struct {
+	mu      sync.Mutex
+	lines   []struct{ seq int64; b []byte }
+	idx     int
+	ackedTo int64
+}
+
+func (p *fakePipe) WriteLine([]byte) error { return nil }
+func (p *fakePipe) ReadLine() ([]byte, int64, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.idx >= len(p.lines) {
+		return nil, 0, io.EOF
+	}
+	item := p.lines[p.idx]
+	p.idx++
+	return item.b, item.seq, nil
+}
+func (p *fakePipe) Ack(upTo int64, _ []int64) {
+	p.mu.Lock()
+	p.ackedTo = upTo
+	p.mu.Unlock()
+}
+func (p *fakePipe) CloseInput() error { return nil }
+func (p *fakePipe) Kill()             {}
+func (p *fakePipe) Wait() error       { return nil }
+func (p *fakePipe) Pid() int          { return 42 }
+
+// V0.agy-adapter: a reattached ACP process finishing an in-flight pre-restart
+// turn must flush buffered text and emit a result carrying its runner seq.
+func TestACPReattachFinishesMidTurn(t *testing.T) {
+	p := &fakePipe{
+		lines: []struct{ seq int64; b []byte }{
+			{10, []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"part1 "}}}}`)},
+			{11, []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"part2"}}}}`)},
+			{12, []byte(`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}`)},
+		},
+	}
+	sess, err := Adapter{}.ReattachSession(p, "s1", "gemini-4-neon", nil, cli.Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotAssistant, gotResult cli.Msg
+	for msg := range sess.Out() {
+		switch msg["type"] {
+		case "assistant":
+			gotAssistant = msg
+		case "result":
+			gotResult = msg
+		}
+		if h, ok := sess.(interface{ Handled(cli.Msg) }); ok {
+			h.Handled(msg)
+		}
+	}
+	<-sess.Done()
+	if gotAssistant == nil || gotResult == nil {
+		t.Fatalf("expected assistant and result on reattach, got assistant=%v result=%v", gotAssistant, gotResult)
+	}
+	if gotResult["result"] != "part1 part2" || gotResult[claude.SeqKey] != int64(12) {
+		t.Fatalf("unexpected reattached result: %+v", gotResult)
+	}
+	p.mu.Lock()
+	acked := p.ackedTo
+	p.mu.Unlock()
+	if acked != 12 {
+		t.Fatalf("runner ack=%d want 12", acked)
+	}
+}
+
+// V0.agy-adapter: tool completion must not invoke the viewnudge hook and
+// discard returned feed notices (turn.go handles toolDone via tool_result).
+func TestACPDoesNotDropFeedNoticesOnToolResult(t *testing.T) {
+	l := fakeLaunch(t)
+	var hooks []string
+	var mu sync.Mutex
+	sess, err := Adapter{}.Start(l, cli.Handlers{
+		Hook: func(id string, in cli.Msg) cli.Msg {
+			mu.Lock()
+			hooks = append(hooks, id)
+			mu.Unlock()
+			return nil
+		},
+		CanUseTool: func(cli.Msg) cli.Msg {
+			return cli.Msg{"behavior": "allow"}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := sess.Initialize(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "tool:echo ok"}}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	for msg := range sess.Out() {
+		if msg["type"] == "result" {
+			break
+		}
+	}
+	mu.Lock()
+	got := append([]string(nil), hooks...)
+	mu.Unlock()
+	if slices.Contains(got, "viewnudge") {
+		t.Fatalf("acpSession must not call viewnudge hook and drop notices: %v", got)
+	}
+}

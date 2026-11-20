@@ -1,0 +1,13 @@
+# V0.agy-adapter: Antigravity CLI (`agy`) adapter via ACP
+
+→ V0.50, V0.53, V0.90, V0.108, V0.115, V0.120, decision 0015.
+
+Fyr supports Google's Antigravity CLI (`agy`) as a second CLI adapter alongside `claude`, speaking the Agent Client Protocol (`agy acp --stdio`) over newline-delimited JSON-RPC 2.0 and translating ACP events, permissions, models, sessions and logins into Fyr's adapter interfaces.
+
+(1) **Adapter interfaces (`internal/cli`).** Optional adapter interfaces (`SessionReattacher`, `ModelLister`, `Loginer`, `Defaults`) let `internal/provider` and `internal/agent` work with any CLI adapter without hardcoding `claude` paths, login commands, model listing, or fast system-agent model selection.
+
+(2) **ACP protocol translation (`internal/cli/agycli`).** Sessions start via `agy acp --stdio` (`initialize` + `session/new` or `session/resume`), pass Fyr's appended system prompt (`_meta.antigravity.systemPrompt.append`), MCP server config, model and reasoning effort (`thought_level`), and permission mode. ACP notifications (`agent_message_chunk`, `tool_call`, `tool_call_update`, `available_commands_update`, `config_option_update`) translate into Fyr's stream-json observation format, mapping native tool names (`run_command`, `read_file`, `edit_file`, `write_file`, `invoke_subagent`, `ask_question`, `mcp_<server>_<tool>`, `call_mcp_tool`) to Fyr's canonical names so activity labels, PR detection, Bash gates (`gh pr merge`, `sudo`, heavy-job slots), timer blocking, and auto-allowed Fyr MCP tools behave identically. Reattaching to a kept runner process mid-turn completes in-flight turns cleanly on their JSON-RPC response.
+
+(3) **Providers, detection, login and system jobs.** Detection finds logged-in Antigravity folders (`~/.gemini`, `~/.gemini-*`) as `agy-account` providers and `GEMINI_API_KEY` as an `endpoint` provider with `cli: "agy"`. Folder logins run `agy acp --login` through Settings → Providers; API-key runs prepare an isolated gemini config dir with `modelProvider: "gemini"` without touching `~/.gemini`. Model refresh queries `agy acp` `session/new`; one-shot system jobs (`Print`) run an ephemeral tool-disabled ACP session on the adapter's fast Flash model.
+
+(4) **Handover and both fronts.** Same-CLI Antigravity handover copies `<appDataDir>/conversations/<sid>.db` (with WAL/SHM sidecars) and `<appDataDir>/brain/<sid>` for Rung 1 resume; cross-CLI handover (`agy` ↔ `claude`) uses Rung 2 adopt. Settings → Providers (shared by desktop and phone) supports creating and managing `Antigravity account` and `Antigravity (API key)` providers, and Hand over matches Gemini model families.

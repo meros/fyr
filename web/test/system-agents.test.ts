@@ -34,6 +34,12 @@ test("the model choices start with the provider's Haiku", () => {
     { value: "claude-haiku-5-5", label: "claude-haiku-5-5" },
   ]);
   assert.deepEqual(modelOptions(view, "zai")[0], { value: "", label: "Haiku (none on Z.ai)" });
+  const agyView: SystemAgentsView = {
+    default: {},
+    providers: [{ id: "agy", name: "Antigravity", models: ["gemini-4-neon", "gemini-3.8-flash"], haiku: "gemini-3.8-flash" }],
+    jobs: [],
+  };
+  assert.deepEqual(modelOptions(agyView, "agy")[0], { value: "", label: "Fast (gemini-3.8-flash)" });
 });
 
 // SPEC V0.115 (2): each job says what it runs on now, or why it cannot run.

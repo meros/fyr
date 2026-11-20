@@ -13,6 +13,7 @@ import (
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/agycli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/runner"
@@ -176,16 +177,19 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 	if !ok {
 		return drop("no thread " + threadID)
 	}
-	id := meta.CLI
-	if id == "" {
-		id = claudecli.ID
-	}
+	id := cliID(meta.CLI)
 	ad, ok := m.cfg.Adapters[id]
-	if !ok && id == claudecli.ID {
-		ad, ok = claudecli.Adapter{}, true
+	if !ok {
+		switch id {
+		case claudecli.ID:
+			ad, ok = claudecli.Adapter{}, true
+		case agycli.ID:
+			ad, ok = agycli.Adapter{}, true
+		}
 	}
+	sre, _ := ad.(cli.SessionReattacher)
 	re, _ := ad.(cli.Reattacher)
-	if !ok || re == nil {
+	if !ok || (sre == nil && re == nil) {
 		return drop("no adapter can reattach " + id)
 	}
 	s := &session{thread: t.ID, proc: p.ID, cwd: t.Cwd, token: meta.Token, asks: map[string]chan core.Effect{}, reqs: map[string]string{},
@@ -225,11 +229,17 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 		m.tokens[s.token] = t.ID // the CLI calls Fyr's tools with the token it started with
 		m.mu.Unlock()
 	}
-	c, err := re.Reattach(conn, w, cli.Handlers{
+	handlers := cli.Handlers{
 		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },
 		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
 		Hook:       func(id string, in claude.Msg) claude.Msg { return m.hook(s, id, in) },
-	})
+	}
+	var c cli.Session
+	if sre != nil {
+		c, err = sre.ReattachSession(conn, t.SessionID, t.Model, w, handlers)
+	} else {
+		c, err = re.Reattach(conn, w, handlers)
+	}
 	if err != nil {
 		m.unhold(s)
 		return drop(err.Error())

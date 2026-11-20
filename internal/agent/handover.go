@@ -10,7 +10,6 @@ import (
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
-	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/provider"
@@ -48,15 +47,28 @@ func sameDir(a, b string) bool {
 	return err1 == nil && err2 == nil && os.SameFile(sa, sb)
 }
 
+func (m *Manager) sessionsDir(p provider.Profile, ad cli.Adapter) string {
+	// Legacy profiles may pass CLAUDE_CONFIG_DIR in Env rather than ConfigDir.
+	if p.ConfigDir == "" && p.Auth.ConfigDir == "" && len(p.Env) > 0 && cliID(p.CLI) == "claude" {
+		return p.ConfigDirPath()
+	}
+	return ad.SessionsDir(authOf(p))
+}
+
 // resumable reports whether the target can resume the thread's session,
 // and the source transcript; it changes nothing.
-func resumable(t core.Thread, from provider.Profile) (string, error) {
+func (m *Manager) resumable(t core.Thread, from provider.Profile) (string, error) {
 	if t.SessionID == "" {
 		return "", fmt.Errorf("The thread has no session yet")
 	}
-	src := claudecli.SessionFile(from.ConfigDirPath(), t.Cwd, t.SessionID)
+	ad, err := m.adapter(from)
+	if err != nil {
+		return "", err
+	}
+	dir := m.sessionsDir(from, ad)
+	src := ad.SessionFile(dir, t.Cwd, t.SessionID)
 	if src == "" {
-		return "", fmt.Errorf("No session transcript for this thread in %s", from.ConfigDirPath())
+		return "", fmt.Errorf("No session transcript for this thread in %s", dir)
 	}
 	return src, nil
 }
@@ -67,7 +79,14 @@ func (m *Manager) HandoverPlan(threadID, profile string) Plan {
 	if !ok {
 		return Plan{Rung: RungAdopt, Note: "No such thread"}
 	}
-	if _, err := resumable(t, m.cfg.Profile(t.Profile)); err != nil {
+	from := m.cfg.Profile(t.Profile)
+	if profile != "" {
+		to := m.cfg.Profile(profile)
+		if cliID(from.CLI) != cliID(to.CLI) {
+			return Plan{Rung: RungAdopt, Note: "The target runs another CLI"}
+		}
+	}
+	if _, err := m.resumable(t, from); err != nil {
 		return Plan{Rung: RungAdopt, Note: err.Error()}
 	}
 	return Plan{Rung: RungResume}
@@ -161,14 +180,14 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	}
 
 	// Rung 1: resume the same session on the target.
-	if src, err := resumable(t, from); err != nil {
+	if src, err := m.resumable(t, from); err != nil {
 		notes = append(notes, err.Error())
-	} else if from.CLI != to.CLI {
+	} else if cliID(from.CLI) != cliID(to.CLI) {
 		notes = append(notes, "The target runs another CLI")
 	} else if ad, aerr := m.adapter(to); aerr != nil {
 		notes = append(notes, aerr.Error())
 	} else {
-		fromDir, toDir := from.ConfigDirPath(), to.ConfigDirPath()
+		fromDir, toDir := m.sessionsDir(from, ad), m.sessionsDir(to, ad)
 		var cerr error
 		if !sameDir(fromDir, toDir) {
 			cerr = ad.CopySession(src, fromDir, toDir, t.SessionID)

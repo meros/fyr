@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/agycli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/quota"
@@ -22,6 +23,7 @@ type Found struct {
 	ID        string            `json:"id"` // the provider id an import creates
 	Name      string            `json:"name"`
 	Kind      string            `json:"kind"`
+	CLI       string            `json:"cli,omitempty"`
 	Source    string            `json:"source"` // where it was found, for the owner
 	ConfigDir string            `json:"configDir,omitempty"`
 	BaseURL   string            `json:"baseURL,omitempty"`
@@ -97,7 +99,7 @@ func Detect(h Host) []Found {
 			continue
 		}
 		base := filepath.Base(d)
-		f := Found{Kind: KindAccount, Source: "~/" + base, Models: modelsFor(ids(claudecli.Models), false)}
+		f := Found{Kind: KindAccount, CLI: claudecli.ID, Source: "~/" + base, Models: modelsFor(claudecli.ID, ids(claudecli.Models), false)}
 		if base == ".claude" {
 			f.ID, f.Name = "claude", "Claude"
 		} else {
@@ -112,14 +114,53 @@ func Detect(h Host) []Found {
 		f.Default = f.Models[0].ID
 		out = append(out, f)
 	}
+	// Antigravity (agy) logins: ~/.gemini and ~/.gemini-* folders.
+	agyDirs := []string{filepath.Join(h.Home, ".gemini")}
+	if m, _ := filepath.Glob(filepath.Join(h.Home, ".gemini-*")); len(m) > 0 {
+		sort.Strings(m)
+		agyDirs = append(agyDirs, m...)
+	}
+	agyAdapter := agycli.Adapter{}
+	for _, d := range agyDirs {
+		if st, err := os.Stat(d); err != nil || !st.IsDir() || usedDirs[d] {
+			continue
+		}
+		base := filepath.Base(d)
+		f := Found{Kind: KindAgyAccount, CLI: agycli.ID, Source: "~/" + base, Models: modelsFor(agycli.ID, ids(agycli.Models), false)}
+		if base == ".gemini" {
+			f.ID, f.Name = "agy", "Antigravity"
+		} else {
+			suffix := strings.TrimPrefix(base, ".gemini-")
+			f.ID, f.Name, f.ConfigDir = "agy-"+slug(suffix), "Antigravity ("+suffix+")", "~/"+base
+		}
+		f.LoggedIn = agyAdapter.LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: d})
+		if !f.LoggedIn {
+			continue
+		}
+		f.Status, f.QuotaKind = Ready, quota.KindNone
+		if len(f.Models) > 0 {
+			f.Default = f.Models[0].ID
+		}
+		out = append(out, f)
+	}
 	// Keys in fyrd's environment, by name.
 	for _, k := range knownKeys {
 		if h.Getenv(k.env) == "" || usedURL[k.url] {
 			continue
 		}
-		out = append(out, Found{ID: k.id, Name: k.name, Kind: KindEndpoint, Source: k.env + " in fyrd's environment",
+		out = append(out, Found{ID: k.id, Name: k.name, Kind: KindEndpoint, CLI: claudecli.ID, Source: k.env + " in fyrd's environment",
 			BaseURL: k.url, KeyFrom: k.env + " in fyrd's environment", KeyRef: "env:" + k.env, Status: Ready,
 			QuotaKind: k.quota, Models: []cli.Model{}, Note: "Add the model ids this endpoint should offer."})
+	}
+	if h.Getenv("GEMINI_API_KEY") != "" {
+		ms := modelsFor(agycli.ID, ids(agycli.Models), true)
+		def := ""
+		if len(ms) > 0 {
+			def = ms[0].ID
+		}
+		out = append(out, Found{ID: "gemini", Name: "Gemini API", Kind: KindEndpoint, CLI: agycli.ID,
+			Source: "GEMINI_API_KEY in fyrd's environment", KeyFrom: "GEMINI_API_KEY in fyrd's environment",
+			KeyRef: "env:GEMINI_API_KEY", Status: Ready, QuotaKind: quota.KindNone, Models: ms, Default: def})
 	}
 	return out
 }
@@ -133,8 +174,12 @@ func ids(ms []cli.Model) []string {
 }
 
 func (h Host) dir(d string) string {
+	return h.dirFor(claudecli.ID, d)
+}
+
+func (h Host) dirFor(cliID, d string) string {
 	if d == "" {
-		return filepath.Join(h.Home, ".claude")
+		d = defaultConfigDir(cliID)
 	}
 	return filepath.Clean(hostfs.ExpandHome(d, h.Home))
 }
@@ -185,9 +230,9 @@ func fromProfile(h Host, p Profile) Found {
 	}
 	if f.BaseURL == "" {
 		f.Kind = KindAccount
-		f.Models = modelsFor(p.Models, false)
+		f.Models = modelsFor(claudecli.ID, p.Models, false)
 		if len(f.Models) == 0 {
-			f.Models = modelsFor(ids(claudecli.Models), false)
+			f.Models = modelsFor(claudecli.ID, ids(claudecli.Models), false)
 		}
 		f.LoggedIn = h.Adapter.LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: h.dir(f.ConfigDir)})
 		if tok := env.secrets["CLAUDE_CODE_OAUTH_TOKEN"]; tok != "" {
@@ -209,7 +254,7 @@ func fromProfile(h Host, p Profile) Found {
 		}
 	} else {
 		f.Kind = KindEndpoint
-		f.Models = modelsFor(append(append([]string{}, p.Models...), env.vals["ANTHROPIC_MODEL"]), true)
+		f.Models = modelsFor(claudecli.ID, append(append([]string{}, p.Models...), env.vals["ANTHROPIC_MODEL"]), true)
 		f.ModelEnv = map[string]string{}
 		for k, v := range env.vals {
 			if strings.HasSuffix(k, "_MODEL") {
@@ -263,11 +308,16 @@ func firstNonEmpty(xs ...string) string {
 
 // tildeHome writes a path under home as ~/…; ~/.claude is the default "".
 func tildeHome(p, home string) string {
+	return tildeHomeFor(p, home, "~/.claude")
+}
+
+// tildeHomeFor writes a path under home as ~/…; defDir is the CLI's default "".
+func tildeHomeFor(p, home, defDir string) string {
 	p = strings.ReplaceAll(strings.ReplaceAll(p, "${HOME}", home), "$HOME", home)
 	if home != "" && strings.HasPrefix(p, home+"/") {
 		p = "~" + p[len(home):]
 	}
-	if p == "~/.claude" || p == "~/.claude/" {
+	if defDir != "" && (p == defDir || p == defDir+"/") {
 		return ""
 	}
 	return p
