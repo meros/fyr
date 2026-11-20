@@ -118,6 +118,74 @@ func TestProjectLink(t *testing.T) {
 	}
 }
 
+// V0.link-writes-through-a-stale-copy: a link is written to every named host,
+// also one this front already shows with the link. The front's copy of a
+// record is a frame behind the host, so trusting it skipped a write to a host
+// whose record had lost the link (CI: "relink ... stored:[TEST-A TEST-B]",
+// b "").
+func TestProjectLinkThroughAStaleCopy(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	f := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, f.URL, 2)
+	onA, onB := projectOn(t, f.URL, a, "TEST-A", "Fyr"), projectOn(t, f.URL, b, "TEST-B", "fyr-mac")
+	code, rep := linkCmd(t, f.URL, "l1", onA, onB)
+	if code != 200 {
+		t.Fatalf("link: %d %v", code, rep)
+	}
+	link := linkOf(a, onA)
+	host, id, _ := strings.Cut(onB, "/")
+	// b's own record loses the link (its own settings, a restore) while the
+	// front's frame for it still shows the link.
+	if code, rep := post(t, b.hs.URL+"/api/command", fmt.Sprintf(`{"commandId":"behind","action":"project.link","args":{"id":%q,"link":""}}`, id)); code != 200 {
+		t.Fatalf("unlink behind the front: %d %v", code, rep)
+	}
+	fw := testFront(t, f.URL)
+	fw.mu.Lock()
+	for _, l := range fw.all() {
+		if fw.idOfLocked(l) != host {
+			continue
+		}
+		for _, p := range l.projects {
+			if p["id"] == id {
+				p["link"] = link
+			}
+		}
+	}
+	fw.mu.Unlock()
+	if code, rep := linkCmd(t, f.URL, probe(), onA, onB); code != 200 {
+		t.Fatalf("relink: %d %v", code, rep)
+	}
+	if got := linkOf(b, onB); got != link {
+		t.Fatalf("b after the relink %q, want %q", got, link)
+	}
+	// The unlink writes the same way: a record the front shows with no link
+	// still gets the unlink, so a host that gained one behind its back loses it.
+	if code, rep := linkCmd(t, f.URL, probe(), onA, onB); code != 200 {
+		t.Fatalf("link again: %d %v", code, rep)
+	}
+	if code, rep := post(t, b.hs.URL+"/api/command", fmt.Sprintf(`{"commandId":"behind2","action":"project.link","args":{"id":%q,"link":%q}}`, id, link)); code != 200 {
+		t.Fatalf("link behind the front: %d %v", code, rep)
+	}
+	fw.mu.Lock()
+	for _, l := range fw.all() {
+		if fw.idOfLocked(l) != host {
+			continue
+		}
+		for _, p := range l.projects {
+			if p["id"] == id {
+				p["link"] = ""
+			}
+		}
+	}
+	fw.mu.Unlock()
+	if code, rep := post(t, f.URL+"/api/front/command", fmt.Sprintf(`{"commandId":%q,"action":"front.projectUnlink","args":{"ref":%q}}`, probe(), onB)); code != 200 {
+		t.Fatalf("unlink: %d %v", code, rep)
+	}
+	if got := linkOf(b, onB); got != "" {
+		t.Fatalf("b after the unlink %q, want none", got)
+	}
+}
+
 // A host too old to keep a link says so; the hosts that can keep it do.
 func TestProjectLinkOldHost(t *testing.T) {
 	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
