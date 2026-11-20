@@ -1,0 +1,9 @@
+# V0.watch-waits: a thread with an armed watch of its agent's is Waiting in Working, and the wake-up chip is the time alone
+
+→ #46 (the agent's watches), V0.153 (Waiting in Working), V0.203 (`workGoing` counts an agent's watch), V0.wakeups-via-watch. *Amends V0.wakeups-via-watch (3): the chip's text.* (owner, 20 Nov: a thread that armed a 06:00 wake-up and a "when #1009 is live" watch sat in Seen as finished; "Working, as Waiting"; and of the chip that printed the agent's whole note: "This is ridiculous".)
+
+1. **Where it sits.** A thread whose agent has a notify watch armed (`mcp__fyr__watch`, then notify, not suspended) has work coming: when nothing needs the owner and nothing runs, Attention is `waiting` in Working, not done or seen in Seen. Its reason names the watches, soonest wake-up first, at most two and "+N more": "wakes 07:00", "wakes 21 Nov 07:00", "waits for PR #1009 to be live", "waits for checks ok on PR #12", "waits for the run to end", "wakes after 30 min idle". Times are the host's local time, as V0.143's line. The agent's settle watches (then settle) are not work and do not count. Needs you still comes first: a question, a failure, a Run card. When the last watch fires or is removed and the run it starts ends, the thread is back in Seen, unread.
+2. **The row.** The row in Working shows the reason as its line (`workingLine`, both fronts), as a background task's wait; the wake chip shows only off Working, as before.
+3. **The chip.** The wake-up chip (desktop and phone header) says the time alone: "wakes 07:00", "wakes 21 Nov 07:00 +1" with more armed. The agent's note is its own prompt, often a paragraph, so it is only in the chip's title.
+
+Tests: `internal/core/watchwait_test.go` (TestArmedWatchIsWaitingInWorking, TestWatchWaitTextToday); `web/test/wake.test.ts` (the chip's words).
