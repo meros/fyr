@@ -22,7 +22,9 @@ func projectOn(t *testing.T, front string, h *settingsHost, id, name string) str
 	}
 	pid, _ := rep["result"].(map[string]any)["id"].(string)
 	ref := id + "/" + pid
-	eventually(t, "the front has "+name, func() bool { return frontSees(t, front, ref, "") })
+	// The link command resolves the ref in the front's own copy, which the
+	// host's stream fills a moment after the host answers (V0.old-routes-end).
+	eventually(t, "the front has "+name, func() bool { return frontSees(t, front, ref, "") && frontKnows(front, ref) })
 	return ref
 }
 

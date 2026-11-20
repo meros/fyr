@@ -83,8 +83,29 @@ func newFront(t *testing.T, hosts ...HostConfig) *httptest.Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	go f.Run(ctx)
 	fs := httptest.NewServer(f.Handler())
-	t.Cleanup(func() { cancel(); fs.CloseClientConnections(); fs.Close() })
+	testFronts.Store(fs.URL, f)
+	t.Cleanup(func() { cancel(); fs.CloseClientConnections(); fs.Close(); testFronts.Delete(fs.URL) })
 	return fs
+}
+
+// testFronts: the Front behind each newFront URL, so a test can wait for what
+// the front itself holds, not only for what a host answers through it.
+var testFronts sync.Map
+
+// frontKnows reports whether the front behind url holds the project ref in
+// its own copy of the host's state: what a front command such as a project
+// link resolves (an online host's /api/h/<id>/state is the host's own answer
+// and can be ahead of it).
+func frontKnows(url, ref string) bool {
+	v, ok := testFronts.Load(url)
+	if !ok {
+		return false
+	}
+	f := v.(*Front)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, code, _ := f.projectAtLocked(ref)
+	return code == 200
 }
 
 func post(t *testing.T, url, body string) (int, map[string]any) {
