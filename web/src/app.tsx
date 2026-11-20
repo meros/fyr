@@ -46,7 +46,7 @@ import {
   hostOfThread,
   type View,
 } from "./store.ts";
-import { migrateStorage, moveHostKeys, moveRef, rotations } from "./storage-migrate.ts";
+import { moveHostKeys, moveRef, rotations } from "./host-rotation.ts";
 import { placeOf, steadyThreads, stillRows, trackArrivals, type FinishHold, type RowPlace } from "./still-list.ts";
 import { useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, afterSettle, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
@@ -77,7 +77,7 @@ import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, projectRecords, recordOf, splitSharedPatch } from "./projects.ts";
 import { HIDDEN_KEY, NOTHING_HIDDEN, applyHidden, hiddenCount, parseHidden, pushHiddenOf, type Hidden, type PushHidden } from "./hidden.ts";
-import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, parseHostsOff, type FilterSel } from "./filters.ts";
+import { HOSTS_OFF_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -351,10 +351,9 @@ function App() {
       /* storage blocked */
     }
   };
-  // V0.169: the hosts turned off, remembered per device beside the project filter. V0.134's one host is dropped.
+  // V0.169: the hosts turned off, remembered per device beside the project filter.
   const [hostsOff, setHostsOffState] = useState<string[]>(() => {
     try {
-      localStorage.removeItem(OLD_HOST_FILTER_KEY);
       return parseHostsOff(localStorage.getItem(HOSTS_OFF_KEY));
     } catch {
       return [];
@@ -591,8 +590,7 @@ function App() {
     }
   }, [store.loaded, nav.screen.name, "id" in nav.screen ? nav.screen.id : ""]);
 
-  // V0.client-refs (decision 0031 4.2): what this device kept by the hosts' own ids and names moves to refs and install
-  // ids, once, when the first state lists the hosts and their records. The filters read again what moved.
+  // The filters read again what a host's rotation moved.
   const rereadFilters = () => {
     try {
       setProjectFilterState(localStorage.getItem(FILTER_KEY));
@@ -601,16 +599,6 @@ function App() {
       /* storage blocked */
     }
   };
-  useEffect(() => {
-    if (!fullStore.loaded) return;
-    let kv: Storage | null = null;
-    try {
-      kv = localStorage;
-    } catch {
-      return;
-    }
-    if (migrateStorage(kv, { hosts: fullStore.hostList, threads: Object.values(fullStore.threads), projects: projectRecords(fullStore.projects) })) rereadFilters();
-  }, [fullStore.loaded]);
   // Decision 0031 2.1, 2.5: a host listed with a new id and the one it had (idWas): what the device keeps under the old
   // id moves to the new one (the keys, the stored timelines, the store, the thread on screen).
   const rotationKey = rotations(fullStore.hostList).map((r) => `${r.was}>${r.now}`).join(",");

@@ -15,7 +15,7 @@ import (
 
 func getStateRaw(t *testing.T, base string) map[string]any {
 	t.Helper()
-	resp, err := http.Get(base + "/api/state")
+	resp, err := http.Get(base + "/api/front/state")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestV171OwnerSetsAHostMark(t *testing.T) {
 	online(t, fb.URL, 2)
 	b.setDown(true)
 	eventually(t, "b offline", func() bool { return getState(t, fa.URL).Hosts[1]["online"] == false })
-	if code, rep := post(t, fa.URL+"/api/command", `{"commandId":"m1","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"🏠","color":"teal"}}`); code != 200 || rep["ok"] != true {
+	if code, rep := post(t, fa.URL+"/api/front/command", `{"commandId":"m1","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"🏠","color":"teal"}}`); code != 200 || rep["ok"] != true {
 		t.Fatalf("front.hostMark: %d %v", code, rep)
 	}
 	if m := a.eng.HostMarks().Marks["BBBB-0001"]; m.Icon != "🏠" || m.Color != "teal" {
@@ -56,15 +56,15 @@ func TestV171OwnerSetsAHostMark(t *testing.T) {
 	b.setDown(false)
 	eventually(t, "b catches up", func() bool { return b.eng.HostMarks().Marks["BBBB-0001"].Icon == "🏠" })
 	// Only the colour: the icon goes back to the automatic one.
-	if code, rep := post(t, fb.URL+"/api/command", `{"commandId":"m2","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"","color":"rose"}}`); code != 200 || rep["ok"] != true {
+	if code, rep := post(t, fb.URL+"/api/front/command", `{"commandId":"m2","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"","color":"rose"}}`); code != 200 || rep["ok"] != true {
 		t.Fatalf("front.hostMark from the other front: %d %v", code, rep)
 	}
 	eventually(t, "the new colour on fa", func() bool { m := markOf(t, fa.URL, "BBBB-0001"); return m["color"] == "rose" && m["icon"] == nil })
 	// Both empty: the automatic mark, kept as the owner's choice (V0.208).
-	post(t, fa.URL+"/api/command", `{"commandId":"m3","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"","color":""}}`)
+	post(t, fa.URL+"/api/front/command", `{"commandId":"m3","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"","color":""}}`)
 	eventually(t, "cleared", func() bool { m := markOf(t, fb.URL, "BBBB-0001"); return m["icon"] == nil && m["color"] == nil })
 	for i, bad := range []string{`{"id":"","color":"teal"}`, `{"id":"X","color":"#f00"}`} {
-		if code, _ := post(t, fa.URL+"/api/command", fmt.Sprintf(`{"commandId":"bad%d","action":"front.hostMark","args":%s}`, i, bad)); code == 200 {
+		if code, _ := post(t, fa.URL+"/api/front/command", fmt.Sprintf(`{"commandId":"bad%d","action":"front.hostMark","args":%s}`, i, bad)); code == 200 {
 			t.Fatalf("taken: %s", bad)
 		}
 	}
@@ -109,7 +109,7 @@ func TestV208AgentFillsAHostMark(t *testing.T) {
 		})
 	}
 	// The owner changes the colour; the page sends the icon unchanged.
-	post(t, fa.URL+"/api/command", `{"commandId":"m1","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"cloud","color":"teal"}}`)
+	post(t, fa.URL+"/api/front/command", `{"commandId":"m1","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"cloud","color":"teal"}}`)
 	eventually(t, "the owner's colour", func() bool {
 		m := markOf(t, fb.URL, "BBBB-0001")
 		return m["icon"] == "cloud" && m["color"] == "teal" && by(m, "icon") == "agent" && by(m, "color") == "owner"
@@ -122,7 +122,7 @@ func TestV208AgentFillsAHostMark(t *testing.T) {
 		return m["icon"] == "box" && m["color"] == "teal"
 	})
 	// Automatic is the owner's choice: the agent does not fill it again.
-	post(t, fa.URL+"/api/command", `{"commandId":"m2","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"","color":"teal"}}`)
+	post(t, fa.URL+"/api/front/command", `{"commandId":"m2","action":"front.hostMark","args":{"id":"BBBB-0001","icon":"","color":"teal"}}`)
 	eventually(t, "automatic icon", func() bool { m := markOf(t, fb.URL, "BBBB-0001"); return m["icon"] == nil && by(m, "icon") == "owner" })
 	if got := hostSetup(t, b.eng, map[string]any{"icon": "server"}); !strings.Contains(got, "Kept the icon") {
 		t.Fatalf("the tool says %q", got)

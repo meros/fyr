@@ -30,7 +30,6 @@ type cacheFile struct {
 	Online   bool                      `json:"online"`
 	Since    time.Time                 `json:"since"` // the last time the front had the host online
 	Raw      map[string]map[string]any `json:"raw"`
-	Pub      map[string]map[string]any `json:"pub"`
 	Projects []map[string]any          `json:"projects"`
 	Env      map[string]any            `json:"env"`
 	// Settings: the host's last settings reads (V0.127), by path.
@@ -86,9 +85,6 @@ func (f *Front) restore(l *link) {
 	if c.Raw != nil {
 		l.raw = c.Raw
 	}
-	if c.Pub != nil {
-		l.pub = c.Pub
-	}
 	l.projects = c.Projects
 	if c.Settings != nil {
 		l.settings = c.Settings
@@ -99,9 +95,6 @@ func (f *Front) restore(l *link) {
 		l.since = c.SavedAt
 	}
 	l.online, l.err = false, "not reached since the front started"
-	for id := range l.raw {
-		f.publishLocked(l, id)
-	}
 	f.opt.Logf("front: host %s from the cache (%d threads, offline since %s)", l.name(), len(l.raw), l.since.Local().Format("15:04"))
 }
 
@@ -128,7 +121,7 @@ func (f *Front) save(now time.Time, force bool) {
 			continue
 		}
 		c := cacheFile{Name: l.name(), Online: l.online, Since: l.since,
-			Raw: l.raw, Pub: l.pub, Projects: l.projects, Env: l.env, Settings: l.settings}
+			Raw: l.raw, Projects: l.projects, Env: l.env, Settings: l.settings}
 		b, err := json.Marshal(c)
 		if err != nil {
 			f.opt.Logf("front: cache %s: %v", l.key(), err)

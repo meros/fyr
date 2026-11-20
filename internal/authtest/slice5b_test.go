@@ -54,10 +54,10 @@ func TestAnACLThatBlocksOneDirectionStillGivesBothFrontsTheirHost(t *testing.T) 
 		t.Errorf("who opened it: a says %q, b says %q (a dials, b cannot)", la.Opened, lb.Opened)
 	}
 	// each front reaches the other's host, over the same link
-	if r, err := a.Fyrd.Get("/api/commands?host=b", ca); err != nil || r.Status == 502 || r.Status == 503 {
+	if r, err := a.Fyrd.Get(a.Fyrd.HostPath(ca, "b", "/commands"), ca); err != nil || r.Status == 502 || r.Status == 503 {
 		t.Errorf("a's front to b: %v %v", err, r)
 	}
-	if r, err := b.Fyrd.Get("/api/commands?host=a", cb); err != nil || r.Status == 502 || r.Status == 503 {
+	if r, err := b.Fyrd.Get(b.Fyrd.HostPath(cb, "a", "/commands"), cb); err != nil || r.Status == 502 || r.Status == 503 {
 		t.Errorf("b's front to a: %v %v", err, r)
 	}
 	if r, _ := a.Fyrd.Roster(); r.WhoisLinkUses != 0 {
@@ -98,7 +98,7 @@ func TestBothDirectionsBlockedShowsTheReasonAndAFlapGivesOneLink(t *testing.T) {
 	// reconnects on its own retry, and until then a call says b is offline
 	// (V0.fix-flakes).
 	waitHost(t, a, ca, "b")
-	if r, err := a.Fyrd.Get("/api/commands?host=b", ca); err != nil || r.Status == 502 || r.Status == 503 {
+	if r, err := a.Fyrd.Get(a.Fyrd.HostPath(ca, "b", "/commands"), ca); err != nil || r.Status == 502 || r.Status == 503 {
 		t.Errorf("a's front to b after the flap: %v %v", err, r)
 	}
 }
@@ -112,7 +112,7 @@ func TestRemovalClosesTheLinkAndItsOpenStream(t *testing.T) {
 	ca := ownerFronts(t, a)
 	waitLink(t, a, ca, "c", func(l authtest.LinkOf) bool { return l.State == "up" })
 	// an open stream through a's front to c's host, over the link
-	req, _ := http.NewRequest("GET", a.Fyrd.URL()+"/api/stream?host=c", nil)
+	req, _ := http.NewRequest("GET", a.Fyrd.URL()+"/api/front/stream?host=c", nil)
 	_ = req
 	if out, err := a.Fyrd.Fyr("host", "remove", idOf(t, c)); err != nil || !strings.Contains(out, "removed") {
 		t.Fatalf("%v %s", err, out)

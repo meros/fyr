@@ -102,6 +102,22 @@ async function put(key: string, value: unknown): Promise<void> {
   });
 }
 
+async function del(key: string): Promise<void> {
+  const d = await db();
+  if (!d) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = d.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 /** V0.client-refs (decision 0031 2.5): a host's id rotated: its stored timelines move to the new id; the stored state
  *  is a cache and is read again (the host's records come stamped with the new id). */
 async function moveHost(was: string, now: string): Promise<void> {
@@ -138,9 +154,9 @@ async function moveHost(was: string, now: string): Promise<void> {
 export const cache = {
   moveHost,
   /** the device's copy of the whole state, drawn at once on start (V0.38): slice 2b's snapshot, one state per host.
-   *  The older flat copy ("state2") is not read: it is a cache, and the network state replaces it. */
+   *  V0.old-routes-end: the older flat copy ("state2", the old /api/state's shape) goes when the new one is written. */
   state: () => get<Snapshot>("state3").then((s) => (s && typeof s.states === "object" && s.states && Array.isArray(s.hosts) ? s : null)),
-  saveState: (s: Snapshot) => put("state3", s),
+  saveState: (s: Snapshot) => put("state3", s).then(() => del("state2")),
   /** one host's own state as it last sent it, by install id: its "since" (V0.host-ids) */
   hostState: (hostId: string) => get<StateDTO>(`host:${hostId}`),
   saveHostState: (hostId: string, s: StateDTO) => put(`host:${hostId}`, s),

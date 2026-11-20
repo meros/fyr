@@ -22,18 +22,6 @@ export function decodeStall(raw: unknown, host?: string): StallInfo | null {
   return { ...(h ? { host: h } : {}), at: r.at, what: typeof r.what === "string" ? r.what : "", file: typeof r.file === "string" ? r.file : "", exiting: r.exiting === true };
 }
 
-/** The state's stalls: a front's `stalls`, else a host's own `stall` named by the host. */
-export function stallsOf(dto: { stall?: unknown; stalls?: unknown; host?: string }): StallInfo[] {
-  if (Array.isArray(dto.stalls)) return dto.stalls.map((x) => decodeStall(x)).filter((x): x is StallInfo => x !== null);
-  const one = decodeStall(dto.stall, dto.host || undefined);
-  return one ? [one] : [];
-}
-
-/** A stall from the stream replaces its host's. */
-export function upsertStall(list: StallInfo[], s: StallInfo): StallInfo[] {
-  return [...list.filter((x) => (x.host ?? "") !== (s.host ?? "")), s];
-}
-
 /** The newest stall not dismissed (by its time and host), or null. */
 export function shownStall(list: StallInfo[], dismissed: string | null): StallInfo | null {
   let best: StallInfo | null = null;

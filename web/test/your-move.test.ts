@@ -27,24 +27,18 @@ test("V0.row-group-code: a row lands in the group the host's code names, whateve
   assert.equal(needsGroup(coded("i", "later" as NeedsCode, "x")), "unblock", "a code this front does not know is Unblock");
 });
 
-// Remove with the legacy fallback in rows.ts (#372).
-test("V0.row-group-code: a host before the code is still grouped by its reason", () => {
-  assert.equal(needsGroup(thread("a", "asking", "needs", { decisions: [ask] })), "answer");
-  assert.equal(needsGroup(thread("b", "asking", "needs", { decisions: [merge, ask] })), "answer", "a question in the thread is answered first");
-  assert.equal(needsGroup(thread("c", "asking", "needs", { decisions: [merge] })), "approve");
-  assert.equal(needsGroup(thread("d", "asking", "needs", { decisions: [approval] })), "approve");
-  assert.equal(needsGroup(blocked("e", "PR: Ready", { changes: [need("ready")] })), "approve");
-  assert.equal(needsGroup(blocked("f", "Run: rebuild")), "approve");
-  assert.equal(needsGroup(blocked("g", "PR: failed", { changes: [need("ready"), need("failure")] })), "unblock");
-  assert.equal(needsGroup(thread("h", "failed", "needs")), "unblock");
+test("V0.old-routes-end: a row without a group code (a host older than V0.row-group-code) is Unblock; its words are not read", () => {
+  assert.equal(needsGroup(thread("a", "asking", "needs", { decisions: [ask] })), "unblock");
+  assert.equal(needsGroup(blocked("f", "Run: rebuild")), "unblock");
+  assert.equal(needsGroup(blocked("e", "PR: Ready", { changes: [need("ready")] })), "unblock");
 });
 
 test("V0.your-move: rows sort by group and each group is labelled once", () => {
   const ts = [
-    thread("fail", "failed", "needs"),
-    thread("merge", "asking", "needs", { decisions: [merge] }),
-    thread("q1", "asking", "needs", { decisions: [ask], activityAt: "2026-11-18T10:00:00Z" }),
-    thread("q2", "asking", "needs", { decisions: [ask], activityAt: "2026-11-18T09:00:00Z" }),
+    thread("fail", "failed", "needs", { attention: { state: "failed", section: "needs", group: "unblock" } }),
+    thread("merge", "asking", "needs", { attention: { state: "asking", section: "needs", group: "approve" }, decisions: [merge] }),
+    thread("q1", "asking", "needs", { attention: { state: "asking", section: "needs", group: "answer" }, decisions: [ask], activityAt: "2026-11-18T10:00:00Z" }),
+    thread("q2", "asking", "needs", { attention: { state: "asking", section: "needs", group: "answer" }, decisions: [ask], activityAt: "2026-11-18T09:00:00Z" }),
   ];
   const rows = sections(Object.fromEntries(ts.map((t) => [t.id, t]))).needs;
   assert.deepEqual(rows.map((t) => t.id), ["q2", "q1", "merge", "fail"]);
@@ -52,6 +46,6 @@ test("V0.your-move: rows sort by group and each group is labelled once", () => {
 });
 
 test("V0.your-move: a row that left Your move and keeps its place starts no group", () => {
-  const rows = [thread("open", "working", "working"), thread("q", "asking", "needs", { decisions: [ask] })];
+  const rows = [thread("open", "working", "working"), thread("q", "asking", "needs", { attention: { state: "asking", section: "needs", group: "answer" }, decisions: [ask] })];
   assert.deepEqual(needsHeads(rows), { q: "Answer" });
 });

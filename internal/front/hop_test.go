@@ -19,12 +19,10 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/authtest"
-	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
@@ -65,14 +63,9 @@ const (
 )
 
 var routes = map[string]routeClass{
-	"GET /api/state": local, "GET /api/stream": local, "GET /api/threads/{id}": local, "/api/threads/{id}/{rest...}": hops,
-	"POST /api/command": hops, "POST /api/presence": local, "POST /api/attachments": hops, "GET /api/attachments/{id}": hops,
-	"GET /api/previews/{id}": hops, "GET /api/previews/{id}/{path...}": hops, "/api/projects/{id}/{rest...}": hops,
-	"GET /api/quota": hops, "GET /api/load": hops, "GET /api/profiles": local,
-	"GET /api/providers": local, "GET /api/providers/found": local, "GET /api/systemAgents": local, "GET /api/autoDeploy": local,
-	"GET /api/autoMerge": local, "GET /api/auth/state": local, "POST /api/auth/approve": local, "POST /api/auth/deny": local,
-	"POST /api/auth/revoke": local, "POST /api/auth/add": local, "POST /api/auth/mode": local, "GET /api/updates": local, "/api/": hops,
-	// decision 0031: the host in the path forwards, the front's own routes answer.
+	// decision 0031: the host in the path forwards, the front's own routes answer,
+	// and any other /api/ path is 404 (V0.old-routes-end).
+	"/api/":                 local,
 	"/api/h/{id}/{rest...}": hops, "GET /api/front/state": local, "GET /api/front/stream": local, "POST /api/front/command": local,
 	"POST /api/front/presence": local, "GET /api/front/auth/state": local, "POST /api/front/auth/approve": local, "POST /api/front/auth/deny": local,
 	"POST /api/front/auth/revoke": local, "POST /api/front/auth/add": local, "POST /api/front/auth/mode": local, "/mcp": local, "/": local,
@@ -111,12 +104,6 @@ func TestHopCarriesThePrincipalOnEveryRoute(t *testing.T) {
 	lo := httptest.NewServer(f.Handler())
 	t.Cleanup(func() { cancel(); lo.Close() })
 	online(t, lo.URL, 1)
-	// A project on the host, so the project routes have an owner to forward to.
-	if r := hostSrv.Engine.Command(api.Cmd{CommandID: "hop-p", Action: "project.create", Args: core.Args{"name": "P", "folder": t.TempDir()}}); !r.OK {
-		t.Fatalf("project: %+v", r)
-	}
-	projectID := hostSrv.Engine.Projects()[0].ID
-	eventually(t, "the front to know the project", func() bool { return len(getState(t, lo.URL).Projects) == 1 })
 
 	tsDir, rm, err := authtest.NewDataDir()
 	if err != nil {
@@ -149,7 +136,7 @@ func TestHopCarriesThePrincipalOnEveryRoute(t *testing.T) {
 		}
 		for _, w := range ways {
 			for _, method := range methodsOf(pat) {
-				path := concretize(pat, projectID)
+				path := concretize(pat)
 				before := mark()
 				req, _ := http.NewRequest(method, w.base+path, strings.NewReader(`{"commandId":"hop-1","action":"nope"}`))
 				req.AddCookie(&http.Cookie{Name: auth.Cookie, Value: session})
@@ -245,25 +232,14 @@ func methodsOf(pat string) []string {
 	return []string{"GET", "POST"}
 }
 
-func concretize(pat, projectID string) string {
+func concretize(pat string) string {
 	if _, p, ok := strings.Cut(pat, " "); ok {
 		pat = p
 	}
 	id := "t_probe"
-	if strings.Contains(pat, "/projects/") {
-		id = projectID
-	}
 	if strings.HasPrefix(pat, "/api/h/") {
 		id = "HOST-0000-0000-0000" // the host's install id
 	}
 	r := strings.NewReplacer("{id}", id, "{rest...}", "x", "{path...}", "x/y", "{seq}", "1", "{build}", "b", "{name}", "n")
-	p := r.Replace(pat)
-	if strings.HasPrefix(p, "/api/") {
-		sep := "?"
-		if strings.Contains(p, "?") {
-			sep = "&"
-		}
-		p += sep + "host=desk"
-	}
-	return p
+	return r.Replace(pat)
 }

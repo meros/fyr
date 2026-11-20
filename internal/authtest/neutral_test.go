@@ -156,7 +156,7 @@ func neutralFlow(t *testing.T, n *authtest.MeshNode, cookie string) map[string]a
 	var nh struct{ Code string }
 	json.Unmarshal(b, &nh)
 	out["unknown host"] = []any{code, nh.Code}
-	code, _ = call("GET", "/api/state", "", nil) // the old route still answers, and says so
+	code, _ = call("GET", "/api/state", "", nil) // an old route: 404 (V0.old-routes-end), through either front
 	out["old route"] = code
 
 	// 3. Reorder the hosts: the order in the front's state is the order the owner set.

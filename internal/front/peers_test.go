@@ -21,11 +21,11 @@ import (
 // (the whois port, the loopback hostListen) is gone: the front reaches the host
 // over the peer link only, and hosts[].link says so.
 func TestAPairedHostIsFollowedOverThePeerLinkWithTheOldListenerGone(t *testing.T) {
-	b := newHost(t, "server")
+	hostKey, frontKey := mustKey(t), mustKey(t)
+	b := newHostID(t, "server", hostKey.ID()) // a host reports its key id
 	bu, _ := url.Parse(b.hs.URL)
 	toHost := httputil.NewSingleHostReverseProxy(bu)
 	// The host's peer port, and its old listener beside it.
-	hostKey, frontKey := mustKey(t), mustKey(t)
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	ps, err := peerlink.Serve(ln, hostKey, toHost)
 	if err != nil {
@@ -37,9 +37,9 @@ func TestAPairedHostIsFollowedOverThePeerLinkWithTheOldListenerGone(t *testing.T
 
 	// "server" is configured at its old listener (config hosts:) and is paired;
 	// "paired" is a second host the roster alone brings.
-	c := newHost(t, "paired")
-	cu, _ := url.Parse(c.hs.URL)
 	cKey := mustKey(t)
+	c := newHostID(t, "paired", cKey.ID())
+	cu, _ := url.Parse(c.hs.URL)
 	cln, _ := net.Listen("tcp", "127.0.0.1:0")
 	cps, err := peerlink.Serve(cln, cKey, httputil.NewSingleHostReverseProxy(cu))
 	if err != nil {
@@ -65,7 +65,7 @@ func TestAPairedHostIsFollowedOverThePeerLinkWithTheOldListenerGone(t *testing.T
 		t.Fatalf("create on the host: %v", rep)
 	}
 	eventually(t, "the host's thread in the state", func() bool { return threadOf(getState(t, fs.URL), id) != nil })
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c-ren-peer","action":"thread.rename","threadId":"`+id+`","args":{"title":"B"}}`); code != 200 {
+	if code, rep := post(t, fs.URL+"/api/h/"+hostKey.ID()+"/command", `{"commandId":"c-ren-peer","action":"thread.rename","threadId":"`+id+`","args":{"title":"B"}}`); code != 200 {
 		t.Fatalf("a command through the front: %d %v", code, rep)
 	}
 	for _, h := range getState(t, fs.URL).Hosts {

@@ -20,11 +20,11 @@ import (
 func TestFyrActorOnABrowserListenerIs400(t *testing.T) {
 	l := live(t)
 	hdr := map[string]string{"Fyr-Actor": "v=1; kind=install; id=AAAA-BBBB-CCCC-DDDD; how=link"}
-	r, err := authtest.Do(l.Laptop.URL(), authtest.Request{Path: "/api/state", Cookie: l.Local, Header: hdr})
+	r, err := authtest.Do(l.Laptop.URL(), authtest.Request{Path: "/api/front/state", Cookie: l.Local, Header: hdr})
 	if err != nil || r.Status != 400 {
 		t.Errorf("loopback: %v %d (want 400)", err, r.Status)
 	}
-	r, err = authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state", Cookie: l.Tailnet, Header: hdr})
+	r, err = authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state", Cookie: l.Tailnet, Header: hdr})
 	if err != nil || r.Status != 400 {
 		t.Errorf("through Serve: %v %d (want 400)", err, r.Status)
 	}
@@ -46,7 +46,7 @@ func TestServeSocketClosedToAnotherUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	r, err := authtest.Do(s.URL, authtest.Request{Path: "/api/state"})
+	r, err := authtest.Do(s.URL, authtest.Request{Path: "/api/front/state"})
 	if err != nil || r.Status != http.StatusBadGateway || r.Session() != "" {
 		t.Fatalf("a peer that is not root: %v %d session %q (want 502 and none)", err, r.Status, r.Session())
 	}
@@ -60,7 +60,7 @@ func TestServeSocketClosedToAnotherUser(t *testing.T) {
 func TestCommandEventNamesTheDevice(t *testing.T) {
 	l := live(t)
 	body := `{"commandId":"audit-1","action":"thread.create","args":{"cwd":"` + t.TempDir() + `","text":"audit"}}`
-	r, err := authtest.Do(l.Laptop.URL(), authtest.Request{Method: "POST", Path: "/api/command", Cookie: l.Local,
+	r, err := authtest.Do(l.Laptop.URL(), authtest.Request{Method: "POST", Path: "/api/h/" + l.ID + "/command", Cookie: l.Local,
 		Header: map[string]string{"Content-Type": "application/json"}, Body: strings.NewReader(body)})
 	if err != nil || r.Status != 200 {
 		t.Fatalf("create: %v %d %s", err, r.Status, r.Body)
@@ -70,7 +70,7 @@ func TestCommandEventNamesTheDevice(t *testing.T) {
 	if rep.ThreadID == "" {
 		t.Fatalf("no thread in %s", r.Body)
 	}
-	ev, err := l.Laptop.Get("/api/threads/"+rep.ThreadID+"/events?limit=50", l.Local)
+	ev, err := l.Laptop.Get("/api/h/"+l.ID+"/threads/"+rep.ThreadID+"/events?limit=50", l.Local)
 	if err != nil || ev.Status != 200 {
 		t.Fatalf("events: %v %d", err, ev.Status)
 	}
@@ -97,7 +97,7 @@ func TestCommandEventNamesTheDevice(t *testing.T) {
 func TestNewFrontFollowsAnOlderHost(t *testing.T) {
 	l := live(t)
 	l.Rec.SetStripActor(true)
-	r, err := l.Laptop.Get("/api/profiles?host=server", l.Local)
+	r, err := l.Laptop.Get(l.Laptop.HostPath(l.Local, "server", "/profiles"), l.Local)
 	if err != nil || r.Status != 200 {
 		t.Fatalf("a call through the front to an older host: %v %d %s", err, r.Status, r.Body)
 	}
@@ -114,7 +114,7 @@ func TestNoSessionIsTheLegacyPrincipalOnTheHop(t *testing.T) {
 		t.Fatal(err)
 	}
 	mark := l.Rec.Mark()
-	if _, err := l.Laptop.Get("/api/commands?host=server", ""); err != nil {
+	if _, err := l.Laptop.Get(l.Laptop.HostPath("", "server", "/commands"), ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range l.Rec.Since(mark) {

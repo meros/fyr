@@ -36,7 +36,7 @@ type settingsHost struct {
 }
 
 func newSettingsHost(t *testing.T, name string) *settingsHost {
-	return newSettingsHostID(t, name, "")
+	return newSettingsHostID(t, name, testID(name))
 }
 
 // newSettingsHostID is a settings host that reports an install id.
@@ -131,13 +131,14 @@ func TestFrontHostSettingsReachTheirHost(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
+	au, bu := hostURL(t, fs.URL, "a"), hostURL(t, fs.URL, "b")
 
 	// Providers: create on b; a retry with the same commandId answers the same and adds nothing.
-	create := `{"commandId":"p1","action":"provider.create","args":{"host":"b","kind":"endpoint","name":"Lab Z","baseURL":"https://z.example","models":["glm-5"]}}`
-	if code, rep := post(t, fs.URL+"/api/command", create); code != 200 || rep["ok"] != true {
+	create := `{"commandId":"p1","action":"provider.create","args":{"kind":"endpoint","name":"Lab Z","baseURL":"https://z.example","models":["glm-5"]}}`
+	if code, rep := post(t, bu+"/command", create); code != 200 || rep["ok"] != true {
 		t.Fatalf("provider.create on b: %d %v", code, rep)
 	}
-	if code, rep := post(t, fs.URL+"/api/command", create); code != 200 || rep["ok"] != true {
+	if code, rep := post(t, bu+"/command", create); code != 200 || rep["ok"] != true {
 		t.Fatalf("retry: %d %v", code, rep)
 	}
 	if n := len(b.reg.Providers()); n != 1 {
@@ -147,22 +148,22 @@ func TestFrontHostSettingsReachTheirHost(t *testing.T) {
 		t.Fatal("a got b's provider")
 	}
 	id := providerNamed(b.reg, "Lab Z").ID
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p2","action":"provider.update","args":{"host":"b","id":"`+id+`","name":"Lab Z2"}}`); code != 200 {
+	if code, rep := post(t, bu+"/command", `{"commandId":"p2","action":"provider.update","args":{"id":"`+id+`","name":"Lab Z2"}}`); code != 200 {
 		t.Fatalf("provider.update on b: %d %v", code, rep)
 	}
 	if providerNamed(b.reg, "Lab Z2") == nil {
 		t.Fatal("b's provider was not renamed")
 	}
-	// The reads follow ?host=.
-	if _, _, body := read(t, fs.URL+"/api/providers?host=b"); !strings.Contains(body, "Lab Z2") {
-		t.Fatalf("providers?host=b: %s", body)
+	// The reads follow the prefix.
+	if _, _, body := read(t, bu+"/providers"); !strings.Contains(body, "Lab Z2") {
+		t.Fatalf("b's providers: %s", body)
 	}
-	if _, _, body := read(t, fs.URL+"/api/providers?host=a"); strings.Contains(body, "Lab Z2") {
-		t.Fatalf("providers?host=a shows b's: %s", body)
+	if _, _, body := read(t, au+"/providers"); strings.Contains(body, "Lab Z2") {
+		t.Fatalf("a's providers show b's: %s", body)
 	}
 
 	// System agents on b.
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"s1","action":"host.systemAgents","args":{"host":"b","profile":"`+id+`","model":"glm-5"}}`); code != 200 {
+	if code, rep := post(t, bu+"/command", `{"commandId":"s1","action":"host.systemAgents","args":{"profile":"`+id+`","model":"glm-5"}}`); code != 200 {
 		t.Fatalf("host.systemAgents on b: %d %v", code, rep)
 	}
 	if got := b.eng.SystemAgents().Default; got.Profile != id || got.Model != "glm-5" {
@@ -173,20 +174,20 @@ func TestFrontHostSettingsReachTheirHost(t *testing.T) {
 	}
 
 	// Automation on b.
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"d1","action":"host.autoDeploy","args":{"host":"b","on":false}}`); code != 200 {
+	if code, rep := post(t, bu+"/command", `{"commandId":"d1","action":"host.autoDeploy","args":{"on":false}}`); code != 200 {
 		t.Fatalf("host.autoDeploy on b: %d %v", code, rep)
 	}
 	if b.eng.AutoDeploy().On || !a.eng.AutoDeploy().On {
 		t.Fatalf("auto-deploy: a %v b %v", a.eng.AutoDeploy().On, b.eng.AutoDeploy().On)
 	}
 	var dep struct{ On bool }
-	if _, _, body := read(t, fs.URL+"/api/autoDeploy?host=b"); json.Unmarshal([]byte(body), &dep) != nil || dep.On {
-		t.Fatalf("autoDeploy?host=b: %s", body)
+	if _, _, body := read(t, bu+"/autoDeploy"); json.Unmarshal([]byte(body), &dep) != nil || dep.On {
+		t.Fatalf("b's autoDeploy: %s", body)
 	}
 
 	// A project on b: made there, then changed by its id alone.
 	dir := t.TempDir()
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"j1","action":"project.create","args":{"host":"b","name":"Lab","folder":"`+dir+`"}}`)
+	code, rep := post(t, bu+"/command", `{"commandId":"j1","action":"project.create","args":{"name":"Lab","folder":"`+dir+`"}}`)
 	if code != 200 {
 		t.Fatalf("project.create on b: %d %v", code, rep)
 	}
@@ -199,7 +200,7 @@ func TestFrontHostSettingsReachTheirHost(t *testing.T) {
 		}
 		return pid != ""
 	})
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"j2","action":"project.update","args":{"id":"`+pid+`","name":"Lab 2","defaultProfile":"`+id+`"}}`); code != 200 {
+	if code, rep := post(t, bu+"/command", `{"commandId":"j2","action":"project.update","args":{"id":"`+pid+`","name":"Lab 2","defaultProfile":"`+id+`"}}`); code != 200 {
 		t.Fatalf("project.update on b: %d %v", code, rep)
 	}
 	var on *string
@@ -216,21 +217,25 @@ func TestFrontHostSettingsReachTheirHost(t *testing.T) {
 	}
 }
 
-// SPEC V0.126 (2): a host name the front does not follow is refused, for a
-// command and for a read; nothing goes to the first host instead.
+// SPEC V0.126 (2), decision 0031 2.2: a host id the front does not follow is
+// refused, for a command and for a read; nothing goes to the first host
+// instead, and a host's name is not its id.
 func TestFrontRefusesAnUnknownHost(t *testing.T) {
 	a := newSettingsHost(t, "a")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL})
 	online(t, fs.URL, 1)
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"x1","action":"provider.create","args":{"host":"lab","kind":"endpoint","name":"Z","baseURL":"https://z.example"}}`)
+	code, rep := post(t, fs.URL+"/api/h/lab/command", `{"commandId":"x1","action":"provider.create","args":{"kind":"endpoint","name":"Z","baseURL":"https://z.example"}}`)
 	if code != http.StatusNotFound || !strings.Contains(rep["error"].(string), "lab") {
 		t.Fatalf("command to an unknown host: %d %v", code, rep)
 	}
 	if len(a.reg.Providers()) != 0 {
 		t.Fatal("the command for lab ran on a")
 	}
-	if code, _, body := read(t, fs.URL+"/api/providers?host=lab"); code != http.StatusNotFound || !strings.Contains(body, "lab") {
+	if code, _, body := read(t, fs.URL+"/api/h/lab/providers"); code != http.StatusNotFound || !strings.Contains(body, "lab") {
 		t.Fatalf("read of an unknown host: %d %s", code, body)
+	}
+	if code, _, _ := read(t, fs.URL+"/api/h/a/providers"); code != http.StatusNotFound {
+		t.Fatalf("a host's name taken for its id: %d", code)
 	}
 }
 
@@ -240,16 +245,18 @@ func TestFrontRefusesAnUnknownHost(t *testing.T) {
 func TestFrontServesLastKnownSettingsOfAnOfflineHost(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	cache := t.TempDir()
+	pins := &memKV{} // the host ids the front pinned, which name its cache files (decision 0031 4.3)
 	hosts := []HostConfig{{Name: "a", URL: a.hs.URL}, {Name: "b", URL: b.hs.URL}}
-	fs := startFront(t, Options{CacheDir: cache}, hosts...)
+	fs := startFront(t, Options{CacheDir: cache, Store: pins}, hosts...)
 	online(t, fs.URL, 2)
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"provider.create","args":{"host":"b","kind":"endpoint","name":"Lab Z","baseURL":"https://z.example"}}`); code != 200 {
+	bu := hostURL(t, fs.URL, "b")
+	if code, rep := post(t, bu+"/command", `{"commandId":"p1","action":"provider.create","args":{"kind":"endpoint","name":"Lab Z","baseURL":"https://z.example"}}`); code != 200 {
 		t.Fatalf("create: %d %v", code, rep)
 	}
-	paths := []string{"/api/providers", "/api/providers/found", "/api/systemAgents", "/api/autoDeploy", "/api/autoMerge", "/api/updates"}
+	paths := []string{"/providers", "/providers/found", "/systemAgents", "/autoDeploy", "/autoMerge", "/updates"}
 	live := map[string]string{}
 	for _, p := range paths {
-		code, h, body := read(t, fs.URL+p+"?host=b")
+		code, h, body := read(t, bu+p)
 		if code != 200 || h.Get("X-Fyr-Read-At") != "" {
 			t.Fatalf("%s online: %d %q", p, code, h.Get("X-Fyr-Read-At"))
 		}
@@ -260,7 +267,7 @@ func TestFrontServesLastKnownSettingsOfAnOfflineHost(t *testing.T) {
 	check := func(when string) {
 		t.Helper()
 		for _, p := range paths {
-			code, h, body := read(t, fs.URL+p+"?host=b")
+			code, h, body := read(t, bu+p)
 			at, err := time.Parse(time.RFC3339, h.Get("X-Fyr-Read-At"))
 			if code != 200 || err != nil || time.Since(at) > time.Minute || body != live[p] {
 				t.Fatalf("%s %s: %d %q %s", when, p, code, h.Get("X-Fyr-Read-At"), body)
@@ -268,33 +275,36 @@ func TestFrontServesLastKnownSettingsOfAnOfflineHost(t *testing.T) {
 		}
 	}
 	check("offline")
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p2","action":"provider.create","args":{"host":"b","kind":"endpoint","name":"Lab Y","baseURL":"https://y.example"}}`); code != http.StatusServiceUnavailable {
+	if code, rep := post(t, bu+"/command", `{"commandId":"p2","action":"provider.create","args":{"kind":"endpoint","name":"Lab Y","baseURL":"https://y.example"}}`); code != http.StatusServiceUnavailable {
 		t.Fatalf("a change on offline b: %d %v", code, rep)
 	}
 	// A path never read while b was online has nothing to show.
-	if code, _, _ := read(t, fs.URL+"/api/load?host=b"); code != http.StatusServiceUnavailable {
+	if code, _, _ := read(t, bu+"/load"); code != http.StatusServiceUnavailable {
 		t.Fatalf("an unread path: %d", code)
 	}
 	fs.stop()
-	fs2 := startFront(t, Options{CacheDir: cache}, hosts...)
+	fs2 := startFront(t, Options{CacheDir: cache, Store: pins}, hosts...)
 	eventually(t, "a online after the restart", func() bool { return getState(t, fs2.URL).Hosts[0]["online"] == true })
-	fs = fs2
+	fs, bu = fs2, hostURL(t, fs2.URL, "b")
 	check("after a restart")
 }
 
 // SPEC V0.126 (4): the quota of the same provider id on two hosts is two
-// quotas, each stamped with its host, the first host's first.
+// quotas, each read from its own host by its prefix (the client stamps each
+// with its host; the front merges nothing).
 func TestFrontQuotaPerHost(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
-	_, _, body := read(t, fs.URL+"/api/quota")
-	var qs []map[string]any
-	if err := json.Unmarshal([]byte(body), &qs); err != nil {
-		t.Fatal(err)
-	}
-	if len(qs) != 2 || qs[0]["host"] != "a" || qs[0]["error"] != "on a" || qs[1]["host"] != "b" || qs[1]["error"] != "on b" {
-		t.Fatalf("quota: %s", body)
+	for _, name := range []string{"a", "b"} {
+		_, _, body := read(t, hostURL(t, fs.URL, name)+"/quota")
+		var qs []map[string]any
+		if err := json.Unmarshal([]byte(body), &qs); err != nil {
+			t.Fatal(err)
+		}
+		if len(qs) != 1 || qs[0]["error"] != "on "+name {
+			t.Fatalf("%s's quota: %s", name, body)
+		}
 	}
 }
 
@@ -304,9 +314,10 @@ func TestFrontServesLastKnownSettingsWhenTheReadFails(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
-	_, _, live := read(t, fs.URL+"/api/autoDeploy?host=b")
+	bu := hostURL(t, fs.URL, "b")
+	_, _, live := read(t, bu+"/autoDeploy")
 	b.setDown(true)
-	code, h, body := read(t, fs.URL+"/api/autoDeploy?host=b") // at once: the front may not know yet
+	code, h, body := read(t, bu+"/autoDeploy") // at once: the front may not know yet
 	if code != 200 || h.Get("X-Fyr-Read-At") == "" || body != live {
 		t.Fatalf("a read that fails: %d %q %s", code, h.Get("X-Fyr-Read-At"), body)
 	}

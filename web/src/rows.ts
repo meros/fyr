@@ -49,8 +49,7 @@ export type NeedsGroup = (typeof NEEDS_GROUPS)[number]["key"];
  *  something broken. V0.row-group-code: the host sends the group as a code; the row never reads the reason's words. */
 export function needsGroup(t: Thread): NeedsGroup {
   const g = t.attention.group;
-  if (g) return NEEDS_GROUPS.some((x) => x.key === g) ? g : "unblock";
-  return legacyNeedsGroup(t);
+  return g && NEEDS_GROUPS.some((x) => x.key === g) ? g : "unblock";
 }
 
 export function needsGroupRank(t: Thread): number {
@@ -94,35 +93,7 @@ export function rowState(t: Thread): string {
 export function blockedReason(t: Pick<Thread, "attention" | "changes">): { word: string; what: string } | null {
   const a = t.attention;
   if (a.state !== "blocked" || !a.reason) return null;
-  if (a.word) return { word: a.word, what: a.subject ?? "" };
-  return a.group ? null : legacyBlockedReason(t);
-}
-
-// A host before V0.row-group-code sends no attention.group, word or subject: during an update a newer front may read
-// an older host (a front reads several hosts). These two read its reason's words as before. Remove them one release
-// after V0.row-group-code, with the old routes (#372).
-
-function legacyNeedsGroup(t: Thread): NeedsGroup {
-  const st = t.attention.state;
-  if (st === "asking") return t.decisions.length === 0 || t.decisions.some((d) => d.kind === "ask") ? "answer" : "approve";
-  if (st === "blocked") {
-    if (t.attention.reason?.startsWith("Run: ")) return "approve";
-    if (t.settleAsk && t.attention.reason?.startsWith("Settle: ")) return "approve";
-    const needs = t.changes.flatMap((c) => (c.need && !c.need.muted ? [c.need] : []));
-    if (needs.length > 0 && needs.every((n) => n.cause === "ready")) return "approve";
-  }
-  return "unblock";
-}
-
-function legacyBlockedReason(t: Pick<Thread, "attention" | "changes">): { word: string; what: string } | null {
-  const r = t.attention.reason ?? "";
-  const i = r.indexOf(": ");
-  if (i < 0) return null;
-  const head = r.slice(0, i);
-  const tail = r.slice(i + 2);
-  if (head === "Run" || head === "Settle") return { word: head, what: tail };
-  if ((t.changes ?? []).some((c) => c.title === head) && tail) return { word: tail, what: head };
-  return null;
+  return a.word ? { word: a.word, what: a.subject ?? "" } : null;
 }
 
 /** V0.row-calm: the state word names the row's PR ("Merge #4170"), so a "#4170 ready" chip under it says nothing new. */

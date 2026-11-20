@@ -11,10 +11,10 @@ import (
 )
 
 // SPEC V0.126 (3): a host's settings as the owner would see them connected
-// to it directly. The front reads them from the host (?host=, "" for the
-// first) through its host client, keeps the last answer per host and path,
-// and serves that answer while the host is offline, with X-Fyr-Read-At: when
-// it was read. Changes are commands (POST /api/command with args.host) and
+// to it directly. The front reads them from the host the path names
+// (/api/h/<id>/…, decision 0031) through its host client, keeps the last
+// answer per host and path, and serves that answer while the host is offline,
+// with X-Fyr-Read-At: when it was read. Changes are that host's commands and
 // are refused while the host is offline, like every command.
 
 // settingsPaths are the reads of Settings → Providers and Automation.
@@ -29,20 +29,6 @@ type settingsRead struct {
 // maxSettingsRead bounds one answer the front keeps (a provider list with
 // a large catalog is a few hundred kB).
 const maxSettingsRead = 8 << 20
-
-func (f *Front) settingsRead(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("host")
-	l := f.byName(name)
-	if l == nil {
-		if name != "" {
-			noHost(w, name)
-		} else {
-			f.unavailable(w, nil)
-		}
-		return
-	}
-	f.settingsFor(w, r, l, r.URL.Path, func() { f.unavailable(w, l) })
-}
 
 // settingsFor answers one settings read of one host: from the host, kept, or
 // the kept answer while the host is offline (decision 0031 2.2 keeps V0.127's

@@ -67,7 +67,7 @@ func exempt(r *http.Request) bool {
 		// "document", and the page itself (/, /index.html, a path the client
 		// routes) must never go out without a session.
 		return (r.Method == http.MethodGet || r.Method == http.MethodHead) && staticFile(p)
-	case strings.HasPrefix(p, "/api/previews/"), hostPreviewPath(p):
+	case hostPreviewPath(p): // /api/h/<id>/previews/…
 		return r.Method == http.MethodGet || r.Method == http.MethodHead
 	}
 	return false
@@ -76,7 +76,7 @@ func exempt(r *http.Request) bool {
 // previewRead: a GET or HEAD of a preview's page or one of its files.
 func previewRead(r *http.Request) bool {
 	p := r.URL.Path
-	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && (strings.HasPrefix(p, "/api/previews/") || hostPreviewPath(p))
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && hostPreviewPath(p)
 }
 
 // staticFile: the path names an asset of the built client, not a page.
@@ -631,7 +631,7 @@ func (f *Front) authAPI(mux muxer) {
 		}
 		return p, ok
 	}
-	both(mux, "GET", "/auth/state", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/front/auth/state", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := signedIn(r); !ok && st.Mode(auth.WayBrowser) == auth.ModeEnforce {
 			f.signedOut(w, r, false, nil)
 			return
@@ -653,7 +653,7 @@ func (f *Front) authAPI(mux muxer) {
 		}
 		return p, true
 	}
-	both(mux, "POST", "/auth/approve", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/auth/approve", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := wide(w, r)
 		if !ok {
 			return
@@ -673,7 +673,7 @@ func (f *Front) authAPI(mux muxer) {
 		}
 		api.WriteJSON(w, 200, map[string]any{"ok": true, "device": d.Name})
 	})
-	both(mux, "POST", "/auth/deny", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/auth/deny", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := need(w, r)
 		if !ok {
 			return
@@ -682,7 +682,7 @@ func (f *Front) authAPI(mux muxer) {
 		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
 		api.WriteJSON(w, 200, map[string]any{"ok": st.Deny(b.ID, "device:"+p.ID)})
 	})
-	both(mux, "POST", "/auth/revoke", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/auth/revoke", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := need(w, r)
 		if !ok {
 			return
@@ -692,7 +692,7 @@ func (f *Front) authAPI(mux muxer) {
 		gone := st.Revoke(b.ID, "device:"+p.ID)
 		api.WriteJSON(w, 200, map[string]any{"ok": len(gone) > 0, "revoked": gone})
 	})
-	both(mux, "POST", "/auth/add", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/auth/add", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := wide(w, r)
 		if !ok {
 			return
@@ -702,7 +702,7 @@ func (f *Front) authAPI(mux muxer) {
 		origin := originOf(r)
 		api.WriteJSON(w, 200, f.oneTimeLink(func(tok string) string { return origin + "/auth/once#" + tok }, auth.HowLink, nameOr(b.Name, "a new device"), p.ID, 10*time.Minute))
 	})
-	both(mux, "POST", "/auth/mode", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/auth/mode", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := need(w, r)
 		if !ok {
 			return

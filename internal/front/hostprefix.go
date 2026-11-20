@@ -5,8 +5,8 @@ package front
 //	/api/h/<hostId>/<the host protocol's path after /api/>   one host's call
 //	/api/front/…                                              what belongs to no host
 //
-// The old routes stay as they were, marked Deprecation: true and counted in
-// oldRouteUses, until the release after the client stops using them.
+// Slice 5 (V0.old-routes-end): every other /api/ path is 404; there is no
+// default host.
 
 import (
 	"encoding/json"
@@ -27,33 +27,9 @@ const (
 	frontPrefix = "/api/front/"
 )
 
-// both registers a front route under its old path and under /api/front
-// (decision 0031 2.3). path is the old path without the "/api" start.
-func both(mux muxer, method, path string, h func(http.ResponseWriter, *http.Request)) {
-	mux.HandleFunc(method+" /api"+path, h)
-	mux.HandleFunc(method+" "+frontPrefix[:len(frontPrefix)-1]+path, h)
-}
-
-// isOldRoute: an /api/ path that is neither a host's (/api/h/) nor the
-// front's (/api/front/).
-func isOldRoute(p string) bool {
-	return strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, hostPrefix) && !strings.HasPrefix(p, frontPrefix)
-}
-
-// withDeprecation marks and counts a call to an old route (decision 0031 2.8).
-func (f *Front) withDeprecation(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isOldRoute(r.URL.Path) {
-			f.oldRouteUses.Add(1)
-			w.Header().Set("Deprecation", "true")
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 // hostPreviewPath: a call for a preview's page or file under a host's prefix.
 // A sandboxed page has no cookie, and the 80-bit id in its URL is its key
-// (V0.19), as for /api/previews/.
+// (V0.19).
 func hostPreviewPath(p string) bool {
 	rest, ok := strings.CutPrefix(p, hostPrefix)
 	if !ok {
@@ -290,20 +266,19 @@ func (f *Front) cachedThread(w http.ResponseWriter, l *link, id string) {
 func (f *Front) publishFrameLocked(l *link, ev string, data []byte) {
 	m, err := decode(data)
 	if err != nil || m == nil {
-		f.hub2.Publish(ev, data)
+		f.hub.Publish(ev, data)
 		return
 	}
 	m["host"] = f.idOfLocked(l)
 	if b, err := json.Marshal(m); err == nil {
-		f.hub2.Publish(ev, b)
+		f.hub.Publish(ev, b)
 	}
 }
 
 // publishFront sends one of the front's own frames (hosts, projectOrder,
-// hostMarks) on both streams.
+// hostMarks) on the stream.
 func (f *Front) publishFront(ev string, data []byte) {
 	f.hub.Publish(ev, data)
-	f.hub2.Publish(ev, data)
 }
 
 func (f *Front) publishFrame(l *link, ev string, data []byte) {
@@ -436,4 +411,12 @@ func (f *Front) presenceRoute2(w http.ResponseWriter, r *http.Request) {
 	}
 	f.sendFocus(b.Device, calls)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// notAHostRoute answers an /api/ path outside /api/h/<id>/ and /api/front/:
+// 404, and it reaches no host (decision 0031 2.8 and test 2,
+// V0.old-routes-end). A call that names no host has no host to go to.
+func notAHostRoute(w http.ResponseWriter, r *http.Request) {
+	api.WriteJSON(w, http.StatusNotFound, map[string]any{"ok": false, "code": "no-route",
+		"error": "no such route: a host's calls are /api/h/<host id>/…, the front's /api/front/…"})
 }

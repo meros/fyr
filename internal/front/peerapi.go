@@ -38,7 +38,7 @@ func (f *Front) peerAPI(mux muxer) {
 		}
 		return true
 	}
-	both(mux, "GET", "/peer/state", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/front/peer/state", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := signedIn(r); !ok && f.opt.Auth != nil && f.opt.Auth.Mode("browser") == "enforce" {
 			f.signedOut(w, r, false, nil)
 			return
@@ -56,7 +56,7 @@ func (f *Front) peerAPI(mux muxer) {
 		out["signedIn"] = signed
 		api.WriteJSON(w, 200, out)
 	})
-	both(mux, "POST", "/peer/invite", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/peer/invite", func(w http.ResponseWriter, r *http.Request) {
 		if !wide(w, r) {
 			return
 		}
@@ -67,7 +67,7 @@ func (f *Front) peerAPI(mux muxer) {
 		}
 		api.WriteJSON(w, 200, out)
 	})
-	both(mux, "POST", "/peer/remove", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/peer/remove", func(w http.ResponseWriter, r *http.Request) {
 		if !need(w, r) { // ending trust needs no step-up: a lost phone is removed at once
 			return
 		}
@@ -79,7 +79,7 @@ func (f *Front) peerAPI(mux muxer) {
 		}
 		api.WriteJSON(w, 200, map[string]any{"ok": true})
 	})
-	both(mux, "POST", "/peer/join", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/front/peer/join", func(w http.ResponseWriter, r *http.Request) {
 		if !wide(w, r) {
 			return
 		}

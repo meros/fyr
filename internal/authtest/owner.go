@@ -142,7 +142,7 @@ func BreakDevices(t testing.TB, dir string) {
 	}
 }
 
-// LinkOf is how a front sees a host: its link state, as /api/state shows it.
+// LinkOf is how a front sees a host: its link state, as /api/front/state shows it.
 type LinkOf struct {
 	State, Via, Opened string
 	Error              struct{ Kind, Text string }
@@ -150,7 +150,7 @@ type LinkOf struct {
 
 // HostLink reads hosts[].link of a host from a front, through a session.
 func HostLink(f *Fyrd, cookie, host string) (LinkOf, bool) {
-	r, err := f.Get("/api/state", cookie)
+	r, err := f.Get("/api/front/state", cookie)
 	if err != nil || r.Status != 200 {
 		return LinkOf{}, false
 	}
@@ -168,4 +168,24 @@ func HostLink(f *Fyrd, cookie, host string) (LinkOf, bool) {
 		}
 	}
 	return LinkOf{}, false
+}
+
+// HostPath is the front's path for a call to the host named host
+// (/api/h/<its install id><rest>, decision 0031): the front lists its hosts
+// with their ids, and a call names the host by id, never by name. A host the
+// front does not list gives a path that is 404.
+func (f *Fyrd) HostPath(cookie, host, rest string) string {
+	r, err := f.Get("/api/front/state", cookie)
+	if err == nil && r.Status == 200 {
+		var st struct {
+			Hosts []struct{ ID, Name string }
+		}
+		json.Unmarshal(r.Body, &st)
+		for _, h := range st.Hosts {
+			if h.Name == host && h.ID != "" {
+				return "/api/h/" + h.ID + rest
+			}
+		}
+	}
+	return "/api/h/no-host-named-" + host + rest
 }

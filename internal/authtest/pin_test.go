@@ -34,7 +34,7 @@ func live(t *testing.T) *authtest.Live {
 // the owner's login. The owner is let in and gets a session.
 func TestServeSocketTakesTheOwnerWithHostLocalhost(t *testing.T) {
 	l := live(t)
-	r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state"})
+	r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestServeSocketTakesTheOwnerWithHostLocalhost(t *testing.T) {
 		t.Fatalf("the emulator did not send Host: localhost, as tailscaled does\n%s", l.Laptop.Log())
 	}
 	// The session works, and is not minted again.
-	r, err = authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state", Cookie: session})
+	r, err = authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state", Cookie: session})
 	if err != nil || r.Status != 200 || r.Session() != "" {
 		t.Fatalf("with its session: %v %v %q", err, r.Status, r.Session())
 	}
@@ -64,13 +64,13 @@ func TestServeSocketRefusesAnotherTailnetUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
-	r, err := authtest.Do(other.URL, authtest.Request{Path: "/api/state"})
+	r, err := authtest.Do(other.URL, authtest.Request{Path: "/api/front/state"})
 	if err != nil || r.Status != 403 || r.Session() != "" {
 		t.Fatalf("another user's node: %v %d %q (want 403 and no session)", err, r.Status, r.Session())
 	}
 	// A login the browser sent itself is stripped by Serve: the other user's
 	// node cannot pose as the owner.
-	r, err = authtest.Do(other.URL, authtest.Request{Path: "/api/state", Header: map[string]string{"Tailscale-User-Login": l.OwnerLogin}})
+	r, err = authtest.Do(other.URL, authtest.Request{Path: "/api/front/state", Header: map[string]string{"Tailscale-User-Login": l.OwnerLogin}})
 	if err != nil || r.Status != 403 || r.Session() != "" {
 		t.Fatalf("a forged login through Serve: %v %d %q (want 403 and no session)", err, r.Status, r.Session())
 	}
@@ -84,7 +84,7 @@ func TestServeSocketMintsNothingForATaggedNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tagged.Close()
-	r, err := authtest.Do(tagged.URL, authtest.Request{Path: "/api/state"})
+	r, err := authtest.Do(tagged.URL, authtest.Request{Path: "/api/front/state"})
 	if err != nil || r.Session() != "" {
 		t.Fatalf("a tagged node: %v %d session %q (want none)", err, r.Status, r.Session())
 	}
@@ -94,13 +94,13 @@ func TestServeSocketMintsNothingForATaggedNode(t *testing.T) {
 // front and on to its host. The preview's CSP names the public ts.net name.
 func TestUploadAndPreviewThroughServe(t *testing.T) {
 	l := live(t)
-	first, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state"})
+	first, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state"})
 	if err != nil || first.Session() == "" {
 		t.Fatalf("sign in: %v %d", err, first.Status)
 	}
 	session := first.Session()
 	page := "<!doctype html><title>pin</title><p>hello</p>"
-	up, err := authtest.Do(l.Phones.URL, authtest.Request{Method: "POST", Path: "/api/attachments", Cookie: session,
+	up, err := authtest.Do(l.Phones.URL, authtest.Request{Method: "POST", Path: "/api/h/" + l.ID + "/attachments", Cookie: session,
 		Header: map[string]string{"Content-Type": "text/html", "X-Fyr-Filename": "pin.html"}, Body: strings.NewReader(page)})
 	if err != nil || up.Status != 200 {
 		t.Fatalf("upload through Serve: %v %d %s", err, up.Status, up.Body)
@@ -112,16 +112,16 @@ func TestUploadAndPreviewThroughServe(t *testing.T) {
 	if id == "" {
 		t.Fatalf("no id in %s", up.Body)
 	}
-	got, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/attachments/" + id, Cookie: session})
+	got, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/h/" + l.ID + "/attachments/" + id, Cookie: session})
 	if err != nil || got.Status != 200 || string(got.Body) != page {
 		t.Fatalf("read back through Serve: %v %d %q", err, got.Status, got.Body)
 	}
-	pv, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/previews/" + id, Cookie: session})
+	pv, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/h/" + l.ID + "/previews/" + id, Cookie: session})
 	if err != nil || pv.Status != 200 {
 		t.Fatalf("preview through Serve: %v %d %s", err, pv.Status, pv.Body)
 	}
 	csp := pv.Header.Get("Content-Security-Policy")
-	if want := "https://" + l.Self.Name + ":7443/api/previews/" + id + "/"; !strings.Contains(csp, want) {
+	if want := "https://" + l.Self.Name + ":7443/api/h/" + l.ID + "/previews/" + id + "/"; !strings.Contains(csp, want) {
 		t.Fatalf("the preview's CSP does not name the public origin %q:\n%s", want, csp)
 	}
 }
@@ -130,13 +130,13 @@ func TestUploadAndPreviewThroughServe(t *testing.T) {
 // first frame arrives.
 func TestLiveViewThroughServe(t *testing.T) {
 	l := live(t)
-	first, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state"})
+	first, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/front/state"})
 	if err != nil || first.Session() == "" {
 		t.Fatalf("sign in: %v %d", err, first.Status)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", l.Phones.URL+"/api/stream", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", l.Phones.URL+"/api/front/stream", nil)
 	req.AddCookie(&http.Cookie{Name: auth.Cookie, Value: first.Session()})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestFrontFollowsItsHost(t *testing.T) {
 	if err != nil || !hosts["laptop"] || !hosts["server"] {
 		t.Fatalf("hosts online: %v %v", hosts, err)
 	}
-	r, err := l.Laptop.Get("/api/profiles?host=server", l.Local)
+	r, err := l.Laptop.Get(l.Laptop.HostPath(l.Local, "server", "/profiles"), l.Local)
 	if err != nil || r.Status != 200 {
 		t.Fatalf("a call to the server host through the front: %v %d %s", err, r.Status, r.Body)
 	}
@@ -181,7 +181,7 @@ func TestPeerGuardWhoisLink(t *testing.T) {
 	}
 	for _, c := range cases { // in order: one address, one node at a time
 		c.node()
-		r, err := authtest.Do(srv, authtest.Request{Path: "/api/state"})
+		r, err := authtest.Do(srv, authtest.Request{Path: "/api/front/state"})
 		if err != nil || r.Status != c.want {
 			t.Errorf("%s: %v %d (want %d)", c.name, err, r.Status, c.want)
 		}

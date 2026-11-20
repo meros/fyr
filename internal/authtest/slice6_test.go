@@ -302,7 +302,7 @@ func TestAPhoneWithTheOwnersCertificateSignsInByQR(t *testing.T) {
 	hc := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: ca.Pool}}}
 	base := "https://localhost:" + port
 
-	if resp, err := http.Get("http://localhost:" + port + "/api/state"); err == nil && resp.StatusCode == 200 {
+	if resp, err := http.Get("http://localhost:" + port + "/api/front/state"); err == nil && resp.StatusCode == 200 {
 		t.Error("the TLS port answered plain HTTP with the state")
 	}
 	get := func(path string, hdr map[string]string, cookie string) int {
@@ -320,10 +320,10 @@ func TestAPhoneWithTheOwnersCertificateSignsInByQR(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	if s := get("/api/state", nil, ""); s != 401 {
+	if s := get("/api/front/state", nil, ""); s != 401 {
 		t.Errorf("no session over the LAN: %d, want 401 (the observe mode never serves this way)", s)
 	}
-	if s := get("/api/state", map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); s != 400 {
+	if s := get("/api/front/state", map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); s != 400 {
 		t.Errorf("a Tailscale header over the LAN: %d, want 400", s)
 	}
 	out, err := f.Fyr("device", "add", "-name", "Kitchen phone")
@@ -361,7 +361,7 @@ func TestAPhoneWithTheOwnersCertificateSignsInByQR(t *testing.T) {
 	if resp.StatusCode != 200 || session == "" {
 		t.Fatalf("redeem: %d, session %q", resp.StatusCode, session)
 	}
-	if s := get("/api/state", nil, session); s != 200 {
+	if s := get("/api/front/state", nil, session); s != 200 {
 		t.Errorf("signed in over HTTPS: %d", s)
 	}
 }

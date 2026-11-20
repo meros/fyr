@@ -49,12 +49,17 @@ func (h *host) recordFocus(device, thread string, on bool) {
 }
 
 func newHost(t *testing.T, name string, profiles ...provider.Profile) *host {
+	return newHostID(t, name, testID(name), profiles...)
+}
+
+// newHostID is newHost reporting install id id.
+func newHostID(t *testing.T, name, id string, profiles ...provider.Profile) *host {
 	st, err := store.Open(filepath.Join(t.TempDir(), "db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := &host{eng: engine.New(st)}
-	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, Profiles: profiles, Focus: h.recordFocus}
+	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, ID: id, Profiles: profiles, Focus: h.recordFocus}
 	inner := s.Handler()
 	h.hs = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.down.Load() {
@@ -78,8 +83,29 @@ func newFront(t *testing.T, hosts ...HostConfig) *httptest.Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	go f.Run(ctx)
 	fs := httptest.NewServer(f.Handler())
-	t.Cleanup(func() { cancel(); fs.CloseClientConnections(); fs.Close() })
+	testFronts.Store(fs.URL, f)
+	t.Cleanup(func() { cancel(); fs.CloseClientConnections(); fs.Close(); testFronts.Delete(fs.URL) })
 	return fs
+}
+
+// testFronts: the Front behind each newFront URL, so a test can wait for what
+// the front itself holds, not only for what a host answers through it.
+var testFronts sync.Map
+
+// frontKnows reports whether the front behind url holds the project ref in
+// its own copy of the host's state: what a front command such as a project
+// link resolves (an online host's /api/h/<id>/state is the host's own answer
+// and can be ahead of it).
+func frontKnows(url, ref string) bool {
+	v, ok := testFronts.Load(url)
+	if !ok {
+		return false
+	}
+	f := v.(*Front)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, code, _ := f.projectAtLocked(ref)
+	return code == 200
 }
 
 func post(t *testing.T, url, body string) (int, map[string]any) {
@@ -104,17 +130,66 @@ type state struct {
 	Projects []map[string]any `json:"projects"`
 }
 
-func getState(t *testing.T, base string) state {
-	resp, err := http.Get(base + "/api/state")
+// testID is the install id a test host reports: every host is addressed by
+// one (decision 0031).
+func testID(name string) string { return "id-" + name }
+
+func getDoc(t *testing.T, url string, v any) int {
+	t.Helper()
+	resp, err := http.Get(url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	var s state
 	dec := json.NewDecoder(resp.Body)
 	dec.UseNumber() // revs are nanosecond counts above 2^53
-	dec.Decode(&s)
+	dec.Decode(v)
+	return resp.StatusCode
+}
+
+// getState is what a client reads, as the client reads it (decision 0031
+// 2.4): /api/front/state, then each host's own /api/h/<id>/state. A test
+// reads the records of every host in one list, each marked with its host's
+// name; the actions are the first host's.
+func getState(t *testing.T, base string) state {
+	t.Helper()
+	var s state
+	getDoc(t, base+"/api/front/state", &s)
+	for _, h := range s.Hosts {
+		id, _ := h["id"].(string)
+		if id == "" {
+			continue
+		}
+		var hs state
+		getDoc(t, base+"/api/h/"+id+"/state", &hs)
+		for _, d := range hs.Threads {
+			d["host"] = h["name"]
+			s.Threads = append(s.Threads, d)
+		}
+		for _, p := range hs.Projects {
+			p["host"] = h["name"]
+			s.Projects = append(s.Projects, p)
+		}
+		if s.Actions == nil {
+			s.Actions = hs.Actions
+		}
+	}
 	return s
+}
+
+// hostURL is base's prefix for the host named name: /api/h/<its id>.
+func hostURL(t *testing.T, base, name string) string {
+	t.Helper()
+	var s state
+	getDoc(t, base+"/api/front/state", &s)
+	for _, h := range s.Hosts {
+		if h["name"] == name {
+			id, _ := h["id"].(string)
+			return base + "/api/h/" + id
+		}
+	}
+	t.Fatalf("the front lists no host %s", name)
+	return ""
 }
 
 func eventually(t *testing.T, what string, ok func() bool) {
@@ -173,15 +248,16 @@ func (s sse) next(t *testing.T) (string, string) {
 }
 
 // SPEC 0.5 V0.51: a front talks to its host only over the host protocol: a
-// command sent to the front reaches the host's engine, and the host's change
-// comes back to the browser on the front's state and stream, stamped with the
-// host's name.
+// command sent to the front under the host's prefix reaches the host's engine,
+// and the host's change comes back on the front's stream, named by the host's
+// install id (decision 0031 2.4).
 func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 	h := newHost(t, "host-a")
 	fs := newFront(t, HostConfig{Name: "host-a", URL: h.hs.URL})
 	online(t, fs.URL, 1)
+	hu := hostURL(t, fs.URL, "host-a")
 
-	resp, err := http.Get(fs.URL + "/api/stream")
+	resp, err := http.Get(fs.URL + "/api/front/stream")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +267,7 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 		t.Fatalf("hello: %s %s", ev, data)
 	}
 
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
+	code, rep := post(t, hu+"/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
 	id, _ := rep["threadId"].(string)
 	if code != 200 || rep["ok"] != true || id == "" {
 		t.Fatalf("create via front: %d %v", code, rep)
@@ -199,7 +275,7 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 	if _, ok := h.eng.Thread(id); !ok {
 		t.Fatalf("the host's engine has no thread %s", id)
 	}
-	// The stream brings the new thread, with its host.
+	// The stream brings the new thread, with its host's id.
 	for {
 		ev, data := st.next(t)
 		if ev != "thread" {
@@ -208,7 +284,7 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 		var d map[string]any
 		json.Unmarshal([]byte(data), &d)
 		if d["id"] == id {
-			if d["host"] != "host-a" || d["title"] != "hi" {
+			if d["host"] != testID("host-a") || d["title"] != "hi" {
 				t.Fatalf("streamed thread: %s", data)
 			}
 			break
@@ -218,12 +294,12 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 	if s.BuildID != "front-build" || len(s.Actions) < 10 {
 		t.Fatalf("state envelope: %+v", s)
 	}
-	if d := threadOf(s, id); d == nil || d["host"] != "host-a" {
-		t.Fatalf("state thread: %v", d)
+	if d := threadOf(s, id); d == nil {
+		t.Fatalf("no thread %s in the host's state", id)
 	}
 
 	// A command on the thread goes to its host; the change comes back.
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c2","action":"thread.rename","threadId":"`+id+`","args":{"title":"Renamed"}}`); code != 200 || rep["ok"] != true {
+	if code, rep := post(t, hu+"/command", `{"commandId":"c2","action":"thread.rename","threadId":"`+id+`","args":{"title":"Renamed"}}`); code != 200 || rep["ok"] != true {
 		t.Fatalf("rename via front: %d %v", code, rep)
 	}
 	if th, _ := h.eng.Thread(id); th.Title != "Renamed" {
@@ -234,7 +310,7 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 		return d != nil && d["title"] == "Renamed"
 	})
 	// Thread calls pass through to the host.
-	r, err := http.Get(fs.URL + "/api/threads/" + id + "/events")
+	r, err := http.Get(hu + "/threads/" + id + "/events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,84 +320,70 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 		t.Fatalf("events via front: %d %s", r.StatusCode, b)
 	}
 	// The same commandId twice is still once (I7 across the hop).
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`); code != 200 || rep["threadId"] != id {
+	if code, rep := post(t, hu+"/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`); code != 200 || rep["threadId"] != id {
 		t.Fatalf("replayed command: %d %v", code, rep)
 	}
 }
 
-// SPEC 0.5 V0.51: with two hosts, the front sends each command to the host
-// that owns the thread (its id-to-host map).
-func TestFrontRoutesToTheThreadsHost(t *testing.T) {
+// SPEC 0.5 V0.51, decision 0031 2.2: with two hosts, a command goes to the
+// host its path names, and to no other.
+func TestFrontRoutesToTheNamedHost(t *testing.T) {
 	a, b := newHost(t, "a"), newHost(t, "b")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
-	_, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"on b","host":"b"}}`)
+	bu := hostURL(t, fs.URL, "b")
+	_, rep := post(t, bu+"/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"on b"}}`)
 	id, _ := rep["threadId"].(string)
 	if _, ok := b.eng.Thread(id); !ok || id == "" {
-		t.Fatalf("args.host did not pick host b: %v", rep)
+		t.Fatalf("the prefix did not pick host b: %v", rep)
 	}
 	if _, ok := a.eng.Thread(id); ok {
 		t.Fatal("host a has host b's thread")
 	}
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c2","action":"thread.rename","threadId":"`+id+`","args":{"title":"B"}}`); code != 200 {
+	if code, rep := post(t, bu+"/command", `{"commandId":"c2","action":"thread.rename","threadId":"`+id+`","args":{"title":"B"}}`); code != 200 {
 		t.Fatalf("rename: %d %v", code, rep)
 	}
 	if th, _ := b.eng.Thread(id); th.Title != "B" {
 		t.Fatalf("host b title %q", th.Title)
 	}
-	eventually(t, "thread stamped b", func() bool {
+	eventually(t, "thread on b", func() bool {
 		d := threadOf(getState(t, fs.URL), id)
 		return d != nil && d["host"] == "b"
 	})
 }
 
-// SPEC 0.5 V0.51: when a host goes away the front keeps its last threads,
-// marks them hostOffline and read-only; when it returns the mark clears.
+// SPEC 0.5 V0.51: when a host goes away the front keeps its last threads
+// (read from its cache) and lists the host offline; commands are refused
+// until it returns.
 func TestFrontMarksOfflineHost(t *testing.T) {
 	h := newHost(t, "host-a")
 	fs := newFront(t, HostConfig{Name: "host-a", URL: h.hs.URL})
 	online(t, fs.URL, 1)
-	_, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
+	hu := hostURL(t, fs.URL, "host-a")
+	framed := threadFrames(t, fs.URL)
+	_, rep := post(t, hu+"/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
 	id, _ := rep["threadId"].(string)
-	var rev0 int64
-	eventually(t, "thread on the front", func() bool {
-		d := threadOf(getState(t, fs.URL), id)
-		if d != nil {
-			rev0, _ = d["rev"].(json.Number).Int64()
-		}
-		return d != nil
-	})
+	framed(id) // in the front's cache, which serves it while the host is offline
 
 	h.setDown(true)
-	var d map[string]any
-	eventually(t, "offline mark", func() bool {
-		d = threadOf(getState(t, fs.URL), id)
-		return d != nil && d["hostOffline"] != nil
+	eventually(t, "host offline", func() bool {
+		s := getState(t, fs.URL)
+		return len(s.Hosts) == 1 && s.Hosts[0]["online"] == false
 	})
-	if rev, _ := d["rev"].(json.Number).Int64(); rev <= rev0 {
-		t.Fatalf("the offline mark must raise rev: %v <= %v", rev, rev0)
-	}
-	if d["title"] != "hi" {
+	if d := threadOf(getState(t, fs.URL), id); d == nil || d["title"] != "hi" {
 		t.Fatalf("cached thread lost its data: %v", d)
 	}
-	s := getState(t, fs.URL)
-	if len(s.Hosts) != 1 || s.Hosts[0]["online"] != false || s.Hosts[0]["name"] != "host-a" {
-		t.Fatalf("hosts: %v", s.Hosts)
-	}
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c2","action":"thread.rename","threadId":"`+id+`","args":{"title":"x"}}`)
-	if code != 503 || !strings.Contains(rep["error"].(string), "host-a is offline") {
+	code, rep := post(t, hu+"/command", `{"commandId":"c2","action":"thread.rename","threadId":"`+id+`","args":{"title":"x"}}`)
+	if code != 503 || rep["code"] != "host-offline" || !strings.Contains(rep["error"].(string), "host-a is offline") {
 		t.Fatalf("command to an offline host: %d %v", code, rep)
 	}
-	if r, _ := http.Get(fs.URL + "/api/threads/" + id + "/events"); r.StatusCode != 503 {
+	if r, _ := http.Get(hu + "/threads/" + id + "/events"); r.StatusCode != 503 {
 		t.Fatalf("events of an offline host: %d", r.StatusCode)
 	}
 
 	h.setDown(false)
-	eventually(t, "mark cleared", func() bool {
-		d := threadOf(getState(t, fs.URL), id)
-		return d != nil && d["hostOffline"] == nil
-	})
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c3","action":"thread.rename","threadId":"`+id+`","args":{"title":"back"}}`); code != 200 {
+	online(t, fs.URL, 1)
+	if code, rep := post(t, hu+"/command", `{"commandId":"c3","action":"thread.rename","threadId":"`+id+`","args":{"title":"back"}}`); code != 200 {
 		t.Fatalf("command after return: %d %v", code, rep)
 	}
 }
@@ -336,64 +398,60 @@ func TestFrontServesClientAndGuards(t *testing.T) {
 	if !strings.Contains(string(b), "<title>Fyr</title>") {
 		t.Fatalf("index: %s", b)
 	}
-	req, _ := http.NewRequest("POST", fs.URL+"/api/command", strings.NewReader(`{}`))
+	req, _ := http.NewRequest("POST", fs.URL+"/api/front/command", strings.NewReader(`{}`))
 	if r, _ := http.DefaultClient.Do(req); r.StatusCode != 403 {
 		t.Fatalf("POST without X-Fyr: %d", r.StatusCode)
 	}
 }
 
 // SPEC 0.5 V0.58: project.delete through the front reaches the project's
-// host, and the front drops the project from its state.
+// host, and the front drops the project from its copy of that host's state.
 func TestFrontDropsDeletedProject(t *testing.T) {
 	h := newHost(t, "host-a")
 	fs := newFront(t, HostConfig{Name: "host-a", URL: h.hs.URL})
 	online(t, fs.URL, 1)
-	projects := func() []any {
-		resp, err := http.Get(fs.URL + "/api/state")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		var s struct {
-			Projects []any `json:"projects"`
-		}
-		json.NewDecoder(resp.Body).Decode(&s)
-		return s.Projects
-	}
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"project.create","args":{"name":"Garden"}}`)
+	hu := hostURL(t, fs.URL, "host-a")
+	projects := func() []map[string]any { return getState(t, fs.URL).Projects }
+	code, rep := post(t, hu+"/command", `{"commandId":"p1","action":"project.create","args":{"name":"Garden"}}`)
 	res, _ := rep["result"].(map[string]any)
 	pid, _ := res["id"].(string)
 	if code != 200 || pid == "" {
 		t.Fatalf("create via front: %d %v", code, rep)
 	}
 	eventually(t, "the project on the front", func() bool { return len(projects()) == 1 })
-	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p2","action":"project.delete","args":{"id":"`+pid+`"}}`); code != 200 || rep["ok"] != true {
+	if code, rep := post(t, hu+"/command", `{"commandId":"p2","action":"project.delete","args":{"id":"`+pid+`"}}`); code != 200 || rep["ok"] != true {
 		t.Fatalf("delete via front: %d %v", code, rep)
 	}
 	if len(h.eng.Projects()) != 0 {
 		t.Fatal("the host still has the project")
 	}
-	eventually(t, "the project gone from the front", func() bool { return len(projects()) == 0 })
+	eventually(t, "the project gone from the host", func() bool { return len(projects()) == 0 })
+	// The front's copy, served while the host is offline, dropped it too.
+	h.setDown(true)
+	eventually(t, "host offline", func() bool { s := getState(t, fs.URL); return len(s.Hosts) == 1 && s.Hosts[0]["online"] == false })
+	if ps := projects(); len(ps) != 0 {
+		t.Fatalf("the front's cache kept the deleted project: %v", ps)
+	}
 }
 
-// #42: the front's profiles read asks each online host and merges by id (the
-// first host's wins), as its state does.
-func TestFrontProfiles(t *testing.T) {
-	a := newHost(t, "a", provider.Profile{ID: "claude", Name: "Claude on a", Env: []string{"SECRET=1"}})
-	b := newHost(t, "b", provider.Profile{ID: "claude", Name: "Claude on b"}, provider.Profile{ID: "local", Name: "Local"})
-	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
-	online(t, fs.URL, 2)
-	resp, err := http.Get(fs.URL + "/api/profiles")
+// threadFrames opens base's stream; the func it returns waits until the front
+// streamed thread id, so the front's own copy (its cache) has it. A test that
+// reads a thread through the prefix while the host is online reads the host,
+// not that copy.
+func threadFrames(t *testing.T, base string) func(id string) {
+	t.Helper()
+	resp, err := http.Get(base + "/api/front/stream")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	var ps []map[string]any
-	if err := json.Unmarshal(raw, &ps); err != nil {
-		t.Fatalf("%v: %s", err, raw)
-	}
-	if len(ps) != 2 || ps[0]["name"] != "Claude on a" || ps[1]["id"] != "local" || strings.Contains(string(raw), "SECRET") {
-		t.Fatalf("profiles: %s", raw)
+	t.Cleanup(func() { resp.Body.Close() })
+	frames := sse{bufio.NewReader(resp.Body)}
+	return func(id string) {
+		t.Helper()
+		for {
+			if ev, data := frames.next(t); ev == "thread" && strings.Contains(data, `"id":"`+id+`"`) {
+				return
+			}
+		}
 	}
 }

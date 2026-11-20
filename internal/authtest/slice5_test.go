@@ -301,7 +301,7 @@ func TestAFreshSessionCannotWidenTrust(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/api/auth/add", "/api/auth/approve"} {
+	for _, path := range []string{"/api/front/auth/add", "/api/front/auth/approve"} {
 		r, err := authtest.Do(f.URL(), authtest.Request{Method: "POST", Path: path, Cookie: cookie, Header: map[string]string{"Origin": f.URL()}, Body: strings.NewReader(`{"code":"ABCD2345"}`)})
 		if err != nil || r.Status != 403 || !strings.Contains(string(r.Body), "too new") {
 			t.Errorf("%s with a fresh session: %v %d %s", path, err, r.Status, r.Body)
@@ -311,7 +311,7 @@ func TestAFreshSessionCannotWidenTrust(t *testing.T) {
 		t.Errorf("the owner socket was asked for a step-up: %v", err)
 	}
 	// reading and ending trust need none
-	if r, _ := authtest.Do(f.URL(), authtest.Request{Path: "/api/auth/state", Cookie: cookie}); r.Status != 200 {
+	if r, _ := authtest.Do(f.URL(), authtest.Request{Path: "/api/front/auth/state", Cookie: cookie}); r.Status != 200 {
 		t.Errorf("state: %d", r.Status)
 	}
 	_ = auth.Cookie

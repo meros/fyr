@@ -2,7 +2,6 @@ package front
 
 import (
 	"bytes"
-	"encoding/json"
 	"image"
 	"image/png"
 	"net/http"
@@ -12,37 +11,30 @@ import (
 )
 
 // SPEC 0.5 V0.116: a project's icon is read from and uploaded to the host
-// the project lives on, whichever host is first.
+// the project lives on, which the path names (decision 0031).
 func TestFrontProjectIconOnItsHost(t *testing.T) {
 	a, b := newHost(t, "a"), newHost(t, "b")
 	b.eng.Icons = &projicon.Store{Dir: t.TempDir()}
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"project.create","args":{"name":"Acme","host":"b"}}`)
+	au, bu := hostURL(t, fs.URL, "a"), hostURL(t, fs.URL, "b")
+	code, rep := post(t, bu+"/command", `{"commandId":"p1","action":"project.create","args":{"name":"Acme"}}`)
 	pid, _ := rep["result"].(map[string]any)["id"].(string)
 	if code != 200 || pid == "" {
 		t.Fatalf("%d %v", code, rep)
 	}
-	eventually(t, "the project on the front", func() bool {
-		resp, err := http.Get(fs.URL + "/api/state")
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		var s struct{ Projects []map[string]any }
-		json.NewDecoder(resp.Body).Decode(&s)
-		return len(s.Projects) == 1
-	})
 	var img bytes.Buffer
 	png.Encode(&img, image.NewNRGBA(image.Rect(0, 0, 8, 8)))
-	eventually(t, "the upload reaches b", func() bool {
-		req, _ := http.NewRequest("POST", fs.URL+"/api/projects/"+pid+"/icon", bytes.NewReader(img.Bytes()))
-		req.Header.Set("X-Fyr", "1")
-		resp, err := http.DefaultClient.Do(req)
-		return err == nil && resp.StatusCode == 200
-	})
-	resp, err := http.Get(fs.URL + "/api/projects/" + pid + "/icon?size=64")
+	req, _ := http.NewRequest("POST", bu+"/projects/"+pid+"/icon", bytes.NewReader(img.Bytes()))
+	req.Header.Set("X-Fyr", "1")
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("upload to b: %v %v", err, resp)
+	}
+	resp, err := http.Get(bu + "/projects/" + pid + "/icon?size=64")
 	if err != nil || resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/png" {
 		t.Fatalf("%v %v", err, resp)
+	}
+	if resp, err := http.Get(au + "/projects/" + pid + "/icon?size=64"); err == nil && resp.StatusCode == 200 {
+		t.Fatal("host a served b's project icon")
 	}
 }

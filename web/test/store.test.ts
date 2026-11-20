@@ -28,7 +28,7 @@ import {
   UNDO_MS,
   bannerDeploy,
 } from "../src/store.ts";
-import { snapshot, thread, view, TH } from "./helpers.ts";
+import { needsThread, snapshot, thread, view, TH } from "./helpers.ts";
 
 const at = (m: number) => new Date(Date.UTC(2026, 10, 14, 9, m)).toISOString();
 
@@ -57,12 +57,12 @@ test("upsert places threads into sections by attention.section", () => {
 // V0.stable-groups: by group (Answer before Unblock), then oldest first inside a group, whatever the state.
 test("needs you sorts by group, then oldest first inside the group", () => {
   const ts = [
-    thread("done-new", "done", "needs", { activityAt: at(50) }),
-    thread("blocked", "blocked", "needs", { activityAt: at(40) }),
-    thread("ask-old", "asking", "needs", { activityAt: at(1) }),
-    thread("failed", "failed", "needs", { activityAt: at(30) }),
-    thread("ask-new", "asking", "needs", { activityAt: at(20) }),
-    thread("done-old", "done", "needs", { activityAt: at(2) }),
+    needsThread("done-new", "done", "unblock", { activityAt: at(50) }),
+    needsThread("blocked", "blocked", "unblock", { activityAt: at(40) }),
+    needsThread("ask-old", "asking", "answer", { activityAt: at(1) }),
+    needsThread("failed", "failed", "unblock", { activityAt: at(30) }),
+    needsThread("ask-new", "asking", "answer", { activityAt: at(20) }),
+    needsThread("done-old", "done", "unblock", { activityAt: at(2) }),
   ];
   const sec = sections(view(applySnapshot(initialStore(), snap(ts), 0)).threads);
   assert.deepEqual(sec.needs.map((t) => t.id), ["ask-old", "ask-new", "done-old", "failed", "blocked", "done-new"]);
@@ -73,10 +73,10 @@ test("needs you puts merge asks after questions and before failures", () => {
   const merge = { id: "m", kind: "effect", effect: { action: "pr.merge", args: {} } } as const;
   const ask = { id: "q", kind: "ask" } as const;
   const ts = [
-    thread("merge-new", "asking", "needs", { activityAt: at(50), decisions: [merge] }),
-    thread("failed", "failed", "needs", { activityAt: at(40) }),
-    thread("question-old", "asking", "needs", { activityAt: at(1), decisions: [ask] }),
-    thread("both", "asking", "needs", { activityAt: at(2), decisions: [merge, ask] }),
+    needsThread("merge-new", "asking", "approve", { activityAt: at(50), decisions: [merge] }),
+    needsThread("failed", "failed", "unblock", { activityAt: at(40) }),
+    needsThread("question-old", "asking", "answer", { activityAt: at(1), decisions: [ask] }),
+    needsThread("both", "asking", "answer", { activityAt: at(2), decisions: [merge, ask] }),
   ];
   const sec = sections(view(applySnapshot(initialStore(), snap(ts), 0)).threads);
   assert.deepEqual(sec.needs.map((t) => t.id), ["question-old", "both", "merge-new", "failed"]);

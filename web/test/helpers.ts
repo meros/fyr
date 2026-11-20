@@ -3,7 +3,7 @@ import type { HostId } from "../src/hostid.ts";
 import type { Snapshot } from "../src/hostfeed.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import { viewOf, type Store, type View } from "../src/store.ts";
-import type { AttentionState, Profile, Project, Section, StateDTO, Thread, ThreadDTO } from "../src/types.ts";
+import type { AttentionState, NeedsCode, Profile, Project, Section, StateDTO, Thread, ThreadDTO } from "../src/types.ts";
 
 /** A test's install id: a string is not a HostId (src/hostid.ts), so a test names its hosts through this. */
 export const hid = (s: string) => s as HostId;
@@ -29,6 +29,11 @@ export function thread(id: string, state: AttentionState, section: Section, extr
     },
     extra.hostId ?? TH,
   );
+}
+
+/** A thread in Your move with the group code its host sends (V0.row-group-code; every host sends one, V0.old-routes-end). */
+export function needsThread(id: string, state: AttentionState, group: NeedsCode, extra: Partial<ThreadDTO> = {}): Thread {
+  return thread(id, state, "needs", { ...extra, attention: { state, section: "needs", reason: "", group, ...extra.attention } });
 }
 
 /** A snapshot (slice 2b: one state per host) from records stamped with their host (`hostId`, TH when they name none).

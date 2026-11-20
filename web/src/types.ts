@@ -321,12 +321,6 @@ export interface StateDTO {
   now: string;
   /** SPEC V0.13: a different buildId after a reconnect reloads the page */
   buildId?: string;
-  /** The host name for the rail's bottom indicator. */
-  host?: string;
-  /** V0.124: this install's key id ("F7QK-2M9X-…"); missing from a Fyr older than V0.124 */
-  hostId?: string;
-  /** V0.170: what this install runs on (laptop, desktop, server); missing from a Fyr older than V0.170 */
-  machine?: string;
   /** V0.171: the owner's host marks by install id ({id: {icon, color}}); a front's, missing when none is set */
   hostMarks?: Record<string, { icon?: string; color?: string }>;
   user: string;
@@ -342,8 +336,6 @@ export interface StateDTO {
   projectOrder?: string[];
   /** V0.147: a host's newest stall of the last 24 h */
   stall?: unknown;
-  /** V0.147: a front's hosts' stalls, each with its host */
-  stalls?: unknown;
 }
 
 export interface FyrEvent {

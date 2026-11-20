@@ -170,7 +170,7 @@ try {
     const session = jar.find((c) => c.name === "fyr_session");
     check(!!session, `${size.name}: the tailnet identity minted a session cookie`);
     check(session?.httpOnly === true && session?.sameSite === "Strict", `${size.name}: the session cookie is HttpOnly and SameSite=Strict`);
-    const hosts = await t.evaluate(`fetch('/api/state').then(r => r.json()).then(j => j.hosts.map(h => h.name).sort().join(','))`);
+    const hosts = await t.evaluate(`fetch('/api/front/state').then(r => r.json()).then(j => j.hosts.map(h => h.name).sort().join(','))`);
     check(hosts === "laptop,server", `${size.name}: the signed-in page reads the API and its front follows its host (${hosts})`);
 
     // A browser that holds the fixture's tailnet session (the phone as V0.130 left it) is let in and gets no new one.

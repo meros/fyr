@@ -158,12 +158,12 @@ func (l *Live) Close() {
 // HostsOnline asks the laptop's front which hosts it follows and whether each
 // is online: name → online. cookie is a session ("" sends none).
 func (l *Live) HostsOnline(cookie string) (map[string]bool, error) {
-	r, err := l.Laptop.Get("/api/state", cookie)
+	r, err := l.Laptop.Get("/api/front/state", cookie)
 	if err != nil {
 		return nil, err
 	}
 	if r.Status != 200 {
-		return nil, fmt.Errorf("GET /api/state: %d %s", r.Status, r.Body)
+		return nil, fmt.Errorf("GET /api/front/state: %d %s", r.Status, r.Body)
 	}
 	var st struct {
 		Hosts []struct {

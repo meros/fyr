@@ -7,7 +7,7 @@ import (
 
 // SPEC V0.132 (host order): the owner's host order is set on one front and
 // stored on every host; every front that follows those hosts shows it, and
-// its first host is the default for a command that names none.
+// no command goes to its first host by default (V0.old-routes-end).
 func TestHostOrderIsTheOwnersAcrossFronts(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	hosts := []HostConfig{{Name: "a", URL: a.hs.URL}, {Name: "b", URL: b.hs.URL}}
@@ -17,7 +17,7 @@ func TestHostOrderIsTheOwnersAcrossFronts(t *testing.T) {
 	if s := getState(t, fb.URL); s.Hosts[0]["name"] != "a" {
 		t.Fatalf("before any order, the config's: %v", s.Hosts[0]["name"])
 	}
-	if code, rep := post(t, fa.URL+"/api/command", `{"commandId":"o1","action":"front.hostOrder","args":{"names":["b","a"]}}`); code != 200 || rep["ok"] != true {
+	if code, rep := post(t, fa.URL+"/api/front/command", `{"commandId":"o1","action":"front.hostOrder","args":{"ids":["id-b","id-a"]}}`); code != 200 || rep["ok"] != true {
 		t.Fatalf("front.hostOrder: %d %v", code, rep)
 	}
 	for _, h := range []*settingsHost{a, b} {
@@ -28,12 +28,12 @@ func TestHostOrderIsTheOwnersAcrossFronts(t *testing.T) {
 	for _, f := range []string{fa.URL, fb.URL} {
 		eventually(t, "b first on "+f, func() bool { s := getState(t, f); return s.Hosts[0]["name"] == "b" && s.Hosts[1]["name"] == "a" })
 	}
-	// The first host is the default: a command that names none goes to b, also from the other front.
-	if code, rep := post(t, fb.URL+"/api/command", `{"commandId":"p1","action":"provider.create","args":{"kind":"endpoint","name":"Z","baseURL":"https://z.example"}}`); code != 200 {
-		t.Fatalf("create: %d %v", code, rep)
+	// The first host is not a default: a command that names no host reaches none.
+	if code, rep := post(t, fb.URL+"/api/command", `{"commandId":"p1","action":"provider.create","args":{"kind":"endpoint","name":"Z","baseURL":"https://z.example"}}`); code != 404 {
+		t.Fatalf("a command without a host: %d %v", code, rep)
 	}
-	if len(b.reg.Providers()) != 1 || len(a.reg.Providers()) != 0 {
-		t.Fatalf("the default host is not b: a %d b %d", len(a.reg.Providers()), len(b.reg.Providers()))
+	if len(b.reg.Providers()) != 0 || len(a.reg.Providers()) != 0 {
+		t.Fatalf("a command without a host reached one: a %d b %d", len(a.reg.Providers()), len(b.reg.Providers()))
 	}
 }
 
@@ -46,7 +46,7 @@ func TestHostOrderReachesAHostThatWasOffline(t *testing.T) {
 	online(t, fa.URL, 2)
 	b.setDown(true)
 	eventually(t, "b offline", func() bool { return getState(t, fa.URL).Hosts[1]["online"] == false })
-	if code, rep := post(t, fa.URL+"/api/command", `{"commandId":"o1","action":"front.hostOrder","args":{"names":["b","a"]}}`); code != 200 {
+	if code, rep := post(t, fa.URL+"/api/front/command", `{"commandId":"o1","action":"front.hostOrder","args":{"ids":["id-b","id-a"]}}`); code != 200 {
 		t.Fatalf("front.hostOrder with b offline: %d %v", code, rep)
 	}
 	if len(b.eng.HostOrder().Names) != 0 {

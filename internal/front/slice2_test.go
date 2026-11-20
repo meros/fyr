@@ -1,6 +1,7 @@
 package front
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -58,7 +59,7 @@ func (p *fakePush) payloads() []push.Payload {
 
 // fullHost is a host with attachments and its own profile, as fyrd runs it.
 func fullHost(t *testing.T, name, profile string) *host {
-	return fullHostID(t, name, profile, "")
+	return fullHostID(t, name, profile, testID(name))
 }
 
 // fullHostID is fullHost reporting install id id (V0.124).
@@ -110,7 +111,7 @@ func startFront(t *testing.T, opt Options, hosts ...HostConfig) *runningFront {
 
 func create(t *testing.T, base, host, text string) string {
 	t.Helper()
-	code, rep := post(t, base+"/api/command", `{"commandId":"`+text+`","action":"thread.create","args":{"cwd":"/tmp","text":"`+text+`","host":"`+host+`"}}`)
+	code, rep := post(t, hostURL(t, base, host)+"/command", `{"commandId":"`+text+`","action":"thread.create","args":{"cwd":"/tmp","text":"`+text+`"}}`)
 	id, _ := rep["threadId"].(string)
 	if code != 200 || id == "" {
 		t.Fatalf("create on %s: %d %v", host, code, rep)
@@ -148,7 +149,7 @@ func TestFrontPushesForAnyHost(t *testing.T) {
 	}
 
 	// Presence lives on the front now: a watched thread gets no push.
-	req, _ := http.NewRequest("POST", fs.URL+"/api/presence", strings.NewReader(`{"threadId":"`+idB2+`","device":"phone"}`))
+	req, _ := http.NewRequest("POST", fs.URL+"/api/front/presence", strings.NewReader(`{"host":"id-b","threadId":"`+idB2+`","device":"phone"}`))
 	req.Header.Set("X-Fyr", "1")
 	if r, err := http.DefaultClient.Do(req); err != nil || r.StatusCode != 204 {
 		t.Fatalf("presence: %v %v", r, err)
@@ -164,7 +165,7 @@ func TestFrontPushesForAnyHost(t *testing.T) {
 		t.Fatalf("a watched thread pushed: %d payloads", n)
 	}
 	// The push endpoints are the front's.
-	if code, rep := post(t, fs.URL+"/api/push/subscribe", `{"subscription":{"endpoint":"https://push.example/x","keys":{"p256dh":"k","auth":"a"}},"device":"phone"}`); code != 200 || rep["ok"] != true {
+	if code, rep := post(t, fs.URL+"/api/front/push/subscribe", `{"subscription":{"endpoint":"https://push.example/x","keys":{"p256dh":"k","auth":"a"}},"device":"phone"}`); code != 200 || rep["ok"] != true {
 		t.Fatalf("subscribe on the front: %d %v", code, rep)
 	}
 	if len(p.subs) != 1 {
@@ -174,21 +175,24 @@ func TestFrontPushesForAnyHost(t *testing.T) {
 
 // SPEC 0.5 V0.54: the last state per host survives a front restart: a host
 // that is offline when the front starts shows its threads from the cache,
-// marked offline and read-only, until it returns.
+// listed offline and read-only, until it returns.
 func TestFrontCacheSurvivesRestart(t *testing.T) {
 	a, b := fullHost(t, "a", "pa"), fullHost(t, "b", "pb")
+	pins := &memKV{} // the host ids the front pinned, which name its cache files (decision 0031 4.3)
 	dir := t.TempDir()
 	hosts := []HostConfig{{Name: "a", URL: a.hs.URL}, {Name: "b", URL: b.hs.URL}}
-	f1 := startFront(t, Options{CacheDir: dir}, hosts...)
+	f1 := startFront(t, Options{CacheDir: dir, Store: pins}, hosts...)
 	online(t, f1.URL, 2)
+	framed := threadFrames(t, f1.URL)
 	id := create(t, f1.URL, "b", "cached")
+	framed(id) // in the front's cache, not only on b
 	f1.stop()
 
 	b.setDown(true)
-	f2 := startFront(t, Options{CacheDir: dir}, hosts...)
+	f2 := startFront(t, Options{CacheDir: dir, Store: pins}, hosts...)
 	// At once, before any host answers: b's thread from the cache.
 	d := threadOf(getState(t, f2.URL), id)
-	if d == nil || d["host"] != "b" || d["title"] != "cached" || d["hostOffline"] == nil {
+	if d == nil || d["host"] != "b" || d["title"] != "cached" {
 		t.Fatalf("cached thread after restart: %v", d)
 	}
 	online(t, f2.URL, 1) // a only
@@ -196,26 +200,22 @@ func TestFrontCacheSurvivesRestart(t *testing.T) {
 	if s.Hosts[1]["name"] != "b" || s.Hosts[1]["online"] != false || s.Hosts[1]["since"] == nil {
 		t.Fatalf("hosts: %v", s.Hosts)
 	}
-	if code, rep := post(t, f2.URL+"/api/command", `{"commandId":"r","action":"thread.rename","threadId":"`+id+`","args":{"title":"x"}}`); code != 503 || !strings.Contains(rep["error"].(string), "b is offline") {
+	if code, rep := post(t, hostURL(t, f2.URL, "b")+"/command", `{"commandId":"r","action":"thread.rename","threadId":"`+id+`","args":{"title":"x"}}`); code != 503 || !strings.Contains(rep["error"].(string), "b is offline") {
 		t.Fatalf("command to a cached thread: %d %v", code, rep)
 	}
 	b.setDown(false)
-	eventually(t, "mark cleared", func() bool {
-		d := threadOf(getState(t, f2.URL), id)
-		return d != nil && d["hostOffline"] == nil
-	})
+	online(t, f2.URL, 2)
 }
 
-// SPEC 0.5 V0.54: an upload goes to the host the client names, and the
-// attachment is read back from that host by ?host= or ?thread=; profiles
-// and deploy are per host.
+// SPEC 0.5 V0.54: an upload goes to the host its path names, and the
+// attachment is read back from that host only; profiles are per host.
 func TestFrontRoutesUploadsAndStatePerHost(t *testing.T) {
 	a, b := fullHost(t, "a", "pa"), fullHost(t, "b", "pb")
 	fs := startFront(t, Options{}, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
-	id := create(t, fs.URL, "b", "files")
+	au, bu := hostURL(t, fs.URL, "a"), hostURL(t, fs.URL, "b")
 
-	req, _ := http.NewRequest("POST", fs.URL+"/api/attachments?thread="+id, strings.NewReader("hello from b"))
+	req, _ := http.NewRequest("POST", bu+"/attachments", strings.NewReader("hello from b"))
 	req.Header.Set("X-Fyr", "1")
 	req.Header.Set("X-Fyr-Filename", "note.txt")
 	req.Header.Set("Content-Type", "text/plain")
@@ -229,8 +229,8 @@ func TestFrontRoutesUploadsAndStatePerHost(t *testing.T) {
 	if r.StatusCode != 200 || up.ID == "" {
 		t.Fatalf("upload: %d %+v", r.StatusCode, up)
 	}
-	read := func(q string) (int, string) {
-		r, err := http.Get(fs.URL + "/api/attachments/" + up.ID + q)
+	read := func(hu string) (int, string) {
+		r, err := http.Get(hu + "/attachments/" + up.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -238,59 +238,59 @@ func TestFrontRoutesUploadsAndStatePerHost(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		return r.StatusCode, string(b)
 	}
-	for _, q := range []string{"?host=b", "?thread=" + id, ""} { // "": the front learned the upload's host
-		if code, body := read(q); code != 200 || body != "hello from b" {
-			t.Fatalf("read %q: %d %q", q, code, body)
-		}
+	if code, body := read(bu); code != 200 || body != "hello from b" {
+		t.Fatalf("read on b: %d %q", code, body)
 	}
-	if code, _ := read("?host=a"); code != 404 {
+	if code, _ := read(au); code != 404 {
 		t.Fatalf("host a has b's file: %d", code)
 	}
 
-	var st struct {
-		Profiles []map[string]any `json:"profiles"`
-		Hosts    []struct {
-			Name     string           `json:"name"`
+	for name, want := range map[string]string{"a": "pa", "b": "pb"} {
+		var st struct {
 			Profiles []map[string]any `json:"profiles"`
-		} `json:"hosts"`
-	}
-	resp, _ := http.Get(fs.URL + "/api/state")
-	json.NewDecoder(resp.Body).Decode(&st)
-	resp.Body.Close()
-	if len(st.Profiles) != 2 || st.Profiles[0]["id"] != "pa" || st.Profiles[1]["id"] != "pb" {
-		t.Fatalf("merged profiles: %v", st.Profiles)
-	}
-	if len(st.Hosts) != 2 || len(st.Hosts[1].Profiles) != 1 || st.Hosts[1].Profiles[0]["id"] != "pb" {
-		t.Fatalf("per-host profiles: %+v", st.Hosts)
+		}
+		getDoc(t, hostURL(t, fs.URL, name)+"/state", &st)
+		if len(st.Profiles) != 1 || st.Profiles[0]["id"] != want {
+			t.Fatalf("%s's profiles: %v", name, st.Profiles)
+		}
 	}
 }
 
-// SPEC 0.5 V0.54: a deploy on a host that is not this front's own shows on
-// that host's row, never as this front's update banner.
+// SPEC 0.5 V0.54: a deploy on a host shows on that host's row, and on the
+// stream named by that host's id (decision 0031 2.6: the client's banner is
+// the deploy of the host the front runs in), never as another host's.
 func TestFrontDeployIsPerHost(t *testing.T) {
 	a, b := fullHost(t, "a", "pa"), fullHost(t, "b", "pb")
-	fs := startFront(t, Options{Local: "a"}, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	fs := startFront(t, Options{}, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
-	b.eng.SetDeploy(map[string]any{"phase": "drain", "startedAt": time.Now().UTC()}, "drain")
-	type hostRow struct {
-		Name   string         `json:"name"`
-		Deploy map[string]any `json:"deploy"`
+	resp, err := http.Get(fs.URL + "/api/front/stream")
+	if err != nil {
+		t.Fatal(err)
 	}
-	var st struct {
-		Deploy any       `json:"deploy"`
-		Hosts  []hostRow `json:"hosts"`
+	defer resp.Body.Close()
+	st := sse{bufio.NewReader(resp.Body)}
+	if ev, _ := st.next(t); ev != "hello" {
+		t.Fatalf("first frame %q", ev)
+	}
+	b.eng.SetDeploy(map[string]any{"phase": "drain", "startedAt": time.Now().UTC()}, "drain")
+	for {
+		ev, data := st.next(t)
+		if ev != "deploy" {
+			continue
+		}
+		var d map[string]any
+		json.Unmarshal([]byte(data), &d)
+		if d["host"] != testID("b") || d["phase"] != "drain" {
+			t.Fatalf("deploy frame: %s", data)
+		}
+		break
 	}
 	eventually(t, "b's deploy on its row", func() bool {
-		resp, err := http.Get(fs.URL + "/api/state")
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		st.Deploy, st.Hosts = nil, nil
-		json.NewDecoder(resp.Body).Decode(&st)
-		return len(st.Hosts) == 2 && st.Hosts[1].Deploy != nil && st.Hosts[1].Deploy["phase"] == "drain"
+		s := getState(t, fs.URL)
+		d, _ := s.Hosts[1]["deploy"].(map[string]any)
+		return len(s.Hosts) == 2 && d != nil && d["phase"] == "drain"
 	})
-	if st.Deploy != nil {
-		t.Fatalf("b's deploy became the front's banner: %v", st.Deploy)
+	if d := getState(t, fs.URL).Hosts[0]["deploy"]; d != nil {
+		t.Fatalf("b's deploy reached a's row: %v", d)
 	}
 }
