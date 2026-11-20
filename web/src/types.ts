@@ -143,6 +143,8 @@ export interface ThreadDTO {
   settleAsk?: { at: string; why?: string } | null;
   /** V0.59 (7): settles when the change (an id or a key) reaches the phase */
   settleWhen?: { change: string; phase: string };
+  /** V0.wakeups-via-watch: the agent's armed wake-ups (its watches on a time), soonest first; note is the prompt it runs then */
+  wakes?: { rule: string; at: string; note?: string }[];
   source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;

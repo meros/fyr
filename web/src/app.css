@@ -1950,3 +1950,10 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 @keyframes arr-in{from{transform:translateY(-100%);opacity:0}to{transform:none;opacity:1}}
 @keyframes arr-wash{from{box-shadow:inset 0 0 0 999px var(--beam-wash)}to{box-shadow:inset 0 0 0 999px transparent}}
 @media (prefers-reduced-motion: reduce){.arrived{animation:none}}
+/* V0.wakeups-via-watch: the agent's wake-up chip (wake-ui.tsx): the header's is a button that cancels it, the row's only shows */
+.wake svg{flex:none}
+button.chip.wake,button.m-chip.wake{border:0;cursor:pointer}
+button.chip.wake:hover{color:var(--ink)}
+.pr.wake{display:inline-flex;align-items:center;gap:4px;max-width:240px;font-family:var(--ui)}
+.pr.wake span{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.one .cl .pr.wake{max-width:168px} /* the row's own line keeps its room; the full text is the title */

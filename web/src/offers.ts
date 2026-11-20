@@ -269,3 +269,23 @@ export function settleLine(t: Pick<Thread, "settleWhenDone" | "settleWhenMerged"
   const c = cs.find((x) => x.id === w.change) ?? cs.find((x) => x.key === w.change);
   return `settles when ${c?.title || w.change} is ${w.phase}`;
 }
+
+/** V0.wakeups-via-watch: the agent's soonest wake-up as a chip, in the owner's local time: "wakes 06:00 · <first line of its
+ *  prompt>", with the date when it is not today ("wakes 21 Nov 06:00 · …"); null when none is armed. */
+export function wakeChip(t: Pick<Thread, "wakes">, now: number): { text: string; title: string; rule: string } | null {
+  const w = t.wakes?.[0];
+  if (!w) return null;
+  const at = new Date(Date.parse(w.at));
+  if (Number.isNaN(at.getTime())) return null;
+  const n = new Date(now);
+  const hm = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const today = at.getFullYear() === n.getFullYear() && at.getMonth() === n.getMonth() && at.getDate() === n.getDate();
+  const when = today ? hm : `${at.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm}`;
+  const line = (w.note ?? "").trim().split("\n")[0].trim();
+  const more = (t.wakes?.length ?? 0) > 1 ? ` (+${t.wakes!.length - 1} more)` : "";
+  return {
+    text: line ? `wakes ${when} · ${line}` : `wakes ${when}`,
+    title: `The agent wakes at ${when}${line ? ` and runs: ${(w.note ?? "").trim()}` : ""}${more}`,
+    rule: w.rule,
+  };
+}

@@ -160,6 +160,9 @@ type Manager struct {
 	sessions map[string]*session
 	starting map[string]*starting // thread id → its start in flight (#40)
 	tokens   map[string]string    // MCP token → thread id
+	// loops are the threads the owner ran /loop in (V0.wakeups-via-watch):
+	// their processes keep the CLI's own timers.
+	loops map[string]bool
 	// restoreDir makes again a worktree Fyr removed (V0.worktree-sweep).
 	restoreDir atomic.Pointer[func(dir string) (bool, error)]
 }
@@ -224,6 +227,10 @@ type session struct {
 	reloadWhy string
 	// toolsHash: the MCP tool list of the build that started the process.
 	toolsHash string
+	// timers: the process has the CLI's own timers (CronCreate, CronDelete,
+	// ScheduleWakeup): it runs without Fyr's tools, or the owner ran /loop
+	// (V0.wakeups-via-watch).
+	timers bool
 	// bg: the background tasks (Bash, Monitor, agents) the CLI reports
 	// running (background_tasks_changed). V0.133: Fyr never closes the
 	// input while bg > 0; the CLI would live on for them and refuse every
@@ -305,7 +312,7 @@ func New(host Host, cfg Config) *Manager {
 			os.Remove(f)
 		}
 	}
-	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}}
+	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}, loops: map[string]bool{}}
 }
 
 // writeMCPConfig writes a CLI's MCP config to a new 0600 file in dir.
@@ -571,10 +578,17 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		}
 		defer os.Remove(path)
 		l.MCPConfigFile, l.AllowedTools = path, []string{"mcp__fyr__*"}
+		// V0.wakeups-via-watch: the CLI's timers live in its process, which
+		// Fyr ends when idle, so a wake-up set hours ahead was lost. Fyr's
+		// timed watch outlives it; only /loop keeps the CLI's own.
+		if !m.loopOn(threadID) {
+			l.DisallowedTools = TimerTools
+		}
 		if m.cfg.Tools != nil {
 			s.toolsHash = m.cfg.Tools()
 		}
 	}
+	s.timers = len(l.DisallowedTools) == 0
 	prompt := m.cfg.Prompt
 	if prompt == "-" {
 		prompt = ""
@@ -635,7 +649,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		// adopt it.
 		l.Runner, l.ProcID, l.RunnerKey = m.cfg.Runner, s.proc, threadID
 		l.Meta, _ = json.Marshal(procMeta{Thread: threadID, CLI: ad.ID(), Token: s.token, Effort: l.Effort,
-			ViewTools: s.viewTools, ChangeTools: s.changeTools, Cgroup: s.cgroup, Tools: s.toolsHash})
+			ViewTools: s.viewTools, ChangeTools: s.changeTools, Cgroup: s.cgroup, Tools: s.toolsHash, Timers: s.timers})
 	}
 	c, err := ad.Start(l, cli.Handlers{
 		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },

@@ -48,6 +48,7 @@ import { ChangeList, useViewAction } from "./offers-ui.tsx";
 import { DockRun, NextSteps, ProseCommand, RunCardAt, RunCards, showCard } from "./runcard-ui.tsx";
 import { cardShows, cardsKey, dockRun, placeCards, requests, splitProse, waitingRuns } from "./runcard.ts";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
+import { WakeChip } from "./wake-ui.tsx";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
@@ -221,6 +222,8 @@ export function ThreadPane(p: ThreadPaneProps) {
               </span>
             ) : null;
           })()}
+          {/* V0.wakeups-via-watch: the agent's wake-up, in the settle chip's slot and style; a press cancels it */}
+          <WakeChip t={t} now={p.now} cls="chip" onCancel={(rule) => p.onRun("thread.cancelWake", { rule })} />
         </div>
         <div class="tabs" role="tablist">
           <SlideMark under at={tab} />

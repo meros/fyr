@@ -86,7 +86,10 @@ type Launch struct {
 	SystemPrompt   string // appended
 	MCPConfigFile  string // a 0600 file with the JSON for Fyr's MCP server (V0.129); "" for none
 	AllowedTools   []string
-	Log            io.Writer
+	// DisallowedTools are the CLI's own tools the session may not use
+	// (V0.wakeups-via-watch: its timers, which die with the process).
+	DisallowedTools []string
+	Log             io.Writer
 	// Cgroup: the thread's cgroup directory (V0.80); "" is the daemon's.
 	Cgroup string
 	// Wrap: the command line that starts the CLI in the thread's scope

@@ -35,6 +35,8 @@ type procMeta struct {
 	// Tools: the hash of the MCP tool list it started with
 	// (V0.tool-reload); "" for a process from before.
 	Tools string `json:"tools,omitempty"`
+	// Timers: the process has the CLI's own timers (V0.wakeups-via-watch).
+	Timers bool `json:"timers,omitempty"`
 }
 
 // threadOf is the thread a runner process belongs to: its key, else the
@@ -187,7 +189,7 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 		return drop("no adapter can reattach " + id)
 	}
 	s := &session{thread: t.ID, proc: p.ID, cwd: t.Cwd, token: meta.Token, asks: map[string]chan core.Effect{}, reqs: map[string]string{},
-		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort, toolsHash: meta.Tools,
+		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort, toolsHash: meta.Tools, timers: meta.Timers,
 		viewTools: meta.ViewTools, changeTools: meta.ChangeTools, live: t.Running, lifecycle: true,
 		bg: t.RunningTasks(), // V0.133: until the CLI reports its tasks again
 		// V0.143: a process whose input an earlier fyrd closed reads

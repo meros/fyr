@@ -114,6 +114,9 @@ func Args(l cli.Launch) []string {
 	if len(l.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(l.AllowedTools, ","))
 	}
+	if len(l.DisallowedTools) > 0 {
+		args = append(args, "--disallowedTools", strings.Join(l.DisallowedTools, ","))
+	}
 	if l.SystemPrompt != "" {
 		args = append(args, "--append-system-prompt", l.SystemPrompt)
 	}

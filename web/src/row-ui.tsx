@@ -20,6 +20,7 @@ import { snoozeLine } from "./snooze.ts";
 import { prChip } from "./pr.ts";
 import { changeChip, needLook, rowNeed } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
+import { WakeChip } from "./wake-ui.tsx";
 import { GUEST_TEXT, type GuestWhy } from "./selection.ts";
 
 /** What differs between the fronts, each for a reason. */
@@ -215,6 +216,7 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
   const need = rowNeed(t); // V0.101: the host's cause, read only
   // V0.row-calm: the chip is left out when the state word already names that PR ("Merge #4170" over "#4170 ready").
   const chip = hasChange(t) && !stateNamesPr(t);
+  const wake = !!t.wakes?.length; // V0.wakeups-via-watch
   // V0.row-calm: when the button says the state word ("Merge" by "Merge"), the line starts with what it acts on.
   const word = rowState(t);
   const said = !!need && needButton(need.change, need.need) === word;
@@ -238,9 +240,10 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
         <RowFrom t={t} look={look} more />
         {rowDetail(t, { keys: look.keys })}
       </span>
-      {chip && (
+      {(chip || wake) && (
         <span class="cl">
-          <PrBadge t={t} />
+          {chip && <PrBadge t={t} />}
+          <WakeChip t={t} now={now} cls="pr" />
         </span>
       )}
       {/* V0.row-calm: the button sits at the right of the state line, under the age, not on a line of its own */}
@@ -300,7 +303,10 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
   // V0.164: heavy work Fyr did not admit starts the line, in the beam ink, and says the use itself (same on both fronts).
   const und = useRowUndeclared(t.id, now);
   const cpu = working && !und && hasCPU;
-  const chips = sub || cpu || (!working && hasChange(t));
+  // V0.wakeups-via-watch: a thread that waits on the agent's wake-up says so, apart from a finished one. On the row the chip
+  // only shows: a tap on a row opens the thread (and the phone's row swipes), where the same chip cancels it.
+  const wake = !working && !!t.wakes?.length;
+  const chips = sub || cpu || (!working && hasChange(t)) || wake;
   return (
     <div {...attrs} class={`one${agents.length ? " has-agents" : ""}${guest ? " guest" : ""}${extra}`}>
       {lead ?? <StateIcon state={st} />}
@@ -321,7 +327,8 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
           <span class="cl">
             {cpu && <ThreadCPU id={t.id} chip />}
             {sub && <span class="sb">{t.subagents ?? 0} sub</span>}
-            {!working && <PrBadge t={t} short />}
+            {!working && hasChange(t) && <PrBadge t={t} short />}
+            {wake && <WakeChip t={t} now={now} cls="pr" />}
           </span>
         )}
       </span>
