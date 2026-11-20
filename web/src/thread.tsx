@@ -1,6 +1,8 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { ArrivedBar } from "./arrived-bar.tsx";
+import type { AnswerMove } from "./arrived.ts";
 import { PIN_ICON } from "./row-ui.tsx";
 import { copySource, copyToClipboard } from "./copy.ts";
 import { useDraft } from "./drafts.ts";
@@ -90,6 +92,8 @@ export interface ThreadPaneProps {
   onHandover?: () => void;
   /** V0.108: asks Fyr for a new title from the conversation. */
   onRegenerateTitle?: () => void;
+  /** V0.arrived-from: an answer moved the owner here; the bar names the thread answered and leads back to it */
+  arrived?: { a: AnswerMove; onBack(): void; onDismiss(): void };
 }
 
 /** A deep link `/?open=<id>&tab=pr` opens that tab on the desktop too. */
@@ -227,6 +231,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           ))}
         </div>
       </div>
+      {p.arrived && <ArrivedBar a={p.arrived.a} onBack={p.arrived.onBack} onDismiss={p.arrived.onDismiss} />}
       <UndeclaredStrip id={t.id} />
       <LeftoverStrip id={t.id} now={p.now} />
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.events} cwd={t.cwd} />}
