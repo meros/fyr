@@ -66,7 +66,7 @@ export function ContextMenu({ x, y, items, anchor, onPick, onClose }: { x: numbe
             class="ctxm-i"
             role="menuitem"
             aria-disabled={it.disabled ? true : undefined}
-            title={it.disabled}
+            title={it.disabled ?? it.hint}
             onClick={() => !it.disabled && onPick(it)}
           >
             <span class="ell">{it.label}</span>

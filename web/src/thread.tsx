@@ -24,7 +24,7 @@ import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
-import { SETTLE_DONE_HINT, settleDoneEntry } from "./menu.ts";
+import { deskThreadMenu, type ThreadAction } from "./actions.ts";
 import { hostChip, hostOf, offlineLine, profilesOfHost, threadProvider } from "./hosts.ts";
 import { ThreadQuotaChip } from "./quota-ui.tsx";
 import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
@@ -76,8 +76,6 @@ export interface ThreadPaneProps {
   onAllow(d: Decision, allow: boolean): void;
   onRun(action: string, args?: Record<string, unknown>): void;
   onSnooze(): void;
-  /** V0.203: arms "settle when done", or cancels it when armed */
-  onSettleWhenDone?(): void;
   onSend(args: SendArgs): Promise<boolean>;
   onAtEnd(atEnd: boolean): void;
   onFocusZone(): void;
@@ -87,12 +85,8 @@ export interface ThreadPaneProps {
   now: number;
   /** Back to the inbox: the desktop closes the thread pane with it (open or peek). */
   onBack?: () => void;
-  /** Opens the project picker for this thread (V0.26, V0.30); absent: no ⋯ menu. */
-  onMoveProject?: () => void;
-  /** Opens the handover dialog (V0.45). */
-  onHandover?: () => void;
-  /** V0.108: asks Fyr for a new title from the conversation. */
-  onRegenerateTitle?: () => void;
+  /** V0.one-action-list: runs an entry of the ⋯ menu (actions.ts, the same dispatch as the row menu); absent: no ⋯ menu. */
+  onAction?(a: ThreadAction): void;
   /** V0.arrived-from: an answer moved the owner here; the bar names the thread answered and leads back to it */
   arrived?: { a: AnswerMove; onBack(): void; onDismiss(): void };
 }
@@ -160,7 +154,8 @@ export function ThreadPane(p: ThreadPaneProps) {
             <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle now and stop the run (e)" : "Settle now (e)")} onClick={() => p.onRun("thread.settle")}>
               Settle <kbd>e</kbd>
             </button>
-            {p.onMoveProject && <ThreadMenu settleDone={settleDoneEntry(t).label} settleDoneReason={unavailableReason(t, settleDoneEntry(t).action)} onSettleDone={p.onSettleWhenDone} onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} onHandover={p.onHandover} handoverReason={unavailableReason(t, "thread.handover")} onRegenerateTitle={p.onRegenerateTitle} regenerateReason={unavailableReason(t, "thread.regenerateTitle")} />}
+            {/* V0.one-action-list: the buttons above are DESK_HEADER_BUTTONS; the ⋯ menu holds the rest of the thread's actions */}
+            {p.onAction && <ThreadMenu items={deskThreadMenu(t)} onPick={p.onAction} />}
           </div>
         </div>
         <div class="chips">
@@ -300,7 +295,7 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
 }
 
 /** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
-function ThreadMenu({ settleDone, settleDoneReason, onSettleDone, onMove, liveView, onLiveView, onHandover, handoverReason, onRegenerateTitle, regenerateReason }: { settleDone: string; settleDoneReason?: string; onSettleDone?: () => void; onMove(): void; liveView: boolean; onLiveView(): void; onHandover?: () => void; handoverReason?: string; onRegenerateTitle?: () => void; regenerateReason?: string }) {
+function ThreadMenu({ items, onPick }: { items: ThreadAction[]; onPick(a: ThreadAction): void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -313,24 +308,24 @@ function ThreadMenu({ settleDone, settleDoneReason, onSettleDone, onMove, liveVi
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
-  const run = (fn: () => void) => () => {
+  const run = (a: ThreadAction) => () => {
     setOpen(false);
-    fn();
+    onPick(a);
   };
   const onKey = (e: KeyboardEvent) => {
     // The menu owns its keys: the inbox shortcuts must not act while it has focus.
     e.stopPropagation();
     if (!open) return;
-    const items = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
-    const i = items.indexOf(document.activeElement as HTMLElement);
+    const els = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
+    const i = els.indexOf(document.activeElement as HTMLElement);
     if (e.key === "Escape") {
       e.preventDefault();
       setOpen(false);
       btn.current?.focus();
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      const n = items.length;
-      items[(i + (e.key === "ArrowDown" ? 1 : n - 1) + n) % n]?.focus();
+      const n = els.length;
+      els[(i + (e.key === "ArrowDown" ? 1 : n - 1) + n) % n]?.focus();
     } else if (e.key === "Tab") setOpen(false);
   };
   return (
@@ -340,37 +335,13 @@ function ThreadMenu({ settleDone, settleDoneReason, onSettleDone, onMove, liveVi
       </button>
       {open && (
         <div class="tmenu-l" role="menu" aria-label="Thread actions">
-          <button class="mi" role="menuitem" onClick={run(onMove)}>
-            <kbd>p</kbd>
-            <span class="ell">Project…</span>
-            <span />
-          </button>
-          {onSettleDone && (
-            <button class="mi" role="menuitem" disabled={!!settleDoneReason} title={settleDoneReason ?? SETTLE_DONE_HINT} onClick={run(onSettleDone)}>
-              <span />
-              <span class="ell">{settleDone}</span>
+          {items.map((a) => (
+            <button key={a.id} class="mi" role="menuitem" disabled={!!a.disabled} title={a.disabled ?? a.hint} onClick={run(a)}>
+              {a.key ? <kbd>{a.key}</kbd> : <span />}
+              <span class="ell">{a.label}</span>
               <span />
             </button>
-          )}
-          <button class="mi" role="menuitem" onClick={run(onLiveView)}>
-            <span />
-            <span class="ell">{liveView ? "Turn off live view" : "Turn on live view"}</span>
-            <span />
-          </button>
-          {onHandover && (
-            <button class="mi" role="menuitem" disabled={!!handoverReason} title={handoverReason} onClick={run(onHandover)}>
-              <span />
-              <span class="ell">Hand over…</span>
-              <span />
-            </button>
-          )}
-          {onRegenerateTitle && (
-            <button class="mi" role="menuitem" disabled={!!regenerateReason} title={regenerateReason ?? "Name the thread from its conversation so far"} onClick={run(onRegenerateTitle)}>
-              <span />
-              <span class="ell">Regenerate title</span>
-              <span />
-            </button>
-          )}
+          ))}
         </div>
       )}
     </div>
