@@ -56,6 +56,7 @@ import { answerThenNext, cardKey, goTo, initCard, setOther, submitOf, type CardS
 import { keyHints } from "./keys.ts";
 import { escapeTarget, parsePage, type PageRef } from "./settings-nav.ts";
 import { Settings, type SettingsDevice, type SettingsProps } from "./settings-ui.tsx";
+import { SetupInboxCard } from "./setup-ui.tsx";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type FilterView, type Theme } from "./inbox.tsx";
@@ -1651,6 +1652,13 @@ function App() {
         unlink: projectActions.unlink,
         add: async (id, host, folder) => (await projectActions.add(id, host, folder)).error,
       }}
+      onOpenThread={(id) => {
+        if (phoneHeader) navGo({ screen: { name: "thread", id }, sheet: null });
+        else {
+          setDialog(null);
+          openThread(id, "open");
+        }
+      }}
     />
     </HostsContext.Provider>
   );
@@ -1914,6 +1922,16 @@ function App() {
           unlock={unlock}
           quietHits={quietHits}
           extra={pwaControls}
+          setup={
+            <SetupInboxCard
+              hosts={fullStore.hostList}
+              projectCount={fullStore.projects.length}
+              onOpen={() => {
+                setSettingsAt({ page: "setup" });
+                setDialog("settings");
+              }}
+            />
+          }
           onFocusZone={() => setZone("list")}
           // V0.184: desktop only. The phone shows the list full screen with no pane beside it, so it has no edge to drag.
           resizer={<ListResizer win={winW} />}

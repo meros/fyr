@@ -188,6 +188,8 @@ interface InboxProps {
   quietHits: number;
   /** V0.ai-search: what AI search may read, in list order (the same reach as the typed search) */
   searchable: Thread[];
+  /** Decision 0037: optional "Set up · X of 6" card atop the inbox */
+  setup?: ComponentChildren;
 }
 
 export function Inbox(p: InboxProps) {
@@ -224,6 +226,7 @@ export function Inbox(p: InboxProps) {
       <FilterRow f={p.filter} now={p.now} unlock={p.unlock} />
       {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
       <div class="list" role="listbox" aria-label="Threads" onClick={(e) => e.target === e.currentTarget && p.onBackground?.()}>
+        {p.setup}
         <AiSearchPanel ai={ai} onOpen={p.onClick} />
         {!p.query.trim() && <FilterEmpty f={p.filter} cls="fempty" />}
         {p.rows.pinned.length > 0 && (
