@@ -58,16 +58,18 @@ With agentsUnit off the module writes V0.80's delegated unit (fyrd in `fyr.servi
 
 ### Fyr's cgroup budget (`services.fyr.cgroups`)
 
+A size in percent is a share of the machine: of the RAM for `memory.high` and `memory.max`, of the swap for `memory.swap.max` (systemd reads it so on the slice; fyrd resolves it from `/proc/meminfo` in the unit layout). A size like `12G` is taken as it is. fyrd's `cgroups: on` line at start states the budget it runs with (V0.agents-budget-share).
+
 | Option | Recommended | Why |
 |---|---|---|
 | `enable` | true | Each thread gets its own cgroup, which the guard, the job cgroups and the measurements all need. |
 | `agentsUnit` | true | The agents in `fyr-agents.slice`, fyrd out of oomd's reach (above). |
 | `agentsOomPressureLimit` | 80 % (the default) or a little above, e.g. 85 % | Above what the guard's own throttling produces, so the guard acts first. `null` sets no rule. |
 | `serverMemoryLow` | 1 G (the default) | `MemoryLow` of `fyr.service`, so the kernel reclaims from the agents before fyrd. |
-| `agentsMemoryHigh` | about 30–40 % of RAM | Where the kernel starts reclaiming from the agents. The rest is for the desktop, the browser and the page cache. |
-| `agentsMemoryMax` | `agentsMemoryHigh` + about 6 % of RAM | Keep the gap narrow. Past it the kernel OOM-kills a whole thread. |
-| `agentsMemorySwapMax` | about 20–35 % of RAM, below the swap device | Keeps the agents' cold pages from filling the disk swap. |
-| `agentsCpuCores` | cores − 1 or more | The rest is for the desktop. |
+| `agentsMemoryHigh` | about 30–40 % of RAM (default `40%`) | Where the kernel starts reclaiming from the agents. The rest is for the desktop, the browser and the page cache. |
+| `agentsMemoryMax` | `agentsMemoryHigh` + about 6 % of RAM (default `46%`) | Keep the gap narrow. Past it the kernel OOM-kills a whole thread. |
+| `agentsMemorySwapMax` | about 20–35 % of RAM, below the swap device (default `30%`, a share of the swap) | Keeps the agents' cold pages from filling the disk swap. |
+| `agentsCpuCores` | none (the default) or cores − 1 | The agents' low `cpu.weight` already gives the desktop the CPU first; a cap only bounds them when the desktop is idle. |
 | `threadMemoryHighPercent` | 0 (off) | Each thread's own `memory.high` (decision 0032 slice 3). A throttled thread stalls and becomes the first one oomd's rule takes (decision 0036 (B)); with agentsUnit that is the whole thread, never fyrd. *Removed by V0.share-shadow: fyrd ignores it (one log line) and the module only warns when it is not 0; the `guard: budget over … mode=shadow` lines measure a 12 % share instead.* |
 
 ## macOS

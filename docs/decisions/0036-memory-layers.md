@@ -1,6 +1,6 @@
 # 0036 Memory layers: the daemon is never a victim, jobs size themselves, services are not jobs, and a rerunnable job may be killed
 
-Date: 2026-11-19 · Status: **proposed; the owner chose a decision doc and opt-in kill-and-retry on 19 Nov** · Builds on decisions 0029 and 0032, V0.164, V0.188, V0.194, V0.198, V0.freeze-old-work, V0.load-tuning · Makes #221 urgent
+Date: 2026-11-19 · Status: **accepted 20 Nov; every slice (0–6) is built** (the owner chose a decision doc and opt-in kill-and-retry on 19 Nov, and on 20 Nov to polish it, then accept; the polish is V0.agents-budget-share) · Builds on decisions 0029 and 0032, V0.164, V0.188, V0.194, V0.198, V0.freeze-old-work, V0.load-tuning · Makes #221 urgent
 
 
 ## What the host did (home-laptop, 17–19 Nov)
@@ -110,6 +110,20 @@ The swap valve of decision 0032 slice 3 applies: every job limit lifts while the
 The host settings these slices assume (zswap, oomd limits, the cgroup budget) are written down for the owner in `docs/HOST-SETUP.md`.
 
 Each slice adds its `guard:` log lines first, as decision 0032 did, so it can be tuned from the log.
+
+## As built (20 Nov)
+
+| Slice | Built in |
+|---|---|
+| 0 | V0.oomd-guard |
+| 1 | the host's NixOS configuration: zswap with its shrinker and disk swap, no zram, `vm.swappiness` 100 (`docs/HOST-SETUP.md`) |
+| 2 | V0.agents-unit, closing #221 |
+| 3 | V0.job-limits, V0.joblimit-slice |
+| 4 | V0.services-not-jobs |
+| 5 | V0.guard-wake, V0.multi-freeze, V0.freeze-fast-class-name |
+| 6 | V0.rerun-classes |
+
+The amendments in italics above are what the review of 20 Nov and the load simulation (V0.load-sim, V0.sim-fixes) changed in the rules as first written. V0.agents-budget-share makes the budget a share of the machine and records what the first morning on release `3be8b2f` showed. It also records a guard rule that was tried and not taken: work would have kept running through a stall caused by reclaiming cache.
 
 ## The owner's answers
 

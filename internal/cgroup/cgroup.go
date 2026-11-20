@@ -64,6 +64,7 @@ type Options struct {
 	Budget
 	FS   string // the cgroup2 mount, default /sys/fs/cgroup
 	Self string // default /proc/self/cgroup
+	Proc string // default /proc: meminfo resolves a budget in percent (V0.agents-budget-share)
 	PID  int    // default os.Getpid()
 	Logf func(string, ...any)
 	// Probe starts a process in dir to prove the kernel accepts
@@ -151,6 +152,9 @@ func Setup(o Options) *Tree {
 	if o.Self == "" {
 		o.Self = "/proc/self/cgroup"
 	}
+	if o.Proc == "" {
+		o.Proc = "/proc"
+	}
 	if o.PID == 0 {
 		o.PID = os.Getpid()
 	}
@@ -177,7 +181,7 @@ func Setup(o Options) *Tree {
 	if o.AgentsSlice != "" && selfErr == nil {
 		st, serr := setupScopes(o, t, self)
 		if serr == nil {
-			o.Logf("cgroups: on, layout scope: fyrd in %s, each thread in %s/%s<thread>.scope (memory.oom.group=1), deploys in %s<n>.scope", self, st.agentsDir(), scopePrefix, deployPrefix)
+			o.Logf("cgroups: on, layout scope: fyrd in %s, each thread in %s/%s<thread>.scope (memory.oom.group=1), deploys in %s<n>.scope; %s", self, st.agentsDir(), scopePrefix, deployPrefix, budgetLine(st.agentsDir(), o.Proc))
 			if st.legacy != "" {
 				o.Logf("cgroups: threads started before the switch run on in %s/<thread>", st.legacy)
 			}
@@ -192,7 +196,7 @@ func Setup(o Options) *Tree {
 		o.Logf("cgroups: off (%v); every process runs in the daemon's cgroup", err)
 		return nil
 	}
-	o.Logf("cgroups: on, layout unit, in %s (server/, agents/<thread>/, agents/self-deploy/)", t.root)
+	o.Logf("cgroups: on, layout unit, in %s (server/, agents/<thread>/, agents/self-deploy/); %s", t.root, budgetLine(t.agentsDir(), o.Proc))
 	// V0.oomd-guard: in the split unit oomd's rule on fyr.service may pick
 	// server/, fyrd itself; oomd honours user.oomd_omit there (same owner).
 	// Best effort: a file system without user xattrs only loses it. Said only
@@ -284,9 +288,19 @@ func setup(o Options, path string, err error) (*Tree, error) {
 	set(server, "cpu.weight", serverWeight)
 	set(server, "memory.low", o.ServerMemoryLow)
 	set(agents, "cpu.weight", agentsWeight)
-	set(agents, "memory.high", o.AgentsMemoryHigh)
-	set(agents, "memory.max", o.AgentsMemoryMax)
-	set(agents, "memory.swap.max", o.AgentsMemorySwapMax)
+	// V0.agents-budget-share: a share of the machine ("55%") is bytes here.
+	mem, swap := procTotals(o.Proc)
+	share := func(file, v string, total uint64) {
+		r, err := resolveShare(v, total)
+		if err != nil {
+			bad = append(bad, fmt.Sprintf("%s: %v", file, err))
+			return
+		}
+		set(agents, file, r)
+	}
+	share("memory.high", o.AgentsMemoryHigh, mem)
+	share("memory.max", o.AgentsMemoryMax, mem)
+	share("memory.swap.max", o.AgentsMemorySwapMax, swap)
 	// agents-lock-cap (the machine's QoS) rewrites this while the screen is locked.
 	set(agents, "cpu.max", o.AgentsCPUMax)
 	if err := put(agents, "cgroup.subtree_control", controllers); err != nil {
