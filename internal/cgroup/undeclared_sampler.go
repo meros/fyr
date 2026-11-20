@@ -60,6 +60,28 @@ func (s *Sampler) detect(l Load) {
 	s.names.Store(&names)
 }
 
+// FlagNow flags the thread whose working set grew most at once (Detector.FlagNow,
+// V0.freeze-fast-class-name) and names its command; "" when none is over the
+// memory threshold.
+func (s *Sampler) FlagNow() string {
+	if s.Detect == nil {
+		return ""
+	}
+	th := s.Detect.FlagNow(s.now())
+	if th == "" {
+		return ""
+	}
+	for _, f := range s.Detect.Flags() {
+		if f.Thread != th {
+			continue
+		}
+		if root, ok := Heaviest(s.Roots(f)); ok {
+			s.Detect.SetCommand(th, CommandOf(root, s.Groups.Bashes(th)))
+		}
+	}
+	return th
+}
+
 // Roots are the job roots of flag f's episode: from its cgroup, else from the
 // process tree under its CLI (V0.process-tree-hosts). An episode over its
 // memory threshold also takes the older work that holds a quarter of its

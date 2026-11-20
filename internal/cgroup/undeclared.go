@@ -157,6 +157,8 @@ type Detector struct {
 
 	mu      sync.Mutex
 	threads map[string]*dthread
+	memThr  float64       // the last tick's memory threshold, bytes; 0 while detection is off
+	window  time.Duration // the last tick's window W
 	pub     atomic.Pointer[[]Flag]
 	levels  atomic.Pointer[map[string]Level]
 }
@@ -210,6 +212,44 @@ func (d *Detector) MarkThawed(thread string) {
 	}
 }
 
+// FlagNow flags at once, without the window, the thread not admitted and not
+// flagged whose working set at the last reading is furthest above its idle
+// level, when that is over the memory threshold; it returns the thread, ""
+// for none. V0.freeze-fast-class-name: the guard asks for it when the PSI
+// trigger fired and the agents' memory stalls critically (or near oomd's
+// limit), so the work that grows is frozen before oomd acts, not a window
+// later. The episode then goes on and ends as any other.
+func (d *Detector) FlagNow(now time.Time) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.memThr <= 0 {
+		return ""
+	}
+	var pick string
+	var most uint64
+	for name, th := range d.threads {
+		if th.ep != nil || len(th.hist) == 0 { // flagged, or admitted (no history)
+			continue
+		}
+		last := th.hist[len(th.hist)-1].work
+		if last <= th.idle.Mem {
+			continue
+		}
+		grew := last - th.idle.Mem
+		if float64(grew) < d.memThr || grew < most || (grew == most && name > pick) {
+			continue
+		}
+		pick, most = name, grew
+	}
+	if pick == "" {
+		return ""
+	}
+	d.threads[pick].ep = &episode{since: now, firstOver: now.Add(-d.window), window: d.window,
+		mem: most, peak: most, overMem: true, memOver: true}
+	d.publishLocked()
+	return pick
+}
+
 func mean(xs []float64) float64 {
 	if len(xs) == 0 {
 		return 0
@@ -236,6 +276,7 @@ func (d *Detector) Observe(now time.Time, in DetectInput) {
 			}
 		}
 		d.threads = map[string]*dthread{}
+		d.memThr = 0
 		d.publishLocked()
 		d.mu.Unlock()
 		d.emit(ended)
@@ -243,6 +284,7 @@ func (d *Detector) Observe(now time.Time, in DetectInput) {
 	}
 	cpuThr := cfg.CPU * in.Capacity.CPU
 	memThr := cfg.Memory * float64(in.Capacity.Memory)
+	d.memThr, d.window = memThr, cfg.After
 	for _, th := range d.threads {
 		th.touched = false
 	}

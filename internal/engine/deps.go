@@ -144,6 +144,10 @@ type UndeclaredDeps struct {
 	// episode and their descendants; false when thread is not flagged
 	// (V0.guard-tidy: the work holds little of the thread's memory).
 	UndeclaredRootsMem func(thread string) (uint64, bool)
+	// UndeclaredFlagNow flags at once the thread whose work grew most over
+	// the memory threshold, without the detector's window, and returns it
+	// ("" for none; V0.freeze-fast-class-name).
+	UndeclaredFlagNow func() string
 	// Decision 0032 slice 2: UndeclaredUnits lists the parts of a thread's
 	// undeclared work, UndeclaredRotate lets one run and freezes the others,
 	// and UndeclaredFaults is what the thread has read back so far, in bytes.

@@ -246,6 +246,9 @@ func (e *Engine) GuardNow() {
 	if e.Slots == nil {
 		return
 	}
+	e.mu.Lock()
+	e.guardTrig = e.Now()
+	e.mu.Unlock()
 	e.guardOnce(e.Now(), "psi", "PSI trigger: the agents' memory stall crossed 150 ms in 2 s; the guard runs now")
 	e.sweepSlots()
 }
@@ -376,6 +379,12 @@ const (
 	AddFreezeAfter = 60 * time.Second
 	WakeEvery      = 10 * time.Second
 )
+
+// TriggerFresh is how long after the PSI trigger fired the guard may freeze
+// work that grows without waiting the detector's window, when the agents'
+// memory stalls critically or the unit is near oomd's limit
+// (V0.freeze-fast-class-name): two ticks.
+const TriggerFresh = 20 * time.Second
 
 // isFrozen says the guard holds thread frozen now; under mu.
 func (e *Engine) isFrozen(thread string) bool {
@@ -576,6 +585,9 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		e.frozeHolds = map[string]time.Time{}
 	}
 	frozen := append([]frozenJob(nil), e.frozen...)
+	// V0.freeze-fast-class-name: the trigger fired lately and the agents'
+	// stall is critical, or the unit is near oomd's limit.
+	fast := !e.guardTrig.IsZero() && now.Sub(e.guardTrig) < TriggerFresh && (agentsCritical || nearOomd)
 	wasShort := e.guardShort
 	e.guardShort = short
 	if short && !wasShort {
@@ -790,6 +802,20 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	if e.freezeUndeclared(sig, now, len(s.Held) > 0) {
 		return
 	}
+	// V0.freeze-fast-class-name: on 20 Nov the PSI trigger fired at 07:32:12
+	// and the work was frozen at 07:33:01, as the desktop froze. When the
+	// trigger fired and the agents stall critically (or near oomd's limit),
+	// the work that grew most is flagged now, not a window (45 s) later, and
+	// freezeUndeclared's rules (services, the share it holds, MaxFreezes,
+	// someone gains) decide as for any flag.
+	if fast && e.UndeclaredFlagNow != nil {
+		if th := e.UndeclaredFlagNow(); th != "" {
+			log.Printf("guard: flagged thread=%s without the window: the PSI trigger fired and %s", th, fastWhy(sig))
+			if e.freezeUndeclared(sig, now, len(s.Held) > 0) {
+				return
+			}
+		}
+	}
 	// One job always runs: a job is frozen only while two or more run.
 	var running []slots.Holder
 	for _, h := range s.Held {
@@ -920,6 +946,14 @@ func frozenWords(d time.Duration) string {
 		return fmt.Sprintf("%d min", m)
 	}
 	return fmt.Sprintf("%d min %d s", m, s)
+}
+
+// fastWhy says why the guard did not wait the window (V0.freeze-fast-class-name).
+func fastWhy(sig slots.Signals) string {
+	if w := sig.OomdWhy(); w != "" {
+		return w
+	}
+	return "the agents' memory stalls (critical)"
 }
 
 // frozenOwners names the frozen threads for the log, comma-separated.
