@@ -1212,6 +1212,35 @@ for (const [name, w, h, mobile, field, button, tabs] of [
   }
 });
 
+// V0.scroll-to-bottom: scrolled up in a conversation, a round arrow sits inside its bottom right corner and takes
+// you back to the end; at the end it is gone. Desktop and phone.
+for (const [name, w, h, mobile, tabs] of [
+  ["phone", 390, 844, true, ".m-tabs button"],
+  ["desktop", 1280, 800, false, ".th .tabs [role=tab]"],
+]) section(`V0.scroll-to-bottom ${name}`, async ({ evaluate, waitFor, settle, navigate, openScreen, shot }) => {
+  try {
+    if (mobile) await openScreen({ url: "?mock=1&open=t_view" }, w, h);
+    else await navigate(`${origin}/?mock=1&open=t_view`, "!!document.querySelector('.th #composer')");
+    await evaluate(`[...document.querySelectorAll('${tabs}')].find((x) => x.textContent.trim() === 'Conversation')?.click()`);
+    await waitFor("!!document.querySelector('.convo .convo-in')", { what: "the conversation" });
+    // Make it taller than its box whatever the mock holds, then scroll to the top.
+    await evaluate(`(() => { const c = document.querySelector('.convo'), pad = document.createElement('div'); pad.style.height = '3000px'; c.querySelector('.convo-in').prepend(pad); c.scrollTop = 0; c.dispatchEvent(new Event('scroll')); })()`);
+    await waitFor("!!document.querySelector('.convo .cv-endb')", { what: "the arrow" });
+    await settle();
+    const r = await evaluate(`(() => {
+      const c = document.querySelector('.convo').getBoundingClientRect(), b = document.querySelector('.cv-endb').getBoundingClientRect();
+      return { inside: b.left >= c.left && b.right <= c.right && b.top >= c.top && b.bottom <= c.bottom, right: c.right - b.right, bottom: c.bottom - b.bottom, w: b.width };
+    })()`);
+    check(r.inside && r.right < 40 && r.bottom < 40, `V0.scroll-to-bottom ${name}: the arrow is not in the bottom right corner ${JSON.stringify(r)}`);
+    check(r.w >= (mobile ? 44 : 32), `V0.scroll-to-bottom ${name}: the arrow is ${r.w} px wide`);
+    await shot(`scroll-to-bottom-${name}.png`);
+    await evaluate("document.querySelector('.cv-endb').click()");
+    await waitFor("(() => { const c = document.querySelector('.convo'); return c.scrollHeight - c.scrollTop - c.clientHeight < 24 && !document.querySelector('.cv-endb'); })()", { what: "the end, without the arrow" });
+  } catch (e) {
+    failures.push(`V0.scroll-to-bottom ${name}: ${e.message}`);
+  }
+});
+
 // V0.79: on the phone, `/` at the start of the composer lists the commands above it, inside the screen, rows 44 px
 // tall; a tap fills `/name ` and the argument hint shows above the field.
 section('V0.79', async (h) => {
