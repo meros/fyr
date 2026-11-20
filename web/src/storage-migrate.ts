@@ -3,6 +3,7 @@
 // its place. Keys written before name a record by the host's own id and a host by its name; they move once, after the
 // first state that lists the hosts and their records, and `fyr.storage = 2` marks that done. When a host's id rotates
 // (hosts[].idWas), what the device keeps under the old id moves to the new one. Pure but for the storage passed in.
+import type { HostId } from "./hostid.ts";
 import type { HostInfo } from "./hosts.ts";
 import { HOSTS_OFF_KEY, parseHostsOff } from "./filters.ts";
 import { loadRemembered, NEW_THREAD_KEY } from "./new-thread.ts";
@@ -140,6 +141,6 @@ export function moveHostKeys(kv: KVList | null, was: string, now: string): numbe
 }
 
 /** The rotations in a host list: each host listed with a new id and the id it had. */
-export function rotations(hosts: readonly Pick<HostInfo, "id" | "idWas">[]): { was: string; now: string }[] {
-  return hosts.filter((h) => h.id && h.idWas && h.id !== h.idWas).map((h) => ({ was: h.idWas!, now: h.id! }));
+export function rotations(hosts: readonly Pick<HostInfo, "id" | "idWas">[]): { was: HostId; now: HostId }[] {
+  return hosts.flatMap((h) => (h.id && h.idWas && h.id !== h.idWas ? [{ was: h.idWas, now: h.id }] : []));
 }

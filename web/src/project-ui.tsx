@@ -12,7 +12,8 @@ import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settin
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { HostChip, HostField, useHosts } from "./host-pick-ui.tsx";
-import { hostChip, hostChoices, hostOf, hostOfflineNote, multiHost, profilesOfHost } from "./hosts.ts";
+import { hostChip, hostOfflineNote, multiHost, pickerStart } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import { deleteProjectAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { effortsFor, offLabel, projectModelOff } from "./providers.ts";
@@ -361,7 +362,7 @@ export function QuietGate({ project, now, unlock, what }: { project?: Project; n
 
 /** A project's one folder (V0.55): the short path and what it does with "Change…" through the host folder picker, or
  *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given. */
-export function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: string; onPick(path: string): void; onClear?(): void }) {
+export function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: HostId; onPick(path: string): void; onClear?(): void }) {
   const picker = useFolderPick();
   const pick = async () => {
     const path = await picker.pick({ title, ...(host ? { host } : {}) });
@@ -398,9 +399,10 @@ export function FolderField({ folder, title, host, onPick, onClear }: { folder: 
  *  on the project screen. V0.132: with several hosts, the host it lives on comes first: picked here (Settings), or set
  *  by the caller (`host`: the New thread form's host, or the threads' host when it is made from them); the folder is
  *  that host's, and a new host drops a folder picked on another. */
-export function NewProjectStep({ initialName, initialFolder, fromThread, host: fixed, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; host?: string; onCreate(name: string, folder: string, host?: string): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
+export function NewProjectStep({ initialName, initialFolder, fromThread, host: fixed, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; host?: HostId; onCreate(name: string, folder: string, host: HostId): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
   const hs = useHosts();
-  const [own, setOwn] = useState(() => hostChoices(hs.hosts)[0]?.name ?? "");
+  // Slice 2b: the picker starts on the first host in the owner's order (shown in it), the only one with one host.
+  const [own, setOwn] = useState<HostId | undefined>(() => pickerStart(hs.hosts));
   const host = fixed ?? own;
   const down = hostOfflineNote(host, hs.hosts, hs.now);
   const [name, setName] = useState(initialName);
@@ -419,10 +421,10 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
       nameRef.current?.focus();
       return setErr("A project needs a name.");
     }
-    if (down) return setErr(down); // V0.132: never on another host instead
+    if (down || !host) return setErr(down); // V0.132: never on another host instead
     setBusy(true);
     setErr(null);
-    const e = await onCreate(name.trim(), folder, host || undefined);
+    const e = await onCreate(name.trim(), folder, host);
     setBusy(false);
     if (e) setErr(e);
   };
@@ -451,9 +453,9 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
           }}
         />
       ) : (
-        multiHost(hs.hosts) && fixed && <p class="lede">On {fixed}.</p>
+        multiHost(hs.hosts) && fixed && <p class="lede">On {hs.hosts.find((h) => h.id === fixed)?.name ?? "a host this Fyr does not follow"}.</p>
       )}
-      <FolderField folder={folder} title="Project folder" host={host || undefined} onPick={setFolder} onClear={() => setFolder("")} />
+      <FolderField folder={folder} title="Project folder" host={host} onPick={setFolder} onClear={() => setFolder("")} />
       <p class="lede">Icon, colour and defaults are on the project screen, later.</p>
       {err && <div class="err prose">{err}</div>}
       <div class="pformb">
@@ -475,7 +477,7 @@ export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: {
   const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
   const cur = one ? projectOf(one, projects) : undefined;
   // V0.132: a project made from threads lives on their host.
-  if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} host={threads[0]?.host ?? ""} onCreate={onCreate} onCancel={() => setDraft(null)} />;
+  if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} host={threads[0]?.hostId} onCreate={onCreate} onCancel={() => setDraft(null)} />;
   const sub = base.folder ? `${base.name} · threads in ${shortPath(base.folder)} land there` : "Just a name; file threads here by hand";
   return (
     <>
@@ -608,8 +610,8 @@ type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock
 export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
   const hs = useHosts();
   const env = useSet();
-  const chip = hostChip(p.project.host, hs.hosts, hs.now);
-  const profiles = profilesOfHost(hostOf(p.project, hs.hosts), hs.hosts, p.profiles);
+  const chip = hostChip(p.project.hostId, hs.hosts, hs.now);
+  const profiles = p.profiles; // V0.139: the caller hands its host's (store.ts profilesOn)
   return (
     <SetContext.Provider value={{ ...env, readOnly: env.readOnly || !!chip?.offline }}>
       <ProjectEditorBody
@@ -642,12 +644,12 @@ export interface ProjectLinking {
   candidates: Project[];
   link(other: string): Promise<string | null>;
   unlink(id: string): Promise<string | null>;
-  add(host: string, folder: string): Promise<string | null>;
+  add(host: HostId, folder: string): Promise<string | null>;
   /** open a member's page: its folder and defaults are its own */
   open(id: string): void;
 }
 
-export function linkingFor(group: Project, projects: Project[], actions: { link(id: string, other: string): Promise<string | null>; unlink(id: string): Promise<string | null>; add(id: string, host: string, folder: string): Promise<string | null> }, open: (id: string) => void): ProjectLinking {
+export function linkingFor(group: Project, projects: Project[], actions: { link(id: string, other: string): Promise<string | null>; unlink(id: string): Promise<string | null>; add(id: string, host: HostId, folder: string): Promise<string | null> }, open: (id: string) => void): ProjectLinking {
   return { group, candidates: linkCandidates(group, projects), link: (other) => actions.link(group.id!, other), unlink: actions.unlink, add: (host, folder) => actions.add(group.id!, host, folder), open };
 }
 
@@ -678,7 +680,7 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
       {members
         .filter((m) => m.id !== project.id)
         .map((m) => {
-          const chip = hostChip(m.host, hs.hosts, hs.now);
+          const chip = hostChip(m.hostId, hs.hosts, hs.now);
           return (
             <Row
               key={m.id}
@@ -745,7 +747,7 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
                 class="btn"
                 disabled={busy || env.readOnly}
                 onClick={async () => {
-                  const path = await picker.pick({ title: `Folder for ${linking.group.name} on ${addTo.name}`, host: addTo.name });
+                  const path = await picker.pick({ title: `Folder for ${linking.group.name} on ${addTo.name}`, host: addTo.id });
                   if (path) await run(() => linking.add(addTo.id!, path));
                 }}
               >
@@ -807,21 +809,22 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
     const bad = iconFileError(f);
     if (bad) return err("icon", bad);
     setBusy(true);
-    const rs = await Promise.all(imageTargets.map((m) => api.uploadProjectIcon(m.hostId ?? "", m.id!, f)));
+    const rs = await Promise.all(imageTargets.map((m) => (m.hostId ? api.uploadProjectIcon(m.hostId, m.id!, f) : Promise.resolve({ ok: false, error: "This host reports no install id" }))));
     setBusy(false);
     const bad2 = rs.find((r) => !r.ok);
     err("icon", bad2 ? (bad2.error ?? "The upload did not work") : null);
     if (!bad2) env.saved();
   };
   const removeImage = async () => {
-    const rs = await Promise.all(imageTargets.map((m) => api.command(m.hostId ?? "", "project.update", undefined, { id: m.id, image: "" })));
+    const rs = await Promise.all(imageTargets.map((m) => (m.hostId ? api.command(m.hostId, "project.update", undefined, { id: m.id, image: "" }) : Promise.resolve({ ok: false, error: "This host reports no install id" }))));
     const bad2 = rs.find((r) => !r.ok);
     err("icon", bad2 ? (bad2.error ?? "That did not work") : null);
     if (!bad2) env.saved();
   };
   const setup = async () => {
+    if (!project.hostId) return err("setup", "This host reports no install id");
     setBusy(true);
-    const r = await api.command(project.hostId ?? "", "project.setupRun", undefined, { id: project.id });
+    const r = await api.command(project.hostId, "project.setupRun", undefined, { id: project.id });
     setBusy(false);
     err("setup", r.ok ? null : (r.error ?? "That did not work"));
   };
@@ -978,7 +981,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
               class="btn pfchg"
               disabled={env.readOnly}
               onClick={async () => {
-                const path = await picker.pick({ title: `Folder for ${project.name}`, ...(project.host ? { host: project.host } : {}) }); // V0.132: on its host
+                const path = await picker.pick({ title: `Folder for ${project.name}`, ...(project.hostId ? { host: project.hostId } : {}) }); // V0.132: on its host
                 if (!path) return;
                 const e = await onSetFolder(path);
                 err("folder", e);

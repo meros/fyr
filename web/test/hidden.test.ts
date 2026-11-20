@@ -3,18 +3,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { NOTHING_HIDDEN, applyHidden, hiddenCount, hostIsHidden, lastShownHost, parseHidden, pushHiddenOf, setHostShown, setProjectShown, type Hidden } from "../src/hidden.ts";
 import type { HostInfo } from "../src/hosts.ts";
-import { initialStore, type Store } from "../src/store.ts";
+import { initialStore, type View } from "../src/store.ts";
 import type { Project, Thread } from "../src/types.ts";
-import { thread } from "./helpers.ts";
+import { hid, thread } from "./helpers.ts";
 
-const H = (name: string, id?: string): HostInfo => ({ name, online: true, ...(id ? { id } : {}) });
-const P = (id: string, name: string, host: string, hostId: string): Project => ({ id, rid: id.split("/")[1], name, host, hostId, threads: 1, lastUsed: "" }) as Project;
-const T = (id: string, projectId: string, host: string, hostId: string): Thread => thread(id, "done", "seen", { projectId, host, hostId });
+const H = (name: string, id?: string): HostInfo => ({ name, online: true, ...(id ? { id: hid(id) } : {}) });
+const P = (id: string, name: string, host: string, hostId: string): Project => ({ id, rid: id.split("/")[1], name, host, hostId: hid(hostId), threads: 1, lastUsed: "" }) as Project;
+const T = (id: string, projectId: string, host: string, hostId: string): Thread => thread(id, "done", "seen", { projectId, host, hostId: hid(hostId) });
 
 const hosts = [H("desk", "D"), H("lab", "L")];
 const projects = [P("D/p1", "fyr", "desk", "D"), P("D/p2", "garden", "desk", "D"), P("L/p3", "ops", "lab", "L")];
 const threads = [T("D/a", "D/p1", "desk", "D"), T("D/b", "D/p2", "desk", "D"), T("L/c", "L/p3", "lab", "L")];
-const store: Store = { ...initialStore(), host: "desk", hosts, projects, threads: Object.fromEntries(threads.map((t) => [t.id, t])), stalls: [{ host: "lab", at: "", what: "x", file: "" }] as Store["stalls"] };
+const store: View = { ...initialStore(), hostList: hosts, projects, threads: Object.fromEntries(threads.map((t) => [t.id, t])), stalls: [{ host: "lab", at: "", what: "x", file: "" }] as View["stalls"] };
 const H0 = (h: Partial<Hidden>): Hidden => ({ ...NOTHING_HIDDEN, ...h });
 
 test("nothing hidden is the same store", () => {
@@ -25,12 +25,12 @@ test("a hidden project leaves the projects and takes its threads along", () => {
   const s = applyHidden(store, H0({ projects: ["D/p2"] }));
   assert.deepEqual(s.projects.map((p) => p.name), ["fyr", "ops"]);
   assert.deepEqual(Object.keys(s.threads), ["D/a", "L/c"]);
-  assert.equal(s.hosts.length, 2);
+  assert.equal(s.hostList.length, 2);
 });
 
 test("a hidden host takes its threads, projects and stall along", () => {
   const s = applyHidden(store, H0({ hosts: ["L"] }));
-  assert.deepEqual(s.hosts.map((h) => h.name), ["desk"]);
+  assert.deepEqual(s.hostList.map((h) => h.name), ["desk"]);
   assert.deepEqual(s.projects.map((p) => p.name), ["fyr", "garden"]);
   assert.deepEqual(Object.keys(s.threads), ["D/a", "D/b"]);
   assert.equal(s.stalls.length, 0);
@@ -38,7 +38,7 @@ test("a hidden host takes its threads, projects and stall along", () => {
 
 test("every host hidden hides no host, so the front stays usable", () => {
   const s = applyHidden(store, H0({ hosts: ["D", "L"] }));
-  assert.equal(s.hosts.length, 2);
+  assert.equal(s.hostList.length, 2);
   assert.equal(Object.keys(s.threads).length, 3);
   assert.deepEqual(pushHiddenOf(hosts, projects, H0({ hosts: ["D", "L"] })).hosts, []);
 });

@@ -4,6 +4,7 @@ import { clockTime, dayTime } from "./format.ts";
 import type { Profile } from "./types.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { channelLabel } from "./updates.ts";
+import { asHostId, type HostId } from "./hostid.ts";
 
 export interface HostInfo {
   name: string;
@@ -18,9 +19,9 @@ export interface HostInfo {
   /** V0.123: the front found it on the tailnet (decision 0025); else it is configured */
   found?: boolean;
   /** V0.124 (decision 0026): the host's install key id ("F7QK-2M9X-…"); missing from a host older than V0.124 */
-  id?: string;
+  id?: HostId;
   /** V0.124: the id the front first saw under this name, when the host now reports another */
-  idWas?: string;
+  idWas?: HostId;
   /** V0.125: the URL the front dials for it, as configured or as discovery found it; missing from an older front */
   url?: string;
   /** V0.170: what it runs on (laptop, desktop, server) and its OS ("linux", "darwin"); missing until it is seen */
@@ -99,8 +100,8 @@ export function decodeHosts(raw: unknown): HostInfo[] {
       profiles: Array.isArray(h.profiles) ? (h.profiles as Profile[]) : undefined,
       deploy: h.deploy && typeof h.deploy === "object" && typeof (h.deploy as { phase?: unknown }).phase === "string" ? (h.deploy as DeployProgress) : undefined,
       ...(h.found === true ? { found: true } : {}),
-      ...(typeof h.id === "string" && h.id ? { id: h.id } : {}),
-      ...(typeof h.idWas === "string" && h.idWas ? { idWas: h.idWas } : {}),
+      ...(asHostId(h.id) ? { id: asHostId(h.id) } : {}),
+      ...(asHostId(h.idWas) ? { idWas: asHostId(h.idWas) } : {}),
       ...(typeof h.url === "string" && h.url ? { url: h.url } : {}),
       ...(typeof h.machine === "string" && h.machine ? { machine: h.machine } : {}),
       ...(typeof h.os === "string" && h.os ? { os: h.os } : {}),
@@ -181,13 +182,6 @@ export function offlineLine(t: { host?: string; hostOffline?: string }): string 
   return `${t.host || "Its host"} offline${at ? ` since ${at}` : ""} · read-only`;
 }
 
-/** The install id a host's name stands for in a picker (decision 0031: a call names the id). No name is the first host in
- *  the owner's order: the default *choice* of a picker, which the call then names. "" when the host has no id. */
-export function hostIdByName(hosts: HostInfo[] | undefined, name?: string): string {
-  const hs = hosts ?? [];
-  return (name ? hs.find((h) => h.name === name) : hs[0])?.id ?? "";
-}
-
 /** V0.54: the host shows on rows and headers only when the front has more than one. */
 export function multiHost(hosts: HostInfo[] | undefined): boolean {
   return (hosts?.length ?? 0) > 1;
@@ -196,17 +190,6 @@ export function multiHost(hosts: HostInfo[] | undefined): boolean {
 /** V0.54: the host name a thread row or header shows: "" with one host. */
 export function hostTag(t: { host?: string }, hosts: HostInfo[] | undefined): string {
   return multiHost(hosts) && t.host ? t.host : "";
-}
-
-/** V0.54: the profiles a new thread on `host` can use: that host's, else the merged list (one host, or an older front). */
-export function profilesOn(host: string | undefined, hosts: HostInfo[] | undefined, all: Profile[]): Profile[] {
-  const h = host ? hosts?.find((x) => x.name === host) : undefined;
-  return h?.profiles ?? all;
-}
-
-/** V0.54: the host a new thread starts on: its project's host, else the first host (the front's default). */
-export function hostForProject(projectHost: string | undefined, hosts: HostInfo[] | undefined): string | undefined {
-  return projectHost || hosts?.[0]?.name;
 }
 
 const BUSY = new Set(["build", "test", "drain", "switch", "client"]);
@@ -304,55 +287,68 @@ export function howIn(hostname: string, user: string): string {
   return `At ${hostname}${user ? `, as ${user}` : ""}. What stands in front of Fyr there decides who gets in.`;
 }
 
-/** V0.132: the hosts New project and New thread offer, in the owner's order (the first is the default); an offline one
- *  is named so. None when the front has one host (nothing to pick). Decision 0031 2.6: the same through every front. */
-export function hostChoices(hosts: Pick<HostInfo, "name" | "online">[] | undefined): { name: string; label: string; online: boolean }[] {
+/** V0.132: the hosts New project and New thread offer, in the owner's order; an offline one is named so. None when the
+ *  front has one host (nothing to pick). Decision 0031 2.6: the same through every front. Slice 2b: a host is picked by
+ *  its install id, and one without an id (older than V0.124) cannot be addressed, so it is not offered. */
+export function hostChoices(hosts: readonly Pick<HostInfo, "id" | "name" | "online">[] | undefined): { id: HostId; name: string; label: string; online: boolean }[] {
   const hs = hosts ?? [];
   if (hs.length <= 1) return [];
-  return hs.map((h) => ({ name: h.name, label: h.online ? h.name : `${h.name} (offline)`, online: h.online }));
+  return hs.flatMap((h) => (h.id ? [{ id: h.id, name: h.name, label: h.online ? h.name : `${h.name} (offline)`, online: h.online }] : []));
 }
 
-/** V0.132: why nothing can be made on a picked host now; "" when it is online (or none is picked). Nothing falls back
- *  to another host. */
-export function hostOfflineNote(name: string | undefined, hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, now: number): string {
-  const h = name ? hosts?.find((x) => x.name === name) : undefined;
-  if (!h || h.online) return "";
+/** Slice 2b: where a host picker starts: the only host when there is one (no picker shows), else the first choice in
+ *  the owner's order, shown in the picker, so the call names the host the owner sees. None when no host can be named. */
+export function pickerStart(hosts: readonly Pick<HostInfo, "id" | "name" | "online">[] | undefined): HostId | undefined {
+  const hs = hosts ?? [];
+  return hs.length === 1 ? hs[0].id : hostChoices(hs)[0]?.id;
+}
+
+/** V0.132: why nothing can be made on a picked host now; "" when it is online. Nothing falls back to another host:
+ *  with no host picked, or one the front no longer lists, it says so. */
+export function hostOfflineNote(id: HostId | undefined, hosts: readonly Pick<HostInfo, "id" | "name" | "online" | "since">[] | undefined, now: number): string {
+  if (!id) return "Pick the host it starts on.";
+  const h = hosts?.find((x) => x.id === id);
+  if (!h) return "That host is no longer one of this Fyr's hosts; pick another.";
+  if (h.online) return "";
   const at = dayTime(h.since, now);
   return `${h.name} is offline${at ? ` since ${at}` : ""}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`;
 }
 
-/** V0.139: the host a project or thread lives on: its own, else the first in the owner's order. */
-export function hostOf(r: { host?: string }, hosts: HostInfo[] | undefined): string | undefined {
-  return hostForProject(r.host, hosts);
-}
+/** Slice 2b: each host's own profiles, by install id (store.ts `profilesByHost`). A record's profile is looked up on
+ *  its own host; there is no merged list. */
+export type HostProfiles = Readonly<Record<string, Profile[]>>;
 
-/** V0.139: the providers of a host (a project's, a thread's): that host's, else the merged list (one host). */
-export const profilesOfHost = profilesOn;
+/** The profiles of a record's host; none when its host is not known. */
+export function profilesOf(r: { hostId?: HostId }, byHost: HostProfiles): Profile[] {
+  return (r.hostId && byHost[r.hostId]) || [];
+}
 
 /** V0.206: the provider a thread runs on, as its header and its inbox row show it. The id is looked up on the thread's
  *  host (the same id on another host is another provider); one no longer configured shows its id. */
-export function threadProvider(t: { host?: string; profile: string }, hosts: HostInfo[] | undefined, all: Profile[]): { name: string; color?: string; title: string } {
-  const p = profilesOfHost(hostOf(t, hosts), hosts, all).find((x) => x.id === t.profile);
+export function threadProvider(t: { hostId?: HostId; profile: string }, byHost: HostProfiles): { name: string; color?: string; title: string } {
+  const p = profilesOf(t, byHost).find((x) => x.id === t.profile);
   const name = p?.name ?? t.profile;
   return { name, color: p?.color || undefined, title: p?.unavailable ? `Provider ${name} · ${p.unavailable}` : `Provider ${name}` };
 }
 
 /** V0.206: the provider for an inbox row: null while every provider has the one name, as a row shows no host with one
  *  host. Names count, not ids: "Claude" on two hosts tells the rows nothing. */
-export function rowProvider(t: { host?: string; profile: string }, hosts: HostInfo[] | undefined, all: Profile[]): ReturnType<typeof threadProvider> | null {
-  const me = threadProvider(t, hosts, all);
+export function rowProvider(t: { hostId?: HostId; profile: string }, byHost: HostProfiles): ReturnType<typeof threadProvider> | null {
+  const me = threadProvider(t, byHost);
   if (!me.name) return null;
-  const names = new Set([me.name, ...all.map((x) => x.name), ...(hosts ?? []).flatMap((h) => (h.profiles ?? []).map((x) => x.name))]);
+  const names = new Set([me.name, ...Object.values(byHost).flatMap((ps) => ps.map((x) => x.name))]);
   return names.size > 1 ? me : null;
 }
 
 /** V0.139: the read-only host chip of an existing project or thread, in the same place on every screen: its name, and
- *  "offline since 19:40 · read-only" when it is. null with one host (nothing to say). */
-export function hostChip(name: string | undefined, hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, now: number): { name: string; line: string; offline: boolean } | null {
+ *  "offline since 19:40 · read-only" when it is. null with one host (nothing to say). Slice 2b: the record's own host,
+ *  by its install id; a record whose host the front does not list says so, it is not taken for the first host's. */
+export function hostChip(id: HostId | undefined, hosts: readonly Pick<HostInfo, "id" | "name" | "online" | "since">[] | undefined, now: number): { name: string; line: string; offline: boolean } | null {
   if (!hosts || hosts.length < 2) return null;
-  const n = name || hosts[0].name;
-  const h = hosts.find((x) => x.name === n);
-  if (!h || h.online) return { name: n, line: "", offline: false };
+  const h = id ? hosts.find((x) => x.id === id) : undefined;
+  if (!h) return { name: "Unknown host", line: "not one of this Fyr's hosts · read-only", offline: true };
+  const n = h.name;
+  if (h.online) return { name: n, line: "", offline: false };
   const at = dayTime(h.since, now);
   return { name: n, line: `offline${at ? ` since ${at}` : ""} · read-only`, offline: true };
 }

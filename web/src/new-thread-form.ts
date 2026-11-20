@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { useFolderPick } from "./folder-picker.tsx";
-import { hostIdByName, hostOfflineNote } from "./hosts.ts";
+import { hostOfflineNote } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import {
   changeOptions,
   chooseHost,
@@ -42,9 +43,9 @@ export interface NewThreadFormOptions extends FormCtx {
   /** thread.create; resolves to the host's error text, or null */
   onCreate(a: NewThreadArgs): Promise<string | null>;
   /** V0.30, V0.63: project.create; V0.132: on the form's host */
-  onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }>;
+  onNewProject(name: string, folder: string, host: HostId): Promise<{ error: string | null; id?: string }>;
   /** Decision 0034: the project gets a member on that host (by install id), in that folder */
-  onAddProject?(id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }>;
+  onAddProject?(id: string, host: HostId, folder: string): Promise<{ error: string | null; id?: string }>;
 }
 
 function storage(): KeyValue | null {
@@ -71,7 +72,8 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const last = useMemo(() => loadRemembered(storage()), []);
   const [f, setF] = useState<NewThreadForm>(() => settleForm(initialForm(), ctx, o.projectFilter, last));
   // The projects and profiles may arrive after the form opens (phone deep link, reconnect).
-  useEffect(() => setF((x) => settleForm(x, ctxRef.current, o.projectFilter, last)), [offered.length, o.profiles.length]);
+  const profileCount = Object.values(o.profiles).reduce((n, ps) => n + ps.length, 0);
+  useEffect(() => setF((x) => settleForm(x, ctxRef.current, o.projectFilter, last)), [offered.length, profileCount, o.hosts?.length]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const picker = useFolderPick();
@@ -81,14 +83,15 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const making = makingProject(f);
   const profiles = formProfiles(f, ctx);
   // V0.54: the files upload to the host the thread starts on.
-  const att = useAttachments(hostIdByName(o.hosts, formHost(f, ctx)));
+  const here = formHost(f, ctx);
+  const att = useAttachments(here);
   const folder = formFolder(f, ctx);
   const prof = profiles.find((x) => x.id === f.profile);
   const effort = startEffort(prof, f.model, f.effortPick);
   const plan = sendArgs(f.text, att.chips);
   const set = (patch: Partial<NewThreadForm>) => setF((x) => ({ ...x, ...patch }));
   // Decision 0034: the filter's project, when the host picked does not have it yet.
-  const hereId = hostIdByName(o.hosts, formHost(f, ctx));
+  const hereId = here;
   const wanted = findProject(ctx.projects, o.projectFilter);
   const missing = o.onAddProject && wanted && hereId && (o.hosts?.length ?? 0) > 1 && !making && !memberOn(wanted, hereId) ? wanted : null;
 
@@ -96,8 +99,9 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     if (busy) return;
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     // V0.132: nothing is made on an offline host, and nothing falls back to another.
-    const down = hostOfflineNote(formHost(f, ctx), o.hosts, Date.now() + off);
-    if (down) return setErr(down);
+    const on = formHost(f, ctx);
+    const down = hostOfflineNote(on, o.hosts, Date.now() + off);
+    if (down || !on) return setErr(down);
     setBusy(true);
     setErr(null);
     // V0.63: Start with the New project step open makes the project first, then files the thread in it.
@@ -105,7 +109,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     if (making) {
       const name = making.name.trim();
       if (!name) return (setBusy(false), setErr("A project needs a name."));
-      const r = await o.onNewProject(name, making.folder, formHost(f, ctx));
+      const r = await o.onNewProject(name, making.folder, on);
       if (r.error || !r.id) return (setBusy(false), setErr(r.error ?? "The project was not made."));
       const id = r.id;
       setF((x) => madeProject(x, id, name, making.folder, ctxRef.current));
@@ -133,7 +137,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     chip: projectChip(cur, making),
     folder,
     /** V0.79: whose `/` commands the prompt lists: the newest of this provider and folder; none for a new scratch folder */
-    commandSource: folder.cwd && f.profile ? { cwd: folder.cwd, profile: f.profile, host: hostIdByName(o.hosts, formHost(f, ctx)) } : null,
+    commandSource: folder.cwd && f.profile && here ? { cwd: folder.cwd, profile: f.profile, host: here } : null,
     /** the profiles of the host the thread starts on */
     profiles,
     prof,
@@ -146,8 +150,8 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     busy,
     choose: (pr: Project | null) => setF((x) => chooseProject(x, pr, ctxRef.current)),
     /** V0.132, V0.139: the host the thread starts on, picked first */
-    host: formHost(f, ctx) ?? "",
-    chooseHost: (h: string) => setF((x) => chooseHost(x, h, ctxRef.current, last)),
+    host: here,
+    chooseHost: (h: HostId) => setF((x) => chooseHost(x, h, ctxRef.current, last)),
     pickProfile: (id: string) => setF((x) => pickProfile(x, id, ctxRef.current)),
     /** V0.model-choice: provider and model, picked as one */
     pickModel: (profile: string, model: string) => setF((x) => pickModel(x, profile, model)),
@@ -159,7 +163,9 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     setDraft: (name: string, folder: string) => set({ draft: { name, folder } }),
     /** NewProjectStep's Create: make the project and pick it */
     createProject: async (name: string, folder: string): Promise<string | null> => {
-      const r = await o.onNewProject(name, folder, formHost(f, ctxRef.current));
+      const on = formHost(f, ctxRef.current);
+      if (!on) return hostOfflineNote(on, o.hosts, Date.now() + off);
+      const r = await o.onNewProject(name, folder, on);
       if (r.error) return r.error;
       const id = r.id;
       if (id) setF((x) => madeProject(x, id, name, folder, ctxRef.current));
@@ -168,9 +174,8 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     missing,
     /** Decision 0034: choose a folder on this host and add the project there */
     addHere: async () => {
-      if (!missing) return;
-      const name = formHost(f, ctxRef.current);
-      const path = await picker.pick({ title: `Folder for ${missing.name}`, ...(name ? { host: name } : {}) });
+      if (!missing || !hereId) return;
+      const path = await picker.pick({ title: `Folder for ${missing.name}`, host: hereId });
       if (!path) return;
       const r = await o.onAddProject!(missing.id!, hereId, path);
       setErr(r.error);

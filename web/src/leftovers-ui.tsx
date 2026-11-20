@@ -2,19 +2,18 @@
 // Settings' lists in settings-ui.tsx. The texts are leftovers.ts's. One component serves the desktop and the phone unless a reason is
 // written beside it.
 
+import type { HostId } from "./hostid.ts";
 import { useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import { hostIdByName } from "./hosts.ts";
-import { useHosts } from "./host-pick-ui.tsx";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { findLeftovers, stripText } from "./leftovers.ts";
 
 /** A host command on a leftover (End, Keep, Remove), then a fresh read of the load; the error text or null. */
-export function useLeftoverCommand(): (host: string, action: string, args: Record<string, unknown>) => Promise<string | null> {
+export function useLeftoverCommand(): (host: HostId | undefined, action: string, args: Record<string, unknown>) => Promise<string | null> {
   const api = useApi();
-  const { hosts } = useHosts();
   return async (host, action, args) => {
-    const r = await api.command(hostIdByName(hosts, host), action, undefined, args);
+    if (!host) return "This host reports no install id, so nothing can be sent to it until it updates";
+    const r = await api.command(host, action, undefined, args);
     refreshLoad();
     return r.ok ? null : (r.error ?? "That did not work");
   };
@@ -32,7 +31,7 @@ export function LeftoverStrip({ id, now }: { id: string; now: number }) {
   const all = async (action: string, args: Record<string, unknown> = {}) => {
     setBusy(true);
     let e: string | null = null;
-    for (const l of f.items) e = (await run(f.host, action, { id: l.id, ...args })) ?? e;
+    for (const l of f.items) e = (await run(f.hostId, action, { id: l.id, ...args })) ?? e;
     setErr(e);
     setBusy(false);
   };

@@ -3,19 +3,20 @@ import assert from "node:assert/strict";
 import { FRAME_ALLOW, FRAME_MAX, filmstrip, frameHeight, inlineAttachmentId, previewCard, stepImage, thumbBox } from "../src/previews.ts";
 import { buildConversation, previewsOf } from "../src/conversation.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
+import { hid } from "./helpers.ts";
 
 const at = "2026-11-14T09:00:00Z";
 
 test("card model per kind", () => {
-  const img = previewCard(3, at, { kind: "image", attachmentId: "a1", title: "Sheet", caption: "c", width: 390, height: 844, url: "http://localhost:5173/x" }, "H1");
+  const img = previewCard(3, at, { kind: "image", attachmentId: "a1", title: "Sheet", caption: "c", width: 390, height: 844, url: "http://localhost:5173/x" }, hid("H1"));
   assert.equal(img?.src, "/api/h/H1/attachments/a1");
   assert.equal(img?.url, "http://localhost:5173/x");
-  const html = previewCard(4, at, { kind: "html", attachmentId: "p1", title: "Chart", width: 640, height: 300 }, "H1");
+  const html = previewCard(4, at, { kind: "html", attachmentId: "p1", title: "Chart", width: 640, height: 300 }, hid("H1"));
   assert.equal(html?.src, "/api/h/H1/previews/p1");
   assert.equal(html?.caption, "");
-  assert.equal(previewCard(5, at, { kind: "video", attachmentId: "x" }, "H1"), null, "unknown kind");
-  assert.equal(previewCard(6, at, { kind: "image" }, "H1"), null, "no id");
-  assert.equal(previewCard(7, at, { kind: "image", attachmentId: "a", url: "javascript:alert(1)" }, "H1")?.url, undefined, "only http(s) links");
+  assert.equal(previewCard(5, at, { kind: "video", attachmentId: "x" }, hid("H1")), null, "unknown kind");
+  assert.equal(previewCard(6, at, { kind: "image" }, hid("H1")), null, "no id");
+  assert.equal(previewCard(7, at, { kind: "image", attachmentId: "a", url: "javascript:alert(1)" }, hid("H1"))?.url, undefined, "only http(s) links");
 });
 
 test("frame height: min(height, 600) at first, never over 2,000", () => {
@@ -53,7 +54,7 @@ test("only same-origin /api/attachments/{id} images are inline", () => {
   assert.equal(inlineAttachmentId("/api/attachments/a_1?x=1", o), null);
   assert.equal(inlineAttachmentId("data:image/png;base64,AAAA", o), null);
   setMarkdownOrigin(o);
-  const html = renderMarkdown("![shot](/api/attachments/a_1) ![x](https://example.com/x.png)", "H1");
+  const html = renderMarkdown("![shot](/api/attachments/a_1) ![x](https://example.com/x.png)", hid("H1"));
   assert.ok(html.includes('<img class="md-img" src="/api/h/H1/attachments/a_1"'), "the agent's path is read from its thread's host");
   assert.ok(!html.includes('src="https://example.com'), "remote images stay links");
   assert.ok(html.includes('href="https://example.com/x.png"'));

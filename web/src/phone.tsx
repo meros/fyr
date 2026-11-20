@@ -12,11 +12,12 @@ import { useDraft } from "./drafts.ts";
 import { Fragment, type ComponentChildren, type VNode } from "preact";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
+import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
+import type { HostId } from "./hostid.ts";
 import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
 import { HomeScreen } from "./home-ui.tsx";
 import { stripHosts } from "./load.ts";
-import { SECTIONS, connLabel, connWords, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import { SECTIONS, connLabel, connWords, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -68,7 +69,7 @@ import { CardView } from "./card-ui.tsx";
 import { ArrivedBar } from "./arrived-bar.tsx";
 import { type AnswerMove, arrive } from "./arrived.ts";
 import { HostMark } from "./host-mark-ui.tsx";
-import { hostOf, hostTag, offlineLine, profilesOfHost, threadProvider, type HostInfo } from "./hosts.ts";
+import { hostTag, offlineLine, profilesOf, threadProvider, type HostInfo, type HostProfiles } from "./hosts.ts";
 
 // ---- icons ----
 const I = {
@@ -219,8 +220,10 @@ export interface PhoneActions {
 
 export interface PhoneProps {
   nav: PhoneNav;
-  /** threads, projects, profiles, hosts and the connection */
-  store: Store;
+  /** threads, projects, hosts and the connection: the store as the screens read it (store.ts viewOf) */
+  store: View;
+  /** slice 2b: each host's profiles by install id; a thread's and a project's are its own host's */
+  profiles: HostProfiles;
   /** the inbox's sections; what search finds: the project filter's threads, quiet ones only while the unlock runs
    *  (V0.114); all: the same with quiet ones, to count the hits the lock hides; the one unlock of quiet projects;
    *  V0.192: rows is what the list draws (sec, with the current thread when the filters hide it), guest that row */
@@ -241,7 +244,7 @@ export interface PhoneProps {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
     setFolder(id: string, path: string): Promise<string | null>;
     /** V0.132: on `host`, else the threads' host */
-    create(name: string, folder: string, threadIds?: string[], host?: string): Promise<{ error: string | null; id?: string }>;
+    create(name: string, folder: string, threadIds?: string[], host?: HostId): Promise<{ error: string | null; id?: string }>;
     /** null: No project */
     move(ids: string[], projectId: string | null): Promise<string | null>;
     /** V0.58 */
@@ -249,7 +252,7 @@ export interface PhoneProps {
     /** Decision 0034 */
     link(id: string, other: string): Promise<string | null>;
     unlink(id: string): Promise<string | null>;
-    add(id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }>;
+    add(id: string, host: HostId, folder: string): Promise<{ error: string | null; id?: string }>;
   };
   actions: PhoneActions;
   /** V0.119: a Settings screen (the app builds it with its Api): the nav (null) or a page, under this header */
@@ -318,7 +321,7 @@ export function PhoneApp(p: PhoneProps) {
         <div class="m-screen m-status">
           <MHeader onBack={p.nav.back} title="Status" />
           <div class="m-nbody">
-            <HomeScreen phone sec={p.inbox.sec} projects={p.store.projects} profiles={p.store.profiles} hosts={p.store.hosts} now={p.now} loaded={p.store.loaded} onOpen={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} onAllNeeds={p.nav.back} />
+            <HomeScreen phone sec={p.inbox.sec} projects={p.store.projects} profiles={p.profiles} hosts={p.store.hostList} now={p.now} loaded={p.store.loaded} onOpen={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} onAllNeeds={p.nav.back} />
           </div>
         </div>
       )}
@@ -428,7 +431,7 @@ function MInbox(p: PhoneProps) {
     if (!p.list.selecting) setSwept(false);
   }, [p.list.selecting]);
   const unreadLeft = swept ? sweptUnread(all, p.list.picked) : 0;
-  const strip = stripHosts(useLoad(), p.store.hosts);
+  const strip = stripHosts(useLoad(), p.store.hostList);
   // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
   const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
   const canSettleMerged = merged.some((t) => !isPinned(t));
@@ -915,7 +918,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             )}
           </div>
           {/* V0.quota-in-thread: what is left on this thread's provider; one figure here, every window in Details */}
-          <ThreadQuotaFigure profile={t.profile} host={hostOf(t, p.store.hosts)} name={threadProvider(t, p.store.hosts, p.store.profiles).name} onOpen={() => p.nav.go({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />
+          <ThreadQuotaFigure profile={t.profile} host={t.host} name={threadProvider(t, p.profiles).name} onOpen={() => p.nav.go({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />
           <button class="b44" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "thread-menu", ids: [t.id] } })} aria-label="Thread actions">
             {I.more}
           </button>
@@ -929,7 +932,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             </span>
             <span>{stateLabel(st)}</span>
           </span>
-          {hostTag(t, p.store.hosts) && !t.hostOffline && (
+          {hostTag(t, p.store.hostList) && !t.hostOffline && (
             <span class="m-chip m m-hostc">
               <HostMark name={t.host!} />
               <span>{t.host}</span>
@@ -941,11 +944,11 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             </span>
           )}
           {(() => {
-            const pv = threadProvider(t, p.store.hosts, p.store.profiles); // V0.206: as the desktop header shows it
+            const pv = threadProvider(t, p.profiles); // V0.206: as the desktop header shows it
             // V0.agent-pill: the desktop header's pill. It only shows here: the chip row is one button that opens Details,
             // where the same pill picks (a select inside a button would take the tap from it).
             if (!pv.name) return null;
-            const pf = profilesOfHost(hostOf(t, p.store.hosts), p.store.hosts, p.store.profiles).find((x) => x.id === t.profile);
+            const pf = profilesOf(t, p.profiles).find((x) => x.id === t.profile);
             return <AgentPill size="chip" phone segs={threadAgent(t, pf, pv, "", () => {}).map(showOnly)} />;
           })()}
           {(() => {
@@ -1052,7 +1055,7 @@ function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: strin
   const empty = !text.trim() && !att.chips.length;
   const stop = t.running && empty;
   // V0.79: `/` at the start lists the agent's commands and skills; a tap picks.
-  const slash = useSlash(reason ? null : { host: t.hostId ?? "", threadId: t.id }, text, setText, ta);
+  const slash = useSlash(reason ? null : { host: t.hostId, threadId: t.id }, text, setText, ta);
   useLayoutEffect(() => {
     const el = ta.current;
     if (!el) return;
@@ -1315,7 +1318,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
 /** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked.
  *  #41: the state is useNewThreadForm's, shared with the desktop dialog. */
 function MNew(p: PhoneProps) {
-  const n = useNewThreadForm({ onAddProject: p.projectActions.add, projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder, host) => p.projectActions.create(name, folder, [], host) });
+  const n = useNewThreadForm({ onAddProject: p.projectActions.add, projects: p.store.projects, profiles: p.profiles, hosts: p.store.hostList, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder, host) => p.projectActions.create(name, folder, [], host) });
   const { form: f, cur, chip, folder, profiles, att } = n;
   const ta = useRef<HTMLTextAreaElement>(null);
   const ready = n.plan.ok;
@@ -1413,7 +1416,7 @@ function MNew(p: PhoneProps) {
             <span class="ell">Live view</span>
           </label>
           {n.note && <div class="m-mnote" role="status">{n.note}</div>}
-          <QuotaList profiles={profiles} />
+          <QuotaList profiles={p.profiles} />
         </div>
         {n.err && <div class="err prose">{n.err}</div>}
       </div>
@@ -1458,7 +1461,7 @@ function MSettingsItem({ hosts, onClick }: { hosts: HostInfo[]; onClick(): void 
 }
 
 /** V0.166: the host load sheet: what the desktop rail's tooltips say, as text, and the provider quotas. */
-function MLoadSheet({ hosts, profiles, onClose }: { hosts: HostInfo[]; profiles: Profile[]; onClose(): void }) {
+function MLoadSheet({ hosts, profiles, onClose }: { hosts: HostInfo[]; profiles: HostProfiles; onClose(): void }) {
   const list = stripHosts(useLoad(), hosts);
   return (
     <MSheet onClose={onClose} label="Host load">
@@ -1485,7 +1488,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
       p.list.setPicked(new Set());
     }} />;
   }
-  if (sheet.kind === "load") return <MLoadSheet hosts={p.store.hosts} profiles={p.store.profiles} onClose={close} />;
+  if (sheet.kind === "load") return <MLoadSheet hosts={p.store.hostList} profiles={p.profiles} onClose={close} />;
   if (sheet.kind === "menu") {
     // V0.119: Notifications and Theme live in Settings → This device now (the owner's choice); Settings says what
     // needs the owner, as the Providers badge does.
@@ -1494,7 +1497,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.list.setSelecting(true))} />
         <Item label="Status" sub="What needs you, what runs, what happened" onClick={() => p.nav.replace({ screen: { name: "status" }, sheet: null })} />
         <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
-        <MSettingsItem hosts={p.store.hosts} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
+        <MSettingsItem hosts={p.store.hostList} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />
         <Item label="Adopt from T3" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "adopt" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
@@ -1633,12 +1636,12 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
     return (
       <MSheet onClose={close} label="Hand over">
         <div class="m-shh">Hand over</div>
-        <HandoverForm phone t={t} profiles={p.store.profiles} onClose={close} onConfirm={(pr, m, e) => p.commands.handover(t.id, pr, m, e)} />
+        <HandoverForm phone t={t} profiles={profilesOf(t, p.profiles)} onClose={close} onConfirm={(pr, m, e) => p.commands.handover(t.id, pr, m, e)} />
       </MSheet>
     );
   }
   if (sheet.kind === "details") {
-    const prof = profilesOfHost(hostOf(t, p.store.hosts), p.store.hosts, p.store.profiles).find((x) => x.id === t.profile); // V0.139: its host's
+    const prof = profilesOf(t, p.profiles).find((x) => x.id === t.profile); // V0.139: its host's
     const row = (k: string, v: ComponentChildren) => (
       <div class="m-kvrow">
         <span class="k">{k}</span>
@@ -1664,13 +1667,13 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
               );
             })(),
           )}
-          <ThreadQuotaRow profile={t.profile} host={hostOf(t, p.store.hosts)} name={threadProvider(t, p.store.hosts, p.store.profiles).name} />
+          <ThreadQuotaRow profile={t.profile} host={t.host} name={threadProvider(t, p.profiles).name} />
           {row("Folder", t.cwd)}
           {t.branch && row("Branch", t.branch)}
           {/* V0.agent-pill: the desktop header's pill, at a finger's size; the model and the effort pick in place */}
           {row(
             "Agent",
-            <AgentPill size="field" phone segs={threadAgent(t, prof, threadProvider(t, p.store.hosts, p.store.profiles), reason("thread.setModel"), (a) => void p.commands.run("thread.setModel", [t.id], a))} />,
+            <AgentPill size="field" phone segs={threadAgent(t, prof, threadProvider(t, p.profiles), reason("thread.setModel"), (a) => void p.commands.run("thread.setModel", [t.id], a))} />,
           )}
           {t.pr &&
             row(
@@ -1749,7 +1752,7 @@ function MProject(p: PhoneProps & { id: string }) {
           <ProjectEditor
             project={pr}
             linking={group && linkingFor(group, p.allProjects, { ...p.projectActions, add: async (id, host, folder) => (await p.projectActions.add(id, host, folder)).error }, (id) => p.nav.replace({ screen: { name: "project", id }, sheet: null }))}
-            profiles={p.store.profiles}
+            profiles={profilesOf(pr, p.profiles)}
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
             onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}

@@ -5,16 +5,17 @@ import assert from "node:assert/strict";
 import { activeFilters, applyFilters, clickHost, filterEmpty, inView, parseHostsOff, threadHost, toggleHost, type FilterSel } from "../src/filters.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project, Thread } from "../src/types.ts";
-import { thread } from "./helpers.ts";
+import { thread, hid } from "./helpers.ts";
 
 const P = (id: string, name: string, extra: Partial<Project> = {}): Project => ({ id, name, threads: 1, lastUsed: "", ...extra }) as Project;
 const projects = [P("p_web", "web"), P("p_fyr", "fyr"), P("p_home", "home")];
-const H = (name: string, online = true): HostInfo => ({ name, online });
+// Slice 2b: a host is its install id (here its name, for short), and a thread is in the state of its host.
+const H = (name: string, online = true): HostInfo => ({ name, online, id: hid(name) });
 const hosts = [H("lab"), H("desk"), H("server", false)]; // the owner's order (V0.132): lab first
 const NOW = Date.parse("2026-11-17T12:00:00Z");
 const byId = (...ts: Thread[]) => Object.fromEntries(ts.map((t) => [t.id, t]));
 const T = (id: string, section: "needs" | "working" | "seen" | "snoozed" | "settled", projectId: string, host: string, extra: Record<string, unknown> = {}) =>
-  thread(id, "done", section, { projectId, project: projects.find((p) => p.id === projectId)?.name ?? "", host, ...extra });
+  thread(id, "done", section, { projectId, project: projects.find((p) => p.id === projectId)?.name ?? "", host, hostId: hid(host), ...extra });
 const base = { projects, hosts, now: NOW, showUntil: 0, open: {} };
 const S = (hostsOff: string[] = [], project: string | null = null): FilterSel => ({ hostsOff, project });
 const names = (f: ReturnType<typeof activeFilters>) => ({ hosts: f.hosts.map((h) => h.name), projects: f.projects.map((p) => p.project.name) });
@@ -113,17 +114,15 @@ test("V0.204: a click on the only host on ends the host filter; any other click 
   assert.deepEqual(clickHost([], [{ key: "desk", last: false }, { key: "lab", last: false }], "lab"), ["lab"]);
 });
 
-test("V0.client-refs: a host is filtered by its install id; two hosts with one name stay two chips; a host with no id by its name", () => {
-  const hs: HostInfo[] = [{ name: "box", online: true, id: "AAAA-1111-AAAA-1111" }, { name: "box", online: true, id: "BBBB-2222-BBBB-2222" }, { name: "nuc", online: true }];
+test("V0.client-refs: a host is filtered by its install id; two hosts with one name stay two chips", () => {
+  const hs: HostInfo[] = [{ name: "box", online: true, id: hid("AAAA-1111-AAAA-1111") }, { name: "box", online: true, id: hid("BBBB-2222-BBBB-2222") }];
   const threads = byId(
     T("AAAA-1111-AAAA-1111/t_1", "needs", "p_web", "box", { hostId: "AAAA-1111-AAAA-1111" }),
     T("BBBB-2222-BBBB-2222/t_1", "needs", "p_web", "box", { hostId: "BBBB-2222-BBBB-2222" }),
-    T("t_2", "needs", "p_web", "nuc"),
   );
   const f = activeFilters({ ...base, hosts: hs, threads, sel: S() });
-  assert.deepEqual(f.hosts.map((h) => [h.key, h.name, h.n]), [["AAAA-1111-AAAA-1111", "box", 1], ["BBBB-2222-BBBB-2222", "box", 1], ["nuc", "nuc", 1]]);
-  assert.deepEqual(Object.keys(applyFilters(threads, S(["AAAA-1111-AAAA-1111"]), projects)).sort(), ["BBBB-2222-BBBB-2222/t_1", "t_2"]);
-  assert.deepEqual(Object.keys(applyFilters(threads, S(["nuc"]), projects)).length, 2);
+  assert.deepEqual(f.hosts.map((h) => [h.key, h.name, h.n]), [["AAAA-1111-AAAA-1111", "box", 1], ["BBBB-2222-BBBB-2222", "box", 1]]);
+  assert.deepEqual(Object.keys(applyFilters(threads, S(["AAAA-1111-AAAA-1111"]), projects)).sort(), ["BBBB-2222-BBBB-2222/t_1"]);
 });
 
 test("parseHostsOff: what the device stored, else none off", () => {

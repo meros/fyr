@@ -1,6 +1,7 @@
 // V0.load-invariants: the load guard's invariants as words. A violation is a card in Needs you (the evidence, Fix it,
 // Dismiss) until the owner presses one; Settings → Automation lists each invariant with its last violation and count.
 // Pure: invariants-ui.tsx prints them, on the desktop and the phone alike.
+import type { HostId } from "./hostid.ts";
 import type { Guard, InvariantCard } from "./guard.ts";
 import type { HostLoad } from "./load.ts";
 import { relTime, whenLabel } from "./format.ts";
@@ -8,6 +9,8 @@ import { relTime, whenLabel } from "./format.ts";
 /** One open card and the host it is of. */
 export interface HostCard {
   host: string;
+  /** the host's install id, which Fix it and Dismiss name; none for a load read from no addressable host */
+  hostId?: HostId;
   card: InvariantCard;
   /** the Fyr checkout Fix it starts its thread in; null when the host has none */
   fixDir: string | null;
@@ -20,7 +23,7 @@ export function invariantCards(load: HostLoad[]): HostCard[] {
   const out: HostCard[] = [];
   for (const h of load) {
     const inv = guardOf(h)?.invariants;
-    for (const card of inv?.cards ?? []) out.push({ host: h.host, card, fixDir: inv?.fixDir || null });
+    for (const card of inv?.cards ?? []) out.push({ host: h.host, ...(h.hostId ? { hostId: h.hostId } : {}), card, fixDir: inv?.fixDir || null });
   }
   return out.sort((a, b) => Date.parse(b.card.at) - Date.parse(a.card.at));
 }

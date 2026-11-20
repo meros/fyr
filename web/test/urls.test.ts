@@ -4,17 +4,18 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { frontPath, hostPath, hostUrl } from "../src/urls.ts";
+import { hid } from "./helpers.ts";
 
 test("a host's path carries the install id and the host protocol's own path", () => {
-  assert.equal(hostPath("F7QK-2M9X-AB34-CD56", "/threads/t_1/events?after=3"), "/api/h/F7QK-2M9X-AB34-CD56/threads/t_1/events?after=3");
-  assert.equal(hostPath("a b", "/state"), "/api/h/a%20b/state", "the id is escaped");
+  assert.equal(hostPath(hid("F7QK-2M9X-AB34-CD56"), "/threads/t_1/events?after=3"), "/api/h/F7QK-2M9X-AB34-CD56/threads/t_1/events?after=3");
+  assert.equal(hostPath(hid("a b"), "/state"), "/api/h/a%20b/state", "the id is escaped");
   assert.equal(frontPath("/state"), "/api/front/state");
 });
 
 test("a call without a host throws instead of reaching another; a shown URL is empty", () => {
-  assert.throws(() => hostPath("", "/state"), /names the host/);
-  assert.equal(hostUrl("", "/attachments/a_1"), "");
-  assert.equal(hostUrl("H1", "/attachments/a_1"), "/api/h/H1/attachments/a_1");
+  assert.throws(() => hostPath(hid(""), "/state"), /names the host/);
+  assert.equal(hostUrl(hid(""), "/attachments/a_1"), "");
+  assert.equal(hostUrl(hid("H1"), "/attachments/a_1"), "/api/h/H1/attachments/a_1");
 });
 
 // Where a module may write "/api/" in a string: the one URL function, the service worker (it never caches /api/), and the

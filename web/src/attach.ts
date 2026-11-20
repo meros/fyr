@@ -1,5 +1,6 @@
 // Attachments (SPEC 0.5 V0.18): the chip state of files being uploaded, and the send arguments. Pure.
 
+import type { HostId } from "./hostid.ts";
 import { hostUrl } from "./urls.ts";
 
 export const MAX_BYTES = 25 * 1024 * 1024;
@@ -114,8 +115,8 @@ export function formatSize(bytes: number): string {
 /** Where attachments and HTML previews load from (V0.18, V0.19). The Api provides them (#41: through ApiContext);
  *  the mock serves object and data URLs. `host` is the install id of the thread's host (decision 0031). */
 export interface ContentUrls {
-  attachmentUrl(host: string, id: string): string;
-  previewUrl(host: string, id: string): string;
+  attachmentUrl(host: HostId | undefined, id: string): string;
+  previewUrl(host: HostId | undefined, id: string): string;
 }
 
 /** V0.download-assets: the URL that saves an attachment instead of showing it. The host answers `?download=1` with
@@ -127,6 +128,6 @@ export function downloadUrl(src: string): string {
 }
 
 /** The URL of an attachment on its host. */
-export function attachmentUrl(host: string, id: string): string {
+export function attachmentUrl(host: HostId | undefined, id: string): string {
   return hostUrl(host, `/attachments/${encodeURIComponent(id)}`);
 }

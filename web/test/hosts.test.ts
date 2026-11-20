@@ -1,12 +1,13 @@
 // SPEC 0.5 V0.51: Settings → Hosts lists the front's hosts; an offline host's threads say so and are read-only.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeHosts, hostForProject, hostLine, hostState, howIn, idChangedLine, routeOf, hostRoute, shortID, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
+import { decodeHosts, hostLine, hostState, howIn, idChangedLine, routeOf, hostRoute, shortID, hostTag, multiHost, offlineLine, profilesOf } from "../src/hosts.ts";
 import { rowProvider, threadProvider } from "../src/hosts.ts";
 import { attachmentUrl } from "../src/attach.ts";
 import { previewCard, previewUrl } from "../src/previews.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
-import { applySnapshot, initialStore } from "../src/store.ts";
+import { applySnapshot, initialStore, profilesOn } from "../src/store.ts";
+import { hid, snapshot } from "./helpers.ts";
 import { clockTime } from "../src/format.ts";
 
 test("an offline thread names its host and the time; an online one says nothing", () => {
@@ -23,11 +24,11 @@ test("hosts decode leniently and read as words", () => {
   assert.deepEqual(decodeHosts(undefined), []);
 });
 
-test("the store keeps the state's hosts, and none from an older host", () => {
-  const base = { now: "2026-11-14T18:40:00Z", user: "owner", threads: [], actions: [], profiles: [], projects: [] };
-  const s = applySnapshot(initialStore(), { ...base, hosts: [{ name: "a", online: true }] }, Date.now());
-  assert.deepEqual(s.hosts.map((h) => h.name), ["a"]);
-  assert.deepEqual(applySnapshot(initialStore(), base, Date.now()).hosts, []);
+test("the store keeps the front's hosts; a host without an install id is listed and has no state", () => {
+  const s = applySnapshot(initialStore(), snapshot({ hosts: [{ name: "a", online: true, id: hid("HA") }, { name: "old", online: true }] }), Date.now());
+  assert.deepEqual(s.hostList.map((h) => h.name), ["a", "old"]);
+  assert.deepEqual(Object.keys(s.hosts), ["HA"]);
+  assert.deepEqual(applySnapshot(initialStore(), snapshot({ hosts: [] }), Date.now()).hostList, []);
 });
 
 // SPEC 0.5 V0.54: rows and headers name the host only with more than one; a new thread uses its host's profiles.
@@ -40,31 +41,32 @@ test("the host shows with two hosts, never with one", () => {
   assert.equal(hostTag({}, two), "");
 });
 
-test("profiles and deploy are per host; an older front's state falls back to the merged list", () => {
+test("profiles and deploy are per host; slice 2b: no merged list, and a host not known has none", () => {
   const pa = { id: "pa", name: "A", color: "", models: ["m"], defaultModel: "m" };
   const pb = { id: "pb", name: "B", color: "", models: ["m"], defaultModel: "m" };
   const hs = decodeHosts([
-    { name: "a", online: true, profiles: [pa] },
-    { name: "b", online: true, profiles: [pb], deploy: { phase: "drain" } },
-    { name: "c", online: true },
+    { name: "a", online: true, id: "HA", profiles: [pa] },
+    { name: "b", online: true, id: "HB", profiles: [pb], deploy: { phase: "drain" } },
+    { name: "c", online: true, id: "HC" },
   ]);
-  const all = [pa, pb];
-  assert.deepEqual(profilesOn("b", hs, all).map((p) => p.id), ["pb"]);
-  assert.deepEqual(profilesOn("c", hs, all).map((p) => p.id), ["pa", "pb"]);
-  assert.deepEqual(profilesOn(undefined, [], all).map((p) => p.id), ["pa", "pb"]);
-  assert.equal(hostForProject(undefined, hs), "a");
-  assert.equal(hostForProject("b", hs), "b");
+  const s = applySnapshot(initialStore(), snapshot({ hosts: hs }), Date.now());
+  assert.deepEqual(profilesOn(s, hid("HB")).map((p) => p.id), ["pb"]);
+  assert.deepEqual(profilesOn(s, hid("HC")), [], "a host with no profiles has none, not another host's");
+  assert.deepEqual(profilesOn(s, undefined), []);
+  assert.deepEqual(profilesOf({ hostId: hid("HA") }, { HA: [pa] }).map((p) => p.id), ["pa"]);
+  assert.deepEqual(profilesOf({}, { HA: [pa] }), [], "a record with no host has no profiles");
   assert.equal(hostState(hs[1], Date.now()), "online · updating Fyr");
   assert.equal(hs[0].deploy, undefined);
 });
 
 test("attachments, previews and markdown images load from the thread's host", () => {
-  assert.equal(attachmentUrl("HB", "att_1"), "/api/h/HB/attachments/att_1");
-  assert.equal(previewCard(1, "", { kind: "html", attachmentId: "pv_1" }, "HB")?.src, "/api/h/HB/previews/pv_1");
-  assert.equal(previewUrl("HB", "pv_1"), "/api/h/HB/previews/pv_1");
+  const HB = hid("HB");
+  assert.equal(attachmentUrl(HB, "att_1"), "/api/h/HB/attachments/att_1");
+  assert.equal(previewCard(1, "", { kind: "html", attachmentId: "pv_1" }, HB)?.src, "/api/h/HB/previews/pv_1");
+  assert.equal(previewUrl(HB, "pv_1"), "/api/h/HB/previews/pv_1");
   setMarkdownOrigin("http://fyr.test");
   const md = "![shot](http://fyr.test/api/attachments/att_9)";
-  assert.match(renderMarkdown(md, "HB"), /src="\/api\/h\/HB\/attachments\/att_9"/);
+  assert.match(renderMarkdown(md, HB), /src="\/api\/h\/HB\/attachments\/att_9"/);
   assert.doesNotMatch(renderMarkdown(md), /<img/, "without a host there is nowhere to read it from: a link");
   setMarkdownOrigin(null);
 });
@@ -167,19 +169,17 @@ test("V0.125: how this browser gets in, from the page's host and the state's use
 
 test("V0.206: a thread's provider is its host's, and a row names it only when there is more than one name", () => {
   const prof = (id: string, name: string, extra = {}) => ({ id, name, color: "#123456", models: [], ...extra });
-  const hosts = [
-    { name: "a", online: true, profiles: [prof("p", "Claude")] },
-    { name: "b", online: true, profiles: [prof("p", "DeepSeek", { unavailable: "No key" })] },
-  ] as never[];
-  assert.deepEqual(threadProvider({ host: "b", profile: "p" }, hosts, []), { name: "DeepSeek", color: "#123456", title: "Provider DeepSeek · No key" });
-  assert.equal(rowProvider({ host: "a", profile: "p" }, hosts, [])?.name, "Claude");
+  const [A, B] = [hid("HA"), hid("HB")];
+  const byHost = { HA: [prof("p", "Claude")], HB: [prof("p", "DeepSeek", { unavailable: "No key" })] } as never;
+  assert.deepEqual(threadProvider({ hostId: B, profile: "p" }, byHost), { name: "DeepSeek", color: "#123456", title: "Provider DeepSeek · No key" });
+  assert.equal(rowProvider({ hostId: A, profile: "p" }, byHost)?.name, "Claude");
   // One name, on one host or on two: the row says nothing.
-  assert.equal(rowProvider({ profile: "p" }, [], [prof("p", "Claude")]), null);
-  const same = [{ name: "a", online: true, profiles: [prof("p", "Claude")] }, { name: "b", online: true, profiles: [prof("q", "Claude")] }] as never[];
-  assert.equal(rowProvider({ host: "b", profile: "q" }, same, []), null);
+  assert.equal(rowProvider({ hostId: A, profile: "p" }, { HA: [prof("p", "Claude")] } as never), null);
+  const same = { HA: [prof("p", "Claude")], HB: [prof("q", "Claude")] } as never;
+  assert.equal(rowProvider({ hostId: B, profile: "q" }, same), null);
   // A provider since removed shows its id, which is a second name.
-  assert.equal(rowProvider({ profile: "gone" }, [], [prof("p", "Claude")])?.name, "gone");
-  assert.equal(rowProvider({ profile: "" }, [], [prof("p", "Claude")]), null);
+  assert.equal(rowProvider({ hostId: A, profile: "gone" }, { HA: [prof("p", "Claude")] } as never)?.name, "gone");
+  assert.equal(rowProvider({ hostId: A, profile: "" }, { HA: [prof("p", "Claude")] } as never), null);
 });
 
 test("V0.host-updates: a host's row says how far behind it is and how its last update ended", async () => {

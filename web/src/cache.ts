@@ -4,6 +4,7 @@
 // events and fetches only newer ones. Without IndexedDB everything still
 // works from the network.
 import type { FyrEvent, StateDTO } from "./types.ts";
+import type { Snapshot } from "./hostfeed.ts";
 
 type Partial = StateDTO & { partial?: boolean };
 
@@ -16,8 +17,8 @@ export function mergeStateDelta(stored: StateDTO, next: Partial): StateDTO {
 }
 
 /** V0.host-ids (decision 0031 2.5, C7): the device keeps each host's own state, by install id, as that host last sent
- *  it. A host's "since" is its own newest rev, and its partial answer merges into its own state before the hosts are
- *  flattened into one, so one host's clock or records never decide what is asked of another. */
+ *  it. A host's "since" is its own newest rev, and its partial answer merges into its own state, and the hosts are
+ *  kept apart (slice 2b), so one host's clock or records never decide what is asked of another. */
 export function hostSince(stored: StateDTO | null): number {
   return stored ? sinceRev(stored) : 0;
 }
@@ -136,9 +137,10 @@ async function moveHost(was: string, now: string): Promise<void> {
 
 export const cache = {
   moveHost,
-  /** the device's copy of the whole state, drawn at once on start (V0.38) */
-  state: () => get<StateDTO>("state2"),
-  saveState: (s: StateDTO) => put("state2", s),
+  /** the device's copy of the whole state, drawn at once on start (V0.38): slice 2b's snapshot, one state per host.
+   *  The older flat copy ("state2") is not read: it is a cache, and the network state replaces it. */
+  state: () => get<Snapshot>("state3").then((s) => (s && typeof s.states === "object" && s.states && Array.isArray(s.hosts) ? s : null)),
+  saveState: (s: Snapshot) => put("state3", s),
   /** one host's own state as it last sent it, by install id: its "since" (V0.host-ids) */
   hostState: (hostId: string) => get<StateDTO>(`host:${hostId}`),
   saveHostState: (hostId: string, s: StateDTO) => put(`host:${hostId}`, s),

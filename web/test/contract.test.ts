@@ -12,6 +12,7 @@ import { relTime, whenLabel } from "../src/format.ts";
 import { decodeProject, decodeThread } from "../src/decode.ts";
 import { blockedReason, needsGroup } from "../src/rows.ts";
 import { hideQuiet, nextQuietEnd, quietLine, quietList, quietNote } from "../src/quiet.ts";
+import { TH, snapshot, view } from "./helpers.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/host-state.json", import.meta.url), "utf8"));
 const REQUIRED = new Set(["id"]); // a thread or project without an id is not data
@@ -46,9 +47,12 @@ function variants(): { label: string; state: any }[] {
 
 function render(state: any) {
   const now = Date.parse("2026-01-01T00:00:00Z");
-  let s = applySnapshot(initialStore(), state, now);
-  for (const t of state.threads ?? []) s = upsertThread(s, structuredClone({ ...t, rev: (t.rev ?? 0) + 1 }));
-  for (const p of state.projects ?? []) s = upsertProject(s, structuredClone(p));
+  // Slice 2b: the host's state is one host's in the snapshot; a frame names its host.
+  const snap = snapshot({ now: state.now });
+  let raw = applySnapshot(initialStore(), { ...snap, states: { [TH]: state } }, now);
+  for (const t of state.threads ?? []) raw = upsertThread(raw, structuredClone({ ...t, hostId: TH, rev: (t.rev ?? 0) + 1 }));
+  for (const p of state.projects ?? []) raw = upsertProject(raw, structuredClone({ ...p, hostId: TH }));
+  const s = view(raw);
   const sec = sections(hideQuiet(s.threads, false, now));
   flatOrder(sec);
   nextQuietEnd(s.threads, s.projects, now);
@@ -98,16 +102,16 @@ test("the host fixture has the edge cases (a thread with no project, an icon wit
     { group: run?.attention.group, word: run?.attention.word, subject: run?.attention.subject },
     { group: "approve", word: "Run", subject: "Mount the SD card" },
   );
-  const row = decodeThread(run);
+  const row = decodeThread(run, TH);
   assert.equal(needsGroup(row), "approve");
   assert.deepEqual(blockedReason(row), { word: "Run", what: "Mount the SD card" });
 });
 
 test("SPEC 0.5 V0.55: decode keeps a new-project prefill with a name and drops one without", () => {
   const t = fixture.threads.find((x: any) => x.newProject?.name === "lib");
-  assert.equal(decodeThread(t).newProject?.name, "lib");
-  assert.equal(decodeThread({ ...t, newProject: { folder: "/x" } }).newProject, undefined);
-  assert.deepEqual(decodeThread({ ...t, newProject: { name: "lib" } }).newProject, { name: "lib", folder: "" });
+  assert.equal(decodeThread(t, TH).newProject?.name, "lib");
+  assert.equal(decodeThread({ ...t, newProject: { folder: "/x" } }, TH).newProject, undefined);
+  assert.deepEqual(decodeThread({ ...t, newProject: { name: "lib" } }, TH).newProject, { name: "lib", folder: "" });
   assert.equal(decodeProject({ name: "a" }).folder, "");
 });
 

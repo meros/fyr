@@ -1,17 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { addHosts, sameRepo, projectIconUrl, splitSharedPatch, expandOrder, findProject, linkCandidates, linkProjects, memberOn, projectOf, projectRecords, projectSubtitle, recordOf } from "../src/projects.ts";
-import { applySnapshot, initialStore, setHosts, setProjectOrder, stateForCache, upsertProject } from "../src/store.ts";
+import { applySnapshot, initialStore, setHosts, setProjectOrder, stateForCache, upsertProject, viewOf, type View } from "../src/store.ts";
 import { activeFilters, applyFilters, liveProject } from "../src/filters.ts";
 import { chooseHost, initialForm, settleForm } from "../src/new-thread.ts";
 import { applyHidden, projectIsHidden, pushHiddenOf, setProjectShown } from "../src/hidden.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project } from "../src/types.ts";
-import { thread } from "./helpers.ts";
+import { thread, hid, snapshot } from "./helpers.ts";
 
-const host = (id: string, name: string, online = true) => ({ id, name, online }) as HostInfo;
+const host = (id: string, name: string, online = true) => ({ id: hid(id), name, online }) as HostInfo;
 const A = host("A", "desk"), B = host("B", "mac");
-const rec = (hostId: string, pid: string, name: string, extra: Partial<Project> = {}): Project => ({ id: `${hostId}/${pid}`, rid: pid, hostId, host: hostId === "A" ? "desk" : "mac", name, threads: 1, ...extra });
+const rec = (hostId: string, pid: string, name: string, extra: Partial<Project> = {}): Project => ({ id: `${hostId}/${pid}`, rid: pid, hostId: hid(hostId), host: hostId === "A" ? "desk" : "mac", name, threads: 1, ...extra });
 const on = (id: string, h: string, p: Project) => thread(id, "working", "working", { host: h, projectId: p.id });
 const fyrA = rec("A", "p1", "Fyr", { link: "l_1", color: "rose", threads: 2 });
 const fyrB = rec("B", "p9", "fyr-mac", { link: "l_1", color: "blue", threads: 3 });
@@ -63,22 +63,23 @@ test("the filter and the chips treat both hosts' threads as one project", () => 
 });
 
 test("the store keeps records: a frame for a member, a new host order and the device cache", () => {
-  let s = applySnapshot(initialStore(), { now: new Date(0).toISOString(), user: "o", hosts: [A, B], threads: [], actions: [], profiles: [], projects: [fyrA, fyrB, other] } as never, 0);
-  assert.equal(s.projects.length, 2);
+  let s = applySnapshot(initialStore(), snapshot({ hosts: [A, B], projects: [fyrA, fyrB, other] }), 0);
+  assert.equal(viewOf(s).projects.length, 2);
   s = upsertProject(s, { ...fyrB, name: "Renamed", rev: 9 });
-  assert.equal(recordOf(s.projects, fyrB.id)?.name, "Renamed");
-  assert.equal(s.projects.length, 2);
-  assert.equal(setHosts(s, [B, A]).projects.find((p) => p.members)?.name, "Renamed");
-  assert.equal((stateForCache(s, "x").projects ?? []).length, 3);
-  s = upsertProject(s, { id: fyrB.id, deleted: true } as Project);
-  assert.ok(!s.projects.some((p) => p.members), "one member left: an ordinary project");
+  assert.equal(recordOf(viewOf(s).projects, fyrB.id)?.name, "Renamed");
+  assert.equal(viewOf(s).projects.length, 2);
+  assert.equal(viewOf(setHosts(s, [B, A])).projects.find((p) => p.members)?.name, "Renamed");
+  assert.equal(Object.values(stateForCache(s, "x").states).flatMap((st) => st.projects).length, 3, "each host's records, one state per host");
+  s = upsertProject(s, { id: fyrB.id, hostId: fyrB.hostId, deleted: true } as Project);
+  assert.ok(!viewOf(s).projects.some((p) => p.members), "one member left: an ordinary project");
 });
 
 test("reordering moves the members together", () => {
   const ps = linkProjects([fyrA, fyrB, other], [A, B]);
   assert.deepEqual(expandOrder([other.id!, fyrA.id!], ps), [other.id, fyrA.id, fyrB.id]);
-  const s = setProjectOrder({ ...initialStore(), hosts: [A, B], projects: ps }, expandOrder([other.id!, fyrA.id!], ps));
-  assert.deepEqual(s.projects.map((p) => p.name), ["Stacks", "Fyr"]);
+  const base = applySnapshot(initialStore(), snapshot({ hosts: [A, B], projects: [fyrA, fyrB, other] }), 0);
+  const s = setProjectOrder(base, expandOrder([other.id!, fyrA.id!], ps));
+  assert.deepEqual(viewOf(s).projects.map((p) => p.name), ["Stacks", "Fyr"]);
 });
 
 test("what can join: another host's project outside any other link", () => {
@@ -91,11 +92,11 @@ test("what can join: another host's project outside any other link", () => {
 
 test("New thread stays host first: the filter picks the host's own member, and a new host keeps the project", () => {
   const ps = linkProjects([fyrA, fyrB, other], [A, B]);
-  const ctx = { projects: ps, profiles: [], hosts: [A, B] };
+  const ctx = { projects: ps, profiles: {}, hosts: [A, B] };
   const f = settleForm(initialForm(), ctx, fyrB.id!, {});
-  assert.equal(f.host, "desk");
+  assert.equal(f.host, "A");
   assert.equal(f.projectId, fyrA.id);
-  const moved = chooseHost(f, "mac", ctx);
+  const moved = chooseHost(f, hid("B"), ctx);
   assert.equal(moved.projectId, fyrB.id);
 });
 
@@ -121,7 +122,7 @@ test("an edit splits into what the link shares and what stays this host's", () =
 
 test("hiding: any member's id hides the linked project, and a hidden host takes only its own record", () => {
   const projects = linkProjects([fyrA, fyrB, other], [A, B]);
-  const s = { ...initialStore(), hosts: [A, B], projects };
+  const s: View = { ...initialStore(), hostList: [A, B], projects, threads: {}, stalls: [] };
   const hidden = { hosts: [], projects: [fyrB.id!] };
   assert.ok(projectIsHidden(projects[0], hidden));
   assert.deepEqual(applyHidden(s, hidden).projects.map((p) => p.name), ["Stacks"]);

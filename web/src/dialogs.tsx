@@ -1,13 +1,14 @@
 // New thread, Adopt from T3, and the snooze menu.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Profile, Project, T3Candidate } from "./types.ts";
+import type { Project, T3Candidate } from "./types.ts";
 import { ProfileQuota } from "./quota-ui.tsx";
 import { AgentPill, newThreadAgent } from "./agent-ui.tsx";
 import { ChipStrip, ClipPicker } from "./attach-ui.tsx";
 import { NewProjectStep, ProjectIcon, ProjectList, QuietHold } from "./project-ui.tsx";
 import { HostField, useHosts } from "./host-pick-ui.tsx";
-import { hostChoices, hostOfflineNote } from "./hosts.ts";
+import { hostOfflineNote, pickerStart, type HostProfiles } from "./hosts.ts";
+import type { HostId } from "./hostid.ts";
 import { colorVar } from "./projects.ts";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozeChoice } from "./snooze.ts";
@@ -33,7 +34,7 @@ export function Modal({ title, onClose, children, wide, cls }: { title: string; 
 
 /** SPEC 0.5 V0.30, V0.42: Project first; the folder follows from the project's folder, else a fresh scratch
  *  folder; "Change" opens the folder picker. #41: the state is useNewThreadForm's, shared with the phone. */
-export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddProject"]; profiles: Profile[]; hosts?: HostInfo[]; projects: Project[]; projectFilter: string | null; clockOffset?: number; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }> }) {
+export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddProject"]; profiles: HostProfiles; hosts?: HostInfo[]; projects: Project[]; projectFilter: string | null; clockOffset?: number; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, host: HostId): Promise<{ error: string | null; id?: string }> }) {
   const n = useNewThreadForm(p);
   const { form: f, cur, chip, folder, profiles, att } = n;
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -148,21 +149,22 @@ export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddP
   );
 }
 
-export function AdoptDialog(p: { load(host?: string): Promise<T3Candidate[]>; now: number; onClose(): void; onAdopt(ids: string[], host?: string): Promise<string | null> }) {
+export function AdoptDialog(p: { load(host: HostId): Promise<T3Candidate[]>; now: number; onClose(): void; onAdopt(ids: string[], host: HostId): Promise<string | null> }) {
   const [cands, setCands] = useState<T3Candidate[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  // V0.139: T3's threads are a host's; the owner picks which (the first in the host order), and they run there.
+  // V0.139: T3's threads are a host's; the owner picks which (the picker starts on the first in the host order), and
+  // they run there.
   const hs = useHosts();
-  const [host, setHost] = useState(() => hostChoices(hs.hosts)[0]?.name ?? "");
+  const [host, setHost] = useState<HostId | undefined>(() => pickerStart(hs.hosts));
 
   useEffect(() => {
     setCands(null);
     setErr(null);
     setPicked(new Set());
-    if (hostOfflineNote(host, hs.hosts, hs.now)) return;
-    p.load(host || undefined).then(setCands, () => setErr("Could not load T3 threads."));
+    if (!host || hostOfflineNote(host, hs.hosts, hs.now)) return;
+    p.load(host).then(setCands, () => setErr("Could not load T3 threads."));
   }, [host]);
 
   const toggle = (id: string) => {
@@ -173,9 +175,9 @@ export function AdoptDialog(p: { load(host?: string): Promise<T3Candidate[]>; no
   };
 
   const submit = async () => {
-    if (!picked.size || busy) return;
+    if (!picked.size || busy || !host) return;
     setBusy(true);
-    const e = await p.onAdopt([...picked], host || undefined);
+    const e = await p.onAdopt([...picked], host);
     setBusy(false);
     if (e) setErr(e);
   };

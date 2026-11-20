@@ -4,32 +4,40 @@
 import { HostMark } from "./host-mark-ui.tsx";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import { hostChoices, hostOfflineNote, type HostInfo } from "./hosts.ts";
-import type { Profile } from "./types.ts";
+import { hostChoices, hostOfflineNote, type HostInfo, type HostProfiles } from "./hosts.ts";
+import { asHostId, type HostId } from "./hostid.ts";
 
 /** The front's hosts, its own among them (decision 0031 2.6: nothing here says which one is the front's). */
 export const HostsContext = createContext<{ hosts: HostInfo[]; now: number }>({ hosts: [], now: 0 });
 export const useHosts = () => useContext(HostsContext);
 
-/** The providers of every host, merged: the handover divider's names (V0.45), the inbox rows' provider (V0.206). */
-export const ProfilesContext = createContext<Profile[]>([]);
+/** Each host's providers by install id (slice 2b: no merged list): a thread's provider is its own host's (V0.206). */
+export const ProfilesContext = createContext<HostProfiles>({});
 
 /** The Host field, where the host is a choice (New project, New thread: host first, V0.139): nothing with one host;
  *  an offline host's note says why nothing can be made there. */
-export function HostField({ value, onPick, what = "It lives there: its folders and providers are that host's." }: { value: string; onPick(h: string): void; what?: string }) {
+export function HostField({ value, onPick, what = "It lives there: its folders and providers are that host's." }: { value: HostId | undefined; onPick(h: HostId): void; what?: string }) {
   const { hosts, now } = useHosts();
   const choices = hostChoices(hosts);
   if (!choices.length) return null;
   const note = hostOfflineNote(value, hosts, now);
+  const name = hosts.find((h) => h.id === value)?.name ?? "";
   return (
     <label class="fld hostf">
       <span>Host</span>
       {/* V0.170: the picked host's mark beside the list (a native list draws no icons in its options). */}
       <span class="hostsel">
-        <HostMark name={value} size={20} />
-        <select value={value} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
+        <HostMark name={name} size={20} />
+        <select
+          value={value ?? ""}
+          onChange={(e) => {
+            const id = asHostId((e.target as HTMLSelectElement).value);
+            if (id) onPick(id);
+          }}
+        >
+          {!value && <option value="">Pick a host</option>}
           {choices.map((c) => (
-            <option key={c.name} value={c.name}>
+            <option key={c.id} value={c.id}>
               {c.label}
             </option>
           ))}

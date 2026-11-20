@@ -6,6 +6,7 @@ import { choiceLabel, handoverPick, mappingLine, modelChoices, modelName, neares
 import { chooseProject, initialForm, settleForm, type FormCtx } from "../src/new-thread.ts";
 import { projectDefaults } from "../src/projects.ts";
 import type { Profile, Project } from "../src/types.ts";
+import { TH } from "./helpers.ts";
 
 const E = ["low", "medium", "high", "xhigh", "max"];
 const claude: Profile = {
@@ -83,14 +84,14 @@ const project = (o: Partial<Project>): Project => ({ id: "p1", name: "Web", colo
 test("a project's default effort applies when its model takes it", () => {
   assert.equal(projectDefaults(project({ profile: "claude", model: "claude-opus-5-5", effort: "max" }), [claude]).effort, "max");
   assert.equal(projectDefaults(project({ profile: "claude", model: "claude-haiku-5-5", effort: "max" }), [claude]).effort, undefined);
-  const ctx: FormCtx = { projects: [project({ profile: "claude", model: "claude-opus-5-5", effort: "low" })], profiles: [claude, acme] };
+  const ctx: FormCtx = { projects: [project({ profile: "claude", model: "claude-opus-5-5", effort: "low" })], profiles: { [TH]: [claude, acme] }, hosts: [{ name: "h1", id: TH, online: true }] };
   const f = settleForm(initialForm(), ctx, "p1", {});
   assert.equal(f.effortPick, "low");
   assert.equal(f.note, "");
 });
 
 test("a project default that cannot run says so, and which provider the thread starts on", () => {
-  const ctx: FormCtx = { projects: [project({ profile: "dead" })], profiles: [dead, acme] };
+  const ctx: FormCtx = { projects: [project({ profile: "dead" })], profiles: { [TH]: [dead, acme] }, hosts: [{ name: "h1", id: TH, online: true }] };
   const f = settleForm(initialForm(), ctx, "p1", {});
   assert.equal(f.profile, "acme");
   assert.equal(f.note, "Web's default, Work, cannot run (Needs a login); it starts on Claude (acme).");

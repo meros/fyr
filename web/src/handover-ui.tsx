@@ -1,7 +1,5 @@
 // SPEC 0.5 V0.45, decision 0013: the handover dialog. Pick the profile and model, see which rung the host will
 // use, confirm. The same form sits in a desktop modal and in a phone sheet.
-import { useHosts } from "./host-pick-ui.tsx";
-import { hostOf, profilesOfHost } from "./hosts.ts";
 import { useEffect, useState } from "preact/hooks";
 import type { Profile, Thread } from "./types.ts";
 import { handoverTargets, parsePlan, planGuess, rungText, type HandoverPlan } from "./handover.ts";
@@ -13,6 +11,7 @@ import { hostPath } from "./urls.ts";
 
 export interface HandoverProps {
   t: Thread;
+  /** the profiles of the thread's host (store.ts profilesOn): a thread is handed over on its host (V0.139) */
   profiles: Profile[];
   onClose(): void;
   /** runs thread.handover; resolves to an error text, or null */
@@ -21,7 +20,7 @@ export interface HandoverProps {
 
 async function fetchPlan(t: Thread, profile: string): Promise<HandoverPlan> {
   try {
-    const r = await fetch(hostPath(t.hostId ?? "", `/threads/${encodeURIComponent(t.id)}/handover?profile=${encodeURIComponent(profile)}`), { headers: { Accept: "application/json" } });
+    const r = await fetch(hostPath(t.hostId, `/threads/${encodeURIComponent(t.rid ?? t.id)}/handover?profile=${encodeURIComponent(profile)}`), { headers: { Accept: "application/json" } });
     if (r.ok) return parsePlan(await r.json()) ?? planGuess(t);
   } catch {
     /* the mock client and old hosts have no plan */
@@ -31,8 +30,7 @@ async function fetchPlan(t: Thread, profile: string): Promise<HandoverPlan> {
 
 export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   // V0.139: a thread is handed over on its host, to that host's providers.
-  const hs = useHosts();
-  const targets = handoverTargets(p.t, profilesOfHost(hostOf(p.t, hs.hosts), hs.hosts, p.profiles));
+  const targets = handoverTargets(p.t, p.profiles);
   const fromProf = p.profiles.find((x) => x.id === p.t.profile);
   const [profile, setProfile] = useState(targets.find((x) => !x.unavailable)?.id ?? "");
   const prof = targets.find((x) => x.id === profile);

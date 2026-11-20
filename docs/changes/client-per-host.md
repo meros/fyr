@@ -1,0 +1,17 @@
+# V0.client-per-host: the client keeps one state per host, every call names its host by a required install id, and nothing falls back to the first host
+
+→ decision 0031 slice 2b (2.5, C6, C8, C13), V0.51, V0.54, V0.132, V0.139, V0.client-refs, V0.forget-front. *Amends V0.54 (a host with no profiles of its own has none; no merged list stands in), V0.132 (with no host picked, nothing is made; the picker starts on the first host in the owner's order and shows it, so the call names what the owner sees).* (decision 0031)
+
+The client's store held one merged map of threads, one merged list of profiles and actions, and the front's own name, id and machine. With two hosts the merge hid whose a provider was, and every place that did not know a record's host fell back to the first host in the owner's order, or sent an empty host id that only failed at run time.
+
+(1) **One state per host.** The store keeps `hosts: {<install id>: {threads, projects, profiles, actions, deploy, stall}}`, each as its host sent it, and the front's list of hosts in the owner's order beside it. The inbox, the board, the project list, the filters and the stall banner are selectors over every host; a thread frame, a patch, a project, a deploy and a stall go into the state of the host whose stream sent them, and one that names no host goes nowhere. The device's stored copy is one state per host too (an older stored copy is not read; the network state replaces it).
+
+(2) **A record's profiles and actions are its own host's.** A thread's provider, its handover targets, a project's defaults and a quota line's name are read from that host's profiles. There is no merged list, and a host with no profiles has none.
+
+(3) **The host id is a type.** An install id is its own type in the client; a string, a name or `hostId ?? ""` does not compile where a host is called. Every call names its host: a thread's command, its events and its patch refetch go to the host whose state has it; a project's command to its record's host; a folder picker, an upload, New thread, New project and Adopt from T3 to the host the form names. Where no host is known the screen says so ("Pick the host it starts on.", "This thread's host is not one Fyr follows now", "This host reports no install id…") and sends nothing.
+
+(4) **No first-host fallbacks.** The host picker of New thread, New project and Adopt starts on the first host in the owner's order and shows it (with one host, that host); the call then names it. A host that reports no install id (decision 0031 2.1) is not offered, as no call can name it. A record without a host is not taken for the first host's: its host chip says "Unknown host". Settings' parts send to their own host's id; a part of a host with no install id sends nothing and says why.
+
+(5) **The front only in Settings and the banner.** The store has no host, host id or machine of the front's; it keeps `front: {id, name}` for Settings → This device ("Connected through …") and the update banner, which is the deploy of the host the front runs in, read from that host's state (decision 0031 2.6).
+
+(6) **Tests.** The per-host store and its selectors (`web/test/host-store.test.ts`); a guard over the sources that fails on `hostId ?? ""`, on a host-by-name or first-host helper, and on an Api method or URL function that takes its host as a string (`web/test/front-identity.test.ts`); the layout test picks hosts by install id.

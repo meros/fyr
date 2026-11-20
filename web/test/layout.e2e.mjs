@@ -3154,7 +3154,8 @@ for (const [label, w, ht] of [
       failures.push(`${ctx} ${name}: ${e.message}`);
     }
   };
-  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = ${JSON.stringify(h)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  // Slice 2b: a host is picked by its install id; the option's text is its name (", (offline)" for one that is).
+  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = [...s.options].find((o) => o.textContent.replace(/ \\(offline\\)$/, '') === ${JSON.stringify(h)})?.value ?? ''; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const click = (sel, text) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find(x => x.textContent.trim().startsWith(${JSON.stringify(text)})); b?.click(); return !!b; })()`);
   const PICKER = `({ title: (document.querySelector('.fsheet .m-shh') ?? document.querySelector('.fmodal .dh b'))?.textContent ?? '', rows: [...document.querySelectorAll('.fpick .fsec.browse .fpr')].map(b => b.textContent.trim()), note: document.querySelector('.fnote')?.textContent ?? '' })`;
   const closePicker = () => evaluate(`(document.querySelector('.fsheet .m-fchg') ?? document.querySelector('.fmodal .dh button'))?.click()`);
@@ -3164,7 +3165,8 @@ for (const [label, w, ht] of [
     if (!(await click(`${root} button`, "New project"))) throw new Error("no New project button");
     await waitFor(`!!document.querySelector('${root} .hostf select')`);
     const opts = await evaluate(`[...document.querySelectorAll('${root} .hostf option')].map(o => o.textContent)`);
-    check(opts.join("|") === "desk|host-b (offline)|lab|old-nuc", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
+    // Slice 2b (decision 0031 2.1): old-nuc reports no install id, so no call can name it and it is not offered.
+    check(opts.join("|") === "desk|host-b (offline)|lab", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
     if (phone) {
       const h = await evaluate(`document.querySelector('${root} .hostf select').getBoundingClientRect().height`);
       check(h >= 44, `${ctx}: the Host field is ${h} px high`);
@@ -3258,7 +3260,7 @@ for (const [label, w, ht] of [
     await open(phone ? `${q}&settings=projects` : `${q}&dialog=settings&page=projects`, `document.querySelectorAll('${root} .pli').length > 3`);
     await click(`${root} button`, "New project");
     await waitFor(`!!document.querySelector('${root} .hostf select')`);
-    const np = await evaluate(`({ v: document.querySelector('${root} .hostf select').value, first: document.querySelector('${root} .hostf option')?.value })`);
+    const np = await evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); return { v: s.selectedOptions[0]?.textContent, first: s.options[0]?.textContent }; })()`);
     check(np.v === "lab" && np.first === "lab", `${ctx}: New project's default host ${JSON.stringify(np)}`);
     await open(phone ? `${q}&settings=providers` : `${q}&dialog=settings&page=providers`, `document.querySelectorAll('${root} .hpart').length === 4`);
     const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => p.dataset.host).join('|')`);
@@ -3291,13 +3293,14 @@ for (const [label, w, ht] of [
       failures.push(`${ctx} ${name}: ${e.message}`);
     }
   };
-  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = ${JSON.stringify(h)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  // Slice 2b: a host is picked by its install id; the option's text is its name (", (offline)" for one that is).
+  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = [...s.options].find((o) => o.textContent.replace(/ \\(offline\\)$/, '') === ${JSON.stringify(h)})?.value ?? ''; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const chipName = `(document.querySelector('${root} .ppick .pln, ${root} .m-ppick .pln')?.textContent ?? '')`;
   // 1. New thread, host first.
   await step("new thread", async () => {
     await open(phone ? "?mock=rail&hosts=2&hostOrder=lab,desk&new" : "?mock=rail&hosts=2&hostOrder=lab,desk&dialog=new", `!!document.querySelector('${root} .hostf select')`);
     const s = await evaluate(`(() => { const host = document.querySelector('${root} .hostf'); const pick = document.querySelector('${root} .ppick, ${root} .m-ppick');
-      return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('select').value, proj: ${chipName},
+      return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('select').selectedOptions[0]?.textContent, proj: ${chipName},
         provs: document.querySelector('${root} .agp .ags.agv select') ? [...document.querySelector('${root} .agp .ags.agv select').options].map(o => o.value) : null }; })()`);
     check(s.first && s.v === "lab" && s.proj === "Robot arm", `${ctx}: host first, lab, lab's project ${JSON.stringify(s)}`);
     // V0.model-choice: the choice is provider and model; its providers are the part before the NUL (both fronts: one pill)

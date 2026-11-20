@@ -7,6 +7,7 @@ import { buildConversation, previewsOf } from "../src/conversation.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
 import { hostUrls, previewCard } from "../src/previews.ts";
 import type { FyrEvent } from "../src/types.ts";
+import { hid } from "./helpers.ts";
 
 const fake: ContentUrls = {
   attachmentUrl: (host, id) => `fake:att/${id}@${host}`,
@@ -16,20 +17,20 @@ const fake: ContentUrls = {
 const preview = (seq: number, kind: string, id: string): FyrEvent => ({ seq, at: "2026-11-15T10:00:00Z", type: "preview", data: { kind, attachmentId: id } }) as FyrEvent;
 
 test("#41: previews load from the Api's URLs that are passed in", () => {
-  assert.equal(previewCard(1, "", { kind: "image", attachmentId: "a1" }, "h", fake)?.src, "fake:att/a1@h");
-  assert.equal(previewCard(2, "", { kind: "html", attachmentId: "p1" }, "h", fake)?.src, "fake:pv/p1@h");
-  assert.deepEqual(previewsOf([preview(3, "html", "p2")], "h", fake).map((c) => c.src), ["fake:pv/p2@h"]);
-  const items = buildConversation([preview(4, "image", "a2")], { host: "h", urls: fake });
+  assert.equal(previewCard(1, "", { kind: "image", attachmentId: "a1" }, hid("h"), fake)?.src, "fake:att/a1@h");
+  assert.equal(previewCard(2, "", { kind: "html", attachmentId: "p1" }, hid("h"), fake)?.src, "fake:pv/p1@h");
+  assert.deepEqual(previewsOf([preview(3, "html", "p2")], hid("h"), fake).map((c) => c.src), ["fake:pv/p2@h"]);
+  const items = buildConversation([preview(4, "image", "a2")], { host: hid("h"), urls: fake });
   assert.deepEqual(items.flatMap((i) => (i.kind === "preview" ? [i.card.src] : [])), ["fake:att/a2@h"]);
-  assert.equal(previewCard(5, "", { kind: "image", attachmentId: "a3" }, "F7QK-2M9X")?.src, hostUrls.attachmentUrl("F7QK-2M9X", "a3"), "the host's own paths, under its prefix");
+  assert.equal(previewCard(5, "", { kind: "image", attachmentId: "a3" }, hid("F7QK-2M9X"))?.src, hostUrls.attachmentUrl(hid("F7QK-2M9X"), "a3"), "the host's own paths, under its prefix");
 });
 
 test("#41: markdown images use the URL function passed in, and the cache does not mix two Apis", () => {
   setMarkdownOrigin("http://localhost");
   try {
     const md = "![shot](/api/attachments/a_1)";
-    assert.match(renderMarkdown(md, "h", fake.attachmentUrl), /src="fake:att\/a_1@h"/);
-    assert.match(renderMarkdown(md, "H1"), /src="\/api\/h\/H1\/attachments\/a_1"/);
+    assert.match(renderMarkdown(md, hid("h"), fake.attachmentUrl), /src="fake:att\/a_1@h"/);
+    assert.match(renderMarkdown(md, hid("H1")), /src="\/api\/h\/H1\/attachments\/a_1"/);
   } finally {
     setMarkdownOrigin(null);
   }

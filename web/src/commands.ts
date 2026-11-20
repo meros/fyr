@@ -2,6 +2,8 @@
 // settle, archive or snooze (SPEC U8), the toast that reports it, and the error text when the host says no.
 // The desktop keys and buttons and the phone's swipes and sheets all go through it.
 
+import type { HostId } from "./hostid.ts";
+import type { CommandReply } from "./types.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import { recordUndo, undoCommands, undoKindOf, undoLive, type UndoEntry } from "./store.ts";
@@ -45,8 +47,9 @@ export interface CommandOptions {
   onUndone?(entry: UndoEntry, ok: boolean): void;
   /** V0.207: told of each action the owner runs, before it goes out */
   onRun?(action: string, ids: string[]): void;
-  /** The install id of the host that runs a thread (decision 0031: a command names its host). */
-  hostOf(threadId: string): string;
+  /** The install id of the host that runs a thread (decision 0031: a command names its host); none for a thread the
+   *  store does not have, which then gets no command. */
+  hostIdOf(threadId: string): HostId | undefined;
 }
 
 export function useThreadCommands(o: CommandOptions): ThreadCommands {
@@ -68,10 +71,16 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
   const notify = (text: string, error = false) => setToast(error ? { text, undo: false, error: true, at: Date.now() } : { text, undo: false, at: Date.now() });
   const showError = (text: string) => notify(text, true);
 
+  /** A thread's command to its own host; a thread whose host is not known gets none, and says so. */
+  const to = (id: string | undefined, action: string, args?: Record<string, unknown>): Promise<CommandReply> => {
+    const host = id ? opts.current.hostIdOf(id) : undefined;
+    return host ? api.command(host, action, id, args) : Promise.resolve({ ok: false, error: "This thread's host is not one Fyr follows now" });
+  };
+
   const run = async (action: string, ids: string[], args?: Record<string, unknown>, ro?: RunOptions): Promise<number> => {
     if (!ids.length) return 0;
     opts.current.onRun?.(action, ids);
-    const replies = await Promise.all(ids.map((id) => api.command(opts.current.hostOf(id), action, id, args).then((r) => ({ id, r }))));
+    const replies = await Promise.all(ids.map((id) => to(id, action, args).then((r) => ({ id, r }))));
     const ok = replies.filter((x) => x.r.ok).map((x) => x.id);
     const bad = replies.filter((x) => !x.r.ok);
     const kind = undoKindOf(action);
@@ -85,14 +94,14 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
   };
 
   const send = async (id: string, args: SendArgs): Promise<boolean> => {
-    const r = await api.command(opts.current.hostOf(id), "thread.send", id, { ...args });
+    const r = await to(id, "thread.send", { ...args });
     if (!r.ok) showError(r.error ?? "Could not send");
     return r.ok;
   };
 
   const handover = async (id: string | null, profile?: string, model?: string, effort?: string): Promise<string | null> => {
     if (!id || !profile) return "Pick a profile";
-    const r = await api.command(opts.current.hostOf(id), "thread.handover", id, { profile, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); // V0.model-choice: with its effort
+    const r = await to(id, "thread.handover", { profile, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); // V0.model-choice: with its effort
     return r.ok ? null : (r.error ?? "The handover could not start");
   };
 
@@ -105,7 +114,7 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     const cmds = undoCommands(entry, Date.now());
     if (!entry || !cmds) return;
     setUndo(null);
-    const res = await Promise.all(cmds.map((c) => api.command(opts.current.hostOf(c.threadId ?? ""), c.action, c.threadId, c.args)));
+    const res = await Promise.all(cmds.map((c) => to(c.threadId, c.action, c.args)));
     const bad = res.find((r) => !r.ok);
     if (bad) showError(`Undo failed: ${bad.error ?? ""}`);
     else notify("Undone");

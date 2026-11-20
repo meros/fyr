@@ -1,12 +1,14 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
 import { needsGroupRank } from "./rows.ts";
-import { linkProjects, orderProjects, projectRecords } from "./projects.ts";
+import { linkProjects, orderProjects } from "./projects.ts";
 import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
 import type { OwnerMarks } from "./host-mark.ts";
 import type { DeployProgress } from "./deploy.ts";
-import { decodeStall, stallsOf, upsertStall, type StallInfo } from "./stall.ts";
+import { decodeStall, type StallInfo } from "./stall.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
+import { asHostId, type HostId } from "./hostid.ts";
+import type { Snapshot } from "./hostfeed.ts";
 
 import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, Thread, ThreadDTO } from "./types.ts";
 
@@ -38,37 +40,56 @@ export function connWords(c: Conn): string {
   return c === "live" ? "Connected to Fyr" : c === "offline" ? "Fyr is not reachable, retrying" : "Connecting…";
 }
 
+/** Decision 0031 2.5 (slice 2b, V0.client-per-host): what the client keeps of one host, as that host sent it. Nothing here is another host's,
+ *  and nothing is merged: a thread's actions and profiles are read from its own host's. */
+export interface HostState {
+  /** the host's threads by ref */
+  threads: Record<string, Thread>;
+  /** the host's project records, each stamped with the host (a linked project is one record per host, decision 0034) */
+  projects: Project[];
+  profiles: Profile[];
+  actions: ActionInfo[];
+  /** V0.39: an update of Fyr on this host */
+  deploy: DeployProgress | null;
+  /** V0.147: the host's newest stall */
+  stall: StallInfo | null;
+}
+
+export function emptyHost(): HostState {
+  return { threads: {}, projects: [], profiles: [], actions: [], deploy: null, stall: null };
+}
+
 export interface Store {
   loaded: boolean;
   conn: Conn;
   /** server clock minus client clock, ms */
   clockOffset: number;
   user: string;
-  host: string;
-  /** V0.125: this install's id (the state's hostId, V0.124), for Settings → Hosts when the front lists no hosts */
-  hostId: string;
-  /** V0.170: what this install runs on, for its mark when the front lists no hosts */
-  machine: string;
+  /** Decision 0031 2.6: the front this browser is connected through. Read for Settings → This device and the update
+   *  banner (`bannerDeploy`) only; no host is the front's, and nothing falls back to it. */
+  front: { id: string; name: string };
   /** V0.171: the owner's host marks by install id */
   hostMarks: OwnerMarks;
-  /** V0.51 */
-  hosts: HostInfo[];
-  threads: Record<string, Thread>;
-  actions: ActionInfo[];
-  profiles: Profile[];
-  /** in the owner's order (V0.121: orderProjects); one entry per project, a linked one with its `members` (decision 0034) */
-  projects: Project[];
+  /** V0.51: the front's hosts, in the owner's order */
+  hostList: HostInfo[];
+  /** Slice 2b: each host's own state, by install id. The lists the screens draw are selectors over it (`viewOf`). */
+  hosts: Record<HostId, HostState>;
   /** V0.121: the owner's project order; null until set (by name then) */
   projectOrder: string[] | null;
-  /** V0.39 */
-  deploy: DeployProgress | null;
-  /** V0.147: the hosts' stalls, one per host */
-  stalls: StallInfo[];
-  /** timeline events per thread, oldest first; only for threads the client has loaded */
+  /** timeline events per thread ref, oldest first; only for threads the client has loaded */
   events: Record<string, FyrEvent[]>;
   /** The last seq of each loaded timeline when the stream left live: a refetch starts there, not after the
    * events the new stream already appended (review 2026-11-15). Cleared per thread once refetched. */
   resumeFrom: Record<string, number>;
+}
+
+/** What the screens read: the store with the lists over every host (decision 0031 2.5: the inbox, the board, the
+ *  project list and the filters are selectors over the hosts). `threads` is keyed by ref, so two hosts' records never
+ *  meet; `projects` is in the owner's order, a linked project once (decision 0034); `stalls` one per host. */
+export interface View extends Store {
+  threads: Record<string, Thread>;
+  projects: Project[];
+  stalls: StallInfo[];
 }
 
 export function initialStore(): Store {
@@ -77,21 +98,91 @@ export function initialStore(): Store {
     conn: "connecting",
     clockOffset: 0,
     user: "",
-    host: "",
-    hostId: "",
-    machine: "",
+    front: { id: "", name: "" },
     hostMarks: {},
-    hosts: [],
-    threads: {},
-    actions: [],
-    profiles: [],
-    projects: [],
+    hostList: [],
+    hosts: {},
     projectOrder: null,
     events: {},
     resumeFrom: {},
-    deploy: null,
-    stalls: [],
   };
+}
+
+// ---- selectors over the hosts ----
+
+/** The hosts' states in the owner's order (a host the list no longer names last, so its records still show until the
+ *  next state drops them). */
+function hostStates(s: Pick<Store, "hosts" | "hostList">): [HostId, HostState][] {
+  const out: [HostId, HostState][] = [];
+  const seen = new Set<string>();
+  for (const h of s.hostList) {
+    const st = h.id ? s.hosts[h.id] : undefined;
+    if (h.id && st && !seen.has(h.id)) (seen.add(h.id), out.push([h.id, st]));
+  }
+  for (const [id, st] of Object.entries(s.hosts) as [HostId, HostState][]) if (!seen.has(id)) out.push([id, st]);
+  return out;
+}
+
+/** Every host's threads by ref. */
+export function allThreads(s: Pick<Store, "hosts" | "hostList">): Record<string, Thread> {
+  const out: Record<string, Thread> = {};
+  for (const [, st] of hostStates(s)) Object.assign(out, st.threads);
+  return out;
+}
+
+/** Every host's project records, in host order. */
+export function allRecords(s: Pick<Store, "hosts" | "hostList">): Project[] {
+  return hostStates(s).flatMap(([, st]) => st.projects);
+}
+
+let lastView: { s: Store; v: View } | null = null;
+let lastThreads: { hosts: Store["hosts"]; hostList: HostInfo[]; threads: Record<string, Thread> } | null = null;
+
+/** The store as the screens read it. The lists are rebuilt only when the hosts' states, the host list or the order change. */
+export function viewOf(s: Store): View {
+  if (lastView?.s === s) return lastView.v;
+  const prev = lastView?.v;
+  const threads = lastThreads && lastThreads.hosts === s.hosts && lastThreads.hostList === s.hostList ? lastThreads.threads : allThreads(s);
+  lastThreads = { hosts: s.hosts, hostList: s.hostList, threads };
+  const sameLists = !!prev && prev.hosts === s.hosts && prev.hostList === s.hostList && prev.projectOrder === s.projectOrder;
+  const projects = sameLists ? prev!.projects : linkProjects(orderProjects(allRecords(s), s.projectOrder), s.hostList);
+  const stalls = sameLists ? prev!.stalls : hostStates(s).flatMap(([, st]) => (st.stall ? [st.stall] : []));
+  const v: View = { ...s, threads, projects, stalls };
+  lastView = { s, v };
+  return v;
+}
+
+/** The profiles of one host; none for a host the store does not have. */
+export function profilesOn(s: Pick<Store, "hosts">, host: HostId | undefined): Profile[] {
+  return (host && s.hosts[host]?.profiles) || [];
+}
+
+const byHostMemo = new WeakMap<object, Record<string, Profile[]>>();
+
+/** Every host's profiles by install id (hosts.ts `HostProfiles`): a thread's provider is looked up on its own host. */
+export function profilesByHost(s: Pick<Store, "hosts">): Record<string, Profile[]> {
+  const hit = byHostMemo.get(s.hosts);
+  if (hit) return hit;
+  const out: Record<string, Profile[]> = {};
+  for (const [id, st] of Object.entries(s.hosts) as [HostId, HostState][]) out[id] = st.profiles;
+  byHostMemo.set(s.hosts, out);
+  return out;
+}
+
+/** The actions one host offers. */
+export function actionsOn(s: Pick<Store, "hosts">, host: HostId | undefined): ActionInfo[] {
+  return (host && s.hosts[host]?.actions) || [];
+}
+
+/** Decision 0031 2.6 (2): the update banner is the update of the host the front runs in: that host's own deploy. */
+export function bannerDeploy(s: Pick<Store, "hosts" | "front">): DeployProgress | null {
+  return s.hosts[s.front.id as HostId]?.deploy ?? null;
+}
+
+/** The host whose state has the thread, or undefined: a thread the store does not have has no host to ask. */
+export function hostOfThread(s: Pick<Store, "hosts">, id: string): HostId | undefined {
+  for (const [h, st] of Object.entries(s.hosts) as [HostId, HostState][]) if (st.threads[id]) return h;
+  return undefined;
 }
 
 function ts(s: string | null | undefined): number {
@@ -112,51 +203,70 @@ function newerProject(cur: Project | undefined, next: Project): boolean {
   return !cur || typeof cur.rev !== "number" || typeof next.rev !== "number" || next.rev >= cur.rev;
 }
 
-export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store {
-  const dto = decodeState(raw);
+/** One host's state from its snapshot, over what the store had of it: an upsert that arrived on the stream after
+ *  subscribing but before the snapshot may be newer, and is kept. Threads missing from the snapshot are dropped (stale
+ *  from an earlier connection); a project frame may have crossed the snapshot in flight (#42). */
+function hostFromSnapshot(prev: HostState | undefined, raw: StateDTO, info: HostInfo, host: HostId): HostState {
+  const dto = decodeState(raw, host);
   const threads: Record<string, Thread> = {};
   for (const t of dto.threads) threads[t.id] = t;
-  // An upsert that arrived on the stream after subscribing but before the snapshot may be newer.
-  // Threads missing from the snapshot are dropped (stale from an earlier connection).
   for (const id of Object.keys(threads)) {
-    const cur = s.threads[id];
+    const cur = prev?.threads[id];
     if (cur && cur !== threads[id] && !newer(cur, threads[id])) threads[id] = cur;
   }
-  // Projects the same way (#42): a project frame may have crossed the snapshot in flight.
   const projects = (dto.projects ?? []).map((p) => {
-    const cur = p.id ? s.projects.find((x) => x.id === p.id) : undefined;
-    return cur && !newerProject(cur, p) ? cur : p;
+    const q: Project = { ...p, hostId: host };
+    const cur = q.id ? prev?.projects.find((x) => x.id === q.id) : undefined;
+    return cur && !newerProject(cur, q) ? cur : q;
   });
+  const profiles = dto.profiles?.length ? dto.profiles : (info.profiles ?? []);
+  return { threads, projects, profiles, actions: dto.actions ?? [], deploy: dto.deploy ?? null, stall: decodeStall(raw.stall, info.name) };
+}
+
+export function applySnapshot(s: Store, snap: Snapshot, clientNow: number): Store {
+  const hosts: Record<HostId, HostState> = {};
+  for (const h of snap.hosts) {
+    if (!h.id) continue; // a host older than V0.124 cannot be addressed: it is listed and has nothing
+    const raw = snap.states[h.id];
+    hosts[h.id] = raw ? hostFromSnapshot(s.hosts[h.id], raw, h, h.id) : (s.hosts[h.id] ?? emptyHost());
+  }
   return {
     ...s,
     loaded: true,
-    clockOffset: ts(dto.now) ? ts(dto.now) - clientNow : s.clockOffset,
-    user: dto.user ?? "",
-    host: dto.host ?? "",
-    hostId: typeof dto.hostId === "string" ? dto.hostId : "",
-    machine: typeof dto.machine === "string" ? dto.machine : "",
-    hostMarks: decodeHostMarks(dto.hostMarks),
-    hosts: dto.hosts ?? [],
-    threads,
-    actions: dto.actions ?? [],
-    profiles: dto.profiles ?? [],
-    projects: linkProjects(orderProjects(projects, dto.projectOrder ?? null), dto.hosts ?? []),
-    projectOrder: dto.projectOrder ?? null,
-    deploy: dto.deploy ?? null,
-    stalls: stallsOf(dto),
+    clockOffset: ts(snap.now) ? ts(snap.now) - clientNow : s.clockOffset,
+    user: snap.user ?? "",
+    front: { id: snap.front?.id ?? "", name: snap.front?.name ?? "" },
+    hostMarks: decodeHostMarks(snap.hostMarks),
+    hostList: snap.hosts ?? [],
+    hosts,
+    projectOrder: snap.projectOrder ?? null,
   };
 }
 
-/** The state as the device stores it (V0.38); applySnapshot reads it back on an offline start. */
-export function stateForCache(s: Store, now: string): StateDTO {
-  return { now, user: s.user, host: s.host, ...(s.hostId ? { hostId: s.hostId } : {}), hosts: s.hosts, deploy: s.deploy, ...(s.stalls.length ? { stalls: s.stalls } : {}), threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: projectRecords(s.projects), ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
+/** The state as the device stores it (V0.38): the snapshot that applySnapshot reads back on an offline start. */
+export function stateForCache(s: Store, now: string): Snapshot {
+  const states: Record<string, StateDTO> = {};
+  for (const [id, st] of Object.entries(s.hosts) as [HostId, HostState][]) {
+    states[id] = { now, user: s.user, threads: Object.values(st.threads), projects: st.projects, profiles: st.profiles, actions: st.actions, deploy: st.deploy, ...(st.stall ? { stall: st.stall } : {}) };
+  }
+  return { now, user: s.user, front: s.front, hosts: s.hostList, ...(Object.keys(s.hostMarks).length ? { hostMarks: s.hostMarks } : {}), ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}), states };
 }
 
+/** One host's state changed. */
+function withHost(s: Store, host: HostId, f: (h: HostState) => HostState): Store {
+  const cur = s.hosts[host] ?? emptyHost();
+  const next = f(cur);
+  return next === cur ? s : { ...s, hosts: { ...s.hosts, [host]: next } };
+}
+
+/** A thread from the stream, into the state of the host it came in (its `hostId`, which api.ts stamps). A thread that
+ *  names no host has no state to go in, and is dropped: it is not taken for some host's. */
 export function upsertThread(s: Store, raw: ThreadDTO): Store {
-  const t = decodeThread(raw);
+  const host = asHostId(raw.hostId);
+  if (!host) return s;
+  const t = decodeThread(raw, host);
   if (!t.id) return s;
-  if (!newer(s.threads[t.id], t)) return s;
-  return { ...s, threads: { ...s.threads, [t.id]: t } };
+  return withHost(s, host, (h) => (newer(h.threads[t.id], t) ? { ...h, threads: { ...h.threads, [t.id]: t } } : h));
 }
 
 export function setConn(s: Store, conn: Conn): Store {
@@ -477,30 +587,34 @@ export function presetForKey<T extends SnoozePreset>(presets: T[], key: string):
   return /^[1-9]$/.test(key) ? (presets[Number(key) - 1] ?? null) : null;
 }
 
-/** A project from the stream (`event: project`, V0.23): replace by id unless older (#42), or add; `{id, deleted: true}`
- *  removes it (V0.58). */
+/** A project from the stream (`event: project`, V0.23), into its host's records: replace by id unless older (#42), or
+ *  add; `{id, deleted: true}` removes it (V0.58). A project that names no host is dropped. */
 export function upsertProject(s: Store, raw: Project): Store {
-  const records = projectRecords(s.projects);
-  if (raw.deleted) return raw.id && records.some((x) => x.id === raw.id) ? withRecords(s, records.filter((x) => x.id !== raw.id)) : s;
-  const p = decodeProject(raw);
-  const i = records.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
-  if (i >= 0 && !newerProject(records[i], p)) return s;
-  return withRecords(s, i >= 0 ? records.map((x, j) => (j === i ? p : x)) : [...records, p]);
-}
-
-/** The project list from its records: in the owner's order, a linked project once (decision 0034). */
-function withRecords(s: Store, records: Project[]): Store {
-  return { ...s, projects: linkProjects(orderProjects(records, s.projectOrder), s.hosts) };
+  const host = asHostId(raw.hostId);
+  if (!host) return s;
+  return withHost(s, host, (h) => {
+    const records = h.projects;
+    if (raw.deleted) return raw.id && records.some((x) => x.id === raw.id) ? { ...h, projects: records.filter((x) => x.id !== raw.id) } : h;
+    const p = { ...decodeProject(raw), hostId: host };
+    const i = records.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
+    if (i >= 0 && !newerProject(records[i], p)) return h;
+    return { ...h, projects: i >= 0 ? records.map((x, j) => (j === i ? p : x)) : [...records, p] };
+  });
 }
 
 /** V0.121: the owner's project order changed (the front's `projectOrder` event, or this device's own move). */
 export function setProjectOrder(s: Store, ids: string[]): Store {
-  return withRecords({ ...s, projectOrder: ids }, projectRecords(s.projects));
+  return { ...s, projectOrder: ids };
 }
 
-/** The front's list of hosts changed: a linked project shows its first online member (decision 0034). */
+/** The front's list of hosts changed: a linked project shows its first online member (decision 0034, `viewOf`). */
 export function setHosts(s: Store, hosts: HostInfo[]): Store {
-  return { ...s, hosts, projects: linkProjects(projectRecords(s.projects), hosts) };
+  return { ...s, hostList: hosts };
+}
+
+/** V0.50: a host's profiles read again (after a provider changed). */
+export function setProfiles(s: Store, host: HostId, profiles: Profile[]): Store {
+  return withHost(s, host, (h) => ({ ...h, profiles }));
 }
 
 /** RFC 7396 JSON Merge Patch: objects merge key by key, null deletes, anything else replaces. */
@@ -516,6 +630,8 @@ export function mergePatch(target: unknown, patch: unknown): unknown {
 
 export interface ThreadPatch {
   id: string;
+  /** Slice 2b: the host whose stream sent it (api.ts stamps it) */
+  host: HostId;
   rev: number;
   base: number;
   patch: Record<string, unknown>;
@@ -523,21 +639,23 @@ export interface ThreadPatch {
 
 /** SPEC 0.5 V0.38: apply a thread patch only on the copy it was made against; else ask for the whole thread. */
 export function applyThreadPatch(s: Store, p: ThreadPatch): { store: Store; needFull: boolean } {
-  const cur = s.threads[p.id];
+  const cur = s.hosts[p.host]?.threads[p.id];
   if (!cur || cur.rev !== p.base) return { store: s, needFull: true };
-  const next = decodeThread(mergePatch(cur, p.patch));
-  return { store: { ...s, threads: { ...s.threads, [p.id]: next } }, needFull: false };
+  const next = decodeThread(mergePatch(cur, p.patch), p.host);
+  return { store: withHost(s, p.host, (h) => ({ ...h, threads: { ...h.threads, [p.id]: next } })), needFull: false };
 }
 
-/** V0.147: a stall from the stream. */
-export function setStall(s: Store, raw: unknown): Store {
-  const st = decodeStall(raw); // decision 0031 2.6: a stall names its host (api.ts); none is not the front's own
-  return st ? { ...s, stalls: upsertStall(s.stalls, st) } : s;
+/** V0.147: a stall from the stream, its host's newest. */
+export function setStall(s: Store, host: HostId, raw: unknown): Store {
+  const name = s.hostList.find((h) => h.id === host)?.name;
+  const st = decodeStall(raw, name);
+  return st ? withHost(s, host, (h) => ({ ...h, stall: st })) : s;
 }
 
-/** V0.39: a deploy progress from the stream. */
-export function setDeploy(s: Store, p: DeployProgress | null): Store {
-  return { ...s, deploy: p };
+/** V0.39: a deploy progress from the stream, of the host it names (stampDeploy). */
+export function setDeploy(s: Store, p: DeployProgress | null, host?: HostId): Store {
+  const id = host ?? asHostId(p?.host);
+  return id ? withHost(s, id, (h) => ({ ...h, deploy: p })) : s;
 }
 
 /** V0.171: the owner's host marks as the state or the "hostMarks" event sends them; anything else is left out. */
@@ -561,9 +679,9 @@ export function decodeHostMarks(raw: unknown): OwnerMarks {
   return out;
 }
 
-/** V0.client-refs (decision 0031 2.5): a host's install id rotated from `was` to `now`: the records the store keeps under
- *  the old id's refs, and the timelines loaded for them, move to the new id. The next state names them by it too. */
-export function moveHostInStore(s: Store, was: string, now: string): Store {
+/** V0.client-refs (decision 0031 2.5): a host's install id rotated from `was` to `now`: its state, the records in it
+ *  (keyed by refs of the old id) and the timelines loaded for them move to the new id. The next state names them by it. */
+export function moveHostInStore(s: Store, was: HostId, now: HostId): Store {
   const pre = `${was}/`;
   if (!was || !now || was === now) return s;
   const mv = (id: string) => (id.startsWith(pre) ? `${now}/${id.slice(pre.length)}` : id);
@@ -577,11 +695,19 @@ export function moveHostInStore(s: Store, was: string, now: string): Store {
     }
     return hit ? out : m;
   };
-  const threads = keys(s.threads, (t, k) => ({ ...t, id: k, hostId: now }));
+  const old = s.hosts[was];
+  let hosts = s.hosts;
+  if (old) {
+    const { [was]: _, ...rest } = s.hosts;
+    const threads: Record<string, Thread> = {};
+    for (const [k, t] of Object.entries(old.threads)) threads[mv(k)] = { ...t, id: mv(k), hostId: now };
+    const projects = old.projects.map((p) => ({ ...p, ...(p.id ? { id: mv(p.id) } : {}), hostId: now }));
+    hosts = { ...rest, [now]: { ...(s.hosts[now] ?? emptyHost()), ...old, threads: { ...s.hosts[now]?.threads, ...threads }, projects } } as Record<HostId, HostState>;
+  }
   const events = keys(s.events, (evs, k) => evs.map((e) => ({ ...e, subject: k })));
   const resumeFrom = keys(s.resumeFrom);
-  if (threads === s.threads && events === s.events && resumeFrom === s.resumeFrom) return s;
-  return { ...s, threads, events, resumeFrom };
+  if (hosts === s.hosts && events === s.events && resumeFrom === s.resumeFrom) return s;
+  return { ...s, hosts, events, resumeFrom };
 }
 
 /** A link names a record by the host's own id (`?open=t_12`, an old push tap, a stored selection): the ref of the one

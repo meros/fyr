@@ -1,13 +1,15 @@
-// Decision 0031 slice 2a: the front's state and each host's own state become the state the store reads; a record's host
-// is the host whose state or frame it came in.
+// Decision 0031 slice 2a, 2b: the front's state and each host's own state become the snapshot the store reads, one
+// state per host; a record's host is the host whose state or frame it came in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addressable, decodeFront, flatten, hostOfFrame, reachabilityChanged, stampThread } from "../src/hostfeed.ts";
+import { addressable, decodeFront, hostOfFrame, reachabilityChanged, snapshotOf, stampThread } from "../src/hostfeed.ts";
 import type { HostInfo } from "../src/hosts.ts";
+import type { HostId } from "../src/hostid.ts";
 import type { StateDTO, ThreadDTO } from "../src/types.ts";
+import { hid } from "./helpers.ts";
 
-const desk: HostInfo = { id: "AAAA-1", name: "desk", online: true, since: "2026-11-17T08:00:00Z", machine: "laptop" };
-const lab: HostInfo = { id: "BBBB-2", name: "lab", online: false, since: "2026-11-17T09:30:00Z" };
+const desk: HostInfo & { id: HostId } = { id: hid("AAAA-1"), name: "desk", online: true, since: "2026-11-17T08:00:00Z", machine: "laptop" };
+const lab: HostInfo & { id: HostId } = { id: hid("BBBB-2"), name: "lab", online: false, since: "2026-11-17T09:30:00Z" };
 const old: HostInfo = { name: "old-nuc", online: true };
 const front = () =>
   decodeFront({ now: "2026-11-17T10:00:00Z", user: "me", buildId: "b1", front: { id: "AAAA-1", name: "desk" }, hosts: [desk, lab, old], projectOrder: ["p_same"], hostMarks: { "BBBB-2": { color: "teal" } } });
@@ -23,36 +25,40 @@ test("the front's state is the hosts and what is the front's own, nothing of a h
 });
 
 test("a thread and a project are stamped with the host they came in: name to show, id to send", () => {
-  const out = flatten(front(), [
+  const out = snapshotOf(front(), [
     { host: desk, state: state("on desk") },
     { host: lab, state: state("on lab") },
   ]);
-  assert.deepEqual(out.threads.map((t) => [t.title, t.host, t.hostId]), [["on desk", "desk", "AAAA-1"], ["on lab", "lab", "BBBB-2"]], "one id on two hosts is two records");
-  assert.deepEqual(out.projects.map((p) => [p.name, p.host, p.hostId]), [["on desk", "desk", "AAAA-1"], ["on lab", "lab", "BBBB-2"]]);
+  const threads = Object.values(out.states).flatMap((st) => st.threads);
+  const projects = Object.values(out.states).flatMap((st) => st.projects);
+  assert.deepEqual(threads.map((t) => [t.title, t.host, t.hostId, t.id]), [["on desk", "desk", "AAAA-1", "AAAA-1/t_same"], ["on lab", "lab", "BBBB-2", "BBBB-2/t_same"]], "one id on two hosts is two records");
+  assert.deepEqual(projects.map((p) => [p.name, p.host, p.hostId]), [["on desk", "desk", "AAAA-1"], ["on lab", "lab", "BBBB-2"]]);
 });
 
 test("an offline host's threads carry the time it went away; an online host's carry none", () => {
-  const out = flatten(front(), [
+  const out = snapshotOf(front(), [
     { host: desk, state: state("a") },
     { host: lab, state: state("b") },
   ]);
-  assert.equal(out.threads[0].hostOffline, undefined);
-  assert.equal(out.threads[1].hostOffline, "2026-11-17T09:30:00Z");
+  assert.equal(out.states["AAAA-1"].threads[0].hostOffline, undefined);
+  assert.equal(out.states["BBBB-2"].threads[0].hostOffline, "2026-11-17T09:30:00Z");
   assert.equal(stampThread({ ...th("x"), hostOffline: "stale" } as ThreadDTO, desk).hostOffline, undefined, "a stamp from an earlier state does not stay");
 });
 
-test("the rest of the state: the host the front runs in gives the deploy, actions are the first host's, profiles merge by id", () => {
-  const out = flatten(front(), [
+test("slice 2b: nothing is merged; each host keeps its deploy, actions, profiles and stall, and the front is only named", () => {
+  const out = snapshotOf(front(), [
     { host: desk, state: state("a", { deploy: { phase: "waiting" } as never, actions: [{ id: "x" }] as never, profiles: [{ id: "claude" }, { id: "own" }] as never, stall: { at: "t" } as never }) },
     { host: lab, state: state("b", { deploy: { phase: "installing" } as never, actions: [{ id: "y" }] as never, profiles: [{ id: "claude" }, { id: "zai" }] as never }) },
   ]);
-  assert.equal((out.deploy as { phase: string }).phase, "waiting", "the banner is the front's own host's update");
-  assert.deepEqual(out.actions, [{ id: "x" }]);
-  assert.deepEqual(out.profiles.map((p) => p.id), ["claude", "own", "zai"]);
-  assert.deepEqual(out.stalls, [{ at: "t", host: "desk" }], "a stall names its host");
-  assert.equal(out.host, "desk");
-  assert.equal(out.hostId, "AAAA-1");
-  assert.equal(out.machine, "laptop");
+  const [d, l] = [out.states["AAAA-1"], out.states["BBBB-2"]];
+  assert.deepEqual([(d.deploy as { phase: string; host: string }).phase, (d.deploy as { host: string }).host], ["waiting", "AAAA-1"], "a deploy names its host by id");
+  assert.equal((l.deploy as { phase: string }).phase, "installing");
+  assert.deepEqual([d.actions, l.actions], [[{ id: "x" }], [{ id: "y" }]]);
+  assert.deepEqual([d.profiles.map((p) => p.id), l.profiles.map((p) => p.id)], [["claude", "own"], ["claude", "zai"]]);
+  assert.deepEqual(d.stall, { at: "t", host: "desk" }, "a stall names its host");
+  assert.equal(l.stall, undefined);
+  assert.deepEqual(out.front, { id: "AAAA-1", name: "desk" });
+  assert.deepEqual(Object.keys(out.states), ["AAAA-1", "BBBB-2"], "a host with no install id has no state");
   assert.deepEqual(out.projectOrder, ["p_same"]);
   assert.deepEqual(out.hostMarks, { "BBBB-2": { color: "teal" } });
 });

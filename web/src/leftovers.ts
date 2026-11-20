@@ -1,5 +1,6 @@
 // SPEC V0.176: leftover processes (what a thread left running outside its CLI) and the settled threads' worktrees, as
 // words for the open thread's strip, the rail, the phone's load sheet and Settings. Pure texts; the components print them.
+import type { HostId } from "./hostid.ts";
 import type { Card } from "./card.ts";
 import type { HostLoad, Lookup } from "./load.ts";
 
@@ -63,10 +64,10 @@ const byMemory = (a: Leftover, b: Leftover) => b.rss - a.rss || a.pid - b.pid;
 /** A thread's leftovers on one host, the heaviest first; null without any. V0.kept-not-leftover: a process the agent
  *  kept (keep_process) is its work, not a leftover, and stays off the strip until the keep expires; Settings →
  *  Automation still lists it with End and Keep. */
-export function findLeftovers(list: HostLoad[], id: string): { host: string; items: Leftover[] } | null {
+export function findLeftovers(list: HostLoad[], id: string): { host: string; hostId?: HostId; items: Leftover[] } | null {
   for (const h of list) {
     const items = (h.leftovers ?? []).filter((l) => l.thread === id && !l.orphan && l.kept?.by !== "agent");
-    if (items.length) return { host: h.host, items: items.sort(byMemory) };
+    if (items.length) return { host: h.host, ...(h.hostId ? { hostId: h.hostId } : {}), items: items.sort(byMemory) };
   }
   return null;
 }

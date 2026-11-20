@@ -1,7 +1,8 @@
 // Rail and inbox list, as the rail direction (decision 0006) draws them.
 
+import type { HostProfiles } from "./hosts.ts";
 import { Fragment, type ComponentChildren, type Ref } from "preact";
-import type { Profile, Thread } from "./types.ts";
+import type { Thread } from "./types.ts";
 import type { FilterSel, HostChip, ProjectChip } from "./filters.ts";
 import { LoadRail } from "./load-ui.tsx";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
@@ -32,8 +33,8 @@ interface RailProps {
   /** V0.40: show or hide the thread list */
   listOn?: boolean;
   onToggleList?(): void;
-  /** V0.44: profiles, for the quota in the footer */
-  profiles?: Profile[];
+  /** V0.44: each host's profiles (slice 2b); the rail's middle shows while they are given */
+  profiles?: HostProfiles;
   /** V0.50: the gear opens Settings */
   onSettings?(): void;
   /** V0.64: open the Changes board; needs is how many changes need the owner */
