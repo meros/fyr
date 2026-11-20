@@ -301,6 +301,14 @@ func (c *acpSession) emit(m cli.Msg, seq int64) {
 }
 
 func (c *acpSession) request(ctx context.Context, method string, params cli.Msg) (cli.Msg, error) {
+	return c.requestOn(ctx, method, params, nil)
+}
+
+// requestOn is request, with onWritten run once the request is on the agent's
+// pipe and before its answer is waited for: a turn is announced "started"
+// there, so an Interrupt written after that announcement reaches the agent
+// after the prompt it cancels (V0.agy-interrupt-before-prompt).
+func (c *acpSession) requestOn(ctx context.Context, method string, params cli.Msg, onWritten func()) (cli.Msg, error) {
 	idNum := c.seq.Add(1)
 	idKey := strconv.FormatInt(idNum, 10)
 	ch := make(chan rpcResp, 1)
@@ -318,6 +326,9 @@ func (c *acpSession) request(ctx context.Context, method string, params cli.Msg)
 	}
 	if err := c.write(req); err != nil {
 		return nil, err
+	}
+	if onWritten != nil {
+		onWritten()
 	}
 	select {
 	case r, open := <-ch:
@@ -672,17 +683,22 @@ func (c *acpSession) promptWorker() {
 		c.initEmitted = true
 		c.mu.Unlock()
 
-		if item.uuid != "" {
-			c.emit(cli.Msg{"type": "command_lifecycle", "command_uuid": item.uuid, "state": "started"}, 0)
-		}
-		if needInit && sid != "" {
-			c.emit(cli.Msg{"type": "system", "subtype": "init", "session_id": sid, "model": model}, 0)
+		var startedOnce sync.Once
+		started := func() {
+			startedOnce.Do(func() {
+				if item.uuid != "" {
+					c.emit(cli.Msg{"type": "command_lifecycle", "command_uuid": item.uuid, "state": "started"}, 0)
+				}
+				if needInit && sid != "" {
+					c.emit(cli.Msg{"type": "system", "subtype": "init", "session_id": sid, "model": model}, 0)
+				}
+			})
 		}
 		start := time.Now()
-		res, err := c.request(context.Background(), "session/prompt", cli.Msg{
+		res, err := c.requestOn(context.Background(), "session/prompt", cli.Msg{
 			"sessionId": sid,
 			"prompt":    convertPromptBlocks(item.content),
-		})
+		}, started)
 		durMs := time.Since(start).Milliseconds()
 
 		// Flush any trailing assistant text before emitting result.

@@ -507,6 +507,57 @@ func TestACPQueueCancelAndInterrupt(t *testing.T) {
 	}
 }
 
+// V0.agy-interrupt-before-prompt: a turn is announced "started" only once its
+// prompt is on the agent's pipe. Announced first, an Interrupt could reach the
+// agent before the prompt it cancels, and a real agent cancels no turn it has
+// not received: both sides waited forever (CI hit it once in 10 minutes, and
+// `go test -count=60` under load hangs the same way).
+func TestACPStartedFollowsThePrompt(t *testing.T) {
+	l := fakeLaunch(t)
+	sess, err := Adapter{}.Start(l, cli.Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := sess.Initialize(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		uuid := fmt.Sprintf("r%d", i)
+		if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "slow"}}, uuid); err != nil {
+			t.Fatal(err)
+		}
+		// Interrupt the moment the turn is announced, as Fyr's Stop does. The
+		// prompt must already be out: a "started" sent first leaves the cancel
+		// to cross the prompt, the fake is still reading its own stdin for the
+		// cancel that round, and the wait below never returns.
+		for msg := range sess.Out() {
+			if msg["type"] == "command_lifecycle" && msg["command_uuid"] == uuid && msg["state"] == "started" {
+				break
+			}
+		}
+		if err := sess.Interrupt(ctx); err != nil {
+			t.Fatal(err)
+		}
+		// The fake's "slow" turn lasts until it sees session/cancel.
+		var gotResult bool
+		for msg := range sess.Out() {
+			if msg["type"] == "result" {
+				gotResult = true
+				break
+			}
+		}
+		if !gotResult {
+			t.Fatalf("turn %d ended with no result", i)
+		}
+	}
+}
+
 func TestPrintAndListModels(t *testing.T) {
 	l := fakeLaunch(t)
 	l.Model = "gemini-3.8-flash"
@@ -623,8 +674,11 @@ func TestParseLoginAndTools(t *testing.T) {
 }
 
 type fakePipe struct {
-	mu      sync.Mutex
-	lines   []struct{ seq int64; b []byte }
+	mu    sync.Mutex
+	lines []struct {
+		seq int64
+		b   []byte
+	}
 	idx     int
 	ackedTo int64
 }
@@ -654,7 +708,10 @@ func (p *fakePipe) Pid() int          { return 42 }
 // turn must flush buffered text and emit a result carrying its runner seq.
 func TestACPReattachFinishesMidTurn(t *testing.T) {
 	p := &fakePipe{
-		lines: []struct{ seq int64; b []byte }{
+		lines: []struct {
+			seq int64
+			b   []byte
+		}{
 			{10, []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"part1 "}}}}`)},
 			{11, []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"part2"}}}}`)},
 			{12, []byte(`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}`)},
