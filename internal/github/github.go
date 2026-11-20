@@ -72,7 +72,10 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 		IsDraft    bool            `json:"isDraft"`
 		MergeState string          `json:"mergeStateStatus"`
 		AutoMerge  json.RawMessage `json:"autoMergeRequest"`
-		Rollup     []struct {
+		// V0.review-threads: only the batched read has it; gh pr view
+		// cannot read review threads, so its read leaves -1 (not read).
+		UnresolvedThreads int `json:"unresolvedThreads"`
+		Rollup            []struct {
 			Typename   string `json:"__typename"`
 			Name       string `json:"name"`
 			Context    string `json:"context"`
@@ -81,6 +84,7 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 			State      string `json:"state"`
 		} `json:"statusCheckRollup"`
 	}
+	v.UnresolvedThreads = -1
 	if err := json.Unmarshal(out, &v); err != nil {
 		return core.PR{}, 0, fmt.Errorf("gh pr view: %w", err)
 	}
@@ -122,6 +126,8 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 		// V0.136: name what blocks it, once per repo and base (cached).
 		rs := readRules(ctx, gh, repo, p.Base)
 		p.Rules, p.Protected = rs.types, rs.protected
+		p.Approvals, p.ThreadResolution = rs.approvals, rs.threads
+		p.UnresolvedThreads = v.UnresolvedThreads
 		for _, ctxName := range rs.required {
 			if !passed[ctxName] {
 				p.MissingChecks = append(p.MissingChecks, ctxName)
@@ -228,6 +234,8 @@ type ruleSet struct {
 	types     []string // the rule types active on the branch (rulesets)
 	required  []string // the required status checks, of rulesets and classic protection
 	protected bool     // classic branch protection
+	approvals int      // the most approvals a pull_request rule requires
+	threads   bool     // a pull_request rule requires review threads resolved
 	at        time.Time
 }
 
@@ -257,6 +265,8 @@ func readRules(ctx context.Context, gh Runner, repo, base string) ruleSet {
 			Checks []struct {
 				Context string `json:"context"`
 			} `json:"required_status_checks"`
+			Approvals int  `json:"required_approving_review_count"`
+			Threads   bool `json:"required_review_thread_resolution"`
 		} `json:"parameters"`
 	}
 	if json.Unmarshal(out, &rules) != nil {
@@ -269,6 +279,10 @@ func readRules(ctx context.Context, gh Runner, repo, base string) ruleSet {
 		}
 		for _, c := range r.Parameters.Checks {
 			rs.required = append(rs.required, c.Context)
+		}
+		if r.Type == "pull_request" { // V0.review-threads
+			rs.approvals = max(rs.approvals, r.Parameters.Approvals)
+			rs.threads = rs.threads || r.Parameters.Threads
 		}
 	}
 	if len(rs.types) == 0 {
@@ -463,7 +477,9 @@ func (p *Poller) Run(ctx context.Context) {
 
 func (p *Poller) pollAll(ctx context.Context) {
 	// V0.178: the PRs of one repo are read in one GraphQL query (up to
-	// BatchMax each); a PR the batch did not answer is read alone.
+	// BatchMax each); a PR the batch did not answer is read alone. A repo
+	// with one PR is read the same way (V0.review-threads): one query
+	// either way, and only that query reads the review threads.
 	byRepo := map[string][]PRThread{}
 	var order []string
 	for _, t := range p.Src.Snapshot() {
@@ -480,10 +496,6 @@ func (p *Poller) pollAll(ctx context.Context) {
 	}
 	for _, k := range order {
 		ts := byRepo[k]
-		if len(ts) == 1 {
-			p.poll(ctx, ts[0])
-			continue
-		}
 		for len(ts) > 0 {
 			chunk := ts[:min(BatchMax, len(ts))]
 			ts = ts[len(chunk):]

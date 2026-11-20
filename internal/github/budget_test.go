@@ -200,3 +200,38 @@ func (s *prSrc) Observe(id string, pr core.PR) {
 	}
 	s.got[id] = pr
 }
+
+// V0.review-threads: a repo's one PR is read in the batched query too, and
+// that query counts its unresolved review threads; a BLOCKED green PR gets
+// the pull_request rule's parameters with the rules it already read. The
+// shape of #1008 on 20 Nov: 0 approvals, threads must be resolved, one
+// bot thread open. No call is added: one GraphQL read and one rules read.
+func TestPollerReadsReviewThreadsAndRuleParameters(t *testing.T) {
+	baseRules.Clear()
+	defer baseRules.Clear()
+	batch := `{"data":{"repository":{
+	  "p0":{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":null,"title":"one","headRefName":"a","headRefOid":"h1","baseRefName":"main","isDraft":false,"mergeStateStatus":"BLOCKED","mergedAt":null,"mergeCommit":null,"autoMergeRequest":null,
+	    "reviewThreads":{"totalCount":3,"nodes":[{"isResolved":true},{"isResolved":false},{"isResolved":true}]},
+	    "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"nodes":[{"__typename":"CheckRun","name":"go","status":"COMPLETED","conclusion":"SUCCESS"}]}}}}]}}}}}`
+	rules := `[{"type":"pull_request","parameters":{"required_approving_review_count":0,"required_review_thread_resolution":true}},
+	  {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"go"}]}}]`
+	c := &counting{out: func(args []string) ([]byte, error) {
+		j := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(j, "api graphql") && strings.Contains(j, "p0: pullRequest(number: 1008)") && strings.Contains(j, "reviewThreads(first: 100) { totalCount nodes { isResolved } }"):
+			return []byte(batch), nil
+		case j == "api repos/o/r/rules/branches/main":
+			return []byte(rules), nil
+		}
+		return nil, errors.New("unexpected " + j)
+	}}
+	src := &prSrc{ts: []PRThread{{ID: "t1", URL: "https://github.com/o/r/pull/1008"}}}
+	(&Poller{Gh: c.run, Src: src}).pollAll(context.Background())
+	if len(c.calls) != 2 {
+		t.Fatalf("calls: %v", c.calls)
+	}
+	p := src.got["t1"]
+	if p.Review != "" || p.Approvals != 0 || !p.ThreadResolution || p.UnresolvedThreads != 1 || len(p.MissingChecks) != 0 {
+		t.Fatalf("read %+v", p)
+	}
+}

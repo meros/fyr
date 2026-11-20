@@ -326,6 +326,13 @@ type PR struct {
 	Rules         []string `json:"rules,omitempty"`
 	MissingChecks []string `json:"missingChecks,omitempty"`
 	Protected     bool     `json:"protected,omitempty"`
+	// V0.review-threads: what the base's pull_request rules ask of the PR
+	// (the most approvals any of them requires, and whether one requires
+	// its review threads resolved), and how many of its review threads are
+	// unresolved (read in the poll's batched query; -1: not read).
+	Approvals         int  `json:"approvals,omitempty"`
+	ThreadResolution  bool `json:"threadResolution,omitempty"`
+	UnresolvedThreads int  `json:"unresolvedThreads,omitempty"`
 }
 
 // PRMissing is the state Fyr observes when GitHub answers that the PR or its

@@ -64,7 +64,7 @@ type ActionSpec struct {
 	// chip under the newest message, never in Your move or the dock.
 	Optional bool   `json:"optional,omitempty"`
 	By       string `json:"by"` // agent or observed
-	Digest  string `json:"digest"`
+	Digest   string `json:"digest"`
 }
 
 // ActionRun is one press of an action and its result. On names the holder
