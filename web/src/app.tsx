@@ -34,7 +34,6 @@ import {
   UNDO_MS,
   type Arrival,
   type SectionKey,
-  type Sections,
   type Store,
   applyThreadPatch,
   moveHostInStore,
@@ -430,7 +429,7 @@ function App() {
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
   const queue = useSlotQueue(); // V0.137
-  // V0.207: `sec` is the truth, for every count; the list draws `rows` and j/k walks `drawn`, which keep their place.
+  // V0.207: `sec` is the truth, for every count; the list draws `rows`, j/k walks `walkRows` (V0.open-row-glides).
   // V0.stable-groups: when each thread came into its group; a new row goes last and nothing else moves one.
   const arrivalsRef = useRef<Record<string, Arrival>>({});
   const arrivals = useMemo(() => (arrivalsRef.current = trackArrivals(arrivalsRef.current, listThreads, Date.now() + store.clockOffset)), [listThreads]);
@@ -475,20 +474,21 @@ function App() {
   const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
   const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, arrivals)), [listed, shown, sec, queue, arrivals]);
-  // V0.open-row-only: the open row keeps the place it had on the screen when it was opened, until another thread is
-  // current. Every other row is where the live list has it. V0.phone-row-moves: not on the phone, where the list and the
-  // thread are never on screen together, so back on the list the row is where the live list has it.
-  const drawnRef = useRef<Sections | null>(null);
+  // V0.open-row-glides: every row, the open one too, is where the live list has it; the open row glides there
+  // (`useListAnchor`). What stays is where the owner was: j/k, the next row after a settle and the step past a row that
+  // leaves walk the list with the open row back in the place it had when it was opened (`stillRows`), until another
+  // thread is current or the owner marks it seen or unseen by hand. V0.phone-row-moves: not on the phone, where the list
+  // and the thread are never on screen together.
+  const rows = liveRows;
   const placeRef = useRef<RowPlace | null>(null);
-  if (placeRef.current?.id !== sel) placeRef.current = (drawnRef.current && placeOf(drawnRef.current, sel)) ?? placeOf(liveRows, sel);
+  if (placeRef.current?.id !== sel) placeRef.current = placeOf(rows, sel);
   const place = phone || placeRef.current?.id === freed ? null : placeRef.current;
-  const rows = useMemo(() => stillRows(liveRows, place), [liveRows, place]);
-  drawnRef.current = rows;
-  const drawn = useMemo(() => stillRows(sec, place), [sec, place]);
+  const drawn = sec;
   const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen), [rows, sel, hidden, sectionOpen]);
   const order = useMemo(() => flatOrder(drawn, limits), [drawn, limits]);
   useListAnchor(useMemo(() => flatOrder(rows, limits).join(" "), [rows, limits]), sel);
   const allRows = useMemo(() => flatOrder(rows), [rows]); // V0.186: with the rows not drawn, for the guest's place
+  const walkRows = useMemo(() => (place ? flatOrder(stillRows(rows, place)) : allRows), [rows, place, allRows]);
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
   // ---- connection ----
@@ -849,7 +849,7 @@ function App() {
    * thread pane the thread stays open. */
   const stepPast = (ids: string[]) => {
     if (zone !== "list") return;
-    const next = rowAfter(order, sel, ids, allRows);
+    const next = rowAfter(order, sel, ids, walkRows);
     if (!next) return;
     if (view) openThread(next, view.mode);
     else setLastOpen(next);
@@ -861,7 +861,7 @@ function App() {
    *  (U8, leaveOpenThread), so this is the desktop's. */
   const leaveSettled = (ids: string[]) => {
     if (phoneRef.current) return;
-    const to = afterSettle(order, sel, ids, allRows);
+    const to = afterSettle(order, sel, ids, walkRows);
     if (to === "stay") return;
     if (to === "home") return view ? closeThread() : setLastOpen(null);
     const z = zone;
@@ -1441,7 +1441,7 @@ function App() {
         e.preventDefault();
         const dir = k === "j" || k === "ArrowDown" ? 1 : -1;
         // V0.186: over the drawn rows only; a folded section is passed and stays folded.
-        const to = stepRow(allRows, order, sel, dir);
+        const to = stepRow(walkRows, order, sel, dir);
         // V0.109: j/k opens the row it marks when a thread is open; with nothing open it only marks it.
         if (to) {
           if (view) openThread(to, view.mode);

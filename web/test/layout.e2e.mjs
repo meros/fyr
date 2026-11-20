@@ -5399,9 +5399,9 @@ try {
 // SPEC 0.5 V0.192: the current thread punches through the filters: they stay as they are, its one row is in the list,
 // tagged, in its section, and it leaves with the next thread. A locked quiet thread stays out, behind its gate.
 // V0.207, V0.open-row-only: rows move at once, also with the owner's hand on the list; the row under the hand stays at
-// its height, and the open row stays where it was until the owner opens another.
+// its height. V0.open-row-glides: the open row moves at once too, and j steps from the place it had.
 for (const phone of [false, true]) section(`V0.207 still list ${phone ? "phone" : "desktop"}`, async (h) => {
-  const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
+  const { send, evaluate, waitFor, settle, navigate, openScreen, key } = h;
   const ctx = `V0.207 still list ${phone ? "phone" : "desktop"}`;
 try {
   const L = phone ? ".m-list" : ".ib .list", S = (k) => `#${phone ? "m-" : ""}sec-${k}`;
@@ -5443,9 +5443,11 @@ try {
   check(!(await evaluate(`!!document.querySelector('.heldup')`)), `${ctx}: the list still offers waiting updates`);
   if (phone) await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   else await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 200 });
-  // 4. The open row stays in Unread after it is read, until another thread opens.
+  // 4. V0.open-row-glides: the open row leaves Unread at once when it is read, and j opens the row that took its place.
   await patch(open, "done", "seen");
   await waitFor(`${IN("unread")}.includes(${JSON.stringify(open)})`, { soft: true });
+  const unread = await evaluate(IN("unread"));
+  const below = unread[unread.indexOf(open) + 1] ?? null;
   await evaluate(`document.querySelector('${L} [data-id="${open}"]').click()`);
   await waitFor(phone ? "!!document.querySelector('.m-thread')" : "!!document.querySelector('.th .tt')", { soft: true });
   await patch(open, "seen", "seen");
@@ -5455,8 +5457,15 @@ try {
     await evaluate("history.back()");
     await waitFor(`${IN("seen")}.includes(${JSON.stringify(open)})`, { soft: true });
     await settle();
-    check((await evaluate(IN("seen"))).includes(open) && !(await evaluate(IN("unread"))).includes(open), `${ctx}: back on the list the read row kept its Unread place (${JSON.stringify({ unread: await evaluate(IN("unread")), seen: await evaluate(IN("seen")) })})`);
-  } else check((await evaluate(IN("unread"))).includes(open), `${ctx}: the open row left Unread (${JSON.stringify({ open, unread: await evaluate(IN("unread")), seen: await evaluate(IN("seen")), sel: await evaluate(`document.querySelector('${L} [aria-selected="true"]')?.dataset.id ?? null`) })})`);
+  }
+  const where = async () => JSON.stringify({ open, unread: await evaluate(IN("unread")), seen: await evaluate(IN("seen")) });
+  check((await evaluate(IN("seen"))).includes(open) && !(await evaluate(IN("unread"))).includes(open), `${ctx}: the read open row kept its Unread place (${await where()})`);
+  if (!phone && below) {
+    await key("j", "KeyJ");
+    const SEL = `document.querySelector('${L} [aria-selected="true"]')?.dataset.id ?? null`;
+    await waitFor(`${SEL} === ${JSON.stringify(below)}`, { soft: true });
+    check((await evaluate(SEL)) === below, `${ctx}: j did not step from the open row's old place to ${below} (${await evaluate(SEL)})`);
+  }
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }
