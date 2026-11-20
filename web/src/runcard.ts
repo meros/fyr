@@ -60,11 +60,21 @@ export function chips(t: Pick<Thread, "runs"> & { offers?: Offer[] }): { prompts
 }
 
 /** V0.settle-request: the agent's word that its work is done, as a Settle chip under the newest message, once the run
- *  has ended and while the thread is not settled; null otherwise. */
-export function settleChip(t: Pick<Thread, "settleAsk" | "running" | "settledAt">): { label: string; why: string } | null {
+ *  has ended and while the thread is not settled; null otherwise. V0.settle-chip-rationale: the chip says why the work
+ *  is done ("Settle: PR merged"); a why that only repeats the thread's title says nothing the row does not, so it falls
+ *  back to the plain line. */
+export function settleChip(t: Pick<Thread, "settleAsk" | "running" | "settledAt"> & { title?: string }): { label: string; why: string } | null {
   if (!t.settleAsk || t.running || t.settledAt) return null;
-  const why = t.settleAsk.why?.trim() ?? "";
+  let why = t.settleAsk.why?.trim() ?? "";
+  if (why && repeatsTitle(why, t.title ?? "")) why = "";
   return { label: why ? `Settle: ${why}` : "Settle: the agent is done", why };
+}
+
+/** Whether a why is the title again: the same words, or one wholly inside the other, ignoring case and punctuation. */
+function repeatsTitle(why: string, title: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const w = norm(why), ti = norm(title);
+  return !!w && !!ti && (w === ti || ti.includes(w) || w.includes(ti));
 }
 
 /** V0.next-step-chips (4): an optional request's card stands in the conversation only once it ran; before, it is a chip. */

@@ -14,6 +14,15 @@ test("V0.settle-request: the Settle chip shows the agent's why once the run ende
   assert.equal(settleChip({ settleAsk: { at: ask.at }, running: false })?.label, "Settle: the agent is done");
 });
 
+test("V0.settle-chip-rationale: a why that only repeats the thread's title gives the plain line", () => {
+  const at = "2026-11-19T10:00:00Z";
+  const chip = (why: string, title: string) => settleChip({ settleAsk: { at, why }, running: false, title })?.label;
+  assert.equal(chip("Fix the scrollbar jump.", "Fix the scrollbar jump"), "Settle: the agent is done");
+  assert.equal(chip("scrollbar jump", "Fix the scrollbar jump"), "Settle: the agent is done");
+  assert.equal(chip("PR #12 merged", "Fix the scrollbar jump"), "Settle: PR #12 merged");
+  assert.equal(chip("PR #12 merged", ""), "Settle: PR #12 merged");
+});
+
 test("V0.settle-request: a project asks unless set to auto, and saves ask as null", () => {
   assert.equal(agentSettleOf({}), "ask");
   assert.equal(agentSettleOf({ agentSettle: "auto" }), "auto");
