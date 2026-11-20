@@ -249,7 +249,7 @@ func (e *Engine) GuardNow() {
 	e.mu.Lock()
 	e.guardTrig = e.Now()
 	e.mu.Unlock()
-	e.guardOnce(e.Now(), "psi", "PSI trigger: the agents' memory stall crossed 150 ms in 2 s; the guard runs now")
+	e.guardOnce(e.Now(), "psi", "PSI trigger: the agents' memory stall crossed 200 ms in 2 s (critical); the guard runs now")
 	e.sweepSlots()
 }
 
@@ -380,11 +380,10 @@ const (
 	WakeEvery      = 10 * time.Second
 )
 
-// TriggerFresh is how long after the PSI trigger fired the guard may freeze
-// work that grows without waiting the detector's window, when the agents'
-// memory stalls critically or the unit is near oomd's limit
-// (V0.freeze-fast-class-name): two ticks.
-const TriggerFresh = 20 * time.Second
+// TriggerFresh is how long after the PSI trigger fired the agents' stall is
+// critical and the guard may freeze work that grows without waiting the
+// detector's window (V0.freeze-fast-class-name): two ticks.
+const TriggerFresh = slots.TriggerFresh
 
 // isFrozen says the guard holds thread frozen now; under mu.
 func (e *Engine) isFrozen(thread string) bool {
@@ -439,6 +438,9 @@ func guardSignals(sig slots.Signals) string {
 	out := fmt.Sprintf("headroom=%s stall=%s slowdown=%s", h, sig.Stall, s)
 	if sig.AgentsStall != "" {
 		out += " agents_stall=" + string(sig.AgentsStall)
+	}
+	if sig.Triggered { // V0.freeze-fast-class-name: critical by the trigger, not avg10
+		out += " psi_trigger=fresh"
 	}
 	if sig.UnitStall != nil && sig.OomdLimit > 0 { // V0.guard-agents-stall
 		out += fmt.Sprintf(" unit_full=%.0f%% oomd_limit=%.0f%%", *sig.UnitStall, sig.OomdLimit)
@@ -569,7 +571,13 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	if e.SlotFreeze == nil || e.SlotThaw == nil || e.SlotSignals == nil {
 		return
 	}
-	sig := e.SlotSignals()
+	now := e.Now()
+	e.mu.Lock()
+	trig := e.guardTrig
+	e.mu.Unlock()
+	// V0.freeze-fast-class-name: a fresh trigger is a critical stall (the
+	// sampler says so too; this holds whatever SlotSignals is).
+	sig := e.SlotSignals().Fresh(trig, now)
 	// V0.oomd-guard (decision 0036 E2): no timed thaw into a critical stall,
 	// the host's or the agents'. V0.guard-agents-stall (decision 0036 B, act
 	// before oomd): either makes memory short, and so does the unit's stall
@@ -579,15 +587,13 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	nearOomd := sig.NearOomd()
 	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy)) || critical || nearOomd)
 	calm := !critical && !nearOomd && sig.Stall != slots.StallElevated && sig.AgentsStall != slots.StallElevated
-	now := e.Now()
 	e.mu.Lock()
 	if e.frozeHolds == nil {
 		e.frozeHolds = map[string]time.Time{}
 	}
 	frozen := append([]frozenJob(nil), e.frozen...)
-	// V0.freeze-fast-class-name: the trigger fired lately and the agents'
-	// stall is critical, or the unit is near oomd's limit.
-	fast := !e.guardTrig.IsZero() && now.Sub(e.guardTrig) < TriggerFresh && (agentsCritical || nearOomd)
+	// V0.freeze-fast-class-name: the trigger fired within TriggerFresh.
+	fast := sig.Triggered
 	wasShort := e.guardShort
 	e.guardShort = short
 	if short && !wasShort {
@@ -803,14 +809,14 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		return
 	}
 	// V0.freeze-fast-class-name: on 20 Nov the PSI trigger fired at 07:32:12
-	// and the work was frozen at 07:33:01, as the desktop froze. When the
-	// trigger fired and the agents stall critically (or near oomd's limit),
-	// the work that grew most is flagged now, not a window (45 s) later, and
+	// and the work was frozen at 07:33:01, as the desktop froze. Within
+	// TriggerFresh of the trigger the work that grew most is flagged now, not
+	// a window (45 s) later, and
 	// freezeUndeclared's rules (services, the share it holds, MaxFreezes,
 	// someone gains) decide as for any flag.
 	if fast && e.UndeclaredFlagNow != nil {
 		if th := e.UndeclaredFlagNow(); th != "" {
-			log.Printf("guard: flagged thread=%s without the window: the PSI trigger fired and %s", th, fastWhy(sig))
+			log.Printf("guard: flagged thread=%s without the window: the PSI trigger fired %s ago %s", th, now.Sub(trig).Round(time.Second), guardSignals(sig))
 			if e.freezeUndeclared(sig, now, len(s.Held) > 0) {
 				return
 			}
@@ -946,14 +952,6 @@ func frozenWords(d time.Duration) string {
 		return fmt.Sprintf("%d min", m)
 	}
 	return fmt.Sprintf("%d min %d s", m, s)
-}
-
-// fastWhy says why the guard did not wait the window (V0.freeze-fast-class-name).
-func fastWhy(sig slots.Signals) string {
-	if w := sig.OomdWhy(); w != "" {
-		return w
-	}
-	return "the agents' memory stalls (critical)"
 }
 
 // frozenOwners names the frozen threads for the log, comma-separated.

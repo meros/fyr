@@ -628,7 +628,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			case <-t.C:
 				eng.Tick()
 			case <-guardWake:
-				sampler.Tick() // fresh signals for the guard
+				sampler.Triggered() // V0.freeze-fast-class-name: a critical stall for TriggerFresh
+				sampler.Tick()      // fresh signals for the guard
 				eng.GuardNow()
 			}
 		}

@@ -65,26 +65,25 @@ func TestFreezeFastWithoutTheTriggerTheWindowHolds(t *testing.T) {
 	}
 }
 
-func TestFreezeFastAnElevatedStallWaits(t *testing.T) {
+func TestFreezeFastAnElevatedStallWithoutTheTriggerWaits(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	asked := growing(t, e, u, a, now)
 	z.free, z.agents = 0.30, slots.StallElevated
-	e.GuardNow()
-	tickFor(e, now, 20*time.Second)
+	tickFor(e, now, 30*time.Second)
 	if len(z.frozen) != 0 || *asked != 0 {
-		t.Fatalf("the agents' stall is only elevated: the old wait holds, got frozen=%v asked=%d", z.frozen, *asked)
+		t.Fatalf("no trigger, the agents' stall only elevated: the old wait holds, got frozen=%v asked=%d", z.frozen, *asked)
 	}
 }
 
 func TestFreezeFastAnOldTriggerDoesNotCount(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
-	asked := growing(t, e, u, a, now)
 	z.free, z.agents = 0.30, slots.StallElevated
-	e.GuardNow()
+	e.GuardNow() // nothing grows yet
 	tickFor(e, now, TriggerFresh+10*time.Second)
-	z.agents = slots.StallCritical // critical long after the trigger
+	asked := growing(t, e, u, a, now)
+	z.agents = slots.StallCritical // critical by avg10, long after the trigger
 	e.Tick()
 	if len(z.frozen) != 0 || *asked != 0 {
 		t.Fatalf("a trigger %s old: the old wait holds, got frozen=%v asked=%d", TriggerFresh, z.frozen, *asked)
@@ -101,5 +100,43 @@ func TestFreezeFastNeverAService(t *testing.T) {
 	e.GuardNow()
 	if z.frozen[a] {
 		t.Fatal("froze a service")
+	}
+}
+
+// The 20 Nov timeline: the trigger fired at 07:32:12 while avg10 still read
+// "elevated" (the agents' stall went critical only at 07:33:01, headroom
+// 64 %). A fresh trigger is a critical stall (10 %, the trigger's own level),
+// so the growing work is frozen by the trigger plus one tick.
+func TestFreezeFastTheTwentyNovemberTimeline(t *testing.T) {
+	e, u, now, z, th := fzEngine(t)
+	a := th[0]
+	growing(t, e, u, a, now)
+	e.Slots.Acquire(th[1], slots.Test) // held=1 that morning
+	z.free, z.stall, z.agents = 0.64, slots.StallElevated, slots.StallElevated
+	t0 := *now
+	e.GuardNow()
+	if !z.frozen[a] {
+		tickFor(e, now, 10*time.Second)
+	}
+	if !z.frozen[a] {
+		t.Fatalf("trigger at t0 with avg10 elevated: not frozen by t0+%s, got %v", now.Sub(t0), z.frozen)
+	}
+	if !e.GuardView().Short {
+		t.Fatal("a fresh trigger is a critical stall: memory is short")
+	}
+}
+
+// Past TriggerFresh with avg10 still elevated, memory is no longer short by
+// the trigger.
+func TestFreezeFastTheTriggerCountsForTriggerFreshOnly(t *testing.T) {
+	e, _, now, z, _ := fzEngine(t)
+	z.free, z.agents = 0.64, slots.StallElevated
+	e.GuardNow()
+	if !e.GuardView().Short {
+		t.Fatal("not short at the trigger")
+	}
+	tickFor(e, now, TriggerFresh+10*time.Second)
+	if e.GuardView().Short {
+		t.Fatal("still short past TriggerFresh with avg10 elevated")
 	}
 }

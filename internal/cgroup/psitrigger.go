@@ -15,9 +15,11 @@ import (
 // memory.pressure tells fyrd within one window that the agents stall, so the
 // guard acts at once; the 10 s tick stays as the fallback.
 
-// PressureTrigger is the trigger fyrd writes: 150 ms of full stall in a 2 s
-// window. An unprivileged trigger needs a window that is a multiple of 2 s.
-const PressureTrigger = "full 150000 2000000"
+// PressureTrigger is the trigger fyrd writes: 200 ms of full stall in a 2 s
+// window, 10 %, the critical level (StallCritical), so a trigger and
+// "critical" mean the same (V0.freeze-fast-class-name; it was 150 ms). An
+// unprivileged trigger needs a window that is a multiple of 2 s.
+const PressureTrigger = "full 200000 2000000"
 
 // PressureRetry is how often fyrd tries the trigger again after the open was
 // refused (V0.psi-trigger-slice): the slice's memory.pressure is root's until
