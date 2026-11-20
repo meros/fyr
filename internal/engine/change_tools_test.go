@@ -373,13 +373,31 @@ func TestMergeOneGuard(t *testing.T) {
 		t.Fatalf("press: %+v", r)
 	}
 	// A slow machine sends the conflict notice and the merge result in one
-	// message, so look for the line in any message the agent got.
+	// message, so look for the line in any message the agent got. V0.merge-guard-flake:
+	// when the result comes while that message waits for the process, the
+	// turn takes it in front of the message's words (V0.95 (1)), after the
+	// user event was logged; the fake CLI's echo is what the agent read.
 	eventually(t, "the agent heard the merge", func() bool {
+		heard := func(text string) bool {
+			return strings.Contains(text, `[Fyr] The owner ran "Merge"`) && strings.Contains(text, "succeeded")
+		}
 		for _, ev := range h.events(id) {
-			var m map[string]any
-			if ev.Type == "user" && json.Unmarshal(ev.Data, &m) == nil {
-				text, _ := m["text"].(string)
-				if strings.Contains(text, `[Fyr] The owner ran "Merge"`) && strings.Contains(text, "succeeded") {
+			var m struct {
+				Text    string `json:"text"`
+				Message struct {
+					Content []struct {
+						Text string `json:"text"`
+					} `json:"content"`
+				} `json:"message"`
+			}
+			if json.Unmarshal(ev.Data, &m) != nil {
+				continue
+			}
+			if ev.Type == "user" && heard(m.Text) {
+				return true
+			}
+			for _, c := range m.Message.Content {
+				if ev.Type == "msg" && heard(c.Text) {
 					return true
 				}
 			}
