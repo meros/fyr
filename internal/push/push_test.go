@@ -175,7 +175,7 @@ func TestHiddenLeavesTheDeviceOut(t *testing.T) {
 	p, out := newPusher(t, nil)
 	p.Subscribe("owner", sub("https://push/phone"), "phone")
 	p.Subscribe("owner", sub("https://push/desk"), "desk")
-	if ok, err := p.SetHidden("https://push/phone", Hidden{Hosts: []string{"lab"}, Projects: []HiddenProject{{Host: "desk", ID: "p_wayout"}}}); !ok || err != nil {
+	if ok, err := p.SetHidden("https://push/phone", Hidden{Hosts: []string{"lab"}, Projects: []HiddenProject{{Host: "desk", ID: "p_garden"}}}); !ok || err != nil {
 		t.Fatalf("SetHidden: %v %v", ok, err)
 	}
 	for _, c := range []struct {
@@ -183,8 +183,8 @@ func TestHiddenLeavesTheDeviceOut(t *testing.T) {
 		o    *Origin
 		want int
 	}{
-		{"hidden project", &Origin{Host: "desk", ProjectID: "p_wayout"}, 1},
-		{"same id on another host", &Origin{Host: "other", ProjectID: "p_wayout"}, 2},
+		{"hidden project", &Origin{Host: "desk", ProjectID: "p_garden"}, 1},
+		{"same id on another host", &Origin{Host: "other", ProjectID: "p_garden"}, 2},
 		{"hidden host", &Origin{Host: "lab", ProjectID: "p_x"}, 1},
 		{"shown", &Origin{Host: "desk", ProjectID: "p_fyr"}, 2},
 		{"about no thread", nil, 2},

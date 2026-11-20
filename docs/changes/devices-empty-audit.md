@@ -1,6 +1,6 @@
 # V0.devices-empty-audit: Settings → Devices opens on an install whose audit trail is empty
 
-→ V0.157. (owner, 18 Nov: the page showed "This page could not be shown. e is not iterable".)
+→ V0.157. 
 
 (1) **The host.** `/auth/state` sends `audit: []` when nothing has been recorded yet. It sent `null`.
 

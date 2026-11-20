@@ -1,8 +1,8 @@
 # 0018 Changes are records
 
-Date: 2026-11-15 · Status: accepted (owner: "Polish this plan, build it") · Research: [`research/change-sets.md`](../../research/change-sets.md) · Amends V0.8, V0.12, V0.25, V0.36 · Keeps D5
+Date: 2026-11-15 · Status: accepted  · Amends V0.8, V0.12, V0.25, V0.36 · Keeps D5
 
-**Context.** The owner: "git obviously is the most common case, and we should visualize that sota and best. But it's not the only thing we use agents to ask for things. Change-sets handling should have its own set of fyr tools the agent could and should use." Fyr had one hard-coded "PR of the thread" and one hard-coded "Fyr deploy". A server change with `kubectl`, a NixOS rebuild, a migration, a design or a document left no record; a second PR replaced the first; a local commit without a PR had no state; nothing followed a merge to production.
+**Context.** Fyr had one hard-coded "PR of the thread" and one hard-coded "Fyr deploy". A server change with `kubectl`, a NixOS rebuild, a migration, a design or a document left no record; a second PR replaced the first; a local commit without a PR had no state; nothing followed a merge to production.
 
 **Decisions.**
 
@@ -16,7 +16,7 @@ Date: 2026-11-15 · Status: accepted (owner: "Polish this plan, build it") · Re
 | Git first | Fyr observes git itself: after each run the thread's branch, commits ahead of the base, unpushed commits and changed files; every PR of the thread (not only one) through the GitHub poller. The tools add intent: title, group, stack, asks. |
 | Where it lives | In the thread's record, like the PR before it. A table comes when a change must outlive or move between threads. |
 | Attention | A failed condition on a change not ended, or a change that needs the owner (`needs: owner`), blocks the thread with the change's title and reason. An open PR waiting for CI does not. |
-| Actions (owner: "Changes should include action. Scripted and llm-driven.") | A change carries buttons. Three ways to run: **fyr** (Fyr's own effects: merge, re-run checks), **script** (an exact argv the agent declared; no shell; bound to a revision when asked, like a saved plan) and **agent** (a prompt for this thread's agent or a new thread). Script for exact, repeatable steps; agent for steps that need judgement. Only the owner presses; the press carries a digest of what the owner saw, so a changed action never runs on an old press. Fyr adds Merge, Re-run failed checks, Fix CI, Address review and Rebase to PRs from what it observed. The same model ("offers") holds actions on the thread and on its live view: one tool `offer_action {on}`, one command `action.run {on, digest}`, one runner. A view page runs only actions declared on the view. |
+| Actions  | A change carries buttons. Three ways to run: **fyr** (Fyr's own effects: merge, re-run checks), **script** (an exact argv the agent declared; no shell; bound to a revision when asked, like a saved plan) and **agent** (a prompt for this thread's agent or a new thread). Script for exact, repeatable steps; agent for steps that need judgement. Only the owner presses; the press carries a digest of what the owner saw, so a changed action never runs on an old press. Fyr adds Merge, Re-run failed checks, Fix CI, Address review and Rebase to PRs from what it observed. The same model ("offers") holds actions on the thread and on its live view: one tool `offer_action {on}`, one command `action.run {on, digest}`, one runner. A view page runs only actions declared on the view. |
 | Landed but not live | No reminder by default. |
 | Settle | `settle_when merged` keeps its meaning; `settle_when {change, phase}` settles when that change reaches the phase. |
 | Fyr applies infra changes | Later. The record must prove useful first. |
@@ -27,7 +27,7 @@ Date: 2026-11-15 · Status: accepted (owner: "Polish this plan, build it") · Re
 
 ## Addendum (#35, 2026-11-15): observed branches are host records
 
-Owner: "one observed change per repo and branch on the host, shown in every thread in that folder and once on the Changes board. Agent-opened changes stay per thread." Live data showed why: branch `v0` of fyr was one change id on two threads, and it stayed `working` with "7 commits not pushed" after it merged and was deleted.
+One observed change per repo and branch on the host, shown in every thread in that folder and once on the Changes board; agent-opened changes stay per thread. Live data showed why: branch `v0` of fyr was one change id on two threads, and it stayed `working` with "7 commits not pushed" after it merged and was deleted.
 
 | Question | Decision |
 |---|---|

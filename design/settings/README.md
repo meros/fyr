@@ -1,6 +1,6 @@
 # Settings redesign
 
-The design work for the Settings screens and the project screen (owner, 16 Nov: "redesigning/polishing all the settings screens. They are becoming a bit messy").
+The design work for the Settings screens and the project screen.
 
 | Path | What |
 |---|---|

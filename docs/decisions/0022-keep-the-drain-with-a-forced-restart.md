@@ -1,8 +1,8 @@
 # 0022 Keep the drain, with a forced restart that resumes the cut turns
 
-Date: 2026-11-16 · Status: accepted (owner, 2026-11-16, issue 76: "keep the wait (option 4), and add a way out. While a deploy waits for running threads, the banner offers Restart now. After a confirmation (it ends the running turns), the deploy switches at once. After the restart, Fyr sends "continue" to each thread whose turn it cut, so the session resumes with --resume") · Amends V0.13 (4) · Spec row V0.83
+Date: 2026-11-16 · Status: accepted (issue 76) · Amends V0.13 (4) · Spec row V0.83
 
-**Context.** The owner, 16 Nov: "Wouldn't it be possible to switch/update the frontend/backend WITHOUT stopping the claude sessions?" Today the `claude` CLI is a child of fyrd and talks to it over pipes (`internal/claude/client.go`), so a restart of fyrd ends every running turn. A deploy that changes fyrd therefore drains first (V0.13 (4)): it waits until no thread runs, up to 30 minutes. A deploy that changes only the web client already switches without a restart (V0.81, issue 75). The question was whether a running turn should survive a restart, so that a Go change does not have to wait either.
+**Context.** Today the `claude` CLI is a child of fyrd and talks to it over pipes (`internal/claude/client.go`), so a restart of fyrd ends every running turn. A deploy that changes fyrd therefore drains first (V0.13 (4)): it waits until no thread runs, up to 30 minutes. A deploy that changes only the web client already switches without a restart (V0.81, issue 75). The question was whether a running turn should survive a restart, so that a Go change does not have to wait either.
 
 **Options.**
 

@@ -12,7 +12,7 @@ const P = (id: string, name: string, host: string, hostId: string): Project => (
 const T = (id: string, projectId: string, host: string, hostId: string): Thread => thread(id, "done", "seen", { projectId, host, hostId });
 
 const hosts = [H("desk", "D"), H("lab", "L")];
-const projects = [P("D/p1", "fyr", "desk", "D"), P("D/p2", "wayout", "desk", "D"), P("L/p3", "ops", "lab", "L")];
+const projects = [P("D/p1", "fyr", "desk", "D"), P("D/p2", "garden", "desk", "D"), P("L/p3", "ops", "lab", "L")];
 const threads = [T("D/a", "D/p1", "desk", "D"), T("D/b", "D/p2", "desk", "D"), T("L/c", "L/p3", "lab", "L")];
 const store: Store = { ...initialStore(), host: "desk", hosts, projects, threads: Object.fromEntries(threads.map((t) => [t.id, t])), stalls: [{ host: "lab", at: "", what: "x", file: "" }] as Store["stalls"] };
 const H0 = (h: Partial<Hidden>): Hidden => ({ ...NOTHING_HIDDEN, ...h });
@@ -31,7 +31,7 @@ test("a hidden project leaves the projects and takes its threads along", () => {
 test("a hidden host takes its threads, projects and stall along", () => {
   const s = applyHidden(store, H0({ hosts: ["L"] }));
   assert.deepEqual(s.hosts.map((h) => h.name), ["desk"]);
-  assert.deepEqual(s.projects.map((p) => p.name), ["fyr", "wayout"]);
+  assert.deepEqual(s.projects.map((p) => p.name), ["fyr", "garden"]);
   assert.deepEqual(Object.keys(s.threads), ["D/a", "D/b"]);
   assert.equal(s.stalls.length, 0);
 });

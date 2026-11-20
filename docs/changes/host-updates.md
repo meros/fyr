@@ -1,6 +1,6 @@
 # V0.host-updates: Settings → Hosts shows how far each host is from the newest release, and a held-back release can be retried
 
-→ V0.126, V0.153 (decision 0027), #154 (each host updates on its own; the decision issue #144, option 4: no canary). Owner: "a host that stopped updating goes unnoticed".
+→ V0.126, V0.153 (decision 0027), #154 (each host updates on its own; the decision issue #144, option 4: no canary). A host that stopped updating went unnoticed.
 
 1. **Each host says where it is.** A host with a release source sends its update state in its state and as the stream frame `update` (docs/API-v0.md): the commit it runs, the commit `deployable` points at, how many commits behind it is, its last update (result, reason, time), the release it holds back and whether a local build pauses auto-update. A front carries it on the host's row (`hosts[].update`), so every front shows every host's.
 2. **Behind costs one call per move.** The watcher counts the commits between what runs and `deployable` with one GitHub compare when either moves, and keeps the count; 0 when the host runs the wanted release, without a call.

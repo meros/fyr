@@ -1,6 +1,6 @@
 # V0.merge-label: a Merge button in the list says "Merge", not the head's hash
 
-→ V0.97 (1), V0.101 (6). *Amends V0.97 (1) "Each Merge button shows the short SHA" and V0.101 (6) "Merge a1b2c3d" for the inbox row and the change card.* (owner, 19 Nov: "The merge button in the list should show something better than a hash...")
+→ V0.97 (1), V0.101 (6). *Amends V0.97 (1) "Each Merge button shows the short SHA" and V0.101 (6) "Merge a1b2c3d" for the inbox row and the change card.* 
 
 (1) **The label.** The inbox row's Merge (a Ready change), the change card's Merge and the yes of a merge ask read "Merge" ("Review and merge" when a required review waits). A hash on the button told the owner nothing they could check at a glance; the PR chip beside it already names the PR.
 

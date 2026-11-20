@@ -1,6 +1,6 @@
 # V0.settle-request: an agent whose work is done calls settle_request, and its project decides whether Fyr settles the thread or the owner does
 
-→ V0.203, V0.106, V0.next-step-chips, V0.settle-leaves, V0.project-priority. (owner, 19 Nov: "Add a settlement mcp hint... When a job is clearly done with all asks behind the model should be encouraged to call a settle request. This can be honored automatically or manually depending on project (new setting)")
+→ V0.203, V0.106, V0.next-step-chips, V0.settle-leaves, V0.project-priority. 
 
 (1) **The tool.** `settle_request {why}`: the agent says its work is done. The Fyr prompt steers it there: when the work is clearly done and nothing is left behind (every ask answered, nothing waits on the owner, no PR still needs the agent), call it before the turn ends. The tool's description says when not to: while waiting on CI, a review, the owner or a job of its own. `settle_when` stays for "settle once X happens".
 

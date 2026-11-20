@@ -1,6 +1,6 @@
 # V0.finish-debounce: a thread that stops working waits a few seconds before the list shows it finished
 
-→ V0.open-row-only, V0.207, V0.199. *Amends V0.open-row-only (1) ("no timer runs"): one timer runs, for this hold only.* (owner, 19 Nov: "debounce the thread moving between categories... They often blink in finished".)
+→ V0.open-row-only, V0.207, V0.199. *Amends V0.open-row-only (1) ("no timer runs"): one timer runs, for this hold only.* 
 
 The cause: the host shows a run's end at once, so a run that ends and starts again a second later (a queued message, a Fyr line that wakes the agent) jumps from Moving without you to Finished, unread and back.
 

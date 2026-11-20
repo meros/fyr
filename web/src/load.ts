@@ -314,7 +314,7 @@ export function budgetLine(h: HostLoad): string {
 }
 
 /** V0.152: a short distinct name per host for the rail: the tokens all names share at the start or the end go
- *  ("meros-laptop", "meros-server" → "laptop", "server"); the full name if that leaves one empty or two alike. */
+ *  ("home-laptop", "home-server" → "laptop", "server"); the full name if that leaves one empty or two alike. */
 export function shortHostNames(names: string[]): Map<string, string> {
   const out = new Map(names.map((n) => [n, n]));
   if (names.length < 2) return out;

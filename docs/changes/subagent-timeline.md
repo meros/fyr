@@ -1,6 +1,6 @@
 # V0.subagent-timeline: an opened subagent shows its prompt and everything it did, in order, from its Agent row and from the agents strip
 
-→ V0.16. (owner, 20 Nov: "Maybe we should add support in fyr to see the subagent data?", then chose "Full timeline in order", and: "Should be accessible from the already existing subagent list".)
+→ V0.16. 
 
 (1) **What was missing.** The CLI sends a subagent's texts, thinking and tool calls with `parent_tool_use_id` set (checked on CLI 2.1.327, with and without `--forward-subagent-text`: the same messages, so Fyr passes no new flag). An opened Agent row showed the subagent's tool calls in one group and then only its last text; the earlier texts, their order among the calls, and the prompt it was given were dropped.
 

@@ -40,7 +40,7 @@ type Live struct {
 	Self  Node // the laptop's node
 	Phone Node // the owner's phone: untagged, the owner's user
 	Other Node // another tailnet user's node
-	Tag   Node // a tagged node (meros-server's kind)
+	Tag   Node // a tagged node (home-server's kind)
 
 	Phones *Serve // the phone's path: Serve emulator into the laptop's serve.sock
 
@@ -293,7 +293,7 @@ func (l *Live) EnablePeers() (*Mac, error) {
 }
 
 // AddTaggedInstall is slice 4's state change of the live install (decision 0030
-// 5.2): a tagged install (the owner's meros-server) beside the others. It cannot
+// 5.2): a tagged install (the owner's home-server) beside the others. It cannot
 // pair by itself; the owner pairs it with an invite from `fyr pair`. The caller
 // does that and checks what followed.
 func (l *Live) AddTaggedInstall(mac *Mac) (*Mac, error) {

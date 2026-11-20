@@ -1,8 +1,8 @@
 # 0011 Visual pacing: the outcome at full weight, the work quiet and folded
 
-Date: 2026-11-14 · Status: accepted (owner, 2026-11-15, shipped in V0.41) · Spec: 0.5 V0.41
+Date: 2026-11-14 · Status: accepted (V0.41) · Spec: 0.5 V0.41
 
-**Context.** The owner's request: "make sure I naturally read/focus on what is important for me to see and naturally glance over what is mostly noise, intermediate stuff". In the conversation every agent paragraph had the same 15 px body text, so narration ("Test first, then the code and the spec row:") weighed as much as a result ("160 web tests pass…") or a question. Each tool group was a bordered card with the weight of an answer. Run ends, effect lines, "Agent is here", delivery words and View chips sat at even 12 px gaps, and the owner's own messages were dark, heavy bubbles: the heaviest thing on the screen was the owner's own words.
+**Context.** The eye should land on what matters and pass over what is mostly noise. In the conversation every agent paragraph had the same 15 px body text, so narration ("Test first, then the code and the spec row:") weighed as much as a result ("160 web tests pass…") or a question. Each tool group was a bordered card with the weight of an answer. Run ends, effect lines, "Agent is here", delivery words and View chips sat at even 12 px gaps, and the owner's own messages were dark, heavy bubbles: the heaviest thing on the screen was the owner's own words.
 
 **What others do.** A short survey, from memory of the products plus two web searches (sources below); none of it was measured.
 

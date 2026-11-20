@@ -1,6 +1,6 @@
 # V0.load-card: a host's load reads as a card, not a wall of measures
 
-→ V0.80 (6), V0.99 (3), V0.142 (7), V0.146 (5), V0.163, V0.164, V0.166, V0.167. *Amends the tooltip of each: the figures stay, their words and layout change.* (owner, 19 Nov, a screenshot of the rail's tooltip: "This mumbo jumbo is unreadable! Improve".)
+→ V0.80 (6), V0.99 (3), V0.142 (7), V0.146 (5), V0.163, V0.164, V0.166, V0.167. *Amends the tooltip of each: the figures stay, their words and layout change.* 
 
 *Cause:* the rail's host tooltip was the browser's own `title`: twelve lines of one size and colour, each a measure name (load average, CPU pressure, PSI stall, provider) with its unit and window in brackets, and the heavy jobs as one long sentence that wrapped mid-figure. Nothing said whether the host was fine.
 

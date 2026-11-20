@@ -1,6 +1,6 @@
 # V0.machine-wait-restart: a wait for the machine ends when the host that waited is gone
 
-→ V0.153, V0.90, V0.6. (owner, 18 Nov: "Waiting for the machine (memory pressure) · since 15:29": "We get stuck in this sometimes".)
+→ V0.153, V0.90, V0.6. 
 
 (1) **The cause.** The wait is saved on the thread, but the start that ends it lives in the host's memory. When the host stopped during the wait, nothing was left to end it, and a thread that was not running was skipped by the repair at the next start. The line stayed through later runs, until the thread's process was lost during a run. On 18 Nov this happened at 07:22 (a host restart that kept the process) and at 15:30 (systemd-oomd killed the host).
 

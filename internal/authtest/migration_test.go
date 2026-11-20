@@ -80,7 +80,7 @@ var steps = []step{
 			t.Fatalf("the front follows %v (%v): want laptop, server and mac\n%s", hosts, err, l.Laptop.Log())
 		}
 	}},
-	// Slice 4: the owner's invite. A tagged install (meros-server) cannot pair by
+	// Slice 4: the owner's invite. A tagged install (home-server) cannot pair by
 	// itself; `fyr pair` on the laptop opens an invite, the box joins with it, the
 	// Mac learns the box by vouching. Pairing only adds: the cookies, the phone, fyr
 	// open and the static host all still work (checks run after the step).

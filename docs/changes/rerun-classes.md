@@ -1,6 +1,6 @@
 # V0.rerun-classes: under the memory guard, a job of a class the owner marked rerunnable is killed and run again instead of held frozen
 
-→ decision 0036 slice 6 ((F)), V0.151, V0.164 section 7, V0.209, V0.guard-wake. (owner, 19 Nov: kill and rerun "yes, for opted-in classes"; "All slices please".)
+→ decision 0036 slice 6 ((F)), V0.151, V0.164 section 7, V0.209, V0.guard-wake. 
 
 (1) **The owner's list.** Settings → Automation → Kill and rerun (desktop and phone, one component) lists the command classes the owner marked rerunnable on this host, each with Remove, and a field to add one (`make test`, `yarn lint`, `tsc`). Nothing is on it by default. Each row says what the guard did to that class in the last hour: "Not killed in the last hour", "Killed once in the last hour", or "Killed 3 times in the last hour; frozen instead until 14:41". The command is `host.rerunClasses` with `add` or `remove`, owner only. It is kept in the host's store, and `GET /api/load` shows it as `rerun.classes`. An entry matches a job when it equals the job's heavy class (a job record's "project: " prefix aside), or when its words stand alone in the job's command ("make test" in `cd web && make test 2>&1`, not in `make testdata`). A service (decision 0036 (D), `GuardService`) is never killed.
 

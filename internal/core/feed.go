@@ -812,7 +812,7 @@ func ownerNotices(r Reduced) []Notice {
 }
 
 // The upkeep sentences (SPEC 0.5 V0.37, V0.52). They name what to update
-// and never dictate a reply (research/stop-hook-spike.md). V0.101: the
+// and never dictate a reply. V0.101: the
 // changes are not upkeep any more; Fyr reads them.
 const (
 	// ViewOnText tells a running agent that the owner turned the view on

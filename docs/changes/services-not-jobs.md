@@ -2,7 +2,7 @@
 
 → decision 0036 (D), slice 4; amends V0.164 (the detector and the roots of a freeze), V0.freeze-old-work (the elders), decision 0032 slice 2 (the parts of a turn) and decision 0029 S2 (admission). Builds on V0.job-limits.
 
-The evidence (daemon.log, 19 Nov): the guard froze `docker compose -f devdocker/docker-compose.yaml --project-name norban-dev …`, whose containers held the memory in docker's own cgroups, outside `agents/`. It also froze `process-compose --config process-compose.yaml --tui=false` stacks of 3.6–4.4 GB that the same thread's e2e tests talked to.
+The evidence (daemon.log, 19 Nov): the guard froze `docker compose -f devdocker/docker-compose.yaml --project-name acme-dev …`, whose containers held the memory in docker's own cgroups, outside `agents/`. It also froze `process-compose --config process-compose.yaml --tui=false` stacks of 3.6–4.4 GB that the same thread's e2e tests talked to.
 
 (1) **What a service is.** A command that matches a service pattern. The built-in patterns are `process-compose` (`up`, `--config`, `-f`, or alone), `docker compose … up`, `docker-compose … up`, `npm`/`pnpm`/`bun run dev`, `yarn`/`pnpm dev`, `yarn run dev`, and `vite` (alone, `dev`, `serve`, `preview`). The config's `servicePatterns` adds to them. In Settings → Automation → Services (desktop and phone, one component), the owner removes a pattern, including a built-in one, or adds one (`host.servicePatterns` `{add}` or `{remove}`). The list is kept in the store. The patterns are matched against each process's command line in the thread's cgroup. The topmost matching process is the service and its subtree is its memory. The CLI's shell around a Bash command is never the service; its child is.
 

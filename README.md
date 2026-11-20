@@ -4,7 +4,7 @@ A calm control room for Claude coding agents. Like a lighthouse (*fyr* in Swedis
 
 Fyr runs Claude Code sessions on your own machines and shows one list: what needs you on top, running work below. It is built for one person who runs many agents in parallel against GitHub, and it is meant to replace T3 Code for that use.
 
-**Status:** v0 is in daily use (spec 0.5, V0.1–V0.71). Current milestone: `Solid core`, which consolidates the data model; the order is in [`docs/PLAN.md`](docs/PLAN.md). Status lives in [GitHub milestones](https://github.com/meros/fyr/milestones); how work flows is in [`docs/PROCESS.md`](docs/PROCESS.md).
+**Status:** v0, in daily use by its author and changing fast: expect breaking changes and no migration guarantees between builds. The order is in [`docs/PLAN.md`](docs/PLAN.md). Status lives in [GitHub milestones](https://github.com/meros/fyr/milestones); how work flows is in [`docs/PROCESS.md`](docs/PROCESS.md).
 
 ## Requirements
 
@@ -22,7 +22,6 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 | [`docs/REVIEW-LOG.md`](docs/REVIEW-LOG.md) | Five adversarial review rounds and a consistency pass, with every resolution |
 | [`design/screens-v1.html`](design/screens-v1.html) | The v1 screens: inbox after a break, the question card, phone answer and capture, bulk settle |
 | [`design/`](design/README.md) | The Fyr design system (tokens, components, brand book), screen mocks and their generators |
-| [`research/`](research/) | T3 Code feature map, the owner's T3 usage, competitors, coordinator agents, vision ideas |
 | [`spikes/`](spikes/) | Proven assumptions: Go client for the `claude` control protocol; PSI and cgroup behaviour |
 
 ## Decisions so far
@@ -44,9 +43,13 @@ It builds nothing. It downloads the CI release that the tag `deployable` points 
 
 ## Updates
 
-Fyr updates itself only to CI-built releases (decision 0027). Every green push to main publishes signed `fyr` and `fyrd` binaries for Linux and macOS (amd64 and arm64) as the release `build-<sha12>`, and moves the tag `deployable` to it. Each host checks `deployable` every hour (config `updateEveryMinutes`). After it has stayed put for 10 minutes (it wakes for that, not at the next check), the host downloads the release, verifies its signature and sums, runs `fyrd selftest` on a copy of the database, and switches. The launcher checks `/healthz` after the switch and rolls back to `previous` if the build is not healthy or crashes within 10 minutes. Settings → Auto-update turns this off. The releases of a private repository are read with `GH_TOKEN` from `~/.config/fyr/github.env` (mode 0600; a fine-grained token that may only read the repository's contents), which systemd's `EnvironmentFile` and the Mac's launchd job both load; without it, the `gh` login is used. To stop a bad release on every host, move the tag back: `git push -f origin <sha>:refs/tags/deployable`.
+Fyr updates itself only to CI-built releases (decision 0027). Every green push to main publishes signed `fyr` and `fyrd` binaries for Linux and macOS (amd64 and arm64) as the release `build-<sha12>`, and moves the tag `deployable` to it. Each host checks `deployable` every hour (config `updateEveryMinutes`). After it has stayed put for 10 minutes (it wakes for that, not at the next check), the host downloads the release, verifies its signature and sums, runs `fyrd selftest` on a copy of the database, and switches. The launcher checks `/healthz` after the switch and rolls back to `previous` if the build is not healthy or crashes within 10 minutes. Settings → Auto-update turns this off. A private fork's releases are read with `GH_TOKEN` from `~/.config/fyr/github.env` (mode 0600; a fine-grained token that may only read the repository's contents), which systemd's `EnvironmentFile` and the Mac's launchd job both load; without it, the `gh` login is used. To stop a bad release on every host, move the tag back: `git push -f origin <sha>:refs/tags/deployable`.
 
 To try a branch from inside Fyr, an agent asks `fyr.deploy {dir}`. It builds the checkout and switches to it once you press. Auto-update then pauses until a release contains that commit.
+
+## Contributing
+
+Issues are welcome. Pull requests from forks are read, but CI does not run them on its own: the PR gate runs on a self-hosted runner that only takes branches in this repository (V0.public-repo), so the owner re-runs an accepted change from a branch here.
 
 ## License
 

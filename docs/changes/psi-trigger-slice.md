@@ -2,7 +2,7 @@
 
 → V0.guard-wake (decision 0036 E5), V0.agents-unit (8).
 
-(1) **The cause.** On meros-laptop daemon.log said at start: `guard: no PSI trigger on the agents' memory.pressure (permission denied); the guard reads every 10 s`. In the scope layout of V0.agents-unit the agents' cgroup is `/sys/fs/cgroup/fyr.slice/fyr-agents.slice`, and its `memory.pressure` is `root:root 0644`. fyrd runs as the service user (`User=` in `fyr.service`, no root launcher), the unit is no longer delegated, and fyrd opens the file `O_RDWR` to write the trigger. So the guard only ever had its 10 s tick, plus oomd's 20 s, which V0.guard-wake's trigger was there to shorten.
+(1) **The cause.** On home-laptop daemon.log said at start: `guard: no PSI trigger on the agents' memory.pressure (permission denied); the guard reads every 10 s`. In the scope layout of V0.agents-unit the agents' cgroup is `/sys/fs/cgroup/fyr.slice/fyr-agents.slice`, and its `memory.pressure` is `root:root 0644`. fyrd runs as the service user (`User=` in `fyr.service`, no root launcher), the unit is no longer delegated, and fyrd opens the file `O_RDWR` to write the trigger. So the guard only ever had its 10 s tick, plus oomd's 20 s, which V0.guard-wake's trigger was there to shorten.
 
 (2) **The module hands over that one file.** With `cgroups.agentsUnit`, `fyr.service` gets `ExecStartPre=+<script>`; `+` runs it as root. The script asks systemd for the slice's cgroup (`systemctl show -P ControlGroup fyr-agents.slice`) and chowns `/sys/fs/cgroup<that>/memory.pressure` to the service user. If it cannot (no cgroup, chown refused), it says so on stderr and exits 0: the unit starts anyway and fyrd keeps the tick.
 

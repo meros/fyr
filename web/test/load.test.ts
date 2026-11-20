@@ -108,7 +108,7 @@ test("V0.99: the ring fills with the load over the cores; calm, warm from 70 %, 
 
 test("V0.152: the rail names hosts by the part that differs, the full name when that is not enough", () => {
   const m = (ns: string[]) => [...shortHostNames(ns).values()];
-  assert.deepEqual(m(["meros-laptop", "meros-server"]), ["laptop", "server"]);
+  assert.deepEqual(m(["home-laptop", "home-server"]), ["laptop", "server"]);
   assert.deepEqual(m(["desk", "lab"]), ["desk", "lab"]);
   assert.deepEqual(m(["a.lan", "b.lan"]), ["a", "b"]);
   assert.deepEqual(m(["build-1.lan", "build-2.lan", "desk"]), ["build-1.lan", "build-2.lan", "desk"]);

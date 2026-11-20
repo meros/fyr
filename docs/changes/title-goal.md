@@ -1,6 +1,6 @@
 # V0.title-goal: a regenerated title says the goal of the work, not the step the agent is at
 
-→ V0.108, V0.69. *Amends V0.108: the title call no longer asks "what the thread works on now".* (owner, 19 Nov: "regenerate title should not give a name based on what it does *right now* but rather goal/context to understand what work is going on in there. Think issue title like 'fix the header ...' 'fix broken...'".)
+→ V0.108, V0.69. *Amends V0.108: the title call no longer asks "what the thread works on now".* 
 
 (1) **The title is the goal.** The title call (`internal/agent/title.go`) is asked for a title like an issue's: the goal of the work and the thing it is about ("Fix the header that overlaps the menu on phones"). The goal comes from what the owner asked for; when the owner changed the goal later, the newest goal counts.
 

@@ -1,6 +1,6 @@
 # V0.next-step-dock: everything that waits on the owner stands in one dock above the composer, a Run card too
 
-→ V0.149, V0.run-cards-in-conversation, V0.ask-tool, V0.your-move. *Amends V0.run-cards-in-conversation (1): the card keeps its place in the conversation, and while it waits it also stands in the dock.* (owner, 19 Nov: "There is the run card, the action buttons and the change that has an apply... These three options are a bit confusing and too much for 'a random action to perform'... I often miss the run cards, even if they are nice otherwise.")
+→ V0.149, V0.run-cards-in-conversation, V0.ask-tool, V0.your-move. *Amends V0.run-cards-in-conversation (1): the card keeps its place in the conversation, and while it waits it also stands in the dock.* 
 
 (1) **One idea.** What the agent hands the owner is a *next step*. A step either blocks the agent (it waits for the answer) or does not. This entry is about the steps that block: a question (`ask`, AskUserQuestion), a command to run (`run_request`), an approval (a merge, a Fyr deploy). V0.next-step-chips is about the steps that do not.
 

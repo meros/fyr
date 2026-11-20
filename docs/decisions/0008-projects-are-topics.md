@@ -1,6 +1,6 @@
 # 0008 A project is a topic; the folder is a hint
 
-Date: 2026-11-14 · Status: accepted (owner, 2026-11-14) · Spec: 0.5 V0.23, V0.27
+Date: 2026-11-14 · Status: accepted · Spec: 0.5 V0.23, V0.27
 
 **Context.** V0.23 matched every thread to a project by its folder and made an auto project when nothing matched. On the first live day this made a project for each T3 scratch folder and one for the home folder, which then held every thread below it. This thread runs in a scratch folder and is about Fyr, so folder matching filed it wrong. Projects were seeded from T3 at every start, and a project could only filter and colour threads.
 

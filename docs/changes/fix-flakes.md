@@ -2,7 +2,7 @@
 
 → V0.33 (message delivery), V0.45 and V0.96 (4) (handover), V0.60 and V0.101 (actions, Stopped on a failure), V0.133 (the fake's background tasks), V0.165 (full screen), V0.174 (slice 5b), the local gate of #405.
 
-The owner (19 Nov): "Fix the flakes when you encounter them (new Claude rule in repo)". The local gate (`scripts/ci-local.sh`) failed on tests that pass alone, while several gates ran on the host at once. Each was run alone and under load (`go test -count=N` beside 8 busy loops, or 6 test binaries at once); the numbers are failures before → after, same load.
+The local gate (`scripts/ci-local.sh`) failed on tests that pass alone, while several gates ran on the host at once. Each was run alone and under load (`go test -count=N` beside 8 busy loops, or 6 test binaries at once); the numbers are failures before → after, same load.
 
 (1) **A product bug: two messages sent at once could reach the agent out of order.** `send` decided "first message of the turn" under the manager's lock, released it, recorded the message and then wrote it. A second message sent in that gap was written first, so the agent answered the later message before the earlier one. `TestUnreadMessageLostWithProcess` caught it: "later" was answered before "hang" started. Each session now has a send lock held from that decision to the write (`internal/agent/outbox.go`). 4 of 1800 → 0 of 1800 (6 test binaries at once, 8 busy loops).
 

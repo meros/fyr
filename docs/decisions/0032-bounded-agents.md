@@ -1,10 +1,10 @@
 # 0032 Bounded agents: one thread's heavy work cannot starve the host, and the guard says what it did
 
-Date: 2026-11-18 · Status: **slices 1, 2 and 3 are built (3 is off until a share is set); the owner accepted the two relaxed V0.164 rules on 18 Nov** (owner, 18 Nov: "Can we protect the daemons from the workloads?", "Be creative - this is such a common problem for me", "Do a real plan and start implementing", "Add relevant logging as well so we can tune this going forward") · Amends V0.164 (7) · Builds on decision 0029 and V0.151
+Date: 2026-11-18 · Status: **slices 1, 2 and 3 are built (3 is off until a share is set); the owner accepted the two relaxed V0.164 rules on 18 Nov** · Amends V0.164 (7) · Builds on decision 0029 and V0.151
 
 ## The incident
 
-On 18 Nov 06:30–07:30 on `meros-laptop` one thread (a `/norban:fix` agent) ran `turbo run lint lint:types`: two `tsc` and two `tsgolint` processes, 9.7 GB together, which is the whole of `agents/` (`memory.high` 9 GB, `memory.swap.max` 6 GB). They ran 28 minutes. The Fyr UI showed messages as "Waiting" for the whole time. The owner's desktop was fine (`user.slice` memory pressure 0.1 %); `server/` was fine (0 %). Only `agents/` was at 75 % `some` / 53 % `full`.
+On 18 Nov 06:30–07:30 on `home-laptop` one thread (a `/acme:fix` agent) ran `turbo run lint lint:types`: two `tsc` and two `tsgolint` processes, 9.7 GB together, which is the whole of `agents/` (`memory.high` 9 GB, `memory.swap.max` 6 GB). They ran 28 minutes. The Fyr UI showed messages as "Waiting" for the whole time. The owner's desktop was fine (`user.slice` memory pressure 0.1 %); `server/` was fine (0 %). Only `agents/` was at 75 % `some` / 53 % `full`.
 
 **What the cgroup did.** The four processes evicted each other's pages: about 25 000 major faults a second and 26 GB of file pages refaulted in 20 s, while each got 30–60 % of a core. The agents' swap was at 5.2 of 6 GB. Every other agent's CLI started slowly ("the agent starts slowly under memory pressure; waiting"; "Stop not answered within 20 s").
 
@@ -56,7 +56,7 @@ With 4 M touches, all at once took 40.8 and 45.4 s against 5.3 s one at a time (
 | one 1500 MB job, small job 200 MB | 2.7 s | 1.9 s | 1006 → 299 MB |
 | four 500 MB jobs, small job 250 MB | 18.3 s | 17.1 s | 1000 → 300 MB |
 
-A repeat of the second load gave 17.7 s without and 16.5 s with the share. The share slowed the big work 1.7 times in the first run of that load and 1.1 times in the repeat, so that cost is not settled either. The limit is enforced, but these runs did not show that it protects another thread: the small job was never timed alone, so how much the neighbour hurt it is unknown. The owner chose to build it anyway and tune it from the log (18 Nov: "make sure we can tune and tweak from logs later"). Measure first: the share is off by default, and the log reports what it would meet.
+A repeat of the second load gave 17.7 s without and 16.5 s with the share. The share slowed the big work 1.7 times in the first run of that load and 1.1 times in the repeat, so that cost is not settled either. The limit is enforced, but these runs did not show that it protects another thread: the small job was never timed alone, so how much the neighbour hurt it is unknown. It is built anyway, to be tuned from the log. Measure first: the share is off by default, and the log reports what it would meet.
 
 ### Slice 2 under real pressure (18 Nov, `TestRealGuardTakesTurns`)
 

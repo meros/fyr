@@ -1,6 +1,6 @@
 # 0007 NixOS owns the frame, the launcher owns the builds
 
-Date: 2026-11-14 · Status: accepted (owner, 2026-11-15, shipped) · Spec: 12.6, 0.5 V0.13 · Issue: #10
+Date: 2026-11-14 · Status: accepted · Spec: 12.6, 0.5 V0.13 · Issue: #10
 
 **Context.** The owner's machines are NixOS (`~/nixos-config`, flake with home-manager). T3 runs there as `modules/nixos/services/t3code.nix`: a system unit as the owner's user, `restartIfChanged = false`, the agent CLIs on the unit PATH, a delegated cgroup. Fyr must use that config system, but a self-deploy (V0.13) must not need `nixos-rebuild` each time.
 

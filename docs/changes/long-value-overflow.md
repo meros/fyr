@@ -1,6 +1,6 @@
 # V0.long-value-overflow: a very long value fits every screen, on both fronts, and CI proves it
 
-→ V0.17, V0.119, #84. (owner, 18 Nov: "CI-test all names etc for long value bugs in all screens for overflows".) Merged in #309 as a row V0.214 of the closed table, and moved here.
+→ V0.17, V0.119, #84. Merged in #309 as a row V0.214 of the closed table, and moved here.
 
 (1) **The test.** The layout test opens every phone screen and the main desktop screens in mock mode with `&long=word` (one unbroken run of 140 characters) and `&long=words` (a long sentence) added to every name, title, path, branch, repo, host, label and message. It fails on text outside its box, text cut with no ellipsis, a control cut off or squeezed, and a page that scrolls sideways.
 

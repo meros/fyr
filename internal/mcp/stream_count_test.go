@@ -26,7 +26,7 @@ func (w *firstWrite) Write(b []byte) (int, error) {
 }
 
 // V0.mcp-stream-count: the stream counts as open before its first event goes
-// out. Found as a flake on meros-server: TestMCPStreamThroughTheMainPort read
+// out. Found as a flake on home-server: TestMCPStreamThroughTheMainPort read
 // the event, then saw Current false because the count came after the flush.
 func TestStreamCountsBeforeItsFirstEvent(t *testing.T) {
 	s := New(func(tok string) (string, bool) { return "t1", tok == "tok" })

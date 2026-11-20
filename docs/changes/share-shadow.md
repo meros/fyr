@@ -2,7 +2,7 @@
 
 → amends decision 0032 slice 3 (V0.198) and V0.job-limits (3).
 
-The owner (19 Nov): "Keep shadow log only." The thread share of decision 0032 slice 3 was off by default, and the per-job limits of V0.job-limits now bound what it was meant to bound: the job that grows, in its own cgroup, sized from its class. A thread-wide `memory.high` beside them was a second limit on the same memory, written through `systemctl set-property` in the scope layout of V0.agents-unit and as a file in the unit layout. The real runs of 18 Nov (decision 0032, `TestRealThreadBudget`) showed the limit enforced but no gain for the neighbouring thread.
+The thread share of decision 0032 slice 3 was off by default, and the per-job limits of V0.job-limits now bound what it was meant to bound: the job that grows, in its own cgroup, sized from its class. A thread-wide `memory.high` beside them was a second limit on the same memory, written through `systemctl set-property` in the scope layout of V0.agents-unit and as a file in the unit layout. The real runs of 18 Nov (decision 0032, `TestRealThreadBudget`) showed the limit enforced but no gain for the neighbouring thread.
 
 (1) **Removed.** No thread's `memory.high` is written, in either layout. The `threadMemoryHighPercent` setting, the slot raise (1.25 × the learned peak while a slot is held), the thread swap valve (`guard: budget limits lifted/back`) and the `guard: budget limit …` lines are gone. `/api/load` no longer has a thread's `memoryHigh` (no page showed it). The swap valve of the job limits stays in `joblimit.go` (`SwapFullShare`, the one constant for "swap is nearly full").
 

@@ -1,6 +1,6 @@
 # V0.load-invariants: the load guard checks seven invariants on its tick, and a broken one puts a card with the evidence in Needs you, whose Fix it starts a fix thread in Fyr's own checkout
 
-→ decisions 0029, 0032 and 0036; checks what V0.oomd-guard, V0.guard-wake, V0.guard-tidy, V0.guard-agents-stall, V0.job-limits, V0.admission-memory and V0.psi-trigger-slice promise. The owner (19 Nov): "Can we make a few invariants, that when they trigger automatically opens a bug fix in fyr for this?", then chose a Needs-you card only: fyrd shows the evidence and the owner presses Fix it; fyrd never starts an agent by itself.
+→ decisions 0029, 0032 and 0036; checks what V0.oomd-guard, V0.guard-wake, V0.guard-tidy, V0.guard-agents-stall, V0.job-limits, V0.admission-memory and V0.psi-trigger-slice promise. A broken invariant becomes a Needs-you card only: fyrd shows the evidence and the owner presses Fix it; fyrd never starts an agent by itself.
 
 (1) **The invariants.** Each has a stable id; the thresholds are constants in `internal/engine/invariants.go`.
 - `thaw-into-critical`: the guard thawed work while the agents' memory stall was critical, other than at the 30 min ceiling (V0.guard-tidy) or because its processes were gone.

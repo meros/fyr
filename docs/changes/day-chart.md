@@ -1,6 +1,6 @@
 # V0.day-chart: the status screen shows the day so far, as four numbers and a chart of the open changes
 
-→ V0.status-home, V0.98. *Adds a block to V0.status-home (3), between Moving without you and Since you looked.* (owner, 19 Nov: "On the rhs non-selected-card page. Add some nice burndown/stats graph for the day.")
+→ V0.status-home, V0.98. *Adds a block to V0.status-home (3), between Moving without you and Since you looked.* 
 
 (1) **The numbers.** Today: changes **finished** (merged or the owner's Done, with how many merged), changes **opened**, changes **open now** (with the peak when it was higher), and **threads started**. A thread archived is left out, as on the board; a change shown in several threads counts once (`allChanges` in `board.ts`).
 

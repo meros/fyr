@@ -1,6 +1,6 @@
 # V0.forget-front: the client does not know which front it is connected through, except where Settings says so
 
-→ decision 0031 slice 4 (2.6, C8, C9, C10, tests 1 and 8), V0.51, V0.54, V0.125, V0.126, V0.132, V0.170, V0.client-refs. *Amends V0.125 (no Hosts row is tagged "This install"; a front that lists no hosts shows none), V0.126 (no per-host group's line is "This install"), V0.132 (the host picker has no "(this install)").* (owner, 17 Nov, decision 0031 Q3: "Only in Settings"; 19 Nov: "Finish decision 0031".)
+→ decision 0031 slice 4 (2.6, C8, C9, C10, tests 1 and 8), V0.51, V0.54, V0.125, V0.126, V0.132, V0.170, V0.client-refs. *Amends V0.125 (no Hosts row is tagged "This install"; a front that lists no hosts shows none), V0.126 (no per-host group's line is "This install"), V0.132 (the host picker has no "(this install)").* (decision 0031)
 
 (1) **One place.** Settings → This device has a row **Connected through** with the front's name. Nothing else names the front: the host pickers (New thread, New project) list the hosts by name in the owner's order, an offline one marked; Settings → Hosts has no "This install" tag on a host row (the Paired installs panel still marks the install whose roster it shows, which signs its pairings: decision 0031 2.9 keeps the roster as it is); the per-host groups of Providers and Automation say online or offline since when, for every host alike; the Hosts summary with one host is "One host".
 

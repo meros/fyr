@@ -1,12 +1,6 @@
 # 0027 Auto-update installs only CI-built, signed releases; a local build is an explicit developer switch
 
-Date: 2026-11-16 · Status: accepted (owner, 16 Nov, planning thread t_6ad20148224e9641, issue #144) · Amends V0.13 (2), V0.111 and #141's `scripts/update.sh` · Spec row V0.126
-
-**The owner's words, 16 Nov:**
-- "Start planning - issues not fixes - how to make a more robust less hacky auto-update mechanism".
-- Asked whether watching git is the best mechanism, and whether to do something else: "That's the right approach! We only auto-update to ci-built binaries... We still need to be able to switch locally built binaries when working on fyr from fyr itself".
-- "That way even mac can be built using nix as well right?"; "We could probably remove the makefiles... I will not develop fyr from fyr there".
-- On the questions: a smoke test only when CI passed; every green main commit, batched; each host on its own; the key only in the GitHub secret; releases always restart.
+Date: 2026-11-16 · Status: accepted (#144) · Amends V0.13 (2), V0.111 and #141's `scripts/update.sh` · Spec row V0.126
 
 **Context.** On 16 Nov Fyr updated itself about 30 times on one laptop, and the update path showed its seams:
 - It built the coordinator agent's working checkout, so it once built an older commit than main. The coordinator then checked every binary's `vcs.revision` with `strings`, and ran `git pull` before every ask.

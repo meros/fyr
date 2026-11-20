@@ -31,7 +31,7 @@ export interface HostChip {
   /** V0.client-refs: what the filter keeps: the install id, or the name of a host that reports none */
   key: string;
   name: string;
-  /** V0.152: the short name the rail uses ("meros-laptop", "meros-server" → "laptop", "server") */
+  /** V0.152: the short name the rail uses ("home-laptop", "home-server" → "laptop", "server") */
   short: string;
   /** the host as the front lists it; missing for a host turned off that the front no longer lists */
   info?: HostInfo;

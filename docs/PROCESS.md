@@ -35,7 +35,7 @@ A bug is a place where the code breaks the spec. The fix starts at step 2. If th
 | `type:bug` | the code breaks the spec | Bug |
 | `type:spec` | the spec must change (new behaviour, a gap, a contradiction) | Spec change |
 | `type:decision` | a choice that needs options and a recorded reason | Decision |
-| `type:research` | a question to answer with sources, ends in a `research/` file | Research |
+| `type:research` | a question to answer with sources, ends in a note under `docs/` | Research |
 
 Areas: `area:core`, `area:agent`, `area:store`, `area:server`, `area:web`, `area:t3`, `area:github`, `area:nix`, `area:design`, `area:android`.
 

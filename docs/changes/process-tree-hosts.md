@@ -1,6 +1,6 @@
 # V0.process-tree-hosts: a host without cgroups (a Mac) sees each thread and each heavy job from its process tree, and pauses work under the memory guard with SIGSTOP
 
-→ V0.150 (6), V0.164 (3), (7), (9), V0.151 (5), V0.142 (8), V0.195 (3), decision 0029 section 0 (c). *Amends V0.150 (6), V0.164 (9), V0.151 (5) and V0.195 (3).* (owner, 18 Nov: "Make sure everthing works properly (as good as possible) on mac as well.")
+→ V0.150 (6), V0.164 (3), (7), (9), V0.151 (5), V0.142 (8), V0.195 (3), decision 0029 section 0 (c). *Amends V0.150 (6), V0.164 (9), V0.151 (5) and V0.195 (3).* 
 
 (1) **The reading.** Every read takes the process table once (`/proc`, on macOS `ps -A -o pid=,ppid=,rss=,etime=,time=,state=,args=`; zombies are left out). A thread is its CLI and the CLI's descendants: memory is the sum of RSS (shared pages count more than once), CPU time counts per process, so a child that ends takes nothing back; a process that starts and ends between two reads is not seen.
 

@@ -2,8 +2,6 @@
 
 Date: 2026-11-17 · Status: **accepted** (the owner answered Q1–Q4 on 17 Nov, each as recommended; see "The owner's answers") · Builds on 0016 (fronts and hosts), 0025 (the client keeps one uplink), 0026 (an install is its key), 0030 (every hop names who acts) and its Amendment 1 (two-way links) · Amends V0.51, V0.54, V0.121, V0.127, V0.132, V0.134, V0.139, V0.140, V0.169 where they say "the first host", "this install" or name a host by its name on the wire · Spec rows: one per slice, numbered when the slice's PR opens
 
-**The owner's words, 17 Nov:** "Start a new review and refactor of the frontend. A frontend connects to a backend and gets a list of hosts. From that point on, the whole protocol is neutral to who it is connected to. All operations need to include what host to direct to. I.e. a frontend doesn't *really* know what host it's connected to (it does, but it doesn't affect the UX)."
-
 **In one paragraph.** A browser connects to one front, signs in (0030) and reads the list of hosts. After that, every read, command, stream frame, upload and preview names its host by install id, in the path: `/api/h/<hostId>/…`. What follows the prefix is the host protocol, unchanged, so every host answers the same calls, and the host that runs in the front's own process is reached the same way as a host on another machine. No call has a default host. What belongs to no host (the host list, the stream, push, presence, devices, pairing, the owner's orders) lives under `/api/front/…`. The client keys everything it keeps by (host id, record id).
 
 Part 1 is the review of the code at `a58bb97`, part 2 the decision, part 3 the tests, part 4 the migration, part 5 the slices.
@@ -186,7 +184,7 @@ The client is served by the front it talks to, so the two are always of one buil
 
 The host protocol; MCP (agents talk to their host); the roster, pairing and sessions; the owner's host order and project order and where they are kept; the push plan; the front's cache of an offline host; one uplink per client (0025).
 
-### The owner's answers (17 Nov)
+### The owner's answers
 
 | # | Question | Answer |
 |---|---|---|

@@ -2,9 +2,8 @@
 
 Date: 2026-11-19 · Status: **proposed; the owner chose a decision doc and opt-in kill-and-retry on 19 Nov** · Builds on decisions 0029 and 0032, V0.164, V0.188, V0.194, V0.198, V0.freeze-old-work, V0.load-tuning · Makes #221 urgent
 
-The owner, 19 Nov: "Prior art and tech detail research for the anti swapp deload fixes.... What is the best way to manage this? What are we missing?"
 
-## What the host did (meros-laptop, 17–19 Nov)
+## What the host did (home-laptop, 17–19 Nov)
 
 The host: Linux 7.3, 8 cores, 30 GB RAM, zram 20 GB (priority 5) in front of 34 GB disk swap, zswap off, MGLRU on with `min_ttl_ms` 0. `fyr.service` has `Delegate=cpu memory`, `ManagedOOMMemoryPressure=kill` at 70 % for 20 s, and `MemoryLow=1G`. `agents/` has `memory.high` 12 GB, `memory.max` 14 GB and `memory.swap.max` 10 GB. Sources: `oomctl`, `journalctl -u systemd-oomd` and the `guard:` lines in `~/.local/share/fyr/daemon.log`.
 
@@ -82,7 +81,7 @@ The swap valve of decision 0032 slice 3 applies: every job limit lifts while the
 5. *Triggers, not a tick.* fyrd keeps a PSI trigger on `agents/memory.pressure` (full, 150 ms in a 2 s window, unprivileged). A notification makes the guard tick at once; the 10 s tick stays as a fallback and on hosts without PSI. *Amended by V0.psi-trigger-slice: in the scope layout (V0.agents-unit) the file is the slice's `memory.pressure`, root's, so the module hands it to the service user before fyrd starts, and fyrd tries again each minute while the open is refused.* *Amended by V0.freeze-fast-class-name: the trigger is 200 ms in 2 s, the critical level, and for 20 s after it fires the agents' stall counts as critical.*
 6. *Say how long it was frozen.* After a thaw, the hook output for that thread names the time frozen (`frozen_usec`), so the agent can tell a timeout caused by the freeze from a real failure.
 
-**(F) Kill and rerun, for classes the owner opts in.** The owner, 19 Nov: yes, for opted-in classes.
+**(F) Kill and rerun, for classes the owner opts in.** Yes, for opted-in classes.
 - A class is rerunnable only when it is marked so in Settings → Automation (desktop and phone), for example `tsc`, `yarn lint`, `go test ./internal/...`, `make test`. Nothing is rerunnable by default. Services never are.
 - Under the guard, a rerunnable job is killed instead of frozen when it was frozen and could not wake within 2 min, or when it is the job (E) would freeze and its learned wall time is under 5 min. The job's cgroup gets `cgroup.kill`, and `process_mrelease` releases the memory.
 - The agent's tool result says it was killed by Fyr to free memory and that it will be admitted again. The gate holds the rerun until the memory guard is green and the class's learned peak fits.
@@ -112,7 +111,7 @@ The host settings these slices assume (zswap, oomd limits, the cgroup budget) ar
 
 Each slice adds its `guard:` log lines first, as decision 0032 did, so it can be tuned from the log.
 
-## The owner's answers (19 Nov)
+## The owner's answers
 
 1. **How to take the findings forward:** a decision doc (this one), then PRs by slice.
 2. **Kill and rerun:** yes, for classes the owner opts in (F).

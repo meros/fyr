@@ -1,6 +1,6 @@
 # V0.starting-moves: a thread whose agent is starting moves without the owner
 
-→ V0.101, V0.153, V0.6. (owner, 19 Nov: "New threads should start in moving without you... They are 'finished' now until the agent responds.")
+→ V0.101, V0.153, V0.6. 
 
 (1) **The cause.** A thread was Working only once its run began, and a run begins when Fyr writes the first message to a live agent. Starting the agent's process (the CLI, its MCP servers) can take up to a minute; in that time the thread had no run and fell through to Finished, unread.
 

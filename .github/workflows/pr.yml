@@ -3,8 +3,10 @@
 # runner takes one job at a time; a newer push to a PR cancels its older run. scripts/ci-local.sh stays the fallback
 # when the runner is down (its status local/test counts the same for Fyr).
 #
-# Only for this private repo: a self-hosted runner runs whatever a workflow says, so it must never take PRs from
-# people who are not the owner.
+# A self-hosted runner runs whatever a workflow says, and a PR runs the workflow from its own head, so a fork could
+# edit this file. The lock is the repository's Actions setting "Require approval for all external contributors": no
+# fork PR runs until the owner approves it, and the owner approves none on this runner (V0.public-repo). The `if`
+# below makes an approved fork run skip the job instead of running it here.
 name: pr
 
 on:
@@ -19,6 +21,7 @@ concurrency:
 
 jobs:
   test:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, meros-server]
     timeout-minutes: 30
     steps:

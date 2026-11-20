@@ -1,6 +1,6 @@
 # V0.ask-tool: the agent asks on a card with Fyr's own tool, and is told when it asked in text
 
-→ V0.3, V0.12, V0.149, V0.210, decision 0033. (owner, 19 Nov: "Fyr works best when the agent uses ask the user... we should probably expose the same tools with fyr mcp and steer agents to use that instead of leaving open things in text.")
+→ V0.3, V0.12, V0.149, V0.210, decision 0033. 
 
 (1) **The tool.** `mcp__fyr__ask {questions}` takes what the CLI's AskUserQuestion takes: 1 to 4 questions, each with a text, an optional header, up to 4 options and multiSelect. A question may have no options; the owner then answers in their own words. It opens the same `ask` Decision, so the card, the keys, Your move (Answer), the push and both fronts are unchanged.
 

@@ -2,7 +2,7 @@
 
 Date: 2026-11-14 · Status: accepted (owner, two-round walk-through) · Builds on 0002, 0015 · Amends FYR-V1 v1.2
 
-**Context.** A second host (host-b) is coming. The owner named the two problems: "info sharing and who serves the client". The first proposal was a hub: one `fyrd` serves the client and the other hosts dial in. The owner rejected it: "I think it's not correct to have the *host* also serve the *frontend*? Maybe the laptop should serve from localhost and phone from host-b? Both configured with one thing only: what hosts to connect to."
+**Context.** A second host (host-b) is coming. Two problems: sharing information, and who serves the client. The first proposal was a hub: one `fyrd` serves the client and the other hosts dial in. It was rejected: a host should not have to serve the frontend; the laptop could serve from localhost and the phone from host-b, each configured with one thing only, what hosts to connect to.
 
 **The model.**
 
@@ -19,7 +19,7 @@ One program, `fyrd`, runs as a host, a front, or both. The laptop runs both (its
 |---|---|
 | Who serves the client | **A front, configured with a list of hosts only.** No hub. Each front sees all hosts it lists. |
 | Info sharing | **One owner per record.** A thread, its events and its inbox state live on the host that runs it. A provider and its keys live on their host; keys never leave it. No record has two writers, so there are no merge rules. |
-| Projects | **Single-host for now** (owner: "start out with projects being single host"). A project lives on one host with its folders. Fronts show projects from all hosts. A project across hosts is a later decision. |
+| Projects | **Single-host for now**. A project lives on one host with its folders. Fronts show projects from all hosts. A project across hosts is a later decision. |
 | Inbox state | **On the thread's host**, so the phone and the desktop agree. |
 | Front auth | **Tailnet identity.** Hosts listen on the tailnet only and accept peers that the owner owns (Tailscale whois). No tokens to copy. |
 | A host is offline | The front shows that host's threads from its cache, marked "host-a offline since 19:40", read-only. |

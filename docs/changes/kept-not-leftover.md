@@ -1,6 +1,6 @@
 # V0.kept-not-leftover: a process the agent kept stays off its thread's leftover strip
 
-→ V0.176. (owner, 19 Nov, #353: "Hide kept jobs from strip".)
+→ V0.176. (#353)
 
 (1) **What happened.** On 19 Nov at 11:59 an agent started a 3 h build detached (`setsid nohup timeout 3h …`), kept it with `keep_process`, held an admitted build slot, and waited for it with a background Bash. Its turn ended at 12:52. The build is outside the CLI's process tree, so the thread's strip showed it as "1 leftover process: uv (1.4 GB) · kept for 2 h: …" with End. At 13:05:48 the owner pressed End and the build died in its last step.
 

@@ -1,6 +1,6 @@
 # V0.multi-freeze: the guard freezes one more thread for each minute memory stays short, thaws them one at a time, and gives turns to heavy parts only
 
-→ V0.guard-swap (4), V0.164 section 7, decision 0029 S5, decision 0032 slices 1 and 2. *Amends "one at a time on the host" (V0.164 section 7) and the turn order (decision 0032 slice 2).* (owner, 19 Nov: "multi-freeze not done? I need everything we know about this type of thrashing to be fixed".)
+→ V0.guard-swap (4), V0.164 section 7, decision 0029 S5, decision 0032 slices 1 and 2. *Amends "one at a time on the host" (V0.164 section 7) and the turn order (decision 0032 slice 2).* 
 
 (1) **The cause.** On 19 Nov memory was short from 14:21:55 to 14:39 without a break. The guard held one thread frozen at a time: one dev stack for its 10 minutes, then the other. Meanwhile the second dev stack, a dozen vitest runs and two Python jobs ran on. Each freeze was the only one the guard could make, however long memory stayed short.
 

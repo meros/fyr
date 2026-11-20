@@ -1,6 +1,6 @@
 # 0028 Who may act: one session per browser, an owner socket instead of loopback trust, a host decides which fronts drive it, and agents are named for what they are
 
-Date: 2026-11-16 · Status: **accepted** (owner, 17 Nov: "Accept, start slices 0 and 1"); the owner answered Q1–Q4 on 16 Nov (see "The owner's answers"); slice 0 is V0.129; slice 1's first release (observe) is V0.130 · Builds on 0026 (keys, roster, mTLS, device pairing) · Amends 0026 (5) (loopback is no longer trusted; device sessions move from slice 5 to the first slice), V0.14, V0.51 (5), V0.12 (the token's transport) · Spec rows: the draft at the end, numbered when each slice is built · Superseded in part by 0030 ((1), (3), (4), (7) and the slices), once 0030 is accepted
+Date: 2026-11-16 · Status: **accepted**; the owner answered Q1–Q4 on 16 Nov (see "The owner's answers"); slice 0 is V0.129; slice 1's first release (observe) is V0.130 · Builds on 0026 (keys, roster, mTLS, device pairing) · Amends 0026 (5) (loopback is no longer trusted; device sessions move from slice 5 to the first slice), V0.14, V0.51 (5), V0.12 (the token's transport) · Spec rows: the draft at the end, numbered when each slice is built · Superseded in part by 0030 ((1), (3), (4), (7) and the slices), once 0030 is accepted
 
 **Why now (16 Nov, adding host-b as a second host).** On host-b, `stacks-plex-1` runs with Docker host networking. It shares the host's network namespace ([Docker docs](https://docs.docker.com/engine/network/drivers/host/)), so it reaches `127.0.0.1:7777`, and `guard()` treats any loopback `Host` as the owner. A compromised Plex (LAN port 32400) can start agents as the owner's user (wheel, docker, Nix trusted user), so it is effectively root. The same survey found four more ways in that trust only "you are on this machine" (below).
 
@@ -192,7 +192,7 @@ Out of scope: several owners, an attacker with root on a trusted machine, the ta
 
 **A stopgap for host-b today, outside Fyr** (more urgent with Q2's full mesh, since the server will drive the laptop). Until slice 1 ships, take Plex off host networking (bridge mode with its published ports), or stop `fyr.service` there. A UID firewall rule does not help: the container's UID is likely 1000 too. An nftables `socket cgroupv2` match on the Docker scope could work, but it is fiddly and unverified here.
 
-## The owner's answers (16 Nov)
+## The owner's answers
 
 | Q | Asked | Recommended | Owner |
 |---|---|---|---|

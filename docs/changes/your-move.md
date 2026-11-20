@@ -1,6 +1,6 @@
 # V0.your-move: the inbox says whose move it is
 
-→ V0.189, V0.199, V0.205, V0.207, V0.210, decision 0033. *Amends V0.207 (4) (a new row in the first section comes in at the top of its group, not above every held row) and the section names of V0.199; the order of V0.199 stands.* (owner, 18 Nov: "I feel it's hard to keep track of what jobs actually need me", then, about the proposal's list, "Finish the full change".)
+→ V0.189, V0.199, V0.205, V0.207, V0.210, decision 0033. *Amends V0.207 (4) (a new row in the first section comes in at the top of its group, not above every held row) and the section names of V0.199; the order of V0.199 stands.* 
 
 (1) **The names.** Needs you is **Your move**, Unread is **Finished, unread**, Seen is **Finished, seen**, Working is **Moving without you**. The rail and the phone's strip say Yours, Unread, Seen, Moving. The keys, the g keys, what lands in each section and the host's states do not change. "Needs you" stays on the Changes board and in Settings, which are about changes and hosts.
 

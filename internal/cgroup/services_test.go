@@ -32,8 +32,8 @@ func svcThread(t *testing.T) (*Tree, string, string) {
 	fakeProc2(t, proc, 20, 10, tick(1000), 10, "/bin/zsh", "-c", "source "+snap+" && eval 'process-compose --config process-compose.yaml --tui=false'")
 	fakeProc2(t, proc, 21, 20, tick(1001), 1000, "process-compose", "--config", "process-compose.yaml", "--tui=false")
 	fakeProc2(t, proc, 22, 21, tick(1002), 900000, "postgres") // about 3.4 GB
-	fakeProc2(t, proc, 30, 10, tick(1100), 10, "/bin/zsh", "-c", "source "+snap+" && eval 'docker compose -f devdocker/docker-compose.yaml --project-name norban-dev up'")
-	fakeProc2(t, proc, 31, 30, tick(1101), 5000, "docker", "compose", "-f", "devdocker/docker-compose.yaml", "--project-name", "norban-dev", "up")
+	fakeProc2(t, proc, 30, 10, tick(1100), 10, "/bin/zsh", "-c", "source "+snap+" && eval 'docker compose -f devdocker/docker-compose.yaml --project-name acme-dev up'")
+	fakeProc2(t, proc, 31, 30, tick(1101), 5000, "docker", "compose", "-f", "devdocker/docker-compose.yaml", "--project-name", "acme-dev", "up")
 	fakeProc2(t, proc, 40, 10, tick(7200), 10, "/bin/zsh", "-c", "source "+snap+" && eval 'yarn e2e'")
 	fakeProc2(t, proc, 41, 40, tick(7201), 500000, "node", "e2e.js")
 	write(t, filepath.Join(td, "cgroup.procs"), "10\n20\n21\n22\n30\n31\n40\n41\n")
@@ -49,7 +49,7 @@ func TestSvc1AThreadsServicesAndTheirContainers(t *testing.T) {
 	now := boot.Add(3 * time.Hour)
 	d := &Docker{FS: fs, Now: func() time.Time { return now }, PS: func() (string, error) {
 		asked++
-		return "aaa\tnorban-dev\nbbb\tnorban-dev\nccc\tother\n", nil
+		return "aaa\tacme-dev\nbbb\tacme-dev\nccc\tother\n", nil
 	}}
 	book := &heavy.Services{}
 	s := &Services{Match: book.Match, Docker: d, Proc: proc, Now: func() time.Time { return now }}
@@ -62,7 +62,7 @@ func TestSvc1AThreadsServicesAndTheirContainers(t *testing.T) {
 	if got[0].Memory != 901000*page || got[0].Project != "" {
 		t.Fatalf("process-compose %+v", got[0])
 	}
-	if got[1].Project != "norban-dev" || got[1].Containers != 2<<30 || got[1].Reserve != 5000*page+2<<30 {
+	if got[1].Project != "acme-dev" || got[1].Containers != 2<<30 || got[1].Reserve != 5000*page+2<<30 {
 		t.Fatalf("compose %+v", got[1])
 	}
 	if s.InCgroup("t_a") != 906000*page {
@@ -106,33 +106,33 @@ func TestSvc3ComposeUpDetachedCountsUntilItsContainersAreGone(t *testing.T) {
 	fs := t.TempDir()
 	write(t, filepath.Join(fs, "docker", "aaa", "memory.current"), "3G")
 	now := boot
-	ps := "aaa\tnorban-dev\n"
+	ps := "aaa\tacme-dev\n"
 	d := &Docker{FS: fs, Now: func() time.Time { return now }, PS: func() (string, error) { return ps, nil }}
 	s := &Services{Docker: d, Now: func() time.Time { return now }, Cwd: func(string) string { return "/w/repo" }}
-	s.Bash("t_a", "docker compose -f devdocker/docker-compose.yaml --project-name norban-dev up -d")
+	s.Bash("t_a", "docker compose -f devdocker/docker-compose.yaml --project-name acme-dev up -d")
 	s.Bash("t_a", "docker compose ps")
 	s.Tick(nil, nil)
 	got := s.Of("t_a")
-	if len(got) != 1 || got[0].Name != "compose norban-dev" || got[0].Containers != 3<<30 {
+	if len(got) != 1 || got[0].Name != "compose acme-dev" || got[0].Containers != 3<<30 {
 		t.Fatalf("%+v", got)
 	}
 	// Told once an hour, when the containers hold a share of the agents' memory.
 	c := Capacity{CPU: 8, Memory: 12 << 30}
 	n := s.Notice("t_a", c)
-	if !strings.Contains(n, "compose project norban-dev") || !strings.Contains(n, "docker compose -p norban-dev down") {
+	if !strings.Contains(n, "compose project acme-dev") || !strings.Contains(n, "docker compose -p acme-dev down") {
 		t.Fatalf("notice %q", n)
 	}
 	if s.Notice("t_a", c) != "" || s.Notice("t_b", c) != "" {
 		t.Fatal("told again within the hour, or another thread")
 	}
 	// down ends it; containers gone end it after a grace.
-	s.Bash("t_a", "docker compose -p norban-dev down")
+	s.Bash("t_a", "docker compose -p acme-dev down")
 	now = now.Add(time.Minute)
 	s.Tick(nil, nil)
 	if len(s.Of("t_a")) != 0 {
 		t.Fatal("still counted after down")
 	}
-	s.Bash("t_a", "docker compose -p norban-dev up -d")
+	s.Bash("t_a", "docker compose -p acme-dev up -d")
 	ps = ""
 	now = now.Add(time.Minute)
 	s.Tick(nil, nil)

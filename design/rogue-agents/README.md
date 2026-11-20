@@ -1,6 +1,6 @@
 # Undeclared heavy work (V0.164)
 
-The design for agents that run heavy work without asking for a heavy job: detect it from the thread's cgroup, tell the agent once, count the use against the host, and pause it only under real memory pressure (owner, 17 Nov: "do it").
+The design for agents that run heavy work without asking for a heavy job: detect it from the thread's cgroup, tell the agent once, count the use against the host, and pause it only under real memory pressure.
 
 | Path | What |
 |---|---|

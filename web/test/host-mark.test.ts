@@ -24,7 +24,7 @@ test("decodeHosts reads machine and os", () => {
 });
 
 test("colours: from the install id, from the palette (never amber), stable, and different for each host", () => {
-  const hosts = [H("meros-laptop", { id: "F7QK-2M9X-AB34-CD56" }), H("meros-server", { id: "M3RS-QX7P-5LKA-2WNE" }), H("MacBook-Air-7", { id: "B7LA-4QZE-9KDF-3HXW" })];
+  const hosts = [H("home-laptop", { id: "F7QK-2M9X-AB34-CD56" }), H("home-server", { id: "M3RS-QX7P-5LKA-2WNE" }), H("MacBook-Air-7", { id: "B7LA-4QZE-9KDF-3HXW" })];
   const c = hostColors(hosts);
   assert.equal(c.size, 3);
   for (const v of c.values()) assert.ok(PALETTE_NAMES.includes(v));
@@ -32,7 +32,7 @@ test("colours: from the install id, from the palette (never amber), stable, and 
   // The same on another front that lists them in another order.
   assert.deepEqual([...hostColors([hosts[2], hosts[0], hosts[1]])].sort(), [...c].sort());
   // Renaming a host keeps its colour: it follows the id.
-  assert.equal(hostColors([{ ...hosts[0], name: "laptop2" }, hosts[1], hosts[2]]).get("laptop2"), c.get("meros-laptop"));
+  assert.equal(hostColors([{ ...hosts[0], name: "laptop2" }, hosts[1], hosts[2]]).get("laptop2"), c.get("home-laptop"));
   // Without an id (a host older than V0.124), the name.
   assert.ok(PALETTE_NAMES.includes(hostColors([H("old-nuc")]).get("old-nuc")!));
 });

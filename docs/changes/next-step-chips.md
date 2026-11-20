@@ -1,6 +1,6 @@
 # V0.next-step-chips: an optional next step is a chip under the agent's newest message, not a button in the header
 
-→ V0.60, V0.68, V0.75, V0.149, V0.next-step-dock. *Amends V0.60: a thread's action is a chip under the newest message, an action is a prompt only, and a command goes through `run_request`; amends V0.149: `run_request {optional: true}`.* (owner, 19 Nov: "I often don't see the command buttons, even if they sometimes makes sense...")
+→ V0.60, V0.68, V0.75, V0.149, V0.next-step-dock. *Amends V0.60: a thread's action is a chip under the newest message, an action is a prompt only, and a command goes through `run_request`; amends V0.149: `run_request {optional: true}`.* 
 
 (1) **The cause.** A thread's buttons stood in the header, above the tabs: the last place the owner looks after reading a reply. In 14 to 19 Nov agents offered 15 script buttons and 10 agent buttons. The owner pressed most script buttons once and about half the agent buttons. Half the script buttons were a command to run ("Force-push…", "Ship with nx"), so they were a Run card in another place, with other rules (argv, no shell, no root, no streaming).
 

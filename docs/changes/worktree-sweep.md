@@ -1,6 +1,6 @@
 # V0.worktree-sweep: Fyr removes a worktree nobody works in once its work is kept elsewhere, and makes it again when a thread works there
 
-→ V0.176 (6), (7), (10); decision 0019 (Cleanup). (owner, 19 Nov: "Investigate how we can handle worktree abandonment automatically in a safe way", then "Write spec + implement" and, for worktrees agents or the owner made, "All, if preserved".)
+→ V0.176 (6), (7), (10); decision 0019 (Cleanup). 
 
 That day this repository had 145 worktrees (8.1 GB). The V0.176 check (no uncommitted file, HEAD on a remote branch) passed 59 of them, for three reasons. History had been rewritten, so 81 clean worktrees whose PRs had merged had no commit in common with `origin/main`, and patch ids no longer matched either. Subagent worktrees (`.claude/worktrees/agent-*`) belong to no thread's folder or change branch. And threads asleep for more than 14 days were never looked at. The head of a GitHub PR proves 133 of them kept: 97 HEADs were a merged PR's head and 33 were inside one. Of the other 12, 5 had uncommitted files, 6 were 0 to 2 days old (two of them were the working folder of a live process), and 1 had work nowhere else.
 

@@ -1,6 +1,6 @@
 # V0.waiting-folds: Waiting to run folds
 
-→ V0.137, V0.163, V0.186, V0.192. *Amends V0.137 (1) ("it has no collapse").* (owner, 19 Nov: "Make waiting to run collapsible".)
+→ V0.137, V0.163, V0.186, V0.192. *Amends V0.137 (1) ("it has no collapse").* 
 
 (1) **The fold.** The header of Waiting to run folds and unfolds the section, like every other section's header (click, tap, Enter or Space). It is open by default, and the fold is remembered per device with the others (V0.186). It does not close by itself (V0.196 is for Snoozed and Settled).
 

@@ -3,3 +3,5 @@ __pycache__/
 /spikes/protocol/npm/
 /spikes/protocol/run/
 bin/
+/fyrd
+/result

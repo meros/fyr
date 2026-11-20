@@ -1,11 +1,6 @@
 # 0026 An install is its key: discovery from many sources, trust from pairing, TLS pinned to keys; the tailnet is one route
 
-Date: 2026-11-16 · Status: accepted (owner, 16 Nov: PAKE code, the tailnet shortcut for untagged nodes, a shared signed roster; the browser path "is up to the installation") · Amends 0016 (front auth), 0021 (6) and 0025 (1), (2) · Supersedes the parts of 0025 that rest on the tailnet · Spec rows follow with each slice · Superseded in part by 0030 ((3)–(5) and the slices), once 0030 is accepted
-
-**The owner's words, 16 Nov:**
-- "Make a more robust plan for auto discovery and authentication that doesn't directly rely on tailnet. We should be able to run on a lan for instance."
-- On the questions: pairing by a PAKE code; "yes" to the tailnet shortcut for the owner's untagged nodes; a shared signed roster.
-- On how a phone browser reaches its front on a LAN: "It's up to the installation! I use tailnet to reach my phone pwa fyrd".
+Date: 2026-11-16 · Status: accepted · Amends 0016 (front auth), 0021 (6) and 0025 (1), (2) · Supersedes the parts of 0025 that rest on the tailnet · Spec rows follow with each slice · Superseded in part by 0030 ((3)–(5) and the slices), once 0030 is accepted
 
 **Context.** Since V0.123 (0025) everything between Fyr installs rests on Tailscale:
 
@@ -62,7 +57,7 @@ An unpaired candidate shows in Settings → Hosts as "Fyr install F7QK… on 192
 
 A browser does not trust a pinned self-signed certificate by itself, and a PWA needs a secure context for its service worker and push. HTTP on a LAN address is not one.
 
-**The browser path is the installation's choice** (the owner, 16 Nov). The owner's own phone reaches its front over the tailnet, so Fyr builds no certificate machinery of its own now. What Fyr builds:
+**The browser path is the installation's choice**. The owner's own phone reaches its front over the tailnet, so Fyr builds no certificate machinery of its own now. What Fyr builds:
 
 - localhost and Tailscale Serve, as today;
 - a config `tls: {cert, key}` (file paths, re-read when they change). With it, the front serves its browser port over HTTPS with any certificate the install brings: from its own CA, from an ACME client, or from a reverse proxy in front. That is the hook a LAN-only install uses;

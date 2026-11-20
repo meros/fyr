@@ -2,8 +2,6 @@
 
 Date: 2026-11-17 · Status: **proposed; the owner answered Q1–Q4 on 17 Nov** (research, no code; the question was relayed by the coordinator thread t_d8b8040dae603057) · Would amend V0.86 (1) and (6), V0.99 (2), and build on V0.137 (the owner's queue order) and issue #174 (heavy jobs without a slot)
 
-**The owner's words, 17 Nov:** "The algorithms NEED to be machine indepentant - work for any host" (after the first draft; see section 0).
-
 The question: "can we make slots adaptive somehow? Let's assume a job is normally 1 in cost, then if a specific job reliably is less taxing but long running than expected - lower the 'cost'. So it doesn't measure time, it measures system load (memory and cpu). What we want to avoid is system overload, but also not just wait wait wait."
 
 ## What would change for the owner, day to day
@@ -24,7 +22,7 @@ The question: "can we make slots adaptive somehow? Let's assume a job is normall
 - every cgroup under `fyr.service/`: `cpu.stat`, `memory.current`, `memory.peak`, `memory.swap.current` and the three pressure files;
 - the slot pool, from the store's KV table every 30 s.
 
-Next to the sampler, a probe in this thread's cgroup timed a fixed 20 ms CPU burst every 5 s. Its **stretch** (wall time ÷ CPU time) is how much slower a new job runs right now, and it is used below as ground truth. The scripts are in `research/adaptive-slots/` and run read-only: `sampler.py samples.jsonl 1800`, `probe.py probe.jsonl 1800`, then `analyze.py` and `auc.py` in the same folder; `jobs.py ~/.local/share/fyr/logs` gives the wall times.
+Next to the sampler, a probe in this thread's cgroup timed a fixed 20 ms CPU burst every 5 s. Its **stretch** (wall time ÷ CPU time) is how much slower a new job runs right now, and it is used below as ground truth.
 
 | Signal (30 min, 180 samples) | p10 | p50 | p90 | max |
 |---|---|---|---|---|
@@ -55,7 +53,7 @@ What the window showed:
 
 ## 0. Machine independence: one algorithm on any host
 
-The owner, after the first draft: "The algorithms NEED to be machine indepentant - work for any host". Fyr runs on Linux with delegated cgroup v2 (this desktop), on Linux without it (dev runs, containers, older kernels), and on macOS: 0027 ships darwin builds with CGO off, and macOS has neither cgroups nor PSI. The design follows four rules.
+The algorithms must not depend on the machine: they work for any host. Fyr runs on Linux with delegated cgroup v2 (this desktop), on Linux without it (dev runs, containers, older kernels), and on macOS: 0027 ships darwin builds with CGO off, and macOS has neither cgroups nor PSI. The design follows four rules.
 
 **(a) No absolute numbers in the algorithm.** Every threshold is one of four things:
 - a share of the host's capacity **C**;
@@ -249,7 +247,7 @@ Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the 
 - **The probe measured from one thread cgroup** with cpu.weight 100 (300 while the owner watches it, V0.85). Other threads saw similar or worse stretch. The AUC ranking is what matters, not the absolute values.
 - **One 30-minute window on one host.** The thresholds are in shares and slowdowns, so they transfer, but they were seen on one machine. S1 records continuously on every host, including the probe beside PSI; S_max, R_mem and the AIMD bounds should be checked on at least the desktop and the headless server before S2 is enabled.
 - **The probe's noise and cost.** It is about 0.1 % of a core. A single probe can be hit by a burst, so the median of 3 is used. On Linux it must run in `agents/`, not `server/` (weight 1000), or it would feel less than a job does.
-- **macOS is deferred** (owner, 17 Nov: "Don't worry too much about mac - we can fix that later"). *V0.150 adds the `sysctl` provider: the probe, `kern.memorystatus_level` for the headroom (not the page counts sketched above, which read far too low on macOS) and `kern.memorystatus_vm_pressure_level` for the stall level; the process tree is still to come.* Until a later issue adds its provider, a macOS host keeps the fixed count of V0.86 (the "none of the above" row). The macOS column above is a sketch for that issue, not part of S1–S5. Because the rules are in shares and slowdowns, adding it later is only a provider.
+- **macOS is deferred**. *V0.150 adds the `sysctl` provider: the probe, `kern.memorystatus_level` for the headroom (not the page counts sketched above, which read far too low on macOS) and `kern.memorystatus_vm_pressure_level` for the stall level; the process tree is still to come.* Until a later issue adds its provider, a macOS host keeps the fixed count of V0.86 (the "none of the above" row). The macOS column above is a sketch for that issue, not part of S1–S5. Because the rules are in shares and slowdowns, adding it later is only a provider.
 
 ## S5 as built (V0.151)
 
@@ -257,16 +255,16 @@ The job's cgroup is not made by rewriting the command at the gate (`fyr job run 
 
 ## Percent and two resources (V0.163)
 
-The owner, after S1–S5: "Slots don't make sense in this model... It should be percentage", and admission checks CPU and memory as two separate dimensions. A job's cost was one number, the larger of its CPU and memory shares; it is now two needs, CPU (learned demand) and memory (learned peak), each checked against its own free budget, so a CPU-heavy job (make test-go, about 3 cores and 2 GB) runs next to a memory-heavy one. AIMD moves a CPU factor and a memory factor apart: memory pressure cuts the memory budget, a CPU stall the CPU budget. Everything shown is a percentage of what the host gives its agents. The tools keep their names (slot_acquire, slot_release); their answers speak percent.
+After S1–S5, slots gave way to percentages, and admission checks CPU and memory as two separate dimensions. A job's cost was one number, the larger of its CPU and memory shares; it is now two needs, CPU (learned demand) and memory (learned peak), each checked against its own free budget, so a CPU-heavy job (make test-go, about 3 cores and 2 GB) runs next to a memory-heavy one. AIMD moves a CPU factor and a memory factor apart: memory pressure cuts the memory budget, a CPU stall the CPU budget. Everything shown is a percentage of what the host gives its agents. The tools keep their names (slot_acquire, slot_release); their answers speak percent.
 
 ## Admission without asking (V0.209)
 
-The owner, 18 Nov: "I want "heavy jobs" to be automated... Not something I need to manually manage". Asking was the part that failed: agents forgot to ask (24 % of heavy runs, V0.164), forgot to release (the idle reminder), and what they missed became buttons for the owner. The gate hook already saw every command, so it now does the asking. It admits a matched command, and the end of the tool call (the stream's `tool_result`, or PostToolUse) releases it. A job that outlives its call (`run_in_background`, `&`, `nohup`, `setsid`) is released by the idle rule, since only its CPU can say when it ended. Releasing too early is harmless, because the next heavy command is admitted again. Commands learned from undeclared episodes are soft (admitted if there is room, never refused): an episode's command is a best guess, and a wrong hard pattern could stop `git push` on a full host.
+Heavy jobs must be automatic, not something the owner manages. Asking was the part that failed: agents forgot to ask (24 % of heavy runs, V0.164), forgot to release (the idle reminder), and what they missed became buttons for the owner. The gate hook already saw every command, so it now does the asking. It admits a matched command, and the end of the tool call (the stream's `tool_result`, or PostToolUse) releases it. A job that outlives its call (`run_in_background`, `&`, `nohup`, `setsid`) is released by the idle rule, since only its CPU can say when it ended. Releasing too early is harmless, because the next heavy command is admitted again. Commands learned from undeclared episodes are soft (admitted if there is room, never refused): an episode's command is a best guess, and a wrong hard pattern could stop `git push` on a full host.
 
-## The owner's answers (17 Nov)
+## The owner's answers
 
 1. **CPU overload signal:** PSI some, with the run queue for the size above PSI's ceiling (recommended). Revised for machine independence (section 0): the slowdown probe takes the run queue's role on every host, and PSI is used where it exists.
-2. **Unslotted heavy work:** ignore it in the budget (the recommendation was to count it as U). Section 5 records the consequences. *Reversed on 17 Nov by V0.164 (owner: "do it"): the 24 % of heavy runs the gate still missed, a layout e2e run at 2.8 GB and `yarn pre-push:check`, drove a memory thrash; undeclared work is now seen, told, counted and, only under memory pressure, paused.*
+2. **Unslotted heavy work:** ignore it in the budget (the recommendation was to count it as U). Section 5 records the consequences. *Reversed on 17 Nov by V0.164: the 24 % of heavy runs the gate still missed, a layout e2e run at 2.8 GB and `yarn pre-push:check`, drove a memory thrash; undeclared work is now seen, told, counted and, only under memory pressure, paused.*
 3. **A job heavier than predicted, under memory pressure:** stop admissions, notify, **and freeze the newest job** (the recommendation was notices only). Section 4 gives the rules; S5 is now required for it.
 4. **Backfill:** EASY backfill with an aging cap (recommended).
 5. **After the first draft:** "The algorithms NEED to be machine indepentant - work for any host". Section 0.

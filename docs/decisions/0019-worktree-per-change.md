@@ -1,8 +1,8 @@
 # 0019 A worktree per change
 
-Date: 2026-11-15 · Status: accepted (owner: "I am happy with your recommendation") · Issue: #44 · Amends 0015 (Workspace), 0018 · Builds on 0017
+Date: 2026-11-15 · Status: accepted  · Issue: #44 · Amends 0015 (Workspace), 0018 · Builds on 0017
 
-**Context.** Threads and their subagents often work in the same folder at once, so one thread's branch switch moves another thread's next edit onto the wrong branch. The owner: "we need a robust mechanism for threads to use worktrees when other threads or subagents are also working in same folder... We use some worktrees containing many repos which makes this non-trivial", and "one thread may run multiple changes in parallel or serial."
+**Context.** Threads and their subagents often work in the same folder at once, so one thread's branch switch moves another thread's next edit onto the wrong branch. Some worktrees hold many repos, and one thread may run several changes, in parallel or one after another.
 
 Today:
 - Decision 0015 defines a workspace as one path with one branch per thread.

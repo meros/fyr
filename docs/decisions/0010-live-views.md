@@ -1,8 +1,8 @@
 # 0010 Live views: a page plus a patched state, kept current by a Stop hook
 
-Date: 2026-11-14 · Status: accepted (owner, 2026-11-15, shipped in V0.37, V0.52, V0.62) · Spec: 0.5 V0.37
+Date: 2026-11-14 · Status: accepted (V0.37, V0.52, V0.62) · Spec: 0.5 V0.37
 
-**Context.** The owner reads a thread to find out where its work stands: which steps are done, what blocks, what comes next. The agent knows this and could show it. The research handover asked for a per-thread view the agent keeps current, pinned above the conversation, so the thread does not have to be read and interpreted. `research/stop-hook-spike.md` showed that a Stop hook registered through `initialize` makes the CLI run one more turn when the host blocks, on new and resumed sessions, so Fyr can ask for the update at the end of a run instead of hoping the agent remembers.
+**Context.** The owner reads a thread to find out where its work stands: which steps are done, what blocks, what comes next. The agent knows this and could show it. The research handover asked for a per-thread view the agent keeps current, pinned above the conversation, so the thread does not have to be read and interpreted. A spike showed that a Stop hook registered through `initialize` makes the CLI run one more turn when the host blocks, on new and resumed sessions, so Fyr can ask for the update at the end of a run instead of hoping the agent remembers.
 
 **Options.**
 

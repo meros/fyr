@@ -1,6 +1,6 @@
 # V0.text-ask-nudge: a question Fyr reads in the agent's text goes back to the agent, which asks on a card or ends its turn; the owner no longer sees Fyr's guess
 
-→ V0.210, V0.ask-tool (5), V0.header-one-block (3), decision 0033. *Amends V0.210 (3) to (5): a yes no longer puts the thread in Needs you, and the line "Fyr read this as a question" with Not a question is gone from both fronts.* (owner, 20 Nov: "I still get lots of these yellow boxes. I don't really like them and I thought we tried to push agents to ask questions when they are not fully done?")
+→ V0.210, V0.ask-tool (5), V0.header-one-block (3), decision 0033. *Amends V0.210 (3) to (5): a yes no longer puts the thread in Needs you, and the line "Fyr read this as a question" with Not a question is gone from both fronts.* 
 
 **Why.** In its first two days the job raised 123 lines, and the owner pressed Not a question on 31 of them. Decision 0033's test already said that 32 of the 54 yeses were not blocking (22 of 54 were). The false ones were mostly optional offers ("I can arm a watch… if you want one"), turns that had already offered a chip ("Press the Settle chip"), work waiting on someone else, and once "Ingen åtgärd krävs från dig just nu" ("no action is needed from you right now"). The true ones were agents writing a question instead of calling `mcp__fyr__ask`. The agent can tell which is which; the owner should not have to.
 
