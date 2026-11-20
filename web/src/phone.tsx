@@ -34,7 +34,7 @@ import { SlashList, useSlash } from "./slash-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { WakeChip } from "./wake-ui.tsx";
-import { SETTLE_DONE_HINT, seenToggle, settleDoneEntry } from "./menu.ts";
+import { actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
@@ -49,7 +49,7 @@ import { useNewThreadForm } from "./new-thread-form.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
 import { ADVANCE_MS, activeSection, allowCommit, askCommit, stepLabel, stripCount, type Choice } from "./mobile.ts";
-import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeArmed, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
+import { LONG_PRESS_MS, idle, longPressCancelled, swipeAvail, swipeArmed, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
 import { hostsNeed, settingsNeed, type PageRef } from "./settings-nav.ts";
 import { useProvidersNeed } from "./settings-ui.tsx";
@@ -1548,12 +1548,59 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   }
   if (!t) return null;
   const reason = (a: string) => unavailableReason(t, a);
-  const avail = swipeAvail(t);
-  const mark = seenToggle(t);
-  const done = settleDoneEntry(t);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
     const d = currentDecision(t);
+    // V0.one-action-list: the same actions as the desktop's row menu (peek) and its header ⋯ menu (thread sheet),
+    // run by the same dispatch. A sheet opens over this one (replace); a command closes the sheet first.
+    const handlers: ActionHandlers = {
+      command: (command, id, args) => void p.commands.run(command, [id], args),
+      sheet: (kind, id) => p.nav.replace({ ...p.nav.at, sheet: { kind, ids: [id] } }),
+      navigate: (id) => p.nav.replace({ screen: { name: "thread", id }, sheet: null }),
+      copy: (text) =>
+        void navigator.clipboard?.writeText(text).then(
+          () => p.commands.notify("Copied"),
+          () => p.commands.showError("Could not copy"),
+        ),
+      select: (id) => (p.list.setSelecting(true), p.list.setPicked(new Set([id]))),
+      own: { settle: (id) => p.actions.settle([id]), settleWhenDone: p.actions.settleWhenDone, archive: (id) => p.actions.archive([id]), markUnseen: p.actions.markUnseen, regenTitle: (id) => void p.commands.regenerateTitle(id) },
+    };
+    const pick = (a: ThreadAction) => (a.kind === "sheet" || a.kind === "navigate" ? () => runAction(a, t.id, handlers) : after(() => runAction(a, t.id, handlers, location.origin)));
+    // The phone's own look of an entry: an icon, and at the right what a swipe or tap does (touch only) or the project.
+    // No key hints: the phone has no keyboard.
+    const look = (a: ThreadAction): { icon?: ComponentChildren; right?: string } => {
+      switch (a.id) {
+        case "open":
+          return { icon: I.right, right: "tap" };
+        case "settle":
+          return { icon: <StateIcon state="settled" size={16} />, right: peek ? "swipe →" : undefined };
+        case "unsettle":
+        case "settleWhenDone":
+          return { icon: <StateIcon state="settled" size={16} /> };
+        case "snooze":
+          return { icon: <StateIcon state="snoozed" size={16} />, right: peek ? "← swipe" : undefined };
+        case "unsnooze":
+          return { icon: <StateIcon state="snoozed" size={16} /> };
+        case "pin":
+        case "unpin":
+          return { icon: PIN_ICON };
+        case "markSeen":
+          return { icon: <StateIcon state="seen" size={16} /> };
+        case "markUnseen":
+          return { icon: <StateIcon state="done" size={16} /> };
+        case "project":
+          return { icon: <ProjectIcon project={projectOf(t, p.store.projects)} name={projectName(t, p.store.projects)} size={18} />, right: projectName(t, p.store.projects) };
+        case "archive":
+        case "unarchive":
+          return { icon: I.close };
+        case "details":
+          return { icon: I.right };
+        case "select":
+          return { icon: <i class="m-ck" /> };
+        default:
+          return {};
+      }
+    };
     return (
       <MSheet onClose={close} label={t.title}>
         {peek && (
@@ -1575,40 +1622,10 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
           </div>
         )}
         {!peek && <div class="m-shh ell">{t.title}</div>}
-        {peek && <Item label="Open thread" icon={I.right} right="tap" onClick={() => p.nav.replace({ screen: { name: "thread", id: t.id }, sheet: null })} />}
-        {t.attention.state === "failed" && <Item label="Retry" sub={reason("thread.retry")} disabled={!!reason("thread.retry")} onClick={after(() => void p.commands.run("thread.retry", [t.id]))} />}
-        <Item
-          label={avail.right.ok ? settleLabel(t) : "Settle"}
-          icon={<StateIcon state="settled" size={16} />}
-          sub={avail.right.ok ? undefined : t.attention.state === "asking" ? "Answer the question first" : reason("thread.settle")}
-          disabled={!avail.right.ok}
-          right={peek ? "swipe →" : undefined}
-          onClick={after(() => p.actions.settle([t.id]))}
-        />
-        {/* V0.203: the same entry as the desktop menus (settleDoneEntry) */}
-        <Item label={done.label} icon={<StateIcon state="settled" size={16} />} sub={reason(done.action) ?? (t.settleWhenDone ? undefined : SETTLE_DONE_HINT)} disabled={!!reason(done.action)} onClick={after(() => p.actions.settleWhenDone(t.id))} />
-        <Item
-          label="Snooze…"
-          icon={<StateIcon state="snoozed" size={16} />}
-          sub={reason("thread.snooze")}
-          disabled={!!reason("thread.snooze")}
-          right={peek ? "← swipe" : undefined}
-          onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "snooze", ids: [t.id] } })}
-        />
-        {t.pinnedAt ? (
-          <Item label="Unpin" icon={PIN_ICON} sub={reason("thread.unpin")} disabled={!!reason("thread.unpin")} onClick={after(() => void p.commands.run("thread.unpin", [t.id]))} />
-        ) : (
-          <Item label="Pin" icon={PIN_ICON} sub={reason("thread.pin") ?? "Keep it on top of the list"} disabled={!!reason("thread.pin")} onClick={after(() => void p.commands.run("thread.pin", [t.id]))} />
-        )}
-        <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.store.projects)} name={projectName(t, p.store.projects)} size={18} />} right={projectName(t, p.store.projects)} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "project", ids: [t.id] } })} />
-        <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => void p.commands.run("thread.setView", [t.id], { on: !t.liveView }))} />
-        <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another provider"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />
-        <Item label="Regenerate title" sub={reason("thread.regenerateTitle") ?? "Name the thread from its conversation so far"} disabled={!!reason("thread.regenerateTitle")} onClick={after(() => void p.commands.regenerateTitle(t.id))} />
-        {/* V0.189: the desktop menu's entry (seenToggle): an unread thread offers Mark seen */}
-        <Item label={mark.label} icon={<StateIcon state={mark.id === "markSeen" ? "seen" : "done"} size={16} />} sub={reason(mark.action)} disabled={!!reason(mark.action)} onClick={after(() => (mark.id === "markSeen" ? void p.commands.run(mark.action, [t.id]) : p.actions.markUnseen(t.id)))} />
-        {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.list.setSelecting(true), p.list.setPicked(new Set([t.id]))))} />}
-        {!peek && <Item label="Details" icon={I.right} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />}
-        <Item label="Archive" icon={I.close} sub={reason("thread.archive")} disabled={!!reason("thread.archive")} onClick={after(() => p.actions.archive([t.id]))} />
+        {actionsFor("phone", t, peek ? "row" : "thread").map((a) => {
+          const l = look(a);
+          return <Item key={a.id} label={a.label} icon={l.icon} sub={a.disabled ?? a.hint} disabled={!!a.disabled} right={l.right} onClick={pick(a)} />;
+        })}
       </MSheet>
     );
   }

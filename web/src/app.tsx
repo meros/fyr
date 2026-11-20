@@ -88,6 +88,7 @@ import { restartNowAsk } from "./deploy.ts";
 import { cache, mergeEventLists } from "./cache.ts";
 import { navTransition } from "./native.ts";
 import { BottomSheet, installPress, PHONE_QUERY, Pop } from "./motion-ui.tsx";
+import { actionsFor, runAction, settleToast, type ActionHandlers, type ThreadAction } from "./actions.ts";
 import { SETTLE_DONE_TOAST, menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
@@ -871,7 +872,7 @@ function App() {
 
   /** V0.203: settles now; on a running thread the host stops the run, and the toast says so. */
   const settle = (id: string) => {
-    const label = store.threads[id]?.running ? "Settled; run stopped" : undefined;
+    const label = settleToast(store.threads[id]);
     leaveSettled([id]);
     void cmds.run("thread.settle", [id], undefined, label ? { label: () => label } : undefined);
   };
@@ -956,23 +957,24 @@ function App() {
       () => cmds.showError("Could not copy"),
     );
   };
-  const MENU_ACTION: Record<string, string> = { pin: "thread.pin", unpin: "thread.unpin", unsettle: "thread.unsettle", unsnooze: "thread.unsnooze", markSeen: "thread.markSeen", unarchive: "thread.unarchive", interrupt: "thread.interrupt", dismissPR: "thread.dismissPR" };
+  /** V0.one-action-list: the desktop's way to carry out a thread action, from the row menu and the header's ⋯ menu. */
+  const deskHandlers: ActionHandlers = {
+    command: (command, id, args) => void cmds.run(command, [id], args),
+    sheet: (sheet, id) => {
+      if (sheet === "snooze") openSnooze([id]);
+      else if (sheet === "project") openPicker([id]);
+      else if (sheet === "handover") (setHandoverId(id), setDialog("handover"));
+    },
+    navigate: (id) => openThread(id, "open"),
+    copy: copyText,
+    own: { settle, settleWhenDone, archive: (id) => archive([id]), markUnseen, regenTitle: (id) => void cmds.regenerateTitle(id) },
+  };
+  const runDeskAction = (a: ThreadAction, id: string) => runAction(a, id, deskHandlers, location.origin);
   const pickMenu = (it: MenuItem, target: MenuTarget) => {
     setCtx(null);
     if (target.kind === "thread") {
-      const id = target.t.id;
-      if (it.id === "open") openThread(id, "open");
-      else if (it.id === "settle") settle(id);
-      else if (it.id === "settleWhenDone") settleWhenDone(id);
-      else if (it.id === "archive") archive([id]);
-      else if (it.id === "snooze") openSnooze([id]);
-      else if (it.id === "markUnseen") markUnseen(id);
-      else if (it.id === "project") openPicker([id]);
-      else if (it.id === "copyLink") copyText(`${location.origin}/?open=${id}`);
-      else if (it.id === "liveView") void cmds.run("thread.setView", [id], { on: !target.t.liveView });
-      else if (it.id === "handover") (setHandoverId(id), setDialog("handover"));
-      else if (it.id === "regenTitle") void cmds.regenerateTitle(id);
-      else if (MENU_ACTION[it.id]) void cmds.run(MENU_ACTION[it.id], [id]);
+      const a = actionsFor("desktop", target.t, "row").find((x) => x.id === it.id);
+      if (a) runDeskAction(a, target.t.id);
       return;
     }
     if (it.id === "copy" && (target.kind === "text" || target.kind === "link")) copyText(target.kind === "text" ? target.selection : (target.selection ?? ""));
@@ -1707,7 +1709,10 @@ function App() {
     settle: (ids, bulk, unreadKept) =>
       bulk
         ? void settleBulk(ids, { unreadKept }).then((done) => done.length && leaveOpenThread(done))
-        : void cmds.run("thread.settle", ids, undefined, ids.length === 1 && store.threads[ids[0]]?.running ? { label: () => "Settled; run stopped" } : undefined).then((n) => n && leaveOpenThread(ids)),
+        : void cmds.run("thread.settle", ids, undefined, (() => {
+              const label = ids.length === 1 ? settleToast(store.threads[ids[0]]) : undefined;
+              return label ? { label: () => label } : undefined;
+            })()).then((n) => n && leaveOpenThread(ids)),
     settleWhenDone,
     archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread(ids)),
     markUnseen: (id) => markUnseen(id),
@@ -1904,10 +1909,7 @@ function App() {
               void cmds.run(a, [view.id], args);
             }}
             onSnooze={() => openSnooze([view.id])}
-            onSettleWhenDone={() => settleWhenDone(view.id)}
-            onMoveProject={() => openPicker([view.id])}
-            onHandover={() => (setHandoverId(view.id), setDialog("handover"))}
-            onRegenerateTitle={() => void cmds.regenerateTitle(view.id)}
+            onAction={(a) => runDeskAction(a, view.id)}
             onSend={send}
             onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
             onFocusZone={() => {

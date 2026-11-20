@@ -1,9 +1,11 @@
 // SPEC 0.5 V0.31: what Fyr's right-click menu holds. Pure: the target in, the
 // entries out. The menu component and the app wire the ids to actions.
-import { settleLabel } from "./gesture.ts";
+import { actionsFor, type ThreadAction } from "./actions.ts";
 import type { Thread } from "./types.ts";
 
-export type MenuItem = { id: string; label: string; key?: string; disabled?: string };
+export { SETTLE_DONE_HINT, SETTLE_DONE_TOAST, seenToggle, settleDoneEntry } from "./actions.ts";
+
+export type MenuItem = { id: string; label: string; key?: string; disabled?: string; hint?: string };
 export type MenuEntry = MenuItem | { sep: true };
 
 export type MenuTarget =
@@ -16,51 +18,19 @@ export type MenuTarget =
 
 const SEP: MenuEntry = { sep: true };
 
-function item(t: Thread, id: string, action: string, label: string, key?: string): MenuItem {
-  const why = t.unavailable[action];
-  return { id, label, key, ...(why ? { disabled: why } : {}) };
-}
-
-/** V0.189: the one seen/unseen entry of a thread, on both fronts: Mark seen while it is unread (or in Needs you, as
- *  before), else Mark unseen. The host sends an unread thread in section "seen", so the state decides. */
-export function seenToggle(t: Thread): { id: "markSeen" | "markUnseen"; action: "thread.markSeen" | "thread.markUnseen"; label: string; key?: string } {
-  return t.attention.state === "done" || t.attention.section === "needs"
-    ? { id: "markSeen", action: "thread.markSeen", label: "Mark seen" }
-    : { id: "markUnseen", action: "thread.markUnseen", label: "Mark unseen", key: "u" };
-}
-
-/** V0.203: what "settle when done" waits for, in the words both fronts show. */
-export const SETTLE_DONE_HINT = "Once no run is live, nothing waits for you and no PR is open";
-export const SETTLE_DONE_TOAST = "Settles when done";
-
-/** V0.203: the one "settle when done" entry of a thread, on both fronts: it arms the wait, or cancels it when armed. */
-export function settleDoneEntry(t: Pick<Thread, "settleWhenDone">): { id: "settleWhenDone"; action: "thread.settleWhenDone" | "thread.unsettle"; label: string } {
-  return t.settleWhenDone
-    ? { id: "settleWhenDone", action: "thread.unsettle", label: "Cancel settle when done" }
-    : { id: "settleWhenDone", action: "thread.settleWhenDone", label: "Settle when done" };
-}
-
-export function threadMenu(t: Thread): MenuEntry[] {
-  const settled = !!t.settledAt || t.attention.state === "settled";
-  const archived = !!t.archivedAt || t.attention.state === "archived";
-  const snoozed = t.attention.state === "snoozed";
-  const mark = seenToggle(t);
-  const out: MenuEntry[] = [{ id: "open", label: "Open", key: "↵" }, SEP];
-  out.push(t.pinnedAt ? item(t, "unpin", "thread.unpin", "Unpin") : item(t, "pin", "thread.pin", "Pin")); // V0.104
-  const done = settleDoneEntry(t);
-  if (settled) out.push(item(t, "unsettle", "thread.unsettle", "Unsettle"));
-  else out.push(item(t, "settle", "thread.settle", settleLabel(t), "e"), item(t, done.id, done.action, done.label));
-  out.push(snoozed ? item(t, "unsnooze", "thread.unsnooze", "Unsnooze") : item(t, "snooze", "thread.snooze", "Snooze…", "s"));
-  out.push(item(t, mark.id, mark.action, mark.label, mark.key));
-  out.push(archived ? item(t, "unarchive", "thread.unarchive", "Unarchive") : item(t, "archive", "thread.archive", "Archive", "#"));
-  out.push(SEP, item(t, "project", "thread.setProject", "Project…", "p"));
-  out.push(item(t, "liveView", "thread.setView", t.liveView ? "Turn off live view" : "Turn on live view"));
-  out.push(item(t, "handover", "thread.handover", "Hand over…"));
-  out.push(item(t, "regenTitle", "thread.regenerateTitle", "Regenerate title")); // V0.108
-  if (t.running) out.push(item(t, "interrupt", "thread.interrupt", "Stop run", "Esc"));
-  if (t.pr && (t.pr.state === "MERGED" || t.pr.state === "CLOSED" || t.pr.state === "MISSING")) out.push(item(t, "dismissPR", "thread.dismissPR", "Dismiss PR"));
-  out.push(SEP, { id: "copyLink", label: "Copy link" });
+/** Actions as menu entries, a line between groups. */
+export function menuEntries(acts: ThreadAction[]): MenuEntry[] {
+  const out: MenuEntry[] = [];
+  acts.forEach((a, i) => {
+    if (i && acts[i - 1].group !== a.group) out.push(SEP);
+    out.push({ id: a.id, label: a.label, ...(a.key ? { key: a.key } : {}), ...(a.hint ? { hint: a.hint } : {}), ...(a.disabled ? { disabled: a.disabled } : {}) });
+  });
   return out;
+}
+
+/** V0.one-action-list: a row's right-click menu is the desktop's list of the thread's actions (actions.ts). */
+export function threadMenu(t: Thread): MenuEntry[] {
+  return menuEntries(actionsFor("desktop", t, "row"));
 }
 
 /** null: let the browser's own menu open (text fields). [] : open nothing. */
