@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -231,6 +233,14 @@ func TestV176BLiveThreadKeepsLeftoversUntilIdleLimitUnlessKeptOrTimed(t *testing
 	now := time.Now()
 	th := fakeThreads{"t_a": {Known: true, Running: true}}
 	l, lines := newTracker(t, tr, map[string]int{"t_a": cli}, th, &now)
+	var smu sync.Mutex
+	signalled := map[int]syscall.Signal{}
+	l.Signal = func(p int, sig syscall.Signal) error {
+		smu.Lock()
+		signalled[p] = sig
+		smu.Unlock()
+		return syscall.Kill(p, sig)
+	}
 	l.Tick()
 	if n := len(l.View()); n != 0 {
 		t.Fatalf("shown inside the grace: %d", n)
@@ -260,8 +270,18 @@ func TestV176BLiveThreadKeepsLeftoversUntilIdleLimitUnlessKeptOrTimed(t *testing
 	now = now.Add(2 * time.Minute)
 	l.Tick()
 	waitFor(t, func() bool { return !alive(lone) })
-	if !alive(kept) || !alive(timed) || !alive(cli) || !alive(child) {
-		t.Fatal("a kept, timed or CLI process was ended")
+	// What the tracker signalled, not whether they still run: the processes are
+	// real and live in this host's cgroups, where something outside the test
+	// (fyrd's guard, another test binary) may end one; that once failed this
+	// test 1 in 600 beside other packages (V0.fix-flakes).
+	for _, p := range []int{kept, timed, cli, child} {
+		smu.Lock()
+		sig, ok := signalled[p]
+		smu.Unlock()
+		if ok {
+			t.Fatalf("the tracker signalled a kept, timed or CLI process: pid %d (%v; kept %d, timed %d, CLI %d, its child %d); lines %v",
+				p, sig, kept, timed, cli, child, *lines)
+		}
 	}
 	if len(*lines) != 1 {
 		t.Fatalf("lines: %v", *lines)
@@ -330,7 +350,7 @@ func TestV176BOrphanCgroupEndsAfterTheGraceAndPidReuseIsRefused(t *testing.T) {
 	}
 	// An id whose start time does not match the pid's is never signalled.
 	self := os.Getpid()
-	if endPIDs("", []int{self}, map[int]uint64{self: 1}, time.Second) != 0 {
+	if endPIDs("", []int{self}, map[int]uint64{self: 1}, time.Second, nil) != 0 {
 		t.Fatal("signalled a pid whose start time changed")
 	}
 }
