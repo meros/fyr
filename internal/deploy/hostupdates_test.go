@@ -14,17 +14,12 @@ import (
 
 const oldSHA = "fedcba9876543210fedcba9876543210fedcba98"
 
-// withAhead answers GitHub's compare .ahead_by with n, and passes the rest on.
+// withAhead answers GitHub's compare with ahead_by n, and counts the calls.
 func withAhead(r *Releases, n string, calls *int) *Releases {
-	gh := r.Gh
-	r.Gh = func(ctx context.Context, args ...string) ([]byte, error) {
-		if strings.Contains(strings.Join(args, " "), ".ahead_by") {
-			*calls++
-			return []byte(n + "\n"), nil
-		}
-		return gh(ctx, args...)
-	}
-	return r
+	return onCompare(r, func(string) string {
+		*calls++
+		return `{"status":"diverged","ahead_by":` + n + `}`
+	})
 }
 
 // install is one Fyr install for the side-by-side test: its own data

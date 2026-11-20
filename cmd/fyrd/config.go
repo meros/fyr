@@ -62,8 +62,12 @@ type config struct {
 	// UpdateRepo is where auto-update reads releases (decision 0027);
 	// empty is meros/fyr. UpdateQuietMinutes is how long `deployable` must
 	// stay put before a host installs it (#153); 0 is 10. UpdateEveryMinutes
-	// is how often a host reads it; 0 is 60.
+	// is how often a host reads it; 0 is 60. UpdateKey is the base64
+	// ed25519 public key a release must be signed with; empty is the
+	// built-in release.PublicKey (V0.release-without-gh: a fork signs with
+	// its own). Both are read at start.
 	UpdateRepo         string             `json:"updateRepo,omitempty"`
+	UpdateKey          string             `json:"updateKey,omitempty"`
 	UpdateQuietMinutes int                `json:"updateQuietMinutes,omitempty"`
 	UpdateEveryMinutes int                `json:"updateEveryMinutes,omitempty"`
 	OwnerLogin         string             `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)

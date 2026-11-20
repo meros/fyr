@@ -7,7 +7,7 @@ The [README](../README.md) has the short install for NixOS, macOS, Linux without
 | Path | What |
 |---|---|
 | `~/.config/fyr/config.json` | The daemon's configuration. Fyr reads it again when it changes. Most settings are also in the app (Settings). |
-| `~/.config/fyr/github.env` | Optional `GH_TOKEN=…` (mode 0600) for reading releases from a private fork; without it the `gh` login is used. |
+| `~/.config/fyr/github.env` | Optional `GH_TOKEN=…` (mode 0600). A public release repo needs no token; a private fork does, and a token raises GitHub's API limit. Without it the `gh` login is used when `gh` is installed. |
 | `~/.local/share/fyr/` | Data: the database, the builds (`current`, `previous`), logs and the owner socket. |
 | `~/Library/Logs/fyr.log` | The log on macOS. On Linux: `journalctl -u fyr`. |
 | `/etc/systemd/system/fyr.service`, `fyr-agents.slice`, `/etc/polkit-1/rules.d/50-fyr-agents.rules`, `/usr/local/lib/fyr/agents-pressure-chown` | Linux without Nix: what `scripts/install-linux.sh` writes as root ([below](#linux-without-nix)). |
@@ -27,6 +27,8 @@ The keys you are most likely to set in `config.json`:
 | `slots` | `2` | The share of the host heavy jobs may use before they queue: 2 is half the host per job, as a starting point that Fyr then learns per job class |
 | `role` | `"both"` | `host` (runs agents), `front` (serves the app for `hosts`), or `both` |
 | `updateEveryMinutes` | `60` | How often the host checks for a new release |
+| `updateRepo` | `"meros/fyr"` | The GitHub repository releases come from (`owner/name`), read at start |
+| `updateKey` | the built-in key | The base64 ed25519 public key every release must be signed with, read at start. A fork that signs its own releases sets it ([Updates](#updates)) |
 | `agentPath` | none | Folders put first on the agents' `PATH` (`~/` is your home folder), read at start |
 | `cgroups` | absent: off | The agents' cgroups and budget. The NixOS module and `install-linux.sh` set it; see [HOST-SETUP](HOST-SETUP.md) |
 
@@ -36,7 +38,7 @@ The keys you are most likely to set in `config.json`:
 
 `scripts/install-linux.sh` is the NixOS module's stand-in on Debian, Ubuntu and other systemd Linux (V0.linux-without-nix). Run it as the user Fyr and its agents run as; it refuses root.
 
-**What runs as you:** the download of the release that the tag `deployable` points at (with your `gh` login, checked against `SHA256SUMS`) into `~/.local/share/fyr/builds/<sha12>`, the `current` link, the seed (`seed/fyrd`) and the launcher (`launcher/fyr`); and the `cgroups` keys in `~/.config/fyr/config.json` (other keys are kept; with no `python3` and an existing file, it tells you what to add).
+**What runs as you:** the download of the release that the tag `deployable` points at (over HTTPS with `git` and `curl`, no `gh` login; checked against `SHA256SUMS`) into `~/.local/share/fyr/builds/<sha12>`, the `current` link, the seed (`seed/fyrd`) and the launcher (`launcher/fyr`); and the `cgroups` keys in `~/.config/fyr/config.json` (other keys are kept; with no `python3` and an existing file, it tells you what to add).
 
 **What needs root**, run with `sudo`, each command printed first:
 
@@ -53,7 +55,7 @@ Then `systemctl daemon-reload`, `enable` and `restart fyr.service`. These are th
 
 **Run it again** whenever you like: it installs the current release, rewrites the root files and restarts the unit (which ends running agent turns). `--print` shows every file and command and changes nothing: no download, no `sudo`. `--uninstall` stops the unit and removes the root files; `~/.local/share/fyr` and `~/.config/fyr` stay.
 
-**Updates** are the updater's ([below](#updates)). It reads releases with `gh` until #200, so keep `gh` logged in (or put `GH_TOKEN` in `github.env`).
+**Updates** are the updater's ([below](#updates)). It needs no `gh` login for a public release repo.
 
 **The phone over Tailscale:** run `tailscale serve --bg --https=7443 unix:$HOME/.local/share/fyr/serve.sock` once as root (the module's `tailnet.enable` does the same). The script prints it when Tailscale is up.
 
@@ -82,7 +84,11 @@ Fyr updates itself only to CI-built releases ([decision 0027](decisions/0027-one
 2. Each host checks `deployable` every `updateEveryMinutes`. Once the tag has stayed put for 10 minutes, the host downloads the release, verifies its signature and checksums, and runs `fyrd selftest` on a copy of the database.
 3. It switches. The launcher checks `/healthz` and rolls back to `previous` if the build is unhealthy or crashes within 10 minutes.
 
-Settings → Auto-update turns this off. A fork that publishes its own releases sets `updateRepo` to its repository, signs them with its own key (`FYR_RELEASE_KEY` in `.github/workflows/test.yml`) and builds with that key's public half in `internal/release`.
+Settings → Auto-update turns this off. Settings → Updates shows the release repo and the fingerprint of the key releases are verified with.
+
+**No `gh` needed** (V0.release-without-gh). The installs and the updater read a public release repo over plain HTTPS: the tag with `git ls-remote`, a release's files from their download URLs (`https://github.com/<repo>/releases/download/build-<sha12>/…`), and the compares (how far behind, the changelog) from GitHub's REST API without a login. GitHub allows 60 such calls an hour per address without a login; the updater spends a few per new release, asks again with the answer's ETag, and when GitHub says the limit is spent waits until its reset without asking. A token (`GH_TOKEN` or `GITHUB_TOKEN` in `github.env`, else `gh auth token` when `gh` is installed) is sent to the API only: it raises the limit and reads a private fork's releases. The first install checks the sums over HTTPS; the running fyrd checks every later release's signature.
+
+**A fork** that publishes its own releases sets `updateRepo` to its repository and `updateKey` to the public half of its own key (`go run ./cmd/fyrrelease keygen` makes a pair; the private half is `FYR_RELEASE_KEY` in `.github/workflows/test.yml`). `go run ./cmd/fyrrelease verify DIR KEY` checks a downloaded release against it. The install scripts take the repo from `FYR_REPO`.
 
 To stop a bad release on every host, move the tag back: `git push -f origin <sha>:refs/tags/deployable`.
 

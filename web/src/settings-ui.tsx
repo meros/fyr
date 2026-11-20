@@ -36,7 +36,7 @@ import { useAsk } from "./confirm-ui.tsx";
 import type { Profile, Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
-import { changeLines, changesLabel, githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
+import { changeLines, changesLabel, githubPause, githubRows, githubState, releaseSource, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
 import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
@@ -1632,6 +1632,7 @@ function UpdatesGroup({ d }: { d: Data }) {
   const now = Date.now();
   const list = all ? v.updates : v.updates.slice(0, 8);
   const press = v.paused ? "Back to release" : v.bad?.commit ? "Update now · retry" : "Update now"; // V0.host-updates: the press clears the bad mark
+  const src = releaseSource(v); // V0.release-without-gh
   return (
     <Group title="Updates" label="Updates" fold={{ id: `${d.host.name}:updates`, open: !!v.bad?.commit, summary: updateState(v) }} foot={v.bad?.commit ? `Release ${v.bad.commit.slice(0, 7)} is held back here (${v.bad.why}); Fyr waits for a newer one. Update now · retry tries it again.` : undefined}>
       <Row
@@ -1643,6 +1644,7 @@ function UpdatesGroup({ d }: { d: Data }) {
           </button>
         }
       />
+      {src && <Row title={src.title} mono desc={src.desc} class={src.bad ? "bad" : undefined} />}
       {!v.updates.length && <Empty text="No updates yet on this host." />}
       {list.map((u) => {
         const r = updateRow(u, now);

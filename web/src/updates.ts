@@ -38,6 +38,22 @@ export interface UpdatesView {
   live?: string;
   github?: GitHubView; // V0.173
   repo?: string; // V0.update-changelog: owner/name the releases come from, for the changelog's links
+  key?: ReleaseKey; // V0.release-without-gh: the key releases are verified with
+}
+
+/** V0.release-without-gh: the key a host verifies releases with (config updateKey, else the built-in one). */
+export interface ReleaseKey {
+  fingerprint?: string;
+  builtIn?: boolean;
+  error?: string;
+}
+
+/** V0.release-without-gh: the Release source row of Settings → Updates: the repo and the key's fingerprint. */
+export function releaseSource(v: UpdatesView): { title: string; desc: string; bad: boolean } | null {
+  if (!v.repo && !v.key) return null;
+  const k = v.key;
+  const desc = !k ? "" : k.error ? k.error : k.fingerprint ? `signed with ${k.fingerprint} (${k.builtIn ? "built in" : "updateKey"})` : "";
+  return { title: v.repo || "meros/fyr", desc, bad: !!k?.error };
 }
 
 const RESULT: Record<string, string> = { inProgress: "in progress", installed: "installed", failed: "failed", rolledBack: "rolled back" };

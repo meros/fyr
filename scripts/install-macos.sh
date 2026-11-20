@@ -2,8 +2,9 @@
 # Installs Fyr on a Mac as a launchd agent of the logged-in user (the Mac's
 # stand-in for the NixOS module, decision 0007). It builds nothing: it
 # downloads the CI release the tag `deployable` points at (decision 0027,
-# #158) with your gh login, checks its SHA256SUMS, makes it the current build,
-# keeps a copy as the seed and starts the launcher at login. From then on the
+# #158) over HTTPS with no gh login (V0.release-without-gh), checks its
+# SHA256SUMS, makes it the current build, keeps a copy as the seed and starts
+# the launcher at login. From then on the
 # running fyrd updates itself to each new release (signed, verified, smoke-
 # tested, #153). Run it again to reinstall and restart; `--uninstall` stops the
 # agent and removes its plist (the data folder stays).
@@ -12,42 +13,64 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-label=com.github.meros.fyr
-ulabel=$label.update # the daily update.sh job before decision 0027; removed
+# V0.release-without-gh: a label that names no GitHub account. The agents an
+# older install loaded under com.github.meros.fyr (and its daily .update job
+# before decision 0027) are stopped and their plists removed, so a Mac never
+# runs two.
+label=app.fyr.fyrd
+old_labels=(com.github.meros.fyr com.github.meros.fyr.update)
 data="$HOME/.local/share/fyr"
-plist="$HOME/Library/LaunchAgents/$label.plist"
-uplist="$HOME/Library/LaunchAgents/$ulabel.plist"
+agents="$HOME/Library/LaunchAgents"
+plist="$agents/$label.plist"
 log="$HOME/Library/Logs/fyr.log"
 domain="gui/$(id -u)"
 repo="${FYR_REPO:-meros/fyr}"
 
+# stop_agent stops the agent $1 and waits until it is gone: bootout returns
+# before it is, and a bootstrap of the same program fails until it is.
+stop_agent() {
+  launchctl bootout "$domain/$1" 2>/dev/null || true
+  for _ in $(seq 1 50); do launchctl print "$domain/$1" >/dev/null 2>&1 || break; sleep 0.2; done
+}
+
 if [ "${1:-}" = --uninstall ]; then
-  launchctl bootout "$domain/$ulabel" 2>/dev/null || true
-  launchctl bootout "$domain/$label" 2>/dev/null || true
+  for l in "${old_labels[@]}" "$label"; do
+    stop_agent "$l"
+    rm -f "$agents/$l.plist"
+  done
   command -v tailscale >/dev/null && tailscale serve --https=7443 off >/dev/null 2>&1 || true
-  rm -rf "$plist" "$uplist" "$HOME/Applications/Fyr.app"
+  rm -rf "$HOME/Applications/Fyr.app"
   echo "stopped and removed $label; data stays in $data"
   exit 0
 fi
 
-for t in git gh claude; do
+for t in git curl claude; do
   command -v "$t" >/dev/null || { echo "missing $t on PATH (brew install $t)" >&2; exit 1; }
 done
-gh auth status >/dev/null 2>&1 || { echo "gh is not logged in: run gh auth login (Fyr reads its releases with it)" >&2; exit 1; }
+# The install and the updates read the public releases without gh
+# (V0.release-without-gh); the agents use gh for pull requests.
+command -v gh >/dev/null || echo "note: no gh on PATH; the install needs none, but agents need it (logged in) for pull requests" >&2
 
 case "$(uname -m)" in
   arm64) target=darwin-arm64 ;;
   x86_64) target=darwin-amd64 ;;
   *) echo "unsupported Mac: $(uname -m)" >&2; exit 1 ;;
 esac
-sha="$(gh api "repos/$repo/git/ref/tags/deployable" --jq .object.sha)"
+# The tag by git (no API call), an annotated tag's commit first; the assets
+# from their public download URLs (V0.release-without-gh).
+base="https://github.com/$repo"
+out="$(git -c credential.helper= ls-remote --tags "$base.git" refs/tags/deployable)"
+sha="$(awk '$2 == "refs/tags/deployable^{}" {print $1}' <<<"$out")"
+[ -n "$sha" ] || sha="$(awk '$2 == "refs/tags/deployable" {print $1}' <<<"$out")"
+[ "${#sha}" = 40 ] || { echo "no tag deployable in $base" >&2; exit 1; }
 short="${sha:0:12}"
 dl="$(mktemp -d)"
-echo "downloading release build-$short for $target"
-gh release download "build-$short" -R "$repo" -D "$dl" \
-  -p "fyrd-$target" -p "fyr-$target" -p manifest.json -p SHA256SUMS -p SHA256SUMS.sig
+echo "downloading release build-$short for $target from $repo"
+for f in "fyrd-$target" "fyr-$target" manifest.json SHA256SUMS SHA256SUMS.sig; do
+  curl -fsSL --retry 3 -o "$dl/$f" "$base/releases/download/build-$short/$f"
+done
 # The running fyrd verifies the signature of every later update; this
-# first install trusts your gh login and checks the sums.
+# first install trusts HTTPS to GitHub and checks the sums.
 (cd "$dl" && grep -E "  (fyrd-$target|fyr-$target|manifest.json)\$" SHA256SUMS | shasum -a 256 -c -)
 
 build="$data/builds/$short"
@@ -134,7 +157,7 @@ path="$path:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # ~/.config/fyr/github.env (GH_TOKEN=..., mode 0600) is loaded first, as
 # the NixOS hosts' EnvironmentFile: a fine-grained token that may only read
-# meros/fyr's contents (README, Updates). Without it fyrd uses your gh login.
+# meros/fyr's contents (README, Updates). A public release repo needs none.
 cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -243,12 +266,16 @@ else
   echo "tailnet: Tailscale is not running here; other installs will not find this one (run this again once it is)"
 fi
 
-# bootout returns before the agent is gone; bootstrap fails until it is.
-rm -f "$uplist"
-for l in "$ulabel" "$label"; do
-  launchctl bootout "$domain/$l" 2>/dev/null || true
-  for _ in $(seq 1 50); do launchctl print "$domain/$l" >/dev/null 2>&1 || break; sleep 0.2; done
+# The old labels go first (V0.release-without-gh): both would start the
+# same launcher on the same data.
+for l in "${old_labels[@]}"; do
+  if [ -e "$agents/$l.plist" ] || launchctl print "$domain/$l" >/dev/null 2>&1; then
+    echo "moving $l to $label"
+  fi
+  stop_agent "$l"
+  rm -f "$agents/$l.plist"
 done
+stop_agent "$label"
 launchctl bootstrap "$domain" "$plist"
 echo "started $label; open http://127.0.0.1:7777 · log $log"
 echo "release $short is current; fyrd installs each new release by itself (Settings → Auto-update)"

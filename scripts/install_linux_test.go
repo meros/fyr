@@ -14,6 +14,12 @@ import (
 // reports polkit version pk ("" for none) and a fresh HOME.
 func printInstall(t *testing.T, pk string) (string, string) {
 	t.Helper()
+	return printInstallPath(t, pk, os.Getenv("PATH"))
+}
+
+// printInstallPath is printInstall with path after the fake pkaction.
+func printInstallPath(t *testing.T, pk, path string) (string, string) {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("install-linux.sh is for Linux")
 	}
@@ -29,7 +35,7 @@ func printInstall(t *testing.T, pk string) (string, string) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", "install-linux.sh", "--print")
-	cmd.Env = append(os.Environ(), "HOME="+home, "PATH="+bin+":"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), "HOME="+home, "PATH="+bin+":"+path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("--print: %v\n%s", err, out)
@@ -88,6 +94,50 @@ func TestInstallLinuxUnitLayout(t *testing.T) {
 			if strings.Contains(out, not) {
 				t.Errorf("polkit %q: unexpected %q in\n%s", pk, not, out)
 			}
+		}
+	}
+}
+
+// V0.release-without-gh: the install reads the release with git and curl
+// from the public URLs; with no gh on PATH --print still passes and asks for
+// no gh login.
+func TestInstallLinuxNeedsNoGh(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("install-linux.sh is for Linux")
+	}
+	// Every tool on PATH but gh.
+	noGh := t.TempDir()
+	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+		es, _ := os.ReadDir(d)
+		for _, e := range es {
+			if e.Name() == "gh" {
+				continue
+			}
+			os.Symlink(filepath.Join(d, e.Name()), filepath.Join(noGh, e.Name())) // the first one wins
+		}
+	}
+	out, _ := printInstallPath(t, "124", noGh)
+	for _, want := range []string{
+		"by git ls-remote https://github.com/meros/fyr.git and curl https://github.com/meros/fyr/releases/download/build-<sha12>/ (no gh login)",
+		"the install needs none",
+		"GH_TOKEN=... (mode 0600) for a private fork; a public one needs none.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	for _, not := range []string{"gh auth", "gh api", "gh release", "missing gh", "not logged in"} {
+		if strings.Contains(out, not) {
+			t.Errorf("unexpected %q in\n%s", not, out)
+		}
+	}
+	src, err := os.ReadFile("install-linux.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, not := range []string{"gh api", "gh release", "gh auth"} {
+		if strings.Contains(string(src), not) {
+			t.Errorf("install-linux.sh still runs %q", not)
 		}
 	}
 }

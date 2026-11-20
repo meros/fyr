@@ -3,7 +3,6 @@ package deploy
 import (
 	"context"
 	"encoding/json"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -179,10 +178,9 @@ func (r *Releases) Behind(ctx context.Context, running, wanted string) (int, boo
 	if running == "" || wanted == "" || strings.HasPrefix(running, "-") || strings.HasPrefix(wanted, "-") {
 		return 0, false
 	}
-	b, err := r.Gh(ctx, "api", "repos/"+r.repo()+"/compare/"+running+"..."+wanted, "--jq", ".ahead_by")
+	c, err := r.compare(ctx, running, wanted)
 	if err != nil {
 		return 0, false
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	return n, err == nil && n >= 0
+	return c.AheadBy, c.AheadBy >= 0
 }

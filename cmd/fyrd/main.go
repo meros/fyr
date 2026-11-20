@@ -517,7 +517,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	metered := ghMeter.Wrap(github.Gh)
 	gh, pollGh := ghBudget.Runner(metered, github.Act), ghBudget.Runner(metered, github.Poll)
 	go ghMeter.Run(ctx, github.Gh)
-	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Gh: gh}
+	// V0.release-without-gh: releases are read over HTTPS, no gh; a token
+	// (github.env, else gh's login when gh is there) is optional.
+	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Key: cfg.UpdateKey, Token: deploy.TokenFromEnv(), HTTP: &http.Client{Timeout: 15 * time.Minute}}
+	if fp, builtIn, err := dep.Releases.KeyInfo(); err != nil {
+		log.Printf("updateKey in the config is not an ed25519 public key (%v): no release will verify", err)
+	} else {
+		log.Printf("releases from %s, verified with %s%s", dep.Releases.Name(), fp, map[bool]string{true: " (built in)", false: " (updateKey)"}[builtIn])
+	}
 	// V0.111, #159: an ask without a checkout installs the newest release by
 	// itself; a local build of a checkout always waits for the owner's press.
 	deployGate := func(ctx context.Context, dir string) (string, string) {
@@ -666,7 +673,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// V0.126 (#151): the update record, the pause and the bad release.
 		Updates: func() any {
 			bad, why := dep.Bad()
-			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView(), "repo": dep.Releases.Name()}
+			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView(), "repo": dep.Releases.Name(), "key": releaseKey(dep.Releases)}
 		},
 		UpdateLog:   dep.UpdateLog,
 		UpdateState: func() any { return dep.Summary() }, // V0.host-updates
@@ -884,4 +891,16 @@ func checkModels(ctx context.Context, reg *provider.Registry) {
 		reg.CheckDaily(time.Now())
 		t.Reset(time.Hour)
 	}
+}
+
+// releaseKey is the key releases verify with, for Settings → Updates
+// (V0.release-without-gh): its fingerprint, whether it is built in, and why
+// it is not a key.
+func releaseKey(r *deploy.Releases) map[string]any {
+	fp, builtIn, err := r.KeyInfo()
+	m := map[string]any{"fingerprint": fp, "builtIn": builtIn}
+	if err != nil {
+		m["error"] = "updateKey is not an ed25519 public key"
+	}
+	return m
 }

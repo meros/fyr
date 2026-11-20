@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,18 +24,45 @@ import (
 // checkout (Deploy with a dir, #159) stays for working on Fyr from Fyr; it
 // needs the owner's press and pauses auto-update.
 
-// Releases reads Fyr's releases on GitHub; Gh runs the gh CLI.
+// Releases reads Fyr's releases on GitHub over HTTPS (V0.release-without-gh):
+// the tag with git ls-remote, the compares and the release lookups from the
+// REST API, the assets from their download URLs. No gh, no login for a
+// public repo.
 type Releases struct {
 	Repo string // owner/name, default meros/fyr
-	Gh   func(ctx context.Context, args ...string) ([]byte, error)
 	// Git runs git (tests); nil is the git CLI (V0.173).
 	Git func(ctx context.Context, args ...string) ([]byte, error)
 	// Key verifies a release; empty is release.PublicKey.
 	Key string
+	// API and Web are GitHub's REST API and web bases (tests); empty is
+	// api.github.com and github.com. HTTP nil is http.DefaultClient.
+	API, Web string
+	HTTP     *http.Client
+	// Token, when it returns one, is sent to the API (a higher limit, a
+	// private fork); nil or "" reads anonymously.
+	Token func() string
+	Now   func() time.Time // tests
+	state apiState
 }
 
 // Name is owner/name of the repo the releases come from (V0.update-changelog: the changelog links to it).
 func (r *Releases) Name() string { return r.repo() }
+
+func (r *Releases) key() string {
+	if strings.TrimSpace(r.Key) == "" {
+		return release.PublicKey
+	}
+	return r.Key
+}
+
+// KeyInfo names the key releases are verified with (V0.release-without-gh):
+// its fingerprint, whether it is the built-in one, and an error when the
+// configured key is not an ed25519 public key.
+func (r *Releases) KeyInfo() (fingerprint string, builtIn bool, err error) {
+	builtIn = strings.TrimSpace(r.Key) == "" || strings.TrimSpace(r.Key) == release.PublicKey
+	fingerprint, err = release.Fingerprint(r.key())
+	return fingerprint, builtIn, err
+}
 
 func (r *Releases) repo() string {
 	if r.Repo == "" {
@@ -51,10 +80,33 @@ func (r *Releases) Deployable(ctx context.Context) (string, error) {
 	} else {
 		log.Printf("deployable by git: %v; asking the API", err)
 	}
-	b, err := r.Gh(ctx, "api", "repos/"+r.repo()+"/git/ref/tags/"+release.Deployable, "--jq", ".object.sha")
-	sha := strings.TrimSpace(string(b))
+	b, err := r.api(ctx, "repos/"+r.repo()+"/git/ref/tags/"+release.Deployable)
 	if err != nil {
-		return "", fmt.Errorf("reading %s: %v %s", release.Deployable, err, sha)
+		return "", fmt.Errorf("reading %s: %w", release.Deployable, err)
+	}
+	var ref struct {
+		Object struct {
+			SHA  string `json:"sha"`
+			Type string `json:"type"`
+			URL  string `json:"url"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(b, &ref); err != nil {
+		return "", fmt.Errorf("reading %s: %w", release.Deployable, err)
+	}
+	sha := ref.Object.SHA
+	if ref.Object.Type == "tag" { // an annotated tag: its commit
+		tb, err := r.api(ctx, "repos/"+r.repo()+"/git/tags/"+sha)
+		if err != nil {
+			return "", fmt.Errorf("reading %s: %w", release.Deployable, err)
+		}
+		var tag struct {
+			Object struct {
+				SHA string `json:"sha"`
+			} `json:"object"`
+		}
+		json.Unmarshal(tb, &tag)
+		sha = tag.Object.SHA
 	}
 	if !isSHA(sha) {
 		return "", fmt.Errorf("%s points at %q", release.Deployable, sha)
@@ -88,10 +140,10 @@ func (r *Releases) lsRemote(ctx context.Context) (string, error) {
 		}
 	}
 	ref := "refs/tags/" + release.Deployable
-	// gh is the credential helper: the repo may be private, and gh holds
-	// the login (it reads its stored token; no API call).
-	out, err := git(ctx, "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential",
-		"ls-remote", "--tags", "https://github.com/"+r.repo()+".git", ref)
+	// No credential helper (V0.release-without-gh): a public repo needs
+	// none, and a private one fails here and is read by the API with the
+	// token.
+	out, err := git(ctx, "-c", "credential.helper=", "ls-remote", "--tags", r.webBase()+"/"+r.repo()+".git", ref)
 	if err != nil {
 		return "", err
 	}
@@ -123,9 +175,34 @@ func (r *Releases) Contains(ctx context.Context, commit, ancestor string) bool {
 	if strings.HasPrefix(commit, ancestor) || strings.HasPrefix(ancestor, commit) {
 		return true
 	}
-	b, err := r.Gh(ctx, "api", "repos/"+r.repo()+"/compare/"+ancestor+"..."+commit, "--jq", ".status")
-	s := strings.TrimSpace(string(b))
-	return err == nil && (s == "ahead" || s == "identical")
+	c, err := r.compare(ctx, ancestor, commit)
+	return err == nil && (c.Status == "ahead" || c.Status == "identical")
+}
+
+// comparison is the part of GitHub's compare the updater reads.
+type comparison struct {
+	Status       string `json:"status"`
+	AheadBy      int    `json:"ahead_by"`
+	TotalCommits int    `json:"total_commits"`
+	Commits      []struct {
+		SHA    string `json:"sha"`
+		Commit struct {
+			Message string `json:"message"`
+		} `json:"commit"`
+	} `json:"commits"`
+}
+
+// compare is one GitHub compare of base...head.
+func (r *Releases) compare(ctx context.Context, base, head string) (comparison, error) {
+	var c comparison
+	b, err := r.api(ctx, "repos/"+r.repo()+"/compare/"+url.PathEscape(base)+"..."+url.PathEscape(head))
+	if err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(b, &c); err != nil {
+		return c, fmt.Errorf("compare %s...%s: %w", base, head, err)
+	}
+	return c, nil
 }
 
 // Changes lists the commits of to that from lacks (V0.update-changelog), by one GitHub compare: newest first, at most
@@ -134,15 +211,18 @@ func (r *Releases) Changes(ctx context.Context, from, to string) ([]Change, int,
 	if strings.HasPrefix(from, "-") || strings.HasPrefix(to, "-") {
 		return nil, 0, errors.New("not a commit")
 	}
-	b, err := r.Gh(ctx, "api", "repos/"+r.repo()+"/compare/"+from+"..."+to,
-		"--jq", `(.total_commits|tostring), (.commits[] | .sha + "\t" + (.commit.message | split("\n")[0]))`)
+	c, err := r.compare(ctx, from, to)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%v %s", err, tail(b, 300))
+		return nil, 0, err
 	}
-	first, rest, _ := strings.Cut(string(b), "\n")
-	cs, n := parseChanges(rest, true)
-	var total int
-	if _, err := fmt.Sscan(strings.TrimSpace(first), &total); err != nil || total < n {
+	var lines strings.Builder
+	for _, x := range c.Commits {
+		title, _, _ := strings.Cut(x.Commit.Message, "\n")
+		lines.WriteString(x.SHA + "\t" + strings.TrimSpace(title) + "\n")
+	}
+	cs, n := parseChanges(lines.String(), true)
+	total := c.TotalCommits
+	if total < n {
 		total = n
 	}
 	return cs, total, nil
@@ -154,16 +234,11 @@ func (r *Releases) Changes(ctx context.Context, from, to string) ([]Change, int,
 func (r *Releases) fetch(ctx context.Context, sha, dir string) (release.Info, error) {
 	t := release.Here()
 	fyrd, fyr := release.Asset("fyrd", t), release.Asset("fyr", t)
-	args := []string{"release", "download", release.Tag(sha), "-R", r.repo(), "-D", dir,
-		"-p", fyrd, "-p", fyr, "-p", release.Manifest, "-p", release.Sums, "-p", release.Sig}
-	if b, err := r.Gh(ctx, args...); err != nil {
-		return release.Info{}, fmt.Errorf("downloading %s: %v %s", release.Tag(sha), err, tail(b, 500))
+	names := []string{fyrd, fyr, release.Manifest, release.Sums, release.Sig}
+	if err := r.download(ctx, release.Tag(sha), names, dir); err != nil {
+		return release.Info{}, fmt.Errorf("downloading %s from %s: %w", release.Tag(sha), r.repo(), err)
 	}
-	key := r.Key
-	if key == "" {
-		key = release.PublicKey
-	}
-	info, err := release.Verify(dir, key, fyrd, fyr)
+	info, err := release.Verify(dir, r.key(), fyrd, fyr)
 	if err != nil {
 		return info, fmt.Errorf("release %s did not verify: %w", release.Tag(sha), err)
 	}
