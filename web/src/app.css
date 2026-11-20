@@ -1906,16 +1906,25 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .agp.ph.chip .ags.agm{font-size:12px}
 .agp.ph.field{height:48px;border-radius:12px;border-color:var(--line);font-size:15px}
 .agp.ph.field .ags{padding:0 12px}
-/* Details: each part takes its own width; when the row is short the provider gives way first, then the model, and the effort keeps its meter */
-.agp.ph.field .ags.agv{flex:0 4 auto}
-.agp.ph.field .ags.agm{flex:1 1 auto;min-width:0}
-.agp.ph.field .ags.age{flex:0 0 auto}
+/* New thread on the phone: provider · model fills the row up to effort, with no fixed effort floor */
+.agp.ph.field .ags.agv{flex:1 1 0;min-width:0}
+.agp.ph.field .ags.agv>.agt:not(.agmn){flex-shrink:2}
+.agp.ph.field .ags.age{flex:0 0 auto;min-width:0}
+/* Details on the phone (read-only provider + model + effort): provider sits on its own top band and the 48 px pickers
+   share the full width underneath, so long provider and model names never squeeze. */
+.agp.ph.field:has(.agm){display:grid;grid-template-columns:minmax(0,1fr) auto;height:auto}
+.agp.ph.field:has(.agm) .ags.agv{grid-column:1 / -1;min-height:36px;padding:6px 12px;background:var(--sunken);color:var(--ink-muted);font-size:13px;font-weight:500;box-shadow:inset 0 -1px 0 var(--line)}
+.agp.ph.field:has(.agm) .ags.agm{min-height:48px;box-shadow:none}
+.agp.ph.field:has(.agm) .ags.agm:last-child{grid-column:1 / -1}
+.agp.ph.field:has(.agm) .ags.age{min-height:48px}
 @media (hover:none){.ags.pick:hover{background:none}}
 .agp.ph select{font-size:16px}
-/* The phone header is narrow: the model keeps its width, the provider shrinks to its dot (its name is in the title
-   and in Details), and the effort is its meter alone (the level's name is in Details). */
+/* The phone header is narrow: the model keeps its width, the provider is its dot alone while a model shows (its name
+   is in the title and in Details), and the effort is its meter alone (the level's name is in Details). */
 .agp.ph.chip .ags.agm{flex-shrink:0}
 .agp.ph.chip .ags.agv{min-width:24px}
+.agp.ph.chip:has(.ags.agm .agt:not(:empty)) .ags.agv{padding:0 7px}
+.agp.ph.chip:has(.ags.agm .agt:not(:empty)) .ags.agv .agt{display:none}
 .agp.ph.chip .ags.age .agt{display:none}
 /* V0.agent-pill on V0.model-choice: New thread's provider · model is one part over one choice; a hairline inside it
    keeps the header's look (provider, then the model in mono). */
