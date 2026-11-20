@@ -1992,7 +1992,8 @@ button.chip.wake:hover{color:var(--ink)}
 .setup-prog{font:600 13px/18px var(--ui);color:var(--ink-muted)}
 .setup-step{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:6px}
 .setup-step-h{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 14px/20px var(--ui)}
-.setup-pill{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:999px;background:var(--sunken);color:var(--ink-muted)}
+.setup-step-h strong{flex:1;min-width:0;overflow-wrap:anywhere}
+.setup-pill{flex:none;font:500 11px/16px var(--ui);padding:2px 8px;border-radius:999px;background:var(--sunken);color:var(--ink-muted)}
 .setup-pill.ok{color:var(--ok, #16a34a)}
 .setup-pill.fix{color:var(--harbour)}
 .setup-pill.miss{color:var(--warn, #d97706)}
