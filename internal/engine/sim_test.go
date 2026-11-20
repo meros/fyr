@@ -554,8 +554,19 @@ func (r *simRun) checkTick() {
 	}
 	// A thread is frozen when none of its heavy work runs (taking turns, one
 	// part does).
+	// V0.sim-fixes (3): frozen work left alone wakes at once unless memory
+	// stalls critically or near oomd's limit, as the guard reads it (a fresh
+	// PSI trigger is critical, V0.freeze-fast-class-name): no thaw into a
+	// critical stall (decision 0036 E2, V0.load-invariants). Only then may it
+	// stay frozen with no other heavy work running.
 	if frozen, n := len(heavyTh)-len(runsTh), len(heavyTh); frozen > max(n-1, 0) {
-		r.viol(invMaxFrozen, "%d threads frozen with %d with heavy work", frozen, n)
+		r.e.mu.Lock()
+		trig := r.e.guardTrig
+		r.e.mu.Unlock()
+		sig := h.signals().Fresh(trig, r.e.Now())
+		if crit, _ := sig.Critical(); !crit && !sig.NearOomd() {
+			r.viol(invMaxFrozen, "%d threads frozen with %d with heavy work", frozen, n)
+		}
 	}
 	switch {
 	case liveHeavy == 0 || runningHeavy > 0:

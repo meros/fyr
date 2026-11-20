@@ -677,11 +677,12 @@ func level(avg float64) slots.Stall {
 	return slots.StallOK
 }
 
-// psiTrigger is V0.guard-wake's trigger: 150 ms of full stall in 2 s.
+// psiTrigger is fyrd's trigger: 200 ms of full stall in 2 s, the critical
+// level (V0.freeze-fast-class-name (3); V0.guard-wake set it at 150 ms).
 func (h *simHost) psiTrigger() bool {
 	s := 0.0
 	for _, v := range h.inst2 {
 		s += v
 	}
-	return len(h.inst2) == 2 && s/2 >= 0.075
+	return len(h.inst2) == 2 && s/2 >= cgroup.StallCritical/100
 }
