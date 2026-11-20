@@ -56,8 +56,8 @@ func TestChangeTools(t *testing.T) {
 	if out, _ := call("change_list", map[string]any{"id": c.ID}); !strings.Contains(out, "https://logs/x") || !strings.Contains(out, "Raise api replicas") {
 		t.Fatalf("list: %s", out)
 	}
-	if out, isErr := call("settle_when", map[string]any{"condition": "change", "change": c.ID, "phase": "live"}); isErr {
-		t.Fatalf("settle_when: %s", out)
+	if out, isErr := call("watch", map[string]any{"when": map[string]any{"kind": "changeReached", "change": c.ID, "phase": "live"}, "then": "settle"}); isErr {
+		t.Fatalf("watch settle: %s", out)
 	}
 	if _, isErr := call("change_update", map[string]any{"change": "nope", "phase": "live"}); !isErr {
 		t.Fatal("an unknown change was accepted")
@@ -312,21 +312,21 @@ func TestConcurrentPressRunsOnce(t *testing.T) {
 	})
 }
 
-// SPEC 0.5 V0.12, review 2026-11-15: pr_link and change_open store the PR in
-// the one canonical form, whatever page of it the agent passed.
+// SPEC 0.5 V0.12, review 2026-11-15: change_open and a merge ask store the PR
+// in the one canonical form, whatever page of it the agent passed.
 func TestPRLinkStoresCanonicalURL(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("x")
 	h.wait(id, "done", state(core.Done))
-	if out, isErr := callAs(t, h.e, id, "pr_link", map[string]any{"url": "https://github.com/o/r/pull/5/files?w=1"}); isErr {
+	if out, isErr := callAs(t, h.e, id, "change_request", map[string]any{"change": "https://github.com/o/r/pull/5/files?w=1", "ask": "merge", "args": map[string]any{"head": "abc1234def"}}); isErr {
 		t.Fatal(out)
 	}
 	if out, isErr := callAs(t, h.e, id, "change_open", map[string]any{"key": "k", "title": "K", "pr": "https://github.com/o/r/pull/6#top"}); isErr {
 		t.Fatal(out)
 	}
 	th, _ := h.e.Thread(id)
-	if th.MainPR() == nil || th.MainPR().URL != "https://github.com/o/r/pull/5" {
-		t.Fatalf("pr_link stored %+v", th.MainPR())
+	if c := core.FindChange(&th, "https://github.com/o/r/pull/5"); c == nil || c.PRURL() != "https://github.com/o/r/pull/5" {
+		t.Fatalf("the merge ask stored %+v", th.Changes)
 	}
 	if c := core.FindChange(&th, "k"); c == nil || c.PRURL() != "https://github.com/o/r/pull/6" {
 		t.Fatalf("change_open stored %+v", c)
@@ -334,8 +334,8 @@ func TestPRLinkStoresCanonicalURL(t *testing.T) {
 }
 
 // #31: merge has one guard. The owner's PR-tab command, the press of a
-// change's built-in Merge, and the agent's effect_request and change_request
-// all refuse a PR with a conflict with the same reason; once it clears, the
+// change's built-in Merge, and the agent's change_request (by the change or
+// by the PR URL) all refuse a PR with a conflict with the same reason; once it clears, the
 // press merges the change's PR and the agent hears the result (V0.60 (4)).
 func TestMergeOneGuard(t *testing.T) {
 	h := newHarness(t, time.Minute)
@@ -358,8 +358,8 @@ func TestMergeOneGuard(t *testing.T) {
 	if r := h.cmdID("p1", "action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest}); r.OK || r.Status != 409 || !strings.Contains(r.Error, why) {
 		t.Fatalf("press: %+v", r)
 	}
-	if out, isErr := callAs(t, h.e, id, "effect_request", map[string]any{"action": "pr.merge", "args": map[string]any{"pr": url}}); !isErr || !strings.Contains(out, why) {
-		t.Fatalf("effect_request: %s", out)
+	if out, isErr := callAs(t, h.e, id, "change_request", map[string]any{"change": url, "ask": "merge"}); !isErr || !strings.Contains(out, why) {
+		t.Fatalf("change_request by URL: %s", out)
 	}
 	if out, isErr := callAs(t, h.e, id, "change_request", map[string]any{"change": c.ID, "ask": "merge"}); !isErr || !strings.Contains(out, why) {
 		t.Fatalf("change_request: %s", out)

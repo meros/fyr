@@ -1,5 +1,6 @@
-// SPEC 0.5 V0.86: slot_acquire answers at once, a queued thread is told
-// when the slot is its own, and a held slot goes back when the run ends.
+// SPEC 0.5 V0.86: a queued thread is told when the slot is its own, and a
+// held slot goes back when the run ends. (The agent's slot_acquire and
+// slot_release went with V0.one-tool-vocabulary: the gate admits.)
 package engine
 
 import (
@@ -33,16 +34,11 @@ func TestV086SlotToolsAndRunEnd(t *testing.T) {
 	running(e, a)
 	running(e, b)
 
-	out, isErr := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
-	if isErr || !strings.Contains(out, "Admitted: your test job") {
-		t.Fatalf("a: %v %q", isErr, out)
+	if out := acquire(e, a, "test"); out != "admitted" {
+		t.Fatalf("a: %q", out)
 	}
-	out, isErr = callAs(t, e, b, "slot_acquire", map[string]any{"kind": "test"})
-	if isErr || !strings.Contains(out, "(0 ahead)") {
-		t.Fatalf("b: %v %q", isErr, out)
-	}
-	if _, isErr := callAs(t, e, b, "slot_acquire", map[string]any{"kind": "nap"}); !isErr {
-		t.Fatal("an unknown kind was accepted")
+	if out := acquire(e, b, "test"); !strings.Contains(out, "(0 ahead)") {
+		t.Fatalf("b: %q", out)
 	}
 	// b's run ends while it waits: it keeps its place.
 	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: b, Args: core.RunEndedArgs{}}); err != nil {
@@ -74,29 +70,20 @@ func TestV086SlotToolsAndRunEnd(t *testing.T) {
 		t.Fatalf("an idle grant kept its slot: %+v", s)
 	}
 
-	// slot_release gives it back at once.
-	running(e, a)
-	callAs(t, e, a, "slot_acquire", map[string]any{"kind": "build"})
-	out, isErr = callAs(t, e, a, "slot_release", map[string]any{})
-	if isErr || len(e.Slots.Snapshot().Held) != 0 {
-		t.Fatalf("release: %v %q", isErr, out)
-	}
 }
 
 func TestV086SlotsOff(t *testing.T) {
 	e, _, _ := bare(t)
 	a := bareThread(t, e)
-	out, isErr := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
-	if isErr || !strings.Contains(out, "does not limit heavy jobs") {
-		t.Fatalf("%v %q", isErr, out)
+	if out := acquire(e, a, "test"); out != "off" {
+		t.Fatalf("%q", out)
 	}
 	// SPEC 0.5 V0.86 (1): slots 0 answers that heavy jobs are not limited and queues nothing.
 	e.UseSlots(slots.New(0))
 	b := bareThread(t, e)
 	for _, id := range []string{a, b} {
-		out, isErr := callAs(t, e, id, "slot_acquire", map[string]any{"kind": "test"})
-		if isErr || !strings.Contains(out, "does not limit heavy jobs") {
-			t.Fatalf("%v %q", isErr, out)
+		if out := acquire(e, id, "test"); out != "off" {
+			t.Fatalf("%q", out)
 		}
 	}
 	if s := e.Slots.Snapshot(); len(s.Held)+len(s.Waiting) != 0 {
@@ -140,7 +127,7 @@ func TestV0137SlotOrderDecidesTheNextGrant(t *testing.T) {
 	a, b, c := bareThread(t, e), bareThread(t, e), bareThread(t, e)
 	for _, id := range []string{a, b, c} {
 		running(e, id)
-		callAs(t, e, id, "slot_acquire", map[string]any{"kind": "test"})
+		acquire(e, id, "test")
 	}
 	r := e.Command(api.Cmd{CommandID: "o1", Action: "host.slotOrder", Args: map[string]any{"owners": []any{c, b}}})
 	if !r.OK {
@@ -149,8 +136,7 @@ func TestV0137SlotOrderDecidesTheNextGrant(t *testing.T) {
 	if s, ok := r.Result.(slots.Snapshot); !ok || len(s.Waiting) != 2 || s.Waiting[0].Owner != c {
 		t.Fatalf("the receipt is not the new queue: %#v", r.Result)
 	}
-	out, _ := callAs(t, e, b, "slot_acquire", map[string]any{"kind": "test"})
-	if !strings.Contains(out, "1 ahead") {
+	if out := acquire(e, b, "test"); !strings.Contains(out, "1 ahead") {
 		t.Fatalf("b's place after the reorder: %q", out)
 	}
 	// An agent's input is refused.
@@ -188,7 +174,7 @@ func TestV201AdmissionOutlivesTheRunWhileTheJobRuns(t *testing.T) {
 			e.UseSlots(slots.New(1))
 			a := bareThread(t, e)
 			running(e, a)
-			callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
+			acquire(e, a, "test")
 			coretest.Patch(e, a, func(th *core.Thread, _ time.Time) []core.Event {
 				th.Tasks = []core.Task{c.task}
 				return nil

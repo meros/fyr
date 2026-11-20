@@ -1091,7 +1091,7 @@ type AssuranceLevel = "none" | "confirm" | "verified";
 **Built.**
 - `confirm` is the client's confirmation (V0.68): before a script or `fyr` action, Delete project and Remove provider. A press carries the digest of what the owner saw (5.13); a different digest is rejected.
 - An agent cannot supply a proof. What the agent asks Fyr to run becomes an effect Decision that only the owner answers (5.10).
-- **Agent tool calls** go through the tool gate (12.3): a PreToolUse hook on `Bash` denies `gh pr merge` with "Use mcp__fyr__effect_request with action pr.merge" (V0.12). The gate is a convenience. The boundaries are the OS user and the credentials that the session receives (5.9).
+- **Agent tool calls** go through the tool gate (12.3): a PreToolUse hook on `Bash` denies `gh pr merge` with "Call mcp__fyr__change_request {change, ask: \"merge\"}" (V0.12, V0.one-tool-vocabulary). The gate is a convenience. The boundaries are the OS user and the credentials that the session receives (5.9).
 
 **Post-v1.** `LevelPolicy` is a pure function `level(call, principal, entity, policy) → AssuranceLevel`, loaded from a static policy file as a `policy` Document; each gated call writes `level.evaluated`; a tool call that matches no rule gets `defaultsByMode[mode]` (`auto`: none; `ask` and `plan`: confirm). The `verified` Actions (`host.pair`, `host.revokeDevice`) are available only through the host CLI, which runs as `system(cli)`.
 
@@ -1112,7 +1112,7 @@ When the user approves a blocking Decision, they can choose "allow this exact ca
 |---|---|---|---|
 | `ask` | the agent's AskUserQuestion (the `claude` adapter's permission callback) | yes | gone; the thread is `failed` with class `restart`, and Retry asks again |
 | `approval` | any other permission request of the CLI | yes | gone, as `ask` |
-| `effect` | the agent's `effect_request` or `change_request` (5.10) | no | stays open |
+| `effect` | the agent's `change_request` (5.10) | no | stays open |
 
 - **Answering.** Only the owner answers, with `thread.answer`. An `ask` answer and an `approval` yes or no resolve the waiting callback of the run. An `effect` yes runs the effect (5.10); a no is reported to the agent.
 - **Withdrawn.** When the CLI cancels a request (after an interrupt), the Decision goes (`decision.withdrawn`).
@@ -1153,12 +1153,12 @@ A reducer never does work. It returns effects, and Fyr's effect runner executes 
 
 | Effect | Requested by the agent | Guard |
 |---|---|---|
-| `pr.merge {pr, method}` | `effect_request`, `change_request {ask: merge}` | archived; no PR; the PR's change is not in flight ("The PR is not open"); a conflict; changes requested. A PR with no change in the thread is left to GitHub, which the runner reads again. |
+| `pr.merge {pr, method}` | `change_request {ask: merge}` | archived; no PR; the PR's change is not in flight ("The PR is not open"); a conflict; changes requested. A PR with no change in the thread is left to GitHub, which the runner reads again. |
 | `pr.rerunFailed {pr}` | no | archived; no PR; the PR is not open |
-| `fyr.deploy {dir}` | `effect_request`, `change_request {ask: deploy}` | none; `dir` is required |
+| `fyr.deploy {dir?, tests?}` | `change_request {ask: fyr.deploy}`, only from a thread whose folder or project is a Fyr checkout (V0.one-tool-vocabulary) | none |
 
 **The agent's request (D5).**
-1. **Request.** The agent calls `effect_request {action, args, reason}` or `change_request {change, ask, args?, reason?}`. The reducer checks the args and the effect's guard, then opens a Decision of kind `effect` with the exact call. The tool returns at once.
+1. **Request.** The agent calls `change_request {change, ask, args?, reason?}` (`change` is not needed for `fyr.deploy`). The reducer checks the args and the effect's guard, then opens a Decision of kind `effect` with the exact call. An identical ask still open or held is returned instead of a second one (V0.one-tool-vocabulary). The tool returns at once.
 2. **The run continues or ends.** Nothing waits inside the run. No callback and no slot are held.
 3. **The owner answers.** A yes to a Fyr effect returns the effect `effect`; the runner checks the guard again and runs it. An answer to an ask that Fyr does not run (`review`, `approve`, `apply`, `revert`) is reported at once; a yes to `review` or `approve` also sets the change's `approval` condition ok (source owner) and clears `needs`. A no is reported at once.
 4. **Result.** The result lands as `effect.result` on the thread, and the agent feed tells the agent with urgency `wake` (5.14).
@@ -1186,11 +1186,8 @@ Each session gets Fyr's MCP server (V0.12). A tool call becomes an Input with so
 |---|---|---|
 | `change_open`, `change_revise`, `change_status`, `change_attach` | `change.open`, `change.revise`, `change.status`, `change.attach` | 3.13. Each records the upkeep (`changesCheckedAt`) and one `change` event. |
 | `change_unchanged {reason}` | `change.unchanged` | Records that the changes are current (V0.62). |
-| `change_request` | `change.request` | Opens an effect Decision (5.10). |
-| `pr_link {url}` | `pr.link` | Links a PR: a code change with the PR, and the main change. |
-| `effect_request` | `effect.request` | 5.10. |
-| `settle_when {condition: done \| merged \| change, change?, phase?}` | `settle.when` | Arms a settle Rule (7.6). |
-| `watch {when, then: notify \| settle, note?}` or `{remove}` | `rule.arm`, `rule.remove` | The agent's own Rules (7.1). |
+| `change_request {change?, ask: merge \| fyr.deploy, args?, reason?}` | `change.request` | Opens an effect Decision (5.10), the one way to ask for a merge or a Fyr deploy; an identical open ask is returned again. `change` may be an untracked PR URL, which Fyr then tracks (V0.one-tool-vocabulary). |
+| `watch {when, then: notify \| settle, note?}` or `{remove}` | `rule.arm`, `rule.remove` | The agent's own Rules (7.1); `{kind: workDone}` alone, with then settle, is "settle when done" (7.6). An identical armed watch is returned again (V0.one-tool-vocabulary). |
 | `offer_action` | `action.offer` | Declares or removes an action (5.13). |
 | `view_publish`, `view_state`, `view_unchanged` | `view.publish`, `view.state`, `view.unchanged` | Only for a process started with the live view (V0.37). |
 | `thread_rename {title, id?}` | `thread.retitle` | This thread or one it started (V0.69). |
@@ -1390,7 +1387,7 @@ type Rule = {
 
 | Purpose | `then` | Armed by |
 |---|---|---|
-| `settle` | `rule.settle` | the owner (`thread.settle` while a run is live, `thread.settleWhenMerged`), the agent (`settle_when`, `watch {then: settle}`) |
+| `settle` | `rule.settle` | the owner (`thread.settle` while a run is live, `thread.settleWhenMerged`), the agent (`watch {then: settle}`) |
 | `snooze` | `rule.wake` | the owner (`thread.snooze`), on the View |
 | `deployWatch` | `rule.end` | Fyr, when a change's PR merges (7.6) |
 | `builtins` | `change.builtins` | Fyr, for a code change with a PR (7.6) |

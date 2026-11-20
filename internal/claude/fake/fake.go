@@ -28,7 +28,7 @@
 //	refused  makes one Bash call that the CLI refuses with its reject
 //	         text, without asking Fyr (V0.133)
 //	sub      runs one subagent (Task tool) before it answers
-//	merge U  calls mcp__fyr__effect_request {action pr.merge, args {pr: U}}
+//	merge U  calls mcp__fyr__change_request {change: U, ask: merge}
 //	         over HTTP from --mcp-config and reports the tool's text
 //	gate     asks the PreToolUse hook about "gh pr merge 1" and reports it
 //	mcpstatus reports whether the MCP server answered at startup, as the
@@ -509,9 +509,9 @@ func turn(text string) (took []queued) {
 		result(false, "success", "merge")
 	case "merge":
 		url := strings.TrimSpace(strings.TrimPrefix(text, "merge"))
-		assistant(msg{"type": "tool_use", "id": "tu_m", "name": "mcp__fyr__effect_request",
-			"input": msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash", "head": "abc1234def"}}})
-		out := callMCP("effect_request", msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash", "head": "abc1234def"}, "reason": "asked"})
+		in := msg{"change": url, "ask": "merge", "args": msg{"method": "squash", "head": "abc1234def"}, "reason": "asked"}
+		assistant(msg{"type": "tool_use", "id": "tu_m", "name": "mcp__fyr__change_request", "input": in})
+		out := callMCP("change_request", in)
 		assistant(msg{"type": "text", "text": "tool said: " + out})
 		result(false, "success", "requested")
 	case "gate":

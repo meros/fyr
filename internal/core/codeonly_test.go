@@ -98,7 +98,8 @@ func TestCodeOnlyRefusals(t *testing.T) {
 			t.Fatalf("%s: %v", ask, err)
 		}
 	}
-	if got := Names(ChangeAsks()); len(got) != 1 || got[0] != string(AskMerge) {
+	// V0.one-tool-vocabulary: Fyr's own deploy is the other ask.
+	if got := Names(ChangeAsks()); len(got) != 2 || got[0] != string(AskMerge) || got[1] != string(AskFyrDeploy) {
 		t.Fatalf("asks: %v", got)
 	}
 	if got := OpenKinds(); len(got) != 1 || got[0] != KindCode {

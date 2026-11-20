@@ -92,7 +92,7 @@ func TestNoticeRules(t *testing.T) {
 			req := &EffectReq{Action: FyrMerge, Args: map[string]any{"pr": fprURL}}
 			th, res := fstep(t, th, Input{Source: FromEffect("fx_1"), Kind: KindEffectResult, Args: EffectResult{Effect: Effect{ID: "fx_1", Kind: EffectRun, Allow: true, Request: req}, OK: true, Text: "Merged."}}, ct0)
 			n := queued(t, th, "result:pr.merge:PR #7")
-			if n.Urgency != Wake || n.What != "Your effect_request pr.merge on PR #7 succeeded: Merged." || !wakes(res) {
+			if n.Urgency != Wake || n.What != "Your change_request pr.merge on PR #7 succeeded: Merged." || !wakes(res) {
 				t.Fatalf("agent's request: %+v wakes=%v", n, wakes(res))
 			}
 			c := &th.Changes[0]

@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"maps"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/heavy"
-	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -1615,55 +1613,4 @@ func article(kind string) string {
 		return "an " + kind
 	}
 	return "a " + kind
-}
-
-// slotTools are slot_acquire and slot_release (V0.86 (2)): both answer at
-// once; a queued thread hears later, in a [Fyr] notice.
-func (e *Engine) slotTools(s *mcp.Server) {
-	// V0.209: Fyr admits and releases by itself at the gate; these two remain
-	// for running agents that were told about them, and to name a job early.
-	off := "This host does not limit heavy jobs; run the job."
-	s.Add(mcp.Tool{Name: "slot_acquire",
-		Description: "Not needed: Fyr admits a heavy command by itself when you run it. Only for work Fyr cannot recognise as heavy: asks for a share of this host now, and answers admitted or queued.",
-		Schema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": slots.Kinds()},
-			"command": map[string]any{"type": "string", "description": "The command you will run, e.g. \"make test\"; Fyr then knows what the job costs."}}, "kind"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			kind := sArg(a, "kind")
-			if !slices.Contains(slots.Kinds(), kind) {
-				return "", fmt.Errorf("kind must be one of %v", slots.Kinds())
-			}
-			if c := sArg(a, "command"); c != "" && e.SlotJob != nil {
-				e.SlotJob(th, c) // decision 0029 S3: the job's class before it runs
-			}
-			if e.Slots == nil {
-				return off, nil
-			}
-			if e.Slots.Off() {
-				return off, nil
-			}
-			held, ahead := e.Slots.Acquire(th, kind)
-			e.syncSlotQueue()
-			s := e.Slots.Snapshot()
-			if held {
-				return fmt.Sprintf("Admitted: your %s job %s of %s; %s left. Run the job now; the admission ends by itself when the work stops.", kind, jobShare(s, th), e.hostName(), freeShare(s)), nil
-			}
-			why := ""
-			if ahead == 0 && s.Why != "" {
-				why = " Waiting: " + s.Why + "." // decision 0029 S2
-			}
-			return fmt.Sprintf("Queued: your %s job needs %s of %s; %s free (%d ahead).%s Do not start the job; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", kind, strings.TrimPrefix(jobShare(s, th), "≈ "), e.hostName(), freeShare(s), ahead, why), nil
-		}})
-	s.Add(mcp.Tool{Name: "slot_release",
-		Description: "Not needed: an admission ends by itself. Gives it back early, or leaves the queue.",
-		Schema:      obj(map[string]any{}),
-		Call: func(_ context.Context, th string, _ map[string]any) (string, error) {
-			if e.Slots == nil {
-				return off, nil
-			}
-			if !e.dropSlot(th) { // V0.209: it usually ended by itself already
-				return "Nothing to release: Fyr already ended this admission.", nil
-			}
-			e.syncSlotQueue()
-			return fmt.Sprintf("Released: %s of %s free for heavy jobs.", freeShare(e.Slots.Snapshot()), e.hostName()), nil
-		}})
 }

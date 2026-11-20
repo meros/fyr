@@ -26,10 +26,10 @@ func TestS2QueuedWithAReasonAndGrantedAtTheTick(t *testing.T) {
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	if out, _ := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"}); !strings.Contains(out, "Admitted:") {
+	if out := acquire(e, a, "test"); out != "admitted" {
 		t.Fatalf("a: one job always runs: %q", out)
 	}
-	out, _ := callAs(t, e, b, "slot_acquire", map[string]any{"kind": "test"})
+	out := acquire(e, b, "test")
 	if !strings.Contains(out, "(0 ahead). Waiting: CPU: new jobs run 2.4× slower.") {
 		t.Fatalf("b: %q", out)
 	}

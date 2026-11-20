@@ -151,7 +151,9 @@ const (
 )
 
 // AgentWhens are the kinds the agent may use in its own Rules.
-var AgentWhens = []string{WhenRunEnded, WhenReached, WhenCondition, WhenAt, WhenIdleFor}
+// workDone only alone and with then settle (V0.one-tool-vocabulary: it was
+// settle_when done).
+var AgentWhens = []string{WhenRunEnded, WhenReached, WhenCondition, WhenAt, WhenIdleFor, WhenWorkDone}
 
 // All is the Condition that holds when all of ws hold.
 func All(ws ...When) When { return When{All: ws} }
@@ -750,6 +752,9 @@ func checkAgentWhen(t *Thread, w *When, depth int) error {
 	if !slices.Contains(AgentWhens, w.Kind) {
 		return fmt.Errorf("kind must be %s", OrList(AgentWhens))
 	}
+	if w.Kind == WhenWorkDone && depth > 0 {
+		return errors.New("workDone stands alone, with then settle")
+	}
 	switch w.Kind {
 	case WhenReached, WhenCondition:
 		c, err := findChange(t, w.Change)
@@ -792,6 +797,14 @@ func reduceRuleArm(r Rec, in Input, now time.Time) (Result, error) {
 	if n >= maxAgentRules {
 		return Result{}, fmt.Errorf("at most %d watches; remove one first", maxAgentRules)
 	}
+	if a.When.Kind == WhenWorkDone { // V0.one-tool-vocabulary: settle_when done
+		if a.Then != "settle" {
+			return Result{}, fmt.Errorf("%w: workDone is for then settle", ErrBadArgs)
+		}
+		SettleWhenDone(r.T, ByAgent, now)
+		rule := *FindRule(r.T, settleDoneRule)
+		return Result{Events: []Event{{"rule.armed", map[string]any{"rule": rule}}}, Reply: rule}, nil
+	}
 	rule := Rule{ID: a.ID, About: a.When.changeOf(), When: a.When, After: AfterDisarm, CreatedBy: ByAgent}
 	switch a.Then {
 	case "notify":
@@ -801,6 +814,9 @@ func reduceRuleArm(r Rec, in Input, now time.Time) (Result, error) {
 	default:
 		return Result{}, fmt.Errorf("%w: then must be notify or settle", ErrBadArgs)
 	}
+	if x := sameRule(r.T, rule); x != nil { // a retry: the watch is armed already
+		return Result{Reply: *x}, nil
+	}
 	ArmRule(r.T, rule, now)
 	var effects []Effect
 	if x := FindRule(r.T, rule.ID); x != nil && x.When.anchorPR(r.T, x.Armed, now) {
@@ -808,6 +824,23 @@ func reduceRuleArm(r Rec, in Input, now time.Time) (Result, error) {
 		effects = []Effect{{Kind: EffectChangeRefresh}} // read the new head now
 	}
 	return Result{Events: []Event{{"rule.armed", map[string]any{"rule": rule}}}, Effects: effects, Reply: rule}, nil
+}
+
+// sameRule is the agent's armed Rule that watches the same condition with
+// the same outcome as r, or nil (V0.one-tool-vocabulary): an agent that
+// retries a watch whose reply it lost gets the watch it armed.
+func sameRule(t *Thread, r Rule) *Rule {
+	want, _ := json.Marshal([]any{r.Purpose, r.When, r.Then})
+	for i := range t.Rules {
+		x := &t.Rules[i]
+		if x.CreatedBy != ByAgent || x.Status != RuleArmed {
+			continue
+		}
+		if got, _ := json.Marshal([]any{x.Purpose, x.When, x.Then}); string(got) == string(want) {
+			return x
+		}
+	}
+	return nil
 }
 
 func reduceRuleRemove(r Rec, in Input, _ time.Time) (Result, error) {

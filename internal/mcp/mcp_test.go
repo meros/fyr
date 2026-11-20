@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -173,12 +175,30 @@ func TestToolHash(t *testing.T) {
 	if !s.Current("tok") {
 		t.Fatal("not current after tools/list")
 	}
-	s.Add(Tool{Name: "hidden", Hidden: true, Schema: map[string]any{"type": "object"}})
+	s.Retire("gone", "call echo")
 	if s.Hash() != h {
-		t.Fatal("a hidden alias changed the hash")
+		t.Fatal("a retired tool changed the hash")
 	}
 	s.Add(Tool{Name: "echo", Description: "Echo, changed", Schema: map[string]any{"type": "object"}})
 	if s.Hash() == h || s.Current("tok") {
 		t.Fatal("a changed description kept the hash")
+	}
+}
+
+// V0.one-tool-vocabulary: a removed tool is not listed, and a call of it is a
+// tool error that names its replacement.
+func TestRetiredToolNamesItsReplacement(t *testing.T) {
+	s := newServer()
+	s.Retire("old_echo", "call echo instead.")
+	_, r := rpc(t, s, "tok", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	if strings.Contains(fmt.Sprint(r), "old_echo") {
+		t.Fatalf("listed: %v", r)
+	}
+	_, r = rpc(t, s, "tok", map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "old_echo", "arguments": map[string]any{}}})
+	if got := fmt.Sprint(r); !strings.Contains(got, "isError:true") || !strings.Contains(got, "Fyr removed the tool old_echo: call echo instead.") {
+		t.Fatalf("call: %v", got)
+	}
+	if s.Has("old_echo") || !s.Has("echo") {
+		t.Fatal("Has")
 	}
 }

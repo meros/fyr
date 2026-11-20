@@ -451,11 +451,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	sd := engine.SlotDeps{
 		SlotActive:  jobs.Active, // #174
 		SlotSignals: sampler.Signals, SlotGrowth: jobs.Growth, SlotPolicy: adm.Policy,
-		SlotJob: func(thread, c string) {
-			class, text := heavyCmds.Match(c)
-			jobs.Saw(thread, class)
-			groups.Seen(thread, text)
-		},
 		SlotOver:   adm.Over, // V0.163
 		JobReset:   jobs.Reset,
 		SlotFreeze: groups.Freeze, SlotThaw: groups.Thaw, // decision 0029 S5

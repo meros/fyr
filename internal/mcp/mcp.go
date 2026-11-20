@@ -27,7 +27,7 @@ import (
 // every agent of the session (V0.prompt-fits-setup). The appended system
 // prompt reaches only the main agent; a subagent sees the tools and this.
 const Instructions = `Fyr runs this session and shows it to the owner on desktop and phone. Use these tools for the actions they name instead of shell commands. The key rules, for subagents too:
-- Asks are asynchronous: ask, run_request, change_request and effect_request return at once, and the answer arrives later as a message that starts with [Fyr]. Go on with what does not depend on it, or end your turn; never do the same thing another way meanwhile.
+- Asks are asynchronous: ask, run_request and change_request return at once, and the answer arrives later as a message that starts with [Fyr]. Go on with what does not depend on it, or end your turn; never do the same thing another way meanwhile.
 - Never merge a pull request yourself (no gh pr merge): ask with change_request {change, ask: "merge"}. Never run sudo: call run_request {command, why, root: true}.
 - A question or a choice for the owner goes on a card with ask, and a command the owner must run with run_request: never in your message's text.
 - Fyr already watches pull requests and CI: read change_list or arm watch instead of polling gh.`
@@ -39,14 +39,14 @@ type Tool struct {
 	Description string
 	Schema      map[string]any
 	Call        func(ctx context.Context, thread string, args map[string]any) (string, error)
-	// Hidden: an alias kept for one release (V0.101): not listed, still
-	// callable.
-	Hidden bool
 }
 
 type Server struct {
 	auth  func(token string) (thread string, ok bool)
 	tools map[string]Tool
+	// retired: a removed tool's name → the line that names its replacement
+	// (V0.one-tool-vocabulary), for an agent that still calls it.
+	retired map[string]string
 
 	mu sync.Mutex
 	// listed: token → the hash of the tool list it last read;
@@ -58,11 +58,33 @@ type Server struct {
 }
 
 func New(auth func(token string) (string, bool)) *Server {
-	return &Server{auth: auth, tools: map[string]Tool{}, listed: map[string]string{}, streams: map[string]int{}, done: make(chan struct{})}
+	return &Server{auth: auth, tools: map[string]Tool{}, retired: map[string]string{}, listed: map[string]string{}, streams: map[string]int{}, done: make(chan struct{})}
 }
 
 // Add registers a tool. Call it before serving: the list is the build's.
 func (s *Server) Add(t Tool) { s.tools[t.Name] = t }
+
+// Retire names a tool that was removed and what to call instead
+// (V0.one-tool-vocabulary). It is not listed; a call of it is a tool error
+// that says so, for an agent that read the old list.
+func (s *Server) Retire(name, instead string) { s.retired[name] = instead }
+
+// Has reports a listed tool of this name.
+func (s *Server) Has(name string) bool {
+	_, ok := s.tools[name]
+	return ok
+}
+
+// Descriptions are every listed tool's description and schema, as JSON
+// text, by name: what an agent reads of the tools.
+func (s *Server) Descriptions() map[string]string {
+	out := map[string]string{}
+	for n, t := range s.tools {
+		b, _ := json.Marshal(map[string]any{"description": t.Description, "inputSchema": t.Schema})
+		out[n] = string(b)
+	}
+	return out
+}
 
 // Keepalive is how often an open server stream gets a comment line, so a
 // proxy or the CLI does not take a quiet stream for a dead one.
@@ -78,9 +100,6 @@ func (s *Server) list() []any {
 	list := []any{}
 	for _, n := range names {
 		t := s.tools[n]
-		if t.Hidden {
-			continue
-		}
 		list = append(list, map[string]any{"name": t.Name, "description": t.Description, "inputSchema": t.Schema})
 	}
 	return list
@@ -249,6 +268,9 @@ func (s *Server) dispatch(ctx context.Context, thread string, req request) (any,
 			return nil, rpcError(-32602, "bad params")
 		}
 		t, ok := s.tools[p.Name]
+		if instead, gone := s.retired[p.Name]; !ok && gone {
+			return map[string]any{"content": []any{map[string]any{"type": "text", "text": "Fyr removed the tool " + p.Name + ": " + instead}}, "isError": true}, nil
+		}
 		if !ok {
 			return nil, rpcError(-32602, "unknown tool "+p.Name)
 		}

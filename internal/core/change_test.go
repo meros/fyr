@@ -327,7 +327,7 @@ func TestPRLivesOnItsChange(t *testing.T) {
 	}
 	PRObserved(th, PR{URL: "https://github.com/o/r/pull/2", State: "OPEN"}, ct0)
 	if p := th.MainPR(); p == nil || p.Number != 2 {
-		t.Fatalf("pr_link to the second PR: %+v", p)
+		t.Fatalf("linking the second PR: %+v", p)
 	}
 	// Evidence the agent attaches gives a change its PR, which the poller reads.
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "api", Kind: KindCode, Title: "API"}, ByAgent, ct0)

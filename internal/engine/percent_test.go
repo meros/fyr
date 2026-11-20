@@ -1,5 +1,5 @@
-// V0.163: slot_acquire and slot_release keep their names, but their answers, the gate's refusal and the notices
-// speak a percentage of the host, not slots.
+// V0.163: the gate's refusal and the notices speak a percentage of the host, not slots. (slot_acquire and
+// slot_release, whose answers did too, went with V0.one-tool-vocabulary.)
 package engine
 
 import (
@@ -10,7 +10,7 @@ import (
 	"github.com/meros/fyr/internal/slots"
 )
 
-func TestV163ToolsSpeakPercent(t *testing.T) {
+func TestV163GateSpeaksPercent(t *testing.T) {
 	e, _, _ := bare(t)
 	p := slots.New(2)
 	p.Now = e.Now
@@ -27,18 +27,6 @@ func TestV163ToolsSpeakPercent(t *testing.T) {
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	out, _ := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
-	if !strings.Contains(out, "Admitted: your test job ≈ 45 % CPU, 15 % memory of home-laptop; 55 % CPU and 85 % memory left.") || strings.Contains(out, "slot.") {
-		t.Fatalf("held %q", out)
-	}
-	out, _ = callAs(t, e, b, "slot_acquire", map[string]any{"kind": "e2e"})
-	if !strings.Contains(out, "Queued: your e2e job needs 45 % CPU, 15 % memory of home-laptop; 55 % CPU and 85 % memory free (0 ahead).") || !strings.Contains(out, "Waiting: needs ≈ 45 % CPU, 10 % free.") {
-		t.Fatalf("queued %q", out)
-	}
-	out, _ = callAs(t, e, a, "slot_release", map[string]any{})
-	if !strings.Contains(out, "Released:") || !strings.Contains(out, "% memory of home-laptop free") {
-		t.Fatalf("release %q", out)
-	}
 	e.Slots.Acquire(a, slots.Test)
 	e.Slots.Acquire(b, slots.Test)
 	if r := e.HeavyGate(HeavyCall{Thread: bareThread(t, e), Class: "make test", ToolUse: "tu"}); strings.Contains(r, "slot") || !strings.Contains(r, "no room") {

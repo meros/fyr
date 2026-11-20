@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
+	"strings"
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
@@ -12,51 +12,6 @@ import (
 
 // Tools registers the agent tools of SPEC 0.5 V0.12 on an MCP server.
 func (e *Engine) Tools(s *mcp.Server) {
-	s.Add(mcp.Tool{Name: "pr_link", Hidden: true, // V0.101: change_open {pr} does this
-		Description: alias("change_open {pr}", "Link a GitHub pull request to this Fyr thread. Call it when you open a PR other than with `gh pr create`, or to switch the thread to another PR."),
-		Schema:      obj(map[string]any{"url": str("The PR URL, https://github.com/<owner>/<repo>/pull/<n>")}, "url"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			url, ok := core.CanonicalPR(sArg(a, "url"))
-			if !ok {
-				return "", errors.New("not a GitHub pull request URL")
-			}
-			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindPRLink, Thread: th, Args: url}); err != nil {
-				return "", err
-			}
-			return "Linked " + url + ". Fyr watches its checks and reviews.", nil
-		}})
-
-	s.Add(mcp.Tool{Name: "effect_request",
-		Description: "Ask Fyr to perform an effect that needs the user's approval. Returns at once; do not wait or poll. The user approves or declines in Fyr, Fyr runs it, and the result arrives as a later message starting with [Fyr]. Actions: \"pr.merge\" with args {pr: <url>, method: squash|merge|rebase, head?: <commit SHA, default the head Fyr reads now>} (use this instead of gh pr merge; Fyr merges only that head, and shows the ask to the user only when CI is green on it); \"fyr.deploy\": Fyr updates itself when CI publishes a green commit on main (the tag deployable), so do not ask after a merge. With args {} it installs the newest CI release now (approved by itself unless the owner turned auto-update off). With args {dir: <Fyr checkout>, tests?: true} it builds that checkout locally and switches to it to try it; that always waits for the owner's press and pauses auto-update until a release contains it.",
-		Schema: obj(map[string]any{
-			"action": map[string]any{"type": "string", "enum": requestable()},
-			"args":   map[string]any{"type": "object"},
-			"reason": str("One sentence for the user: why now."),
-		}, "action", "args"),
-		Call: func(ctx context.Context, th string, a map[string]any) (string, error) {
-			action, _ := a["action"].(string)
-			args, _ := a["args"].(map[string]any)
-			if args == nil {
-				args = map[string]any{}
-			}
-			if err := canonicalArgs(args); err != nil {
-				return "", err
-			}
-			if action == core.FyrMerge {
-				e.readPRForMergeAsk(ctx, th)
-			}
-			reason, _ := a["reason"].(string)
-			id := NewID("d_")
-			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindEffectRequest, Thread: th,
-				Args: core.EffectRequest{ID: id, Action: action, Args: args, Reason: reason}}); err != nil {
-				return "", err
-			}
-			if s := e.heldReply(th, id); s != "" { // V0.136: a merge ask waits for CI
-				return s, nil
-			}
-			return "Requested. The user decides in Fyr; the result arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not perform this action another way.", nil
-		}})
-
 	e.changeTools(s) // V0.59
 	s.Add(e.showTool())
 	e.viewTools(s)
@@ -64,29 +19,26 @@ func (e *Engine) Tools(s *mcp.Server) {
 	e.setupTools(s)     // V0.116
 	e.hostSetupTools(s) // V0.208
 
-	s.Add(mcp.Tool{Name: "settle_when",
-		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when the work is done (no run or task is live, nothing waits for the owner, and no PR is open), \"merged\" when the linked PR merges, \"change\" when the change (id or key) reaches phase (landed is also reached by live). Conditions add up: the first that holds settles the thread, never while a run is live.",
-		Schema: obj(map[string]any{
-			"condition": map[string]any{"type": "string", "enum": []string{"done", "merged", "change"}},
-			"change":    str("For condition change: the change's id or key."),
-			"phase":     map[string]any{"type": "string", "enum": core.PhasesAfter(core.PhaseWorking)},
-		}, "condition"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindSettleWhen, Thread: th, Args: core.Args(a)})
-			if err != nil {
-				return "", err
-			}
-			cond, _ := out.(string)
-			return "The thread settles when " + cond + "." + e.pinNote(th), nil
-		}})
-
 	s.Add(e.settleRequestTool()) // V0.settle-request
 
 	s.Add(e.watchTool())
 	s.Add(e.stateTool())
 	s.Add(e.askTool()) // V0.ask-tool
-	e.slotTools(s)     // V0.86
 	e.leftoverTools(s) // V0.176
+	for name, instead := range Retired {
+		s.Retire(name, instead)
+	}
+}
+
+// Retired are the tools V0.one-tool-vocabulary removed, each with the line
+// that names its replacement: an agent that read the old list hears it when
+// it calls one.
+var Retired = map[string]string{
+	"effect_request": `ask with change_request instead: {change: <the PR URL or the change>, ask: "merge", args?: {method, head}} to merge, or {ask: "fyr.deploy", args: {dir?, tests?}} to deploy Fyr from a thread on Fyr's own repo.`,
+	"settle_when":    `arm watch with then "settle" instead: {when: {kind: "workDone"}} for done, {when: {kind: "changeReached", change, phase: "landed"}} for merged or a change's phase. When your work is done, call settle_request.`,
+	"slot_acquire":   "nothing to call: Fyr admits a heavy command by itself when you run it.",
+	"slot_release":   "nothing to call: an admission ends by itself when the work stops.",
+	"pr_link":        "call change_open {pr} instead.",
 }
 
 // pinNote tells the agent that its settle waits: the owner pinned the
@@ -116,9 +68,9 @@ func (e *Engine) stateTool() mcp.Tool {
 // watchTool is the agent's own Rules (SPEC 7, #46): arm a watch over Fyr's
 // records that notifies the agent or settles the thread, or remove one.
 func (e *Engine) watchTool() mcp.Tool {
-	cond := map[string]any{"type": "object", "description": `A condition over Fyr's records (never the network). One of: {"kind":"runEnded"} (your current run ends); {"kind":"changeReached","change":<id or key>,"phase":<phase>}; {"kind":"condition","change":<id or key>,"type":"checks"|"review"|"conflict"|"deploy"|...,"status":"ok"|"fail"|"pending"}; {"kind":"at","at":<RFC 3339 time>}; {"kind":"idleFor","ms":<n>} (nothing happened on the thread for n ms); or {"any":[...]}, {"all":[...]}, {"not":{...}}.`}
+	cond := map[string]any{"type": "object", "description": `A condition over Fyr's records (never the network). One of: {"kind":"runEnded"} (your current run ends); {"kind":"changeReached","change":<id, key or PR URL>,"phase":<phase>} (landed is a merge; live is also landed); {"kind":"condition","change":<id or key>,"type":"checks"|"review"|"conflict"|"deploy"|...,"status":"ok"|"fail"|"pending"}; {"kind":"at","at":<RFC 3339 time>}; {"kind":"idleFor","ms":<n>} (nothing happened on the thread for n ms); {"kind":"workDone"} (only alone, with then settle: no run or task is live, nothing waits for the owner, no PR is open); or {"any":[...]}, {"all":[...]}, {"not":{...}}.`}
 	return mcp.Tool{Name: "watch",
-		Description: "Watch something in Fyr and act once when it becomes true: then \"notify\" tells you (for example when CI on a change passes), then \"settle\" settles the thread (never while a run is live). It fires once, when the condition goes from false to true, and is then removed. The owner sees your watches on the thread. Remove one with {remove: <id>}.",
+		Description: "Watch something in Fyr and act once when it becomes true: then \"notify\" tells you (for example when CI on a change passes), then \"settle\" settles the thread (never while a run is live), for example when the owner says the thread is finished once a PR merges. It fires once, when the condition goes from false to true, and is then removed. The same watch armed again returns the one already armed. The owner sees your watches on the thread. Remove one with {remove: <id>}.",
 		Schema: obj(map[string]any{
 			"when":   cond,
 			"then":   map[string]any{"type": "string", "enum": []string{"notify", "settle"}},
@@ -137,8 +89,9 @@ func (e *Engine) watchTool() mcp.Tool {
 			if err := json.Unmarshal(b, &w); err != nil || a["when"] == nil {
 				return "", errors.New("when must be a condition object")
 			}
+			id := NewID("w_")
 			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindRuleArm, Thread: th,
-				Args: core.RuleArmArgs{ID: NewID("w_"), When: w, Then: sArg(a, "then"), Note: sArg(a, "note")}})
+				Args: core.RuleArmArgs{ID: id, When: w, Then: sArg(a, "then"), Note: sArg(a, "note")}})
 			if err != nil {
 				return "", err
 			}
@@ -147,7 +100,11 @@ func (e *Engine) watchTool() mcp.Tool {
 			if sArg(a, "then") == "settle" {
 				note = e.pinNote(th)
 			}
-			return "Armed the watch " + r.ID + " (then " + sArg(a, "then") + "). Remove it with watch {remove: \"" + r.ID + "\"}." + note, nil
+			verb := "Armed"
+			if r.ID != id && strings.HasPrefix(r.ID, "w_") { // V0.one-tool-vocabulary: a retry
+				verb = "Already armed:"
+			}
+			return verb + " the watch " + r.ID + " (then " + sArg(a, "then") + "). Remove it with watch {remove: \"" + r.ID + "\"}." + note, nil
 		}}
 }
 
@@ -163,18 +120,6 @@ func obj(props map[string]any, required ...string) map[string]any {
 }
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
-
-// requestable are the Fyr effects an agent may request, sorted.
-func requestable() []string {
-	var out []string
-	for id, fx := range core.FyrEffects {
-		if fx.Request {
-			out = append(out, id)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
 
 // SettleRequestDesc is settle_request's description (V0.settle-request).
 const SettleRequestDesc = "Tell Fyr this thread's work is done, so it can leave the owner's inbox. Call it at the end of a turn when the task is clearly finished and nothing is left behind: every ask answered, no run_request or merge waiting, no PR open that still needs you, nothing the owner said they want next. Do not call it while you wait on CI, a review, the owner, or a job of your own, and not when you just asked the owner something. The project decides what happens: either Fyr settles the thread itself once the run ends and nothing waits, or the owner sees a Settle chip with your why. A new message or run clears it, so call it again when a later turn finishes the work."

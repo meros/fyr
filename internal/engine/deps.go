@@ -95,11 +95,9 @@ type SlotDeps struct {
 	SlotSignals func() slots.Signals
 	SlotGrowth  func(owner string) uint64
 	SlotPolicy  slots.Policy
-	// Decision 0029 S3: SlotJob hears the command a slot_acquire names;
-	// SlotOver says whether a holder's job is heavier than predicted (its
+	// Decision 0029 S3: SlotOver says whether a holder's job is heavier than predicted (its
 	// class, live and predicted cost); JobReset forgets a learned class
 	// (the owner's Reset).
-	SlotJob  func(thread, command string)
 	SlotOver func(owner string) (class string, live, predicted float64, over bool)
 	JobReset func(class string) bool
 	// SlotAIMD adapts the pool's budget at each tick (decision 0029 S4).

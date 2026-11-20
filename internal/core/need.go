@@ -116,7 +116,7 @@ func threadNeed(t *Thread, on func(repo string) bool) (*Change, *Need) {
 }
 
 // askFor is the id of the thread's change an open ask is about, or "": a
-// change_request names it; an effect_request names its PR.
+// change_request names it; an older effect_request names its PR.
 func askFor(t *Thread, d Decision) string {
 	if d.Kind != DecisionEffect || d.Effect == nil {
 		return ""
