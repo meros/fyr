@@ -8,7 +8,7 @@
 
 (3) **Settle (auto).** The request arms "settle when done" as the agent's (V0.203): the thread settles once the run ends, no task is live, nothing waits for the owner and no PR is open. As every agent settle, it does not fire on a pinned thread and unpin drops it (V0.106).
 
-(4) **Ask me.** The thread keeps `settleAsk {at, why}` and shows a chip "Settle: <why>" under the agent's newest message, first among the next steps, once the run has ended (V0.next-step-chips (2); the same component on desktop and phone, 44 px on the phone). Its press is the thread's Settle: on the desktop it opens the next row (V0.settle-leaves (1)), on the phone it goes back to the list (U8). It never puts the thread in Your move and sends no push.
+(4) **Ask me.** The thread keeps `settleAsk {at, why}` and shows a chip "Settle: <why>" under the agent's newest message, first among the next steps, once the run has ended (V0.next-step-chips (2); the same component on desktop and phone, 44 px on the phone). Its press is the thread's Settle: on the desktop it opens the next row (V0.settle-leaves (1)), on the phone it goes back to the list (U8). It never puts the thread in Your move and sends no push. *Amended by V0.settle-offer-your-move: the offer puts the thread in Your move.*
 
 (5) **Stale.** A new run, a message to the agent, a settle and an unsettle clear `settleAsk`, as an optional step goes when the next turn starts. A later turn that finishes the work calls the tool again.
 
