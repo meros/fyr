@@ -109,3 +109,15 @@ test("V0.day-chart: the day counts open changes from midnight: one carried over,
   assert.equal(openAt(d, Date.parse(h(10)) + 1), 2);
   assert.equal(hourTicks(d.from, now).length, 4); // 15 h: every 3 h, 03 to 12
 });
+
+test("V0.day-chart-settled: a change of a settled thread stops counting as open at the settle", async () => {
+  const { homeDay } = await import("../src/home.ts");
+  const now = new Date(2026, 10, 19, 15, 0).getTime();
+  const h = (n: number) => new Date(2026, 10, 19, n, 0).toISOString();
+  const today = thread("a", "settled", "settled", { createdAt: h(9), settledAt: h(12), changes: [ch({ id: "x", title: "x", createdAt: h(10) })] });
+  const before = thread("b", "settled", "settled", { createdAt: "2026-11-17T10:00:00Z", settledAt: "2026-11-18T10:00:00Z", changes: [ch({ id: "y", title: "y", createdAt: "2026-11-17T10:00:00Z" })] });
+  const d = homeDay({ a: today, b: before }, [], now);
+  assert.deepEqual(d.steps.map((s) => s.open), [0, 1, 0]);
+  assert.equal(d.open, 0);
+  assert.equal(d.finished, 0); // put away, not finished
+});
