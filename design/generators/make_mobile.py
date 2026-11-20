@@ -47,7 +47,7 @@ G = {  # glyphs for UI controls (not state icons)
 
 e = html.escape
 
-# ---- stress data (same as design/generators/make_directions.py) ----
+# ---- stress data  ----
 T140 = "Investigate why the nightly Playwright run on the staging cluster times out only when map tiles come from the secondary CDN region again, EU"
 P59 = "acme-platform-infrastructure-terraform-modules-eu-north-1"
 BR = "feature/very-long-branch-name-without-any-spaces-that-keeps-going-2026-11-14-final"

@@ -10,7 +10,6 @@ An isometric lighthouse rendered with Blender Cycles on a transparent background
 | `../../web/assets/logo.png` | The shipped asset, 128 px (4× the 32 px display). |
 | `icons.sh` | Cuts the app icons from the master render with ImageMagick into `web/assets/icons/`: the render as it is (192, 512, favicon 32), the render at 80 % on a night tile (maskable 512, Apple touch 180), and a white silhouette from its alpha (badge 96). |
 | `../../web/assets/icons/` | The shipped app icons. The build copies them to `/icons/lighthouse/` (`web/src/icon-paths.ts`). |
-| `iterations/` | The four versions of 16 Nov 2026, with the review notes below. |
 
 Render again (Blender 5.2; samples 256 for the shipped 128 px, 160 for the master):
 

@@ -46,26 +46,26 @@ Fyr (Swedish for lighthouse) runs Claude coding agents on the user's own machine
 | R18 | Work hours and silent hours per scope (a repo, a goal, or all), in Europe/Stockholm time. Outside hours, notifications and optionally background runs wait. Status stays truthful. |
 | R19 | A host can later serve several users without a data migration. v1 has one user and behaves as if multi-user did not exist (3.12). |
 
-### 0.2 Grounding: how the owner uses T3 Code today
+### 0.2 Grounding: how one person runs many agents
 
-Measured from the owner's T3 Code database, 3–13 Nov 2026 (11 days):
+The spec was grounded in eleven days of real use of another agent workbench by one person running many Claude agents in parallel against GitHub. What was measured, and what it decided:
 
-| Fact | Number | Consequence in this spec |
-|---|---|---|
-| Top-level threads the owner started | about 18 a day; 27 % started on the phone | The phone is a primary client (U8, U13) |
-| Threads running at the same time | median 1, p90 4, peak 13 | The working section shows live one-line rows (U16) |
-| Distinct PRs | 369, mostly one PR per root thread | The PR state is part of every row (12.4 `github` row badge) |
-| Native Claude subagents | about 90 a day, 8 per parent on average | Subagents are part of a run, not threads (3.3) |
-| AskUserQuestion requests | 312, median answer 1.0 min, p90 5 min, often 2–4 questions at once | Questions are the main Decision kind, with a keyboard flow (13.2) |
-| Tool approvals and plans | 0 (mode `auto` on 89 % of threads) | `auto` is the default mode; sensitive effects are async (D5, 5.10) |
-| Settle | 180 manual, 47 automatic; auto-settle on merge turned off by the owner | Merge does not settle by default (7.6); bulk settle (U11) |
-| Snooze | presets 1 h, 3 h, today 18:00, tomorrow 06:00, Monday 06:00 | These are the default presets |
-| Pin, plan mode, worktree mode, scheduled tasks, peers | 0 or near 0 | Kept cheap or left to modules |
-| Thread visits | about 1,900 a day | Visits need dwell; peek does not count (6.4); switching is instant (U14) |
-| Agent use of the browser preview | about 1,300 tool calls in 30+ threads | In v1 agents keep their own browser MCP servers; image results show in the run's filmstrip (13.5). A `preview` module follows after v1 (12.4) |
-| Background waits and monitors | about 1,750 calls | Awaited background work keeps a thread `waiting` (3.3) |
-| Failures | 3.3 % of runs; classes: auth, API, MCP start-up, missing workspace; no usage limits | Explicit failure classes with a retry (3.3, 6.2) |
-| Agent backends | one Claude driver with 3 profiles (two accounts, one DeepSeek endpoint) | Agent profiles (12.4 `claude`) |
+| Observed | Consequence in this spec |
+|---|---|
+| Top-level threads the owner started | The phone is a primary client (U8, U13) |
+| Threads running at the same time | The working section shows live one-line rows (U16) |
+| Distinct PRs | The PR state is part of every row (12.4 `github` row badge) |
+| Native Claude subagents | Subagents are part of a run, not threads (3.3) |
+| AskUserQuestion requests | Questions are the main Decision kind, with a keyboard flow (13.2) |
+| Tool approvals and plans | `auto` is the default mode; sensitive effects are async (D5, 5.10) |
+| Settle | Merge does not settle by default (7.6); bulk settle (U11) |
+| Snooze | These are the default presets |
+| Pin, plan mode, worktree mode, scheduled tasks, peers | Kept cheap or left to modules |
+| Thread visits | Visits need dwell; peek does not count (6.4); switching is instant (U14) |
+| Agent use of the browser preview | In v1 agents keep their own browser MCP servers; image results show in the run's filmstrip (13.5). A `preview` module follows after v1 (12.4) |
+| Background waits and monitors | Awaited background work keeps a thread `waiting` (3.3) |
+| Failures | Explicit failure classes with a retry (3.3, 6.2) |
+| Agent backends | Agent profiles (12.4 `claude`) |
 
 ### 0.3 Owner decisions
 - **D1.** A Decision (approval, question, plan, proposal) is a first-class entity. It has its own id, and has a default and a deadline. Every answer is logged with its context and later outcome. Policy is versioned data.

@@ -1,55 +1,106 @@
 # Fyr
 
-A calm control room for Claude coding agents. Like a lighthouse (*fyr* in Swedish), it watches everything and shines only when you must act.
+**A calm control room for Claude coding agents.** Fyr runs Claude Code sessions on your own machines and gives you one list: what needs you on top, the work that moves without you below. Like a lighthouse (*fyr* in Swedish), it watches everything and shines only when you must act.
 
-Fyr runs Claude Code sessions on your own machines and shows one list: what needs you on top, running work below. It is built for one person who runs many agents in parallel against GitHub, and it is meant to replace T3 Code for that use.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/inbox-dark.png">
+  <img alt="The Fyr inbox: four threads need you (a question, an API error, failed CI, an agent that does not respond), three agents work on their own, and the day's changes" src="docs/images/inbox-light.png">
+</picture>
 
-**Status:** v0, in daily use by its author and changing fast: expect breaking changes and no migration guarantees between builds. The order is in [`docs/PLAN.md`](docs/PLAN.md). Status lives in [GitHub milestones](https://github.com/meros/fyr/milestones); how work flows is in [`docs/PROCESS.md`](docs/PROCESS.md).
+Fyr is built for one person who runs many agents in parallel against GitHub, from a desktop and a phone.
+
+## What it does
+
+- **One inbox for every agent.** Each conversation with an agent is a *thread*. A thread that asks a question, fails, waits on CI or finishes rises to **Your move**. The rest stay in **Moving without you**, one live line each. Snooze, settle and quiet hours keep the list short.
+- **Questions arrive as cards.** An agent's question is a card with its options, answered with one press on the desktop or the phone, and the answer goes back into the run.
+- **Agents ask, you approve, Fyr acts.** Merges, deploys and commands an agent cannot run alone become requests: a merge ask waits until CI is green on the head you saw, a Run card shows the exact command, and the result goes back to the agent as context. Agents get Fyr's tools over MCP for this: ask, run a command, open a change, watch CI, show a page, start another thread.
+- **Changes are tracked for you.** Branches, PRs, checks and reviews are read from git and GitHub and shown on the thread that owns them, so an agent never has to report CI.
+- **A machine that stays usable.** Heavy jobs (test suites, builds, e2e runs) are admitted by the CPU and memory they need. A memory guard pauses runaway work before the kernel kills it, and agents run in their own cgroups.
+- **Desktop and phone.** An installable web app with push notifications. The phone can answer, steer, capture a new thread and settle.
+- **Several machines, one list.** Installs find each other over Tailscale or the LAN, pair by a short code, and show every host's threads in one inbox.
+- **Updates itself safely.** It updates only to signed CI releases, tests each one on a copy of its database, and rolls back if a build is unhealthy.
+
+<p align="center"><img alt="The same inbox on a phone" src="docs/images/phone.png" width="300"></p>
+
+## Status
+
+v0. The author uses it every day and it changes fast, so expect breaking changes and no migration guarantees between builds. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md), and the current work in the [milestones](https://github.com/meros/fyr/milestones).
 
 ## Requirements
 
-- **Claude Code.** Fyr runs every agent through the Claude Code CLI, with a Claude login or an Anthropic-compatible endpoint. Other agent CLIs are not supported yet; the code keeps the CLI behind one boundary so one can be added ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
-- **GitHub, through `gh`.** Change cards, CI state, merges and updates need a GitHub remote and a `gh` login. A project on another forge still runs threads, without change tracking. Other forges are not supported yet.
+- **Linux or macOS.** NixOS has a module; macOS has an install script; other Linux builds from source.
+- **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (`claude`), logged in with a Claude account or set up for an Anthropic-compatible endpoint. Fyr drives every agent through it. Other agent CLIs are not supported yet ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
+- **GitHub through [`gh`](https://cli.github.com/)**, logged in. Projects on other forges still run threads, without change tracking.
+- **Optional: [Tailscale](https://tailscale.com/)**, to open Fyr from your phone and to connect machines.
 
-## Start here
+## Install
+
+### NixOS
+
+```nix
+# flake.nix
+inputs.fyr.url = "github:meros/fyr";
+
+# in your NixOS configuration
+imports = [ inputs.fyr.nixosModules.fyr ];
+services.fyr = {
+  enable = true;
+  user = "you"; # agents run as this user, with its logins and repositories
+};
+```
+
+Fyr serves http://127.0.0.1:7777. The module also sets up the agents' cgroups and memory guard; [`docs/HOST-SETUP.md`](docs/HOST-SETUP.md) lists the host settings that help the guard.
+
+### macOS
+
+With Homebrew's `git`, `gh` (logged in), `claude` and Xcode's command line tools:
+
+```sh
+git clone https://github.com/meros/fyr && cd fyr
+scripts/install-macos.sh
+```
+
+It downloads the current signed release, starts a launchd agent on http://127.0.0.1:7777, and adds `~/Applications/Fyr.app`. `scripts/install-macos.sh --uninstall` removes both.
+
+### From source
+
+With Go and Node (the dev shell has both: `nix develop`):
+
+```sh
+make build        # bin/fyr (the launcher) and bin/fyrd (the daemon, with the web client inside)
+make install      # puts the build under ~/.local/share/fyr
+bin/fyr           # starts Fyr on http://127.0.0.1:7777
+```
+
+[`docs/INSTALL.md`](docs/INSTALL.md) covers configuration, the phone, more machines and updates.
+
+## First steps
+
+1. Open http://127.0.0.1:7777. Fyr finds your Claude login (Settings → Providers).
+2. Press **New** (or `c`), pick a folder, and write what the agent should do. The folder becomes a project.
+3. Work elsewhere. When the agent asks, fails or finishes, the thread moves to **Your move**, and your phone is notified if you allowed it.
+4. Answer, steer or press the card's button. **Settle** a thread when you are done with it.
+
+Press `?` for the keyboard shortcuts.
+
+## How it is built
+
+`fyrd` is a Go daemon. It runs the `claude` CLI over its control protocol, keeps every thread as an event log in SQLite, reads git and GitHub, and serves a TypeScript web app (desktop and phone, one code base) with live updates. A small launcher, `fyr`, keeps `fyrd` running across updates and rollbacks. One install is a *host* (it runs agents), a *front* (it serves the app and merges the threads of every host it knows), or both, which is the default.
 
 | Read | For |
 |---|---|
-| [`docs/FYR-V1.md`](docs/FYR-V1.md) | What v1 is, the acceptance checklist, architecture, build plan, roadmap |
-| [`docs/SPEC.md`](docs/SPEC.md) | The full spec (concepts, data model, Actions, Rules, Attention, modules, UX, technology) |
-| [`docs/PROCESS.md`](docs/PROCESS.md) | Spec → red test → code; where plan, status and decisions live |
-| [`docs/decisions/`](docs/decisions/README.md) | Decision records |
-| [`docs/REVIEW-LOG.md`](docs/REVIEW-LOG.md) | Five adversarial review rounds and a consistency pass, with every resolution |
-| [`design/screens-v1.html`](design/screens-v1.html) | The v1 screens: inbox after a break, the question card, phone answer and capture, bulk settle |
-| [`design/`](design/README.md) | The Fyr design system (tokens, components, brand book), screen mocks and their generators |
-| [`spikes/`](spikes/) | Proven assumptions: Go client for the `claude` control protocol; PSI and cgroup behaviour |
-
-## Decisions so far
-
-- Single host in v1; data model ready for a mesh of hosts (moves need a TLA+-checked protocol first).
-- Go daemon, Go-native `claude` control client, SQLite event log, ConnectRPC, `tsnet`, TypeScript PWA, Nix flake with NixOS and home-manager modules.
-- One Action registry for every surface; one pure `attention` function for every status.
-- Async effects: merges and similar effects are requested by the agent, approved by you, run by Fyr, and reported back as context.
-- Ready for several users per host (owner, visibility, per-user view state), but v1 has one user.
-
-
-## Run on a Mac
-
-NixOS uses `nixosModules.fyr`. On a Mac, with Homebrew `git`, `gh` (logged in) and `claude`, and Xcode's command line tools:
-
-    scripts/install-macos.sh
-
-It builds nothing. It downloads the CI release that the tag `deployable` points at, checks its sums, installs the launcher, a seed and the current build under `~/.local/share/fyr`, and starts the launchd agent `com.github.meros.fyr` (Fyr on http://127.0.0.1:7777, log `~/Library/Logs/fyr.log`). It also makes `~/Applications/Fyr.app` (Spotlight, Dock), which opens Fyr in a Chrome app window. When Tailscale runs, it sets `hostListen` (`tailnet:7778`) and `wellKnownListen` (`127.0.0.1:7779`) in `~/.config/fyr/config.json` unless they are there, and points Tailscale Serve's port 7443 at the well-known port, so your other Fyr installs find this Mac and follow it. The macOS Tailscale app cannot proxy to Fyr's Unix socket, so that port answers `/.well-known/fyr` and nothing else; opening Fyr over the tailnet from a browser is not set up on a Mac. The agent starts through a small host program, `~/.local/share/fyr/host/fyr`, which stays the same across installs, so a permission you give Fyr in System Settings (App Management, Full Disk Access) survives reinstalls and updates. `scripts/install-macos.sh --uninstall` removes the agent and the app.
-
-## Updates
-
-Fyr updates itself only to CI-built releases (decision 0027). Every green push to main publishes signed `fyr` and `fyrd` binaries for Linux and macOS (amd64 and arm64) as the release `build-<sha12>`, and moves the tag `deployable` to it. Each host checks `deployable` every hour (config `updateEveryMinutes`). After it has stayed put for 10 minutes (it wakes for that, not at the next check), the host downloads the release, verifies its signature and sums, runs `fyrd selftest` on a copy of the database, and switches. The launcher checks `/healthz` after the switch and rolls back to `previous` if the build is not healthy or crashes within 10 minutes. Settings → Auto-update turns this off. A private fork's releases are read with `GH_TOKEN` from `~/.config/fyr/github.env` (mode 0600; a fine-grained token that may only read the repository's contents), which systemd's `EnvironmentFile` and the Mac's launchd job both load; without it, the `gh` login is used. To stop a bad release on every host, move the tag back: `git push -f origin <sha>:refs/tags/deployable`.
-
-To try a branch from inside Fyr, an agent asks `fyr.deploy {dir}`. It builds the checkout and switches to it once you press. Auto-update then pauses until a release contains that commit.
+| [`docs/INSTALL.md`](docs/INSTALL.md) | Configuration, the phone, more machines, updates |
+| [`docs/HOST-SETUP.md`](docs/HOST-SETUP.md) | Host settings for the memory guard (cgroups, swap, oomd) |
+| [`docs/SPEC.md`](docs/SPEC.md) | The full spec: concepts, data model, actions, attention, UX |
+| [`docs/API-v0.md`](docs/API-v0.md) | The HTTP API between `fyrd` and the web client |
+| [`docs/decisions/`](docs/decisions/README.md) | Architecture decision records |
+| [`docs/changes/`](docs/changes/README.md) | The change log of the spec, one file per change |
+| [`docs/PROCESS.md`](docs/PROCESS.md) | How Fyr is built: spec, red test, code |
+| [`design/`](design/README.md) | The design system, brand book and screen mocks |
 
 ## Contributing
 
-Issues are welcome. Pull requests from forks are read, but CI does not run them on its own: the PR gate runs on a self-hosted runner that only takes branches in this repository (V0.public-repo), so the owner re-runs an accepted change from a branch here.
+Issues are welcome. Read [`docs/PROCESS.md`](docs/PROCESS.md) and [`CLAUDE.md`](CLAUDE.md) first: every behaviour change updates the spec and comes with a test. Pull requests from forks are read, but CI does not run them on its own. The PR gate runs on a self-hosted runner that takes only branches in this repository, so an accepted change is re-run from a branch here.
 
 ## License
 

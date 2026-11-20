@@ -570,7 +570,7 @@ function sparseFixture(now: number): Fixture {
 }
 
 
-// ?mock=rail: the exact content of the first (light) frame of design/directions/04-rail.html.
+// ?mock=rail: the exact content of the first (light) frame of the rail direction (decision 0006).
 export function railNow(real: number): number {
   const d = new Date(real);
   d.setHours(14, 32, 0, 0);
