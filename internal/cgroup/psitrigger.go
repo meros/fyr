@@ -80,3 +80,51 @@ func retryPressure(ctx context.Context, file string, wake, armed func()) {
 		}
 	}
 }
+
+// V0.psi-stale-fire: on 20 Nov each of fyrd's 9 starts saw the new trigger
+// fire 0 to 9 s after it was set, with the agents at 59-85 % headroom, and
+// each made memory short and cut the memory budget ("kept across a restart:
+// memory is short"). A kernel trigger starts its window from the cgroup's
+// poll total, which no one updates while no trigger is set, so the first
+// window counts the stall of the whole gap since the last fyrd's trigger.
+// The cgroup's memory.pressure total is always current: a fire the stall did
+// not cause (less than the trigger's stall since the trigger was set or since
+// its last fire) is dropped. A real fire never is: the kernel fires at most
+// once a window, so the growth since the last fire covers its window.
+
+// stallGate checks a trigger's fires against the full stall total of file.
+type stallGate struct {
+	file string
+	need uint64 // µs of full stall a fire stands for
+	last uint64
+	ok   bool // a total was read; without one every fire counts
+}
+
+// newStallGate reads file's full total now; trigger is "full <µs> <µs>".
+func newStallGate(file, trigger string) *stallGate {
+	g := &stallGate{file: file}
+	var kind string
+	var win uint64
+	if _, err := fmt.Sscanf(trigger, "%s %d %d", &kind, &g.need, &win); err != nil || kind != "full" {
+		return g
+	}
+	if p, ok := readPSI(file); ok && p.hasFull {
+		g.last, g.ok = p.fullTotal, true
+	}
+	return g
+}
+
+// real says whether a fire now is a stall of at least the trigger's, and
+// how much stall (µs) there was since the last check.
+func (g *stallGate) real() (bool, uint64) {
+	if !g.ok {
+		return true, 0
+	}
+	p, ok := readPSI(g.file)
+	if !ok || !p.hasFull || p.fullTotal < g.last {
+		return true, 0
+	}
+	grew := p.fullTotal - g.last
+	g.last = p.fullTotal
+	return grew >= g.need, grew
+}

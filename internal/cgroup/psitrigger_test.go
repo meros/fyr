@@ -91,3 +91,34 @@ func TestPressureTriggerRetriesARefusedOpen(t *testing.T) {
 		t.Errorf("%d tries, want 1", n)
 	}
 }
+
+// V0.psi-stale-fire: 20 Nov, a trigger set on the agents' slice fired at
+// +0.3 s, +2.3 s and +4.2 s with 13, 17 and 0 ms of full stall since it was
+// set; 200 ms is what a fire stands for.
+func TestPSIStaleFireIsDroppedARealOneIsNot(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "memory.pressure")
+	at := func(total int) {
+		write(t, f, fmt.Sprintf("some avg10=0.00 avg60=0.00 avg300=0.00 total=%d\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=%d\n", total*2, total))
+	}
+	at(5_000_000)
+	g := newStallGate(f, PressureTrigger)
+	for _, c := range []struct {
+		total int
+		real  bool
+	}{
+		{5_013_000, false}, // +13 ms: the first fire after the trigger was set
+		{5_030_000, false}, // +17 ms
+		{5_260_000, true},  // +230 ms: a stall
+		{5_300_000, false}, // +40 ms since that fire
+		{5_500_000, true},  // +200 ms: the trigger's own threshold counts
+	} {
+		at(c.total)
+		if got, _ := g.real(); got != c.real {
+			t.Fatalf("total=%d: real=%v, want %v", c.total, got, c.real)
+		}
+	}
+	// Without a reading every fire counts, as before.
+	if got, _ := newStallGate(filepath.Join(t.TempDir(), "none"), PressureTrigger).real(); !got {
+		t.Fatal("no memory.pressure: a fire counts")
+	}
+}
