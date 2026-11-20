@@ -104,8 +104,11 @@ export function createMockApi(scenario: string): Api {
   // Decision 0031 2.6: a front lists every host it follows, its own too; a front with one host lists that one, reached
   // over the pipe.
   const oneHostRow = (st: ReturnType<typeof server.state>): HostInfo & { id: HostId } => ({ name: st.host ?? "", online: true, since: st.now, id: deskId, ...(st.machine ? { machine: st.machine } : {}), link: { state: "up", via: "pipe" } });
-  // The host's row for a fixture's host name (a fixture record without one is desk's). Read once: stamping runs per thread.
-  const infoOf = (name: string | undefined): (HostInfo & { id: HostId }) | undefined => (startHosts.length ? addressable(startHosts).find((h) => h.name === (name || "desk")) : oneHostRow(server.state()));
+  // The host's row for a fixture's host name (a fixture record without one is desk's). Read once: stamping runs per
+  // thread, and server.state() builds every thread, so calling it here made each snapshot quadratic and froze ?mock=1.
+  // Stamping reads only the name and the id, which do not change.
+  const deskRow = startHosts.length ? undefined : oneHostRow(server.state());
+  const infoOf = (name: string | undefined): (HostInfo & { id: HostId }) | undefined => (startHosts.length ? addressable(startHosts).find((h) => h.name === (name || "desk")) : deskRow);
   // A front with one host and no list keeps the fixtures' ids as they are (the layout test names them in its selectors);
   // with several hosts the records are refs, as the real front's are.
   // Decision 0031 2.4: a record's host is the host whose state it came in. A fixture record on a host with no install id

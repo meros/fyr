@@ -239,11 +239,13 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
     void loadSa(host);
   };
   // Every host once, and a host again when it comes back online (what showed was last read).
-  const online = hosts.map((h) => `${h.name}:${h.online ? 1 : 0}`).join(" ");
+  // The id is in the key: Settings opened before the front's host list arrived has one part with no id yet, and must
+  // load once the id comes, not stay on "no install id" (V0.client-per-host).
+  const online = hosts.map((h) => `${h.name}:${h.id ?? ""}:${h.online ? 1 : 0}`).join(" ");
   const was = useRef<Record<string, boolean>>({});
   useEffect(() => {
     for (const h of hosts) {
-      if (h.noId) continue; // V0.host-ids: no call can name it
+      if (!h.id) continue; // V0.host-ids: no call can name it (noId), or the host list has not arrived yet
       if (!(h.name in was.current) || (h.online && !was.current[h.name])) loadAll(h.name);
       was.current[h.name] = h.online;
     }
