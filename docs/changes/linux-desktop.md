@@ -1,0 +1,15 @@
+# V0.linux-desktop: Fyr on a Linux desktop is its own app, with a tray item and the desktop's notifications
+
+→ #461, decision 0038 (the counterpart of 0037, the Mac app); builds on V0.mac-notify (the native push device and the `fyrPush` bridge). Amends V0.130 (`fyr open -app` was the Linux window).
+
+(1) **Why.** On Linux Fyr was a browser's window and the browser's Web Push, with nothing in the tray. The Mac gets a native shell; both desktops should behave alike, and the rules of what notifies stay in one place.
+
+(2) **A push device, as Fyr.app.** The app stores itself with `POST /push/native` and reads `GET /push/native/stream` on the owner socket (V0.mac-notify), keeping its endpoint across restarts and storing itself again when fyrd forgot it. fyrd is unchanged: what pushes, presence, quiet hours, what the device hides and finished threads are decided there for every device, and Web Push, the phone and fyrd's self-update work as before.
+
+(3) **The app.** `fyr-desktop` (`cmd/fyr-desktop`, logic in `internal/desktop`): a WebKitGTK window on `http://fyr.localhost:PORT` that keeps its session and asks the owner socket for a one-time link only on a 401 (at most once in 30 s); a tray item (Open Fyr, Open in Browser, the unit's state, Pause or Resume, Show Log, Quit); a freedesktop notification per thread, replaced by its newer one, whose click opens the thread (`/?open=`). Closing the window keeps the tray item; a second start shows the window. While fyrd is down the window says so and loads Fyr again when it is back.
+
+(4) **The web client.** The window answers the `fyrPush` bridge (`status`, `on`, `off`), so Settings → Notifications works there as on a phone. Two additions in `pwa.ts`: with the bridge there is no service worker, and `clearThreadNotification` sends `clear` ({threadId, state}) so the app closes a thread's notification once the thread moved on, as the page does for the service worker's (Fyr.app refuses an op it does not know, and nothing changes there). Settings → Devices calls the window's session "The Fyr app on Linux" (its user agent ends in `FyrDesktop/linux`).
+
+(5) **Install.** `nix build .#fyr-desktop`; `services.fyr.desktop.enable` installs it, starts it in the tray at login (`-background`) and lets the service user start, stop and restart `fyr.service` without a password (Pause and Resume); `install-linux.sh`'s polkit rule allows the same. `nix develop .#desktop` builds it with `CGO_ENABLED=1 go build ./cmd/fyr-desktop`. Without cgo the command is a stub, so CI and the release are unchanged.
+
+(6) **Tests.** `internal/desktop` (links, sign-in gap, window size, notification ids and stale ones, the unit, the device's register, stream and bridge), `internal/front` (`TestBrowserNameKnowsTheDesktopApp`), the module check, and by hand on Xvfb with a private D-Bus and dunst against a scratch fyrd of this branch (the PR lists what was checked).

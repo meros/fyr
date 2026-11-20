@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Fyr
+GenericName=Coding agents
+Comment=A calm control room for Claude coding agents
+Exec=fyr-desktop
+Icon=io.github.meros.Fyr
+Terminal=false
+Categories=Development;
+StartupWMClass=io.github.meros.Fyr
+StartupNotify=true
+X-GNOME-UsesNotifications=true

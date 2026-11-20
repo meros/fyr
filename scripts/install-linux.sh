@@ -14,7 +14,8 @@
 # ~/.local/share/fyr, the cgroups keys in ~/.config/fyr/config.json) runs as
 # you. The system part needs root and goes through sudo, each command shown
 # before it runs: the unit, the agents' slice fyr-agents.slice, the polkit
-# rule that lets you start the agents' scopes in it, the helper that hands you
+# rule that lets you start the agents' scopes in it (and pause and resume
+# fyr.service from the Linux app, decision 0038), the helper that hands you
 # the slice's memory.pressure, then daemon-reload, enable and restart.
 # --print shows every file and command and changes nothing (no download, no
 # sudo). Run it again to reinstall and restart; --uninstall stops and removes
@@ -184,6 +185,16 @@ polkit.addRule(function (action, subject) {
   if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == "$user") {
     var unit = action.lookup("unit"), verb = action.lookup("verb");
     if (unit && /^fyr-(agent|deploy)-[A-Za-z0-9_.-]+\.scope\$/.test(unit) && (verb == "start" || verb == "set-property")) {
+      return polkit.Result.YES;
+    }
+  }
+});
+// Decision 0038: the Linux app's Pause and Resume (the module's
+// services.fyr.desktop): $user may start, stop and restart fyr.service.
+polkit.addRule(function (action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == "$user") {
+    var unit = action.lookup("unit"), verb = action.lookup("verb");
+    if (unit == "fyr.service" && (verb == "start" || verb == "stop" || verb == "restart")) {
       return polkit.Result.YES;
     }
   }
