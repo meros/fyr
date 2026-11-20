@@ -15,8 +15,9 @@
 #
 # The names, for a second, test install beside the real one:
 #	FYR_BUNDLE_ID (fyr.app), FYR_LABEL (fyr.agent), FYR_DATA (~/.local/share/fyr),
-#	FYR_LOG (~/Library/Logs/fyr.log), FYR_REPLACES (com.github.meros.fyr: the
-#	script install's label, taken over at the first start; empty for none),
+#	FYR_LOG (~/Library/Logs/fyr.log), FYR_REPLACES ("app.fyr.fyrd
+#	com.github.meros.fyr": the script install's labels, the current and the one
+#	before V0.release-without-gh, taken over at the first start; empty for none),
 #	FYR_FLAGS (more fyrd flags, e.g. "-listen 127.0.0.1:7787").
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -36,7 +37,7 @@ bundle_id="${FYR_BUNDLE_ID:-fyr.app}"
 label="${FYR_LABEL:-fyr.agent}"
 data="${FYR_DATA:-~/.local/share/fyr}"
 log="${FYR_LOG:-~/Library/Logs/fyr.log}"
-replaces="${FYR_REPLACES-com.github.meros.fyr}"
+replaces="${FYR_REPLACES-app.fyr.fyrd com.github.meros.fyr}"
 flags="${FYR_FLAGS:-}"
 repo="${FYR_REPO:-meros/fyr}"
 
