@@ -148,8 +148,9 @@ export interface HomeDay {
   peak: number;
 }
 
-/** V0.day-chart: the day from midnight to now. A change is open from its createdAt until its done.at; one opened
- *  before today and still open at midnight starts the line above zero. A thread archived is left out, as on the board. */
+/** V0.day-chart: the day from midnight to now. A change is open from its createdAt until its done.at or its thread's
+ *  settledAt, whichever is first (V0.day-chart-settled); one opened before today and still open at midnight starts the
+ *  line above zero. A thread archived is left out, as on the board. */
 export function homeDay(threads: Record<string, Thread>, projects: Project[], now: number): HomeDay {
   const from = startOfDay(now);
   const ev: { at: number; d: number }[] = [];
@@ -161,16 +162,19 @@ export function homeDay(threads: Record<string, Thread>, projects: Project[], no
     const c = i.change;
     const born = Date.parse(c.createdAt);
     const end = c.done ? Date.parse(c.done.at) : NaN;
+    const settled = i.thread.settledAt ? Date.parse(i.thread.settledAt) : NaN;
+    // A settled thread's work is put away: its change stops counting at the settle, if it was not done before.
+    const close = Math.min(Number.isNaN(end) ? Infinity : end, Number.isNaN(settled) ? Infinity : settled);
     if (Number.isNaN(born) || born > now) continue;
-    if (!Number.isNaN(end) && end <= from) continue;
+    if (close <= from) continue;
     if (born <= from) open0++;
     else {
       opened++;
       ev.push({ at: born, d: 1 });
     }
-    if (!Number.isNaN(end) && end <= now) {
+    if (close <= now) ev.push({ at: Math.max(close, born), d: -1 });
+    if (!Number.isNaN(end) && end > from && end <= now) {
       finished++;
-      ev.push({ at: end, d: -1 });
       if (c.done!.reason === "merged") merges.push({ at: end, text: `${c.pr?.number ? `#${c.pr.number} ` : ""}${c.title}`, thread: i.thread.id });
     }
   }
