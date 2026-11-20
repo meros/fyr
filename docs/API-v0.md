@@ -80,7 +80,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
   "liveView": true,
   "live": {"pageId": "…", "state": {"headline": "Tests pass; PR open", "steps": ["…"]}, "updatedAt": "…", "checkedAt": "…", "headline": "Tests pass; PR open"},
 
-  "attention": {"state": "asking|failed|blocked|done|working|waiting|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…"},
+  "attention": {"state": "asking|failed|blocked|done|working|waiting|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…", "group": "answer|approve|unblock (Needs you only, V0.row-group-code)", "word": "the short word a row shows: Run, Settle, Merge", "subject": "what the word is about: the why, or the change title (V0.row-group-code)"},
   "view": {"seenAt": "…", "snoozeUntil": "…", "snoozeWhenDone": true},
   "unavailable": {"thread.interrupt": "No run is going"},
   "quietUntil": "2026-11-15T06:00:00+01:00 (absent unless the project is in its quiet hours, V0.46)",

@@ -39,7 +39,31 @@ type Attention struct {
 	State   State   `json:"state"`
 	Section Section `json:"section"`
 	Reason  string  `json:"reason,omitempty"`
+	// Group is the owner's move in Needs you (V0.row-group-code, #454):
+	// GroupAnswer, GroupApprove or GroupUnblock, set only in that section.
+	// Clients group by it and never by the words of Reason.
+	Group Group `json:"group,omitempty"`
+	// Word and Subject are the two parts of a Reason "<a>: <b>" that a row
+	// splits: Word goes in the state's place ("Run", "Settle", "Merge"),
+	// Subject on the line under it (the why, the change's title). Set only
+	// when the reason is a run request, a settle offer or a change's need.
+	Word    string `json:"word,omitempty"`
+	Subject string `json:"subject,omitempty"`
 }
+
+// Group is the code of the owner's move in Needs you (V0.row-group-code).
+type Group string
+
+const (
+	// GroupAnswer: a question to answer.
+	GroupAnswer Group = "answer"
+	// GroupApprove: something to say yes to: a tool approval, an effect, a
+	// command to run, a settle offer, a ready PR.
+	GroupApprove Group = "approve"
+	// GroupUnblock: something broken: a failure, an agent not responding,
+	// a change stopped on a failure.
+	GroupUnblock Group = "unblock"
+)
 
 // Compute returns the attention of t for the user who owns v at time now.
 //
@@ -54,10 +78,10 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 // count as an ask of the owner. nil: no repo does.
 func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) Attention {
 	if t.ArchivedAt != nil {
-		return Attention{Archived, ArchivedSec, ""}
+		return Attention{State: Archived, Section: ArchivedSec}
 	}
 	if t.Settle.At != nil {
-		return Attention{Settled, SettledSec, ""}
+		return Attention{State: Settled, Section: SettledSec}
 	}
 	asks := ownerAsks(t, on)
 	asking := len(asks) > 0
@@ -75,63 +99,63 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 		}
 		if !woke {
 			if bound {
-				return Attention{Snoozed, SnoozedSec, "until work is done"}
+				return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until work is done"}
 			}
-			return Attention{Snoozed, SnoozedSec, "until " + until.Format(time.RFC3339)}
+			return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until " + until.Format(time.RFC3339)}
 		}
 	}
 	switch {
 	case asking:
-		return Attention{Asking, NeedsYou, string(asks[0].Kind)}
+		return Attention{State: Asking, Section: NeedsYou, Reason: string(asks[0].Kind), Group: askGroup(asks)}
 	case t.Failure != nil:
-		return Attention{Failed, NeedsYou, t.Failure.Message}
+		return Attention{State: Failed, Section: NeedsYou, Reason: t.Failure.Message, Group: GroupUnblock}
 	case t.Unresponsive != nil:
 		// V0.143: a live process that takes nothing Fyr writes needs the
 		// owner: Restart, or wait for the automatic one.
-		return Attention{Blocked, NeedsYou, UnresponsiveText(t.Unresponsive)}
+		return Attention{State: Blocked, Section: NeedsYou, Reason: UnresponsiveText(t.Unresponsive), Group: GroupUnblock}
 	case t.Running:
-		return Attention{Working, WorkingSec, ""}
+		return Attention{State: Working, Section: WorkingSec}
 	}
 	if t.MachineWait == nil && t.Starting != nil {
 		// V0.starting-moves: the agent is starting; it moves without the
 		// owner already.
-		return Attention{Working, WorkingSec, "Starting"}
+		return Attention{State: Working, Section: WorkingSec, Reason: "Starting"}
 	}
 	if t.MachineWait != nil {
 		// V0.153: Fyr waits for the host before it starts the agent.
-		return Attention{Waiting, WorkingSec, MachineWaitText(t.MachineWait)}
+		return Attention{State: Waiting, Section: WorkingSec, Reason: MachineWaitText(t.MachineWait)}
 	}
 	if n := t.RunningTasks(); n > 0 {
-		return Attention{Waiting, WorkingSec, waitReason(t, n)}
+		return Attention{State: Waiting, Section: WorkingSec, Reason: waitReason(t, n)}
 	}
 	// V0.101: Needs you is computed: Ready or Stopped on a failure (asks
 	// are decisions, above). A finished run whose result the owner has not
 	// seen is unread in Seen, not in Needs you.
 	if c, n := threadNeed(t, on); n != nil {
-		return Attention{Blocked, NeedsYou, c.Title + ": " + n.Text}
+		return blocked(needGroup(t, on), n.Text, c.Title, c.Title+": "+n.Text)
 	}
 	// V0.149 (5): a command the agent asked the owner to run.
 	if a := PendingRequest(t); a != nil {
-		return Attention{Blocked, NeedsYou, "Run: " + a.Why}
+		return blocked(GroupApprove, "Run", a.Why, "Run: "+a.Why)
 	}
 	// V0.settle-offer-your-move: the agent offers to settle once its run
 	// ended; the owner's move is Settle, or a message that clears it.
 	if t.SettleAsk != nil {
-		return Attention{Blocked, NeedsYou, SettleOfferText(t.SettleAsk)}
+		return blocked(GroupApprove, "Settle", settleWhy(t.SettleAsk), SettleOfferText(t.SettleAsk))
 	}
 	// V0.ci-wait-moves: CI the thread waits on moves without the owner, so
 	// the thread is not Finished while it runs.
 	if r := ciWait(t); r != "" {
-		return Attention{Waiting, WorkingSec, r}
+		return Attention{State: Waiting, Section: WorkingSec, Reason: r}
 	}
 	// V0.watch-waits: the agent's own armed watch is work still coming.
 	if s := WatchWaitText(t, now); s != "" {
-		return Attention{Waiting, WorkingSec, s}
+		return Attention{State: Waiting, Section: WorkingSec, Reason: s}
 	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
-		return Attention{Done, SeenSec, ""}
+		return Attention{State: Done, Section: SeenSec}
 	}
-	return Attention{Seen, SeenSec, ""}
+	return Attention{State: Seen, Section: SeenSec}
 }
 
 // UnresponsiveText is the one line that names an unresponsive agent
@@ -172,8 +196,42 @@ func ciWait(t *Thread) string {
 // SettleOfferText is the Your move line of a settle offer
 // (V0.settle-offer-your-move): "Settle: <why>", the chip's words.
 func SettleOfferText(a *SettleAsk) string {
+	return "Settle: " + settleWhy(a)
+}
+
+func settleWhy(a *SettleAsk) string {
 	if a.Why == "" {
-		return "Settle: the agent is done"
+		return "the agent is done"
 	}
-	return "Settle: " + a.Why
+	return a.Why
+}
+
+// blocked is a Needs you attention whose reason a row splits into a word
+// and a subject (V0.row-group-code).
+func blocked(g Group, word, subject, reason string) Attention {
+	return Attention{State: Blocked, Section: NeedsYou, Reason: reason, Group: g, Word: word, Subject: subject}
+}
+
+// askGroup is the move of the owner's open asks (V0.your-move): a question
+// among them is one to answer; tool approvals and effects only are ones to
+// say yes to.
+func askGroup(asks []Decision) Group {
+	for _, d := range asks {
+		if d.Kind == DecisionAsk {
+			return GroupAnswer
+		}
+	}
+	return GroupApprove
+}
+
+// needGroup is the move of a thread blocked on its changes' needs: when
+// every need in Needs you is a ready PR, the owner says yes to it (Merge);
+// any other need (a failure) is one to unblock.
+func needGroup(t *Thread, on func(repo string) bool) Group {
+	for i := range t.Changes {
+		if n := ChangeNeedWith(t, &t.Changes[i], on); n != nil && !n.Muted && n.Cause != CauseReady {
+			return GroupUnblock
+		}
+	}
+	return GroupApprove
 }

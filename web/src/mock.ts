@@ -212,7 +212,7 @@ function fullFixture(now: number): Fixture {
         task("k4", "Run the visual diff", "failed", now, 25, { summary: "Playwright could not start: no display", toolUses: 2, tokens: 3_100 }),
         task("k5", "Översätt felmeddelanden", "stopped", now, 40, { activity: "Edit src/i18n/sv.json", toolUses: 1, tokens: 900 }),
       ],
-      attention: { state: "asking", section: "needs", reason: "2 questions" },
+      attention: { state: "asking", section: "needs", reason: "2 questions", group: "answer" },
       decisions: [askDecision(now)],
       summary: "The lasso no longer closes the sheet.",
       pr: { url: "https://github.com/acme/web/pull/1234", repo: "acme/web", number: 1234, state: "OPEN", checks: "pass", review: "", conflict: false },
@@ -222,14 +222,14 @@ function fullFixture(now: number): Fixture {
   );
   add(
     base("t_fail", "Speed up e2e suite", now, 9, {
-      attention: { state: "failed", section: "needs", reason: "API error" },
+      attention: { state: "failed", section: "needs", reason: "API error", group: "unblock" },
       failure: { class: "api", message: "API error 529: overloaded, stopped after 14 min", at: iso(now - 9 * 60_000) },
       unavailable: { "thread.interrupt": "No run is going" },
     }),
   );
   add(
     base("t_block", "Listing cards v2", now, 21, {
-      attention: { state: "blocked", section: "needs", reason: "CI failed" },
+      attention: { state: "blocked", section: "needs", reason: "CI failed", group: "unblock" },
       summary: "lint: 2 errors in CardGrid.tsx",
       pr: { url: "https://github.com/acme/web/pull/88", repo: "acme/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
       unavailable: NOT_RUNNING,
@@ -238,7 +238,7 @@ function fullFixture(now: number): Fixture {
   add(
     base("t_approval", LONG_TITLE, now, 4, {
       project: LONG_PROJECT,
-      attention: { state: "asking", section: "needs", reason: "Approval" },
+      attention: { state: "asking", section: "needs", reason: "Approval", group: "approve" },
       decisions: [
         {
           id: "d_appr",
@@ -255,7 +255,7 @@ function fullFixture(now: number): Fixture {
   add(
     base("t_update", "Ship the Changes tab and the hardening", now, 3, {
       project: "Fyr",
-      attention: { state: "asking", section: "needs", reason: "Update Fyr" },
+      attention: { state: "asking", section: "needs", reason: "Update Fyr", group: "approve" },
       decisions: [
         {
           id: "d_upd",
@@ -271,7 +271,7 @@ function fullFixture(now: number): Fixture {
   add(
     base("t_effect", "Åtgärda översättningar för sökfältet på ändringssidan", now, 6, {
       project: "acme/web",
-      attention: { state: "asking", section: "needs", reason: "Merge" },
+      attention: { state: "asking", section: "needs", reason: "Merge", group: "approve" },
       decisions: [
         {
           id: "d_eff",
@@ -288,7 +288,7 @@ function fullFixture(now: number): Fixture {
   add(
     base("t_done", "Triage sprint issues", now, 60, {
       project: "acme/ops",
-      attention: { state: "blocked", section: "needs", reason: "Placement rows load in one read: Merge" }, // V0.101: the host computes it from the Ready change below
+      attention: { state: "blocked", section: "needs", reason: "Placement rows load in one read: Merge", group: "approve", word: "Merge", subject: "Placement rows load in one read" }, // V0.101: the host computes it from the Ready change below
       summary: "Filed 6 issues, closed 2 duplicates",
       unavailable: NOT_RUNNING,
     }),
@@ -626,18 +626,18 @@ function railFixture(now: number): Fixture {
       ],
       model: "claude-sonnet-5-5",
       branch: "fix/map-lasso-mobile",
-      attention: { state: "asking", section: "needs", reason: "" },
+      attention: { state: "asking", section: "needs", reason: "", group: "answer" },
       decisions: [ask],
       pr: { url: "https://github.com/acme/web/pull/1234", repo: "acme/web", number: 1234, state: "OPEN", checks: "pass", conflict: false },
       unavailable: { ...quiet, "thread.settle": "A question is open" },
     }),
     base("t_e2e", "Speed up e2e suite", now, 9, {
-      attention: { state: "failed", section: "needs", reason: "API error" },
+      attention: { state: "failed", section: "needs", reason: "API error", group: "unblock" },
       failure: { class: "api", message: "stopped after 14 min", at: min(9) },
       unavailable: { "thread.interrupt": "No run is going" },
     }),
     base("t_cards", "Listing cards v2", now, 21, {
-      attention: { state: "blocked", section: "needs", reason: "CI failed" },
+      attention: { state: "blocked", section: "needs", reason: "CI failed", group: "unblock" },
       summary: "lint: 2 errors in CardGrid.tsx",
       pr: { url: "https://github.com/acme/web/pull/88", repo: "acme/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
       unavailable: quiet,
@@ -663,7 +663,7 @@ function railFixture(now: number): Fixture {
       tasks: [task("st1", "Run Cloud SQL proxy to the clone", "running", now, 120)],
       outbox: [{ id: "m_stuck", state: "sent" }],
       unresponsive: { since: min(51), at: min(38), reason: "it did not take a message within 1 min; a background task holds the process: Run Cloud SQL proxy to the clone" },
-      attention: { state: "blocked", section: "needs", reason: "Agent not responding: it did not take a message within 1 min" },
+      attention: { state: "blocked", section: "needs", reason: "Agent not responding: it did not take a message within 1 min", group: "unblock" },
       unavailable: { "thread.retry": "The last run did not fail", "thread.markUnseen": "A run is going" },
     }),
   );
@@ -787,7 +787,7 @@ function railFixture(now: number): Fixture {
       project: "acme/ops",
       cwd: "/home/owner/src/badges",
       summary: "The minting needs the SD card mounted and root for the NFC device.",
-      attention: { state: "blocked", section: "needs", reason: "Run: Mount the SD card and mint the badge onto it" },
+      attention: { state: "blocked", section: "needs", reason: "Run: Mount the SD card and mint the badge onto it", group: "approve", word: "Run", subject: "Mount the SD card and mint the badge onto it" },
       offers: [
         req("run-1", `udisksctl mount -b /dev/sdc1\n${mint}`, "Mount the SD card and mint the badge onto it", true),
         req("run-2", "nix build .#badges --print-build-logs", "Build the badge images", false),

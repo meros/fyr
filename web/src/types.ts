@@ -14,10 +14,19 @@ export type AttentionState =
 
 export type Section = "needs" | "working" | "seen" | "snoozed" | "settled" | "archived";
 
+/** V0.row-group-code: the owner's move in Needs you, the host's code; the groups of Your move. */
+export type NeedsCode = "answer" | "approve" | "unblock";
+
 export interface Attention {
   state: AttentionState;
   section: Section;
   reason?: string;
+  /** V0.row-group-code: set in Needs you only. Absent from a host before it (see rows.ts). */
+  group?: NeedsCode;
+  /** V0.row-group-code: the two parts of a reason "<word>: <subject>" or "<change title>: <need>" a row splits: the
+   *  word goes in the state's place ("Run", "Settle", "Merge"), the subject on the line under it. */
+  word?: string;
+  subject?: string;
 }
 
 export interface Failure {
