@@ -665,13 +665,12 @@ function railFixture(now: number): Fixture {
       unavailable: { "thread.retry": "The last run did not fail", "thread.markUnseen": "A run is going" },
     }),
   );
-  // V0.210: a question Fyr read in the agent's text.
-  if (MOCK_TEXTASK)
+  // V0.header-one-block: a thread with a long title (the header test opens it).
+  if (MOCK_LONGTITLE)
     threads.push(
-      base("t_textask", LONG_TITLE, now, 12, {
+      base("t_longtitle", LONG_TITLE, now, 12, {
         project: "acme/web",
-        textAsk: { question: "Which logo do you want?", at: min(12), run: 1 },
-        attention: { state: "blocked", section: "needs", reason: "Which logo do you want?" },
+        attention: { state: "done", section: "seen" },
       }),
     );
   const working: [string, string, string, number, number, "working" | "waiting"][] = [
@@ -1391,9 +1390,6 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.markSeen":
         if (t.attention.state === "done") idle("seen", "seen", { view: { seenAt: new Date(clock()).toISOString() } });
         break;
-      case "thread.notQuestion": // V0.210
-        idle("seen", "seen", { textAsk: null });
-        break;
       case "thread.markUnseen":
         idle("done", "seen"); // V0.101, V0.189: as the host sends it; the client shows it in Unread
         break;
@@ -1755,7 +1751,7 @@ function mockDeploy() {
 
 /** V0.54: ?hosts=2 in the mock shows a front with two hosts, the second (host-b, with t_lasso and t_triage)
  *  offline for 25 minutes (the layout test uses it). Read once at load, as ?deploy=. */
-const MOCK_TEXTASK = typeof location !== "undefined" ? new URLSearchParams(location.search).get("textask") === "1" : false;
+const MOCK_LONGTITLE = typeof location !== "undefined" ? new URLSearchParams(location.search).get("longtitle") === "1" : false;
 const MOCK_RUNS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("runs") === "1" : false;
 const MOCK_ROOTPROMPT = typeof location !== "undefined" ? new URLSearchParams(location.search).get("rootprompt") === "no" : false;
 const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;

@@ -49,19 +49,6 @@ test("a row names its project only without an image icon and without a project f
   assert.equal(rowProjectName(undefined, "", null), null);
 });
 
-// SPEC V0.210 (5): both fronts draw these words: the marker first, then what Fyr read.
-test("a question read in text is marked as such and shows the question", () => {
-  const t = thread("q", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Which logo?" }, textAsk: { question: "Which logo?", at: "2026-11-18T10:00:00Z", run: 1 } });
-  assert.equal(rowState(t), "Question in text");
-  assert.equal(rowMeta(t), "Which logo?");
-});
-
-// SPEC V0.210 (4): a flag under a harder cause does not rename that cause.
-test("a blocked row with another reason keeps it", () => {
-  const t = thread("q", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Fix: CI failed" }, textAsk: { question: "Which logo?", at: "2026-11-18T10:00:00Z", run: 1 } });
-  assert.equal(rowState(t), "Fix: CI failed");
-});
-
 // V0.row-calm: the line under the title does not say twice what its state word says.
 test("the detail leaves out what the state word already says", () => {
   assert.equal(trimEcho("Merge #4170", "Merge pull request #4170 · CI is green"), "CI is green");

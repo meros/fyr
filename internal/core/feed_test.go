@@ -287,13 +287,13 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("unsettle after settle when merged: %+v wakes=%v", n, wakes(res))
 			}
 		},
-		// V0.ask-tool: a question Fyr read in the agent's text: told with
-		// the next message, never a wake.
+		// V0.text-ask-nudge: a question Fyr read in the agent's text wakes
+		// the agent once, with the question and the call to make.
 		"textquestion": func(t *testing.T) {
 			th := feedThread()
 			th.RunEnds = 1
 			th, res := fstep(t, th, Input{Source: Observer(ObsTextAsk), Kind: KindTextAskJudged, Args: TextAskJudged{Run: 1, Needs: true, Question: "Which database?"}}, ct0)
-			if n := queued(t, th, "text-question"); n.Urgency != Next || !strings.Contains(n.What, "mcp__fyr__ask") || wakes(res) {
+			if n := queued(t, th, "text-question"); n.Urgency != Wake || !strings.Contains(n.What, "mcp__fyr__ask") || !strings.Contains(n.What, "Which database?") || !wakes(res) {
 				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
 			}
 		},

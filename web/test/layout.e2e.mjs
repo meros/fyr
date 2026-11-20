@@ -1267,33 +1267,28 @@ try {
 });
 
 // V0.header-one-block (#60): the thread header is the title (two lines at most), one row of chips and the tabs, on
-// desktop and phone; a question Fyr read in text stands in the conversation under the newest message, not in the header.
+// desktop and phone.
 // The desktop runs at the owner's window from #60 (1259 × 676), with a long title.
 for (const [front, w, h] of [["desktop", 1259, 676], ["phone", 390, 844]]) section(`V0.header-one-block ${front}`, async ({ send, evaluate, navigate, openScreen, shot }) => {
 try {
   const head = front === "phone" ? ".m-tth" : ".th .thh";
-  const ready = "!!document.querySelector('.chneed.textask')";
+  const ready = `!!document.querySelector('${head}')`;
   if (front === "desktop") {
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
-    await navigate(`${origin}/?mock=rail&textask=1&open=t_textask`, ready);
-  } else await openScreen({ url: "?mock=rail&textask=1&open=t_textask", ready }, w, h);
+    await navigate(`${origin}/?mock=rail&longtitle=1&open=t_longtitle`, ready);
+  } else await openScreen({ url: "?mock=rail&longtitle=1&open=t_longtitle", ready }, w, h);
   const r = await evaluate(`(() => {
-    const hd = document.querySelector('${head}'), q = document.querySelector('.chneed.textask'), box = (e) => e?.getBoundingClientRect();
+    const hd = document.querySelector('${head}'), box = (e) => e?.getBoundingClientRect();
     const tt = document.querySelector('${front === "phone" ? ".m-tt" : ".th .tt"}'), lh = parseFloat(getComputedStyle(tt).lineHeight);
-    const cv = [...document.querySelectorAll('.convo-in .cv')].filter((e) => !e.closest('.nsteps'));
-    return { h: box(hd).height, inHead: hd.contains(q), inConvo: !!q.closest('.convo-in'), afterLast: !cv.length || !!(cv[cv.length - 1].compareDocumentPosition(q) & Node.DOCUMENT_POSITION_FOLLOWING),
+    return { h: box(hd).height,
       lines: Math.round((tt.clientHeight - parseFloat(getComputedStyle(tt).paddingTop) - parseFloat(getComputedStyle(tt).paddingBottom)) / lh), full: tt.scrollHeight > tt.clientHeight,
-      lefts: ${front === "phone" ? "[]" : "['.th .tt', '.th .chips', '.th .tabs'].map((s) => Math.round(box(document.querySelector(s)).left))"},
-      btnH: box(q.querySelector('.btn')).height, qRight: box(q).right, vw: innerWidth };
+      lefts: ${front === "phone" ? "[]" : "['.th .tt', '.th .chips', '.th .tabs'].map((s) => Math.round(box(document.querySelector(s)).left))"} };
   })()`);
-  check(!r.inHead && r.inConvo && r.afterLast, `V0.header-one-block ${front}: the question in text is not under the newest message (${JSON.stringify(r)})`);
   check(r.lines <= 2 && r.full, `V0.header-one-block ${front}: the long title shows ${r.lines} lines (clamped: ${r.full})`);
   // desktop: 14 padding + 2 × 26 title + 12 + 24 chips + 12 + 34 tabs + 1 border; phone: the header as V0.17 measures it, without a line under the chips
   const most = front === "phone" ? 200 : 149;
   check(r.h <= most + 0.5, `V0.header-one-block ${front}: the header is ${r.h.toFixed(1)} px tall, over ${most}`);
   if (front === "desktop") check(new Set(r.lefts).size === 1, `V0.header-one-block desktop: the title, chips and tabs do not share a left edge ${JSON.stringify(r.lefts)}`);
-  check(r.qRight <= r.vw + 0.5, `V0.header-one-block ${front}: the question line leaves the screen (${r.qRight} > ${r.vw})`);
-  if (front === "phone") check(r.btnH >= 44, `V0.header-one-block phone: Not a question is ${r.btnH} px tall, under 44`);
   await shot(`header-one-block-${front}.png`);
 } catch (e) {
   failures.push(`V0.header-one-block ${front}: ${e.message}`);
@@ -2387,13 +2382,6 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
       harbour: (() => { const p = document.createElement('i'); p.style.color = 'var(--harbour)'; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; })(), row: document.querySelector('.one[data-id="t_mapperf"] .tund')?.textContent ?? '', h: Math.round(e.getBoundingClientRect().height) }; })()`);
     check(p.text === "Paused by Fyr: memory is short on laptop (6 % free). Frozen, not killed; it resumes when memory has recovered for 30 s, or after 10 min unless memory stalls. node test/layout.e2e.mjs · 2.8 GB · undeclared" && p.btns === 0 && p.head === p.harbour && p.row === "undeclared · paused: memory" && p.h <= 72, `${ctx}: the paused strip or row is wrong (${JSON.stringify(p)})`);
     await shot(`undeclared-thread-strip-paused-${tag}-desktop.png`);
-    // SPEC V0.210 (5): a question Fyr read in text: the row's marker and line, the thread's line, Not a question.
-    await navigate(`${origin}/?mock=rail&textask=1&open=t_textask`, "!!document.querySelector('.th .chneed.textask')");
-    const q = await evaluate(`({ row: document.querySelector('.list [data-id$="t_textask"]')?.textContent ?? '', line: document.querySelector('.chneed.textask .chnq').textContent, btn: document.querySelector('.chneed.textask .btn').textContent })`);
-    check(q.row.includes("Question in text") && q.row.includes("Which logo do you want?") && q.line === "Fyr read this as a question: Which logo do you want?" && q.btn === "Not a question", `V0.210 desktop: the question in text (${JSON.stringify(q)})`);
-    await shot(`text-question-${tag}-desktop.png`);
-    await evaluate(`document.querySelector('.chneed.textask .btn').click()`);
-    await waitFor(`!document.querySelector('.chneed.textask')`, { what: "Not a question clears the line" });
     // Settings → Automation: what runs, what Fyr learned, the thresholds; nothing asks for a decision.
     await navigate(`${origin}/?mock=rail&undeclared=1&dialog=settings&page=automation`, `!!document.querySelector('.dlg section[aria-label="Undeclared now"]')`);
     await evaluate(unfold("Learned heavy jobs", "When a thread counts as heavy"));
@@ -2458,13 +2446,6 @@ for (const dark of [false, true]) section(`V0.164 phone${dark ? " dark" : ""}`, 
     const pp = await evaluate(`({ btns: document.querySelectorAll('.undb button').length, wide: document.documentElement.scrollWidth > innerWidth, head: document.querySelector('.undb b').textContent })`);
     check(pp.btns === 0 && !pp.wide && pp.head === "Paused by Fyr: memory is short on laptop (6 % free).", `${ctx}: the paused strip (${JSON.stringify(pp)})`);
     await shot(`undeclared-thread-strip-paused-${tag}-phone.png`);
-    // SPEC V0.210 (5): the same words on the phone; the button is a 44 px target.
-    await openScreen({ url: "?mock=rail&textask=1", ready: "[...document.querySelectorAll('.m-list .rw')].some((e) => e.textContent.includes('Question in text') && e.textContent.includes('Which logo do you want?'))" }, W, 844);
-    await openScreen({ url: "?mock=rail&textask=1&open=t_textask", ready: "!!document.querySelector('.m-thread .chneed.textask')" }, W, 844);
-    const tq = await evaluate(`(() => { const e = document.querySelector('.m-thread .chneed.textask'), b = e.querySelector('.btn').getBoundingClientRect(); return { line: e.querySelector('.chnq').textContent, h: b.height, inside: b.right <= innerWidth + 0.5, wide: document.documentElement.scrollWidth > innerWidth }; })()`);
-    check(tq.line === "Fyr read this as a question: Which logo do you want?" && tq.h >= 44 && tq.inside && !tq.wide, `V0.210 phone: the question in text (${JSON.stringify(tq)})`);
-    await shot(`text-question-${tag}-phone.png`);
-    await tapCenter(".m-thread .chneed.textask .btn", "!document.querySelector('.m-thread .chneed.textask')");
     // Settings: every button and field of the new groups is 44 px high; nothing is wider than the screen.
     await openScreen({ url: "?mock=rail&undeclared=2&settings=automation", ready: "!!document.querySelector('.set.phone section[aria-label=\"Undeclared now\"]')" }, W, 844);
     const g = await evaluate(`(() => { const labels = ['Undeclared now', 'Learned heavy jobs', 'Services', 'When a thread counts as heavy'];

@@ -114,10 +114,6 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if a := PendingRequest(t); a != nil {
 		return Attention{Blocked, NeedsYou, "Run: " + a.Why}
 	}
-	// V0.210: a question Fyr read in the agent's text, the last cause.
-	if t.TextAsk != nil {
-		return Attention{Blocked, NeedsYou, t.TextAsk.Question}
-	}
 	// V0.ci-wait-moves: CI the thread waits on moves without the owner, so
 	// the thread is not Finished while it runs.
 	if r := ciWait(t); r != "" {

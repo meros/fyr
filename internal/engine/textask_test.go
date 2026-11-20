@@ -37,25 +37,23 @@ func (f *fakeJudge) n() int {
 	return f.calls
 }
 
-// SPEC V0.210 (1), (2), (3): after a real run the job reads the end of the agent's text, and a yes lands.
+// SPEC V0.210 (1), (2), V0.text-ask-nudge: after a real run the job reads
+// the end of the agent's text, and a yes tells the agent, not the owner.
 func TestTextAskRunsAfterTheTurn(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	f := &fakeJudge{out: `{"needs":true,"q":"Which logo?"}`}
 	h.e.TextJudge = f.judge
 	guardDeps(t, h.e)
 	id := created(h, "make a logo")
-	th := h.wait(id, "the flag", func(th core.Thread, _ core.Attention) bool { return th.TextAsk != nil })
+	h.wait(id, "the nudge", func(th core.Thread, _ core.Attention) bool { return th.TextNudged > 0 })
 	f.mu.Lock()
 	text := f.text
 	f.mu.Unlock()
-	if th.TextAsk.Question != "Which logo?" || text == "" || len([]rune(text)) > textAskChars {
-		t.Fatalf("flag %+v, text %q", th.TextAsk, text)
+	if text == "" || len([]rune(text)) > textAskChars {
+		t.Fatalf("text %q", text)
 	}
-	h.wait(id, "Needs you", func(_ core.Thread, a core.Attention) bool {
-		return a.Section == core.NeedsYou && a.Reason == "Which logo?"
-	})
-	if !hasEvent(h.events(id), "textAsk.raised", "Which logo?") {
-		t.Fatal("no raised event")
+	if !hasEvent(h.events(id), core.EventTextAskNudged, "Which logo?") {
+		t.Fatal("no nudged event")
 	}
 }
 
@@ -80,8 +78,8 @@ func TestTextAskFailureChangesNothing(t *testing.T) {
 				t.Fatal("the job never ran")
 			}
 			time.Sleep(50 * time.Millisecond)
-			if th, _ := h.e.Thread(id); th.TextAsk != nil {
-				t.Fatalf("flag %+v", th.TextAsk)
+			if th, _ := h.e.Thread(id); th.TextNudged != 0 {
+				t.Fatalf("nudged %d", th.TextNudged)
 			}
 		})
 	}

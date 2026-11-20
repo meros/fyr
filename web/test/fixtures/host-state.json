@@ -78,10 +78,6 @@
       "name": "thread.markUnseen"
     },
     {
-      "label": "Not a question",
-      "name": "thread.notQuestion"
-    },
-    {
       "bulk": true,
       "label": "Pin",
       "name": "thread.pin"
@@ -254,7 +250,6 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
-        "thread.notQuestion": "Fyr read no question here",
         "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
@@ -323,7 +318,6 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
-        "thread.notQuestion": "Fyr read no question here",
         "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
@@ -377,7 +371,6 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
-        "thread.notQuestion": "Fyr read no question here",
         "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
@@ -427,7 +420,6 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
-        "thread.notQuestion": "Fyr read no question here",
         "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
@@ -481,7 +473,6 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
-        "thread.notQuestion": "Fyr read no question here",
         "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",

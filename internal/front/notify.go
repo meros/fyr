@@ -131,13 +131,9 @@ func AttentionDetail(d api.Thread) (meta, detail string) {
 	case core.Done:
 		return "Done", d.Summary
 	case core.Blocked:
-		// A question Fyr read in the agent's text (V0.210) says that it is
-		// Fyr's reading. Every other cause is its own sentence ("Add login:
-		// Merge", "Run: …", "Agent not responding since 08:58: …"), and the
-		// row shows it without the word Blocked.
-		if d.TextAsk != nil && d.Attention.Reason == d.TextAsk.Question {
-			return "Question in text", d.TextAsk.Question
-		}
+		// Every cause is its own sentence ("Add login: Merge", "Run: …",
+		// "Agent not responding since 08:58: …"), and the row shows it
+		// without the word Blocked.
 		return "", d.Attention.Reason
 	}
 	if x := firstAsk(d.Decisions); x != nil {

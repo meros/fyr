@@ -46,13 +46,16 @@ func TestTextAskCleanEndIsJudged(t *testing.T) {
 	}
 }
 
-// SPEC V0.210 (1): nothing is judged where the end cannot be a question to the owner.
+// SPEC V0.210 (1), V0.text-ask-nudge: nothing is judged where the end
+// cannot be a question to the owner, or where the agent offered a chip.
 func TestTextAskNotJudged(t *testing.T) {
 	queued := &Thread{ID: "t"}
 	queued.SlotQueued = true
 	asked := &Thread{ID: "t"}
 	asked.Decisions = []Decision{{ID: "d", Kind: DecisionAsk, CreatedAt: ta0}}
 	watching := &Thread{ID: "t", Rules: []Rule{{ID: "w", Purpose: "watch", Status: "armed", When: When{Kind: "at"}}}}
+	chip := &Thread{ID: "t"}
+	chip.Offers = []ActionSpec{{ID: "next", On: OnThread, Label: "Arm a watch", Run: RunAgent, Prompt: "arm it"}}
 	cases := map[string]struct {
 		th   *Thread
 		args RunEndedArgs
@@ -62,6 +65,7 @@ func TestTextAskNotJudged(t *testing.T) {
 		"open ask":    {asked, RunEndedArgs{}},
 		"slot queue":  {queued, RunEndedArgs{}},
 		"watch":       {watching, RunEndedArgs{}},
+		"chip":        {chip, RunEndedArgs{}},
 	}
 	for name, c := range cases {
 		if _, r := taEnd(t, c.th, c.args, ta0); taEffect(r) != nil {
@@ -79,112 +83,63 @@ func TestTextAskSkipsThreadAlreadyNeedingOwner(t *testing.T) {
 	}
 }
 
-// SPEC V0.210 (3), (4): a yes puts the idle thread in Needs you, logged, quiet.
-func TestTextAskYesIsNeedsYouWithoutPush(t *testing.T) {
+// V0.text-ask-nudge (1): a yes tells the agent and logs it; the owner sees
+// nothing of it, so the thread is not in Needs you.
+func TestTextAskYesNudgesTheAgent(t *testing.T) {
 	th, _ := taEnd(t, &Thread{ID: "t"}, RunEndedArgs{}, ta0)
 	at := th.ActivityAt
 	th, r := taJudge(t, th, 1, true, "  Which logo do you want?  ", ta0.Add(time.Second))
-	if th.TextAsk == nil || th.TextAsk.Question != "Which logo do you want?" || th.TextAsk.Run != 1 {
-		t.Fatalf("flag %+v", th.TextAsk)
+	if !taHas(r, EventTextAskNudged) || th.TextNudged != 1 {
+		t.Fatalf("events %+v, nudged %d", r.Events, th.TextNudged)
 	}
-	if !taHas(r, "textAsk.raised") {
-		t.Fatal("not logged")
+	if n := queued(t, th, "text-question"); n.Urgency != Wake || !strings.Contains(n.What, "Which logo do you want?") {
+		t.Fatalf("notice %+v", n)
 	}
-	a := Compute(th, &View{SeenAt: ta0.Add(time.Hour)}, ta0.Add(2*time.Second))
-	if a.State != Blocked || a.Section != NeedsYou || a.Reason != "Which logo do you want?" {
-		t.Fatalf("attention %+v", a)
-	}
-	if !PushQuiet(th, Blocked, func(string) bool { return false }) {
-		t.Fatal("an inferred question pushes")
+	if a := Compute(th, &View{SeenAt: ta0.Add(time.Hour)}, ta0.Add(2*time.Second)); a.Section == NeedsYou {
+		t.Fatalf("Fyr's reading put the thread in Needs you: %+v", a)
 	}
 	if !th.ActivityAt.Equal(at) {
 		t.Fatal("the judgment moved the activity time")
 	}
 }
 
-// SPEC V0.210 (4): a hard cause on the same thread still pushes.
-func TestTextAskDoesNotQuietAHardCause(t *testing.T) {
-	th := needThread(t, ready("abc"))
-	th.TextAsk = &TextAsk{Question: "Which?", At: nt0, Run: 1}
-	if PushQuiet(th, Blocked, func(string) bool { return false }) {
-		t.Fatal("a ready PR went quiet")
-	}
-}
-
-// SPEC V0.210 (3): a no, a stale result and a result during a run change nothing.
+// SPEC V0.210 (3): a no, a stale result, an empty question and a result
+// during a run tell the agent nothing.
 func TestTextAskIgnoredResults(t *testing.T) {
 	th, _ := taEnd(t, &Thread{ID: "t"}, RunEndedArgs{}, ta0)
-	if x, r := taJudge(t, th, 1, false, "", ta0.Add(time.Second)); x.TextAsk != nil || taHas(r, "textAsk.raised") {
-		t.Fatal("a no raised the flag")
-	}
-	if x, _ := taJudge(t, th, 0, true, "Old?", ta0.Add(time.Second)); x.TextAsk != nil {
-		t.Fatal("a stale result raised the flag")
-	}
-	if x, _ := taJudge(t, th, 1, true, "   ", ta0.Add(time.Second)); x.TextAsk != nil {
-		t.Fatal("an empty question raised the flag")
+	for name, x := range map[string]struct {
+		run   int
+		needs bool
+		q     string
+	}{"no": {1, false, ""}, "stale": {0, true, "Old?"}, "empty": {1, true, "   "}} {
+		if _, r := taJudge(t, th, x.run, x.needs, x.q, ta0.Add(time.Second)); taHas(r, EventTextAskNudged) {
+			t.Errorf("%s: nudged", name)
+		}
 	}
 	run, _ := fstep(t, th, Input{Source: Observer(ObsProcess), Kind: KindRunStarted}, ta0.Add(time.Second))
-	if x, _ := taJudge(t, run, 1, true, "Late?", ta0.Add(2*time.Second)); x.TextAsk != nil {
-		t.Fatal("a result during a run raised the flag")
+	if _, r := taJudge(t, run, 1, true, "Late?", ta0.Add(2*time.Second)); taHas(r, EventTextAskNudged) {
+		t.Fatal("a result during a run nudged")
 	}
 }
 
-// SPEC V0.210 (3): the flag survives a run the owner did not start; a yes replaces the line, a no leaves it.
-func TestTextAskSurvivesOtherRuns(t *testing.T) {
+// V0.text-ask-nudge (2): the run the nudge starts is the agent's answer and
+// is not read again; the run after it is, and the same run is nudged once.
+func TestTextAskNudgesOnce(t *testing.T) {
 	th, _ := taEnd(t, &Thread{ID: "t"}, RunEndedArgs{}, ta0)
 	th, _ = taJudge(t, th, 1, true, "First?", ta0.Add(time.Second))
-	th, r := taEnd(t, th, RunEndedArgs{}, ta0.Add(5*time.Minute))
-	if th.TextAsk == nil || taEffect(r) == nil {
-		t.Fatalf("flag %+v, judged %v", th.TextAsk, taEffect(r) != nil)
+	if _, r := taJudge(t, th, 1, true, "First?", ta0.Add(2*time.Second)); taHas(r, EventTextAskNudged) {
+		t.Fatal("the same run nudged twice")
 	}
-	th, _ = taJudge(t, th, 2, false, "", ta0.Add(6*time.Minute))
-	if th.TextAsk == nil || th.TextAsk.Question != "First?" {
-		t.Fatalf("a no changed the flag: %+v", th.TextAsk)
+	th, ns := take(t, th, FeedTake{At: AtIdle}, ta0.Add(3*time.Second))
+	if len(ns) != 1 {
+		t.Fatalf("delivered %+v", ns)
 	}
-	th, _ = taEnd(t, th, RunEndedArgs{}, ta0.Add(10*time.Minute))
-	th, _ = taJudge(t, th, 3, true, "Second?", ta0.Add(11*time.Minute))
-	if th.TextAsk.Question != "Second?" {
-		t.Fatalf("a yes kept the old line: %+v", th.TextAsk)
+	th, r := taEnd(t, th, RunEndedArgs{}, ta0.Add(time.Minute))
+	if taEffect(r) != nil {
+		t.Fatal("the answer to the nudge was judged")
 	}
-}
-
-// SPEC V0.210 (3), (5): Not a question clears and logs it, and a call in flight cannot bring it back.
-func TestNotAQuestion(t *testing.T) {
-	th, _ := taEnd(t, &Thread{ID: "t"}, RunEndedArgs{}, ta0)
-	if _, _, _, err := Reduce(th, nil, Input{Source: FromOwner, Kind: KindNotQuestion, Thread: "t"}, ta0); err == nil {
-		t.Fatal("available without a flag")
-	}
-	th, _ = taJudge(t, th, 1, true, "First?", ta0.Add(time.Second))
-	if _, _, _, err := Reduce(th, nil, Input{Source: FromAgent, Kind: KindNotQuestion, Thread: "t"}, ta0); err == nil {
-		t.Fatal("an agent dismissed it")
-	}
-	th, r := fstep(t, th, Input{Source: FromOwner, Kind: KindNotQuestion}, ta0.Add(time.Minute))
-	if th.TextAsk != nil || !taHas(r, "textAsk.dismissed") {
-		t.Fatalf("flag %+v, events %+v", th.TextAsk, r.Events)
-	}
-	if a := Compute(th, &View{SeenAt: ta0.Add(time.Hour)}, ta0.Add(2*time.Minute)); a.Section == NeedsYou {
-		t.Fatalf("still in Needs you: %+v", a)
-	}
-	if x, _ := taJudge(t, th, 1, true, "First?", ta0.Add(2*time.Minute)); x.TextAsk != nil {
-		t.Fatal("a call in flight brought it back")
-	}
-}
-
-// SPEC V0.210 (3): the owner's message and a settle clear it; another agent's message does not.
-func TestTextAskClearedByOwnerOnly(t *testing.T) {
-	flagged := func() *Thread {
-		th, _ := taEnd(t, &Thread{ID: "t"}, RunEndedArgs{}, ta0)
-		th, _ = taJudge(t, th, 1, true, "First?", ta0.Add(time.Second))
-		return th
-	}
-	if th, _ := fstep(t, flagged(), Input{Source: FromOwner, Kind: "thread.send", Args: Args{"text": "yes"}}, ta0.Add(time.Minute)); th.TextAsk != nil {
-		t.Fatal("the owner's message left it")
-	}
-	if th, _ := fstep(t, flagged(), Input{Source: FromAgent, From: "t2", Kind: "thread.send", Args: Args{"text": "status"}}, ta0.Add(time.Minute)); th.TextAsk == nil {
-		t.Fatal("another agent's message cleared it")
-	}
-	if th, _ := fstep(t, flagged(), Input{Source: FromOwner, Kind: "thread.settle", Args: Args{"now": true}}, ta0.Add(time.Minute)); th.TextAsk != nil {
-		t.Fatal("a settle left it")
+	if _, r = taEnd(t, th, RunEndedArgs{}, ta0.Add(10*time.Minute)); taEffect(r) == nil {
+		t.Fatal("a later run was not judged")
 	}
 }
 
