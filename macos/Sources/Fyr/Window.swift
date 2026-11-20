@@ -41,27 +41,19 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
   private func make() {
     let cfg = WKWebViewConfiguration()
     cfg.websiteDataStore = .default() // the session cookie and the page's own storage persist
-    // The page runs up to the window's top edge; .mac-app and --mac-titlebar
-    // tell it to keep its controls below the traffic lights (app.css).
-    cfg.userContentController.addUserScript(
-      WKUserScript(
-        source: "document.documentElement.classList.add('mac-app');" + inset(Window.titlebar),
-        injectionTime: .atDocumentStart, forMainFrameOnly: true))
     web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: cfg)
     web.navigationDelegate = self
     web.uiDelegate = self
     web.allowsBackForwardNavigationGestures = true
     let w = NSWindow(
-      contentRect: web.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+      contentRect: web.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
       backing: .buffered, defer: false)
     w.title = "Fyr"
-    // The title bar is transparent over the page, and the window takes the
-    // page's colour (its theme-color, else its background) while it loads.
-    // The title bar keeps its mouse events: its strip drags the window.
+    // A standard title bar without a title, in the page's background
+    // (--surface), which follows the page's own theme as well as the system's.
     w.titlebarAppearsTransparent = true
     w.titleVisibility = .hidden
     paints = [
-      web.observe(\.themeColor) { [weak self] _, _ in self?.paint() },
       web.observe(\.underPageBackgroundColor) { [weak self] _, _ in self?.paint() },
     ]
     w.contentView = web
@@ -74,14 +66,7 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     if let o = origin { web.load(URLRequest(url: o)) } else { signIn() }
   }
 
-  // The title bar's height, which the page keeps free.
-  static let titlebar = NSWindow.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled]).height - 100
-
-  private func inset(_ h: CGFloat) -> String {
-    "document.documentElement.style.setProperty('--mac-titlebar','\(Int(h))px');"
-  }
-
-  private func paint() { window?.backgroundColor = web.themeColor ?? web.underPageBackgroundColor }
+  private func paint() { window?.backgroundColor = web.underPageBackgroundColor }
 
   // signIn waits up to 30 s for fyrd (it may be starting) and loads a
   // one-time link from the owner socket.
@@ -218,10 +203,6 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
   }
 
   // MARK: NSWindowDelegate
-
-  // Full screen hides the title bar, and the page takes the strip back.
-  func windowDidEnterFullScreen(_ n: Notification) { web.evaluateJavaScript(inset(0)) }
-  func windowDidExitFullScreen(_ n: Notification) { web.evaluateJavaScript(inset(Window.titlebar)) }
 
   // Closing the window keeps the app in the menu bar, without a Dock icon.
   func windowWillClose(_ n: Notification) { NSApp.setActivationPolicy(.accessory) }

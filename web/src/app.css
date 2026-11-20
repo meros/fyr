@@ -74,12 +74,6 @@ b{font-weight:600}
 kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:center;border-radius:5px;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);display:inline-block;flex:none}
 
 .app{display:grid;grid-template-columns:76px var(--list-w,372px) minmax(0,1fr);height:100vh;height:100dvh}
-/* V0.mac-shell: in Fyr.app's window (decision 0037) the page runs up to the top edge under a transparent title bar,
-   which keeps its strip for dragging and the traffic lights. The top line (the first banner, else each column) takes
-   a transparent border of that height, so its colour reaches the edge and its controls sit below the strip. The
-   phone layout does the same in phone.css. Only the native Mac window sets .mac-app; browsers have their own frame. */
-html.mac-app .shell>.dbn:not(.dbn~.dbn),html.mac-app .shell>.app:not(.dbn~.app)>*{border-top:var(--mac-titlebar,0px) solid transparent}
-html.mac-app .pv-full,html.mac-app .isfs{padding-top:var(--mac-titlebar,0px)}
 
 /* rail */
 .rail{display:flex;flex-direction:column;align-items:stretch;background:var(--sunken);border-right:1px solid var(--line);padding:10px 6px;gap:4px;min-height:0;--knock:var(--sunken)}
