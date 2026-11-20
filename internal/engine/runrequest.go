@@ -56,7 +56,7 @@ func (e *Engine) runRequestTool(s *mcp.Server) {
 			if req.Optional {
 				return fmt.Sprintf("The owner sees it as a chip under your newest message, with %s, until the next turn starts. If they run it, the exit code and the output arrive as a message starting with [Fyr].", how), nil
 			}
-			return fmt.Sprintf("The owner sees a Run card with %s. When they run it, the exit code and the output arrive as a message starting with [Fyr]; if they choose Not now, you hear that too. End your turn or do other work meanwhile.", how), nil
+			return fmt.Sprintf("The owner sees a Run card with %s. When they run it, the exit code and the output arrive as a message starting with [Fyr] (a run that lasts over 10 s also tells you once when it started); if they choose Not now, you hear that too. End your turn or do other work meanwhile.", how), nil
 		}})
 }
 
@@ -169,6 +169,17 @@ func (e *Engine) runPress(threadID string, ef core.Effect) (string, int, error) 
 			}
 			e.pressMu.Unlock()
 		}()
+	}
+	if ef.Press != nil && ef.Press.Action.Request { // V0.run-long-notice
+		after := e.LongRunAfter
+		if after == 0 {
+			after = core.LongRunAfter
+		}
+		t := time.AfterFunc(after, func() {
+			e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindActionLong, Thread: threadID,
+				Args: core.ActionLongArgs{On: ef.Press.On, Action: ef.Press.Action.ID}})
+		})
+		defer t.Stop()
 	}
 	var out string
 	var exit int

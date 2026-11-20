@@ -20,12 +20,21 @@ const (
 	KindActionStop    = "action.stop"
 	KindActionDismiss = "action.dismiss"
 	KindActionOutput  = "action.output"
+	// KindActionLong: a pressed run request still runs after LongRunAfter
+	// (V0.run-long-notice).
+	KindActionLong = "action.long"
 
 	// EventRunRequested marks where in the log the agent asked.
 	EventRunRequested = "run.requested"
 
 	// EffectScriptStop stops the running script of a press.
 	EffectScriptStop EffectKind = "script.stop"
+
+	// EventActionLong is the event of a run request that runs long.
+	EventActionLong = "action.long"
+	// LongRunAfter is how long a pressed run request runs before the agent
+	// hears that it started; a shorter one gets only its result.
+	LongRunAfter = 10 * time.Second
 
 	maxCommand = 8000
 	maxWhy     = 200
@@ -216,7 +225,43 @@ func reduceOutput(r Rec, in Input, now time.Time) (Result, error) {
 	return Result{}, nil
 }
 
+// ActionLongArgs are action.long's: the press that still runs.
+type ActionLongArgs struct {
+	On     string `json:"on"`
+	Action string `json:"action"`
+}
+
+// reduceLong: a run request the owner pressed still runs after
+// LongRunAfter, so the agent hears now that it started, and its result
+// later (V0.run-long-notice). A run that ended meanwhile says nothing more.
+func reduceLong(r Rec, in Input, now time.Time) (Result, error) {
+	a, err := argsOf[ActionLongArgs](in)
+	if err != nil {
+		return Result{}, err
+	}
+	h, err := HolderOf(r.T, a.On)
+	if err != nil {
+		return Result{}, nil
+	}
+	act := h.Find(a.Action)
+	run := lastRunOf(h.Runs, a.Action, h.On)
+	if act == nil || !act.Request || run == nil || !run.Running {
+		return Result{}, nil
+	}
+	return Result{Events: []Event{{EventActionLong, map[string]any{"on": h.On, "action": act.ID, "why": act.Why, "root": act.Root, "by": run.By}}}}, nil
+}
+
+// requestLongText is the agent's notice of a run request that runs long.
+func requestLongText(why string, root bool) string {
+	how := "Run"
+	if root {
+		how = "Run as root"
+	}
+	return fmt.Sprintf("The owner pressed %s on your run request %q; it has run for over %d s and still runs. Fyr sends you the exit code and the output when it ends; end your turn or do other work meanwhile.", how, why, int(LongRunAfter/time.Second))
+}
+
 func init() {
+	RegisterKind(&InputKind{Name: KindActionLong, From: observed, Untouched: true, Reduce: reduceLong})
 	RegisterKind(&InputKind{Name: KindRunRequest, From: agentOnly, Reduce: reduceRunRequest})
 	RegisterKind(&InputKind{Name: KindActionStop, From: ownerOnly, Reduce: reduceStop})
 	RegisterKind(&InputKind{Name: KindActionDismiss, From: ownerOnly, Reduce: reduceDismiss})

@@ -138,12 +138,15 @@ type Engine struct {
 	// RootPrompt is why a root run request cannot ask for a password here,
 	// or ""; nil reads this host's processes (V0.149 (4)).
 	RootPrompt func() string
-	pressMu    sync.Mutex
-	presses    map[string]*pressRun
-	rootWhy    string
-	rootAt     time.Time
-	Hub        *stream.Hub
-	Now        func() time.Time
+	// LongRunAfter is when a pressed run request that still runs tells the
+	// agent it started; 0 is core.LongRunAfter (V0.run-long-notice).
+	LongRunAfter time.Duration
+	pressMu      sync.Mutex
+	presses      map[string]*pressRun
+	rootWhy      string
+	rootAt       time.Time
+	Hub          *stream.Hub
+	Now          func() time.Time
 	// Attach stores files for the show tool (V0.19); Shooter takes screenshots.
 	Attach  *attach.Store
 	Shooter Shooter

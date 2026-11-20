@@ -213,3 +213,29 @@ func TestGateSendsSudoToRunRequest(t *testing.T) {
 		}
 	}
 }
+
+// V0.run-long-notice: action.long on a running request tells the agent it
+// started, under the result's key so the result replaces it while queued;
+// on one that ended it says nothing.
+func TestRunRequestLongNotice(t *testing.T) {
+	th, _, _ := runReq(t, requestThread(), RunRequestArgs{Command: "make", Why: "Build", Root: true})
+	o := th.Offers[0]
+	th, press, _ := pressReq(t, th, KindActionPress, Args{"on": OnThread, "action": o.ID, "digest": o.Digest})
+	long := Input{Source: Observer(ObsProcess), Kind: KindActionLong, Thread: th.ID, Args: ActionLongArgs{On: OnThread, Action: o.ID}}
+	_, _, res, err := Reduce(th, nil, long, at(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns := resultNotices(Reduced{Events: res.Events})
+	if len(ns) != 1 || !strings.Contains(ns[0].What, `Run as root on your run request "Build"`) || !strings.Contains(ns[0].What, "still runs") {
+		t.Fatalf("long notice: %+v", ns)
+	}
+	th, _, res, _ = Reduce(th, nil, Input{Source: FromEffect("e1"), Kind: KindEffectResult, Thread: th.ID, Args: EffectResult{Effect: press.Effects[0], OK: true, Text: "done"}}, at(5))
+	end := resultNotices(Reduced{Events: res.Events})
+	if len(end) != 1 || end[0].Key != ns[0].Key {
+		t.Fatalf("the result does not replace the long notice: %+v %+v", end, ns)
+	}
+	if _, _, res, _ = Reduce(th, nil, long, at(6)); len(res.Events) != 0 {
+		t.Fatalf("a run that ended told it runs: %+v", res.Events)
+	}
+}
