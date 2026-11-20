@@ -43,6 +43,8 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
   private func make() {
     let cfg = WKWebViewConfiguration()
     cfg.websiteDataStore = .default() // the session cookie and the page's own storage persist
+    // Settings → Devices names this session "The Fyr app on macOS" (internal/front/auth.go BrowserName).
+    cfg.applicationNameForUserAgent = "FyrDesktop/mac"
     cfg.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "fyrPush") // V0.mac-notify
     web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: cfg)
     web.navigationDelegate = self
@@ -58,6 +60,7 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     w.titleVisibility = .hidden
     paints = [
       web.observe(\.underPageBackgroundColor) { [weak self] _, _ in self?.paint() },
+      web.observe(\.title) { [weak self] w, _ in self?.updateBadge(w.title) },
     ]
     // A hairline under the title bar in the page's --line: the container
     // shows through the one point above the page.
@@ -90,6 +93,20 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     guard s.count == 7, s.hasPrefix("#"), let n = UInt32(s.dropFirst(), radix: 16) else { return nil }
     return CGColor(
       srgbRed: CGFloat(n >> 16 & 255) / 255, green: CGFloat(n >> 8 & 255) / 255, blue: CGFloat(n & 255) / 255, alpha: 1)
+  }
+
+  // The page sets document.title to "(N) Fyr" for N Your-move items (web/src/app.tsx);
+  // mirror N onto the Dock badge (decision 0037).
+  private func updateBadge(_ title: String?) {
+    let label = Self.badge(for: title)
+    DispatchQueue.main.async { NSApp.dockTile.badgeLabel = label }
+  }
+
+  static func badge(for title: String?) -> String? {
+    guard let t = title, t.hasPrefix("("), let end = t.firstIndex(of: ")") else { return nil }
+    let inner = t[t.index(after: t.startIndex)..<end]
+    guard let n = Int(inner), n > 0 else { return nil }
+    return "\(n)"
   }
 
   // signIn waits up to 30 s for fyrd (it may be starting) and loads a
@@ -243,6 +260,14 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     case "status": n.status(reply)
     case "on": n.turnOn(reply)
     case "off": n.turnOff(reply)
+    case "clear":
+      if let body = m.body as? [String: Any],
+        let threadId = body["threadId"] as? String,
+        let state = body["state"] as? String
+      {
+        n.clear(threadId: threadId, state: state)
+      }
+      reply(["on": true])
     default: replyHandler(nil, "unknown op \(op)")
     }
   }
