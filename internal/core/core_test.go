@@ -336,7 +336,7 @@ func TestMarkSeenUpTo(t *testing.T) {
 func TestBackgroundTasksMakeWaiting(t *testing.T) {
 	th, v := &Thread{ActivityAt: at(1)}, &View{SeenAt: at(0)}
 	TaskObserved(th, Task{ID: "a1", Description: "Design mobile", Status: "running", ToolUseID: "toolu_1"}, at(1))
-	if a := Compute(th, v, at(2)); a.State != Waiting || a.Section != WorkingSec || a.Reason != "1 agent" {
+	if a := Compute(th, v, at(2)); a.State != Waiting || a.Section != WorkingSec || a.Reason != "1 subagent running" {
 		t.Fatalf("got %+v", a)
 	}
 	TaskObserved(th, Task{ID: "a1", Status: "completed", Activity: "Delivered"}, at(3))

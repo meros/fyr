@@ -67,7 +67,7 @@ func (r *quietRig) task() core.Task {
 // is woken, once, and the thread shows what it waits for and since when.
 func TestStuckBackgroundWaitWakesTheAgentOnce(t *testing.T) {
 	r := newQuietRig(t, "bgstuck")
-	if got := r.reason(); got != "Background: Wait for both experiments to finish" {
+	if got := r.reason(); got != "Running in background: Wait for both experiments to finish" {
 		t.Fatalf("reason %q", got)
 	}
 	r.pass(10, 3) // the experiment still runs: no word
@@ -120,7 +120,7 @@ func TestMonitorAndFrozenWorkAreNotStuck(t *testing.T) {
 	if m.told() != 0 {
 		t.Fatal("a quiet Monitor was reported")
 	}
-	if got := m.reason(); got != "Background: CI on the PR" {
+	if got := m.reason(); got != "Running in background: CI on the PR" {
 		t.Fatalf("reason %q", got)
 	}
 	f := newQuietRig(t, "bgstuck")

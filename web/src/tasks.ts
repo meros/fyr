@@ -103,7 +103,9 @@ export function workingLine(t: Thread): string {
     const more = quietNote(running) || newest?.activity;
     return more ? `${reason} · ${more}` : reason;
   }
-  const base = t.activity || t.project;
+  // V0.ci-wait-moves: every row in Moving says why it is there; a run with no activity yet says "Working", a start
+  // "Starting" (the host's reason), never the project, which the row's first line already names.
+  const base = t.activity || t.attention.reason || "Working";
   return running.length ? `${base} · ${runningLabel(running)}` : base;
 }
 

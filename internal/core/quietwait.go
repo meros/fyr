@@ -47,13 +47,13 @@ func waitReason(t *Thread, n int) string {
 	}
 	switch {
 	case len(cmds) == 1 && n == 1 && cmds[0].Description != "":
-		return "Background: " + cmds[0].Description
+		return "Running in background: " + cmds[0].Description
 	case len(cmds) > 0:
-		return fmt.Sprintf("%d background tasks", n)
+		return fmt.Sprintf("%d background tasks running", n)
 	case n == 1:
-		return "1 agent"
+		return "1 subagent running"
 	}
-	return fmt.Sprintf("%d agents", n)
+	return fmt.Sprintf("%d subagents running", n)
 }
 
 // QuietCandidates are the tasks whose wait the CPU can judge: the turn is

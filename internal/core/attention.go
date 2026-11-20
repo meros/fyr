@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // State is the one status vocabulary. Only Attention computes it; clients
 // never derive status themselves.
@@ -114,6 +118,11 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if t.TextAsk != nil {
 		return Attention{Blocked, NeedsYou, t.TextAsk.Question}
 	}
+	// V0.ci-wait-moves: CI the thread waits on moves without the owner, so
+	// the thread is not Finished while it runs.
+	if r := ciWait(t); r != "" {
+		return Attention{Waiting, WorkingSec, r}
+	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
 		return Attention{Done, SeenSec, ""}
 	}
@@ -130,4 +139,27 @@ func UnresponsiveText(u *Unresponsive) string {
 // MachineWaitText is the one line of a wait for the machine (V0.153).
 func MachineWaitText(w *MachineWait) string {
 	return "Waiting for the machine (" + w.Why + ")"
+}
+
+// ciWait is the reason a thread waits for CI (V0.ci-wait-moves), or "": a
+// merge ask held for CI (V0.136) names the checks it waits on, else an open
+// PR of a change still going whose checks the poller read as running (a PR
+// never read has no checks yet: a repo with no CI must not wait).
+func ciWait(t *Thread) string {
+	for i := range t.Changes {
+		if n := heldNeed(t, &t.Changes[i]); n != nil {
+			// "Waiting for CI on #846: 2 of 5 checks done": the row's word
+			// is before the colon, the count after it.
+			if c := t.Changes[i].PR; c != nil && c.Number > 0 {
+				return fmt.Sprintf("Waiting for CI on #%d%s", c.Number, strings.TrimPrefix(n.Text, "Waiting for CI"))
+			}
+			return n.Text
+		}
+	}
+	for _, c := range t.Changes {
+		if c.PR != nil && c.PR.State == "OPEN" && c.PR.Checks == ChecksPending && c.PR.CheckedAt != nil && !c.Dismissed && !c.IsDone() && !c.Phase.Ended() {
+			return fmt.Sprintf("Waiting for CI on #%d", c.PR.Number)
+		}
+	}
+	return ""
 }
