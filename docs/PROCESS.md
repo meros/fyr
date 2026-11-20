@@ -50,8 +50,8 @@ make e2e               # daemon + fake claude + API flow
 scripts/ci-local.sh    # a PR's gate: make test + gitleaks on the pushed head, posts the status local/test
 ```
 
-GitHub Actions runs once an hour, when main moved, in one job (`.github/workflows/test.yml`: gitleaks, the tests, the
-nix build, the release); `gh workflow run test.yml` starts it now. A PR runs `.github/workflows/pr.yml` on the self-hosted runner on meros-server (V0.ci-self-hosted), and Fyr's merge waits for
+Every push to main runs one job on the self-hosted runner on meros-server (`.github/workflows/test.yml`: gitleaks, the
+tests, the nix build, the release); `gh workflow run test.yml` starts it by hand. A PR runs `.github/workflows/pr.yml` on the self-hosted runner on meros-server (V0.ci-self-hosted), and Fyr's merge waits for
 its check; when the runner is down, `scripts/ci-local.sh` on the host posts the status `local/test`, which counts the same. A break that only the nix build or the layout timing catches shows up on main.
 
 `CGO_ENABLED=0` everywhere: the SQLite driver is pure Go, and NixOS has no global C compiler.
