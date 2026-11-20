@@ -55,7 +55,7 @@ Fyr is v0. Its author uses it every day, and it changes daily. Expect breaking c
 
 ## Requirements
 
-- **Linux or macOS.** NixOS has a module; macOS and other Linux (Debian, Ubuntu) have an install script.
+- **Linux or macOS.** NixOS has a module; macOS has `Fyr.app` in a DMG (macOS 13+); other Linux (Debian, Ubuntu) has an install script.
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (`claude`), logged in with a Claude account or set up for an Anthropic-compatible endpoint. Fyr drives every agent through it. Other agent CLIs are not supported yet ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
 - **GitHub through [`gh`](https://cli.github.com/)**, logged in, for the agents' pull requests and change tracking. Projects on other forges still run threads, without it. Installing and updating Fyr need no `gh`.
 - **Optional: [Tailscale](https://tailscale.com/)**, to open Fyr from your phone and to connect machines.
@@ -80,14 +80,18 @@ Fyr serves http://127.0.0.1:7777. The module also sets up the agents' cgroups an
 
 ### macOS
 
-You need `git`, `curl` and `claude`, and Xcode's command line tools (`gh` is for the agents' pull requests; the install needs no login):
+Download [`Fyr.dmg`](https://github.com/meros/fyr/releases/latest/download/Fyr.dmg) (macOS 13+, Apple Silicon and Intel), drag **Fyr** into **Applications** and open it.
+
+> **First open (Gatekeeper):** `Fyr.app` is signed with Fyr's own certificate rather than an Apple Developer ID yet. A browser download is quarantined by macOS, so the first launch needs **right-click → Open** (or **System Settings → Privacy & Security → Open Anyway**).
+
+`Fyr.app` registers its background job under **Login Items** (no admin password needed), opens Fyr in a native window with macOS notifications and a menu-bar icon, walks you through setup in **Settings → Setup**, and keeps both `fyrd` and `Fyr.app` updated automatically. To remove it, choose **Uninstall…** from the menu-bar icon.
+
+For a terminal or developer install (no Gatekeeper prompt):
 
 ```sh
 git clone https://github.com/meros/fyr && cd fyr
 scripts/install-macos.sh
 ```
-
-The script downloads the current signed release and starts a launchd agent on http://127.0.0.1:7777. It also adds `~/Applications/Fyr.app`, which you can open from Spotlight or the Dock. `scripts/install-macos.sh --uninstall` removes both.
 
 ### Linux without Nix (Debian, Ubuntu)
 
