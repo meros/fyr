@@ -32,6 +32,9 @@ type Releases struct {
 	Key string
 }
 
+// Name is owner/name of the repo the releases come from (V0.update-changelog: the changelog links to it).
+func (r *Releases) Name() string { return r.repo() }
+
 func (r *Releases) repo() string {
 	if r.Repo == "" {
 		return "meros/fyr"
@@ -125,6 +128,26 @@ func (r *Releases) Contains(ctx context.Context, commit, ancestor string) bool {
 	return err == nil && (s == "ahead" || s == "identical")
 }
 
+// Changes lists the commits of to that from lacks (V0.update-changelog), by one GitHub compare: newest first, at most
+// changesKeep, and the count of all. A compare lists at most 250 commits; total_commits counts them all.
+func (r *Releases) Changes(ctx context.Context, from, to string) ([]Change, int, error) {
+	if strings.HasPrefix(from, "-") || strings.HasPrefix(to, "-") {
+		return nil, 0, errors.New("not a commit")
+	}
+	b, err := r.Gh(ctx, "api", "repos/"+r.repo()+"/compare/"+from+"..."+to,
+		"--jq", `(.total_commits|tostring), (.commits[] | .sha + "\t" + (.commit.message | split("\n")[0]))`)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%v %s", err, tail(b, 300))
+	}
+	first, rest, _ := strings.Cut(string(b), "\n")
+	cs, n := parseChanges(rest, true)
+	var total int
+	if _, err := fmt.Sscan(strings.TrimSpace(first), &total); err != nil || total < n {
+		total = n
+	}
+	return cs, total, nil
+}
+
 // fetch downloads the release of sha for this host into dir (a fresh
 // folder), verifies it and lays it out as a build: fyrd, fyr,
 // manifest.json, server.sum.
@@ -192,6 +215,7 @@ func (d *Deployer) install(ctx context.Context, run Runner, prog *Progress, gen 
 		d.Unpause()
 		return fmt.Sprintf("Fyr already runs %s, the newest release.", id), nil
 	}
+	d.recordChanges(prog, sha, func(from, to string) ([]Change, int, error) { return d.Releases.Changes(ctx, from, to) })
 	if err := diskRoom(d.Data); err != nil {
 		return failed(err)
 	}

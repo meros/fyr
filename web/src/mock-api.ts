@@ -374,10 +374,27 @@ export function createMockApi(scenario: string): Api {
           ? {
               live: "c705ef536566",
               updates: [
-                { build: "c705ef536566", commit: "c705ef5365660a8608badc1fe181f9a08293e663", trigger: "deployable", result: "installed", startedAt: at(20), endedAt: at(18), logs: ["smoke.log"] },
+                {
+                  build: "c705ef536566",
+                  commit: "c705ef5365660a8608badc1fe181f9a08293e663",
+                  trigger: "deployable",
+                  result: "installed",
+                  startedAt: at(20),
+                  endedAt: at(18),
+                  logs: ["smoke.log"],
+                  // V0.update-changelog: what it brought over what ran before
+                  from: "3277af6a1b2c",
+                  changesAll: 3,
+                  changes: [
+                    { commit: "3be8b2f47894a1b2c3d4e5f60718293a4b5c6d7e", title: "An opened subagent shows its prompt and everything it did, in order (#424)" },
+                    { commit: "64b8fd3112a3b4c5d6e7f8091a2b3c4d5e6f7081", title: "The guard keeps a frozen job's hold (#414)" },
+                    { commit: "d93e1ba4c5d6e7f8091a2b3c4d5e6f708192a3b4", title: "A link that loses a race closes only when both sides are done with it" },
+                  ],
+                },
                 { build: "9b3e1d2c4a5f", commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", trigger: "deployable", result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: at(90), endedAt: at(88), logs: ["smoke.log"] },
               ],
               bad: { commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", why: "was not healthy" },
+              repo: "meros/fyr",
             }
           : { live: "nix-d8b9560", updates: null as unknown as [] },
       );

@@ -312,6 +312,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if mk := prog.start; mk != nil {
 		prog.start = func() Update { u := mk(); u.Branch = branch; return u }
 	}
+	d.recordChanges(prog, commit, func(from, to string) ([]Change, int, error) { return localChanges(ctx, run, dir, from, to) })
 	// V0.111: an auto-approved deploy builds only the commit the gate passed.
 	if want, _ := req.Args["commit"].(string); want != "" && commit != want {
 		return failed(fmt.Errorf("The checkout moved from %s to %s after the approval; nothing was built. Ask again.", short7(want), short7(commit)))
@@ -651,4 +652,18 @@ func short7(s string) string {
 		return s[:7]
 	}
 	return s
+}
+
+// localChanges lists the commits of a checkout between what runs and what is built (V0.update-changelog), with git:
+// no API call. It fails when the checkout does not hold from.
+func localChanges(ctx context.Context, run Runner, dir, from, to string) ([]Change, int, error) {
+	if strings.HasPrefix(from, "-") || strings.HasPrefix(to, "-") {
+		return nil, 0, errors.New("not a commit")
+	}
+	b, err := run(ctx, dir, "git", "-C", dir, "log", "--format=%H%x09%s", "-n", "1000", from+".."+to)
+	if err != nil {
+		return nil, 0, fmt.Errorf("git log: %v %s", err, tail(b, 300))
+	}
+	cs, n := parseChanges(string(b), false)
+	return cs, n, nil
 }
