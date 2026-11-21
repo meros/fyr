@@ -85,6 +85,7 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	}
 	asks := ownerAsks(t, on)
 	asking := len(asks) > 0
+	quotaWait := QuotaWaitText(t, now)
 	if until, since := SnoozeOf(v); until != nil && until.After(now) {
 		// V0.185: until work is done never hides a request, whatever its age.
 		bound := SnoozedWhenDone(v)
@@ -94,7 +95,9 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 				woke = true
 			}
 		}
-		if t.Failure != nil && t.Failure.At.After(*since) {
+		// V0.quota-wait, V0.quota-wait-midturn: a quota wait is not a failure
+		// that needs the owner until its reset passes, so it breaks no snooze.
+		if t.Failure != nil && quotaWait == "" && t.Failure.At.After(*since) {
 			woke = true
 		}
 		if !woke {
@@ -104,7 +107,6 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 			return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until " + until.Format(time.RFC3339)}
 		}
 	}
-	quotaWait := QuotaWaitText(t, now)
 	switch {
 	case asking:
 		return Attention{State: Asking, Section: NeedsYou, Reason: string(asks[0].Kind), Group: askGroup(asks)}

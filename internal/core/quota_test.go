@@ -45,6 +45,8 @@ func TestQuotaReset(t *testing.T) {
 	}{
 		{"Individual quota reached. Resets in 35m47s.", at.Add(35*time.Minute + 47*time.Second)},
 		{"Individual quota reached. Resets in 1h56m30s.", at.Add(time.Hour + 56*time.Minute + 30*time.Second)},
+		{"Individual quota reached. Resets in 1d2h30m.", at.Add(26*time.Hour + 30*time.Minute)},
+		{"Individual quota reached. Resets in 2d.", at.Add(48 * time.Hour)},
 		{"You've hit your weekly limit · resets Nov 23, 4am", time.Date(2026, 11, 23, 4, 0, 0, 0, time.UTC)},
 		{"You've hit your weekly limit · resets 23 Nov, 4am (Europe/Stockholm)", time.Date(2026, 11, 23, 4, 0, 0, 0, time.UTC)},
 		// A day of this month already past is next year's.
@@ -154,5 +156,44 @@ func TestOtherFailuresStillFail(t *testing.T) {
 	}
 	if c := NextCheck(th, v, at.Add(time.Minute)); c != nil {
 		t.Fatalf("a clock was armed for a failure that is not the quota's: %v", c)
+	}
+}
+
+// V0.quota-wait-midturn: a quota wait breaks neither a timed snooze nor a
+// "snooze until work is done" before the reset, wakes once the reset passes,
+// and lets the owner arm "Settle when done" while waiting.
+func TestQuotaWaitSnoozeAndSettleWhenDone(t *testing.T) {
+	start := time.Date(2026, 11, 21, 12, 0, 0, 0, time.Local)
+	stoppedAt := start.Add(5 * time.Minute)
+	resetAt := stoppedAt.Add(time.Hour)
+	th := &Thread{ID: "t_1", ActivityAt: stoppedAt, Conversation: Conversation{
+		Failure: &Failure{Class: ClassQuota, Message: "Individual quota reached. Resets in 1h.", At: stoppedAt},
+	}}
+
+	// Timed snooze started before the quota stop stays snoozed until reset, then wakes.
+	vTimed := snoozed(View{SeenAt: start}, start.Add(4*time.Hour), start)
+	if a := Compute(th, &vTimed, stoppedAt.Add(10*time.Minute)); a.State != Snoozed {
+		t.Fatalf("quota wait broke timed snooze: %+v", a)
+	}
+	if a := Compute(th, &vTimed, resetAt.Add(time.Minute)); a.State != Failed || a.Section != NeedsYou {
+		t.Fatalf("after reset timed snooze did not wake to Failed: %+v", a)
+	}
+
+	// "Snooze until work is done" stays snoozed while waiting for quota, then wakes at reset.
+	vDone := &View{SeenAt: start}
+	SnoozeWhenDone(vDone, start)
+	if a := Compute(th, vDone, stoppedAt.Add(10*time.Minute)); a.State != Snoozed {
+		t.Fatalf("quota wait broke snooze-when-done: %+v", a)
+	}
+	if a := Compute(th, vDone, resetAt.Add(time.Minute)); a.State != Failed || a.Section != NeedsYou {
+		t.Fatalf("after reset snooze-when-done did not wake to Failed: %+v", a)
+	}
+
+	// "Settle when done" is available during a quota wait and disabled once the reset passes.
+	if why := Registry["thread.settleWhenDone"].Available(th, &View{SeenAt: stoppedAt}, stoppedAt.Add(10*time.Minute)); why != "" {
+		t.Fatalf("settleWhenDone disabled during quota wait: %q", why)
+	}
+	if why := Registry["thread.settleWhenDone"].Available(th, &View{SeenAt: stoppedAt}, resetAt.Add(time.Minute)); why != "The last run failed" {
+		t.Fatalf("settleWhenDone after reset: %q, want %q", why, "The last run failed")
 	}
 }

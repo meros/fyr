@@ -595,7 +595,7 @@ func init() {
 			switch {
 			case settlesWhenDoneByOwner(t):
 				return "Already set"
-			case t.Failure != nil:
+			case t.Failure != nil && QuotaWaitText(t, now) == "":
 				return "The last run failed"
 			case WorkDoneAt(t, now):
 				return SettleDoneIdle
