@@ -124,6 +124,11 @@ type invariants struct {
 	armed      bool                   // PSITrigger: the trigger is set
 	psiSeen    bool                   // PSITrigger was called
 	ring       lineRing
+	// V0.thread-self-wake-churn: each self-started run's begin (a thread has
+	// one at a time), and its self-started runs that ended with no turn
+	// behind them, within InvSelfWakeWindow.
+	wakeStart map[string]time.Time
+	wakeRuns  map[string][]time.Time
 }
 
 // lineRing keeps the guard's last log lines with when they were written.

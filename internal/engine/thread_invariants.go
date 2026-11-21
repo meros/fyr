@@ -19,22 +19,23 @@ import (
 
 // Engine/runtime thread invariant IDs (stable: logs, cards, fix threads).
 const (
-	InvThreadRestartLiveWork    = "thread-restart-left-live-work"
-	InvThreadStartingStuck      = "thread-starting-stuck"
-	InvThreadHandoverStuck      = "thread-handover-stuck"
-	InvThreadMachineWaitStuck   = "thread-machine-wait-stuck"
-	InvThreadSettledStillRuns   = "thread-settled-still-running"
-	InvThreadOutboxStuck        = "thread-outbox-stuck"
-	InvThreadWakingFeedStalled  = "thread-waking-feed-stalled"
-	InvThreadRuleOverdue        = "thread-rule-overdue"
-	InvThreadActionRunStuck     = "thread-action-run-stuck"
-	InvThreadAttentionDrift     = "thread-attention-drift"
-	InvThreadSlotQueueDrift     = "thread-slot-queue-drift"
-	InvThreadPhantomRunning     = "thread-phantom-running"
-	InvThreadGhostRunning       = "thread-ghost-running"
-	InvThreadPhantomTasks       = "thread-phantom-tasks"
-	InvThreadPhantomDecision    = "thread-phantom-decision"
-	InvThreadPhantomOutbox      = "thread-phantom-outbox"
+	InvThreadRestartLiveWork   = "thread-restart-left-live-work"
+	InvThreadStartingStuck     = "thread-starting-stuck"
+	InvThreadHandoverStuck     = "thread-handover-stuck"
+	InvThreadMachineWaitStuck  = "thread-machine-wait-stuck"
+	InvThreadSettledStillRuns  = "thread-settled-still-running"
+	InvThreadOutboxStuck       = "thread-outbox-stuck"
+	InvThreadWakingFeedStalled = "thread-waking-feed-stalled"
+	InvThreadRuleOverdue       = "thread-rule-overdue"
+	InvThreadActionRunStuck    = "thread-action-run-stuck"
+	InvThreadAttentionDrift    = "thread-attention-drift"
+	InvThreadSlotQueueDrift    = "thread-slot-queue-drift"
+	InvThreadPhantomRunning    = "thread-phantom-running"
+	InvThreadGhostRunning      = "thread-ghost-running"
+	InvThreadPhantomTasks      = "thread-phantom-tasks"
+	InvThreadPhantomDecision   = "thread-phantom-decision"
+	InvThreadPhantomOutbox     = "thread-phantom-outbox"
+	InvThreadSelfWakeChurn     = "thread-self-wake-churn"
 )
 
 // Thresholds for temporal and process-consistency thread invariants.
@@ -57,6 +58,14 @@ const (
 	InvProcessDriftGrace = 30 * time.Second
 	// invThreadRingKeep: how many recent transitions to retain per thread for card evidence.
 	invThreadRingKeep = 30
+	// InvSelfWakeRuns and InvSelfWakeWindow: V0.thread-self-wake-churn.
+	// KindRunStarted is a turn the CLI opened by itself, and a run that ends
+	// with no measured duration (the adapter's settle timer closed it before
+	// the model answered) or that the provider's quota refused had no turn
+	// behind it at all. Three of them inside this window is not a background
+	// task waking the thread now and then; it is a loop.
+	InvSelfWakeRuns   = 3
+	InvSelfWakeWindow = 10 * time.Minute
 )
 
 // engineThreadInvTexts describes each engine/runtime thread invariant in one sentence.
@@ -77,6 +86,7 @@ var engineThreadInvTexts = map[string]string{
 	InvThreadPhantomTasks:      "A thread has running background tasks, but no live agent process exists for more than 30 seconds.",
 	InvThreadPhantomDecision:   "A thread has an open process-bound question or approval that the agent manager is not waiting on for more than 30 seconds.",
 	InvThreadPhantomOutbox:     "A thread has unread messages in its outbox, but no agent process is live or starting for more than 30 seconds.",
+	InvThreadSelfWakeChurn:     "The CLI started 3 or more turns by itself within 10 minutes, each ended before the model answered or refused by the provider's quota.",
 }
 
 // engineThreadInvOrder is the display order of the engine/runtime thread invariants.
@@ -97,6 +107,7 @@ var engineThreadInvOrder = []string{
 	InvThreadPhantomTasks,
 	InvThreadPhantomDecision,
 	InvThreadPhantomOutbox,
+	InvThreadSelfWakeChurn,
 }
 
 // threadInvOrder is every thread invariant in display order (core pure + engine runtime).
@@ -180,7 +191,57 @@ func (e *Engine) checkThreadApplied(s *staged, autoMerge map[string]bool, lastAf
 			thread:   s.t.ID,
 		})
 	}
+	if v := e.selfWakeRun(s); v != nil {
+		vs = append(vs, *v)
+	}
 	e.reportThreadViolations(vs, s.now)
+}
+
+// selfWakeRun follows thread-self-wake-churn. KindRunStarted exists only for
+// a turn the CLI began by itself (the agent manager emits it when a stream
+// message starts a turn that no send opened), so a start Fyr never asked
+// for. A run it then ends with no measured duration is one the adapter's
+// settle timer closed before the model answered; a run the provider's quota
+// refused is the same to the thread. Three of those in ten minutes is a loop
+// the owner must see, not a background task waking the thread now and then.
+// It reads one Input at a time, so a thread whose runs the owner's message
+// opens (the ordinary case) never enters it.
+func (e *Engine) selfWakeRun(s *staged) *violation {
+	id := s.t.ID
+	c := &e.inv
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.wakeRuns == nil {
+		c.wakeRuns, c.wakeStart = map[string][]time.Time{}, map[string]time.Time{}
+	}
+	switch s.in.Kind {
+	case core.KindRunStarted:
+		c.wakeStart[id] = s.now
+	case core.KindRunEnded:
+		at, self := c.wakeStart[id]
+		delete(c.wakeStart, id)
+		if !self {
+			break
+		}
+		a, _ := s.in.Args.(core.RunEndedArgs)
+		interrupted, _ := a.Data["interrupted"].(bool)
+		quota := a.Failure != nil && a.Failure.Class == core.ClassQuota
+		if interrupted || (a.Data["durationMs"] != nil && !quota) {
+			break
+		}
+		runs := append(c.wakeRuns[id], at)
+		runs = slices.DeleteFunc(runs, func(t time.Time) bool { return s.now.Sub(t) > InvSelfWakeWindow })
+		c.wakeRuns[id] = runs
+		if len(runs) >= InvSelfWakeRuns {
+			c.wakeRuns[id] = nil // a new window from here
+			return &violation{
+				id:       InvThreadSelfWakeChurn,
+				evidence: fmt.Sprintf("thread=%s selfStarts=%d in %s last=%s", id, len(runs), InvSelfWakeWindow, s.now.Format(time.RFC3339)),
+				thread:   id,
+			}
+		}
+	}
+	return nil
 }
 
 // checkThreadLoad checks post-restart recovery invariants right after

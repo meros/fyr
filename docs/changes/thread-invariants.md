@@ -1,4 +1,4 @@
-# V0.thread-invariants: Fyr checks 34 invariants on thread state, transitions, timing, and process consistency, and surfaces a broken one as a Needs-you card
+# V0.thread-invariants: Fyr checks 35 invariants on thread state, transitions, timing, and process consistency, and surfaces a broken one as a Needs-you card
 
 → SPEC sections 3, 5, 6 and 7; follows V0.load-invariants' reporting, persistence, card, Fix it, Dismiss, and Settings list.
 
@@ -37,6 +37,7 @@
 - `thread-attention-drift`: `e.last[id]` disagreed with `ComputeWith` after a commit or after `Tick`.
 - `thread-slot-queue-drift`: `t.SlotQueued` disagreed with `Slots.Snapshot().Waiting` right after `syncSlotQueue`.
 - `thread-phantom-running`, `thread-ghost-running`, `thread-phantom-tasks`, `thread-phantom-decision`, `thread-phantom-outbox`: mismatches between the engine's thread state and `agent.Manager.Inspect()` persisting past a 30-second grace window.
+- `thread-self-wake-churn` (V0.thread-self-wake-churn): the CLI started 3 or more turns by itself within 10 minutes, each of which ended before the model answered (no measured duration, so the adapter's settle timer closed it) or was refused by the provider's quota.
 
 (4) **Surfacing and Fixes.** Thread invariants share V0.load-invariants' log line (`invariant: <id> <evidence>`), kv persistence, 24 h per-invariant card rate-limit, Needs-you card (`Thread invariant broken: <id>`, showing the thread's last 30 transitions), `Fix it` (tailored prompt pointing to `docs/SPEC.md` and `docs/changes/thread-invariants.md`), `Dismiss`, and Settings → Automation (under a **Thread invariants** group next to **Load invariants**, shared by desktop and phone; exposed on `Load.Invariants` as a fallback when slots are off).
 

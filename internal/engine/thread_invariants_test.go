@@ -369,3 +369,72 @@ func TestThreadInvariantFixStartsThreadWithTailoredPrompt(t *testing.T) {
 		t.Fatal("card remained open after Fix it")
 	}
 }
+
+// V0.thread-self-wake-churn: a thread whose CLI starts turns by itself that
+// the provider (or the adapter's settle) ends with nothing behind them is a
+// loop the owner must see; a thread the owner or the feed starts is not.
+func TestThreadInvariantSelfWakeChurn(t *testing.T) {
+	e, _, now := bare(t)
+	out := invLog(t, e)
+	id := bareThread(t, e)
+
+	// A run the agent manager opened for itself: KindRunStarted, with no send
+	// behind it, and the CLI's result carries no measured duration.
+	selfRun := func() {
+		t.Helper()
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunStarted, Thread: id}); err != nil {
+			t.Fatal(err)
+		}
+		*now = now.Add(2 * time.Second)
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id, Args: core.RunEndedArgs{Data: map[string]any{"interrupted": false}}}); err != nil {
+			t.Fatal(err)
+		}
+		*now = now.Add(30 * time.Second)
+	}
+
+	// Two inside the window are not yet a loop.
+	selfRun()
+	selfRun()
+	if n := invLines(out, InvThreadSelfWakeChurn); n != 0 {
+		t.Fatalf("fired below the threshold:\n%s", out)
+	}
+	selfRun()
+	if n := invLines(out, InvThreadSelfWakeChurn); n != 1 {
+		t.Fatalf("want 1 %s, got %d:\n%s", InvThreadSelfWakeChurn, n, out)
+	}
+	cs := invCards(e, InvThreadSelfWakeChurn)
+	if len(cs) != 1 || cs[0].Kind != InvKindThread || !strings.Contains(cs[0].Evidence, "thread="+id) {
+		t.Fatalf("card: %+v", cs)
+	}
+
+	// The owner's own turns never count, and a run the owner interrupted
+	// never does either, whatever its duration.
+	e2, _, now2 := bare(t)
+	out2 := invLog(t, e2)
+	id2 := bareThread(t, e2)
+	for range InvSelfWakeRuns + 1 {
+		if _, err := e2.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id2, Args: core.RunEndedArgs{Data: map[string]any{"interrupted": false}}}); err != nil {
+			t.Fatal(err)
+		}
+		*now2 = now2.Add(30 * time.Second)
+	}
+	if n := invLines(out2, InvThreadSelfWakeChurn); n != 0 {
+		t.Fatalf("fires without a self-start:\n%s", out2)
+	}
+	// A quota-refused self-start counts even with a measured duration.
+	for range InvSelfWakeRuns {
+		if _, err := e2.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunStarted, Thread: id2}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e2.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id2, Args: core.RunEndedArgs{
+			Failure: &core.Failure{Class: core.ClassQuota, Message: "Individual quota reached. Resets in 3h32m5s."},
+			Data:    map[string]any{"interrupted": false, "durationMs": float64(800)},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		*now2 = now2.Add(30 * time.Second)
+	}
+	if n := invLines(out2, InvThreadSelfWakeChurn); n != 1 {
+		t.Fatalf("quota-refused self-starts did not count:\n%s", out2)
+	}
+}
