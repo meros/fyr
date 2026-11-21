@@ -1313,11 +1313,13 @@ func TestACPReactiveWakeupQueuesPromptAndPreservesReply(t *testing.T) {
 	}
 }
 
-// V0.agy-open-tool-settle: a reactive turn whose model wrote a note and then
-// started a command is still running: its usage_update must not settle the
-// turn while the tool is open, and the tool's own completion is what arms the
-// settle. Before this, a 1.5 s settle over a five-minute command ended the
-// turn mid-flight and promoted the command to a background task.
+// V0.agy-open-tool-settle, V0.agy-settle-final-text: a reactive turn whose
+// model wrote a note and then started a command is still running: its
+// usage_update must not settle the turn while the tool is open. After the
+// command ends the turn is still the model's to end — a completed tool does
+// not arm the settle — so it closes only when the model's answer arrives.
+// Before V0.agy-open-tool-settle, a 1.5 s settle over a five-minute command
+// ended the turn mid-flight and promoted the command to background work.
 func TestACPUnsolicitedTurnWaitsForItsOpenTool(t *testing.T) {
 	p := newChanPipe()
 	sess := openACP(p, acpSpec{
@@ -1382,6 +1384,86 @@ func TestACPUnsolicitedTurnWaitsForItsOpenTool(t *testing.T) {
 	if !sawResult {
 		t.Fatal("no result after the command ended")
 	}
+}
+
+// V0.agy-settle-final-text: a completed tool is not the end of a reactive
+// turn, so it must not arm the settle. The live streams finish a tool batch,
+// then think for seconds or minutes before the next tool batch or the final
+// answer (2026-11-21: one continuous answer ran from 14:16 to 14:29 and was
+// closed into 47 runs, each 1.5 s after a tool completion, with no result
+// text). The turn's end is its last assistant text; only that arms the window.
+func TestACPUnsolicitedToolCompletionDoesNotSettleMidAnswer(t *testing.T) {
+	p := newChanPipe()
+	sess := openACP(p, acpSpec{
+		SessionID:   "s-mid",
+		SettleDelay: 40 * time.Millisecond,
+	}, cli.Handlers{}, false)
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+
+	drainToolResult := func(id string) {
+		t.Helper()
+		for {
+			m := nextOut(t, sess.Out(), 2*time.Second)
+			if m["type"] == "result" {
+				t.Fatalf("turn settled before tool %s completed: %+v", id, m)
+			}
+			if m["type"] != "user" {
+				continue
+			}
+			inner, _ := m["message"].(cli.Msg)
+			blocks, _ := inner["content"].([]any)
+			if len(blocks) != 1 {
+				continue
+			}
+			if b, _ := blocks[0].(cli.Msg); b["type"] == "tool_result" && b["tool_use_id"] == id {
+				return
+			}
+		}
+	}
+	expectNoResult := func(why string) {
+		t.Helper()
+		select {
+		case m := <-sess.Out():
+			t.Fatalf("turn settled %s: %+v", why, m)
+		case <-time.After(6 * sess.settleDelay):
+		}
+	}
+
+	// A reactive turn starts with a thought and a tool, and writes no
+	// assistant text: the live case of a model working quietly.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Reading the tests."}}}}`)
+	_ = nextOut(t, sess.Out(), time.Second) // thinking
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"tool_call","toolCallId":"call_a","name":"read_file","args":{"Path":"/a"},"status":"in_progress"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"usage_update","used":1000,"size":1048576}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_a","name":"read_file","status":"completed"}}}`)
+	drainToolResult("call_a")
+	expectNoResult("on a tool completion with no answer text")
+
+	// The model keeps working after the tool result: another thought, then
+	// another tool batch. Still no answer, so still no settle.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Fixing the test."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"tool_call","toolCallId":"call_b","name":"edit_file","args":{"Path":"/a"},"status":"in_progress"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_b","name":"edit_file","status":"completed"}}}`)
+	drainToolResult("call_b")
+	expectNoResult("on the second tool completion with no answer text")
+
+	// The final answer is the turn's end: its text plus usage_update settle
+	// the whole turn exactly once, with all of it in one result.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Done."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-mid","update":{"sessionUpdate":"usage_update","used":1500,"size":1048576}}}`)
+	for {
+		m := nextOut(t, sess.Out(), 2*time.Second)
+		if m["type"] == "result" {
+			if m["result"] != "Done." {
+				t.Fatalf("result text %q, want the final answer", m["result"])
+			}
+			break
+		}
+	}
+	expectNoResult("again after the final answer was delivered")
 }
 
 // V0.agy-reactive-wakeup: Interrupt during an unsolicited turn sends
