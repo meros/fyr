@@ -11,6 +11,7 @@ import (
 func TestPromptOpenPRWhenReady(t *testing.T) {
 	want := []string{
 		"push the branch, open a pull request with gh pr create",
+		"Use mcp__fyr__pr_create to open a GitHub pull request",
 		`mcp__fyr__change_request {change, ask: "merge"}`,
 		"do not stop at a local commit",
 		"do not arm a CI watch just to wait before asking to merge",

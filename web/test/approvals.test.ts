@@ -128,6 +128,11 @@ test("other Fyr MCP tools format naturally", () => {
   assert.equal(s.label, "Settle thread");
   assert.equal(s.title, "Mark this thread done?");
   assert.equal(s.summary, "PR merged");
+
+  const p = describeApproval(appr("mcp__fyr__pr_create", { title: "Add feature", head: "feat/x", base: "main", draft: true }));
+  assert.equal(p.label, "Open pull request");
+  assert.equal(p.title, "Open pull request “Add feature”?");
+  assert.equal(p.fields.length, 3);
 });
 
 test("missing tool falls back safely and humanKey formats snake and camel case", () => {

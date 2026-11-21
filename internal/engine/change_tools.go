@@ -12,6 +12,7 @@ import (
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
 )
 
@@ -45,6 +46,7 @@ const (
 	ChangeUpdateDesc  = "Tell Fyr what only you know about a code change. Send only what changed; send nothing when nothing moved. Fyr reads PR state, checks, reviews, conflicts and the pushed head itself; if you send one of these, Fyr replies with the value it reads. abandoned takes the card off the board."
 	ChangeRequestDesc = "Ask the owner for an effect Fyr runs: the one way to ask for a merge or a Fyr deploy. It returns at once; the answer comes later as a [Fyr] line. The same open ask made again returns the one already open. ask \"merge\" {change: the change, or the PR URL, args?: {method: squash|merge|rebase, head?: <commit SHA, default the head Fyr reads now>}}: ask right after you push; Fyr shows the ask to the owner when CI is green on that head, closes it and tells you when CI fails or GitHub cannot merge, and merges the head the owner saw; never run gh pr merge. ask \"fyr.deploy\" {args: {} or {dir: <Fyr checkout>, tests?: true}}, only from a thread on Fyr's own repo, no change needed: Fyr updates itself when CI publishes a green commit on main, so do not ask after a merge; args {} installs the newest CI release now; dir builds that checkout and switches to it to try it, which waits for the owner's press."
 	ChangeListDesc    = "Fyr's facts, one line per change, open changes only by default, at most 4,000 characters. id gives one change of this thread in full."
+	PRCreateDesc      = "Open a GitHub pull request for a pushed branch in this thread's repo or one of its change worktrees, and link it to the change card immediately. Preferred over shelling out to gh pr create (never blocked by CLI permission classifiers and needs no temp files). Call change_request {change, ask: \"merge\"} right after when the PR is ready to merge."
 )
 
 func (e *Engine) changeTools(s *mcp.Server) {
@@ -166,6 +168,100 @@ func (e *Engine) changeTools(s *mcp.Server) {
 				return fmt.Sprintf("Already asked: the owner has your ask to %s. The answer arrives in a later message starting with [Fyr]; do not ask again or do it another way.", what), nil
 			}
 			return fmt.Sprintf("Asked the owner to %s. The answer arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not do it another way meanwhile.", what), nil
+		}})
+
+	s.Add(mcp.Tool{Name: "pr_create",
+		Description: PRCreateDesc,
+		Schema: obj(map[string]any{
+			"title":     str("Pull request title."),
+			"body":      str("Pull request description (Markdown)."),
+			"change":    str("Optional: the change id or key to link this PR to; defaults dir to its worktree and head to its branch."),
+			"dir":       str("Optional: repo or worktree directory (absolute or relative to the thread's folder). Defaults to the change's worktree or the thread's folder."),
+			"head":      str("Optional: pushed branch name. Defaults to the change's branch or the checkout's current branch."),
+			"base":      str("Optional: target base branch. Defaults to the repo's default branch."),
+			"draft":     map[string]any{"type": "boolean", "description": "Open as a draft pull request."},
+			"labels":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional labels to apply."},
+			"reviewers": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional GitHub logins to request review from."},
+		}, "title", "body"),
+		Call: func(ctx context.Context, th string, a map[string]any) (string, error) {
+			if e.CreatePR == nil {
+				return "", errors.New("this host cannot open GitHub pull requests")
+			}
+			t, ok := e.Thread(th)
+			if !ok {
+				return "", errors.New("no such thread")
+			}
+			var ch *core.Change
+			if ref := sArg(a, "change"); ref != "" {
+				ch = core.FindChange(&t, ref)
+				if ch == nil {
+					return "", noChange(map[string]any{"change": ref})
+				}
+			}
+			rawDir := sArg(a, "dir")
+			if rawDir == "" && ch != nil && ch.Workspace != nil {
+				rawDir = ch.Workspace.Path
+			}
+			dir, err := allowedPRDir(t, rawDir)
+			if err != nil {
+				return "", err
+			}
+			head := sArg(a, "head")
+			if head == "" && ch != nil {
+				head = ch.Branch
+			}
+			// If no change was named explicitly, match a change whose worktree is dir.
+			if ch == nil {
+				for i := range t.Changes {
+					if ws := t.Changes[i].Workspace; ws != nil && filepath.Clean(ws.Path) == dir {
+						ch = &t.Changes[i]
+						if head == "" {
+							head = ch.Branch
+						}
+						break
+					}
+				}
+			}
+			draft, _ := a["draft"].(bool)
+			req := github.CreatePRReq{
+				Dir:       dir,
+				Title:     sArg(a, "title"),
+				Body:      sArg(a, "body"),
+				Head:      head,
+				Base:      sArg(a, "base"),
+				Draft:     draft,
+				Labels:    listArg(a, "labels"),
+				Reviewers: listArg(a, "reviewers"),
+			}
+			url, err := e.CreatePR(ctx, req)
+			if err != nil {
+				return "", err
+			}
+			prRepo, prN, _ := core.ParsePR(url)
+			o := core.ChangeOpen{
+				Kind:   core.KindCode,
+				Title:  req.Title,
+				Branch: head,
+				Evidence: []core.Evidence{
+					{Kind: "pr", URL: url, Title: fmt.Sprintf("#%d", prN)},
+				},
+			}
+			if prRepo != "" && strings.Count(prRepo, "/") == 1 {
+				o.Targets = append(o.Targets, "repo:github.com/"+prRepo)
+			}
+			if ch != nil {
+				o.Key = ch.Key
+			} else {
+				o.Key = core.PRKey(prRepo, prN)
+			}
+			r, err := e.changeInput(th, core.KindChangeOpen, core.ChangeOpenArgs{Open: o, PR: url})
+			if err != nil {
+				return "", fmt.Errorf("PR opened at %s, but linking failed: %w", url, err)
+			}
+			if e.OnPR != nil {
+				e.OnPR(th)
+			}
+			return fmt.Sprintf("Opened pull request %s (change %s %q). Fyr is watching its checks; call change_request {change: %q, ask: \"merge\"} now if it is ready to merge.", url, r.Change.ID, r.Change.Title, r.Change.ID), nil
 		}})
 
 	s.Add(mcp.Tool{Name: "change_list",
@@ -461,4 +557,47 @@ func workspaceText(w *core.Workspace) string {
 		from = " from " + w.Base
 	}
 	return fmt.Sprintf("Fyr made its worktree at %s on branch %s%s: work there (cd into it), and give that path to a subagent that works on this change. Fyr removes it only once nothing in it is uncommitted or unpushed.", w.Path, w.Branch, from)
+}
+
+// allowedPRDir resolves rawDir for pr_create and ensures it stays inside the
+// thread's working directory or one of its tracked change worktrees
+// (V0.pr-create-tool).
+func allowedPRDir(t core.Thread, rawDir string) (string, error) {
+	cwd := filepath.Clean(t.Cwd)
+	if cwd == "" || cwd == "." {
+		return "", errors.New("thread has no working directory")
+	}
+	dir := cwd
+	if strings.TrimSpace(rawDir) != "" {
+		dir = rawDir
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(cwd, dir)
+		}
+		dir = filepath.Clean(dir)
+	}
+	within := func(root, target string) bool {
+		if root == "" {
+			return false
+		}
+		root = filepath.Clean(root)
+		rel, err := filepath.Rel(root, target)
+		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	}
+	ok := within(cwd, dir)
+	if !ok {
+		for _, c := range t.Changes {
+			if c.Workspace != nil && within(c.Workspace.Path, dir) {
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok {
+		return "", errors.New("dir must be inside the thread's folder or one of its change worktrees")
+	}
+	st, err := os.Stat(dir)
+	if err != nil || !st.IsDir() {
+		return "", fmt.Errorf("dir %q is not an existing directory", dir)
+	}
+	return dir, nil
 }
