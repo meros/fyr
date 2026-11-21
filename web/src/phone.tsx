@@ -42,7 +42,7 @@ import { needsCount } from "./board.ts";
 import { TAB_LABEL, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import { DockRun, showCard } from "./runcard-ui.tsx";
 import { dockRun } from "./runcard.ts";
-import { HandoverForm } from "./handover-ui.tsx";
+import { HandoverForm, HandoverLinkBar } from "./handover-ui.tsx";
 import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, ProjectList, QuietGate, QuietHold, ProjectPicker, ProjectTag, StartedBy, type ProjectPatch, type QuietUnlock } from "./project-ui.tsx";
 import { colorVar, findProject, projectName, projectOf, recordOf } from "./projects.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
@@ -1010,6 +1010,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           onDismiss={() => p.open.setArrival(null)}
         />
       )}
+      {!cardOpen && <HandoverLinkBar t={t} phone />}
       {!cardOpen && <UndeclaredStrip id={t.id} />}
       {!cardOpen && <LeftoverStrip id={t.id} now={p.now} />}
       {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.open.events} cwd={t.cwd} />}
@@ -1666,7 +1667,20 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
     return (
       <MSheet onClose={close} label="Hand over">
         <div class="m-shh">Hand over</div>
-        <HandoverForm phone t={t} profiles={profilesOf(t, p.profiles)} onClose={close} onConfirm={(pr, m, e) => p.commands.handover(t.id, pr, m, e)} />
+        <HandoverForm
+          phone
+          t={t}
+          profiles={profilesOf(t, p.profiles)}
+          projects={p.store.projects}
+          onClose={close}
+          onConfirm={(pr, m, e) => p.commands.handover(t.id, pr, m, e)}
+          onConfirmHost={async (args) => {
+            const r = await p.commands.handoverHost(t.id, args);
+            if (r.error) return r.error;
+            if (r.threadId) p.nav.go({ screen: { name: "thread", id: r.threadId }, sheet: null });
+            return null;
+          }}
+        />
       </MSheet>
     );
   }

@@ -14,6 +14,10 @@ const (
 	// KindThreadAdopted is one thread adopted from T3, with its history:
 	// args Adopted.
 	KindThreadAdopted = "thread.adopted"
+	// KindThreadHandedIn creates a thread received from another host, with its
+	// copied conversation history (decision 0039, V0.trans-host-handover):
+	// args Adopted.
+	KindThreadHandedIn = "thread.handedIn"
 	// KindDeployNow is the owner's Restart now (V0.83): a deploy that
 	// waits for running threads switches at once.
 	KindDeployNow = "host.deployNow"
@@ -83,7 +87,7 @@ func init() {
 		}
 		return Result{Effects: []Effect{{Kind: EffectCancelMessage, MessageID: id}}}, nil
 	}})
-	RegisterKind(&InputKind{Name: KindThreadAdopted, From: observed, Makes: true, Untouched: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
+	adoptReduce := func(r Rec, in Input, _ time.Time) (Result, error) {
 		a, err := argsOf[Adopted](in)
 		if err != nil {
 			return Result{}, err
@@ -91,5 +95,7 @@ func init() {
 		*r.T, *r.V = *CloneThread(a.Thread), *cloneView(a.View)
 		r.T.ID, r.V.Entity = in.Thread, in.Thread
 		return Result{Events: a.History, At: a.At}, nil
-	}})
+	}
+	RegisterKind(&InputKind{Name: KindThreadAdopted, From: observed, Makes: true, Untouched: true, Reduce: adoptReduce})
+	RegisterKind(&InputKind{Name: KindThreadHandedIn, From: observed, Makes: true, Untouched: true, Reduce: adoptReduce})
 }

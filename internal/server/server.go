@@ -73,6 +73,9 @@ type Server struct {
 	Load *cgroup.Sampler
 	// HandoverPlan says which rung a handover would use (V0.45); optional.
 	HandoverPlan func(threadID, profile string) agent.Plan
+	// HandoverExport and HandoverImport carry sessions across hosts (decision 0039, V0.trans-host-handover); optional.
+	HandoverExport func(threadID string, wantBrief bool, targetLabel string) (agent.ExportAgentData, error)
+	HandoverImport func(threadID string, req agent.HandoverInReq) (agent.HandoverInResult, error)
 	// ProfileList is the current profiles (the providers, V0.50); it wins
 	// over Profiles. Optional.
 	ProfileList func() []provider.Profile
@@ -197,6 +200,8 @@ func (s *Server) routes(mcp bool) http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
 	mux.HandleFunc("GET /api/threads/{id}/pr", s.prDetail)
 	mux.HandleFunc("GET /api/threads/{id}/handover", s.handoverPlan)
+	mux.HandleFunc("POST /api/threads/{id}/handover/export", s.handoverExport)
+	mux.HandleFunc("POST /api/threads/handover/import", s.handoverImport)
 	mux.HandleFunc("GET /api/threads/{id}/commands", s.threadCommands)
 	mux.HandleFunc("POST /api/threads/{id}/focus", s.focus)
 	mux.HandleFunc("GET /api/commands", s.folderCommands)

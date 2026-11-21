@@ -22,6 +22,8 @@ import { stateLabel } from "./rows.ts";
 import { clockTime, duration, relTime } from "./format.ts";
 import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { dividerLine, rungDone } from "./handover.ts";
+import { HandoverLinkBar } from "./handover-ui.tsx";
+import { ref } from "./hostfeed.ts";
 import { back, pick, progressText, questionsOf, goTo, settledOf, skip, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { deskThreadMenu, type ThreadAction } from "./actions.ts";
@@ -242,6 +244,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
       </div>
       {p.arrived && <ArrivedBar a={p.arrived.a} onBack={p.arrived.onBack} onDismiss={p.arrived.onDismiss} />}
+      <HandoverLinkBar t={t} />
       <UndeclaredStrip id={t.id} />
       <LeftoverStrip id={t.id} now={p.now} />
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.events} cwd={t.cwd} />}
@@ -886,9 +889,15 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
   }
 }
 
-/** V0.45: "Handed over from Claude to Claude (acme) · 17:20", and how the context went over. */
+/** V0.45, V0.trans-host-handover: "Handed over from Claude to Claude (acme) · 17:20", and cross-host link when moved between hosts. */
 function HandoverDivider({ it }: { it: Extract<Item, { kind: "handover" }> }) {
   const profiles = profilesOf({ hostId: useContext(HostContext) }, useContext(ProfilesContext)); // the thread's host's
+  const dir = useDirectory();
+  const link = it.toHostId && it.toThread
+    ? { ref: ref(it.toHostId, it.toThread), label: `Open on ${it.toHost || "target"} →` }
+    : it.fromHostId && it.fromThread
+      ? { ref: ref(it.fromHostId, it.fromThread), label: `View source on ${it.fromHost || "source"}` }
+      : null;
   return (
     <div class="hodiv" role="separator">
       <span class="hot">
@@ -897,6 +906,11 @@ function HandoverDivider({ it }: { it: Extract<Item, { kind: "handover" }> }) {
           {rungDone(it.rung)}
           {it.note ? ` · ${it.note}` : ""}
         </small>
+        {link && (
+          <button type="button" class="ho-linkbtn" onClick={() => dir.openThread(link.ref)}>
+            {link.label}
+          </button>
+        )}
       </span>
     </div>
   );

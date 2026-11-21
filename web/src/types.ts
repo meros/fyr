@@ -115,6 +115,13 @@ export interface WakeUp {
   by?: string;
 }
 
+/** Decision 0039, V0.trans-host-handover: link to the counterpart thread on another host. */
+export interface HandoverLink {
+  hostId: string;
+  hostName?: string;
+  threadId: string;
+}
+
 export interface ThreadDTO {
   /** Increases on every change, also across host restarts: keep the higher (API v0). */
   rev?: number;
@@ -181,6 +188,9 @@ export interface ThreadDTO {
   liveView?: boolean;
   /** V0.45: a handover to another profile is going on */
   handover?: { to: string; model?: string; at: string } | null;
+  /** Decision 0039, V0.trans-host-handover: cross-host handover links */
+  handedOverFrom?: HandoverLink | null;
+  handedOverTo?: HandoverLink | null;
   /** V0.37: the live view; read it through liveViewOf (view.ts) */
   live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string; offers?: Offer[]; runs?: OfferRun[] } | null;
   /** V0.33: messages the host still holds (queued or sent, not yet read) */

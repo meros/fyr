@@ -30,9 +30,27 @@ type Conversations interface {
 }
 
 // Plan is the rung a handover would use now, and why rung 1 does not apply.
+// CLI and Git are populated for cross-host handover inspection (decision 0039,
+// V0.trans-host-handover).
 type Plan struct {
-	Rung string `json:"rung"`
-	Note string `json:"note,omitempty"`
+	Rung string       `json:"rung"`
+	Note string       `json:"note,omitempty"`
+	CLI  string       `json:"cli,omitempty"`
+	Git  *HandoverGit `json:"git,omitempty"`
+}
+
+// HandoverGit summarizes the source checkout's git state so the handover
+// dialog can inform the owner about uncommitted/unpushed work and the target
+// host can inject host-move context (decision 0039, V0.trans-host-handover).
+type HandoverGit struct {
+	Repo     string `json:"repo,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Default  string `json:"default,omitempty"`
+	Head     string `json:"head,omitempty"`
+	Ahead    int    `json:"ahead,omitempty"`
+	Unpushed int    `json:"unpushed,omitempty"`
+	Dirty    int    `json:"dirty,omitempty"`
+	Worktree bool   `json:"worktree,omitempty"`
 }
 
 // BriefTimeout bounds the source's handover turn (rung 3).
@@ -80,16 +98,19 @@ func (m *Manager) HandoverPlan(threadID, profile string) Plan {
 		return Plan{Rung: RungAdopt, Note: "No such thread"}
 	}
 	from := m.cfg.Profile(t.Profile)
+	p := Plan{Rung: RungResume, CLI: cliID(from.CLI), Git: readHandoverGit(t.Cwd)}
 	if profile != "" {
 		to := m.cfg.Profile(profile)
 		if cliID(from.CLI) != cliID(to.CLI) {
-			return Plan{Rung: RungAdopt, Note: "The target runs another CLI"}
+			p.Rung, p.Note = RungAdopt, "The target runs another CLI"
+			return p
 		}
 	}
 	if _, err := m.resumable(t, from); err != nil {
-		return Plan{Rung: RungAdopt, Note: err.Error()}
+		p.Rung, p.Note = RungAdopt, err.Error()
+		return p
 	}
-	return Plan{Rung: RungResume}
+	return p
 }
 
 func (m *Manager) handoverDir() string {

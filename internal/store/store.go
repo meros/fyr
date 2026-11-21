@@ -80,6 +80,18 @@ func (tx *Tx) PutThread(t *core.Thread) error {
 	return err
 }
 
+// DeleteThread removes a thread, its views and its events. Used only to roll
+// back a freshly imported thread whose target session could not start
+// (decision 0039, V0.trans-host-handover).
+func (tx *Tx) DeleteThread(id string) error {
+	for _, q := range []string{`DELETE FROM threads WHERE id=?`, `DELETE FROM views WHERE entity=?`, `DELETE FROM events WHERE subject=?`} {
+		if _, err := tx.tx.Exec(q, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // PutChange stores a host change record (#35).
 func (tx *Tx) PutChange(c *core.Change) error {
 	b, _ := json.Marshal(c)

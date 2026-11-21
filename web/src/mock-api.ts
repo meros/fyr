@@ -175,6 +175,16 @@ export function createMockApi(scenario: string): Api {
       log.push({ host, action, threadId, args: JSON.parse(JSON.stringify(args ?? {})) });
       if (offline) return { ok: false, error: "no connection to the host" };
       const hn = nameOf(host);
+      if (action === "front.threadHandover") {
+        const toHost = String(args?.toHost ?? "");
+        const fromHost = String(args?.fromHost ?? "");
+        const tid = String(args?.threadId ?? "");
+        if (!toHost || !fromHost || !tid) return { ok: false, error: "fromHost, toHost and threadId are required" };
+        if (toHost === fromHost) return { ok: false, error: "fromHost and toHost must be different hosts" };
+        const newRid = "t_ho_" + Math.random().toString(36).slice(2, 8);
+        const targetRef = ref(refHost(toHost as HostId), newRid);
+        return { ok: true, threadId: targetRef, result: { host: toHost, threadId: targetRef, rid: newRid, rung: "resume", cwd: String(args?.cwd ?? "/work") } };
+      }
       if (action.startsWith("provider.") || action === "host.autoDeploy" || action === "host.updateNow" || action === "host.autoMerge" || action === "host.systemAgents") {
         const at = hostFor(hn);
         if ("error" in at) return { ok: false, error: at.error };

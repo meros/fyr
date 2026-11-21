@@ -122,7 +122,7 @@ export function threadActions(t: Thread, where: Where): ThreadAction[] {
   out.push(cmd("liveView", "thread.setView", t.liveView ? "Turn off live view" : "Turn on live view", "thread", { args: { on: !t.liveView }, hint: "The agent keeps its state pinned on top" }));
   {
     const d = why("thread.handover");
-    out.push({ id: "handover", kind: "sheet", sheet: "handover", command: "thread.handover", label: "Hand over…", hint: "Continue this thread with another provider", group: "thread", ...(d ? { disabled: d } : {}) });
+    out.push({ id: "handover", kind: "sheet", sheet: "handover", command: "thread.handover", label: "Hand over…", hint: "Continue this thread on another provider or host", group: "thread", ...(d ? { disabled: d } : {}) });
   }
   out.push(cmd("regenTitle", "thread.regenerateTitle", "Regenerate title", "thread", { hint: "Name the thread from its conversation so far" })); // V0.108
   if (t.running) out.push(cmd("interrupt", "thread.interrupt", "Stop run", "thread", { key: "Esc" }));
