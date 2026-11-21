@@ -274,9 +274,15 @@ func (Adapter) Reattach(p runner.Pipe, log io.Writer, h cli.Handlers) (cli.Sessi
 }
 
 // ReattachSession speaks ACP over a runner pipe with the thread's known
-// session id and model restored across a restart of fyrd (V0.90).
-func (Adapter) ReattachSession(p runner.Pipe, sessionID, model string, log io.Writer, h cli.Handlers) (cli.Session, error) {
-	return openACP(p, acpSpec{Log: log, SessionID: sessionID, Model: model}, h, true), nil
+// session state restored across a restart of fyrd (V0.90, V0.agy-reattach-queue).
+func (Adapter) ReattachSession(p runner.Pipe, state cli.ReattachState, log io.Writer, h cli.Handlers) (cli.Session, error) {
+	return openACP(p, acpSpec{
+		Log:             log,
+		SessionID:       state.SessionID,
+		Model:           state.Model,
+		ReattachRunning: state.Running,
+		ReattachQueued:  state.Queued,
+	}, h, true), nil
 }
 
 // Print runs one prompt via an ephemeral ACP session with no tools allowed

@@ -132,10 +132,26 @@ type Reattacher interface {
 	Reattach(p runner.Pipe, log io.Writer, h Handlers) (Session, error)
 }
 
+// QueuedMessage is a user message waiting in an adapter's queue across a
+// restart of fyrd (V0.90, V0.agy-reattach-queue).
+type QueuedMessage struct {
+	ID      string
+	Content []Msg
+}
+
+// ReattachState is what fyrd knows about a thread's kept session when
+// reattaching after a restart (V0.90, V0.agy-reattach-queue).
+type ReattachState struct {
+	SessionID string
+	Model     string
+	Running   bool
+	Queued    []QueuedMessage
+}
+
 // SessionReattacher is a Reattacher that also takes the thread's known
-// session id and model when reattaching to a kept process (e.g. ACP).
+// session state when reattaching to a kept process (e.g. ACP).
 type SessionReattacher interface {
-	ReattachSession(p runner.Pipe, sessionID, model string, log io.Writer, h Handlers) (Session, error)
+	ReattachSession(p runner.Pipe, state ReattachState, log io.Writer, h Handlers) (Session, error)
 }
 
 // Listing is what a CLI reported when asked for its models (V0.120): the
