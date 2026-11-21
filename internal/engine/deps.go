@@ -57,8 +57,6 @@ type AgentDeps struct {
 	// Providers runs the provider commands' effect (3.16); nil: this host
 	// has no providers.
 	Providers Providers
-	// Adopt runs t3.adopt's effect.
-	Adopt func(ids []string) (int, error)
 	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
 	AttachmentExists func(id string) bool
 	// ProfileExists checks the target of thread.handover (V0.45); nil

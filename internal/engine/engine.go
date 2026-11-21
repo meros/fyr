@@ -569,22 +569,6 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 		if err := e.Agents.Do(in.Thread, ef); err != nil {
 			return fail(409, err.Error())
 		}
-	case core.EffectAdopt:
-		if e.Adopt == nil {
-			return fail(409, "T3 adoption is not configured")
-		}
-		var ids []string
-		raw, _ := ef.Request.Args["t3Ids"].([]any)
-		for _, x := range raw {
-			if s, ok := x.(string); ok {
-				ids = append(ids, s)
-			}
-		}
-		n, err := e.Adopt(ids)
-		if err != nil {
-			return fail(500, err.Error())
-		}
-		reply.Result = map[string]any{"adopted": n}
 	case core.EffectDeployNow:
 		if e.DeployNow == nil {
 			return fail(409, "This host runs no deploy")

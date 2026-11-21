@@ -58,8 +58,6 @@ type Server struct {
 	// Attach stores uploaded files (V0.18); optional.
 	Attach   *attach.Store
 	Profiles []provider.Profile
-	// T3Candidates lists adoptable T3 threads; optional.
-	T3Candidates func() (any, error)
 	// FS serves the host folder picker (V0.42); optional.
 	FS *hostfs.FS
 	// PR reads PR details for the PR tab (V0.43); optional.
@@ -206,7 +204,6 @@ func (s *Server) routes(mcp bool) http.Handler {
 	mux.HandleFunc("POST /api/threads/{id}/focus", s.focus)
 	mux.HandleFunc("GET /api/commands", s.folderCommands)
 	mux.HandleFunc("POST /api/command", s.command)
-	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
 	mux.HandleFunc("GET /api/load", s.load)
 	mux.HandleFunc("POST /api/board/visit", s.boardVisit)
@@ -689,19 +686,6 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 		rep.Status = 200
 	}
 	api.WriteJSON(w, rep.Status, rep)
-}
-
-func (s *Server) t3(w http.ResponseWriter, r *http.Request) {
-	if s.T3Candidates == nil {
-		api.WriteJSON(w, 200, map[string]any{"threads": []any{}})
-		return
-	}
-	c, err := s.T3Candidates()
-	if err != nil {
-		api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
-		return
-	}
-	api.WriteJSON(w, 200, map[string]any{"threads": c})
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {

@@ -4,13 +4,12 @@ import "time"
 
 // The kinds whose reply waits for their effect (#48, InputKind.Await): a
 // message cancel needs the agent's answer before it can say the agent never
-// sees the message (V0.33); T3 adoption (V0.9) and the provider commands
-// (V0.50) change the host's own setup, outside the state, and report what
+// sees the message (V0.33); the provider commands (V0.50) and host setup
+// commands change the host's own setup, outside the state, and report what
 // they did. Each goes down the one path: the sender, the guard, the reduce,
 // then the effect and the receipt with its outcome.
 const (
 	KindCancelMessage = "thread.cancelMessage"
-	KindT3Adopt       = "t3.adopt"
 	// KindThreadAdopted is one thread adopted from T3, with its history:
 	// args Adopted.
 	KindThreadAdopted = "thread.adopted"
@@ -37,7 +36,6 @@ var ProviderKinds = []string{"provider.import", "provider.create", "provider.upd
 
 // The effects of the host kinds; Request carries the command.
 const (
-	EffectAdopt    EffectKind = "t3.adopt"
 	EffectProvider EffectKind = "provider"
 	// EffectDeployNow stops a deploy's drain (V0.83).
 	EffectDeployNow EffectKind = "deploy.now"
@@ -62,7 +60,6 @@ func init() {
 			return Result{Effects: []Effect{{Kind: eff, Request: &EffectReq{Action: in.Kind, Args: mapArgs(in)}}}}, nil
 		}
 	}
-	RegisterKind(&InputKind{Name: KindT3Adopt, On: RecHost, From: ownerOnly, Await: true, Reduce: command(EffectAdopt)})
 	for _, name := range ProviderKinds {
 		RegisterKind(&InputKind{Name: name, On: RecHost, From: ownerOnly, Await: true, Reduce: command(EffectProvider)})
 	}

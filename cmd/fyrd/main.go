@@ -245,7 +245,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		TextJudge:        mgr.JudgeText,     // V0.210
 		Searcher:         mgr.SearchThreads, // V0.ai-search
 		Providers:        h.reg,             // #48: provider commands go down the engine's path
-		Adopt:            h.t3.Adopt,
 		AttachmentExists: func(id string) bool { _, err := att.Get(id); return err == nil },
 		ProfileExists:    func(id string) bool { _, ok := h.profile(id); return ok },
 		SystemAgentResolve: func(job string) (string, string, error) { // V0.115: Settings shows what each job runs
@@ -768,8 +767,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			} else {
 				tree.Unfocus(device, thread, time.Now())
 			}
-		},
-		T3Candidates: func() (any, error) { return h.t3.Candidates() }}
+		}}
 	if tree != nil {
 		go func() { // V0.85: a focus whose beats stopped drops back
 			t := time.NewTicker(5 * time.Second)

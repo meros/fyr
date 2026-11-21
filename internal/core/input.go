@@ -142,7 +142,7 @@ const (
 	RecThread  Record = ""        // a thread and the owner's view of it
 	RecProject Record = "project" // a project (3.15)
 	// RecHost changes no record of the state: the host's own setup (the
-	// provider registry, T3 adoption), done by the kind's effects.
+	// provider registry, deploy/update controls), done by the kind's effects.
 	RecHost Record = "host"
 )
 
@@ -170,8 +170,8 @@ type InputKind struct {
 	Makes bool
 	// Await: the sender's reply waits for the kind's effects, which the
 	// engine runs before it answers and before it stores the receipt (a
-	// message cancel needs the agent's answer; T3 adoption and the provider
-	// commands report what they did).
+	// message cancel needs the agent's answer; the provider commands report
+	// what they did).
 	Await bool
 }
 

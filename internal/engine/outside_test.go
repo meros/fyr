@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,27 +130,6 @@ func TestT3Adopt(t *testing.T) {
 	evs, _ := e.Events(a.ID, 0, 100)
 	if !a.UpdatedAt.Equal(at) || len(evs) == 0 || !evs[0].At.Equal(time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)) {
 		t.Fatalf("times: updated %v, history %+v", a.UpdatedAt, evs)
-	}
-}
-
-// #48: t3.adopt is an Input kind on the one path: its reply waits for the
-// adoption, and one commandId adopts once.
-func TestT3AdoptCommand(t *testing.T) {
-	e, _, _ := bare(t)
-	if r := e.Command(api.Cmd{CommandID: "a0", Action: "t3.adopt"}); r.OK || r.Status != 409 {
-		t.Fatalf("without T3: %+v", r)
-	}
-	calls := 0
-	e.Adopt = func(ids []string) (int, error) { calls++; return len(ids), nil }
-	guardDeps(t, e)
-	for range 2 {
-		r := e.Command(api.Cmd{CommandID: "a1", Action: "t3.adopt", Args: core.Args{"t3Ids": []any{"x", "y"}}})
-		if n, _ := r.Result.(map[string]any)["adopted"]; !r.OK || fmt.Sprint(n) != "2" {
-			t.Fatalf("adopt: %+v", r)
-		}
-	}
-	if calls != 1 {
-		t.Fatalf("one command adopted %d times", calls)
 	}
 }
 
