@@ -146,6 +146,17 @@ type ReattachState struct {
 	Model     string
 	Running   bool
 	Queued    []QueuedMessage
+	// AllowedTools are the launch's AllowedTools: the tools the adapter
+	// answers itself instead of asking. They are not part of the ACP
+	// handshake, so an adapter that reattaches without them asks the owner
+	// for calls the process had never asked about (V0.agy-reattach-allowlist).
+	AllowedTools []string
+	// DisallowedTools are the launch's DisallowedTools, likewise.
+	DisallowedTools []string
+	// MCPServers are the launch's MCPServers: an ACP adapter tells an eager
+	// `mcp_<server>_<tool>` name apart from a flatter name by them, and
+	// without them it guesses (V0.agy-reattach-allowlist).
+	MCPServers []Msg
 }
 
 // SessionReattacher is a Reattacher that also takes the thread's known

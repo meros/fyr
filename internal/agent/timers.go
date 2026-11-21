@@ -10,6 +10,14 @@ import "strings"
 // owner ran /loop in keeps them, since /loop is built on them.
 var TimerTools = []string{"CronCreate", "CronDelete", "ScheduleWakeup"}
 
+// fyrMCPTools is the allowlist of the process that has Fyr's own MCP server:
+// the adapter answers these itself, and the owner is asked about nothing
+// Fyr owns (V0.agy-reattach-allowlist reattaches with the same list).
+const fyrMCPTools = "mcp__fyr__*"
+
+// fyrMCPName is the server's name in that config file.
+const fyrMCPName = "fyr"
+
 // isLoop reports that an owner's message runs /loop.
 func isLoop(text string) bool {
 	f := strings.Fields(text)
