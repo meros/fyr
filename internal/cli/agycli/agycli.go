@@ -50,19 +50,24 @@ func (Adapter) ID() string               { return ID }
 func (Adapter) DefaultBinary() string    { return "agy" }
 func (Adapter) DefaultConfigDir() string { return "~/.gemini" }
 
-// FastModel picks a provider's fast Flash model for system jobs (titles, setup).
+// FastModel picks a provider's fast model for system jobs (titles, setup,
+// approval judge): Gemini 4 Hydrogen first, then Flash.
 func (Adapter) FastModel(models []cli.Model, _ map[string]string, isEndpoint bool) string {
-	for _, m := range models {
-		if strings.Contains(strings.ToLower(m.ID), "flash") {
-			return m.ID
-		}
-	}
-	if !isEndpoint {
-		for _, m := range Models {
-			if strings.Contains(strings.ToLower(m.ID), "flash") {
-				return m.ID
+	pick := func(ms []cli.Model) string {
+		for _, kw := range []string{"hydrogen", "flash"} {
+			for _, m := range ms {
+				if strings.Contains(strings.ToLower(m.ID), kw) {
+					return m.ID
+				}
 			}
 		}
+		return ""
+	}
+	if id := pick(models); id != "" {
+		return id
+	}
+	if !isEndpoint {
+		return pick(Models)
 	}
 	return ""
 }

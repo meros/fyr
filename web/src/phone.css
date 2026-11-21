@@ -267,6 +267,10 @@
 .m-prev .ed{flex:none;height:44px;padding:0 10px;display:grid;place-items:center;font:500 14px/20px var(--ui);color:var(--harbour)}
 .m-otherf{flex:none;padding:12px 14px;border:1px solid var(--harbour);border-radius:12px;font:400 16px/22px var(--ui);background:var(--raised);color:var(--ink);outline:0;width:100%}
 .m-pre{margin:0;flex:none;padding:10px 12px;border-radius:10px;background:var(--sunken);font:400 13px/19px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);max-height:calc(19px * 8 + 20px);overflow-y:auto}
+.m-pre.full{max-height:none}
+.m-apbadge{flex:none;padding:2px 8px;border-radius:999px;border:1px solid var(--line-strong);background:var(--raised);font:500 11px/16px var(--ui);color:var(--beam-ink);white-space:nowrap}
+.m-apnote{font:400 14px/20px var(--ui);color:var(--ink-muted);margin:-4px 0 0;flex:none;overflow-wrap:anywhere}
+.m-apmore{flex:none;height:44px;margin:-6px 0 -4px;display:inline-flex;align-items:center;font:500 14px/20px var(--ui);color:var(--harbour);align-self:flex-start}
 .m-kv{font:400 12px/16px var(--mono);color:var(--ink-muted);flex:none;margin-top:-4px}
 
 /* new thread */

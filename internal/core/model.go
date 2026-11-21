@@ -269,6 +269,9 @@ type Decision struct {
 	Tool      string       `json:"tool,omitempty"`
 	Input     any          `json:"input,omitempty"`
 	Agent     string       `json:"agent,omitempty"` // which subagent asked, when known
+	// JudgeNote is the approval judge's short reason when it escalated a
+	// tool call to the owner (V0.tool-approval-judge).
+	JudgeNote string       `json:"judgeNote,omitempty"`
 	Effect    *EffectReq   `json:"effect,omitempty"`
 	// Async: the agent asked with Fyr's ask tool (V0.ask-tool) and is not
 	// waiting in a tool call: the question does not need the process, and

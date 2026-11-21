@@ -35,8 +35,13 @@ type Project struct {
 	// AgentSettle is what an agent's settle_request does on the project's
 	// threads (V0.settle-request): AgentSettleAuto settles the thread once
 	// nothing waits; "" (ask) shows the owner a Settle chip.
-	AgentSettle string    `json:"agentSettle,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
+	AgentSettle string `json:"agentSettle,omitempty"`
+	// ToolApproval is how agent tool approval prompts run on this project's
+	// threads (V0.tool-approval-judge): ToolApprovalAuto lets the approval
+	// judge allow routine calls and escalate uncertain ones; "" (ask) asks
+	// the owner directly.
+	ToolApproval string    `json:"toolApproval,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
 	// Image is the version of the project's image icon (V0.116), served at
 	// /api/projects/<id>/icon; "" draws Icon, the glyph, in Color.
 	Image string `json:"image,omitempty"`
@@ -54,7 +59,7 @@ type Project struct {
 	// ordinary project. Each record stays its own host's.
 	Link string `json:"link,omitempty"`
 	// SharedAt stamps the values the members share: name, colour, glyph icon,
-	// quiet hours, priority and agentSettle (V0.linked-agent-settle). The newest stamp in a link wins (decision 0034).
+	// quiet hours, priority, agentSettle and toolApproval. The newest stamp in a link wins (decision 0034).
 	SharedAt time.Time `json:"sharedAt,omitzero"`
 }
 
@@ -79,6 +84,16 @@ const (
 // SettlesOnRequest reports that the project settles a thread when its agent
 // asks (V0.settle-request): a nil project asks the owner.
 func (p *Project) SettlesOnRequest() bool { return p != nil && p.AgentSettle == AgentSettleAuto }
+
+// How agent tool approval prompts are handled (V0.tool-approval-judge); "" is ask.
+const (
+	ToolApprovalAsk  = string(DecisionAsk)
+	ToolApprovalAuto = "auto"
+)
+
+// AutoJudgesApprovals reports that the project runs the approval judge before
+// asking the owner on tool approvals (V0.tool-approval-judge): a nil project asks.
+func (p *Project) AutoJudgesApprovals() bool { return p != nil && p.ToolApproval == ToolApprovalAuto }
 
 // Rank is the priority as a number: 1 high, 0 normal, -1 low.
 func (p *Project) Rank() int {
@@ -406,6 +421,16 @@ func reduceProjectUpdate(r Rec, in Input, now time.Time) (Result, error) {
 		}
 		p.AgentSettle = v
 	}
+	if raw, ok := a["toolApproval"]; ok { // V0.tool-approval-judge; null is ask
+		v, _ := raw.(string)
+		if raw != nil && v != ToolApprovalAsk && v != ToolApprovalAuto {
+			return Result{}, reject(RejectBadArgs, "toolApproval must be ask or auto")
+		}
+		if v == ToolApprovalAsk {
+			v = ""
+		}
+		p.ToolApproval = v
+	}
 	p.Edited = true
 	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}, nil
 }
@@ -445,7 +470,7 @@ func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{Reply: map[string]any{"id": p.ID, "kept": true}}, nil
 	}
 	shared := Args{}
-	for _, k := range []string{"name", "color", "icon", "quiet", "priority", "agentSettle"} { // V0.linked-agent-settle
+	for _, k := range []string{"name", "color", "icon", "quiet", "priority", "agentSettle", "toolApproval"} { // V0.linked-agent-settle, V0.tool-approval-judge
 		if v, ok := a[k]; ok {
 			shared[k] = v
 		}

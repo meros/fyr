@@ -153,6 +153,7 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
         quiet: newest.quiet,
         priority: newest.priority,
         agentSettle: newest.agentSettle, // V0.linked-agent-settle
+        toolApproval: newest.toolApproval, // V0.tool-approval-judge
         image: pic?.image,
         ...(pic ? { imageFrom: { id: pic.id!, hostId: pic.hostId! } } : {}),
         members,
@@ -188,7 +189,7 @@ export function memberOn(p: Project | undefined, hostId: string | undefined): Pr
 export function splitSharedPatch<T extends Record<string, unknown>>(patch: T): { shared: Partial<T>; own: Partial<T> } {
   const shared: Partial<T> = {};
   const own: Partial<T> = {};
-  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet", "priority", "agentSettle"].includes(String(k)) ? shared : own)[k] = patch[k];
+  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet", "priority", "agentSettle", "toolApproval"].includes(String(k)) ? shared : own)[k] = patch[k];
   return { shared, own };
 }
 
@@ -400,8 +401,9 @@ export interface ProjectFields {
   quiet: QuietHours[];
   priority: ProjectPriority;
   agentSettle: AgentSettle;
+  toolApproval: ToolApproval;
 }
-export type ProjectFieldPatch = { agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; effort?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
+export type ProjectFieldPatch = { toolApproval?: "auto" | null; agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; effort?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
 
 /** V0.project-priority: a project's priority as the page shows it; normal is stored as none. */
 export type ProjectPriority = "high" | "normal" | "low";
@@ -425,6 +427,16 @@ export function agentSettleLine(v: AgentSettle): string {
     : "When the agent says its work is done, a Settle chip shows under its newest message.";
 }
 
+/** V0.tool-approval-judge: how agent tool approvals run on the project; ask is stored as none. */
+export type ToolApproval = "ask" | "auto";
+export const toolApprovalOf = (p: { toolApproval?: string } | undefined): ToolApproval => (p?.toolApproval === "auto" ? "auto" : "ask");
+/** V0.tool-approval-judge: what the "Tool approvals" row says the choice does. */
+export function toolApprovalLine(v: ToolApproval): string {
+  return v === "auto"
+    ? "A fast judge auto-approves routine tool calls and escalates anything risky or unclear to you."
+    : "Every agent tool permission prompt asks you directly.";
+}
+
 /** project.update's args for one field, and only that field, so an untouched field never becomes the owner's
  *  (V0.116 (2)). A new provider clears the model; no quiet windows turns quiet hours off. */
 export function patchFor<K extends keyof ProjectFields>(field: K, value: ProjectFields[K]): ProjectFieldPatch {
@@ -441,6 +453,8 @@ export function patchFor<K extends keyof ProjectFields>(field: K, value: Project
       return { priority: value === "normal" ? null : (value as "high" | "low") };
     case "agentSettle":
       return { agentSettle: value === "auto" ? "auto" : null };
+    case "toolApproval":
+      return { toolApproval: value === "auto" ? "auto" : null };
   }
   return { [field]: value } as ProjectFieldPatch;
 }

@@ -124,6 +124,11 @@ type Config struct {
 	HostName      string
 	ProfileExists func(id string) bool
 	SystemAgents  func() core.SystemAgents
+	// V0.tool-approval-judge: ApprovalContext reads the project/thread/owner
+	// context for a tool approval request; ApprovalTimeout bounds one judge
+	// call (default 15 s).
+	ApprovalContext func(threadID string) ApprovalContext
+	ApprovalTimeout time.Duration
 	// V0.143, the watchdog. AckTimeout: how long a written message may
 	// wait for the CLI's command_lifecycle report (default 60 s);
 	// ControlTimeout: the same for a control request, a Stop (default
@@ -178,6 +183,8 @@ type Manager struct {
 	loops map[string]bool
 	// restoreDir makes again a worktree Fyr removed (V0.worktree-sweep).
 	restoreDir atomic.Pointer[func(dir string) (bool, error)]
+	// approvalSlots bounds concurrent approval judge calls on this host.
+	approvalSlots chan struct{}
 }
 
 // SetRestoreDir sets what makes again a thread's folder that Fyr removed.
@@ -212,6 +219,11 @@ type session struct {
 	// request the runner has not asked again yet.
 	adopted map[string]bool
 	reqs    map[string]string // control request id → decision id
+	// V0.tool-approval-judge: in-flight approval judge calls by control
+	// request id (so cancelRequest / exit aborts them), and exact-match
+	// per-session auto-approval cache (canonical tool+input hash → reason).
+	judging  map[string]context.CancelFunc
+	approved map[string]string
 	// out holds unread messages: id → "sent" or "queued" (V0.33);
 	// cancelling marks the ones a cancel request is out for.
 	out        map[string]string
@@ -319,6 +331,9 @@ func New(host Host, cfg Config) *Manager {
 	if cfg.PressureMaxWait == 0 {
 		cfg.PressureMaxWait = 15 * time.Minute
 	}
+	if cfg.ApprovalTimeout == 0 {
+		cfg.ApprovalTimeout = 15 * time.Second
+	}
 	if cfg.Setup == nil {
 		cfg.Setup = HostSetup
 	}
@@ -330,7 +345,7 @@ func New(host Host, cfg Config) *Manager {
 			os.Remove(f)
 		}
 	}
-	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}, loops: map[string]bool{}}
+	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}, loops: map[string]bool{}, approvalSlots: make(chan struct{}, 4)}
 }
 
 // writeMCPConfig writes a CLI's MCP config to a new 0600 file in dir.

@@ -299,6 +299,12 @@ func TestEnvAndArgs(t *testing.T) {
 	if gotArgs != "acp --stdio --gemini-dir /cfg/.gemini --add-dir /extra --dangerously-skip-permissions" {
 		t.Fatalf("args: %q", gotArgs)
 	}
+	if got := a.FastModel([]cli.Model{{ID: "gemini-4-neon"}, {ID: "gemini-3.8-flash"}, {ID: "gemini-4-hydrogen"}}, nil, false); got != "gemini-4-hydrogen" {
+		t.Fatalf("FastModel should prefer gemini-4-hydrogen, got %q", got)
+	}
+	if got := a.FastModel([]cli.Model{{ID: "gemini-4-neon"}, {ID: "gemini-3.8-flash"}}, nil, false); got != "gemini-3.8-flash" {
+		t.Fatalf("FastModel should fall back to flash, got %q", got)
+	}
 }
 
 func TestACPLifecycleMCPSystemPromptAndImages(t *testing.T) {

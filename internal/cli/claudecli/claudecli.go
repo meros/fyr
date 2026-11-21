@@ -201,9 +201,16 @@ func (a Adapter) Start(l cli.Launch, h cli.Handlers) (cli.Session, error) {
 // MCP servers, no settings files and no saved session, and system replaces
 // Claude Code's system prompt, so the call reads little more than the prompt.
 func PrintArgs(model, system string) []string {
+	return printArgs(model, "", system)
+}
+
+func printArgs(model, effort, system string) []string {
 	args := []string{"-p"}
 	if model != "" {
 		args = append(args, "--model", model)
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
 	}
 	return append(args, "--system-prompt", system, "--tools", "", "--strict-mcp-config", "--no-session-persistence",
 		"--setting-sources", "", "--output-format", "text")
@@ -220,7 +227,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 	if bin == "" {
 		bin = "claude"
 	}
-	cmd := proc.Command(ctx, bin, PrintArgs(l.Model, system)...)
+	cmd := proc.Command(ctx, bin, printArgs(l.Model, l.Effort, system)...)
 	cmd.Dir = l.Dir
 	cmd.Env = append(append(launchenv.Scrub(os.Environ()), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...) // #167
 	cmd.Stdin = strings.NewReader(prompt)

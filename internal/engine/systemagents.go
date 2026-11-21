@@ -75,7 +75,7 @@ func (e *Engine) SystemAgentsView() SystemAgentsView {
 	for _, j := range core.SystemJobs {
 		o, ok := s.Jobs[j.ID]
 		jv := SystemJobView{SystemJob: j, Override: ok && o != (core.SystemAgentChoice{}), Choice: o}
-		if e.SystemAgentResolve != nil {
+		if e.SystemAgentResolve != nil && !s.UsesThread(j.ID) {
 			p, m, err := e.SystemAgentResolve(j.ID)
 			jv.Profile, jv.Model = p, m
 			if err != nil {
@@ -90,7 +90,11 @@ func (e *Engine) SystemAgentsView() SystemAgentsView {
 // setSystemAgents stores the owner's change: the default (job "") or a
 // job's override, or clears a job's override.
 func (e *Engine) setSystemAgents(job string, c core.SystemAgentChoice, drop bool) error {
-	if c.Profile != "" && e.ProfileExists != nil && !e.ProfileExists(c.Profile) {
+	if c.Profile == core.ProfileSystemDefault {
+		if !core.JobUsesThread(job) {
+			return fmt.Errorf("provider %q is only valid for thread-defaulting jobs", c.Profile)
+		}
+	} else if c.Profile != "" && e.ProfileExists != nil && !e.ProfileExists(c.Profile) {
 		return fmt.Errorf("provider %q is not on this host", c.Profile)
 	}
 	e.mu.Lock()

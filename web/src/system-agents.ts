@@ -17,10 +17,14 @@ export interface SystemProvider {
   unavailable?: string;
 }
 
+/** Sentinel profile on a thread-defaulting job (e.g. approval) to follow System agents Default. */
+export const PROFILE_SYSTEM_DEFAULT = "$default";
+
 /** One job: its override, and what it runs on now or why it cannot run. */
 export interface SystemJob {
   id: string;
   name: string;
+  defaultThread?: boolean;
   override?: boolean;
   choice: SystemAgentChoice;
   profile?: string;
@@ -65,9 +69,28 @@ export function modelOptions(v: SystemAgentsView, profile: string): Option[] {
   return [{ value: "", label: haiku }, ...(p?.models ?? []).map((m) => ({ value: m, label: m }))];
 }
 
+/** Provider choices for a single job row. */
+export function jobProviderOptions(v: SystemAgentsView, j: SystemJob): Option[] {
+  const concrete = providerOptions(v).slice(1);
+  if (j.defaultThread) {
+    return [
+      { value: "=", label: "Thread's provider (auto)" },
+      { value: PROFILE_SYSTEM_DEFAULT, label: "Same as default" },
+      ...concrete,
+    ];
+  }
+  return [{ value: "=", label: "Same as default" }, ...concrete];
+}
+
+/** Whether a job row shows the per-job model selector. */
+export function jobShowsModel(j: SystemJob): boolean {
+  return !!j.override && j.choice.profile !== PROFILE_SYSTEM_DEFAULT;
+}
+
 /** What a job runs on now, or why it cannot run. */
 export function jobLine(v: SystemAgentsView, j: SystemJob): { text: string; error: boolean } {
   if (j.error) return { text: j.error, error: true };
+  if (j.defaultThread && !j.override) return { text: "Runs on each thread's provider (fast model)", error: false };
   const p = providerOf(v, j.profile);
   return { text: `Runs on ${p?.name || j.profile || "?"} · ${j.model ?? "?"}`, error: false };
 }

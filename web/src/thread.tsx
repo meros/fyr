@@ -7,6 +7,7 @@ import { PIN_ICON } from "./row-ui.tsx";
 import { copySource, copyToClipboard } from "./copy.ts";
 import { useDraft } from "./drafts.ts";
 import { AgentStatus } from "./agent-status.tsx";
+import { formatApproval } from "./approval.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useApi } from "./api-context.ts";
@@ -1191,24 +1192,33 @@ export function EffectBody({ d, x, cls = "" }: { d: Decision; x: EffectText; cls
 
 function DecisionCard(p: CardProps) {
   const { d } = p;
+  const [fullCmd, setFullCmd] = useState(false);
+  useEffect(() => setFullCmd(false), [d.id]);
   if (d.kind === "ask") return p.card && p.card.decisionId === d.id ? <AskCard {...p} card={p.card} /> : null;
   const approval = d.kind === "approval";
   const x = approval ? null : describeEffect(d, p.pr);
-  const cmd = approval && typeof d.input?.command === "string" ? (d.input.command as string) : null;
-  const rest = approval && d.input ? Object.fromEntries(Object.entries(d.input).filter(([k]) => k !== "command")) : {};
+  const ap = approval ? formatApproval(d) : null;
+  const shownCmd = ap ? (fullCmd ? ap.fullCmd : ap.cmd) : null;
   return (
     <div class="ask">
       <div class="ah">
         <StateIcon state="asking" size={14} />
         <b>{x ? x.label : "Approval"}</b>
         <span class="ell">{asker(d)}</span>
+        {ap?.outsideSandbox && <span class="ap-badge">Outside sandbox</span>}
         {p.more > 0 && <span class="ml">+{p.more} more</span>}
       </div>
       <div class="ab">
         <div class="q">{x ? x.title : <>Allow {d.tool}?</>}</div>
+        {ap?.judgeNote && <div class="ap-note">Judge: {ap.judgeNote}</div>}
         <div class="payload">
-          {cmd && <pre class="cmd">{cmd}</pre>}
-          {approval && Object.keys(rest).length > 0 && <pre>{JSON.stringify(rest, null, 2)}</pre>}
+          {shownCmd && <pre class="cmd">{shownCmd}</pre>}
+          {ap?.truncated && (
+            <button type="button" class="ap-more" onClick={() => setFullCmd((v) => !v)}>
+              {fullCmd ? "Show less" : `Show full command (${ap.hiddenLines} more ${ap.hiddenLines === 1 ? "line" : "lines"})`}
+            </button>
+          )}
+          {ap && Object.keys(ap.rest).length > 0 && <pre>{JSON.stringify(ap.rest, null, 2)}</pre>}
           {x && <EffectBody d={d} x={x} />}
         </div>
         <div class="grid4">

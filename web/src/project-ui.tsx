@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, toolApprovalLine, toolApprovalOf, type ToolApproval, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -767,8 +767,8 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
 }
 
 function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked, shown, imageTargets }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0034: the records an image goes to: every online member */ imageTargets: Project[] }) {
-  // Decision 0034: name, colour, icon, quiet hours and priority are the link's; the rest of the page is this host's record.
-  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, image: shown.image, imageFrom: shown.imageFrom };
+  // Decision 0034: name, colour, icon, quiet hours, priority, agentSettle and toolApproval are the link's; the rest of the page is this host's record.
+  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -796,6 +796,10 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
   const [ags, setAgs] = useState<AgentSettle | null>(null);
   useEffect(() => setAgs(null), [project.agentSettle]);
   const shownAgs = ags ?? agentSettleOf(project);
+  // V0.tool-approval-judge: the same, for agent tool approvals.
+  const [tapp, setTapp] = useState<ToolApproval | null>(null);
+  useEffect(() => setTapp(null), [project.toolApproval]);
+  const shownTapp = tapp ?? toolApprovalOf(project);
   const saver = useRef(quietSaver<QuietHours[]>((q) => void save("quiet", patchFor("quiet", q))));
   useEffect(() => () => saver.current.flush(), []);
   const [busy, setBusy] = useState(false);
@@ -1064,6 +1068,27 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
               onChange={async (v) => {
                 setAgs(v);
                 if (await save("agentSettle", patchFor("agentSettle", v))) setAgs(null);
+              }}
+            />
+          }
+        />
+        <Row
+          title="Tool approvals"
+          desc={toolApprovalLine(shownTapp)}
+          error={errs.toolApproval}
+          stack
+          end={
+            <Seg
+              label="Tool approvals"
+              value={shownTapp}
+              disabled={env.readOnly}
+              options={[
+                { value: "ask", label: "Ask me" },
+                { value: "auto", label: "Auto-judge" },
+              ]}
+              onChange={async (v) => {
+                setTapp(v);
+                if (await save("toolApproval", patchFor("toolApproval", v))) setTapp(null);
               }}
             />
           }
