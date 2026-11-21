@@ -64,6 +64,21 @@ type acpSpec struct {
 	Cleanup         func()
 	ReattachRunning bool
 	ReattachQueued  []cli.QueuedMessage
+	SettleDelay     time.Duration
+}
+
+// defaultUnsolicitedSettle is how long an unsolicited (reactive-wakeup) ACP
+// turn waits after a text step's usage_update before flushing buffered text
+// and closing the turn with a synthetic result (V0.agy-reactive-wakeup).
+// Live agy sessions emit any subsequent tool_call or JSON-RPC stopReason
+// response within ~250ms of usage_update; 1.5s leaves generous headroom while
+// settling reactive wakeups promptly.
+const defaultUnsolicitedSettle = 1500 * time.Millisecond
+
+type bgTool struct {
+	id       string
+	taskType string
+	desc     string
 }
 
 type queuedPrompt struct {
@@ -116,6 +131,8 @@ type acpSession struct {
 	seq     atomic.Int64
 
 	// Session + turn + prompt queue state.
+	// Lock order: emitMu -> mu (never mu -> emitMu).
+	emitMu          sync.Mutex
 	mu              sync.Mutex
 	sessionID       string
 	currentModel    string
@@ -136,8 +153,19 @@ type acpSession struct {
 	finishedTools   map[string]bool
 	rawNames        map[string]string
 	toolNames       map[string]string
+	toolDescs       map[string]bgTool
+	bgTools         map[string]bgTool
 	openPerms       map[string]bool
 	reattachActive  bool
+
+	// Unsolicited (reactive-wakeup) turn tracking and settle timer state
+	// (V0.agy-reactive-wakeup).
+	unsolicitedActive      bool
+	unsolicitedInterrupted bool
+	settleDelay            time.Duration
+	settleArmed            bool
+	settleGen              uint64
+	settleDeadline         time.Time
 
 	qCh        chan struct{}
 	readDone   chan struct{}
@@ -180,6 +208,10 @@ func openACP(p runner.Pipe, s acpSpec, h cli.Handlers, reattached bool) *acpSess
 	for _, q := range s.ReattachQueued {
 		queue = append(queue, queuedPrompt{uuid: q.ID, content: q.Content})
 	}
+	settleDelay := s.SettleDelay
+	if settleDelay <= 0 {
+		settleDelay = defaultUnsolicitedSettle
+	}
 	c := &acpSession{
 		pipe:           p,
 		spec:           s,
@@ -198,7 +230,10 @@ func openACP(p runner.Pipe, s acpSpec, h cli.Handlers, reattached bool) *acpSess
 		finishedTools:  map[string]bool{},
 		rawNames:       map[string]string{},
 		toolNames:      map[string]string{},
+		toolDescs:      map[string]bgTool{},
+		bgTools:        map[string]bgTool{},
 		openPerms:      map[string]bool{},
+		settleDelay:    settleDelay,
 		reattachActive: reattached && s.ReattachRunning,
 		qCh:            make(chan struct{}, 1),
 		readDone:       make(chan struct{}),
@@ -592,16 +627,13 @@ func (c *acpSession) SendUser(content []cli.Msg, uuid string) error {
 		c.mu.Unlock()
 		return fmt.Errorf("session input is closed")
 	}
-	busy := c.turnRunning || c.reattachActive || len(c.queue) > 0
+	busy := c.turnRunning || c.reattachActive || c.unsolicitedActive || len(c.queue) > 0
 	c.queue = append(c.queue, queuedPrompt{uuid: uuid, content: content})
 	c.mu.Unlock()
 	if busy && uuid != "" {
 		c.emit(cli.Msg{"type": "command_lifecycle", "command_uuid": uuid, "state": "queued"}, 0)
 	}
-	select {
-	case c.qCh <- struct{}{}:
-	default:
-	}
+	c.signalWorker()
 	return nil
 }
 
@@ -624,7 +656,16 @@ func (c *acpSession) CancelMessage(ctx context.Context, uuid string) (bool, erro
 func (c *acpSession) Interrupt(ctx context.Context) error {
 	c.mu.Lock()
 	sid := c.sessionID
+	wake := false
+	if !c.turnRunning && (c.unsolicitedActive || c.reattachActive) {
+		c.unsolicitedInterrupted = true
+		c.armSettleLocked(c.settleDelay)
+		wake = true
+	}
 	c.mu.Unlock()
+	if wake {
+		c.signalWorker()
+	}
 	if sid == "" {
 		return nil
 	}
@@ -666,14 +707,190 @@ func (c *acpSession) Kill() {
 	c.pipe.Kill()
 }
 
+func (c *acpSession) signalWorker() {
+	select {
+	case c.qCh <- struct{}{}:
+	default:
+	}
+}
+
+func (c *acpSession) armSettleLocked(d time.Duration) {
+	c.settleGen++
+	c.settleArmed = true
+	c.settleDeadline = time.Now().Add(d)
+}
+
+func (c *acpSession) cancelSettleLocked() {
+	if c.settleArmed {
+		c.settleGen++
+		c.settleArmed = false
+		c.settleDeadline = time.Time{}
+	}
+}
+
+func (c *acpSession) resetTurnMapsLocked() {
+	c.emittedTools = map[string]bool{}
+	c.finishedTools = map[string]bool{}
+	c.rawNames = map[string]string{}
+	c.toolNames = map[string]string{}
+	c.toolDescs = map[string]bgTool{}
+	for id, bt := range c.bgTools {
+		c.emittedTools[id] = true
+		c.toolDescs[id] = bt
+	}
+}
+
+func (c *acpSession) promoteOpenToolsLocked() (added, all []bgTool) {
+	for id := range c.emittedTools {
+		if c.finishedTools[id] {
+			continue
+		}
+		if _, exists := c.bgTools[id]; exists {
+			continue
+		}
+		bt, ok := c.toolDescs[id]
+		if !ok {
+			name := c.toolNames[id]
+			if name == "" {
+				name = c.rawNames[id]
+			}
+			taskType := "local_bash"
+			if name == "Agent" || name == "Task" {
+				taskType = "local_agent"
+			}
+			bt = bgTool{id: id, taskType: taskType, desc: name}
+		}
+		c.bgTools[id] = bt
+		added = append(added, bt)
+	}
+	if len(added) == 0 {
+		return nil, nil
+	}
+	sort.Slice(added, func(i, j int) bool { return added[i].id < added[j].id })
+	all = c.sortedBGToolsLocked()
+	return added, all
+}
+
+func (c *acpSession) sortedBGToolsLocked() []bgTool {
+	if len(c.bgTools) == 0 {
+		return nil
+	}
+	all := make([]bgTool, 0, len(c.bgTools))
+	for _, bt := range c.bgTools {
+		all = append(all, bt)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].id < all[j].id })
+	return all
+}
+
+func (c *acpSession) emitBackgroundChanged(all []bgTool) {
+	tasks := make([]any, 0, len(all))
+	for _, bt := range all {
+		tasks = append(tasks, cli.Msg{
+			"task_id":     bt.id,
+			"task_type":   bt.taskType,
+			"description": bt.desc,
+		})
+	}
+	c.emit(cli.Msg{
+		"type":    "system",
+		"subtype": "background_tasks_changed",
+		"tasks":   tasks,
+	}, 0)
+}
+
+func (c *acpSession) emitBackgroundStarted(added, all []bgTool) {
+	c.emitBackgroundChanged(all)
+	for _, bt := range added {
+		c.emit(cli.Msg{
+			"type":            "system",
+			"subtype":         "task_started",
+			"task_id":         bt.id,
+			"tool_use_id":     bt.id,
+			"task_type":       bt.taskType,
+			"description":     bt.desc,
+			"is_backgrounded": true,
+		}, 0)
+	}
+}
+
+func makeBGTool(callID, mappedName string, mappedArgs map[string]any) bgTool {
+	taskType := "local_bash"
+	if mappedName == "Agent" || mappedName == "Task" {
+		taskType = "local_agent"
+	}
+	desc := ""
+	for _, key := range []string{"description", "command", "prompt", "file_path", "pattern", "query"} {
+		if v, ok := mappedArgs[key].(string); ok {
+			if line := firstNonEmptyLine(v); line != "" {
+				desc = line
+				break
+			}
+		}
+	}
+	if desc == "" {
+		desc = mappedName
+	}
+	return bgTool{id: callID, taskType: taskType, desc: desc}
+}
+
+func firstNonEmptyLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			if r := []rune(line); len(r) > 120 {
+				return string(r[:119]) + "…"
+			}
+			return line
+		}
+	}
+	return ""
+}
+
 func (c *acpSession) promptWorker() {
 	defer close(c.workerDone)
+	var timer *time.Timer
+	stopTimer := func() {
+		if timer != nil {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer = nil
+		}
+	}
+	defer stopTimer()
+
 	for {
 		c.mu.Lock()
-		if c.reattachActive {
-			// Wait for the in-flight pre-restart turn to finish before sending
-			// any queued follow-up prompt or closing the session (V0.agy-reattach-queue).
+		if c.settleArmed {
+			now := time.Now()
+			if !now.Before(c.settleDeadline) {
+				gen := c.settleGen
+				c.mu.Unlock()
+				stopTimer()
+				c.finishUnsolicitedTurn(gen)
+				continue
+			}
+			wait := time.Until(c.settleDeadline)
 			c.mu.Unlock()
+			stopTimer()
+			timer = time.NewTimer(wait)
+			select {
+			case <-timer.C:
+				continue
+			case <-c.qCh:
+				continue
+			case <-c.readDone:
+				return
+			case <-c.done:
+				return
+			}
+		}
+		if c.reattachActive || c.unsolicitedActive {
+			c.mu.Unlock()
+			stopTimer()
 			select {
 			case <-c.qCh:
 				continue
@@ -688,6 +905,7 @@ func (c *acpSession) promptWorker() {
 			killed := c.killed
 			sid := c.sessionID
 			c.mu.Unlock()
+			stopTimer()
 			if closed {
 				if !killed && sid != "" {
 					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -710,17 +928,18 @@ func (c *acpSession) promptWorker() {
 		c.queue = c.queue[1:]
 		c.turnRunning = true
 		c.reattachActive = false
+		c.unsolicitedActive = false
+		c.unsolicitedInterrupted = false
+		c.cancelSettleLocked()
 		c.textBuf.Reset()
 		c.turnText.Reset()
-		c.emittedTools = map[string]bool{}
-		c.finishedTools = map[string]bool{}
-		c.rawNames = map[string]string{}
-		c.toolNames = map[string]string{}
+		c.resetTurnMapsLocked()
 		sid := c.sessionID
 		model := c.currentModel
 		needInit := !c.initEmitted
 		c.initEmitted = true
 		c.mu.Unlock()
+		stopTimer()
 
 		var startedOnce sync.Once
 		started := func() {
@@ -740,18 +959,37 @@ func (c *acpSession) promptWorker() {
 		}, true, started)
 		durMs := time.Since(start).Milliseconds()
 
-		// Flush any trailing assistant text before emitting result.
-		c.flushAssistantText(0)
+		// Flush any trailing assistant text, promote any still-open background
+		// tools, and emit result atomically under emitMu so a subsequent
+		// reactive-wakeup notification cannot interleave before result.
+		c.emitMu.Lock()
 		c.mu.Lock()
+		trailingText := c.textBuf.String()
+		c.textBuf.Reset()
 		fullText := c.turnText.String()
+		c.turnText.Reset()
+		var addedBG, allBG []bgTool
+		if err == nil {
+			stopReason, _ := res["stopReason"].(string)
+			if stopReason != "cancelled" && stopReason != "canceled" {
+				addedBG, allBG = c.promoteOpenToolsLocked()
+			}
+		}
 		c.turnRunning = false
 		shouldClose := c.inputClosed && len(c.queue) == 0
 		c.mu.Unlock()
 
+		if strings.TrimSpace(trailingText) != "" {
+			c.emitAssistantText(trailingText, 0)
+		}
+		if len(addedBG) > 0 {
+			c.emitBackgroundStarted(addedBG, allBG)
+		}
 		if item.uuid != "" {
 			c.emit(cli.Msg{"type": "command_lifecycle", "command_uuid": item.uuid, "state": "completed"}, 0)
 		}
 		if err != nil {
+			c.emitMu.Unlock()
 			// If the process exited, read() will close Out and report Err.
 			select {
 			case <-c.done:
@@ -782,6 +1020,7 @@ func (c *acpSession) promptWorker() {
 				outMsg["usage"] = u
 			}
 			c.emitHeld(outMsg, respSeq)
+			c.emitMu.Unlock()
 		}
 		if shouldClose {
 			if sid != "" {
@@ -823,6 +1062,16 @@ func convertPromptBlocks(content []cli.Msg) []cli.Msg {
 	return out
 }
 
+func (c *acpSession) emitAssistantText(text string, seq int64) {
+	c.emit(cli.Msg{
+		"type": "assistant",
+		"message": cli.Msg{
+			"role":    "assistant",
+			"content": []any{cli.Msg{"type": "text", "text": text}},
+		},
+	}, seq)
+}
+
 func (c *acpSession) flushAssistantText(seq int64) {
 	c.mu.Lock()
 	text := c.textBuf.String()
@@ -831,13 +1080,7 @@ func (c *acpSession) flushAssistantText(seq int64) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	c.emit(cli.Msg{
-		"type": "assistant",
-		"message": cli.Msg{
-			"role":    "assistant",
-			"content": []any{cli.Msg{"type": "text", "text": text}},
-		},
-	}, seq)
+	c.emitAssistantText(text, seq)
 }
 
 func (c *acpSession) read() {
@@ -889,6 +1132,9 @@ func (c *acpSession) read() {
 			}
 		case hasMethod && hasID:
 			// Server -> Client JSON-RPC request (e.g. session/request_permission).
+			c.mu.Lock()
+			c.cancelSettleLocked()
+			c.mu.Unlock()
 			idKey := jsonIDKey(rawID)
 			c.opened(idKey, seq)
 			go c.handleServerRequest(rawID, idKey, method, m["params"])
@@ -979,17 +1225,66 @@ func (c *acpSession) handleNotification(method string, rawParams any, seq int64)
 	case "agent_message_chunk":
 		if content, _ := upd["content"].(map[string]any); content != nil {
 			if t, _ := content["text"].(string); t != "" {
+				wake := false
 				c.mu.Lock()
-				if !c.turnRunning {
-					c.reattachActive = true
-				}
 				c.textBuf.WriteString(t)
 				c.turnText.WriteString(t)
+				if !c.turnRunning {
+					if c.reattachActive {
+						c.cancelSettleLocked()
+					} else {
+						c.unsolicitedActive = true
+						// Fallback settle window in case agy omits usage_update
+						// (e.g. quota warnings); usage_update tightens this to settleDelay.
+						if len(c.openPerms) == 0 {
+							c.armSettleLocked(3 * c.settleDelay)
+							wake = true
+						}
+					}
+				}
 				c.mu.Unlock()
+				if wake {
+					c.signalWorker()
+				}
 			}
 		}
 		return false
 	case "agent_thought_chunk":
+		c.emitMu.Lock()
+		c.mu.Lock()
+		c.cancelSettleLocked()
+		startUnsolicited := !c.turnRunning && !c.reattachActive && !c.unsolicitedActive
+		if startUnsolicited {
+			c.unsolicitedActive = true
+		}
+		c.mu.Unlock()
+		if startUnsolicited {
+			// V0.agy-reactive-wakeup: open the run immediately as "Thinking"
+			// when a reactive wakeup starts thinking before its first tool call.
+			c.emit(cli.Msg{
+				"type": "assistant",
+				"message": cli.Msg{
+					"role":    "assistant",
+					"content": []any{cli.Msg{"type": "thinking", "thinking": ""}},
+				},
+			}, seq)
+			c.emitMu.Unlock()
+			return true
+		}
+		c.emitMu.Unlock()
+		return false
+	case "usage_update":
+		wake := false
+		c.mu.Lock()
+		if !c.turnRunning && (c.unsolicitedActive || c.reattachActive) &&
+			strings.TrimSpace(c.textBuf.String()) != "" && len(c.openPerms) == 0 {
+			c.armSettleLocked(c.settleDelay)
+			wake = true
+		}
+		c.mu.Unlock()
+		if wake {
+			c.signalWorker()
+		}
 		return false
 	case "available_commands_update":
 		if rawCmds, _ := upd["availableCommands"].([]any); len(rawCmds) > 0 {
@@ -1026,11 +1321,13 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 		args, _ = upd["rawInput"].(map[string]any)
 	}
 	status := acpToolStatus(fmt.Sprint(upd["status"]))
+	isTerminal := status == toolStatusCompleted || status == toolStatusFailed || status == toolStatusCancelled
+
+	c.emitMu.Lock()
+	defer c.emitMu.Unlock()
 
 	c.mu.Lock()
-	if !c.turnRunning {
-		c.reattachActive = true
-	}
+	c.cancelSettleLocked()
 	if rawName == "" {
 		rawName = c.rawNames[callID]
 	}
@@ -1043,15 +1340,20 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 	alreadyEmitted := c.emittedTools[callID]
 	alreadyFinished := c.finishedTools[callID]
 	mcpNames := c.mcpNames
+	if !c.turnRunning && !c.reattachActive && !isTerminal {
+		c.unsolicitedActive = true
+	}
 	c.mu.Unlock()
 
 	queued := false
 	if !alreadyEmitted && rawName != "" {
 		c.flushAssistantText(0)
 		mappedName, mappedArgs := translateToolCall(rawName, args, mcpNames)
+		bt := makeBGTool(callID, mappedName, mappedArgs)
 		c.mu.Lock()
 		c.emittedTools[callID] = true
 		c.toolNames[callID] = mappedName
+		c.toolDescs[callID] = bt
 		c.mu.Unlock()
 		c.emit(cli.Msg{
 			"type": "assistant",
@@ -1068,9 +1370,26 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 		queued = true
 	}
 
-	if !alreadyFinished && (status == toolStatusCompleted || status == toolStatusFailed || status == toolStatusCancelled) {
+	if !alreadyFinished && isTerminal {
+		if !queued {
+			// Flush any interim assistant text written before this tool finished
+			// (e.g. a background command completing right after a status note).
+			c.flushAssistantText(0)
+		}
+		var wasBG bool
+		var remainingBG []bgTool
+		rearmInterrupted := false
 		c.mu.Lock()
 		c.finishedTools[callID] = true
+		if _, ok := c.bgTools[callID]; ok {
+			wasBG = true
+			delete(c.bgTools, callID)
+			remainingBG = c.sortedBGToolsLocked()
+		}
+		if !c.turnRunning && c.unsolicitedInterrupted && len(c.openPerms) == 0 {
+			c.armSettleLocked(c.settleDelay)
+			rearmInterrupted = true
+		}
 		c.mu.Unlock()
 		resultText := extractToolResult(upd)
 		resultSeq := seq
@@ -1089,9 +1408,77 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 				}},
 			},
 		}, resultSeq)
+		if wasBG {
+			taskStat := "completed"
+			switch status {
+			case toolStatusFailed:
+				taskStat = "failed"
+			case toolStatusCancelled:
+				taskStat = "stopped"
+			}
+			c.emit(cli.Msg{
+				"type":    "system",
+				"subtype": "task_notification",
+				"task_id": callID,
+				"status":  taskStat,
+				"summary": firstNonEmptyLine(resultText),
+			}, 0)
+			c.emitBackgroundChanged(remainingBG)
+		}
+		if rearmInterrupted {
+			c.signalWorker()
+		}
 		queued = true
 	}
 	return queued
+}
+
+// finishUnsolicitedTurn closes a reactive-wakeup turn (or a reattached
+// reactive-wakeup turn) after its settle timer fires with no further ACP
+// notifications or JSON-RPC stopReason response (V0.agy-reactive-wakeup).
+func (c *acpSession) finishUnsolicitedTurn(gen uint64) {
+	c.emitMu.Lock()
+	c.mu.Lock()
+	if c.turnRunning || !c.settleArmed || c.settleGen != gen || len(c.openPerms) > 0 {
+		c.mu.Unlock()
+		c.emitMu.Unlock()
+		return
+	}
+	c.settleArmed = false
+	c.settleDeadline = time.Time{}
+	interrupted := c.unsolicitedInterrupted
+	c.unsolicitedActive = false
+	c.unsolicitedInterrupted = false
+	c.reattachActive = false
+	text := c.textBuf.String()
+	c.textBuf.Reset()
+	fullText := c.turnText.String()
+	c.turnText.Reset()
+	var addedBG, allBG []bgTool
+	if !interrupted {
+		addedBG, allBG = c.promoteOpenToolsLocked()
+	}
+	c.resetTurnMapsLocked()
+	c.mu.Unlock()
+
+	if strings.TrimSpace(text) != "" {
+		c.emitAssistantText(text, 0)
+	}
+	if len(addedBG) > 0 {
+		c.emitBackgroundStarted(addedBG, allBG)
+	}
+	subtype := "success"
+	if interrupted {
+		subtype = "interrupted"
+	}
+	c.emit(cli.Msg{
+		"type":     "result",
+		"subtype":  subtype,
+		"is_error": false,
+		"result":   fullText,
+	}, 0)
+	c.emitMu.Unlock()
+	c.signalWorker()
 }
 
 // finishReattachedTurn completes an in-flight session/prompt that was started
@@ -1099,21 +1486,34 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 // reattached pipe with no local waiter in c.pending.
 func (c *acpSession) finishReattachedTurn(resp rpcResp, seq int64) bool {
 	stopReason, hasStop := resp.result["stopReason"].(string)
+	c.emitMu.Lock()
 	c.mu.Lock()
-	active := c.reattachActive && !c.turnRunning
-	c.mu.Unlock()
+	active := (c.reattachActive || c.unsolicitedActive) && !c.turnRunning
 	if !hasStop && !(resp.err != nil && active) {
+		c.mu.Unlock()
+		c.emitMu.Unlock()
 		return false
 	}
-	c.flushAssistantText(0)
-	c.mu.Lock()
+	c.cancelSettleLocked()
+	text := c.textBuf.String()
+	c.textBuf.Reset()
 	fullText := c.turnText.String()
 	c.turnText.Reset()
-	c.emittedTools = map[string]bool{}
-	c.finishedTools = map[string]bool{}
-	c.rawNames = map[string]string{}
-	c.toolNames = map[string]string{}
+	var addedBG, allBG []bgTool
+	if resp.err == nil && stopReason != "cancelled" && stopReason != "canceled" {
+		addedBG, allBG = c.promoteOpenToolsLocked()
+	}
+	c.resetTurnMapsLocked()
+	c.unsolicitedActive = false
+	c.unsolicitedInterrupted = false
 	c.mu.Unlock()
+
+	if strings.TrimSpace(text) != "" {
+		c.emitAssistantText(text, 0)
+	}
+	if len(addedBG) > 0 {
+		c.emitBackgroundStarted(addedBG, allBG)
+	}
 	if resp.err != nil {
 		c.emit(cli.Msg{
 			"type":     "result",
@@ -1137,15 +1537,13 @@ func (c *acpSession) finishReattachedTurn(resp rpcResp, seq int64) bool {
 		}
 		c.emit(outMsg, seq)
 	}
-	// Release promptWorker only after the reattached turn's result is on c.out,
-	// so any queued follow-up turn starts strictly after it (V0.agy-reattach-queue).
+	// Release promptWorker only after the result is on c.out, so any queued
+	// follow-up turn starts strictly after it (V0.agy-reattach-queue).
 	c.mu.Lock()
 	c.reattachActive = false
 	c.mu.Unlock()
-	select {
-	case c.qCh <- struct{}{}:
-	default:
-	}
+	c.emitMu.Unlock()
+	c.signalWorker()
 	return true
 }
 
@@ -1258,6 +1656,7 @@ func (c *acpSession) handleServerRequest(rawID any, idKey, method string, rawPar
 		return
 	}
 	c.mu.Lock()
+	c.cancelSettleLocked()
 	c.openPerms[idKey] = true
 	c.mu.Unlock()
 	ans := c.h.CanUseTool(cli.Msg{

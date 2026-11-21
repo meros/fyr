@@ -470,7 +470,7 @@ func init() {
 				return Result{}, err
 			}
 			t := r.T
-			if a.Activity != "" {
+			if a.Activity != "" && t.Running {
 				t.Activity = a.Activity
 			}
 			if a.Summary != "" {

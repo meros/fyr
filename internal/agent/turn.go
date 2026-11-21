@@ -210,6 +210,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		interrupted := s.interrupt
 		s.live, s.interrupt = false, false
 		m.mu.Unlock()
+		s.digest.resetOpen()
 		m.mu.Lock()
 		noReports := !s.lifecycle
 		restore := s.stopBlocked && !s.forcedWork

@@ -808,24 +808,45 @@ type pipeLine struct {
 	b   []byte
 }
 
+// chanPipe is an interactive runner.Pipe for driving ACP streams step by step
+// in unit tests without spawning a subprocess. push/closeRead are the common
+// way in; line carries a runner seq, which the reattach tests need.
 type chanPipe struct {
 	in      chan pipeLine
 	written chan []byte
+	writeCh chan []byte
 	mu      sync.Mutex
+	kept    [][]byte
 	ackedTo int64
 	closed  bool
 }
 
 func newChanPipe() *chanPipe {
 	return &chanPipe{
-		in:      make(chan pipeLine, 32),
-		written: make(chan []byte, 32),
+		in:      make(chan pipeLine, 64),
+		written: make(chan []byte, 64),
+		writeCh: make(chan []byte, 64),
 	}
+}
+
+func (p *chanPipe) push(line string) {
+	p.in <- pipeLine{b: []byte(line)}
+}
+
+func (p *chanPipe) line(seq int64, line string) {
+	p.in <- pipeLine{seq: seq, b: []byte(line)}
 }
 
 func (p *chanPipe) WriteLine(b []byte) error {
 	cp := append([]byte(nil), b...)
 	p.written <- cp
+	p.mu.Lock()
+	p.kept = append(p.kept, cp)
+	p.mu.Unlock()
+	select {
+	case p.writeCh <- cp:
+	default:
+	}
 	return nil
 }
 
@@ -849,7 +870,7 @@ func (p *chanPipe) acked() int64 {
 	return p.ackedTo
 }
 
-func (p *chanPipe) closeIn() {
+func (p *chanPipe) closeRead() {
 	p.mu.Lock()
 	if !p.closed {
 		p.closed = true
@@ -858,8 +879,8 @@ func (p *chanPipe) closeIn() {
 	p.mu.Unlock()
 }
 
-func (p *chanPipe) CloseInput() error { p.closeIn(); return nil }
-func (p *chanPipe) Kill()             { p.closeIn() }
+func (p *chanPipe) CloseInput() error { p.closeRead(); return nil }
+func (p *chanPipe) Kill()             { p.closeRead() }
 func (p *chanPipe) Wait() error       { return nil }
 func (p *chanPipe) Pid() int          { return 42 }
 
@@ -1006,5 +1027,327 @@ func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
 	handled.Handled(res3)
 	if got := p.acked(); got != 14 {
 		t.Fatalf("runner ack=%d after handling q3 result, want 14", got)
+	}
+}
+
+func nextOut(t *testing.T, out <-chan cli.Msg, timeout time.Duration) cli.Msg {
+	t.Helper()
+	select {
+	case m, ok := <-out:
+		if !ok {
+			t.Fatal("Out closed unexpectedly")
+		}
+		return m
+	case <-time.After(timeout):
+		t.Fatal("timed out waiting for message on Out()")
+		return nil
+	}
+}
+
+func nextWritten(t *testing.T, p *chanPipe, timeout time.Duration) cli.Msg {
+	t.Helper()
+	select {
+	case b := <-p.writeCh:
+		var m cli.Msg
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatalf("unmarshal written line: %v", err)
+		}
+		return m
+	case <-time.After(timeout):
+		t.Fatal("timed out waiting for written JSON-RPC message")
+		return nil
+	}
+}
+
+// V0.agy-reactive-wakeup: a turn ending with an open tool promotes it to a
+// background task; when the tool later finishes and agy runs a reactive-wakeup
+// turn without a session/prompt RPC, acpSession wakes immediately on
+// agent_thought_chunk, settles after usage_update, flushes the final text, and
+// emits result so Fyr never stays stuck in Working.
+func TestACPReactiveWakeupSettlesAndTracksBackgroundTool(t *testing.T) {
+	p := newChanPipe()
+	sess := openACP(p, acpSpec{
+		SessionID:   "s-bg",
+		Model:       "gemini-4-neon",
+		MCPServers:  []cli.Msg{{"name": "fyr"}},
+		SettleDelay: 40 * time.Millisecond,
+	}, cli.Handlers{}, false)
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+
+	// Turn 1: prompt starts a command that stays open when stopReason arrives.
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "run tests"}}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	req1 := nextWritten(t, p, 2*time.Second)
+	if req1["method"] != "session/prompt" {
+		t.Fatalf("expected session/prompt, got %+v", req1)
+	}
+	reqID := req1["id"]
+
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"tool_call","toolCallId":"call_bg","name":"run_command","args":{"CommandLine":"go test ./...","toolSummary":"Run full test suite"},"status":"in_progress"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Waiting for tests to finish."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"usage_update","used":1000,"size":1048576}}}`)
+	p.push(fmt.Sprintf(`{"jsonrpc":"2.0","id":%v,"result":{"stopReason":"end_turn"}}`, reqID))
+
+	var turn1Msgs []cli.Msg
+	for {
+		m := nextOut(t, sess.Out(), 2*time.Second)
+		turn1Msgs = append(turn1Msgs, m)
+		if m["type"] == "result" {
+			break
+		}
+	}
+	var sawBGChanged, sawTaskStarted, sawWaitText bool
+	for _, m := range turn1Msgs {
+		if m["type"] == "system" && m["subtype"] == "background_tasks_changed" {
+			if tasks, _ := m["tasks"].([]any); len(tasks) == 1 {
+				sawBGChanged = true
+			}
+		}
+		if m["type"] == "system" && m["subtype"] == "task_started" && m["task_id"] == "call_bg" && m["is_backgrounded"] == true {
+			sawTaskStarted = true
+		}
+		if m["type"] == "assistant" {
+			inner, _ := m["message"].(cli.Msg)
+			if blocks, _ := inner["content"].([]any); len(blocks) == 1 {
+				if b, _ := blocks[0].(cli.Msg); b["type"] == "text" && b["text"] == "Waiting for tests to finish." {
+					sawWaitText = true
+				}
+			}
+		}
+	}
+	if !sawBGChanged || !sawTaskStarted || !sawWaitText {
+		t.Fatalf("turn 1 missing bg tracking or text: bg=%v task=%v text=%v msgs=%+v", sawBGChanged, sawTaskStarted, sawWaitText, turn1Msgs)
+	}
+
+	// Reactive wakeup: background command completes, agent thinks, renames thread,
+	// writes final reply, emits usage_update, and stops (NO JSON-RPC response!).
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_bg","name":"run_command","status":"completed","rawOutput":{"output":"ok all tests"}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"All tests passed."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"usage_update","used":1200,"size":1048576}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"tool_call","toolCallId":"call_ren","name":"mcp_fyr_thread_rename","args":{"title":"Fixed tests"},"status":"in_progress"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_ren","name":"mcp_fyr_thread_rename","status":"completed"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"All tests passed and PR is ready."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-bg","update":{"sessionUpdate":"usage_update","used":1400,"size":1048576}}}`)
+
+	var wakeupMsgs []cli.Msg
+	for {
+		m := nextOut(t, sess.Out(), 2*time.Second)
+		wakeupMsgs = append(wakeupMsgs, m)
+		if m["type"] == "result" {
+			break
+		}
+	}
+	var sawBGResult, sawDupBGUse, sawTaskNotif, sawBGEmpty, sawThinking, sawFinalText, sawResult bool
+	for _, m := range wakeupMsgs {
+		switch m["type"] {
+		case "user":
+			inner, _ := m["message"].(cli.Msg)
+			if blocks, _ := inner["content"].([]any); len(blocks) == 1 {
+				if b, _ := blocks[0].(cli.Msg); b["type"] == "tool_result" && b["tool_use_id"] == "call_bg" {
+					sawBGResult = true
+				}
+			}
+		case "assistant":
+			inner, _ := m["message"].(cli.Msg)
+			if blocks, _ := inner["content"].([]any); len(blocks) == 1 {
+				b, _ := blocks[0].(cli.Msg)
+				if b["type"] == "tool_use" && b["id"] == "call_bg" {
+					sawDupBGUse = true
+				}
+				if b["type"] == "thinking" {
+					sawThinking = true
+				}
+				if b["type"] == "text" && b["text"] == "All tests passed and PR is ready." {
+					sawFinalText = true
+				}
+			}
+		case "system":
+			if m["subtype"] == "task_notification" && m["task_id"] == "call_bg" && m["status"] == "completed" {
+				sawTaskNotif = true
+			}
+			if m["subtype"] == "background_tasks_changed" {
+				if tasks, _ := m["tasks"].([]any); len(tasks) == 0 {
+					sawBGEmpty = true
+				}
+			}
+		case "result":
+			if m["subtype"] == "success" && m["result"] == "All tests passed and PR is ready." {
+				sawResult = true
+			}
+		}
+	}
+	if sawDupBGUse {
+		t.Fatalf("duplicate tool_use emitted for completed background tool: %+v", wakeupMsgs)
+	}
+	if !sawBGResult || !sawTaskNotif || !sawBGEmpty || !sawThinking || !sawFinalText || !sawResult {
+		t.Fatalf("reactive wakeup missing events: bgRes=%v notif=%v bgEmpty=%v think=%v text=%v res=%v msgs=%+v",
+			sawBGResult, sawTaskNotif, sawBGEmpty, sawThinking, sawFinalText, sawResult, wakeupMsgs)
+	}
+}
+
+// V0.agy-reactive-wakeup: a usage_update without assistant text (context
+// compaction) must not settle an unsolicited turn, and a tool_call arriving
+// after text+usage_update cancels the settle timer and keeps the turn open.
+func TestACPReactiveWakeupCompactionAndMidTurnToolDoNotPrematurelySettle(t *testing.T) {
+	p := newChanPipe()
+	sess := openACP(p, acpSpec{
+		SessionID:   "s-compact",
+		SettleDelay: 40 * time.Millisecond,
+	}, cli.Handlers{}, false)
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+
+	// Start unsolicited turn with thought + usage_update (no text) like compaction.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Compacting..."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"usage_update","used":500000,"size":1048576}}}`)
+
+	// Drain the initial thinking message.
+	m := nextOut(t, sess.Out(), time.Second)
+	if m["type"] != "assistant" {
+		t.Fatalf("expected thinking assistant message, got %+v", m)
+	}
+
+	// Wait longer than 2x SettleDelay: must NOT emit a premature result.
+	select {
+	case unexpected := <-sess.Out():
+		t.Fatalf("unexpected message during compaction pause: %+v", unexpected)
+	case <-time.After(110 * time.Millisecond):
+	}
+
+	// Now emit interim text + usage_update, immediately followed by a tool_call.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Checking file."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"usage_update","used":28000,"size":1048576}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"tool_call","toolCallId":"c1","name":"read_file","args":{"Path":"/x"},"status":"in_progress"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"tool_call_update","toolCallId":"c1","name":"read_file","status":"completed"}}}`)
+
+	// Drain interim text, tool_use, tool_result — none should be result yet.
+	for i := 0; i < 3; i++ {
+		got := nextOut(t, sess.Out(), time.Second)
+		if got["type"] == "result" {
+			t.Fatalf("premature result before final reply: %+v", got)
+		}
+	}
+
+	// Final reply + usage_update settles cleanly.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Done."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-compact","update":{"sessionUpdate":"usage_update","used":29000,"size":1048576}}}`)
+
+	gotText := nextOut(t, sess.Out(), time.Second)
+	gotRes := nextOut(t, sess.Out(), time.Second)
+	if gotText["type"] != "assistant" || gotRes["type"] != "result" || gotRes["subtype"] != "success" {
+		t.Fatalf("expected final assistant+result, got %+v and %+v", gotText, gotRes)
+	}
+}
+
+// V0.agy-reactive-wakeup: a user message sent while a reactive-wakeup turn is
+// active is queued, the reactive turn's reply is flushed intact (never wiped),
+// and the queued prompt starts immediately afterward.
+func TestACPReactiveWakeupQueuesPromptAndPreservesReply(t *testing.T) {
+	p := newChanPipe()
+	sess := openACP(p, acpSpec{
+		SessionID:   "s-q",
+		SettleDelay: 40 * time.Millisecond,
+	}, cli.Handlers{}, false)
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+
+	// Reactive wakeup starts a tool.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-q","update":{"sessionUpdate":"tool_call","toolCallId":"c1","name":"read_file","args":{"Path":"/a"},"status":"in_progress"}}}`)
+	_ = nextOut(t, sess.Out(), time.Second) // tool_use
+
+	// User sends a follow-up while reactive wakeup is running.
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "next question"}}, "u2"); err != nil {
+		t.Fatal(err)
+	}
+	queuedMsg := nextOut(t, sess.Out(), time.Second)
+	if queuedMsg["type"] != "command_lifecycle" || queuedMsg["command_uuid"] != "u2" || queuedMsg["state"] != "queued" {
+		t.Fatalf("expected queued lifecycle, got %+v", queuedMsg)
+	}
+
+	// Reactive wakeup finishes tool and emits final reply + usage_update.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-q","update":{"sessionUpdate":"tool_call_update","toolCallId":"c1","name":"read_file","status":"completed"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-q","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Reactive reply preserved."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-q","update":{"sessionUpdate":"usage_update","used":2000,"size":1048576}}}`)
+
+	// Expect tool_result, assistant("Reactive reply preserved."), result, then started for u2.
+	var sawPreserved, sawWakeResult, sawStarted bool
+	for !sawStarted {
+		m := nextOut(t, sess.Out(), 2*time.Second)
+		if m["type"] == "assistant" {
+			inner, _ := m["message"].(cli.Msg)
+			if blocks, _ := inner["content"].([]any); len(blocks) == 1 {
+				if b, _ := blocks[0].(cli.Msg); b["type"] == "text" && b["text"] == "Reactive reply preserved." {
+					sawPreserved = true
+				}
+			}
+		}
+		if m["type"] == "result" && m["result"] == "Reactive reply preserved." {
+			sawWakeResult = true
+		}
+		if m["type"] == "command_lifecycle" && m["command_uuid"] == "u2" && m["state"] == "started" {
+			if !sawPreserved || !sawWakeResult {
+				t.Fatalf("queued prompt started before reactive reply flushed and ended")
+			}
+			sawStarted = true
+		}
+	}
+
+	req := nextWritten(t, p, 2*time.Second)
+	if req["method"] != "session/prompt" {
+		t.Fatalf("expected queued session/prompt, got %+v", req)
+	}
+	p.push(fmt.Sprintf(`{"jsonrpc":"2.0","id":%v,"result":{"stopReason":"end_turn"}}`, req["id"]))
+	for {
+		m := nextOut(t, sess.Out(), 2*time.Second)
+		if m["type"] == "result" {
+			break
+		}
+	}
+}
+
+// V0.agy-reactive-wakeup: Interrupt during an unsolicited turn sends
+// session/cancel and settles as interrupted without waiting forever for a
+// JSON-RPC stopReason response; an unsolicited message without usage_update
+// (such as a quota notice) settles via the fallback window.
+func TestACPReactiveWakeupInterruptAndFallbackSettle(t *testing.T) {
+	p := newChanPipe()
+	sess := openACP(p, acpSpec{
+		SessionID:   "s-int",
+		SettleDelay: 30 * time.Millisecond,
+	}, cli.Handlers{}, false)
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+
+	// Case 1: Interrupt an active unsolicited turn.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-int","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Working..."}}}}`)
+	_ = nextOut(t, sess.Out(), time.Second) // thinking
+	if err := sess.Interrupt(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cancelMsg := nextWritten(t, p, time.Second)
+	if cancelMsg["method"] != "session/cancel" {
+		t.Fatalf("expected session/cancel, got %+v", cancelMsg)
+	}
+	res := nextOut(t, sess.Out(), time.Second)
+	if res["type"] != "result" || res["subtype"] != "interrupted" {
+		t.Fatalf("expected interrupted result, got %+v", res)
+	}
+
+	// Case 2: Unsolicited agent_message_chunk with NO usage_update settles via fallback.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-int","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Quota reached."}}}}`)
+	txt := nextOut(t, sess.Out(), time.Second)
+	res2 := nextOut(t, sess.Out(), time.Second)
+	if txt["type"] != "assistant" || res2["type"] != "result" || res2["result"] != "Quota reached." {
+		t.Fatalf("expected fallback assistant+result, got %+v and %+v", txt, res2)
 	}
 }

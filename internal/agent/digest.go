@@ -13,10 +13,21 @@ type toolInfo struct {
 }
 
 // digest turns stream messages into row facts. It keeps the tool uses of
-// the session so a tool_result can be matched to its call.
-type digest struct{ tools map[string]toolInfo }
+// the session so a tool_result can be matched to its call, and tracks open
+// top-level tools so Activity moves to "Thinking" once they finish
+// (V0.agy-reactive-wakeup).
+type digest struct {
+	tools     map[string]toolInfo
+	openTools map[string]bool
+}
 
-func newDigest() *digest { return &digest{tools: map[string]toolInfo{}} }
+func newDigest() *digest {
+	return &digest{tools: map[string]toolInfo{}, openTools: map[string]bool{}}
+}
+
+func (d *digest) resetOpen() {
+	d.openTools = map[string]bool{}
+}
 
 // digestOut is what one message changes. Empty fields change nothing.
 type digestOut struct {
@@ -32,6 +43,8 @@ func (d *digest) feed(m map[string]any) digestOut {
 	msg, _ := m["message"].(map[string]any)
 	blocks, _ := msg["content"].([]any)
 	top := m["parent_tool_use_id"] == nil
+	closedAny := false
+	sawThinking := false
 	for _, x := range blocks {
 		b, _ := x.(map[string]any)
 		switch b["type"] {
@@ -43,11 +56,18 @@ func (d *digest) feed(m map[string]any) digestOut {
 			if !top {
 				continue
 			}
+			if id != "" {
+				d.openTools[id] = true
+			}
 			if a := activityLabel(name, in); a != "" {
 				o.Activity = a
 			}
 			if name == "Task" || name == "Agent" {
 				o.Subagents++
+			}
+		case "thinking":
+			if m["type"] == "assistant" && top {
+				sawThinking = true
 			}
 		case "text":
 			if m["type"] == "assistant" && top {
@@ -57,6 +77,12 @@ func (d *digest) feed(m map[string]any) digestOut {
 			}
 		case "tool_result":
 			id, _ := b["tool_use_id"].(string)
+			if top && id != "" {
+				if d.openTools[id] {
+					delete(d.openTools, id)
+					closedAny = true
+				}
+			}
 			ti := d.tools[id]
 			cmd, _ := ti.input["command"].(string)
 			if ti.name == "Bash" && strings.Contains(cmd, "gh pr create") {
@@ -68,6 +94,9 @@ func (d *digest) feed(m map[string]any) digestOut {
 				}
 			}
 		}
+	}
+	if top && o.Activity == "" && len(d.openTools) == 0 && (closedAny || sawThinking) {
+		o.Activity = "Thinking"
 	}
 	return o
 }

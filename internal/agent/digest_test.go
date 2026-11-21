@@ -37,6 +37,47 @@ func TestDigestActivityAndSubagents(t *testing.T) {
 	}
 }
 
+// V0.agy-reactive-wakeup: once all open top-level tool calls return their
+// tool_result (or a top-level thinking block arrives with no tools open),
+// Activity updates to "Thinking" instead of staying on a completed tool.
+func TestDigestActivityMovesToThinkingWhenToolsFinish(t *testing.T) {
+	d := newDigest()
+	o := d.feed(asst(nil, M{"type": "tool_use", "id": "t1", "name": "mcp__fyr__thread_rename", "input": M{"title": "New"}}))
+	if o.Activity != "Fyr thread rename" {
+		t.Fatalf("activity %q", o.Activity)
+	}
+	o = d.feed(result("t1", "renamed"))
+	if o.Activity != "Thinking" {
+		t.Fatalf("expected Thinking after tool_result, got %q", o.Activity)
+	}
+
+	// Parallel tools: Activity only moves to Thinking once the last open tool returns.
+	d.feed(asst(nil, M{"type": "tool_use", "id": "p1", "name": "Read", "input": M{"file_path": "/a.go"}}))
+	d.feed(asst(nil, M{"type": "tool_use", "id": "p2", "name": "Read", "input": M{"file_path": "/b.go"}}))
+	if o := d.feed(result("p1", "a")); o.Activity != "" {
+		t.Fatalf("expected empty activity while p2 still open, got %q", o.Activity)
+	}
+	if o := d.feed(asst(nil, M{"type": "thinking", "thinking": ""})); o.Activity != "" {
+		t.Fatalf("expected empty activity on thinking while p2 still open, got %q", o.Activity)
+	}
+	if o := d.feed(result("p2", "b")); o.Activity != "Thinking" {
+		t.Fatalf("expected Thinking once all tools finished, got %q", o.Activity)
+	}
+
+	// Top-level thinking block with no open tools sets Activity to Thinking.
+	if o := d.feed(asst(nil, M{"type": "thinking", "thinking": ""})); o.Activity != "Thinking" {
+		t.Fatalf("expected Thinking on top-level thinking block, got %q", o.Activity)
+	}
+
+	// resetOpen clears open tools across runs so a late background tool_result
+	// between turns does not report Thinking.
+	d.feed(asst(nil, M{"type": "tool_use", "id": "bg1", "name": "Bash", "input": M{"command": "go test"}}))
+	d.resetOpen()
+	if o := d.feed(result("bg1", "ok")); o.Activity != "" {
+		t.Fatalf("expected empty activity for post-run background tool_result, got %q", o.Activity)
+	}
+}
+
 // SPEC 0.5 V0.8: a PR URL printed by gh pr create links the PR.
 func TestDigestPRFromGhPrCreate(t *testing.T) {
 	d := newDigest()
