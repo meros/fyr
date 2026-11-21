@@ -291,6 +291,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 	{Name: "textquestion", Urgency: Wake, Budget: true, OnReduce: textQuestionNotices}, // V0.ask-tool, V0.text-ask-nudge
 	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},                     // V0.settle-merge-fixes (1)
+	{Name: "quota.continue", Urgency: Wake, OnReduce: quotaContinueNotices},            // V0.quota-auto-continue
 	{Name: "setup", Urgency: Next, OnReduce: setupNotices},                             // V0.prompt-fits-setup
 }
 
@@ -610,6 +611,24 @@ func watchNotices(r Reduced) []Notice {
 			what += ": " + strings.TrimSuffix(note, ".")
 		}
 		out = append(out, Notice{About: "rule:" + id, Key: "rule:" + id, What: what + "."})
+	}
+	return out
+}
+
+// quota.continue: Fyr automatically continued a quota-stopped thread after its
+// reset time passed (V0.quota-auto-continue).
+func quotaContinueNotices(r Reduced) []Notice {
+	var out []Notice
+	for _, ev := range r.Events {
+		if ev.Type != "quota.continued" {
+			continue
+		}
+		d, _ := ev.Data.(map[string]any)
+		what := "The provider quota has reset. Continue from where you stopped."
+		if msg := strings.TrimSpace(str(d["message"])); msg != "" {
+			what = "The provider quota has reset (the last run stopped with: " + msg + "). Continue from where you stopped."
+		}
+		out = append(out, Notice{About: "thread", Key: "quota.continue", What: what})
 	}
 	return out
 }

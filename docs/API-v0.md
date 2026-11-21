@@ -139,6 +139,7 @@ A front serves two prefixes and nothing else under `/api/`: there is no default 
 | `msg` | a raw `claude` stream message: `{"type": "assistant" \| "user", "parent_tool_use_id": null \| "…", "message": {"content": [blocks]}}`. Blocks: `text`, `thinking`, `tool_use {id, name, input}`, `tool_result {tool_use_id, content, is_error}`, `image`. A non-null `parent_tool_use_id` is a subagent message: fold it under that tool use. |
 | `run.started` | `{}` |
 | `run.ended` | `{"failure": Failure \| null, "interrupted": false, "durationMs": 1200}` |
+| `quota.continued` | `{"attempt": 1, "resetAt": "…", "message": "…"}` Fyr automatically continued a quota-stopped thread after its reset time passed (V0.quota-auto-continue) |
 | `decision.opened` | `{"decision": Decision}` |
 | `decision.closed` | `{"id": "…", "answer": "text shown in the log"}` |
 | `decision.autoApproved` | `{"tool": "Bash", "summary": "…", "reason": "…", "model"?: "…", "durationMs": 420, "cached"?: true}` quiet audit record when the per-project approval judge auto-allows a tool call (V0.tool-approval-judge) |
@@ -174,7 +175,7 @@ Actions and their args:
 | `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36, V0.multi-pr: optional `pr` or `change`; merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen`, `thread.pin` and `thread.unpin` (V0.104, owner only), `thread.restart` (V0.143: only while the agent does not respond) | none (or `pr?` / `change?` for `thread.dismissPR`) |
 | `thread.settle` | settles now and stops a live run; `now?: true` for bulk settle, which refuses a pinned or running thread |
 | `thread.settleWhenDone` | V0.203: settles once no run or task is live, nothing waits for the owner and no PR is open |
-| `thread.wakeOnQuota` | V0.quota-reset-wake: `{provider?, window?, note?}` arms an owner-owned wake when that provider's quota window resets and clears a stopped thread's failure |
+| `thread.wakeOnQuota` | V0.quota-reset-wake, V0.quota-auto-continue: `{provider?, window?, note?}` arms an owner-owned wake when that provider's quota window resets and clears a stopped thread's failure; falls back to the thread's own parsed future `failure` reset notice when the provider has no quota polling and no specific window was named |
 | `thread.cancelWake` | V0.wakeups-via-watch: `{rule?}` cancels the agent's wake-up (its watch on a time or quota reset; no rule: the soonest); the agent is told for agent-armed wakes |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.snoozeWhenDone` (V0.185): until the thread's work is done, at most 24 h; `view.snoozeUntil` is then that maximum and `view.snoozeWhenDone` is true. Unavailable, with the reason, when no work goes on or the thread needs the owner | none |

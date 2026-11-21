@@ -117,7 +117,7 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 		// reset the wait is over and the failure is the owner's again.
 		return Attention{State: Waiting, Section: WorkingSec, Reason: quotaWait}
 	case t.Failure != nil:
-		return Attention{State: Failed, Section: NeedsYou, Reason: t.Failure.Message, Group: GroupUnblock}
+		return Attention{State: Failed, Section: NeedsYou, Reason: FailureReason(t, now), Group: GroupUnblock}
 	case t.Unresponsive != nil:
 		// V0.143: a live process that takes nothing Fyr writes needs the
 		// owner: Restart, or wait for the automatic one.

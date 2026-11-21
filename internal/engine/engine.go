@@ -450,21 +450,13 @@ func (e *Engine) submit(in core.Input) api.Reply {
 		return api.Reply{Error: "no profile " + a.Str("profile"), Status: 400}
 	}
 	if in.Kind == core.KindWakeOnQuota {
-		if e.QuotaReset == nil {
-			return api.Reply{Error: "quota wakes are not available on this host", Status: 409}
-		}
-		prov := strings.TrimSpace(a.Str("provider"))
-		if prov == "" {
-			if t, ok := e.Thread(in.Thread); ok {
-				prov = t.Profile
-			}
-		}
-		if prov == "" {
-			return api.Reply{Error: "provider is required", Status: 400}
-		}
-		win, at, err := e.QuotaReset(context.Background(), prov, a.Str("window"))
+		prov, win, at, err := e.resolveQuotaReset(context.Background(), in.Thread, a.Str("provider"), a.Str("window"))
 		if err != nil {
-			return api.Reply{Error: err.Error(), Status: 409}
+			status := 409
+			if errors.Is(err, core.ErrBadArgs) {
+				status = 400
+			}
+			return api.Reply{Error: err.Error(), Status: status}
 		}
 		args := maps.Clone(a)
 		args["provider"] = prov
@@ -1219,6 +1211,23 @@ func (e *Engine) Tick() {
 	e.mu.Lock()
 	now := e.Now()
 	e.recordExhaustedQuotaLocked(snap, now)
+	var due []string
+	for id, t := range e.threads {
+		if at := core.NextCheck(t, e.view(id), now); at != nil && !at.After(now) {
+			due = append(due, id)
+		}
+	}
+	e.mu.Unlock()
+	// The one timer of the Rules and quota auto-continue (#46, V0.quota-auto-continue):
+	// apply KindClock before computing time-driven attention diffs so due transitions
+	// update state and e.last without broadcasting a transient pre-clock state.
+	for _, id := range due {
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsClock), Kind: core.KindClock, Thread: id}); err != nil {
+			log.Printf("thread %s: clock: %v", id, err)
+		}
+	}
+	e.mu.Lock()
+	now = e.Now()
 	quiet := map[string]bool{}
 	for pid := range e.projects {
 		if k := quietKey(e.quietUntil(pid, now)); k != e.quietSent[pid] {
@@ -1231,11 +1240,7 @@ func (e *Engine) Tick() {
 		prev core.State
 	}
 	var changed []change
-	var due []string
 	for id, t := range e.threads {
-		if at := core.NextCheck(t, e.view(id), now); at != nil && !at.After(now) {
-			due = append(due, id)
-		}
 		if core.ComputeWith(t, e.view(id), now, e.autoMergeOn).State != e.last[id] || quiet[t.ProjectID] {
 			e.bump(id)
 			d, prev := e.seen(core.CloneThread(t), now)
@@ -1244,13 +1249,6 @@ func (e *Engine) Tick() {
 	}
 	qresets := e.dueQuotaResetsLocked(now)
 	e.mu.Unlock()
-	// The one timer of the Rules (#46): a Rule due at its nextCheck is
-	// evaluated after the clock's Input.
-	for _, id := range due {
-		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsClock), Kind: core.KindClock, Thread: id}); err != nil {
-			log.Printf("thread %s: clock: %v", id, err)
-		}
-	}
 	if len(quiet) > 0 {
 		for _, p := range e.Projects() {
 			if quiet[p.ID] {
@@ -1265,12 +1263,46 @@ func (e *Engine) Tick() {
 	for _, q := range qresets {
 		e.Hub.Send(stream.FrameQuotaReset, q)
 	}
-	e.sweepSlots()          // V0.86
-	e.sweepQuietWaits()     // V0.195
-	e.checkThreadTick(now)  // V0.thread-invariants
+	e.sweepSlots()         // V0.86
+	e.sweepQuietWaits()    // V0.195
+	e.checkThreadTick(now) // V0.thread-invariants
 	if e.Slots != nil {
 		e.publishGuard(e.Now())
 	}
+}
+
+// resolveQuotaReset resolves a provider's quota window reset time without
+// holding e.mu (V0.quota-reset-wake, V0.quota-auto-continue): first via
+// e.QuotaReset (quota.Service.ResetOf), and when that is unavailable or
+// returns an error and no specific window was requested, falling back to the
+// thread's own fresh future core.QuotaReset(t.Failure) on the same provider.
+func (e *Engine) resolveQuotaReset(ctx context.Context, threadID, provider, window string) (string, string, time.Time, error) {
+	t, hasThread := e.Thread(threadID)
+	prov := strings.TrimSpace(provider)
+	if prov == "" && hasThread {
+		prov = t.Profile
+	}
+	if prov == "" {
+		return "", "", time.Time{}, fmt.Errorf("%w: provider is required", core.ErrBadArgs)
+	}
+	win := strings.TrimSpace(window)
+	var qerr error
+	if e.QuotaReset != nil {
+		rw, at, err := e.QuotaReset(ctx, prov, win)
+		if err == nil {
+			return prov, rw, at, nil
+		}
+		qerr = err
+	}
+	if win == "" && hasThread && t.Profile == prov && core.QuotaStopped(&t) {
+		if at := core.QuotaReset(t.Failure); at != nil && at.After(e.Now()) {
+			return prov, "", at.UTC(), nil
+		}
+	}
+	if qerr != nil {
+		return "", "", time.Time{}, qerr
+	}
+	return "", "", time.Time{}, errors.New("quota wakes are not available on this host")
 }
 
 type quotaResetFrame struct {
