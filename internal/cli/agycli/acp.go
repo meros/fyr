@@ -1572,19 +1572,19 @@ func extractToolResult(upd map[string]any) string {
 			}
 		}
 		if sb.Len() > 0 {
-			return sb.String()
+			return unwrapToolResult(sb.String())
 		}
 	}
 	if rawOut, _ := upd["rawOutput"].(map[string]any); rawOut != nil {
 		if s, _ := rawOut["output"].(string); s != "" {
-			return s
+			return unwrapToolResult(s)
 		}
 		if b, err := json.Marshal(rawOut); err == nil {
-			return string(b)
+			return unwrapToolResult(string(b))
 		}
 	}
 	if s, _ := upd["rawOutput"].(string); s != "" {
-		return s
+		return unwrapToolResult(s)
 	}
 	return ""
 }
