@@ -202,8 +202,15 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 	if s.lastOut.IsZero() {
 		s.lastOut = time.Now()
 	}
+	var queued []cli.QueuedMessage
 	for _, o := range t.Outbox {
 		s.out[o.ID] = o.State
+		if o.State == "queued" {
+			queued = append(queued, cli.QueuedMessage{
+				ID:      o.ID,
+				Content: []cli.Msg{{"type": "text", "text": o.Text}},
+			})
+		}
 	}
 	// The open questions come again from the CLI's kept requests; an answer
 	// that comes first waits in its channel (V0.90 (4)).
@@ -236,7 +243,12 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 	}
 	var c cli.Session
 	if sre != nil {
-		c, err = sre.ReattachSession(conn, t.SessionID, t.Model, w, handlers)
+		c, err = sre.ReattachSession(conn, cli.ReattachState{
+			SessionID: t.SessionID,
+			Model:     t.Model,
+			Running:   t.Running,
+			Queued:    queued,
+		}, w, handlers)
 	} else {
 		c, err = re.Reattach(conn, w, handlers)
 	}

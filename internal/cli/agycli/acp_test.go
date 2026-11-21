@@ -717,7 +717,11 @@ func TestACPReattachFinishesMidTurn(t *testing.T) {
 			{12, []byte(`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}`)},
 		},
 	}
-	sess, err := Adapter{}.ReattachSession(p, "s1", "gemini-4-neon", nil, cli.Handlers{})
+	sess, err := Adapter{}.ReattachSession(p, cli.ReattachState{
+		SessionID: "s1",
+		Model:     "gemini-4-neon",
+		Running:   true,
+	}, nil, cli.Handlers{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -790,5 +794,211 @@ func TestACPDoesNotDropFeedNoticesOnToolResult(t *testing.T) {
 	mu.Unlock()
 	if slices.Contains(got, "viewnudge") {
 		t.Fatalf("acpSession must not call viewnudge hook and drop notices: %v", got)
+	}
+}
+
+type pipeLine struct {
+	seq int64
+	b   []byte
+}
+
+type chanPipe struct {
+	in      chan pipeLine
+	written chan []byte
+	mu      sync.Mutex
+	ackedTo int64
+	closed  bool
+}
+
+func newChanPipe() *chanPipe {
+	return &chanPipe{
+		in:      make(chan pipeLine, 32),
+		written: make(chan []byte, 32),
+	}
+}
+
+func (p *chanPipe) WriteLine(b []byte) error {
+	cp := append([]byte(nil), b...)
+	p.written <- cp
+	return nil
+}
+
+func (p *chanPipe) ReadLine() ([]byte, int64, error) {
+	item, ok := <-p.in
+	if !ok {
+		return nil, 0, io.EOF
+	}
+	return item.b, item.seq, nil
+}
+
+func (p *chanPipe) Ack(upTo int64, _ []int64) {
+	p.mu.Lock()
+	p.ackedTo = upTo
+	p.mu.Unlock()
+}
+
+func (p *chanPipe) acked() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.ackedTo
+}
+
+func (p *chanPipe) closeIn() {
+	p.mu.Lock()
+	if !p.closed {
+		p.closed = true
+		close(p.in)
+	}
+	p.mu.Unlock()
+}
+
+func (p *chanPipe) CloseInput() error { p.closeIn(); return nil }
+func (p *chanPipe) Kill()             { p.closeIn() }
+func (p *chanPipe) Wait() error       { return nil }
+func (p *chanPipe) Pid() int          { return 42 }
+
+// V0.agy-reattach-queue: reattaching mid-turn restores queued messages, holds
+// them until the in-flight pre-restart turn ends, allows cancelling them before
+// they run, queues new messages behind them, and holds prompt response runner
+// seqs until Fyr handles the result.
+func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
+	p := newChanPipe()
+	sess, err := Adapter{}.ReattachSession(p, cli.ReattachState{
+		SessionID: "s1",
+		Model:     "gemini-4-neon",
+		Running:   true,
+		Queued: []cli.QueuedMessage{
+			{ID: "q1", Content: []cli.Msg{{"type": "text", "text": "first queued"}}},
+			{ID: "q2", Content: []cli.Msg{{"type": "text", "text": "second queued"}}},
+		},
+	}, nil, cli.Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+	handled := sess.(interface{ Handled(cli.Msg) })
+	readMsg := func() cli.Msg {
+		t.Helper()
+		select {
+		case m, ok := <-sess.Out():
+			if !ok {
+				t.Fatal("session output closed unexpectedly")
+			}
+			return m
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for session output")
+			return nil
+		}
+	}
+	readWritten := func() cli.Msg {
+		t.Helper()
+		select {
+		case b := <-p.written:
+			var m cli.Msg
+			if err := json.Unmarshal(b, &m); err != nil {
+				t.Fatalf("unmarshal written: %v", err)
+			}
+			return m
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for session/prompt write")
+			return nil
+		}
+	}
+
+	// A new message sent while the pre-restart turn is still active must queue
+	// behind the restored messages rather than sending a concurrent prompt.
+	if err := sess.SendUser([]cli.Msg{{"type": "text", "text": "third queued"}}, "q3"); err != nil {
+		t.Fatal(err)
+	}
+	if m := readMsg(); m["type"] != "command_lifecycle" || m["command_uuid"] != "q3" || m["state"] != "queued" {
+		t.Fatalf("expected q3 queued, got %+v", m)
+	}
+
+	// Cancelling a restored pre-restart queued message must succeed.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ok, err := sess.CancelMessage(ctx, "q1")
+	if err != nil || !ok {
+		t.Fatalf("CancelMessage(q1) = (%v, %v), want (true, nil)", ok, err)
+	}
+	if m := readMsg(); m["type"] != "command_lifecycle" || m["command_uuid"] != "q1" || m["state"] != "cancelled" {
+		t.Fatalf("expected q1 cancelled, got %+v", m)
+	}
+
+	// Nothing may be written to the agent pipe before the pre-restart turn ends.
+	select {
+	case b := <-p.written:
+		t.Fatalf("unexpected write while reattached turn still running: %s", b)
+	default:
+	}
+
+	// Finish the pre-restart turn (seq 12).
+	p.in <- pipeLine{11, []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"pre-restart done"}}}}`)}
+	p.in <- pipeLine{12, []byte(`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}`)}
+
+	if m := readMsg(); m["type"] != "assistant" {
+		t.Fatalf("expected pre-restart assistant text, got %+v", m)
+	}
+	res1 := readMsg()
+	if res1["type"] != "result" || res1["result"] != "pre-restart done" || res1[claude.SeqKey] != int64(12) {
+		t.Fatalf("unexpected pre-restart result: %+v", res1)
+	}
+	handled.Handled(res1)
+
+	// Now q2 ("second queued") must run next (q1 was cancelled).
+	req2 := readWritten()
+	if req2["method"] != "session/prompt" {
+		t.Fatalf("expected session/prompt for q2, got %+v", req2)
+	}
+	rawParams2, _ := json.Marshal(req2["params"])
+	if !strings.Contains(string(rawParams2), "second queued") {
+		t.Fatalf("expected q2 prompt text, got %s", rawParams2)
+	}
+	if m := readMsg(); m["type"] != "command_lifecycle" || m["command_uuid"] != "q2" || m["state"] != "started" {
+		t.Fatalf("expected q2 started, got %+v", m)
+	}
+
+	// Answer q2 at seq 13; runner ack must wait until Fyr handles the result.
+	id2 := int64(req2["id"].(float64))
+	p.in <- pipeLine{13, []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"stopReason":"end_turn"}}`, id2))}
+	if m := readMsg(); m["type"] != "command_lifecycle" || m["command_uuid"] != "q2" || m["state"] != "completed" {
+		t.Fatalf("expected q2 completed, got %+v", m)
+	}
+	res2 := readMsg()
+	if res2["type"] != "result" || res2[claude.SeqKey] != int64(13) {
+		t.Fatalf("expected q2 result carrying seq 13, got %+v", res2)
+	}
+	if got := p.acked(); got >= 13 {
+		t.Fatalf("runner acked %d before q2 result was handled", got)
+	}
+	handled.Handled(res2)
+	if got := p.acked(); got != 13 {
+		t.Fatalf("runner ack=%d after handling q2 result, want 13", got)
+	}
+
+	// Finally q3 ("third queued") must run.
+	req3 := readWritten()
+	rawParams3, _ := json.Marshal(req3["params"])
+	if req3["method"] != "session/prompt" || !strings.Contains(string(rawParams3), "third queued") {
+		t.Fatalf("expected session/prompt for q3, got %+v", req3)
+	}
+	if m := readMsg(); m["type"] != "command_lifecycle" || m["command_uuid"] != "q3" || m["state"] != "started" {
+		t.Fatalf("expected q3 started, got %+v", m)
+	}
+	id3 := int64(req3["id"].(float64))
+	p.in <- pipeLine{14, []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"stopReason":"end_turn"}}`, id3))}
+	if m := readMsg(); m["type"] != "command_lifecycle" || m["command_uuid"] != "q3" || m["state"] != "completed" {
+		t.Fatalf("expected q3 completed, got %+v", m)
+	}
+	res3 := readMsg()
+	if res3["type"] != "result" || res3[claude.SeqKey] != int64(14) {
+		t.Fatalf("expected q3 result carrying seq 14, got %+v", res3)
+	}
+	handled.Handled(res3)
+	if got := p.acked(); got != 14 {
+		t.Fatalf("runner ack=%d after handling q3 result, want 14", got)
 	}
 }

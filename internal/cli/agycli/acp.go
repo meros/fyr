@@ -62,6 +62,8 @@ type acpSpec struct {
 	AllowedTools    []string
 	DisallowedTools []string
 	Cleanup         func()
+	ReattachRunning bool
+	ReattachQueued  []cli.QueuedMessage
 }
 
 type queuedPrompt struct {
@@ -84,6 +86,12 @@ func (e *rpcError) Error() string {
 type rpcResp struct {
 	result cli.Msg
 	err    *rpcError
+	seq    int64
+}
+
+type pendingReq struct {
+	ch      chan rpcResp
+	holdSeq bool
 }
 
 type acpSession struct {
@@ -104,7 +112,7 @@ type acpSession struct {
 	lastKeep []int64
 
 	pmu     sync.Mutex
-	pending map[string]chan rpcResp
+	pending map[string]pendingReq
 	seq     atomic.Int64
 
 	// Session + turn + prompt queue state.
@@ -168,29 +176,35 @@ func openACP(p runner.Pipe, s acpSpec, h cli.Handlers, reattached bool) *acpSess
 			mcpNames = append(mcpNames, n)
 		}
 	}
+	var queue []queuedPrompt
+	for _, q := range s.ReattachQueued {
+		queue = append(queue, queuedPrompt{uuid: q.ID, content: q.Content})
+	}
 	c := &acpSession{
-		pipe:          p,
-		spec:          s,
-		h:             h,
-		log:           s.Log,
-		cleanup:       s.Cleanup,
-		open:          map[string]int64{},
-		pending:       map[string]chan rpcResp{},
-		sessionID:     s.SessionID,
-		currentModel:  s.Model,
-		currentEffort: s.Effort,
-		mcpNames:      mcpNames,
-		initEmitted:   reattached && s.SessionID != "",
-		emittedTools:  map[string]bool{},
-		finishedTools: map[string]bool{},
-		rawNames:      map[string]string{},
-		toolNames:     map[string]string{},
-		openPerms:     map[string]bool{},
-		qCh:           make(chan struct{}, 1),
-		readDone:      make(chan struct{}),
-		workerDone:    make(chan struct{}),
-		out:           make(chan cli.Msg, 256),
-		done:          make(chan struct{}),
+		pipe:           p,
+		spec:           s,
+		h:              h,
+		log:            s.Log,
+		cleanup:        s.Cleanup,
+		open:           map[string]int64{},
+		pending:        map[string]pendingReq{},
+		sessionID:      s.SessionID,
+		currentModel:   s.Model,
+		currentEffort:  s.Effort,
+		mcpNames:       mcpNames,
+		initEmitted:    reattached && s.SessionID != "",
+		queue:          queue,
+		emittedTools:   map[string]bool{},
+		finishedTools:  map[string]bool{},
+		rawNames:       map[string]string{},
+		toolNames:      map[string]string{},
+		openPerms:      map[string]bool{},
+		reattachActive: reattached && s.ReattachRunning,
+		qCh:            make(chan struct{}, 1),
+		readDone:       make(chan struct{}),
+		workerDone:     make(chan struct{}),
+		out:            make(chan cli.Msg, 256),
+		done:           make(chan struct{}),
 	}
 	if reattached {
 		// Avoid colliding with any in-flight pre-restart JSON-RPC request IDs.
@@ -300,20 +314,32 @@ func (c *acpSession) emit(m cli.Msg, seq int64) {
 	c.out <- m
 }
 
+// emitHeld emits a message whose runner seq was already recorded in c.unacked
+// by read() so the runner keeps it until Fyr handles the message (V0.agy-reattach-queue).
+func (c *acpSession) emitHeld(m cli.Msg, seq int64) {
+	if seq > 0 {
+		m[claude.SeqKey] = seq
+	}
+	c.out <- m
+}
+
 func (c *acpSession) request(ctx context.Context, method string, params cli.Msg) (cli.Msg, error) {
-	return c.requestOn(ctx, method, params, nil)
+	res, _, err := c.requestOn(ctx, method, params, false, nil)
+	return res, err
 }
 
 // requestOn is request, with onWritten run once the request is on the agent's
 // pipe and before its answer is waited for: a turn is announced "started"
 // there, so an Interrupt written after that announcement reaches the agent
-// after the prompt it cancels (V0.agy-interrupt-before-prompt).
-func (c *acpSession) requestOn(ctx context.Context, method string, params cli.Msg, onWritten func()) (cli.Msg, error) {
+// after the prompt it cancels (V0.agy-interrupt-before-prompt). When holdSeq is
+// true, read() records the response's runner seq in c.unacked and returns it so
+// the caller can attach it to the emitted result message (V0.agy-reattach-queue).
+func (c *acpSession) requestOn(ctx context.Context, method string, params cli.Msg, holdSeq bool, onWritten func()) (cli.Msg, int64, error) {
 	idNum := c.seq.Add(1)
 	idKey := strconv.FormatInt(idNum, 10)
 	ch := make(chan rpcResp, 1)
 	c.pmu.Lock()
-	c.pending[idKey] = ch
+	c.pending[idKey] = pendingReq{ch: ch, holdSeq: holdSeq}
 	c.pmu.Unlock()
 	defer func() {
 		c.pmu.Lock()
@@ -325,7 +351,7 @@ func (c *acpSession) requestOn(ctx context.Context, method string, params cli.Ms
 		req["params"] = params
 	}
 	if err := c.write(req); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if onWritten != nil {
 		onWritten()
@@ -333,16 +359,16 @@ func (c *acpSession) requestOn(ctx context.Context, method string, params cli.Ms
 	select {
 	case r, open := <-ch:
 		if !open {
-			return nil, fmt.Errorf("process exited before %s was answered", method)
+			return nil, 0, fmt.Errorf("process exited before %s was answered", method)
 		}
 		if r.err != nil {
-			return nil, r.err
+			return nil, r.seq, r.err
 		}
-		return r.result, nil
+		return r.result, r.seq, nil
 	case <-c.readDone:
-		return nil, fmt.Errorf("process exited before %s was answered", method)
+		return nil, 0, fmt.Errorf("process exited before %s was answered", method)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("%s: %w", method, ctx.Err())
+		return nil, 0, fmt.Errorf("%s: %w", method, ctx.Err())
 	}
 }
 
@@ -566,7 +592,7 @@ func (c *acpSession) SendUser(content []cli.Msg, uuid string) error {
 		c.mu.Unlock()
 		return fmt.Errorf("session input is closed")
 	}
-	busy := c.turnRunning || len(c.queue) > 0
+	busy := c.turnRunning || c.reattachActive || len(c.queue) > 0
 	c.queue = append(c.queue, queuedPrompt{uuid: uuid, content: content})
 	c.mu.Unlock()
 	if busy && uuid != "" {
@@ -644,6 +670,19 @@ func (c *acpSession) promptWorker() {
 	defer close(c.workerDone)
 	for {
 		c.mu.Lock()
+		if c.reattachActive {
+			// Wait for the in-flight pre-restart turn to finish before sending
+			// any queued follow-up prompt or closing the session (V0.agy-reattach-queue).
+			c.mu.Unlock()
+			select {
+			case <-c.qCh:
+				continue
+			case <-c.readDone:
+				return
+			case <-c.done:
+				return
+			}
+		}
 		if len(c.queue) == 0 {
 			closed := c.inputClosed
 			killed := c.killed
@@ -695,10 +734,10 @@ func (c *acpSession) promptWorker() {
 			})
 		}
 		start := time.Now()
-		res, err := c.requestOn(context.Background(), "session/prompt", cli.Msg{
+		res, respSeq, err := c.requestOn(context.Background(), "session/prompt", cli.Msg{
 			"sessionId": sid,
 			"prompt":    convertPromptBlocks(item.content),
-		}, started)
+		}, true, started)
 		durMs := time.Since(start).Milliseconds()
 
 		// Flush any trailing assistant text before emitting result.
@@ -719,13 +758,13 @@ func (c *acpSession) promptWorker() {
 				return
 			default:
 			}
-			c.emit(cli.Msg{
+			c.emitHeld(cli.Msg{
 				"type":        "result",
 				"subtype":     "error",
 				"is_error":    true,
 				"result":      err.Error(),
 				"duration_ms": float64(durMs),
-			}, 0)
+			}, respSeq)
 		} else {
 			stopReason, _ := res["stopReason"].(string)
 			subtype := "success"
@@ -742,7 +781,7 @@ func (c *acpSession) promptWorker() {
 			if u, ok := res["usage"].(map[string]any); ok {
 				outMsg["usage"] = u
 			}
-			c.emit(outMsg, 0)
+			c.emitHeld(outMsg, respSeq)
 		}
 		if shouldClose {
 			if sid != "" {
@@ -829,13 +868,19 @@ func (c *acpSession) read() {
 				resp.result = res
 			}
 			c.pmu.Lock()
-			ch := c.pending[idKey]
+			pr, ok := c.pending[idKey]
 			delete(c.pending, idKey)
 			c.pmu.Unlock()
-			if ch != nil {
-				ch <- resp
-				c.note(seq, false)
-				c.ack()
+			if ok {
+				if pr.holdSeq && seq > 0 {
+					c.note(seq, true)
+					resp.seq = seq
+				}
+				pr.ch <- resp
+				if !pr.holdSeq {
+					c.note(seq, false)
+					c.ack()
+				}
 			} else if c.finishReattachedTurn(resp, seq) {
 				// finishReattachedTurn queued a result message carrying seq.
 			} else {
@@ -864,8 +909,8 @@ func (c *acpSession) read() {
 	c.err = c.pipe.Wait()
 	close(c.readDone)
 	c.pmu.Lock()
-	for id, ch := range c.pending {
-		close(ch)
+	for id, pr := range c.pending {
+		close(pr.ch)
 		delete(c.pending, id)
 	}
 	c.pmu.Unlock()
@@ -1068,7 +1113,6 @@ func (c *acpSession) finishReattachedTurn(resp rpcResp, seq int64) bool {
 	c.finishedTools = map[string]bool{}
 	c.rawNames = map[string]string{}
 	c.toolNames = map[string]string{}
-	c.reattachActive = false
 	c.mu.Unlock()
 	if resp.err != nil {
 		c.emit(cli.Msg{
@@ -1077,22 +1121,31 @@ func (c *acpSession) finishReattachedTurn(resp rpcResp, seq int64) bool {
 			"is_error": true,
 			"result":   resp.err.Error(),
 		}, seq)
-		return true
+	} else {
+		subtype := "success"
+		if stopReason == "cancelled" || stopReason == "canceled" {
+			subtype = "interrupted"
+		}
+		outMsg := cli.Msg{
+			"type":     "result",
+			"subtype":  subtype,
+			"is_error": false,
+			"result":   fullText,
+		}
+		if u, ok := resp.result["usage"].(map[string]any); ok {
+			outMsg["usage"] = u
+		}
+		c.emit(outMsg, seq)
 	}
-	subtype := "success"
-	if stopReason == "cancelled" || stopReason == "canceled" {
-		subtype = "interrupted"
+	// Release promptWorker only after the reattached turn's result is on c.out,
+	// so any queued follow-up turn starts strictly after it (V0.agy-reattach-queue).
+	c.mu.Lock()
+	c.reattachActive = false
+	c.mu.Unlock()
+	select {
+	case c.qCh <- struct{}{}:
+	default:
 	}
-	outMsg := cli.Msg{
-		"type":     "result",
-		"subtype":  subtype,
-		"is_error": false,
-		"result":   fullText,
-	}
-	if u, ok := resp.result["usage"].(map[string]any); ok {
-		outMsg["usage"] = u
-	}
-	c.emit(outMsg, seq)
 	return true
 }
 

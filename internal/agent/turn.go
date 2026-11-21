@@ -126,7 +126,14 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		switch msg["state"] {
 		case "queued":
 			m.delivered(s, id, "queued")
-		case "started", "completed":
+		case "started":
+			// V0.agy-reattach-queue: a queued message that begins a new turn
+			// after a previous result starts the run before the agent emits
+			// its first tool call or text, so the thread never looks idle
+			// while the model thinks.
+			m.turnStarted(s)
+			m.delivered(s, id, "read")
+		case "completed":
 			m.delivered(s, id, "read")
 		case "cancelled":
 			m.delivered(s, id, "cancelled")
