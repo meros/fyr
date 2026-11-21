@@ -1313,6 +1313,77 @@ func TestACPReactiveWakeupQueuesPromptAndPreservesReply(t *testing.T) {
 	}
 }
 
+// V0.agy-open-tool-settle: a reactive turn whose model wrote a note and then
+// started a command is still running: its usage_update must not settle the
+// turn while the tool is open, and the tool's own completion is what arms the
+// settle. Before this, a 1.5 s settle over a five-minute command ended the
+// turn mid-flight and promoted the command to a background task.
+func TestACPUnsolicitedTurnWaitsForItsOpenTool(t *testing.T) {
+	p := newChanPipe()
+	sess := openACP(p, acpSpec{
+		SessionID:   "s-open",
+		SettleDelay: 40 * time.Millisecond,
+	}, cli.Handlers{}, false)
+	defer func() {
+		sess.Kill()
+		<-sess.Done()
+	}()
+
+	// An unsolicited turn in the order the live sessions emit it: the model
+	// starts a command, writes a note about waiting for it, and its
+	// usage_update follows — all while the command is still open.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-open","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Checking the tests."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-open","update":{"sessionUpdate":"tool_call","toolCallId":"call_long","name":"run_command","args":{"CommandLine":"go test ./..."},"status":"in_progress"}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-open","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Running the full suite now."}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-open","update":{"sessionUpdate":"usage_update","used":1000,"size":1048576}}}`)
+
+	// Drain what the turn emitted, then prove nothing settled it.
+	sawToolUse := false
+	for !sawToolUse {
+		m := nextOut(t, sess.Out(), 2*time.Second)
+		if m["type"] == "result" {
+			t.Fatalf("the turn settled while its command was open: %+v", m)
+		}
+		if m["type"] == "assistant" {
+			inner, _ := m["message"].(cli.Msg)
+			if blocks, _ := inner["content"].([]any); len(blocks) == 1 {
+				if b, _ := blocks[0].(cli.Msg); b["type"] == "tool_use" && b["id"] == "call_long" {
+					sawToolUse = true
+				}
+			}
+		}
+	}
+	// Well past the settle window: still nothing.
+	select {
+	case m := <-sess.Out():
+		if m["type"] == "result" {
+			t.Fatalf("the turn settled while its command was open: %+v", m)
+		}
+	case <-time.After(6 * sess.settleDelay):
+	}
+
+	// The command ends; the model answers and the turn settles on its own.
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-open","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_long","name":"run_command","status":"completed","rawOutput":{"output":"ok all tests"}}}}`)
+	p.push(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-open","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"All green."}}}}`)
+	var sawResult bool
+	for {
+		m := nextOut(t, sess.Out(), 2*time.Second)
+		if m["type"] == "background_tasks_changed" || (m["type"] == "system" && m["subtype"] == "task_notification") {
+			t.Fatalf("a finished command became background work: %+v", m)
+		}
+		if m["type"] == "result" {
+			if m["result"] != "Running the full suite now.\nAll green." && m["result"] != "Running the full suite now.All green." {
+				t.Fatalf("result text %q", m["result"])
+			}
+			sawResult = true
+			break
+		}
+	}
+	if !sawResult {
+		t.Fatal("no result after the command ended")
+	}
+}
+
 // V0.agy-reactive-wakeup: Interrupt during an unsolicited turn sends
 // session/cancel and settles as interrupted without waiting forever for a
 // JSON-RPC stopReason response; an unsolicited message without usage_update

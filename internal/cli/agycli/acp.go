@@ -714,6 +714,17 @@ func (c *acpSession) signalWorker() {
 	}
 }
 
+// openToolLocked reports a tool of the current turn that has not finished:
+// agy is waiting on it, not done (V0.agy-open-tool-settle).
+func (c *acpSession) openToolLocked() bool {
+	for id := range c.emittedTools {
+		if !c.finishedTools[id] {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *acpSession) armSettleLocked(d time.Duration) {
 	c.settleGen++
 	c.settleArmed = true
@@ -1236,7 +1247,9 @@ func (c *acpSession) handleNotification(method string, rawParams any, seq int64)
 						c.unsolicitedActive = true
 						// Fallback settle window in case agy omits usage_update
 						// (e.g. quota warnings); usage_update tightens this to settleDelay.
-						if len(c.openPerms) == 0 {
+						// Not while a tool is open: the model wrote this note and
+						// then waited on the tool, it did not end its turn.
+						if len(c.openPerms) == 0 && !c.openToolLocked() {
 							c.armSettleLocked(3 * c.settleDelay)
 							wake = true
 						}
@@ -1277,7 +1290,7 @@ func (c *acpSession) handleNotification(method string, rawParams any, seq int64)
 		wake := false
 		c.mu.Lock()
 		if !c.turnRunning && (c.unsolicitedActive || c.reattachActive) &&
-			strings.TrimSpace(c.textBuf.String()) != "" && len(c.openPerms) == 0 {
+			strings.TrimSpace(c.textBuf.String()) != "" && len(c.openPerms) == 0 && !c.openToolLocked() {
 			c.armSettleLocked(c.settleDelay)
 			wake = true
 		}
@@ -1378,7 +1391,7 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 		}
 		var wasBG bool
 		var remainingBG []bgTool
-		rearmInterrupted := false
+		rearm := false
 		c.mu.Lock()
 		c.finishedTools[callID] = true
 		if _, ok := c.bgTools[callID]; ok {
@@ -1386,9 +1399,15 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 			delete(c.bgTools, callID)
 			remainingBG = c.sortedBGToolsLocked()
 		}
-		if !c.turnRunning && c.unsolicitedInterrupted && len(c.openPerms) == 0 {
+		// V0.agy-open-tool-settle: an unsolicited turn's settle is due here,
+		// not at the usage_update that came while the tool was open: the tool
+		// this call was waiting on has just ended. An interrupted one re-arms
+		// to close the turn; a quiet one to take whatever the model wrote
+		// since (its usage_update may never come again).
+		if !c.turnRunning && !c.reattachActive && (c.unsolicitedActive || c.unsolicitedInterrupted) &&
+			len(c.openPerms) == 0 && !c.openToolLocked() {
 			c.armSettleLocked(c.settleDelay)
-			rearmInterrupted = true
+			rearm = true
 		}
 		c.mu.Unlock()
 		resultText := extractToolResult(upd)
@@ -1425,7 +1444,7 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 			}, 0)
 			c.emitBackgroundChanged(remainingBG)
 		}
-		if rearmInterrupted {
+		if rearm {
 			c.signalWorker()
 		}
 		queued = true
