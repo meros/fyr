@@ -424,6 +424,19 @@ func DropRules(t *Thread, match func(Rule) bool) {
 	}
 }
 
+// unwatchable reports a Rule whose Condition its change can no longer make
+// true: a checks, review or conflict condition of a change that has left the
+// in-flight phases (V0.watch-stale), because landing or ending drops those
+// conditions (decision 0018). Every other Condition kind is readable after
+// landing (a phase, a move, the run count), so it stays.
+func unwatchable(t *Thread, x Rule) bool {
+	if x.When.Kind != WhenCondition || !prFact(x.When.Type) {
+		return false
+	}
+	c := FindChange(t, x.When.Change)
+	return c != nil && !c.Phase.InFlight()
+}
+
 // RulesOf are the thread's armed or suspended Rules of a purpose.
 func RulesOf(t *Thread, purpose string) []Rule {
 	var out []Rule
@@ -534,6 +547,12 @@ func EvalRules(r Rec, now time.Time) Result {
 		r.V = &View{}
 	}
 	r.T.Rules = slices.DeleteFunc(r.T.Rules, func(x Rule) bool { return x.About != "" && FindChange(r.T, x.About) == nil })
+	// V0.watch-stale: a watch on a condition its change no longer reports can
+	// never fire (the condition is dropped when the change lands or ends, as
+	// checks, review and conflict are, decision 0018). Drop it rather than
+	// leave it armed forever. The watcher's own thread is told; a dropped Rule
+	// does not act.
+	r.T.Rules = slices.DeleteFunc(r.T.Rules, func(x Rule) bool { return unwatchable(r.T, x) })
 	for fired := 0; ; fired++ {
 		id, onView := due(r, now)
 		if id == "" {
@@ -775,6 +794,12 @@ func checkAgentWhen(t *Thread, w *When, depth int) error {
 		w.Change = c.ID
 		if w.Kind == WhenReached && !w.Phase.Valid() {
 			return fmt.Errorf("phase must be %s", OrList(Phases()))
+		}
+		// V0.watch-stale: a change that has landed or ended drops checks,
+		// review and conflict (decision 0018), so a watch on one of those can
+		// never fire. Refuse it rather than arm a watch that only looks armed.
+		if w.Kind == WhenCondition && prFact(w.Type) && !c.Phase.InFlight() {
+			return fmt.Errorf("%s no longer reports %s: the change is %s", c.Key, w.Type, c.Phase)
 		}
 		if w.Kind == WhenCondition && (w.Type == "" || !w.Status.Valid()) {
 			return fmt.Errorf("condition needs a type and a status (%s)", OrList(CondStatuses()))
