@@ -198,6 +198,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			m.noteLastText(s, typ, msg)
 		}
 		o := s.digest.feed(msg)
+		m.mu.Lock()
+		s.openTools = len(s.digest.openTools)
+		m.mu.Unlock()
 		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []core.Event{{Type: "msg", Data: trimMsg(msg)}}}
 		for _, u := range o.PRURLs {
 			repo, n, _ := core.ParsePR(u)
@@ -213,7 +216,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		ended := s.live
 		interrupted := s.interrupt
 		lastText := s.lastText
-		s.live, s.interrupt, s.lastText = false, false, ""
+		s.live, s.interrupt, s.lastText, s.openTools = false, false, "", 0
 		m.mu.Unlock()
 		s.digest.resetOpen()
 		m.mu.Lock()

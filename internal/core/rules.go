@@ -437,13 +437,30 @@ func DropRules(t *Thread, match func(Rule) bool) {
 // unwatchable reports a Rule whose Condition its change can no longer make
 // true: a checks, review or conflict condition of a change that has left the
 // in-flight phases (V0.watch-stale), because landing or ending drops those
-// conditions (decision 0018). Every other Condition kind is readable after
-// landing (a phase, a move, the run count), so it stays.
+// conditions (decision 0018). Compound All/Any conditions (such as a settle
+// rule wrapping WhenCondition with WhenIdle) are checked recursively. Every
+// other Condition kind is readable after landing (a phase, a move, the run
+// count), so it stays.
 func unwatchable(t *Thread, x Rule) bool {
-	if x.When.Kind != WhenCondition || !prFact(x.When.Type) {
+	return unwatchableWhen(t, x.When)
+}
+
+func unwatchableWhen(t *Thread, w When) bool {
+	if len(w.All) > 0 {
+		return slices.ContainsFunc(w.All, func(x When) bool { return unwatchableWhen(t, x) })
+	}
+	if len(w.Any) > 0 {
+		for _, x := range w.Any {
+			if !unwatchableWhen(t, x) {
+				return false
+			}
+		}
+		return true
+	}
+	if w.Kind != WhenCondition || !prFact(w.Type) {
 		return false
 	}
-	c := FindChange(t, x.When.Change)
+	c := FindChange(t, w.Change)
 	return c != nil && !c.Phase.InFlight()
 }
 

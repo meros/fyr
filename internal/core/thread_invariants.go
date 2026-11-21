@@ -7,6 +7,7 @@ package core
 // when broken.
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -16,36 +17,42 @@ import (
 // Pure thread state & transition invariant IDs (stable: logs, cards, fix threads).
 const (
 	// State invariants (CheckThread).
-	InvThreadArchivedLiveWork    = "thread-archived-live-work"
-	InvThreadSettledContradict   = "thread-settled-contradiction"
-	InvThreadRunStateContradict  = "thread-run-state-contradiction"
-	InvThreadPinContradict       = "thread-pin-contradiction"
-	InvThreadRuleInvalid         = "thread-rule-invalid"
-	InvThreadDecisionInvalid     = "thread-decision-invalid"
-	InvThreadChangeInvalid       = "thread-change-invalid"
-	InvThreadOutboxInvalid       = "thread-outbox-invalid"
-	InvThreadFeedInvalid         = "thread-feed-invalid"
-	InvThreadAttentionPlacement  = "thread-attention-placement"
+	InvThreadArchivedLiveWork     = "thread-archived-live-work"
+	InvThreadSettledContradict    = "thread-settled-contradiction"
+	InvThreadRunStateContradict   = "thread-run-state-contradiction"
+	InvThreadPinContradict        = "thread-pin-contradiction"
+	InvThreadRuleInvalid          = "thread-rule-invalid"
+	InvThreadDecisionInvalid      = "thread-decision-invalid"
+	InvThreadFyrToolApproval      = "thread-fyr-tool-approval"
+	InvThreadQuotaMisclass        = "thread-quota-misclassified"
+	InvThreadSerialDrift          = "thread-serialization-drift"
+	InvThreadChangeInvalid        = "thread-change-invalid"
+	InvThreadOutboxInvalid        = "thread-outbox-invalid"
+	InvThreadFeedInvalid          = "thread-feed-invalid"
+	InvThreadAttentionPlacement   = "thread-attention-placement"
 	InvThreadAvailabilityMismatch = "thread-availability-mismatch"
 
 	// Transition invariants (CheckTransition).
-	InvThreadArchivedMutated    = "thread-archived-mutated"
-	InvThreadSettledRunStarted  = "thread-settled-run-started"
-	InvThreadReviveIncomplete   = "thread-revive-incomplete"
-	InvThreadRightsViolated     = "thread-rights-violated"
-	InvThreadCountersRegressed  = "thread-counters-regressed"
-	InvThreadPollStoleSeen      = "thread-poll-stole-seen"
-	InvThreadRuleLoop           = "thread-rule-loop"
+	InvThreadArchivedMutated   = "thread-archived-mutated"
+	InvThreadSettledRunStarted = "thread-settled-run-started"
+	InvThreadReviveIncomplete  = "thread-revive-incomplete"
+	InvThreadRightsViolated    = "thread-rights-violated"
+	InvThreadCountersRegressed = "thread-counters-regressed"
+	InvThreadPollStoleSeen     = "thread-poll-stole-seen"
+	InvThreadRuleLoop          = "thread-rule-loop"
 )
 
 // CoreThreadInvariantTexts describes each pure thread invariant in one sentence.
 var CoreThreadInvariantTexts = map[string]string{
 	InvThreadArchivedLiveWork:     "An archived thread still has live work, open decisions, a pin, a snooze, or armed rules.",
-	InvThreadSettledContradict:    "A settled thread still has a pin, a settle offer, a settle rule, a snooze, or an armed watch.",
+	InvThreadSettledContradict:    "A settled thread still has Starting, MachineWait, a pin, a settle offer, a settle rule, a snooze, or an armed watch.",
 	InvThreadRunStateContradict:   "A thread's live run fields disagree (Running, Starting, RunStartedAt, Activity, Failure, or Stopped).",
 	InvThreadPinContradict:        "A pinned thread is also archived, settled, actively snoozed, or has an unsuspended auto-settle rule.",
-	InvThreadRuleInvalid:          "A thread or view rule has inconsistent suspend state, duplicate id, orphan change, unwatchable PR condition, or a stuck one-shot watch.",
+	InvThreadRuleInvalid:          "A thread or view rule has inconsistent suspend state, duplicate id, orphan change, dead timer, unwatchable PR condition, or a stuck one-shot watch.",
 	InvThreadDecisionInvalid:      "A thread has a duplicate, void, malformed, or mis-gated open decision or held merge ask.",
+	InvThreadFyrToolApproval:      "A Fyr-owned MCP tool (mcp__fyr__*) or policy-gated tool opened an owner tool-approval card instead of being handled by Fyr.",
+	InvThreadQuotaMisclass:        "A provider quota notice was misclassified, missed on run end, or left without a matching quota wait and reset clock.",
+	InvThreadSerialDrift:          "A thread's JSON save-and-load round trip changed its attention, rule digests, overdue-rule state, or next clock check.",
 	InvThreadChangeInvalid:        "A thread's change record has an invalid phase, PR mapping, done mark, stale park, or dropped PR conditions.",
 	InvThreadOutboxInvalid:        "A thread's outbox contains an empty, duplicate, or terminal message state.",
 	InvThreadFeedInvalid:          "A thread's agent feed exceeds its limits or holds a silent or duplicate-key notice.",
@@ -68,6 +75,9 @@ var CoreThreadInvariantOrder = []string{
 	InvThreadPinContradict,
 	InvThreadRuleInvalid,
 	InvThreadDecisionInvalid,
+	InvThreadFyrToolApproval,
+	InvThreadQuotaMisclass,
+	InvThreadSerialDrift,
 	InvThreadChangeInvalid,
 	InvThreadOutboxInvalid,
 	InvThreadFeedInvalid,
@@ -120,6 +130,12 @@ func CheckThread(t *Thread, v *View, now time.Time, on func(repo string) bool) [
 	}
 	if d := checkDecisionsInvalid(t); d != "" {
 		add(InvThreadDecisionInvalid, d)
+	}
+	if d := checkFyrToolApproval(t); d != "" {
+		add(InvThreadFyrToolApproval, d)
+	}
+	if d := checkQuotaMisclassified(t, v, now); d != "" {
+		add(InvThreadQuotaMisclass, d)
 	}
 	if d := checkChangesInvalid(t); d != "" {
 		add(InvThreadChangeInvalid, d)
@@ -303,15 +319,80 @@ func CheckTransition(beforeT *Thread, beforeV *View, afterT *Thread, afterV *Vie
 		}
 	}
 
-	// 7. Rule firing loop.
+	// 7. Rule firing loop & void held-ask gate close (V0.void-held-ask-and-prompts).
 	for _, ev := range res.Events {
 		if ev.Type == "rule.loop" {
 			add(InvThreadRuleLoop, fmt.Sprintf("rule.loop data=%v", ev.Data))
 			break
 		}
+		if ev.Type == "decision.closed" {
+			if m, ok := ev.Data.(map[string]any); ok {
+				if gate, _ := m["gate"].(bool); gate {
+					if reason, _ := m["reason"].(string); reason == "the PR is not open" {
+						add(InvThreadDecisionInvalid, fmt.Sprintf("void merge ask %v closed as gate instead of void", m["id"]))
+					}
+				}
+			}
+		}
 	}
 
 	return out
+}
+
+// CheckSerialization verifies that a JSON save-and-load round trip of (t, v)
+// preserves computed attention, every change's changeDigest, overdue-rule
+// status, and NextCheck (V0.rule-digest-stable, V0.thread-invariants-recent-bugs).
+func CheckSerialization(t *Thread, v *View, now time.Time, on func(repo string) bool) []Violation {
+	if t == nil {
+		return nil
+	}
+	if v == nil {
+		v = &View{User: Owner, Entity: t.ID}
+	}
+	tb, err := json.Marshal(t)
+	if err != nil {
+		return []Violation{{ID: InvThreadSerialDrift, Evidence: fmt.Sprintf("thread=%s marshal thread: %v", t.ID, err)}}
+	}
+	var rt Thread
+	if err := json.Unmarshal(tb, &rt); err != nil {
+		return []Violation{{ID: InvThreadSerialDrift, Evidence: fmt.Sprintf("thread=%s unmarshal thread: %v", t.ID, err)}}
+	}
+	vb, err := json.Marshal(v)
+	if err != nil {
+		return []Violation{{ID: InvThreadSerialDrift, Evidence: fmt.Sprintf("thread=%s marshal view: %v", t.ID, err)}}
+	}
+	var rv View
+	if err := json.Unmarshal(vb, &rv); err != nil {
+		return []Violation{{ID: InvThreadSerialDrift, Evidence: fmt.Sprintf("thread=%s unmarshal view: %v", t.ID, err)}}
+	}
+	var probs []string
+	a1, a2 := ComputeWith(t, v, now, on), ComputeWith(&rt, &rv, now, on)
+	if a1 != a2 {
+		probs = append(probs, fmt.Sprintf("attention drifted %s/%s(%q) -> %s/%s(%q)", a1.State, a1.Section, a1.Reason, a2.State, a2.Section, a2.Reason))
+	}
+	if len(t.Changes) != len(rt.Changes) {
+		probs = append(probs, fmt.Sprintf("changes len %d -> %d", len(t.Changes), len(rt.Changes)))
+	} else {
+		for i := range t.Changes {
+			d1, d2 := changeDigest(&t.Changes[i]), changeDigest(&rt.Changes[i])
+			if d1 != d2 {
+				probs = append(probs, fmt.Sprintf("change %s digest drifted %s -> %s", t.Changes[i].ID, d1, d2))
+			}
+		}
+	}
+	if OverdueRule(t, v, now) == "" {
+		if ov := OverdueRule(&rt, &rv, now); ov != "" {
+			probs = append(probs, "became overdue after round trip: "+ov)
+		}
+	}
+	nc1, nc2 := NextCheck(t, v, now), NextCheck(&rt, &rv, now)
+	if (nc1 == nil) != (nc2 == nil) || (nc1 != nil && !nc1.Equal(*nc2)) {
+		probs = append(probs, fmt.Sprintf("nextCheck drifted %v -> %v", nc1, nc2))
+	}
+	if len(probs) == 0 {
+		return nil
+	}
+	return []Violation{{ID: InvThreadSerialDrift, Evidence: fmt.Sprintf("thread=%s %s", t.ID, strings.Join(probs, "; "))}}
 }
 
 // --- pure state check helpers ---
@@ -326,6 +407,9 @@ func checkArchivedLiveWork(t *Thread, v *View) string {
 	}
 	if t.Starting != nil {
 		probs = append(probs, "starting!=nil")
+	}
+	if t.MachineWait != nil {
+		probs = append(probs, "machineWait!=nil")
 	}
 	if t.Handover != nil {
 		probs = append(probs, "handover!=nil")
@@ -361,6 +445,9 @@ func checkSettledContradiction(t *Thread, v *View) string {
 	var probs []string
 	if t.Starting != nil {
 		probs = append(probs, "starting!=nil")
+	}
+	if t.MachineWait != nil {
+		probs = append(probs, "machineWait!=nil")
 	}
 	if t.PinnedAt != nil {
 		probs = append(probs, "pinned=true")
@@ -461,6 +548,11 @@ func checkRulesInvalid(t *Thread, v *View) string {
 		}
 		if r.About != "" && FindChange(t, r.About) == nil {
 			probs = append(probs, fmt.Sprintf("rule %s references missing change %q", r.ID, r.About))
+		}
+		if r.Status == RuleArmed {
+			if why := checkWhenInvalid(t, r.When); why != "" {
+				probs = append(probs, fmt.Sprintf("rule %s %s", r.ID, why))
+			}
 		}
 		if unwatchable(t, r) {
 			probs = append(probs, fmt.Sprintf("rule %s watches unwatchable PR condition %s on %s", r.ID, r.When.Type, r.When.Change))
@@ -575,12 +667,12 @@ func checkChangesInvalid(t *Thread) string {
 					probs = append(probs, fmt.Sprintf("change %s %s PR has observed phase %s", c.ID, c.PR.State, c.Phase))
 				}
 			}
-			if c.PR.State != "OPEN" {
-				for _, k := range c.Conditions {
-					if k.Type == CondChecks || k.Type == CondReview || k.Type == CondConflict || k.Type == CondMerge {
-						probs = append(probs, fmt.Sprintf("change %s non-OPEN PR (%s) still has %s condition", c.ID, c.PR.State, k.Type))
-						break
-					}
+		}
+		if c.PR != nil && c.PR.State != "OPEN" {
+			for _, k := range c.Conditions {
+				if k.Type == CondChecks || k.Type == CondReview || k.Type == CondConflict || k.Type == CondMerge {
+					probs = append(probs, fmt.Sprintf("change %s non-OPEN PR (%s) still has %s condition", c.ID, c.PR.State, k.Type))
+					break
 				}
 			}
 		}
@@ -836,8 +928,94 @@ func checkAvailabilityMismatch(t *Thread, v *View, now time.Time) string {
 	wantAvail("thread.dismiss", t.Failure != nil, fmt.Sprintf("failure=%t", t.Failure != nil))
 	if t.ArchivedAt == nil {
 		wantAvail("thread.retry", t.Failure != nil, fmt.Sprintf("failure=%t", t.Failure != nil))
+		if t.Settle.At == nil {
+			wantAvail("thread.settleWhenDone", !settlesWhenDoneByOwner(t) && (t.Failure == nil || QuotaWaitText(t, now) != "") && !WorkDoneAt(t, now), "settleWhenDone")
+			wantAvail("thread.snoozeWhenDone", !NeedsOwnerAt(t, now) && WorkGoingAt(t, now), "snoozeWhenDone")
+		}
 	}
+	wantAvail(KindCancelWake, len(Wakes(t)) > 0, fmt.Sprintf("wakes=%d", len(Wakes(t))))
 	wantAvail("thread.restart", t.Unresponsive != nil, fmt.Sprintf("unresponsive=%t", t.Unresponsive != nil))
+	return strings.Join(probs, "; ")
+}
+
+func checkWhenInvalid(t *Thread, w When) string {
+	for _, x := range slices.Concat(w.All, w.Any) {
+		if s := checkWhenInvalid(t, x); s != "" {
+			return s
+		}
+	}
+	if w.Not != nil {
+		if s := checkWhenInvalid(t, *w.Not); s != "" {
+			return s
+		}
+	}
+	switch w.Kind {
+	case WhenAt:
+		if w.At == nil {
+			return "when=at missing time"
+		}
+	case WhenQuota:
+		if w.At == nil {
+			return "when=quota missing reset time"
+		}
+		if strings.TrimSpace(w.Provider) == "" {
+			return "when=quota missing provider"
+		}
+	case WhenIdleFor:
+		if w.Ms <= 0 {
+			return fmt.Sprintf("when=idleFor has ms=%d", w.Ms)
+		}
+	case WhenReached, WhenCondition, WhenMoved, WhenEnded:
+		if w.Change != "" && FindChange(t, w.Change) == nil {
+			return fmt.Sprintf("when=%s references missing change %q", w.Kind, w.Change)
+		}
+	}
+	return ""
+}
+
+func checkFyrToolApproval(t *Thread) string {
+	var probs []string
+	for _, d := range t.Decisions {
+		if d.Kind != DecisionApproval {
+			continue
+		}
+		if strings.HasPrefix(d.Tool, "mcp__fyr__") || strings.HasPrefix(d.Tool, "mcp_fyr_") {
+			probs = append(probs, fmt.Sprintf("decision %s asks owner to approve Fyr MCP tool %s", d.ID, d.Tool))
+			continue
+		}
+		if in, ok := d.Input.(map[string]any); ok && Gate(d.Tool, in) != "" {
+			probs = append(probs, fmt.Sprintf("decision %s asks owner to approve policy-gated tool %s", d.ID, d.Tool))
+		}
+	}
+	return strings.Join(probs, "; ")
+}
+
+func checkQuotaMisclassified(t *Thread, v *View, now time.Time) string {
+	if t.Failure == nil {
+		return ""
+	}
+	var probs []string
+	if t.Failure.Class != ClassQuota && QuotaNotice(t.Failure.Message) != "" {
+		probs = append(probs, fmt.Sprintf("quota notice classified as %q instead of %q", t.Failure.Class, ClassQuota))
+	}
+	if t.Failure.Class == ClassQuota {
+		if at := QuotaReset(t.Failure); at != nil {
+			wt := QuotaWaitText(t, now)
+			if at.After(now) {
+				if wt == "" {
+					probs = append(probs, fmt.Sprintf("future quota reset %s produced empty wait text", at.UTC().Format(time.RFC3339)))
+				}
+				if !t.Running && t.RunningTasks() == 0 {
+					nc := NextCheck(t, v, now)
+					if nc == nil || nc.After(*at) {
+						probs = append(probs, fmt.Sprintf("quota reset %s not scheduled in nextCheck=%v", at.UTC().Format(time.RFC3339), nc))
+					}
+				}
+			} else if wt != "" {
+				probs = append(probs, fmt.Sprintf("expired quota reset %s still waiting (%q)", at.UTC().Format(time.RFC3339), wt))
+			}
+		}
+	}
 	return strings.Join(probs, "; ")
 }
 

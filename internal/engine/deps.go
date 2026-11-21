@@ -27,12 +27,15 @@ import (
 // AgentState is a snapshot of one thread's agent process state for
 // thread-state invariant checks (V0.thread-invariants).
 type AgentState struct {
-	Live     bool
-	Starting bool
-	TurnLive bool
-	Asks     []string
-	Outbox   []string
-	BG       int
+	Live      bool
+	Starting  bool
+	TurnLive  bool
+	Asks      []string
+	Outbox    []string
+	BG        int
+	LastOut   time.Time
+	OpenTools int
+	Judging   int
 }
 
 // AgentDeps are the agents and what the owner's thread commands check.

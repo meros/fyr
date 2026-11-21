@@ -441,6 +441,9 @@ func init() {
 				r.T.MachineWait = nil
 				return Result{Events: []Event{{"agent.machineWait", map[string]any{"done": true}}}}, nil
 			}
+			if r.T.Asleep() {
+				return Result{}, nil
+			}
 			if r.T.MachineWait != nil && r.T.MachineWait.Why == a.Why {
 				return Result{}, nil
 			}

@@ -100,6 +100,7 @@ func SettleWhenMerged(t *Thread, by string, now time.Time) bool {
 func settleNow(t *Thread, now time.Time) {
 	t.Settle.At = &now
 	t.Starting = nil
+	t.MachineWait = nil
 	t.PinnedAt = nil
 	t.SettleAsk = nil
 	DropSettleRules(t)
