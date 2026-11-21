@@ -13,6 +13,8 @@ func TestPromptOpenPRWhenReady(t *testing.T) {
 		"push the branch, open a pull request with gh pr create",
 		`mcp__fyr__change_request {change, ask: "merge"}`,
 		"do not stop at a local commit",
+		"do not arm a CI watch just to wait before asking to merge",
+		"Do not run git worktree remove on Fyr-managed worktrees",
 	}
 	for _, w := range want {
 		if !strings.Contains(FyrPrompt, w) {
