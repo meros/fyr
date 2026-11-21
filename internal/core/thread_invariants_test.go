@@ -187,10 +187,18 @@ func TestThreadInvariantsPureStateViolations(t *testing.T) {
 		if vs := CheckThread(th, &View{}, now, nil); !hasViolation(vs, InvThreadQuotaMisclass) {
 			t.Fatalf("expected %s for wrong failure class, got %+v", InvThreadQuotaMisclass, vs)
 		}
-		// Properly classified quota wait is clean.
+		// Properly classified quota wait is clean, including across QuotaResumeBuffer before KindClock fires.
 		thOK := &Thread{ID: "t2", Conversation: Conversation{Failure: &Failure{Class: ClassQuota, Message: "⚠ Individual quota reached. Resets in 1h.", At: t0}}}
 		if vs := CheckThread(thOK, &View{}, now, nil); hasViolation(vs, InvThreadQuotaMisclass) {
 			t.Fatalf("unexpected %s for valid quota wait: %+v", InvThreadQuotaMisclass, vs)
+		}
+		if vs := CheckThread(thOK, &View{}, t0.Add(time.Hour+5*time.Second), nil); hasViolation(vs, InvThreadQuotaMisclass) {
+			t.Fatalf("unexpected %s during quota resume buffer: %+v", InvThreadQuotaMisclass, vs)
+		}
+		// Exhausted auto-resumes surface as failed without a quota wait violation.
+		thExhausted := &Thread{ID: "t3", Conversation: Conversation{Failure: &Failure{Class: ClassQuota, Message: "⚠ Individual quota reached. Resets in 1h.", At: t0}, QuotaResumes: MaxQuotaAutoResumes}}
+		if vs := CheckThread(thExhausted, &View{}, now, nil); hasViolation(vs, InvThreadQuotaMisclass) {
+			t.Fatalf("unexpected %s for exhausted quota retries: %+v", InvThreadQuotaMisclass, vs)
 		}
 	})
 

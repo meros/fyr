@@ -1001,18 +1001,26 @@ func checkQuotaMisclassified(t *Thread, v *View, now time.Time) string {
 	if t.Failure.Class == ClassQuota {
 		if at := QuotaReset(t.Failure); at != nil {
 			wt := QuotaWaitText(t, now)
-			if at.After(now) {
+			if resume := QuotaResumeAt(t); resume != nil && QuotaCanAutoContinue(t) {
 				if wt == "" {
-					probs = append(probs, fmt.Sprintf("future quota reset %s produced empty wait text", at.UTC().Format(time.RFC3339)))
+					probs = append(probs, fmt.Sprintf("auto-continuable quota wait %s produced empty wait text", resume.UTC().Format(time.RFC3339)))
 				}
-				if !t.Running && t.RunningTasks() == 0 {
+				if t.RunningTasks() == 0 {
 					nc := NextCheck(t, v, now)
-					if nc == nil || nc.After(*at) {
-						probs = append(probs, fmt.Sprintf("quota reset %s not scheduled in nextCheck=%v", at.UTC().Format(time.RFC3339), nc))
+					if nc == nil || nc.After(*resume) {
+						probs = append(probs, fmt.Sprintf("quota resume %s not scheduled in nextCheck=%v", resume.UTC().Format(time.RFC3339), nc))
 					}
 				}
+			} else if t.QuotaResumes < MaxQuotaAutoResumes {
+				if at.After(now) {
+					if wt == "" {
+						probs = append(probs, fmt.Sprintf("future quota reset %s produced empty wait text", at.UTC().Format(time.RFC3339)))
+					}
+				} else if wt != "" {
+					probs = append(probs, fmt.Sprintf("expired quota reset %s still waiting (%q)", at.UTC().Format(time.RFC3339), wt))
+				}
 			} else if wt != "" {
-				probs = append(probs, fmt.Sprintf("expired quota reset %s still waiting (%q)", at.UTC().Format(time.RFC3339), wt))
+				probs = append(probs, fmt.Sprintf("exhausted quota retries still waiting (%q)", wt))
 			}
 		}
 	}
