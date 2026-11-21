@@ -239,3 +239,38 @@ func TestRunRequestLongNotice(t *testing.T) {
 		t.Fatalf("a run that ended told it runs: %+v", res.Events)
 	}
 }
+
+// V0.run-card-rerun: action.run and action.dismiss record the acting device and
+// front on their action events, matching command events.
+func TestActionEventsRecordActor(t *testing.T) {
+	th, _, _ := runReq(t, requestThread(), RunRequestArgs{Command: "true", Why: "Check"})
+	o := th.Offers[0]
+	th, _, res, err := Reduce(th, nil, Input{Source: FromOwner, Kind: KindActionPress, Thread: th.ID, Actor: "device:dev_1", Front: "FRNT-0000-0000-0000", Args: Args{"on": OnThread, "action": o.ID, "digest": o.Digest}}, at(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := res.Events[0].Data.(map[string]any)
+	if ev["actor"] != "device:dev_1" || ev["front"] != "FRNT-0000-0000-0000" {
+		t.Fatalf("press action event missing actor/front: %+v", ev)
+	}
+	th, _, _, _ = Reduce(th, nil, Input{Source: FromEffect("e1"), Kind: KindEffectResult, Thread: th.ID, Args: EffectResult{Effect: res.Effects[0], OK: true}}, at(4))
+	_, _, res, err = Reduce(th, nil, Input{Source: FromOwner, Kind: KindActionDismiss, Thread: th.ID, Actor: "device:dev_2", Front: "FRNT-1111-1111-1111", Args: Args{"on": OnThread, "action": o.ID}}, at(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev = res.Events[0].Data.(map[string]any)
+	if ev["actor"] != "device:dev_2" || ev["front"] != "FRNT-1111-1111-1111" {
+		t.Fatalf("dismiss action event missing actor/front: %+v", ev)
+	}
+	// No actor on the input leaves the fields out.
+	th2, _, _ := runReq(t, requestThread(), RunRequestArgs{Command: "true", Why: "Check"})
+	o2 := th2.Offers[0]
+	_, _, res, err = Reduce(th2, nil, Input{Source: FromOwner, Kind: KindActionPress, Thread: th2.ID, Args: Args{"on": OnThread, "action": o2.ID, "digest": o2.Digest}}, at(6))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev = res.Events[0].Data.(map[string]any)
+	if _, ok := ev["actor"]; ok {
+		t.Fatalf("unexpected actor: %+v", ev)
+	}
+}

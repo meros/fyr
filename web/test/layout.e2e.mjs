@@ -1384,7 +1384,7 @@ section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
 // V0.149, V0.run-cards-in-conversation: a command the agent wants the owner to run is a Run card in the conversation,
 // where the agent asked, and it scrolls with the messages; the same component on the desktop and the phone: the full command wraps (no sideways scroll), a Nix store path is shortened until pressed, the
 // buttons are inside the screen and 44 px tall on the phone; a `! cmd` block in a message is a Copy-only card.
-for (const [front, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.149 ${front}`, async ({ send, evaluate, navigate, openScreen, tapCenter, shot }) => {
+for (const [front, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.149 ${front}`, async ({ send, evaluate, navigate, openScreen, tapCenter, waitFor, shot }) => {
 try {
   const url = "?mock=rail&runs=1&open=t_run";
   const ready = "document.querySelectorAll('.convo-in .runc:not(.prose)').length === 2 && !!document.querySelector('.runc.prose') && !!document.querySelector('.dockrun')";
@@ -1462,6 +1462,35 @@ try {
   await evaluate("document.querySelector('.dockrun .runc-b .btn.p').click()");
   const sent = await evaluate("(window.__fyrCommands || []).filter((c) => c.action === 'action.run').map((c) => c.args)");
   check(sent.length === 1 && sent[0].on === "thread" && sent[0].action === "run-1" && sent[0].digest === "d-run-1", `V0.149 ${front}: Run sent ${JSON.stringify(sent)}`);
+  // V0.run-card-rerun: once run-1 succeeds, Run again moves out of the first slot and asks before re-running.
+  await waitFor("!!document.querySelector('#runc-run-1.runc.ok')", { soft: true });
+  const okCard = await evaluate(`(() => {
+    const c = document.querySelector('#runc-run-1.runc.ok');
+    if (!c) return null;
+    const bs = [...c.querySelectorAll('.runc-b button')];
+    return { labels: bs.map((b) => b.textContent), minH: Math.min(...bs.map((b) => b.getBoundingClientRect().height)) };
+  })()`);
+  check(okCard && okCard.labels.join("|") === "Copy|Close|Run again", `V0.run-card-rerun ${front}: succeeded card buttons ${JSON.stringify(okCard)}`);
+  if (front === "phone") check(okCard && okCard.minH >= 44, `V0.run-card-rerun phone: button height ${okCard?.minH} < 44`);
+  await evaluate("(() => { const b = [...document.querySelectorAll('#runc-run-1 .runc-b button')].find((x) => x.textContent === 'Run again'); b.scrollIntoView({ block: 'center' }); b.click(); })()");
+  await waitFor("!!document.querySelector('.cfm')", { soft: true });
+  const cfm = await evaluate(`(() => {
+    const c = document.querySelector('.cfm');
+    if (!c) return null;
+    const runs = (window.__fyrCommands || []).filter((x) => x.action === 'action.run').length;
+    return { title: c.querySelector('.cfm-t')?.textContent ?? '', runs };
+  })()`);
+  check(cfm && cfm.title === "Run again?" && cfm.runs === 1, `V0.run-card-rerun ${front}: single press must confirm without running ${JSON.stringify(cfm)}`);
+  await evaluate("([...document.querySelectorAll('.cfm button')].find((b) => b.textContent.trim().startsWith('Cancel'))).click()");
+  await waitFor("!document.querySelector('.cfm')", { soft: true });
+  const afterCancel = await evaluate("(window.__fyrCommands || []).filter((c) => c.action === 'action.run').length");
+  check(afterCancel === 1, `V0.run-card-rerun ${front}: Cancel sent a run (${afterCancel})`);
+  await evaluate("(() => { const b = [...document.querySelectorAll('#runc-run-1 .runc-b button')].find((x) => x.textContent === 'Run again'); b.click(); })()");
+  await waitFor("!!document.querySelector('.cfm')", { soft: true });
+  await evaluate("document.querySelector('.cfm .btn.p, .cfm .m-bt.p').click()");
+  await waitFor("!document.querySelector('.cfm')", { soft: true });
+  const afterConfirm = await evaluate("(window.__fyrCommands || []).filter((c) => c.action === 'action.run').map((c) => c.args)");
+  check(afterConfirm.length === 2 && afterConfirm[1].action === "run-1" && afterConfirm[1].digest === "d-run-1", `V0.run-card-rerun ${front}: confirm did not re-run ${JSON.stringify(afterConfirm)}`);
   // No polkit agent: Run as root is off and the card says why.
   if (front === "desktop") await navigate(`${origin}/${url}&rootprompt=no`, ready);
   else await openScreen({ url: `${url}&rootprompt=no`, ready }, w, h);

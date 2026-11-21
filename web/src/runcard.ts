@@ -3,8 +3,8 @@
 // runcard-ui.tsx draws it, the same component on the desktop and the phone.
 
 import type { Offer, OfferRun, Thread } from "./types.ts";
-import { lastRun, quote } from "./offers.ts";
-import { shortFolder } from "./confirm.ts";
+import { lastRun, pressArgs, quote } from "./offers.ts";
+import { shortFolder, type Ask } from "./confirm.ts";
 import type { Item } from "./conversation.ts";
 
 /** A Nix store path shortened in the middle: /nix/store/<32-char hash>-name as /nix/store/<4>…-name. */
@@ -168,6 +168,41 @@ export function foldOutput(out: string, max = 12): { text: string; hidden: numbe
 
 export const stopArgs = (o: Pick<Offer, "id">) => ({ on: "thread", action: o.id });
 export const dismissArgs = (o: Pick<Offer, "id">) => ({ on: "thread", action: o.id });
+
+/** V0.run-card-rerun: Fyr's confirmation before running a succeeded run request again. Fresh and failed cards return
+ *  null and run directly from their button. */
+export function rerunAsk(o: Offer, state: CardState, opts: { host?: string } = {}): Ask | null {
+  if (state !== "ok") return null;
+  const cmd = o.command ?? (o.argv ?? []).map(quote).join(" ");
+  const why = o.why ?? o.label;
+  const where = opts.host ? ` on ${opts.host}` : "";
+  return {
+    title: "Run again?",
+    text: `“${why}” already succeeded${where}.`,
+    command: {
+      short: shortStore(cmd),
+      full: cmd,
+      ...(o.cwd ? { folder: shortFolder(o.cwd), folderFull: o.cwd } : {}),
+      ...(o.root ? { note: "Runs as root" } : {}),
+    },
+    confirm: o.root ? "Run again as root" : "Run again",
+  };
+}
+
+/** V0.run-card-rerun: press a Run card's run button. A succeeded card asks through Fyr's confirmation first so a stray
+ *  click or tap after a layout shift cannot re-run it. Returns true when action.run was sent. */
+export async function pressRunCard(
+  o: Offer,
+  state: CardState,
+  opts: { host?: string },
+  ask: (a: Ask) => Promise<boolean>,
+  onRun: (action: string, args?: Record<string, unknown>) => unknown,
+): Promise<boolean> {
+  const a = rerunAsk(o, state, opts);
+  if (a && !(await ask(a))) return false;
+  onRun("action.run", pressArgs("thread", o));
+  return true;
+}
 
 // V0.149 (8): the same blocks the host finds (internal/core/runrequest.go, ProseCommands).
 const FENCE = /^[ \t]*```([A-Za-z0-9_+-]*)[^\n]*\n([\s\S]*?)\n?[ \t]*```[ \t]*$/gm;

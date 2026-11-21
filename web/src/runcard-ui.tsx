@@ -6,9 +6,8 @@
 import { createContext } from "preact";
 import { useContext, useState } from "preact/hooks";
 import type { Offer, Thread } from "./types.ts";
-import { pressArgs } from "./offers.ts";
 import { copyToClipboard } from "./copy.ts";
-import { cardDomId, cardLook, cardShows, chips, settleChip, copyText, dismissArgs, dockRun, firstLine, foldOutput, requests, shortStore, stopArgs } from "./runcard.ts";
+import { cardDomId, cardLook, cardShows, chips, settleChip, copyText, dismissArgs, dockRun, firstLine, foldOutput, pressRunCard, requests, shortStore, stopArgs } from "./runcard.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
@@ -61,8 +60,10 @@ function CopyCmd({ text }: { text: string }) {
  *  (V0.next-step-dock (5)), so the buttons are there and this card points to them: one place to press. */
 export function RunCard({ o, t, host, onRun, docked }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; onRun: Run; docked?: boolean }) {
   const l = cardLook(o, t.runs, { host, rootPrompt: t.rootPrompt });
+  const ask = useAsk();
   const [all, setAll] = useState(false);
   const out = all ? { text: l.output.replace(/\n$/, ""), hidden: 0 } : foldOutput(l.output);
+  const onPress = () => void pressRunCard(o, l.state, { host }, ask, onRun);
   return (
     <article id={cardDomId(o.id)} class={`runc ${l.state}${o.root ? " root" : ""}`} aria-label={`${l.title}: ${l.why}`}>
       <header class="runc-h">
@@ -90,19 +91,33 @@ export function RunCard({ o, t, host, onRun, docked }: { o: Offer; t: Pick<Threa
       ) : (
       <div class="runc-b">
         {l.state === "running" ? (
-          <button type="button" class="btn sm bad" onClick={() => onRun("action.stop", stopArgs(o))}>
-            Stop
-          </button>
+          <>
+            <button type="button" class="btn sm bad" onClick={() => onRun("action.stop", stopArgs(o))}>
+              Stop
+            </button>
+            <CopyCmd text={copyText(o)} />
+          </>
+        ) : l.state === "ok" ? (
+          <>
+            {/* V0.run-card-rerun: a succeeded card moves Run again out of the first slot, quiets it and confirms before re-running. */}
+            <CopyCmd text={copyText(o)} />
+            <button type="button" class="btn sm" onClick={() => onRun("action.dismiss", dismissArgs(o))}>
+              {l.close}
+            </button>
+            <button type="button" class="btn sm used" disabled={!!l.runOff} title={l.runOff ?? "Already succeeded; confirms before running again"} onClick={onPress}>
+              {l.run}
+            </button>
+          </>
         ) : (
-          <button type="button" class={`btn sm${l.state === "fresh" ? " p" : ""}`} disabled={!!l.runOff} title={l.runOff ?? undefined} onClick={() => onRun("action.run", pressArgs("thread", o))}>
-            {l.run}
-          </button>
-        )}
-        <CopyCmd text={copyText(o)} />
-        {l.state !== "running" && (
-          <button type="button" class="btn sm" onClick={() => onRun("action.dismiss", dismissArgs(o))}>
-            {l.close}
-          </button>
+          <>
+            <button type="button" class={`btn sm${l.state === "fresh" ? " p" : ""}`} disabled={!!l.runOff} title={l.runOff ?? undefined} onClick={onPress}>
+              {l.run}
+            </button>
+            <CopyCmd text={copyText(o)} />
+            <button type="button" class="btn sm" onClick={() => onRun("action.dismiss", dismissArgs(o))}>
+              {l.close}
+            </button>
+          </>
         )}
       </div>
       )}
@@ -115,6 +130,7 @@ export function RunCard({ o, t, host, onRun, docked }: { o: Offer; t: Pick<Threa
  *  Desktop and phone share it; the phone's buttons are 44 px (phone.css, touch size). */
 export function DockRun({ o, t, host, more, onRun, onShow, chip }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; more: number; onRun: Run; onShow(id: string): void; chip?: boolean }) {
   const l = cardLook(o, t.runs, { host, rootPrompt: t.rootPrompt });
+  const ask = useAsk();
   return (
     <section class={`ask dockrun${chip ? " chiprun" : ""}${o.root ? " root" : ""}`} aria-label={`${l.title}: ${l.why}`}>
       <div class="ah">
@@ -134,8 +150,7 @@ export function DockRun({ o, t, host, more, onRun, onShow, chip }: { o: Offer; t
             disabled={!!l.runOff}
             title={l.runOff ?? undefined}
             onClick={() => {
-              onRun("action.run", pressArgs("thread", o));
-              onShow(o.id);
+              void pressRunCard(o, l.state, { host }, ask, onRun).then((sent) => sent && onShow(o.id));
             }}
           >
             {l.run}

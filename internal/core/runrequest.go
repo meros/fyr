@@ -194,7 +194,7 @@ func reduceDismiss(r Rec, in Input, now time.Time) (Result, error) {
 	a := *act
 	ran := lastRunOf(h.Runs, a.ID, h.On) != nil
 	h.Offers = deleteOffer(h.Offers, a.ID)
-	return Result{Events: []Event{{"action", map[string]any{"on": h.On, "action": a.ID, "label": a.Label, "why": a.Why, "command": a.Command, "request": true, "dismissed": true, "ran": ran, "by": "owner"}}}}, nil
+	return Result{Events: []Event{{"action", withActor(map[string]any{"on": h.On, "action": a.ID, "label": a.Label, "why": a.Why, "command": a.Command, "request": true, "dismissed": true, "ran": ran, "by": "owner"}, in)}}}, nil
 }
 
 func deleteOffer(list []ActionSpec, id string) []ActionSpec {
@@ -379,6 +379,18 @@ func assistantText(data any) string {
 		}
 	}
 	return b.String()
+}
+
+// withActor records the actor and front that sent an owner Input on its
+// event, matching command events (V0.run-card-rerun).
+func withActor(ev map[string]any, in Input) map[string]any {
+	if in.Actor != "" {
+		ev["actor"] = in.Actor
+		if in.Front != "" {
+			ev["front"] = in.Front
+		}
+	}
+	return ev
 }
 
 // pressData is an action event's data: the press, or with ended its
