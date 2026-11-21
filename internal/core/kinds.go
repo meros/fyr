@@ -181,6 +181,7 @@ type (
 		Activity, Summary string
 		Subagents         int
 		PR                *PR
+		PRs               []PR
 		Log               []Event
 	}
 	HandoverDoneArgs struct {
@@ -211,10 +212,21 @@ func init() {
 			if err != nil {
 				return nil, false, err
 			}
-			if a.PR != "" && t.MainPR() == nil {
-				// The first PR is also the thread's main PR (the PR tab, the merge gate).
+			if a.PR != "" {
 				repo, n := parsePRURL(a.PR)
-				PRObserved(t, PR{URL: a.PR, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending, Branch: c.Branch}, now)
+				pr := PR{URL: a.PR, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending, Branch: c.Branch}
+				group := c.Group
+				if t.MainPR() == nil {
+					// The first PR is also the thread's main PR (the PR tab, the merge gate).
+					PRObserved(t, pr, now)
+				} else if cur := changeByPR(t, a.PR); cur == nil || cur.PR == nil || cur.PR.CheckedAt == nil {
+					if pc := ChangePRObserved(t, pr, now); pc != nil && pc.Group == "" && group != "" {
+						pc.Group = group
+					}
+				}
+				if updated := FindChange(t, c.ID); updated != nil {
+					c = updated
+				}
 			}
 			return c, made, nil
 		})},
@@ -460,8 +472,14 @@ func init() {
 				t.Summary = a.Summary
 			}
 			t.Subagents += a.Subagents
-			if p := t.MainPR(); a.PR != nil && (p == nil || p.URL != a.PR.URL) {
-				PRObserved(t, *a.PR, now)
+			prs := a.PRs
+			if len(prs) == 0 && a.PR != nil {
+				prs = []PR{*a.PR}
+			}
+			for _, pr := range prs {
+				if p := t.MainPR(); p == nil || p.URL != pr.URL {
+					PRObserved(t, pr, now)
+				}
 			}
 			return Result{Events: a.Log}, nil
 		}},
@@ -577,11 +595,39 @@ func reportChange(t *Thread, in Input, now time.Time) (*Change, bool, []string, 
 		added = ReviseChange(c, *a.Revision, now)
 	}
 	if len(a.Evidence) > 0 {
-		id := c.ID
+		id, group := c.ID, c.Group
 		AttachEvidence(c, a.Evidence, now)
 		c = joinPRWork(t, c, now) // V0.87 (2)
 		if c == nil {
 			c = FindChange(t, id)
+		}
+		for _, ev := range a.Evidence {
+			if ev.Kind != "pr" || ev.URL == "" {
+				continue
+			}
+			u, ok := CanonicalPR(ev.URL)
+			if !ok {
+				continue
+			}
+			repo, n := parsePRURL(u)
+			if cur := changeByPR(t, u); cur == nil {
+				if pc := ChangePRObserved(t, PR{URL: u, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}, now); pc != nil {
+					if pc.Group == "" && group != "" {
+						pc.Group = group
+					}
+					if t.MainPR() == nil {
+						t.MainChange = pc.ID
+					}
+				}
+			} else {
+				armBuiltins(t, cur, now)
+				if t.MainPR() == nil && !cur.Dismissed {
+					t.MainChange = cur.ID
+				}
+			}
+		}
+		if updated := FindChange(t, id); updated != nil {
+			c = updated
 		}
 	}
 	return c, added, notes, nil

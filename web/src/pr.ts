@@ -128,6 +128,64 @@ export function prChip(pr: PullRequest, short = false): { text: string; cls: str
   return { text, cls, title: [n, s.text, pr.title].filter(Boolean).join(" · ") };
 }
 
+/** V0.multi-pr: urgency order for picking the inbox row's headline PR: failing > conflicts > changes requested >
+ *  review required > ready > running > merged/closed/missing. */
+export function prUrgency(pr: PullRequest): number {
+  const st = pr.state ?? "OPEN";
+  if (st !== "OPEN") return 6;
+  if (pr.checks === "fail") return 0;
+  if (pr.conflict) return 1;
+  if (pr.review === "CHANGES_REQUESTED") return 2;
+  if (pr.review === "REVIEW_REQUIRED") return 3;
+  if (pr.checks === "pending") return 5;
+  return 4;
+}
+
+/** V0.multi-pr: one inbox-row chip for one or more PRs: the most urgent PR, with "+N" when more exist, and every
+ *  PR's status line in the tooltip. */
+export function rowPrChip(prs: PullRequest[], short = false): { text: string; cls: string; title: string } | null {
+  if (!prs.length) return null;
+  const sorted = [...prs].sort((a, b) => prUrgency(a) - prUrgency(b));
+  const top = prChip(sorted[0], short);
+  if (sorted.length === 1) return top;
+  return {
+    text: `${top.text} +${sorted.length - 1}`,
+    cls: top.cls,
+    title: sorted.map((p) => prChip(p).title).join("\n"),
+  };
+}
+
+/** Short repository name ("acme/api" → "api"), shown on multi-repo PR chips and switcher pills. */
+export function shortRepo(repo?: string): string {
+  if (!repo) return "";
+  const i = repo.lastIndexOf("/");
+  return i >= 0 ? repo.slice(i + 1) : repo;
+}
+
+/** True when prs span more than one repository. */
+export function hasMultipleRepos(prs: PullRequest[]): boolean {
+  const repos = new Set(prs.map((p) => (p.repo ?? "").toLowerCase()).filter(Boolean));
+  return repos.size > 1;
+}
+
+/** V0.multi-pr: picks which PR the PR tab displays: an explicit selection if still present, else preferred if open,
+ *  else the first PR in list order (newest open, else newest non-dismissed). */
+export function pickPr(prs: PullRequest[], selected?: string, preferred?: string): PullRequest | null {
+  if (!prs.length) return null;
+  const key = (u: string) => (/^(.*?\/pull\/\d+)/i.exec(u)?.[1] ?? u).toLowerCase();
+  if (selected) {
+    const k = key(selected);
+    const hit = prs.find((p) => key(p.url) === k);
+    if (hit) return hit;
+  }
+  if (preferred) {
+    const k = key(preferred);
+    const hit = prs.find((p) => key(p.url) === k && (p.state ?? "OPEN") === "OPEN");
+    if (hit) return hit;
+  }
+  return prs[0];
+}
+
 export interface CheckGroups {
   failed: PrCheck[];
   running: PrCheck[];

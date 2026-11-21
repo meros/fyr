@@ -968,12 +968,31 @@ func (e *Engine) commit(s *staged, show bool) {
 		e.publishRanksLocked() // V0.project-priority: a new thread, or one filed elsewhere
 	}
 	if s.changed || s.viewChanged || show {
-		s.newPR = s.cur.MainPR() == nil && t.MainPR() != nil
+		s.newPR = hasNewPR(s.cur, t)
 		e.threads[t.ID], e.views[t.ID] = t, s.v
 		e.bump(t.ID)
 		d, prev := e.seen(t, s.now)
 		s.dto, s.prev = &d, prev
 	}
+}
+
+// hasNewPR reports whether t has any non-dismissed PR URL that cur did not
+// have yet, so the poller wakes for a second or third PR on the thread too.
+func hasNewPR(cur, t *core.Thread) bool {
+	seen := map[string]bool{}
+	if cur != nil {
+		for i := range cur.Changes {
+			if c := &cur.Changes[i]; c.PR != nil && !c.Dismissed && c.PR.URL != "" {
+				seen[c.PR.URL] = true
+			}
+		}
+	}
+	for i := range t.Changes {
+		if c := &t.Changes[i]; c.PR != nil && !c.Dismissed && c.PR.URL != "" && !seen[c.PR.URL] {
+			return true
+		}
+	}
+	return false
 }
 
 // sansFeed is a thread as JSON without its notice queue.

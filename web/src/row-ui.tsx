@@ -17,8 +17,8 @@ import { StateIcon, stateClass } from "./icons.tsx";
 import { rowDetail, rowState, stateNamesPr } from "./rows.ts";
 import { relTime, whenLabel } from "./format.ts";
 import { snoozeLine } from "./snooze.ts";
-import { prChip } from "./pr.ts";
-import { changeChip, needLook, rowNeed } from "./offers.ts";
+import { rowPrChip } from "./pr.ts";
+import { changeChip, headerPrs, needLook, rowNeed, threadPrs } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
 import { WakeChip } from "./wake-ui.tsx";
 import { GUEST_TEXT, type GuestWhy } from "./selection.ts";
@@ -138,8 +138,9 @@ export function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
         {c.text}
       </span>
     );
-  if (!t.pr) return <span class="pr none" aria-label="no pull request" />;
-  const l = prChip(t.pr, short);
+  const open = headerPrs(t);
+  const l = rowPrChip(open.length ? open : threadPrs(t), short);
+  if (!l) return <span class="pr none" aria-label="no pull request" />;
   return (
     <span class={`pr ${l.cls}`} title={l.title}>
       {l.text}
@@ -208,7 +209,7 @@ function RowFrom({ t, look, more }: { t: Thread; look: RowLook; more: boolean })
 }
 
 function hasChange(t: Thread): boolean {
-  return !!(t.pr || changeChip(t));
+  return !!(threadPrs(t).length || changeChip(t));
 }
 
 export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }: BodyProps) {

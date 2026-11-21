@@ -97,7 +97,7 @@ export interface Api {
   /** One file's unified diff (V0.25). */
   filePatch(host: HostId, threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
-  prDetail(host: HostId, threadId: string, fresh?: boolean): Promise<PrReply>;
+  prDetail(host: HostId, threadId: string, fresh?: boolean, prUrl?: string): Promise<PrReply>;
   /** V0.ai-search: the host's threads among `ids` (its own ids) that fit the owner's words, best first. Throws with the reason. */
   searchThreads(host: HostId, query: string, ids: string[], signal?: AbortSignal): Promise<SearchHit[]>;
   /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
@@ -628,9 +628,13 @@ function createHttpApi(): Api {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j.hits ?? [];
     },
-    async prDetail(host, threadId, fresh) {
+    async prDetail(host, threadId, fresh, prUrl) {
       try {
-        const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/pr${fresh ? "?fresh=1" : ""}`));
+        const q = new URLSearchParams();
+        if (fresh) q.set("fresh", "1");
+        if (prUrl) q.set("pr", prUrl);
+        const qs = q.toString();
+        const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/pr${qs ? `?${qs}` : ""}`));
         const j = (await r.json().catch(() => ({}))) as PrReply;
         if (!r.ok && !("error" in j)) return { error: `HTTP ${r.status}` };
         return j;

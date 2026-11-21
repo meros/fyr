@@ -184,9 +184,12 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		o := s.digest.feed(msg)
 		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []core.Event{{Type: "msg", Data: trimMsg(msg)}}}
-		if o.PRURL != "" {
-			repo, n, _ := core.ParsePR(o.PRURL)
-			d.PR = &core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}
+		for _, u := range o.PRURLs {
+			repo, n, _ := core.ParsePR(u)
+			pr := core.PR{URL: u, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}
+			d.PRs = append(d.PRs, pr)
+			p := pr
+			d.PR = &p
 		}
 		m.observe(s.thread, core.KindDigest, d)
 		m.noteRefusals(s, msg) // V0.133: after the message it explains

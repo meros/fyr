@@ -97,6 +97,9 @@ func (e *Engine) changeTools(s *mcp.Server) {
 				}
 				prRepo, prN, _ := core.ParsePR(pr)
 				o.Evidence = append(o.Evidence, core.Evidence{Kind: "pr", URL: pr, Title: fmt.Sprintf("#%d", prN)})
+				if prRepo != "" && strings.Count(prRepo, "/") == 1 {
+					o.Targets = append(o.Targets, "repo:github.com/"+prRepo)
+				}
 				if o.Key == "" { // V0.101: the PR names the change
 					o.Key = core.PRKey(prRepo, prN)
 				}

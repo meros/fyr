@@ -33,13 +33,13 @@ import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
-import { changeChip, headerPr, settleLine } from "./offers.ts";
+import { changeChip, headerPrs, prForEffect, settleLine, threadPrs } from "./offers.ts";
 import { WakeChip } from "./wake-ui.tsx";
 import { actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
-import { prChip } from "./pr.ts";
+import { hasMultipleRepos, pickPr, prChip, rowPrChip, shortRepo } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
-import { TAB_LABEL, defaultTab, showsDecision, threadTabs } from "./view.ts";
+import { tabLabel, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import { DockRun, showCard } from "./runcard-ui.tsx";
 import { dockRun } from "./runcard.ts";
 import { HandoverForm } from "./handover-ui.tsx";
@@ -896,10 +896,19 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   const decision = currentDecision(t);
   const dock = dockRun(t);
   const [collapsed, setCollapsed] = useState(false);
+  const [selectedPr, setSelectedPr] = useState<{ id: string; url: string } | null>(null);
   useEffect(() => setCollapsed(false), [decision?.id]);
+  useEffect(() => setSelectedPr(null), [t.id]);
   const cardOpen = !!decision && !collapsed;
   const st = t.attention.state;
   const setTab = (tab: string) => p.nav.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
+  const allPrs = threadPrs(t);
+  const openPrs = headerPrs(t);
+  const activePr = pickPr(allPrs, selectedPr?.id === t.id ? selectedPr.url : undefined, t.pr?.url);
+  const openPr = (url: string) => {
+    setSelectedPr({ id: t.id, url });
+    setTab("pr");
+  };
   const [nextOffer, setNextOffer] = useState<Thread | null>(null);
   useEffect(() => {
     if (!nextOffer) return;
@@ -963,12 +972,6 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             return <AgentPill size="chip" phone segs={threadAgent(t, pf, pv, "", () => {}).map(showOnly)} />;
           })()}
           {(() => {
-            const pr = headerPr(t); // V0.98 (6): the newest open change's PR, never a done one
-            if (!pr) return null;
-            const l = prChip(pr);
-            return <span class={`m-chip prc ${l.cls}`} title={l.title}>{l.text}</span>;
-          })()}
-          {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? <span class={`m-chip prc ${c.cls}`} title={c.title}>{c.text}</span> : null;
           })()}
@@ -977,6 +980,20 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             return l ? <span class="m-chip"><span>{l}</span></span> : null;
           })()}
           </button>
+          {/* V0.multi-pr: every open change's PR as a tappable chip outside Details, jumping straight to that PR in the PR tab. */}
+          {(() => {
+            const multiRepo = hasMultipleRepos(openPrs);
+            return openPrs.map((pr) => {
+              const l = prChip(pr);
+              const repo = multiRepo ? shortRepo(pr.repo) : "";
+              const on = p.tab === "pr" && activePr?.url === pr.url;
+              return (
+                <button key={pr.url} type="button" class="m-pjb m-prb" title={l.title} onClick={() => openPr(pr.url)}>
+                  <span class={`m-chip prc ${l.cls}${on ? " on" : ""}`}>{repo ? `${repo} ${l.text}` : l.text}</span>
+                </button>
+              );
+            });
+          })()}
           {/* V0.wakeups-via-watch: the desktop header's wake chip. Outside the Details button, which takes every tap on the
               chips row, so a tap here cancels the wake-up as on the desktop. */}
           <WakeChip t={t} now={p.now} cls="m-chip" button="m-pjb m-wakeb" onCancel={(rule) => p.commands.run("thread.cancelWake", [t.id], { rule })} />
@@ -991,7 +1008,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             <SlideMark under at={p.tab} />
             {threadTabs(t).map((k) => (
               <button class={p.tab === k ? "on" : ""} onClick={() => setTab(k)}>
-                {TAB_LABEL[k]}
+                {tabLabel(t, k)}
               </button>
             ))}
           </div>
@@ -1021,6 +1038,9 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           t={t}
           tab={p.tab}
           setTab={setTab}
+          prs={allPrs}
+          activePr={activePr}
+          onSelectPr={(url) => setSelectedPr({ id: t.id, url })}
           events={p.open.events}
           now={p.now}
           onAtEnd={p.open.onAtEnd}
@@ -1292,7 +1312,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
   const [choice, setChoice] = useState<Choice>(null);
   useEffect(() => setChoice(null), [d.id]);
   const approval = d.kind === "approval";
-  const x = approval ? null : describeEffect(d, t.pr);
+  const x = approval ? null : describeEffect(d, prForEffect(t, d));
   const c = allowCommit(d, choice);
   const cmd = approval && typeof d.input?.command === "string" ? (d.input.command as string) : null;
   const rest = approval && d.input ? Object.fromEntries(Object.entries(d.input).filter(([k]) => k !== "command" && k !== "cwd")) : {};
@@ -1643,7 +1663,11 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
               <div class="m-pkt">{t.title}</div>
             </div>
             <div class="m-pkm ell">
-              {[t.project, t.branch, t.pr ? prChip(t.pr).text : null].filter(Boolean).join(" · ")}
+              {(() => {
+                const open = headerPrs(t);
+                const chip = rowPrChip(open.length ? open : threadPrs(t));
+                return [t.project, t.branch, chip?.text ?? null].filter(Boolean).join(" · ");
+              })()}
             </div>
             {t.summary && <div class="m-pkb prose">Claude: {t.summary}</div>}
             {d && (
@@ -1713,13 +1737,21 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
             <span class="k">Agent</span>
             <AgentPill size="field" phone segs={threadAgent(t, prof, threadProvider(t, p.profiles), reason("thread.setModel"), (a) => void p.commands.run("thread.setModel", [t.id], a))} />
           </div>
-          {t.pr &&
-            row(
-              "PR",
-              <a href={t.pr.url} target="_blank" rel="noopener noreferrer">
-                {t.pr.repo ? `${t.pr.repo}#${t.pr.number}` : `#${t.pr.number}`}
-              </a>,
-            )}
+          {(() => {
+            const prs = threadPrs(t);
+            if (!prs.length) return null;
+            return row(
+              prs.length > 1 ? "PRs" : "PR",
+              <span class="m-kvprs">
+                {prs.map((pr) => (
+                  <a key={pr.url} href={pr.url} target="_blank" rel="noopener noreferrer">
+                    {pr.repo ? `${pr.repo}#${pr.number}` : `#${pr.number}`}
+                    {prs.length > 1 ? ` · ${prChip(pr).text.replace(/^#\d+\s*/, "")}` : ""}
+                  </a>
+                ))}
+              </span>,
+            );
+          })()}
         </div>
       </MSheet>
     );

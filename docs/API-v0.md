@@ -169,7 +169,7 @@ Actions and their args:
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text) and `skipped: [question]` for the questions the owner left without an answer (V0.ask-cancel: at least one question must be answered), or `allow: bool` for `approval` and `effect` |
 | `thread.cancelAsk` | V0.ask-cancel: `decisionId` of an open `ask`; the card closes without an answer, and the agent is told why it has none |
 | `thread.markSeen` | `upTo`: the thread's `activityAt` the client showed (RFC 3339). Without it, now. |
-| `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36: merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen`, `thread.pin` and `thread.unpin` (V0.104, owner only), `thread.restart` (V0.143: only while the agent does not respond) | none |
+| `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36, V0.multi-pr: optional `pr` or `change`; merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen`, `thread.pin` and `thread.unpin` (V0.104, owner only), `thread.restart` (V0.143: only while the agent does not respond) | none (or `pr?` / `change?` for `thread.dismissPR`) |
 | `thread.settle` | settles now and stops a live run; `now?: true` for bulk settle, which refuses a pinned or running thread |
 | `thread.settleWhenDone` | V0.203: settles once no run or task is live, nothing waits for the owner and no PR is open |
 | `thread.cancelWake` | V0.wakeups-via-watch: `{rule?}` cancels the agent's wake-up (its watch on a time; no rule: the soonest); the agent is told |
@@ -324,7 +324,7 @@ The patch is cut at 400 KB at a line end (`truncated: true`). A path without cha
 
 ## PR detail (SPEC 0.5 V0.43)
 
-`GET /api/threads/{id}/pr` returns the thread's PR, read with `gh` on the host and cached 30 s per PR. `?fresh=1` skips the cache.
+`GET /api/threads/{id}/pr` returns a PR of the thread, read with `gh` on the host and cached 30 s per PR. `?pr=<url>` or `?change=<id>` selects a specific PR linked to the thread (V0.multi-pr; defaults to the main PR or newest non-dismissed PR). `?fresh=1` skips the cache.
 
 ```json
 {
@@ -354,8 +354,8 @@ Owner commands (through `POST /api/command`, with `threadId`):
 
 | action | args |
 |---|---|
-| `pr.merge` | `method?`: `squash` (default), `merge` or `rebase`. Unavailable without an open PR, with a merge conflict or requested changes. The host reads the PR again and refuses a draft, a closed PR, and a merge state of `DIRTY`, `BLOCKED` or `BEHIND` |
-| `pr.rerunFailed` | none: reruns (`gh run rerun <id> --failed`) every failed, cancelled or timed-out workflow run of the head commit. Unavailable without an open PR |
+| `pr.merge` | `pr?` or `change?` (V0.multi-pr: defaults to the main PR), `method?`: `squash` (default), `merge` or `rebase`, `head?`. Unavailable without an open PR, with a merge conflict or requested changes. The host reads the PR again and refuses a draft, a closed PR, and a merge state of `DIRTY`, `BLOCKED` or `BEHIND` |
+| `pr.rerunFailed` | `pr?` or `change?` (V0.multi-pr: defaults to the main PR): reruns (`gh run rerun <id> --failed`) every failed, cancelled or timed-out workflow run of the head commit. Unavailable without an open PR |
 
 Both reply at once; the result arrives as an `effect.result` event with `"by": "owner"` (the agent is not told). `ThreadDTO.unavailable` carries their reasons like any action.
 

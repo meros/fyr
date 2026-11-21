@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -579,6 +580,19 @@ func TestThreadPRDetail(t *testing.T) {
 	fd.err = errors.New("gh is not signed in on this host")
 	if code, m := get("/api/threads/" + id + "/pr"); code != 200 || m["error"] != "gh is not signed in on this host" {
 		t.Fatalf("error: %d %v", code, m)
+	}
+	// V0.multi-pr: ?pr= selects a specific PR linked to the thread and refuses unlinked URLs.
+	fd.err = nil
+	u2 := "https://github.com/a/c/pull/99"
+	coretest.Patch(e, id, func(th *core.Thread, now time.Time) []core.Event {
+		core.ChangePRObserved(th, core.PR{URL: u2, Repo: "a/c", Number: 99, State: "OPEN"}, now)
+		return nil
+	})
+	if code, m := get("/api/threads/" + id + "/pr?pr=" + url.QueryEscape(u2)); code != 200 || m["url"] != u2 || m["error"] != nil {
+		t.Fatalf("second PR detail: %d %v", code, m)
+	}
+	if code, m := get("/api/threads/" + id + "/pr?pr=" + url.QueryEscape("https://github.com/evil/repo/pull/1")); code != 200 || m["error"] == nil {
+		t.Fatalf("unlinked PR should error: %d %v", code, m)
 	}
 }
 

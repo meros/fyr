@@ -567,7 +567,7 @@ type Thread = Conversation & {
   decisions?: Decision[];          // 3.5
   changes?: Change[];              // the thread's own changes (3.13)
   refs?: RecordRef[];              // the host change records it shows (3.14)
-  mainChange?: string;             // the code change whose PR the PR tab shows and the PR commands act on
+  mainChange?: string;             // the default code change for PR detail and PR commands when no PR is named (V0.multi-pr)
   changesCheckedAt?: Time;         // the last change tool call (V0.62, 5.14)
   offers?: ActionSpec[]; runs?: ActionRun[];   // the thread's own actions (5.13)
   live?: LiveView;
@@ -834,7 +834,7 @@ type PR = { url: string; repo: string; number: number; title?: string;
 - **Opening.** `change_open` with a key the thread has returns that change and fills only empty fields, so a second call never undoes the first. A new `code` change with a branch joins the thread's in-flight code change on that branch in the same repo (the same `repo:` target; when either has none, the branch decides); the new key becomes an alias (V0.70).
 - **Revisions.** A new revision sets every condition that the owner did not set back to `pending`: they were about the old revision.
 - **Conditions and their sources.** A condition is one fact with the principal that set it. Fyr observes `checks`, `review`, `conflict` (GitHub), `pushed`, `clean` (git), `deploy` and `deploy:<env>` (GitHub Deployments) and `action:<id>` (a script action's result). The agent may report any other type. A value that Fyr observed is kept against a report from the agent ("facts beat claims"), and an agent cannot set `review` or `approval` to ok. Both are rows of the field rights (5.2).
-- **The PR.** Every PR of the thread is a `code` change, found by its URL, else by its head branch, else made with the key `pr:<repo>#<n>`. Open is review, merged landed, closed abandoned; a merged change that is live stays live. `MISSING` is Fyr's own state: GitHub answered twice, a poll apart, that the PR or its repository does not exist (GraphQL "Could not resolve to a Repository" or "… to a PullRequest", or HTTP 404); the change is abandoned (observed) with the label "the PR does not exist on GitHub", and no change is made for it. A transient error (network, rate limit, 5xx, login, time-out) changes nothing (V0.72). While the PR is open, `checks`, `review` and `conflict` follow it; when it merges or closes they are dropped. The poller reads the PR of every change in flight (5.10, `pr.observed`).
+- **The PR.** Every PR of the thread is a `code` change, found by its URL, else by its head branch (when that change does not already hold a different PR, V0.multi-pr), else made with the key `pr:<repo>#<n>`. Open is review, merged landed, closed abandoned; a merged change that is live stays live. `MISSING` is Fyr's own state: GitHub answered twice, a poll apart, that the PR or its repository does not exist (GraphQL "Could not resolve to a Repository" or "… to a PullRequest", or HTTP 404); the change is abandoned (observed) with the label "the PR does not exist on GitHub", and no change is made for it. A transient error (network, rate limit, 5xx, login, time-out) changes nothing (V0.72). While the PR is open, `checks`, `review` and `conflict` follow it; when it merges or closes they are dropped. The poller reads the PR of every change in flight (5.10, `pr.observed`).
 - **Ending.** An observer ends a change (a PR closed or missing, a branch gone), the agent reports its end, or the owner ends it with `change.end` (5.3): abandoned by default, or reverted, with the reason as its label. An ended change is not polled, offers no actions, and blocks nothing. The owner's end is kept against the agent and the facts (5.2); more work is a new change with another key (V0.72).
 - **Blocking.** A change blocks the thread (6.1 blocked) when it is not ended and has a failed condition, or `needs: owner`. On a landed or live change, only a failure recorded at or after `landedAt` blocks: a failure before the landing is history (V0.70). The thread shows the reason of the newest blocking change: "<title>: <reason>".
 - **Live.** When a change's PR merges, the deploy watch Rule (7.6) reads GitHub Deployments of the merge commit: production `success` makes the change `live` (observed); `failure` sets `deploy` to fail (V0.66).
@@ -1962,11 +1962,11 @@ Row, CompactRow, DecisionRow, Section, AwayStrip, Group, Badge, Panel, Card, Dec
 - **Acknowledgement.** Opening the pane acknowledges the coordinator's failure (`coordinator.acknowledge`).
 
 ### 13.5 Thread view
-- **Header.** Title, state badge, PR badge, profile, host chip (only with more than one host), the coordinator that last acted on it, and the Actions Snooze and Settle.
-- **Tabs.** Conversation · Changes · PR.
+- **Header.** Title, state badge, one PR chip per open PR (clicking opens that PR in the PR tab, V0.multi-pr), profile, host chip (only with more than one host), the coordinator that last acted on it, and the Actions Snooze and Settle.
+- **Tabs.** Conversation · Changes · PR (or `PRs (N)` with more than one non-dismissed PR, V0.multi-pr).
   - **Conversation:** messages, runs with tools and subagents collapsed, a filmstrip per run, `effect.result` lines, and the Decision card docked at the end. The filmstrip shows the image content blocks of the run's `tool_result` messages, from any tool (for example the agent's own Playwright MCP server); the `claude` module stores them as attachments of the run.
   - **Changes:** the branch diff against its base, from checkpoints and git (`git` module).
-  - **PR:** checks, review threads and the external Action "Merge" (`github` module; v0: 0.5 V0.43).
+  - **PR:** checks, review threads and the external Action "Merge", with a switcher strip across every non-dismissed PR when the thread has more than one (`github` module; v0: 0.5 V0.43, V0.multi-pr).
 - **Composer.** U15.
 
 ## 14. Workflow module (probe for R16, post-v1)

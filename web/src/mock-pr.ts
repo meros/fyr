@@ -55,9 +55,9 @@ The listing page shows **cards** instead of rows on every width. A card keeps th
 
 Closes #77.`;
 
-export function mockPrDetail(t: ThreadDTO | undefined, now: number): PrReply {
-  const pr = t?.pr;
-  if (!t || !pr) return { error: "This thread has no PR." };
+export function mockPrDetail(t: ThreadDTO | undefined, now: number, prUrl?: string): PrReply {
+  const pr = prUrl ? (t?.changes ?? []).map((c) => c.pr).find((p) => p?.url === prUrl) ?? (t?.pr?.url === prUrl ? t.pr : undefined) : t?.pr;
+  if (!t || !pr) return { error: prUrl ? "That PR is not linked to this thread." : "This thread has no PR." };
   const common = { url: pr.url, repo: pr.repo ?? "acme/web", number: pr.number, fetchedAt: iso(now - 4000) };
   if (pr.number === 88) {
     const checks = [run("lint", "fail", now, 12, 74), run("e2e (mobile-safari)", "running", now, 6, 0), ...PASSING.map((n, i) => run(n, "pass", now, 12, 40 + i * 13)), run("deploy preview", "skipped", now, 12, 0, "Preview")];
