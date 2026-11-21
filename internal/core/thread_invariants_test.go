@@ -5,6 +5,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"slices"
@@ -596,5 +597,38 @@ func TestRestartDropsConditionsOfNonOpenPR(t *testing.T) {
 	}
 	if k := condition(c, CondMerge); k != nil {
 		t.Fatalf("condition kept: %+v", k)
+	}
+}
+
+// V0.rule-digest-stable: the restart drops the stale conditions of a PR that is
+// no longer open and re-anchors the built-in rule; after the thread is saved and
+// loaded, the rule must not read the change as moved.
+func TestRestartKeepsBuiltinsRuleQuietAfterSaveAndLoad(t *testing.T) {
+	now := t0.Add(10 * time.Minute)
+	th := &Thread{ID: "t1"}
+	c := ChangePRObserved(th, PR{URL: "https://github.com/acme/x/pull/1", Repo: "acme/x", Number: 1, State: "MERGED", Branch: "b"}, now)
+	armBuiltins(th, c, now)
+	setCondition(c, CondMerge, CondFail, "Merge refused: x", ByObserved, now)
+	th, v, _, err := Reduce(th, nil, Input{Source: Observer(ObsClock), Kind: KindClock, Thread: th.ID}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, v, _, err = Reduce(th, v, Input{Source: Observer(ObsHost), Kind: KindHostRestarted, Thread: th.ID, Args: RestartArgs{}}, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Changes[0].Conditions) != 0 {
+		t.Fatalf("conditions kept: %+v", th.Changes[0].Conditions)
+	}
+	b, err := json.Marshal(th)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Thread
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if ov := OverdueRule(&back, v, now.Add(time.Minute)); ov != "" {
+		t.Fatalf("after a save and load: %s", ov)
 	}
 }

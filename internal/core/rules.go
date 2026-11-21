@@ -357,7 +357,17 @@ func readAfter(p *PR, at string) bool {
 // changeDigest is what changeMoved compares: the change's phase, PR,
 // conditions and evidence.
 func changeDigest(c *Change) string {
-	b, _ := json.Marshal([]any{c.Title, c.Phase, c.PRURL(), c.Conditions, c.Evidence})
+	// An empty list is nil: dropConditions leaves an empty slice, a record
+	// saved and loaded again (omitempty) holds nil, and the digest of a
+	// change that did not move must not differ (V0.rule-digest-stable).
+	conds, ev := c.Conditions, c.Evidence
+	if len(conds) == 0 {
+		conds = nil
+	}
+	if len(ev) == 0 {
+		ev = nil
+	}
+	b, _ := json.Marshal([]any{c.Title, c.Phase, c.PRURL(), conds, ev})
 	h := fnv.New64a()
 	h.Write(b)
 	return fmt.Sprintf("%016x", h.Sum64())
