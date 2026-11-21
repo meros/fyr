@@ -1399,12 +1399,15 @@ func (c *acpSession) handleToolUpdate(upd map[string]any, seq int64) bool {
 			delete(c.bgTools, callID)
 			remainingBG = c.sortedBGToolsLocked()
 		}
-		// V0.agy-open-tool-settle: an unsolicited turn's settle is due here,
-		// not at the usage_update that came while the tool was open: the tool
-		// this call was waiting on has just ended. An interrupted one re-arms
-		// to close the turn; a quiet one to take whatever the model wrote
-		// since (its usage_update may never come again).
-		if !c.turnRunning && !c.reattachActive && (c.unsolicitedActive || c.unsolicitedInterrupted) &&
+		// V0.agy-settle-final-text (amends V0.agy-open-tool-settle): a tool
+		// ending is not a turn ending. The live streams complete a tool and
+		// then think for seconds (sometimes minutes) before the next tool
+		// batch or the final answer, so arming here closed a turn the model
+		// was still answering — one continuous answer became dozens of runs.
+		// Only an interrupted turn is armed here: its cancel already ended
+		// the stream and the open tool is the last thing it waits on. A quiet
+		// turn is settled by its last assistant text, which arms on arrival.
+		if c.unsolicitedInterrupted && !c.turnRunning && !c.reattachActive &&
 			len(c.openPerms) == 0 && !c.openToolLocked() {
 			c.armSettleLocked(c.settleDelay)
 			rearm = true
