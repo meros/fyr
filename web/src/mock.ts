@@ -309,6 +309,42 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
+  // V0.pr-switcher-height: a thread that opened a stack of PRs across two repositories. The PR tab reads "PRs (3)" and
+  // its switcher, open first, picks which PR the tab shows; each PR's long body makes the tab scroll on a phone.
+  add(
+    base("t_stack", "Ship the search index in four steps", now, 14, {
+      project: "acme/api",
+      branch: "stack/7203",
+      summary: "Step 4 of 4 pushed; three PRs wait in their stack.",
+      unavailable: NOT_RUNNING,
+      changes: [
+        {
+          id: "c_stack1", key: "pr:acme/api#7200", kind: "code", title: "Search index: read in batches", targets: ["repo:github.com/acme/api"], phase: "landed", phaseBy: "observed",
+          pr: { url: "https://github.com/acme/api/pull/7200", repo: "acme/api", number: 7200, state: "MERGED", checks: "pass" },
+          evidence: [{ kind: "pr", url: "https://github.com/acme/api/pull/7200", title: "#7200" }],
+          createdAt: iso(now - 300 * 60_000), updatedAt: iso(now - 200 * 60_000), done: { at: iso(now - 200 * 60_000), by: "observed", reason: "merged" },
+        },
+        {
+          id: "c_stack2", key: "pr:acme/api#7201", kind: "code", title: "Search index: one write per batch", targets: ["repo:github.com/acme/api"], phase: "review", phaseBy: "observed",
+          pr: { url: "https://github.com/acme/api/pull/7201", repo: "acme/api", number: 7201, state: "OPEN", checks: "pass", review: "APPROVED", mergeState: "CLEAN" },
+          evidence: [{ kind: "pr", url: "https://github.com/acme/api/pull/7201", title: "#7201" }],
+          createdAt: iso(now - 180 * 60_000), updatedAt: iso(now - 40 * 60_000),
+        },
+        {
+          id: "c_stack3", key: "pr:acme/stack#7202", kind: "code", title: "Search index: retry a failed batch", targets: ["repo:github.com/acme/stack"], phase: "review", phaseBy: "observed",
+          pr: { url: "https://github.com/acme/stack/pull/7202", repo: "acme/stack", number: 7202, state: "OPEN", checks: "pending" },
+          evidence: [{ kind: "pr", url: "https://github.com/acme/stack/pull/7202", title: "#7202" }],
+          createdAt: iso(now - 120 * 60_000), updatedAt: iso(now - 6 * 60_000),
+        },
+        {
+          id: "c_stack4", key: "pr:acme/stack#7203", kind: "code", title: "Search index: the nightly switch", targets: ["repo:github.com/acme/stack"], phase: "review", phaseBy: "observed",
+          pr: { url: "https://github.com/acme/stack/pull/7203", repo: "acme/stack", number: 7203, state: "OPEN", checks: "pass", review: "REVIEW_REQUIRED", mergeState: "BLOCKED" },
+          evidence: [{ kind: "pr", url: "https://github.com/acme/stack/pull/7203", title: "#7203" }],
+          createdAt: iso(now - 60 * 60_000), updatedAt: iso(now - 12 * 60_000),
+        },
+      ],
+    }),
+  );
   // V0.73 (2): the owner's phone screen: six changes, five of them ended, a missing main PR, 20 finished agents and a
   // git checkout without a diff. The diff section must flow after the cards (it was drawn over the last two).
   {
