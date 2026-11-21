@@ -4,8 +4,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import type { Thread } from "./types.ts";
-import { MERGE_METHODS, headLabel, shortHead, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
+import type { PullRequest, Thread } from "./types.ts";
+import { MERGE_METHODS, hasMultipleRepos, headLabel, prChip, shortHead, shortRepo, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { relTime } from "./format.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -15,10 +15,15 @@ import { Modal } from "./dialogs.tsx";
 
 export interface PrViewProps {
   t: Thread;
+  /** all non-dismissed PRs of the thread (V0.multi-pr); the switcher shows when length > 1 */
+  prs: PullRequest[];
+  /** the currently selected PR */
+  pr: PullRequest;
+  onSelect(url: string): void;
   now: number;
   /** sends an owner message to the thread (thread.send); resolves true when it was accepted */
   onSend(text: string): Promise<boolean>;
-  onDismiss(): void;
+  onDismiss(url: string): void;
   /** opens the Changes tab */
   onChanges(): void;
   phone?: boolean;
@@ -29,9 +34,9 @@ type Load = { kind: "loading" } | { kind: "error"; error: string } | { kind: "ok
 const STATE_WORD: Record<string, string> = { OPEN: "Open", MERGED: "Merged", CLOSED: "Closed" };
 
 export function PrView(p: PrViewProps) {
-  const { t } = p;
+  const { t, prs, pr } = p;
   const source = useApi();
-  const pr = t.pr!;
+  const multiRepo = hasMultipleRepos(prs);
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; fail?: boolean } | null>(null);
@@ -42,7 +47,7 @@ export function PrView(p: PrViewProps) {
   const fetchDetail = (fresh: boolean) => {
     const g = ++gen.current;
     setBusy(true);
-    source.prDetail(t.hostId, t.id, fresh).then((r) => {
+    source.prDetail(t.hostId, t.id, fresh, pr.url).then((r) => {
       if (g !== gen.current) return;
       setBusy(false);
       if ("error" in r) {
@@ -104,12 +109,35 @@ export function PrView(p: PrViewProps) {
 
   return (
     <div class={`prv${p.phone ? " ph" : ""}`}>
+      {prs.length > 1 && (
+        <div class="prv-sw" role="tablist" aria-label="Pull requests">
+          {prs.map((item) => {
+            const chip = prChip(item);
+            const on = item.url === pr.url;
+            const repo = multiRepo ? shortRepo(item.repo) : "";
+            return (
+              <button
+                key={item.url}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                class={`prv-swb ${chip.cls}${on ? " on" : ""}`}
+                title={chip.title}
+                onClick={() => p.onSelect(item.url)}
+              >
+                {repo && <span class="prv-swr">{repo}</span>}
+                <span>{chip.text}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <header class="prv-h">
         <h2 class="prv-t">
           <a href={pr.url} target="_blank" rel="noopener noreferrer">
             {title}
           </a>{" "}
-          <span class="prv-num">#{number}</span>
+          <span class="prv-num">{multiRepo && (d?.repo || pr.repo) ? `${d?.repo || pr.repo}#${number}` : `#${number}`}</span>
         </h2>
         <div class="prv-meta">
           <span class={`prv-pill ${(d?.state ?? pr.state ?? "OPEN").toLowerCase()}`}>{STATE_WORD[d?.state ?? pr.state ?? "OPEN"] ?? d?.state}</span>
@@ -148,7 +176,7 @@ export function PrView(p: PrViewProps) {
           </button>
         )}
         {open && groups.failed.length > 0 && (
-          <button class="btn" disabled={!isAvailable(t, "pr.rerunFailed")} title={unavailableReason(t, "pr.rerunFailed") ?? "Re-run the failed workflow runs of the head commit"} onClick={() => void run("pr.rerunFailed", {}, "Re-running the failed checks. The result shows in the conversation.")}>
+          <button class="btn" disabled={!isAvailable(t, "pr.rerunFailed")} title={unavailableReason(t, "pr.rerunFailed") ?? "Re-run the failed workflow runs of the head commit"} onClick={() => void run("pr.rerunFailed", { pr: pr.url }, "Re-running the failed checks. The result shows in the conversation.")}>
             Re-run failed
           </button>
         )}
@@ -156,7 +184,7 @@ export function PrView(p: PrViewProps) {
           Open on GitHub
         </a>
         {done && isAvailable(t, "thread.dismissPR") && (
-          <button class="btn" title="The thread goes on; this PR is no longer shown" onClick={p.onDismiss}>
+          <button class="btn" title="The thread goes on; this PR is no longer shown" onClick={() => p.onDismiss(pr.url)}>
             Dismiss PR
           </button>
         )}
@@ -206,8 +234,8 @@ export function PrView(p: PrViewProps) {
           <Description body={d.body ?? ""} />
         </>
       )}
-      {merging && d && <MergeDialog d={d} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { method: m, head }, `Merging #${d.number}. The result shows in the conversation.`)} />}
-      {merging && !d && <MergeDialog d={{ url: pr.url, repo: pr.repo ?? "", number: pr.number, title, state: "OPEN", checks: [], threads: [] }} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { method: m, head }, `Merging #${pr.number}. The result shows in the conversation.`)} />}
+      {merging && d && <MergeDialog d={d} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { pr: pr.url, method: m, head }, `Merging #${d.number}. The result shows in the conversation.`)} />}
+      {merging && !d && <MergeDialog d={{ url: pr.url, repo: pr.repo ?? "", number: pr.number, title, state: "OPEN", checks: [], threads: [] }} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { pr: pr.url, method: m, head }, `Merging #${pr.number}. The result shows in the conversation.`)} />}
     </div>
   );
 }

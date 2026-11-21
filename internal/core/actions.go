@@ -478,22 +478,48 @@ func init() {
 
 	register(&Action{Name: "thread.dismissPR", Label: "Dismiss PR",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			p := t.MainPR()
-			if p == nil {
+			hasPR := false
+			for i := range t.Changes {
+				c := &t.Changes[i]
+				if c.PR == nil || c.Dismissed {
+					continue
+				}
+				hasPR = true
+				if c.PR.State != "OPEN" {
+					return ""
+				}
+			}
+			if !hasPR {
 				return "No PR"
 			}
-			if p.State == "OPEN" {
-				return "The PR is still open"
-			}
-			return ""
+			return "The PR is still open"
 		},
-		// V0.36, #32: the change keeps its record and is never the main
-		// change again; the thread has no main PR until a new one attaches.
-		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			if c := t.Main(); c != nil {
-				c.Dismissed = true
+		// V0.36, #32: the change keeps its record and is never shown as an
+		// active PR again. Optional pr/change selects which PR to dismiss; if
+		// it was the main change, another non-dismissed PR becomes main.
+		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
+			ref := strings.TrimSpace(a.Str("pr"))
+			if ref == "" {
+				ref = strings.TrimSpace(a.Str("change"))
 			}
-			t.MainChange = ""
+			c := t.PRChange(ref)
+			if c == nil || c.PR == nil {
+				return nil, reject(RejectUnavailable, "No PR")
+			}
+			if c.Dismissed {
+				return nil, reject(RejectUnavailable, "The PR is already dismissed")
+			}
+			if c.PR.State == "OPEN" {
+				return nil, reject(RejectUnavailable, "The PR is still open")
+			}
+			c.Dismissed = true
+			if t.MainChange == c.ID {
+				if next := t.nextPRChange(c.ID); next != nil {
+					t.MainChange = next.ID
+				} else {
+					t.MainChange = ""
+				}
+			}
 			return nil, nil
 		}})
 

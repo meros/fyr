@@ -3,7 +3,10 @@
 // I/O, so every rule here is covered by table tests.
 package core
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Owner is the only user in v1. The data model keeps the user dimension
 // (R19) so several users per host need no migration later.
@@ -371,6 +374,45 @@ func (t *Thread) MainPR() *PR {
 		return c.PR
 	}
 	return nil
+}
+
+// PRChange resolves ref (a PR URL, owner/repo#N, #N, or change id/key) to a
+// change of t that holds a PR. When ref is empty, it returns the main change
+// or, if none is set, the newest non-dismissed PR change (open ones first).
+func (t *Thread) PRChange(ref string) *Change {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		if c := t.Main(); c != nil {
+			return c
+		}
+		return t.nextPRChange("")
+	}
+	if u, ok := CanonicalPR(ref); ok {
+		ref = u
+	}
+	if c := FindChange(t, ref); c != nil && c.PR != nil {
+		return c
+	}
+	return nil
+}
+
+// nextPRChange is the newest non-dismissed PR change on t other than skipID,
+// preferring an open, in-flight PR over a merged or closed one.
+func (t *Thread) nextPRChange(skipID string) *Change {
+	var fallback *Change
+	for i := len(t.Changes) - 1; i >= 0; i-- {
+		c := &t.Changes[i]
+		if c.ID == skipID || c.PR == nil || c.Dismissed {
+			continue
+		}
+		if c.PR.State == "OPEN" && !c.Phase.Ended() && !c.IsDone() {
+			return c
+		}
+		if fallback == nil {
+			fallback = c
+		}
+	}
+	return fallback
 }
 
 // SetOutbox records a message's delivery state: "sent" and "queued" keep it

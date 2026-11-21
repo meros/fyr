@@ -635,9 +635,9 @@ export function createMockApi(scenario: string): Api {
       if (/fail/i.test(query)) throw new Error("the model gave no usable answer");
       return ids.slice(0, 2).map((id) => ({ id: bare(host, id), why: `Talks about ${query.trim()}` }));
     },
-    async prDetail(host, threadId) {
+    async prDetail(host, threadId, _fresh, prUrl) {
       await new Promise((r) => setTimeout(r, 120));
-      return server.prDetail(bare(host, threadId));
+      return server.prDetail(bare(host, threadId), prUrl);
     },
     async uploadProjectIcon(host, projectId0, file) {
       const projectId = bare(host, projectId0);

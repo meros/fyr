@@ -207,7 +207,7 @@ export function changeList(t: Pick<Thread, "changes">): Change[] {
 
 /** The inbox chip when the thread has no open PR: the most urgent change that is not a PR (V0.59 (8)). */
 export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { text: string; cls: string; title: string } | null {
-  if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return null;
+  if (headerPrs(t).length > 0) return null;
   const live = t.changes.filter((c) => !ended(c.phase) && !isDone(c) && !(c.evidence ?? []).some((e) => e.kind === "pr"));
   if (!live.length) return null;
   // V0.84: a parked change ranks and reads as quiet work.
@@ -223,15 +223,84 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
   return { text: short ? `${word}${more}` : `${clip(c.title)} · ${word}${more}`, cls: fail ? "fail" : c.phase === "live" ? "ok" : "", title: `${c.title} · ${c.phase === "working" ? [phase, c.label].filter(Boolean).join(" · ") : phaseText(c)}` };
 }
 
-/** The header chip (V0.98 (6), amends V0.73 (2)): the PR of the thread's newest open change that has one; never a
- *  done or ended change's, and none when no change is open. A change without its own snapshot shows the thread's PR
- *  when that PR is its own. */
-export function headerPr(t: Pick<Thread, "changes" | "pr">): PullRequest | null {
-  const main = t.pr;
-  const its = (c: Change) => !!main && (c.key === `pr:${main.repo}#${main.number}` || (c.evidence ?? []).some((e) => e.kind === "pr" && e.url === main.url));
-  const prOf = (c: Change) => c.pr ?? (its(c) ? main! : null);
-  const open = t.changes.filter((c) => !ended(c.phase) && !isDone(c) && prOf(c)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return open.length ? prOf(open[0]) : null;
+/** Canonical key for deduplicating PR URLs (ignores /files, #fragments, and case). */
+export function prUrlKey(url: string): string {
+  return (/^(.*?\/pull\/\d+)/i.exec(url)?.[1] ?? url).toLowerCase();
+}
+
+function prOfChange(c: Change, main?: PullRequest | null): PullRequest | null {
+  if (c.pr) return c.pr;
+  if (!main) return null;
+  const matchesMain = c.key === `pr:${main.repo}#${main.number}` || (c.evidence ?? []).some((e) => e.kind === "pr" && prUrlKey(e.url ?? "") === prUrlKey(main.url));
+  return matchesMain ? main : null;
+}
+
+/** V0.multi-pr: all non-dismissed PRs of a thread for the PR tab and details sheet, open ones first (newest first),
+ *  followed by non-dismissed merged/closed PRs (newest first). */
+export function threadPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullRequest[] {
+  const main = t.pr ?? null;
+  const changes = [...(t.changes ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const open: PullRequest[] = [];
+  const rest: PullRequest[] = [];
+  const seen = new Set<string>();
+  const owned = new Set<string>();
+  for (const c of changes) {
+    const p = prOfChange(c, main);
+    if (!p?.url) continue;
+    const k = prUrlKey(p.url);
+    owned.add(k);
+    if (c.dismissed || seen.has(k)) continue;
+    seen.add(k);
+    const isOpen = !ended(c.phase) && !isDone(c) && (p.state ?? "OPEN") === "OPEN";
+    (isOpen ? open : rest).push(p);
+  }
+  if (main?.url) {
+    const k = prUrlKey(main.url);
+    if (!owned.has(k) && !seen.has(k)) {
+      ((main.state ?? "OPEN") === "OPEN" ? open : rest).push(main);
+    }
+  }
+  return [...open, ...rest];
+}
+
+/** V0.multi-pr, V0.98 (6): the PRs shown as chips in the thread header: every open change's PR (never a done, ended
+ *  or dismissed one), newest first. */
+export function headerPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullRequest[] {
+  const main = t.pr ?? null;
+  const changes = t.changes ?? [];
+  const seen = new Set<string>();
+  const owned = new Set<string>();
+  const out: PullRequest[] = [];
+  for (const c of [...changes].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+    const p = prOfChange(c, main);
+    if (!p?.url) continue;
+    const k = prUrlKey(p.url);
+    owned.add(k);
+    if (c.dismissed || ended(c.phase) || isDone(c) || seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  if (main?.url && (main.state ?? "OPEN") === "OPEN") {
+    const k = prUrlKey(main.url);
+    if (!owned.has(k) && !seen.has(k)) out.push(main);
+  }
+  return out;
+}
+
+/** The header chip (V0.98 (6), amends V0.73 (2)): the newest open change's PR, or null when none is open. */
+export function headerPr(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullRequest | null {
+  return headerPrs(t)[0] ?? null;
+}
+
+/** V0.multi-pr: the PR an effect decision acts on (matching args.pr across the thread's PRs), falling back to t.pr. */
+export function prForEffect(t: Pick<Thread, "pr"> & { changes?: Change[] }, d?: { effect?: { args?: Record<string, unknown> } } | null): PullRequest | null | undefined {
+  const url = typeof d?.effect?.args?.pr === "string" ? d.effect.args.pr : "";
+  if (url) {
+    const k = prUrlKey(url);
+    const match = threadPrs(t).find((p) => prUrlKey(p.url) === k);
+    if (match) return match;
+  }
+  return t.pr;
 }
 
 const clip = (s: string) => (s.length > 24 ? `${s.slice(0, 23)}…` : s);

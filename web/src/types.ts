@@ -419,6 +419,8 @@ export interface Change {
   need?: ChangeNeed;
   /** V0.97: the change's PR as Fyr last read it, and what it waits for from the owner (the host's Ready rule) */
   pr?: PullRequest;
+  /** V0.36: the owner dismissed this merged or closed PR */
+  dismissed?: boolean;
   ready?: "Merge" | "Review and merge";
   phaseBy: "agent" | "observed" | "owner";
   /** V0.60, #31: the change's actions and their last runs */

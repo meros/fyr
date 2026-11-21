@@ -440,21 +440,57 @@ func prGuard(merge bool) func(*Thread, map[string]any) string {
 	}
 }
 
-// The owner's PR commands from the PR tab (V0.43 (2)) are FyrEffects on the
-// thread's main PR (#32): their Available is the effect's guard.
+// The owner's PR commands from the PR tab (V0.43 (2)) are FyrEffects on a PR
+// of the thread (#32): optional args.pr or args.change picks the PR, defaulting
+// to the main PR. Their Available is the effect's guard across the thread's PRs.
 func init() {
 	for _, id := range []string{FyrMerge, FyrRerun} {
 		fx := FyrEffects[id]
-		args := func(t *Thread) map[string]any {
-			if p := t.MainPR(); p != nil {
-				return map[string]any{"pr": p.URL}
+		args := func(t *Thread, a Args) (map[string]any, error) {
+			ref := strings.TrimSpace(a.Str("pr"))
+			if ref == "" {
+				ref = strings.TrimSpace(a.Str("change"))
 			}
-			return map[string]any{}
+			c := t.PRChange(ref)
+			if ref != "" && (c == nil || c.PR == nil) {
+				return nil, fmt.Errorf("%w: no such PR on this thread", ErrBadArgs)
+			}
+			if c != nil && c.PR != nil {
+				return map[string]any{"pr": c.PR.URL}, nil
+			}
+			return map[string]any{}, nil
 		}
 		register(&Action{Name: id, Label: fx.Label,
-			Available: func(t *Thread, _ *View, _ time.Time) string { return fx.Blocked(t, args(t)) },
+			Available: func(t *Thread, _ *View, _ time.Time) string {
+				first := ""
+				if c := t.PRChange(""); c != nil && c.PR != nil {
+					if why := fx.Blocked(t, map[string]any{"pr": c.PR.URL}); why == "" {
+						return ""
+					} else {
+						first = why
+					}
+				}
+				for i := range t.Changes {
+					c := &t.Changes[i]
+					if c.PR == nil || c.Dismissed {
+						continue
+					}
+					if why := fx.Blocked(t, map[string]any{"pr": c.PR.URL}); why == "" {
+						return ""
+					} else if first == "" {
+						first = why
+					}
+				}
+				if first != "" {
+					return first
+				}
+				return "No PR"
+			},
 			Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
-				req := args(t)
+				req, err := args(t, a)
+				if err != nil {
+					return nil, err
+				}
 				if m, ok := a["method"].(string); ok && id == FyrMerge {
 					req["method"] = m
 				}

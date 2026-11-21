@@ -3,6 +3,7 @@
 
 import { currentDecision } from "./decode.ts";
 import { describeEffect } from "./effects.ts";
+import { headerPrs, prForEffect, threadPrs } from "./offers.ts";
 import type { AttentionState, Project, Thread } from "./types.ts";
 import { rowSummary } from "./view.ts";
 
@@ -83,7 +84,7 @@ export function rowState(t: Thread): string {
     }
     // V0.row-calm: the word names the action, as "Merge #12" does; the line under it keeps the command.
     if (d?.kind === "approval") return `Allow ${d.tool ?? "tool"}`;
-    if (d?.kind === "effect") return describeEffect(d, t.pr).label;
+    if (d?.kind === "effect") return describeEffect(d, prForEffect(t, d)).label;
   }
   return blockedReason(t)?.word ?? (t.attention.reason || stateLabel(st));
 }
@@ -96,8 +97,13 @@ export function blockedReason(t: Pick<Thread, "attention" | "changes">): { word:
   return a.word ? { word: a.word, what: a.subject ?? "" } : null;
 }
 
-/** V0.row-calm: the state word names the row's PR ("Merge #4170"), so a "#4170 ready" chip under it says nothing new. */
+/** V0.row-calm: the state word names the row's only PR ("Merge #4170"), so a "#4170 ready" chip under it says nothing
+ *  new. With several PRs on the thread, the chip stays so the "+N" count is not hidden (V0.multi-pr). */
 export function stateNamesPr(t: Thread): boolean {
+  const open = headerPrs(t);
+  const prs = open.length ? open : threadPrs(t);
+  if (prs.length === 1) return new RegExp(`#${prs[0].number}\\b`).test(rowState(t));
+  if (prs.length > 1) return false;
   return !!t.pr && new RegExp(`#${t.pr.number}\\b`).test(rowState(t));
 }
 
@@ -135,7 +141,7 @@ export function rowMeta(t: Thread, o: { keys?: boolean } = {}): string {
       return `Allow ${d.tool ?? "tool"}${cmd}`;
     }
     if (d.kind === "effect") {
-      const x = describeEffect(d, t.pr);
+      const x = describeEffect(d, prForEffect(t, d));
       return `${x.title}${x.why ? " · " + x.why : ""}`;
     }
   }

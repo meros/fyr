@@ -24,6 +24,7 @@ type digestOut struct {
 	Summary   string
 	Subagents int // added
 	PRURL     string
+	PRURLs    []string
 }
 
 func (d *digest) feed(m map[string]any) digestOut {
@@ -59,8 +60,11 @@ func (d *digest) feed(m map[string]any) digestOut {
 			ti := d.tools[id]
 			cmd, _ := ti.input["command"].(string)
 			if ti.name == "Bash" && strings.Contains(cmd, "gh pr create") {
-				if u := createdPR(resultText(b["content"])); u != "" {
+				for _, u := range createdPRs(resultText(b["content"])) {
 					o.PRURL = u
+					if !containsStr(o.PRURLs, u) {
+						o.PRURLs = append(o.PRURLs, u)
+					}
 				}
 			}
 		}
@@ -68,17 +72,26 @@ func (d *digest) feed(m map[string]any) digestOut {
 	return o
 }
 
-// createdPR is the PR URL gh pr create printed: the last line that is a PR
-// URL and nothing else. A URL inside other text (a test run that mentions
-// the command) is not a created PR.
-func createdPR(out string) string {
-	lines := strings.Split(out, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if u, ok := core.CanonicalPR(strings.TrimSpace(lines[i])); ok {
-			return u
+// createdPRs are the unique PR URLs gh pr create printed on their own lines,
+// in order. A URL inside other text (a test run that mentions the command) is
+// not a created PR.
+func createdPRs(out string) []string {
+	var urls []string
+	for _, line := range strings.Split(out, "\n") {
+		if u, ok := core.CanonicalPR(strings.TrimSpace(line)); ok && !containsStr(urls, u) {
+			urls = append(urls, u)
 		}
 	}
-	return ""
+	return urls
+}
+
+func containsStr(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 func resultText(c any) string {

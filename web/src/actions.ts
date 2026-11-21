@@ -4,6 +4,7 @@
 // `thread.unavailable` (the one action vocabulary of the Solid core). Pure: the thread in, the entries out.
 import { settleLabel } from "./gesture.ts";
 import type { Thread } from "./types.ts";
+import { threadPrs } from "./offers.ts";
 
 export type Front = "desktop" | "phone";
 
@@ -126,7 +127,12 @@ export function threadActions(t: Thread, where: Where): ThreadAction[] {
   }
   out.push(cmd("regenTitle", "thread.regenerateTitle", "Regenerate title", "thread", { hint: "Name the thread from its conversation so far" })); // V0.108
   if (t.running) out.push(cmd("interrupt", "thread.interrupt", "Stop run", "thread", { key: "Esc" }));
-  if (t.pr && (t.pr.state === "MERGED" || t.pr.state === "CLOSED" || t.pr.state === "MISSING")) out.push(cmd("dismissPR", "thread.dismissPR", "Dismiss PR", "thread"));
+  const allPrs = threadPrs(t);
+  const donePr = allPrs.find((p) => p.state === "MERGED" || p.state === "CLOSED" || p.state === "MISSING");
+  if (donePr) {
+    const label = allPrs.length > 1 ? `Dismiss PR #${donePr.number}` : "Dismiss PR";
+    out.push(cmd("dismissPR", "thread.dismissPR", label, "thread", { args: { pr: donePr.url } }));
+  }
   if (where === "thread")
     out.push({ id: "details", kind: "sheet", sheet: "details", label: "Details", group: "thread", only: { front: "phone", why: "the desktop's thread header shows the details (state, project, host, provider) at all times; the phone's header has no room for them" } });
   if (where === "row")

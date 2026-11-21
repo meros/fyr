@@ -622,19 +622,30 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, 200, c)
 }
 
-// prDetail serves the PR tab (SPEC 0.5 V0.43). Failures are 200 {error}, so
-// the tab can say what went wrong.
+// prDetail serves the PR tab (SPEC 0.5 V0.43). Optional ?pr=<url> or
+// ?change=<id> selects one of the thread's PRs; absent selects the main PR.
+// Failures are 200 {error}, so the tab can say what went wrong.
 func (s *Server) prDetail(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.Engine.Thread(r.PathValue("id"))
 	if !ok {
 		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
 		return
 	}
-	pr := t.MainPR()
-	if pr == nil || pr.URL == "" {
-		api.WriteJSON(w, 200, map[string]any{"error": "This thread has no PR."})
+	q := r.URL.Query()
+	ref := q.Get("pr")
+	if ref == "" {
+		ref = q.Get("change")
+	}
+	c := t.PRChange(ref)
+	if c == nil || c.PR == nil || c.PR.URL == "" {
+		msg := "This thread has no PR."
+		if ref != "" {
+			msg = "That PR is not linked to this thread."
+		}
+		api.WriteJSON(w, 200, map[string]any{"error": msg})
 		return
 	}
+	pr := c.PR
 	if s.PR == nil {
 		api.WriteJSON(w, 200, map[string]any{"error": "This host does not read PR details."})
 		return

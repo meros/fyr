@@ -1,7 +1,8 @@
 // Live views (SPEC 0.5 V0.37, decision 0010): the pinned view's model, the bridge messages between the view's iframe
 // and the app (MCP Apps names), and the inbox row's headline. Pure.
 
-import type { Thread } from "./types.ts";
+import type { Change, Thread } from "./types.ts";
+import { threadPrs } from "./offers.ts";
 
 export interface LiveViewDTO {
   pageId: string;
@@ -122,11 +123,11 @@ export function pressReply(id: string | number, ok: boolean) {
 }
 
 /** SPEC 0.5 V0.37: the tab a thread opens on. A live view opens on View; an explicit
- *  choice wins; View does not exist without a view. */
-export function defaultTab(t: Pick<Thread, "live" | "pr">, requested: string | undefined): string {
+ *  choice wins; View does not exist without a view; PR exists whenever the thread has any non-dismissed PR. */
+export function defaultTab(t: Pick<Thread, "live" | "pr"> & { changes?: Change[] }, requested: string | undefined): string {
   const has = !!liveViewOf(t);
   if (requested === "view") return has ? "view" : "conv";
-  if (requested === "pr" && !t.pr) return "conv"; // V0.36: no PR, no PR tab
+  if (requested === "pr" && !threadPrs(t).length) return "conv"; // V0.36: no PR, no PR tab
   return requested ?? (has ? "view" : "conv");
 }
 
@@ -134,9 +135,18 @@ export type ThreadTab = "view" | "conv" | "changes" | "pr";
 
 export const TAB_LABEL: Record<ThreadTab, string> = { view: "View", conv: "Conversation", changes: "Changes", pr: "PR" };
 
-/** #41: the tabs a thread has, in order, on desktop and phone: View only with a view (V0.37), PR only with a PR (V0.36). */
-export function threadTabs(t: Pick<Thread, "live" | "pr">): ThreadTab[] {
-  return [...(liveViewOf(t) ? (["view"] as const) : []), "conv", "changes", ...(t.pr ? (["pr"] as const) : [])];
+/** V0.multi-pr: the PR tab reads "PRs (N)" when the thread tracks more than one non-dismissed PR. */
+export function tabLabel(t: Pick<Thread, "pr"> & { changes?: Change[] }, tab: ThreadTab): string {
+  if (tab === "pr") {
+    const n = threadPrs(t).length;
+    return n > 1 ? `PRs (${n})` : "PR";
+  }
+  return TAB_LABEL[tab];
+}
+
+/** #41: the tabs a thread has, in order, on desktop and phone: View only with a view (V0.37), PR with any non-dismissed PR (V0.36, V0.multi-pr). */
+export function threadTabs(t: Pick<Thread, "live" | "pr"> & { changes?: Change[] }): ThreadTab[] {
+  return [...(liveViewOf(t) ? (["view"] as const) : []), "conv", "changes", ...(threadPrs(t).length ? (["pr"] as const) : [])];
 }
 
 /** SPEC 0.5 V0.37: the tabs a question or approval card shows on; never hidden behind View. */

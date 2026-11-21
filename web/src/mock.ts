@@ -1068,7 +1068,7 @@ export interface MockServer {
   /** the in-memory attachment store (V0.18) */
   putAttachment(name: string, mediaType: string, size: number): { id: string; name: string; size: number; mediaType: string; path: string };
   /** the PR tab's detail (V0.43) */
-  prDetail(threadId: string): PrReply;
+  prDetail(threadId: string, prUrl?: string): PrReply;
 }
 
 /** A P-256 public key in the VAPID format; the mock has no private key and never pushes. */
@@ -1490,23 +1490,36 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         put(t, { changes: (t.changes ?? []).map((x) => (x === c && x.pr ? { ...x, pr: { ...x.pr, checkedAt: at } } : x)) });
         break;
       }
-      case "thread.dismissPR":
-        if (!t.pr || t.pr.state === "OPEN") return { ok: false, error: "The PR is still open" };
-        put(t, { pr: null });
+      case "thread.dismissPR": {
+        const targetUrl = typeof args.pr === "string" ? args.pr : t.pr?.url;
+        const ch = (t.changes ?? []).find((c) => c.pr?.url === targetUrl && !c.dismissed);
+        const pr = ch?.pr ?? (t.pr?.url === targetUrl ? t.pr : null);
+        if (!pr || (pr.state ?? "OPEN") === "OPEN") return { ok: false, error: "The PR is still open" };
+        const changes = (t.changes ?? []).map((c) => (c === ch ? { ...c, dismissed: true } : c));
+        const nextMain = t.pr?.url === pr.url ? (changes.find((c) => c.pr && !c.dismissed && (c.pr.state ?? "OPEN") === "OPEN")?.pr ?? changes.find((c) => c.pr && !c.dismissed)?.pr ?? null) : t.pr;
+        put(t, { pr: nextMain, changes });
         break;
+      }
       // V0.43: the owner's PR actions report as an effect.result by the owner.
       case "pr.merge": {
-        if (!t.pr || (t.pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
-        const pr = t.pr;
+        const targetUrl = typeof args.pr === "string" ? args.pr : t.pr?.url;
+        const ch = (t.changes ?? []).find((c) => c.pr?.url === targetUrl);
+        const pr = ch?.pr ?? (t.pr?.url === targetUrl ? t.pr : t.pr);
+        if (!pr || (pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
         setTimeout(() => {
           emit(t.id, "effect.result", { action: "pr.merge", by: "owner", ok: true, text: `You merged #${pr.number} (${String(args.method ?? "squash")}).\n\n✓ Merged pull request ${pr.repo}#${pr.number}` });
-          put(t, { pr: { ...pr, state: "MERGED" } });
+          const merged = { ...pr, state: "MERGED" };
+          const changes = (t.changes ?? []).map((c) => (c.pr?.url === pr.url ? { ...c, pr: merged, phase: "landed" as const } : c));
+          put(t, { ...(t.pr?.url === pr.url ? { pr: merged } : {}), changes });
         }, 600);
         break;
       }
       case "pr.rerunFailed": {
-        if (!t.pr || (t.pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
-        const n = t.pr.number;
+        const targetUrl = typeof args.pr === "string" ? args.pr : t.pr?.url;
+        const ch = (t.changes ?? []).find((c) => c.pr?.url === targetUrl);
+        const pr = ch?.pr ?? t.pr;
+        if (!pr || (pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
+        const n = pr.number;
         setTimeout(() => emit(t.id, "effect.result", { action: "pr.rerunFailed", by: "owner", ok: true, text: `You re-ran the failed checks of #${n}.\n\nRe-ran 1 failed workflow run of 9c1e0b7: CI.` }), 400);
         break;
       }
@@ -1563,8 +1576,8 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       replies.set(commandId, r);
       return r;
     },
-    prDetail(threadId) {
-      return mockPrDetail(threads.get(threadId), clock());
+    prDetail(threadId, prUrl) {
+      return mockPrDetail(threads.get(threadId), clock(), prUrl);
     },
     events(threadId, after, limit) {
       const list = events[threadId] ?? [];

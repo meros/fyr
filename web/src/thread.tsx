@@ -42,7 +42,7 @@ import type { ComponentChildren } from "preact";
 import { Filmstrip, PreviewCardView, openMarkdownImage } from "./preview-ui.tsx";
 import { LiveViewPanel } from "./view-ui.tsx";
 import { rememberTab } from "./desk-history.ts";
-import { TAB_LABEL, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
+import { tabLabel, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsIcon, agentsSummary, endedLabel, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
@@ -50,9 +50,9 @@ import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, useViewAction } from "./offers-ui.tsx";
 import { DockRun, NextSteps, ProseCommand, RunCardAt, RunCards, showCard } from "./runcard-ui.tsx";
 import { cardShows, cardsKey, dockRun, placeCards, requests, splitProse, waitingRuns } from "./runcard.ts";
-import { changeChip, headerPr, settleLine } from "./offers.ts";
+import { changeChip, headerPrs, prForEffect, settleLine, threadPrs } from "./offers.ts";
 import { WakeChip } from "./wake-ui.tsx";
-import { prChip } from "./pr.ts";
+import { hasMultipleRepos, pickPr, prChip, shortRepo } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { LeftoverStrip } from "./leftovers-ui.tsx";
@@ -110,12 +110,23 @@ export function ThreadPane(p: ThreadPaneProps) {
   // #41: the tab is derived as on the phone: the one picked for this thread (or the deep link's), made valid by
   // defaultTab (no View without a view, no PR tab without a PR).
   const [pick, setPick] = useState<{ id: string; tab: string } | null>(null);
+  const [selectedPr, setSelectedPr] = useState<{ id: string; url: string } | null>(null);
   const tab = defaultTab(t, pick?.id === t.id ? pick.tab : urlTab(t.id));
   const setTab = (tab: string) => {
     setPick({ id: t.id, tab });
     rememberTab(t.id, tab); // V0.145: Back to this thread shows this tab
   };
-  useEffect(() => setPick(null), [t.id]); // another thread opens on its own default
+  useEffect(() => {
+    setPick(null);
+    setSelectedPr(null);
+  }, [t.id]); // another thread opens on its own default
+  const allPrs = threadPrs(t);
+  const openPrs = headerPrs(t);
+  const activePr = pickPr(allPrs, selectedPr?.id === t.id ? selectedPr.url : undefined, t.pr?.url);
+  const openPr = (url: string) => {
+    setSelectedPr({ id: t.id, url });
+    setTab("pr");
+  };
   const hs = useHosts();
   // V0.139: the thread's provider is its host's (the same id on another host is another provider).
   const profile = profilesOf(t, p.profiles).find((x) => x.id === t.profile);
@@ -213,8 +224,20 @@ export function ThreadPane(p: ThreadPaneProps) {
             onWake={(window) => p.onRun("thread.wakeOnQuota", { window })}
             onCancelWake={(rule) => p.onRun("thread.cancelWake", { rule })}
           />
-          {/* V0.98 (6): the newest open change's PR; Dismiss acts on the thread's main PR, so only when it is that one. */}
-          {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") && headerPr(t)!.url === t.pr?.url ? () => p.onRun("thread.dismissPR") : undefined} />}
+          {/* V0.98 (6), V0.multi-pr: every open change's PR as a chip; clicking jumps to that PR in the PR tab. */}
+          {(() => {
+            const multiRepo = hasMultipleRepos(openPrs);
+            return openPrs.map((pr) => (
+              <PrChip
+                key={pr.url}
+                pr={pr}
+                repoPrefix={multiRepo ? shortRepo(pr.repo) : ""}
+                active={tab === "pr" && activePr?.url === pr.url}
+                onOpen={() => openPr(pr.url)}
+                onDismiss={isAvailable(t, "thread.dismissPR") && pr.state !== "OPEN" ? () => p.onRun("thread.dismissPR", { pr: pr.url }) : undefined}
+              />
+            ));
+          })()}
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? (
@@ -238,7 +261,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           <SlideMark under at={tab} />
           {threadTabs(t).map((k) => (
             <span class={tab === k ? "on" : ""} role="tab" onClick={() => setTab(k)}>
-              {TAB_LABEL[k]}
+              {tabLabel(t, k)}
             </span>
           ))}
         </div>
@@ -248,10 +271,23 @@ export function ThreadPane(p: ThreadPaneProps) {
       <UndeclaredStrip id={t.id} />
       <LeftoverStrip id={t.id} now={p.now} />
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.events} cwd={t.cwd} />}
-      <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
+      <ThreadTabBody
+        t={t}
+        tab={tab}
+        setTab={setTab}
+        prs={allPrs}
+        activePr={activePr}
+        onSelectPr={(url) => setSelectedPr({ id: t.id, url })}
+        events={p.events}
+        now={p.now}
+        onAtEnd={p.onAtEnd}
+        onEarlier={p.onEarlier}
+        run={p.onRun}
+        send={p.onSend}
+      />
       {/* V0.next-step-dock: what waits on the owner stands in one dock; a question or approval first, then a Run card */}
       {showsDecision(tab) && !decision && dock && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={p.onRun} onShow={(id) => showCard(id, tab, setTab)} />}
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} onCancelAsk={p.onCancelAsk} pr={t.pr} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} onCancelAsk={p.onCancelAsk} pr={prForEffect(t, decision)} />}
       <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} onRestart={() => p.onRun("thread.restart")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );
@@ -262,6 +298,10 @@ export interface ThreadTabBodyProps {
   /** from defaultTab */
   tab: string;
   setTab(tab: string): void;
+  /** V0.multi-pr: non-dismissed PRs of the thread and the one shown in the PR tab */
+  prs?: PullRequest[];
+  activePr?: PullRequest | null;
+  onSelectPr?(url: string): void;
   events: FyrEvent[] | undefined;
   now: number;
   onAtEnd(atEnd: boolean): void;
@@ -274,11 +314,13 @@ export interface ThreadTabBodyProps {
 }
 
 /** #41: what a thread tab shows, the same on desktop and phone: View (V0.37), Conversation with its filmstrip
- *  (V0.19), Changes (V0.25, V0.59) and PR (V0.43). */
-export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
+ *  (V0.19), Changes (V0.25, V0.59) and PR (V0.43, V0.multi-pr). */
+export function ThreadTabBody({ t, tab, setTab, prs, activePr, onSelectPr, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
   const api = useApi();
   const previews = useMemo(() => previewsOf(events ?? [], t.hostId, api), [events, t.hostId]);
   const viewAction = useViewAction(run, t.cwd);
+  const prList = prs ?? threadPrs(t);
+  const currentPr = activePr ?? pickPr(prList, undefined, t.pr?.url);
   return (
     <>
       {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction} />}
@@ -304,7 +346,19 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
           </CiNotesScope>
         </div>
       )}
-      {tab === "pr" && <PrTab t={t} now={now} phone={phone} onSend={(text) => send({ text })} onDismiss={() => run("thread.dismissPR")} onChanges={() => setTab("changes")} />}
+      {tab === "pr" && (
+        <PrTab
+          t={t}
+          prs={prList}
+          pr={currentPr}
+          onSelect={(url) => onSelectPr?.(url)}
+          now={now}
+          phone={phone}
+          onSend={(text) => send({ text })}
+          onDismiss={(url) => run("thread.dismissPR", { pr: url })}
+          onChanges={() => setTab("changes")}
+        />
+      )}
     </>
   );
 }
@@ -376,19 +430,32 @@ function HeaderProjectChip({ t, profileName }: { t: Thread; profileName?: string
   );
 }
 
-/** The PR tab (V0.43). */
-function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: Thread; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
-  if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
-  return <PrView key={t.id} t={t} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
+/** The PR tab (V0.43, V0.multi-pr). */
+function PrTab({ t, prs, pr, onSelect, now, onSend, onDismiss, onChanges, phone }: { t: Thread; prs: PullRequest[]; pr: PullRequest | null; onSelect(url: string): void; now: number; onSend(text: string): Promise<boolean>; onDismiss(url: string): void; onChanges(): void; phone?: boolean }) {
+  if (!pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
+  return <PrView key={t.id} t={t} prs={prs} pr={pr} onSelect={onSelect} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
 }
 
-function PrChip({ pr, onDismiss }: { pr: PullRequest; onDismiss?: () => void }) {
+function PrChip({ pr, repoPrefix, active, onOpen, onDismiss }: { pr: PullRequest; repoPrefix?: string; active?: boolean; onOpen?: () => void; onDismiss?: () => void }) {
   const l = prChip(pr);
   const done = pr.state === "MERGED" || pr.state === "CLOSED" || pr.state === "MISSING";
+  const label = repoPrefix ? `${repoPrefix} ${l.text}` : l.text;
   return (
     <span class="prw">
-      <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={l.title}>
-        {l.text}
+      <a
+        class={`chip pr ${l.cls}${active ? " on" : ""}`}
+        href={pr.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={l.title}
+        onClick={(e) => {
+          if (onOpen && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+      >
+        <span>{label}</span>
       </a>
       {done && onDismiss && (
         <button class="chip prx" aria-label="Dismiss PR" title="Dismiss PR: the thread goes on" onClick={onDismiss}>

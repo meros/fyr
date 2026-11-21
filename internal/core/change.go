@@ -223,8 +223,9 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 	c := FindChange(t, o.Key)
 	if c == nil && o.Kind == KindCode && o.Branch != "" {
 		// One change per repo and branch (V0.70 (2)): the agent's key joins
-		// the change Fyr already keeps for that branch.
-		if c = codeChangeOn(t, o.Branch, o.Targets); c != nil {
+		// the change Fyr already keeps for that branch, unless it already
+		// holds a different PR.
+		if c = codeChangeOn(t, o.Branch, o.Targets, firstPRURL(o.Evidence)); c != nil {
 			c.Aliases = union(c.Aliases, []string{o.Key})
 		}
 	}
@@ -869,13 +870,30 @@ func dropConditions(c *Change, types ...CondType) {
 	c.Conditions = out
 }
 
+// firstPRURL is the first canonical PR URL in evs, or "".
+func firstPRURL(evs []Evidence) string {
+	for _, ev := range evs {
+		if ev.Kind == "pr" && ev.URL != "" {
+			if u, ok := CanonicalPR(ev.URL); ok {
+				return u
+			}
+			return ev.URL
+		}
+	}
+	return ""
+}
+
 // codeChangeOn is the thread's code change on branch in the same repo, not
 // landed (in flight), or nil. Without a repo on either side the branch alone
-// decides.
-func codeChangeOn(t *Thread, branch string, targets []string) *Change {
+// decides. When prURL is non-empty, a change that already owns a different PR
+// is skipped so a second PR on the same branch gets its own tracked change.
+func codeChangeOn(t *Thread, branch string, targets []string, prURL string) *Change {
 	for i := range t.Changes {
 		c := &t.Changes[i]
 		if c.Kind == KindCode && c.Branch == branch && c.Phase.InFlight() && sameRepo(c.Targets, targets) {
+			if prURL != "" && c.PRURL() != "" && c.PRURL() != prURL {
+				continue
+			}
 			return c
 		}
 	}

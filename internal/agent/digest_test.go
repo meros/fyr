@@ -49,6 +49,12 @@ func TestDigestPRFromGhPrCreate(t *testing.T) {
 	if o := d.feed(result("q", []any{M{"type": "text", "text": "https://github.com/acme/app/pull/7"}})); o.PRURL != "" {
 		t.Fatalf("gh pr view must not link: %q", o.PRURL)
 	}
+	// V0.multi-pr: a command that creates several PRs links all of them.
+	d.feed(asst(nil, M{"type": "tool_use", "id": "m", "name": "Bash", "input": M{"command": "for r in a b; do gh pr create --fill; done"}}))
+	om := d.feed(result("m", "https://github.com/acme/a/pull/1\nhttps://github.com/acme/b/pull/2\nhttps://github.com/acme/a/pull/1\n"))
+	if len(om.PRURLs) != 2 || om.PRURLs[0] != "https://github.com/acme/a/pull/1" || om.PRURLs[1] != "https://github.com/acme/b/pull/2" {
+		t.Fatalf("multi PRURLs: %v", om.PRURLs)
+	}
 }
 
 // SPEC 0.5 V0.8: only a line that is a PR URL links, as gh pr create prints
