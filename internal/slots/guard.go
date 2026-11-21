@@ -66,11 +66,12 @@ type Guard struct {
 	Invariants *Invariants `json:"invariants,omitempty"`
 }
 
-// InvariantCard is a load invariant's violation as the owner's Needs you
-// shows it (V0.load-invariants): the invariant in one sentence, when, the
-// signals, and the guard's log lines of the ten minutes before.
+// InvariantCard is an invariant's violation as the owner's Needs you
+// shows it (V0.load-invariants, V0.thread-invariants): the invariant in one
+// sentence, when, the evidence, and recent log or transition lines.
 type InvariantCard struct {
 	ID       string    `json:"id"`
+	Kind     string    `json:"kind,omitempty"` // "" or "load", or "thread"
 	Text     string    `json:"text"`
 	At       time.Time `json:"at"`
 	Evidence string    `json:"evidence"`
@@ -80,6 +81,7 @@ type InvariantCard struct {
 // InvariantStat is one invariant's violations so far and the last one.
 type InvariantStat struct {
 	ID    string     `json:"id"`
+	Kind  string     `json:"kind,omitempty"` // "" or "load", or "thread"
 	Text  string     `json:"text"`
 	Count int        `json:"count"`
 	Last  *time.Time `json:"last,omitempty"`

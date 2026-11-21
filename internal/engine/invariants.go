@@ -68,8 +68,30 @@ var invTexts = map[string]string{
 	InvShortNothingFroze: "Memory has been short and stalling for more than 10 minutes with flagged work the guard may freeze (beside other heavy work, or in two or more parts), and nothing is frozen or held.",
 }
 
-// invOrder is the order the Settings list shows.
+// Invariant kinds: "load" (the memory guard) and "thread" (thread state & transitions).
+const (
+	InvKindLoad   = "load"
+	InvKindThread = "thread"
+)
+
+// invOrder is the order the Settings list shows for load invariants.
 var invOrder = []string{InvThawIntoCritical, InvFreezeHeldLong, InvFreezeCycling, InvShortNothingFroze, InvLimitUnderPrior, InvProbeSilent, InvPSITriggerMissing}
+
+// invKind returns InvKindThread for thread invariants, else InvKindLoad.
+func invKind(id string) string {
+	if threadInvText(id) != "" {
+		return InvKindThread
+	}
+	return InvKindLoad
+}
+
+// invText returns the one-sentence description of any load or thread invariant.
+func invText(id string) string {
+	if s, ok := invTexts[id]; ok {
+		return s
+	}
+	return threadInvText(id)
+}
 
 const invKey = "loadInvariants"
 
@@ -83,23 +105,25 @@ type invState struct {
 	Thread    string               `json:"thread,omitempty"` // the last Fix it's thread
 }
 
-type violation struct{ id, evidence string }
+type violation struct{ id, evidence, thread string }
 
 // invariants is the checker's state, under its own mu (never e.mu).
 type invariants struct {
-	mu      sync.Mutex
-	loaded  bool
-	state   map[string]*invState
-	start   time.Time
-	pending []violation
-	once    map[string]time.Time   // a condition already reported, and when
-	thaws   map[string][]time.Time // thread → its thaws in the last InvCycleWindow
-	cycled  map[string]time.Time   // thread → its last freeze-cycling
-	silent  time.Time              // since when the probe is silent
-	scope   bool                   // PSITrigger: the scope layout
-	armed   bool                   // PSITrigger: the trigger is set
-	psiSeen bool                   // PSITrigger was called
-	ring    lineRing
+	mu         sync.Mutex
+	loaded     bool
+	state      map[string]*invState
+	start      time.Time
+	pending    []violation
+	once       map[string]time.Time   // a condition already reported, and when
+	driftSince map[string]time.Time   // V0.thread-invariants: persistent condition first-seen
+	threadRing map[string][]string    // V0.thread-invariants: recent transitions per thread
+	thaws      map[string][]time.Time // thread → its thaws in the last InvCycleWindow
+	cycled     map[string]time.Time   // thread → its last freeze-cycling
+	silent     time.Time              // since when the probe is silent
+	scope      bool                   // PSITrigger: the scope layout
+	armed      bool                   // PSITrigger: the trigger is set
+	psiSeen    bool                   // PSITrigger was called
+	ring       lineRing
 }
 
 // lineRing keeps the guard's last log lines with when they were written.
@@ -177,7 +201,7 @@ func (e *Engine) JobLimitSet(thread, class, why string, high, prior uint64, sett
 	}
 	c := &e.inv
 	c.mu.Lock()
-	c.pending = append(c.pending, violation{InvLimitUnderPrior, fmt.Sprintf("thread=%s class=%q high=%s prior=%s why=%s", thread, class, slots.GB(float64(high)), slots.GB(float64(prior)), why)})
+	c.pending = append(c.pending, violation{id: InvLimitUnderPrior, evidence: fmt.Sprintf("thread=%s class=%q high=%s prior=%s why=%s", thread, class, slots.GB(float64(high)), slots.GB(float64(prior)), why)})
 	c.mu.Unlock()
 }
 
@@ -191,7 +215,7 @@ func (e *Engine) invEvent(ev slots.GuardEvent, sig slots.Signals) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if sig.AgentsStall == slots.StallCritical && ev.Reason != "ceiling" && ev.Reason != "gone" {
-		c.pending = append(c.pending, violation{InvThawIntoCritical, fmt.Sprintf("thread=%s work=%s reason=%s %s", ev.Thread, ev.Work, ev.Reason, guardSignals(sig))})
+		c.pending = append(c.pending, violation{id: InvThawIntoCritical, evidence: fmt.Sprintf("thread=%s work=%s reason=%s %s", ev.Thread, ev.Work, ev.Reason, guardSignals(sig))})
 	}
 	if c.thaws == nil {
 		c.thaws, c.cycled = map[string][]time.Time{}, map[string]time.Time{}
@@ -200,7 +224,7 @@ func (e *Engine) invEvent(ev slots.GuardEvent, sig slots.Signals) {
 	c.thaws[ev.Thread] = ts
 	if last, ok := c.cycled[ev.Thread]; len(ts) > InvCycles && (!ok || ev.At.Sub(last) >= InvCycleWindow) {
 		c.cycled[ev.Thread] = ev.At
-		c.pending = append(c.pending, violation{InvFreezeCycling, fmt.Sprintf("thread=%s thaws=%d in %s %s", ev.Thread, len(ts), InvCycleWindow, guardSignals(sig))})
+		c.pending = append(c.pending, violation{id: InvFreezeCycling, evidence: fmt.Sprintf("thread=%s thaws=%d in %s %s", ev.Thread, len(ts), InvCycleWindow, guardSignals(sig))})
 	}
 }
 
@@ -254,7 +278,7 @@ func (e *Engine) checkInvariants() {
 	}
 	for _, f := range frozen {
 		if d := now.Sub(f.at); d > InvHeldLong && first("held:"+f.owner+"@"+f.at.Format(time.RFC3339Nano)) {
-			c.pending = append(c.pending, violation{InvFreezeHeldLong, fmt.Sprintf("thread=%s undeclared=%t frozen=%s class=%q %s", f.owner, f.undeclared, d.Round(time.Second), f.class+f.cmd, guardSignals(sig))})
+			c.pending = append(c.pending, violation{id: InvFreezeHeldLong, evidence: fmt.Sprintf("thread=%s undeclared=%t frozen=%s class=%q %s", f.owner, f.undeclared, d.Round(time.Second), f.class+f.cmd, guardSignals(sig))})
 		}
 	}
 	if sig.Provider == "cgroups" && sig.Slowdown == nil {
@@ -262,20 +286,20 @@ func (e *Engine) checkInvariants() {
 			c.silent = now
 		}
 		if d := now.Sub(c.silent); d > InvProbeSilentAfter && first("silent@"+c.silent.Format(time.RFC3339Nano)) {
-			c.pending = append(c.pending, violation{InvProbeSilent, fmt.Sprintf("provider=cgroups no slowdown for %s %s", d.Round(time.Second), guardSignals(sig))})
+			c.pending = append(c.pending, violation{id: InvProbeSilent, evidence: fmt.Sprintf("provider=cgroups no slowdown for %s %s", d.Round(time.Second), guardSignals(sig))})
 		}
 	} else {
 		c.silent = time.Time{}
 	}
 	if c.psiSeen && c.scope && !c.armed && now.Sub(c.start) >= InvPSIWithin && first("psi") {
-		c.pending = append(c.pending, violation{InvPSITriggerMissing, fmt.Sprintf("layout=scope no PSI trigger %s after the start", now.Sub(c.start).Round(time.Minute))})
+		c.pending = append(c.pending, violation{id: InvPSITriggerMissing, evidence: fmt.Sprintf("layout=scope no PSI trigger %s after the start", now.Sub(c.start).Round(time.Minute))})
 	}
 	if mayFreeze && !since.IsZero() && now.Sub(since) > InvShortAfter && first("short@"+since.Format(time.RFC3339Nano)) {
 		names := make([]string, 0, len(flags))
 		for _, f := range flags {
 			names = append(names, fmt.Sprintf("%s(%s %s)", f.Thread, f.Command, slots.GB(float64(f.Mem))))
 		}
-		c.pending = append(c.pending, violation{InvShortNothingFroze, fmt.Sprintf("short for %s flagged=%s frozen=0 held=0 running=%d %s", now.Sub(since).Round(time.Second), strings.Join(names, ","), len(e.Running()), guardSignals(sig))})
+		c.pending = append(c.pending, violation{id: InvShortNothingFroze, evidence: fmt.Sprintf("short for %s flagged=%s frozen=0 held=0 running=%d %s", now.Sub(since).Round(time.Second), strings.Join(names, ","), len(e.Running()), guardSignals(sig))})
 	}
 	vs := c.pending
 	c.pending = nil
@@ -288,7 +312,13 @@ func (e *Engine) checkInvariants() {
 // violate logs v and opens its card when the day's rule lets it.
 func (e *Engine) violate(v violation, now time.Time) {
 	log.Printf("invariant: %s %s", v.id, v.evidence)
-	lines := e.inv.ring.since(now.Add(-InvLogWindow))
+	kind := invKind(v.id)
+	var lines []string
+	if kind == InvKindThread {
+		lines = e.threadLines(v.thread)
+	} else {
+		lines = e.inv.ring.since(now.Add(-InvLogWindow))
+	}
 	c := &e.inv
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -300,7 +330,7 @@ func (e *Engine) violate(v violation, now time.Time) {
 		quiet = s.Dismissed
 	}
 	if s.Open == nil && (quiet.IsZero() || now.Sub(quiet) >= InvCardEvery) {
-		s.Open = &slots.InvariantCard{ID: v.id, Text: invTexts[v.id], At: now, Evidence: v.evidence, Lines: lines}
+		s.Open = &slots.InvariantCard{ID: v.id, Kind: kind, Text: invText(v.id), At: now, Evidence: v.evidence, Lines: lines}
 		s.CardAt = now
 	}
 	e.invSave()
@@ -342,26 +372,38 @@ func (e *Engine) invSave() {
 	}
 }
 
+// InvariantView is the cards and the counts for the front (both load and thread
+// invariants, V0.load-invariants, V0.thread-invariants).
+func (e *Engine) InvariantView() *slots.Invariants { return e.invariantView() }
+
 // invariantView is the cards and the counts for the front.
 func (e *Engine) invariantView() *slots.Invariants {
 	c := &e.inv
 	c.mu.Lock()
 	e.invLoad("")
 	v := &slots.Invariants{Stats: []slots.InvariantStat{}}
-	for _, id := range invOrder {
-		st := slots.InvariantStat{ID: id, Text: invTexts[id]}
-		if s := c.state[id]; s != nil {
-			st.Count = s.Count
-			if !s.Last.IsZero() {
-				t := s.Last
-				st.Last = &t
+	addGroup := func(kind string, ids []string) {
+		for _, id := range ids {
+			st := slots.InvariantStat{ID: id, Kind: kind, Text: invText(id)}
+			if s := c.state[id]; s != nil {
+				st.Count = s.Count
+				if !s.Last.IsZero() {
+					t := s.Last
+					st.Last = &t
+				}
+				if s.Open != nil {
+					card := *s.Open
+					if card.Kind == "" {
+						card.Kind = kind
+					}
+					v.Cards = append(v.Cards, card)
+				}
 			}
-			if s.Open != nil {
-				v.Cards = append(v.Cards, *s.Open)
-			}
+			v.Stats = append(v.Stats, st)
 		}
-		v.Stats = append(v.Stats, st)
 	}
+	addGroup(InvKindLoad, invOrder)
+	addGroup(InvKindThread, threadInvOrder)
 	c.mu.Unlock()
 	if len(v.Cards) > 0 {
 		v.FixDir, _ = e.fyrCheckout()
@@ -440,7 +482,11 @@ func (e *Engine) invariantFix(id string) api.Reply {
 	if dir == "" {
 		return api.Reply{Error: "This host has no project with a Fyr checkout: add the Fyr repo as a project to fix it from here", Status: 409}
 	}
-	args := core.Args{"cwd": dir, "projectId": project, "title": "Fix load invariant " + id, "text": invPrompt(card, e.hostName())}
+	title := "Fix load invariant " + id
+	if card.Kind == InvKindThread || invKind(id) == InvKindThread {
+		title = "Fix thread invariant " + id
+	}
+	args := core.Args{"cwd": dir, "projectId": project, "title": title, "text": invPrompt(card, e.hostName())}
 	r := e.submit(core.Input{Source: core.FromOwner, Kind: "thread.create", Args: args, CmdID: NewID("inv_")})
 	if !r.OK {
 		return r
@@ -455,6 +501,18 @@ func (e *Engine) invariantFix(id string) api.Reply {
 // invPrompt is the fix thread's first message.
 func invPrompt(card slots.InvariantCard, host string) string {
 	var b strings.Builder
+	if card.Kind == InvKindThread || invKind(card.ID) == InvKindThread {
+		fmt.Fprintf(&b, "Fyr's thread invariant `%s` was violated on %s at %s.\n\n%s\n\nEvidence: %s\n", card.ID, host, card.At.Format(time.RFC3339), card.Text, card.Evidence)
+		if len(card.Lines) > 0 {
+			b.WriteString("\nThe thread's recent transitions before the violation:\n\n```\n")
+			for _, l := range card.Lines {
+				b.WriteString(l + "\n")
+			}
+			b.WriteString("```\n")
+		}
+		b.WriteString("\nRead docs/SPEC.md (sections 3, 5, 6 and 7), internal/core/thread_invariants.go, internal/engine/thread_invariants.go, and docs/changes/thread-invariants.md (which defines each invariant). Reproduce it in a test first, fix it, run scripts/ci-local.sh, and open a PR.\n")
+		return b.String()
+	}
 	fmt.Fprintf(&b, "Fyr's load invariant `%s` was violated on %s at %s.\n\n%s\n\nEvidence: %s\n", card.ID, host, card.At.Format(time.RFC3339), card.Text, card.Evidence)
 	if len(card.Lines) > 0 {
 		b.WriteString("\nThe guard's log lines of the 10 minutes before:\n\n```\n")

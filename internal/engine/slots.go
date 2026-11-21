@@ -247,6 +247,7 @@ func (e *Engine) sweepSlots() {
 		e.dropSlot(id)
 	}
 	e.syncSlotQueue()
+	e.checkSlotQueueInvariant() // V0.thread-invariants
 	e.heavierThanPredicted(s)
 	e.freezeGuard(s)
 	e.memoryGuard(s)    // V0.guard-tidy: after the freeze, which told its thread already
@@ -1370,6 +1371,7 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 			if !soft && !h.Priority && e.heavier(c, h) {
 				held, _ = e.Slots.Grow(c.Thread, kind)
 				e.syncSlotQueue()
+				e.checkSlotQueueInvariant() // V0.thread-invariants
 				if held {
 					e.heavyMu.Lock()
 					e.heavyGranted[c.Thread] = grantedClass{c.Class, h.Since}
@@ -1383,6 +1385,7 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 			held, _ = e.Slots.Acquire(c.Thread, kind)
 			fresh = held
 			e.syncSlotQueue()
+			e.checkSlotQueueInvariant() // V0.thread-invariants
 		}
 		if !held {
 			break
@@ -1573,6 +1576,7 @@ func (e *Engine) HeavyDone(thread, toolUse string) {
 	e.mu.Unlock()
 	e.Slots.Fill()
 	e.syncSlotQueue()
+	e.checkSlotQueueInvariant() // V0.thread-invariants
 }
 
 // hostName is how the heavy-job answers name this host (V0.163).

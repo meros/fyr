@@ -459,6 +459,9 @@ func init() {
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			msg := "The last run stopped with an error (" + t.Failure.Message + "). Continue from where you stopped."
 			revive(t, v, now)
+			if !t.Running && t.Starting == nil {
+				t.Starting = &now
+			}
 			return []Effect{{Kind: EffectSend, Text: msg}}, nil
 		}})
 
@@ -726,14 +729,20 @@ func init() {
 			}
 			// L3: archived threads have no live work. V0.101: an agent's ask
 			// does not hold it; archiving voids the ask.
-			if t.Running || slices.ContainsFunc(t.Decisions, Decision.NeedsProcess) {
+			if t.Running || t.RunningTasks() > 0 || slices.ContainsFunc(t.Decisions, Decision.NeedsProcess) {
 				return "Stop the run first"
+			}
+			if t.Handover != nil {
+				return "Wait for the handover to finish"
 			}
 			return ""
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.ArchivedAt = &now
+			t.Starting = nil
 			t.PinnedAt = nil // V0.104
+			t.SettleAsk = nil
+			DropSettleRules(t)
 			Unsnooze(v)
 			return []Effect{{Kind: EffectStop}}, nil
 		}})

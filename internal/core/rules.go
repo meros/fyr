@@ -226,7 +226,7 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 	case WhenIdleFor:
 		return truth(now.Sub(t.ActivityAt) >= time.Duration(w.Ms)*time.Millisecond)
 	case WhenIdle:
-		return truth(!t.Running && t.Failure == nil)
+		return truth(!t.Running && t.Starting == nil && t.Failure == nil)
 	case WhenNoDecisions:
 		return truth(len(t.Decisions) == 0)
 	case WhenWorkOver:
@@ -844,6 +844,12 @@ func checkAgentWhen(t *Thread, w *When, depth int) error {
 }
 
 func reduceRuleArm(r Rec, in Input, now time.Time) (Result, error) {
+	if r.T.ArchivedAt != nil {
+		return Result{}, reject(RejectUnavailable, "the thread is archived")
+	}
+	if r.T.Settle.At != nil {
+		return Result{}, reject(RejectUnavailable, "the thread is already settled")
+	}
 	a, err := argsOf[RuleArmArgs](in)
 	if err != nil {
 		return Result{}, err
@@ -1033,6 +1039,7 @@ func init() {
 		{Name: KindQuotaSync, From: observed, Untouched: true, Reduce: reduceQuotaSync},
 		{Name: KindRuleSettle, From: fromRule, Reduce: func(r Rec, _ Input, now time.Time) (Result, error) {
 			settleNow(r.T, now)
+			Unsnooze(r.V) // SPEC 7.4: settling clears the snooze
 			return Result{}, nil
 		}},
 		// The snooze's end: its firing disarms it, which wakes the thread.

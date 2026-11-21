@@ -425,6 +425,48 @@ func (m *Manager) Live(thread string) bool {
 	return m.sessions[thread] != nil
 }
 
+// SessionState is a snapshot of one thread's agent process state for
+// thread-state invariant checking (V0.thread-invariants).
+type SessionState struct {
+	Live     bool
+	Starting bool
+	TurnLive bool
+	Asks     []string
+	Outbox   []string
+	BG       int
+}
+
+// Inspect returns a lock-free-to-use snapshot of every thread with a live
+// session or a start in flight (V0.thread-invariants). No I/O.
+func (m *Manager) Inspect() map[string]SessionState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]SessionState, len(m.sessions)+len(m.starting))
+	for th := range m.starting {
+		out[th] = SessionState{Starting: true}
+	}
+	for th, s := range m.sessions {
+		st := out[th]
+		st.Live = true
+		st.TurnLive = s.live
+		st.BG = s.bg
+		if len(s.asks) > 0 {
+			st.Asks = make([]string, 0, len(s.asks))
+			for id := range s.asks {
+				st.Asks = append(st.Asks, id)
+			}
+		}
+		if len(s.out) > 0 {
+			st.Outbox = make([]string, 0, len(s.out))
+			for id := range s.out {
+				st.Outbox = append(st.Outbox, id)
+			}
+		}
+		out[th] = st
+	}
+	return out
+}
+
 func randHex(n int) string {
 	b := make([]byte, n)
 	rand.Read(b)

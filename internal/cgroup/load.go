@@ -76,6 +76,8 @@ type Load struct {
 	Temps     []Temp     `json:"temps,omitempty"`
 	// ServicePatterns: the host's service patterns (V0.services-not-jobs).
 	ServicePatterns []heavy.ServicePattern `json:"servicePatterns,omitempty"`
+	// Invariants: load and thread invariants when Slots/Guard is absent (V0.thread-invariants).
+	Invariants *slots.Invariants `json:"invariants,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -143,6 +145,8 @@ type Sampler struct {
 	// V0.services-not-jobs: the threads' services and the host's patterns; optional.
 	Services    *Services
 	ServiceBook *heavy.Services
+	// V0.thread-invariants: invariant view fallback when slots are off.
+	Invariants func() *slots.Invariants
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -166,6 +170,9 @@ func (s *Sampler) Get() Load {
 	if s.Slots != nil && !s.Slots.Off() {
 		sn := s.Slots.View()
 		l.Heavy, l.Slots = &sn, &sn
+	}
+	if s.Invariants != nil && (l.Slots == nil || l.Slots.Guard == nil || l.Slots.Guard.Invariants == nil) {
+		l.Invariants = s.Invariants()
 	}
 	if s.Book != nil && l.Provider != "" {
 		l.HeavyAdded = s.Book.Added()

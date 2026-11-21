@@ -23,10 +23,24 @@ import (
 //
 // A field left nil turns its feature off, as each one says.
 
+// AgentState is a snapshot of one thread's agent process state for
+// thread-state invariant checks (V0.thread-invariants).
+type AgentState struct {
+	Live     bool
+	Starting bool
+	TurnLive bool
+	Asks     []string
+	Outbox   []string
+	BG       int
+}
+
 // AgentDeps are the agents and what the owner's thread commands check.
 type AgentDeps struct {
 	// Agents runs agent effects (*agent.Manager).
 	Agents Agents
+	// AgentInspect snapshots live agent processes and starts in flight, with
+	// no I/O (V0.thread-invariants). Optional.
+	AgentInspect func() map[string]AgentState
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none.
 	Titler Titler

@@ -271,7 +271,7 @@ func TestInvariantShortNothingFrozenNotWithoutAStall(t *testing.T) {
 func TestInvariantCardOncePerDayAndDismiss(t *testing.T) {
 	e, _, now, _, _ := fzEngine(t)
 	out := invLog(t, e)
-	v := violation{InvLimitUnderPrior, "thread=t1"}
+	v := violation{id: InvLimitUnderPrior, evidence: "thread=t1"}
 	e.violate(v, *now)
 	*now = now.Add(time.Hour)
 	e.violate(v, *now)
@@ -302,7 +302,7 @@ func TestInvariantCardOncePerDayAndDismiss(t *testing.T) {
 // The record outlives a restart: the same store, a new engine.
 func TestInvariantCardsAreKept(t *testing.T) {
 	e, st, now := bare(t)
-	e.violate(violation{InvProbeSilent, "x"}, *now)
+	e.violate(violation{id: InvProbeSilent, evidence: "x"}, *now)
 	e2 := New(st)
 	if err := e2.Load(); err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func TestInvariantFixStartsAThreadWithThePrompt(t *testing.T) {
 	ag := &sends{}
 	e.Agents = ag
 	e.LogTap().Write([]byte("2026/11/15 09:58:00 fyrd guard: froze job thread=t9\n"))
-	e.violate(violation{InvFreezeHeldLong, "thread=t9 frozen=31m0s"}, *now)
+	e.violate(violation{id: InvFreezeHeldLong, evidence: "thread=t9 frozen=31m0s"}, *now)
 	fix := func(id string) api.Reply {
 		return e.Command(api.Cmd{CommandID: NewID("c"), Action: core.KindInvariantFix, Args: map[string]any{"id": id}})
 	}

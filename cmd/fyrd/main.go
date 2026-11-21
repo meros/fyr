@@ -232,7 +232,15 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		Tools: mcpSrv.Hash, ToolsCurrent: mcpSrv.Current, Build: BuildID(),
 	})
 	eng.AgentDeps = engine.AgentDeps{
-		Agents:           mgr,
+		Agents: mgr,
+		AgentInspect: func() map[string]engine.AgentState { // V0.thread-invariants
+			raw := mgr.Inspect()
+			out := make(map[string]engine.AgentState, len(raw))
+			for id, s := range raw {
+				out[id] = engine.AgentState{Live: s.Live, Starting: s.Starting, TurnLive: s.TurnLive, Asks: s.Asks, Outbox: s.Outbox, BG: s.BG}
+			}
+			return out
+		},
 		Titler:           mgr.Title,         // V0.108
 		TextJudge:        mgr.JudgeText,     // V0.210
 		Searcher:         mgr.SearchThreads, // V0.ai-search
@@ -374,7 +382,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		func(thread, c string) string {
 			return strings.TrimSpace(heavy.WorkerHint(c, cgroup.Workers(capOf())) + "\n" + services.Notice(thread, capOf()))
 		})
-	pool.Guard = eng.GuardView // decision 0032
+	pool.Guard = eng.GuardView     // decision 0032
+	sampler.Invariants = eng.InvariantView // V0.thread-invariants: fallback when slots are off
 	if tree == nil {
 		// V0.164 section 10, V0.process-tree-hosts: no cgroup tree, so each thread is its
 		// process tree under the CLI, and a pause is SIGSTOP.

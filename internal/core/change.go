@@ -858,6 +858,13 @@ func trimChanges(t *Thread, now time.Time) {
 		}
 		t.Changes = append(t.Changes[:idx], t.Changes[idx+1:]...)
 	}
+	if t.MainChange != "" && FindChange(t, t.MainChange) == nil {
+		if next := t.nextPRChange(""); next != nil {
+			t.MainChange = next.ID
+		} else {
+			t.MainChange = ""
+		}
+	}
 }
 
 func dropConditions(c *Change, types ...CondType) {
