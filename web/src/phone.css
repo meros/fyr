@@ -532,3 +532,8 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 .m-navb.on{color:var(--harbour);border-color:var(--harbour);background:var(--harbour-wash)}
 .m-navb svg{flex:none}
 .m-ahx{color:var(--ink-muted)}
+/* V0.host-tabs: phone touch targets (44 px) and full-bleed tab strip in the load sheet */
+.m-app .htab{height:44px;min-height:44px;padding:0 12px;font-size:14px}
+.m-app .htab-n{font-size:13.5px}
+.m-app .htabs.compact .htab{height:44px;min-height:44px;padding:0 12px}
+.m-lsheet .htabs{margin:-4px -16px 0;padding:0 12px}

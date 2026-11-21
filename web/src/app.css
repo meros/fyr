@@ -576,6 +576,9 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
   .dh .x{width:44px;height:44px}
   /* 16 px in fields, so iOS does not zoom on focus. */
   input,textarea,select{font-size:16px}
+  /* V0.host-tabs: dialogs reused on the phone (Adopt, Handover) keep 44 px tab targets */
+  .htab,.htabs.compact .htab{height:44px;min-height:44px;padding:0 12px;font-size:14px}
+  .htab-n{font-size:13.5px}
 }
 
 /* Installed app: keep content out of the notch, the home indicator and rounded corners. */
@@ -1185,12 +1188,32 @@ html.list-resizing iframe{pointer-events:none}
 /* V0.132: the Host field of New project and New thread; an offline host's note in the error colour */
 .hostf .srcl.hbad{color:var(--signal-ink)}
 .fnote{margin:4px 0}
-/* V0.127: a per-host page with several hosts: one part per host, its name and state, the same on the desktop and the phone */
+/* V0.127, V0.host-tabs: a per-host page with several hosts: HostTabs picks one host at a time, its status line sits
+   under the tabs, and only that host's panel renders (the same on the desktop and the phone). */
 .hpart{display:flex;flex-direction:column;gap:16px;min-width:0}
-.hpart+.hpart{border-top:1px solid var(--line);padding-top:16px}
-.hpart-h{margin:0;display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;font:600 15px/22px var(--ui);min-width:0;overflow-wrap:anywhere}
+.hpart-h{margin:-6px 0 -4px;display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;font:600 15px/22px var(--ui);min-width:0;overflow-wrap:anywhere}
 .hpart-s{font:400 13px/18px var(--ui);color:var(--ink-muted)}
-.hpart.off .hpart-h .mono{color:var(--ink-muted)}
+.hpart.off .hpart-s{color:var(--ink-faint)}
+/* V0.host-tabs: one shared tabbed host switcher for Settings, linked projects, load sheet, and HostField pickers. */
+.htabs{position:relative;display:flex;align-items:center;gap:2px;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid var(--line)}
+.htabs::-webkit-scrollbar{display:none}
+.htab{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:0;background:none;color:var(--ink-muted);font:500 13px/18px var(--ui);white-space:nowrap;cursor:pointer}
+.htab:hover{color:var(--ink)}
+.htab.on{color:var(--ink)}
+.htab.off{color:var(--ink-faint)}
+.htab.off.on{color:var(--ink-muted)}
+.htab:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px;border-radius:6px}
+.htab-n{font-size:12.5px}
+.htab-m{font-size:11px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.htab-m.warm{color:var(--beam-ink)}
+.htab-m.hot{color:var(--signal-ink);font-weight:600}
+.htab-b{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 5px;border-radius:8px;background:var(--beam-wash);color:var(--beam-ink);font:600 11px/16px var(--ui);font-variant-numeric:tabular-nums}
+.stx .stp>.htabs{margin:-4px -20px 0;padding:0 16px}
+.stx .stp .pedit>.htabs{margin:-4px 0 0}
+/* Compact variant inside form fields (HostField): pill track with sliding raised fill */
+.htabs.compact{padding:2px;gap:2px;border:1px solid var(--line-strong);border-radius:9px;background:var(--sunken);border-bottom-color:var(--line-strong)}
+.htabs.compact>.slide{background:var(--raised);border-radius:7px;box-shadow:0 0 0 1px var(--line),var(--lift-1)}
+.htabs.compact .htab{height:30px;padding:0 10px;border-radius:7px}
 .m-ban{padding:8px 16px;background:var(--sunken);border-bottom:1px solid var(--line);font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .m-ban.d{margin:-16px -20px 0;padding:8px 20px}
 /* a group: a label, a card of rows, a foot note */
@@ -1386,6 +1409,10 @@ label.sr{cursor:pointer}
 .set.phone .sr-d{font-size:13px;line-height:18px}
 .set.phone .btn{height:auto;min-height:44px;padding:0 14px;font-size:14px}
 .set.phone .seg button{height:44px;padding:0 14px}
+.set.phone .htab{height:44px;min-height:44px;padding:0 12px;font-size:14px}
+.set.phone .htab-n{font-size:13.5px}
+.set.phone .htabs.compact .htab{height:44px;min-height:44px;padding:0 12px}
+.set.phone .stp>.htabs{margin:-4px 0 0}
 .set.phone :is(.sr select,.inl input,.pq,.fld input,.fld select,.qtime select){height:44px;font-size:16px}
 .set.phone .fld{font-size:13px}
 .set.phone .xb,.set.phone .star{width:44px;height:44px}
@@ -1684,8 +1711,6 @@ label.sr{cursor:pointer}
 .hm.hot{--lv:var(--signal-ink)}
 .hmn{display:flex;align-items:center;gap:3px;min-width:0;font:500 9.5px/11px var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hostc .hmark{margin-left:-3px}
-.hostsel{display:flex;align-items:center;gap:8px;min-width:0}
-.hostsel select{flex:1}
 .hmr{display:grid;grid-template-columns:17px minmax(8px,1fr) auto;align-items:center;column-gap:3px;font:400 9px/11px var(--mono);color:var(--ink-faint);cursor:default}
 .hmb{display:flex;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .hmb i{display:block;flex:none;height:100%}
@@ -1750,15 +1775,15 @@ img{-webkit-user-drag:none}
 .m-strip>.slide{background:var(--raised);border-radius:12px;box-shadow:0 0 0 1px var(--line),var(--lift-1)}
 .seg>.slide{background:var(--night)}
 .chg-seg>.slide{background:var(--select)}
-:is(.m-strip,.seg,.chg-seg,.tabs,.m-tabs)>:not(.slide){position:relative;z-index:1;transition:color .18s ease-out,opacity .18s ease-out,scale .3s var(--spring)}
-.tabs span,.m-tabs button{border-bottom-color:transparent}
+:is(.m-strip,.seg,.chg-seg,.tabs,.m-tabs,.htabs)>:not(.slide){position:relative;z-index:1;transition:color .18s ease-out,opacity .18s ease-out,scale .3s var(--spring)}
+.tabs span,.m-tabs button,.htabs .htab{border-bottom-color:transparent}
 
 /* Presses: on at once, off softly. Each kind of control answers as its native kind does. `scale` leaves `transform` to
    the gestures. */
 :where(button,[role=tab],[role=button],summary,a.btn){transition:opacity .2s ease-out,background-color .2s ease-out,border-color .2s ease-out,color .2s ease-out,filter .2s ease-out,scale .32s var(--spring)}
 :where(button,[role=tab],summary)[data-pressed]{opacity:.55;transition-duration:.05s}
 /* solid buttons sink */
-:is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
+:is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.htabs.compact .htab,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
 :is(.btn,.m-bt,.m-sbtn,.m-capb,.m-dchip)[data-pressed]:not(.p){background-color:var(--sunken)}
 :is(.btn.p,.m-bt.p,.m-send,.m-bnew)[data-pressed]{filter:brightness(.86)}
 /* icon buttons get a soft well */

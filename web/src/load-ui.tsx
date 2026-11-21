@@ -2,6 +2,8 @@
 // whole client, every 5 s while the page is visible; the host reads at most every 2 s.
 
 import { HostMark } from "./host-mark-ui.tsx";
+import { activeTabId, type HostTabItem } from "./host-tabs.ts";
+import { HostTabs } from "./host-tabs-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CardView, HoverCard, useHover } from "./card-ui.tsx";
@@ -180,16 +182,35 @@ export function LoadStrip({ hosts, onOpen }: { hosts: StripHost[]; onOpen(): voi
   );
 }
 
-/** V0.166, V0.167, V0.load-card: the phone's load sheet: per host its full name and state, its two meters, and the
- *  rail's hover card as text (no hover on a phone), then the leftovers; then the provider quotas. */
-export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: ComponentChildren }) {
+/** V0.166, V0.167, V0.load-card, V0.host-tabs: the phone's load sheet. With several hosts, HostTabs at the top picks one
+ *  host at a time (each tab carries its live load % or offline state) so the sheet never stacks several full load cards;
+ *  below it are that host's meters, card, leftovers and provider quotas. With one host there are no tabs. */
+export function LoadSheetBody({ hosts, renderQuotas }: { hosts: StripHost[]; renderQuotas?: (host: string | undefined) => ComponentChildren }) {
   const und = useUnd();
+  const [picked, setPicked] = useState<string | null>(null);
+  const several = hosts.length > 1;
+  const tabItems: HostTabItem[] = hosts.map((h) => {
+    const m = h.load && railMeter(h.load);
+    return {
+      id: h.name,
+      name: h.name,
+      label: h.name,
+      offline: !h.load,
+      meta: m ? m.text : undefined,
+      metaLevel: m ? m.level : undefined,
+      title: h.load ? railLabel(h.load, true) : `${h.name}: offline`,
+    };
+  });
+  const activeId = activeTabId(tabItems, picked);
+  const shown = several ? hosts.filter((h) => h.name === activeId) : hosts;
+  const quotaBody = renderQuotas?.(several ? activeId : undefined);
   return (
     <div class="m-lsheet">
-      {hosts.map((h) => {
+      {several && <HostTabs items={tabItems} active={activeId} onPick={setPicked} label="Hosts" />}
+      {shown.map((h) => {
         const c = h.load && loadCard(h.load, { lookup: und.lookup, now: und.now() });
         return (
-          <section class={`mls${h.load ? "" : " off"}`} aria-label={h.name}>
+          <section key={h.name} class={`mls${h.load ? "" : " off"}`} role={several ? "tabpanel" : undefined} data-host={h.name} aria-label={h.name}>
             <div class="mlsh">
               <span class="mlsn">
                 <b class="mono ell">{h.name}</b>
@@ -207,10 +228,12 @@ export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: C
         );
       })}
       <p class="mlsk">{METERS_LEGEND}</p>
-      <section class="mls" aria-label="Quota">
-        <div class="mlsq">Provider quotas</div>
-        {quotas}
-      </section>
+      {quotaBody && (
+        <section class="mls" aria-label="Quota">
+          <div class="mlsq">Provider quotas</div>
+          {quotaBody}
+        </section>
+      )}
     </div>
   );
 }
@@ -326,7 +349,7 @@ function RailLeftovers({ h }: { h: HostLoad }) {
   if (!r) return null;
   return (
     <>
-      <button type="button" class="rlft" aria-label={`${h.host}: ${r.text}. Show them`} {...hv.bind} onClick={() => (hv.close(), nav.openSettings({ page: "automation", sub: "leftovers" }))}>
+      <button type="button" class="rlft" aria-label={`${h.host}: ${r.text}. Show them`} {...hv.bind} onClick={() => (hv.close(), nav.openSettings({ page: "automation", host: h.host, sub: "leftovers" }))}>
         {r.count} left
       </button>
       {hv.at && (

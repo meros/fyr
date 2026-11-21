@@ -12,6 +12,8 @@ import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settin
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { HostChip, HostField, useHosts } from "./host-pick-ui.tsx";
+import { orderedMembers, type HostTabItem } from "./host-tabs.ts";
+import { HostTabs } from "./host-tabs-ui.tsx";
 import { hostChip, hostOfflineNote, multiHost, pickerStart } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
 import { deleteProjectAsk } from "./confirm.ts";
@@ -604,33 +606,64 @@ type IconTab = "image" | "monogram" | "emoji" | "line";
  *  once when the page closes. The same page in the desktop Settings and on the phone's project screen. */
 type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null> };
 
-/** V0.139: a project lives on one host. With several hosts its screen says which, first, read-only (a project does not
- *  move); its providers and folders are that host's; while that host is offline the screen is read-only and says so.
+/** V0.139, V0.host-tabs: a project lives on one host, or on several when linked (decision 0034). Linked projects show
+ *  HostTabs directly under the header to switch between host records in the owner's host order; unlinked projects on a
+ *  multi-host front keep their read-only Host chip. While the shown host is offline the screen is read-only and says so.
  *  The same on the desktop (Settings → Projects → a project) and the phone (the project screen). */
 export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
   const hs = useHosts();
   const env = useSet();
   const chip = hostChip(p.project.hostId, hs.hosts, hs.now);
   const profiles = p.profiles; // V0.139: the caller hands its host's (store.ts profilesOn)
+  const rawMembers = p.linking?.group.members ?? [];
+  const linked = rawMembers.length > 1;
+  const members = linked ? orderedMembers(rawMembers, hs.hosts ?? []) : [];
+  // A member's tab is its host, with its folder on hover. A member without an id cannot be opened or named: it is left
+  // out of the strip (V0.host-tabs: every other tab names a host a call can reach).
+  const memberTabs: HostTabItem[] = members
+    .filter((m) => m.id)
+    .map((m) => {
+      const mc = hostChip(m.hostId, hs.hosts, hs.now);
+      const name = mc?.name ?? m.host ?? "";
+      return { id: m.id!, name, label: name, offline: !!mc?.offline, title: m.folder ? `${name} · ${shortPath(m.folder)}` : name };
+    });
   return (
     <SetContext.Provider value={{ ...env, readOnly: env.readOnly || !!chip?.offline }}>
       <ProjectEditorBody
         {...p}
         profiles={profiles}
-        linked={!!p.linking?.group.members}
-        shown={p.linking?.group.members ? p.linking.group : undefined}
-        imageTargets={(p.linking?.group.members ?? [p.project]).filter((m) => hs.hosts?.find((h) => h.id === m.hostId)?.online !== false)}
+        linked={linked}
+        shown={linked ? p.linking!.group : undefined}
+        imageTargets={(linked ? rawMembers : [p.project]).filter((m) => hs.hosts?.find((h) => h.id === m.hostId)?.online !== false)}
         host={
-          chip && (
-            <Group title="Host" label="Host">
-              <Row
-                class="hostrow"
-                title={<HostChip chip={chip} />}
-                desc={chip.offline ? `${chip.name} is ${chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.` : "The project lives here: its folder, its threads and the providers below are this host's. A project does not move to another host."}
-              />
-              {p.linking && <LinkRows project={p.project} linking={p.linking} />}
-            </Group>
+          linked && p.linking ? (
+            <>
+              <HostTabs items={memberTabs} active={p.project.id!} onPick={(id) => id !== p.project.id && p.linking!.open(id)} label="Project hosts" />
+              {chip?.offline && (
+                <div class="note hnote">
+                  {chip.name} is {chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.
+                </div>
+              )}
+            </>
+          ) : (
+            chip && (
+              <Group title="Host" label="Host">
+                <Row
+                  class="hostrow"
+                  title={<HostChip chip={chip} />}
+                  desc={chip.offline ? `${chip.name} is ${chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.` : "The project lives here: its folder, its threads and the providers below are this host's. A project does not move to another host."}
+                />
+                {p.linking && <LinkRows project={p.project} linking={p.linking} />}
+              </Group>
+            )
           )
+        }
+        hostManage={
+          linked && p.linking ? (
+            <Group title="Hosts" label="Hosts" fold={{ id: `project:${p.linking.group.id}:hosts`, open: false, summary: `${members.length} linked hosts` }}>
+              <LinkRows project={p.project} linking={p.linking} tabbed />
+            </Group>
+          ) : undefined
         }
       />
     </SetContext.Provider>
@@ -653,9 +686,9 @@ export function linkingFor(group: Project, projects: Project[], actions: { link(
   return { group, candidates: linkCandidates(group, projects), link: (other) => actions.link(group.id!, other), unlink: actions.unlink, add: (host, folder) => actions.add(group.id!, host, folder), open };
 }
 
-/** The Host group's rows for a linked project: each host's record, and what can join. The same on the desktop and the
- *  phone. */
-function LinkRows({ project, linking }: { project: Project; linking: ProjectLinking }) {
+/** The Host group's rows for a linked project: each host's record (omitted when HostTabs renders them above), and what
+ *  can join. The same on the desktop and the phone. */
+function LinkRows({ project, linking, tabbed }: { project: Project; linking: ProjectLinking; tabbed?: boolean }) {
   const hs = useHosts();
   const env = useSet();
   const [pick, setPick] = useState("");
@@ -677,24 +710,25 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
   const chosen = linking.candidates.some((c) => c.id === pick) ? pick : (linking.candidates[0]?.id ?? "");
   return (
     <>
-      {members
-        .filter((m) => m.id !== project.id)
-        .map((m) => {
-          const chip = hostChip(m.hostId, hs.hosts, hs.now);
-          return (
-            <Row
-              key={m.id}
-              class="hostrow"
-              title={chip ? <HostChip chip={chip} /> : m.host}
-              desc={`Also here: ${m.folder ? shortPath(m.folder) : "no folder"}`}
-              end={
-                <button type="button" class="btn" onClick={() => linking.open(m.id!)}>
-                  Open
-                </button>
-              }
-            />
-          );
-        })}
+      {!tabbed &&
+        members
+          .filter((m) => m.id !== project.id)
+          .map((m) => {
+            const chip = hostChip(m.hostId, hs.hosts, hs.now);
+            return (
+              <Row
+                key={m.id}
+                class="hostrow"
+                title={chip ? <HostChip chip={chip} /> : m.host}
+                desc={`Also here: ${m.folder ? shortPath(m.folder) : "no folder"}`}
+                end={
+                  <button type="button" class="btn" onClick={() => linking.open(m.id!)}>
+                    Open
+                  </button>
+                }
+              />
+            );
+          })}
       {members.length > 1 && (
         <Row
           title="Unlink this host"
@@ -766,7 +800,7 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
   );
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked, shown, imageTargets }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0034: the records an image goes to: every online member */ imageTargets: Project[] }) {
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) or the Host group (single-host), under the header */ host?: ComponentChildren; /** V0.host-tabs: compact folded linking actions for a linked project */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0034: the records an image goes to: every online member */ imageTargets: Project[] }) {
   // Decision 0034: name, colour, icon, quiet hours, priority, agentSettle and toolApproval are the link's; the rest of the page is this host's record.
   if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
@@ -1107,6 +1141,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
           {errs.quiet}
         </div>
       )}
+      {hostManage}
       {onDelete && (
         <Group danger class="pdel">
           <Row
