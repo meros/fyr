@@ -200,15 +200,8 @@ func AttentionDetail(d api.Thread) (meta, detail string) {
 		case x.Kind == core.DecisionEffect && x.Effect != nil:
 			return effectText(x.Effect)
 		case x.Kind == core.DecisionApproval:
-			tool := x.Tool
-			if tool == "" {
-				tool = "tool"
-			}
 			in, _ := x.Input.(map[string]any)
-			if cmd, _ := in["command"].(string); cmd != "" {
-				tool += " " + cmd
-			}
-			return "Approval", "Allow " + tool
+			return "Approval", approvalDetail(x.Tool, in, d.Cwd)
 		}
 	}
 	return "", d.Attention.Reason
@@ -230,6 +223,9 @@ func firstAsk(ds []core.Decision) *core.Decision {
 }
 
 var prNumber = regexp.MustCompile(`/pull/(\d+)`)
+
+// homePrefix is a path's home folder, shortened to "~" as approvals.ts shortHome does.
+var homePrefix = regexp.MustCompile(`^(/home/[^/]+|/Users/[^/]+)(/|$)`)
 
 // effectText is an effect ask in words, as web/src/effects.ts describeEffect
 // has it: the short name, then the agent's reason, or what is asked when it
@@ -257,4 +253,247 @@ func effectText(e *core.EffectReq) (meta, detail string) {
 		return "An action", or("Waits for your approval")
 	}
 	return strings.ToUpper(w[:1]) + w[1:], or("Waits for your approval")
+}
+
+// approvalDetail formats an approval decision as human-readable words matching
+// web/src/approvals.ts describeApproval (V0.readable-approvals).
+func approvalDetail(tool string, in map[string]any, cwd string) string {
+	str := func(k string) string {
+		if in == nil {
+			return ""
+		}
+		s, _ := in[k].(string)
+		return strings.TrimSpace(s)
+	}
+	firstLine := func(s string) string {
+		for _, line := range strings.Split(s, "\n") {
+			if t := strings.TrimSpace(line); t != "" {
+				return t
+			}
+		}
+		return ""
+	}
+	rel := func(p string) string {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return ""
+		}
+		// As web/src/conversation.ts relPath: a file inside the thread's folder loses it ("web/src/a.tsx"), and
+		// any other path keeps itself with the home folder as "~". The push clips the whole body at 180 runes.
+		base := strings.TrimRight(cwd, "/")
+		if base != "" && (p == base || strings.HasPrefix(p, base+"/")) {
+			if r := strings.TrimPrefix(p, base); r != "" {
+				return strings.TrimPrefix(r, "/")
+			}
+		}
+		return homePrefix.ReplaceAllString(p, "~$2")
+	}
+	join := func(label, subject string) string {
+		if subject == "" {
+			return label
+		}
+		return label + ": " + subject
+	}
+	tool = strings.TrimSpace(tool)
+	if tool == "" {
+		return "Allow tool"
+	}
+	path := str("file_path")
+	if path == "" {
+		path = str("notebook_path")
+	}
+	if path == "" {
+		path = str("path")
+	}
+	switch tool {
+	case "Bash":
+		s := firstLine(str("command"))
+		if s == "" {
+			s = firstLine(str("description"))
+		}
+		return join("Run command", s)
+	case "Edit", "MultiEdit", "NotebookEdit":
+		return join("Edit file", rel(path))
+	case "Write":
+		return join("Write file", rel(path))
+	case "Read", "NotebookRead":
+		return join("Read file", rel(path))
+	case "Grep":
+		return join("Search code", str("pattern"))
+	case "Glob", "LS":
+		s := str("pattern")
+		if s == "" {
+			s = rel(path)
+		}
+		return join("List files", s)
+	case "WebSearch":
+		return join("Search web", str("query"))
+	case "WebFetch":
+		u := str("url")
+		if i := strings.Index(u, "://"); i >= 0 {
+			u = u[i+3:]
+		}
+		if i := strings.Index(u, "/"); i >= 0 {
+			u = u[:i]
+		}
+		return join("Fetch page", u)
+	case "Task", "Agent":
+		s := str("description")
+		if s == "" {
+			s = firstLine(str("prompt"))
+		}
+		return join("Start subagent", s)
+	case "Skill":
+		return join("Run skill", str("skill"))
+	}
+	if strings.HasPrefix(tool, "mcp__fyr__") {
+		switch strings.TrimPrefix(tool, "mcp__fyr__") {
+		case "offer_action":
+			if rm, _ := in["remove"].(bool); rm {
+				return join("Remove action", str("id"))
+			}
+			s := str("label")
+			if s == "" {
+				s = str("id")
+			}
+			return join("Offer action", s)
+		case "run_request":
+			s := str("why")
+			if s == "" {
+				s = firstLine(str("command"))
+			}
+			return join("Request command", s)
+		case "ask":
+			return "Ask owner"
+		case "settle_request":
+			return join("Settle thread", str("why"))
+		case "watch":
+			if rm := str("remove"); rm != "" {
+				return join("Remove watch", rm)
+			}
+			if str("then") == "settle" {
+				return join("Watch to settle", str("note"))
+			}
+			return join("Set watch", str("note"))
+		case "change_open":
+			s := str("title")
+			if s == "" {
+				s = str("branch")
+			}
+			if s == "" {
+				s = str("pr")
+			}
+			return join("Open change", s)
+		case "change_update":
+			return join("Update change", str("change"))
+		case "change_request":
+			switch str("ask") {
+			case "merge":
+				return join("Ask to merge", str("reason"))
+			case "fyr.deploy":
+				return join("Ask to update Fyr", str("reason"))
+			}
+			return join("Request change", str("reason"))
+		case "show":
+			s := str("title")
+			if s == "" {
+				s = rel(str("path"))
+			}
+			if s == "" {
+				s = str("url")
+			}
+			return join("Show preview", s)
+		case "view_publish", "view_state", "view_unchanged":
+			return join("Update live view", str("reason"))
+		case "thread_new":
+			s := str("title")
+			if s == "" {
+				s = firstLine(str("text"))
+			}
+			return join("Start thread", s)
+		case "thread_send":
+			return join("Message thread", firstLine(str("text")))
+		case "thread_rename":
+			return join("Rename thread", str("title"))
+		case "keep_process":
+			s := str("why")
+			if s == "" {
+				s = str("match")
+			}
+			return join("Keep process", s)
+		case "project_setup":
+			return join("Update project", str("name"))
+		case "host_setup":
+			return join("Update host", str("name"))
+		}
+	}
+	friendly := friendlyApprovalTool(tool)
+	var subject string
+	// The same order as describeApproval's fallback, so a row and its push say one thing: a path before a bare name.
+	for _, k := range []string{"title", "label", "why", "query", "url"} {
+		if s := firstLine(str(k)); s != "" {
+			subject = s
+			break
+		}
+	}
+	if subject == "" {
+		subject = rel(path)
+	}
+	if subject == "" {
+		subject = str("name")
+	}
+	if subject == "" {
+		subject = firstLine(str("command"))
+	}
+	if subject == "" {
+		for _, k := range []string{"prompt", "message", "text"} {
+			if s := firstLine(str(k)); s != "" {
+				subject = s
+				break
+			}
+		}
+	}
+	return join("Allow "+friendly, subject)
+}
+
+func friendlyApprovalTool(name string) string {
+	if strings.HasPrefix(name, "mcp__") {
+		parts := strings.SplitN(strings.TrimPrefix(name, "mcp__"), "__", 2)
+		if len(parts) == 2 {
+			srv := strings.ToLower(parts[0])
+			var label string
+			switch srv {
+			case "github":
+				label = "GitHub"
+			case "gitlab":
+				label = "GitLab"
+			case "playwright":
+				label = "Playwright"
+			case "fyr":
+				label = ""
+			case "t3":
+				label = "T3"
+			case "slack":
+				label = "Slack"
+			case "linear":
+				label = "Linear"
+			case "sentry":
+				label = "Sentry"
+			default:
+				s := strings.NewReplacer("_", " ", "-", " ").Replace(parts[0])
+				if s != "" {
+					label = strings.ToUpper(s[:1]) + s[1:]
+				}
+			}
+			words := strings.TrimSpace(strings.NewReplacer("_", " ", "-", " ").Replace(strings.ToLower(parts[1])))
+			text := words
+			if label != "" {
+				text = label + " " + words
+			}
+			if text != "" {
+				return strings.ToUpper(text[:1]) + text[1:]
+			}
+		}
+	}
+	return name
 }

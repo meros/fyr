@@ -484,11 +484,8 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .payload{overflow:auto;min-height:0;flex:0 1 auto;margin-bottom:10px}
 .payload pre{margin:0 0 6px;padding:8px 10px;border-radius:8px;background:var(--sunken);font:400 12px/18px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 .payload pre:last-child{margin-bottom:0}
-.payload pre.cmd{font-size:13px;color:var(--ink)}
 .ap-badge{flex:none;padding:1px 7px;border-radius:999px;border:1px solid var(--line-strong);background:var(--raised);font:500 11px/16px var(--ui);color:var(--beam-ink);white-space:nowrap}
 .ap-note{font:400 13px/18px var(--ui);color:var(--ink-muted);margin:-4px 0 8px;flex:none;overflow-wrap:anywhere}
-.ap-more{display:inline-flex;align-items:center;height:26px;padding:0 2px;margin:-2px 0 6px;font:500 12px/16px var(--ui);color:var(--harbour)}
-.ap-more:hover{text-decoration:underline}
 
 /* composer */
 .cmpw{flex:none;margin:10px 24px 16px;min-width:0}
@@ -865,6 +862,30 @@ button.ptag{padding:0}
 .eff-det summary::-webkit-details-marker{display:none}
 .eff-det summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin:0 4px 0 2px}
 .eff-det[open] summary::before{transform:rotate(45deg)}
+
+/* V0.readable-approvals: human-readable approval card body, shared between desktop and phone (.m-appr) */
+.appr{display:flex;flex-direction:column;gap:8px;min-width:0}
+.appr-sum{margin:0;font:400 14px/20px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.appr pre.appr-cmd{margin:0;padding:9px 11px;border-radius:8px;background:var(--sunken);font:400 13px/19px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);max-height:calc(19px * 10 + 18px);overflow-y:auto}
+.appr-fields{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:var(--sunken);min-width:0}
+.appr-f{display:flex;flex-direction:column;gap:2px;min-width:0}
+.appr-k{font:500 11px/15px var(--ui);color:var(--ink-muted);letter-spacing:.01em}
+.appr-v{margin:0;font:400 14px/20px var(--ui);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.appr pre.appr-v.mono{padding:6px 8px;margin:2px 0 0;border-radius:6px;background:var(--raised);font:400 12px/18px var(--mono);max-height:calc(18px * 8 + 12px);overflow-y:auto}
+.appr-v.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.appr-more{align-self:flex-start;padding:4px 0;font:500 13px/18px var(--ui);color:var(--harbour);cursor:pointer}
+.appr-more:hover{text-decoration:underline}
+.appr-hidden{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.appr-where{font:400 12px/16px var(--mono);color:var(--ink-muted);min-width:0}
+.m-appr{flex:none}
+.m-appr .appr-sum{font-size:15px;line-height:22px}
+.m-appr pre.appr-cmd{border-radius:10px;padding:10px 12px;font-size:13px;line-height:19px}
+.m-appr .appr-fields{padding:11px 13px;gap:10px}
+.m-appr .appr-k{font-size:12px;line-height:16px}
+.m-appr .appr-v{font-size:15px;line-height:22px}
+.m-appr pre.appr-v.mono{font-size:13px;line-height:19px}
+.m-appr .appr-more{min-height:44px;display:inline-flex;align-items:center;font-size:15px;line-height:20px;margin:-6px 0 -8px}
+.m-appr .eff-det summary{min-height:44px;font-size:15px}
 
 /* SPEC 0.5 V0.21: the end of a run in words; the live line while working */
 .runmark .rm{display:inline-flex;align-items:center;gap:6px;padding:2px 0;border:0;background:none;color:var(--ink-faint);font:400 12px/16px var(--ui);cursor:default}

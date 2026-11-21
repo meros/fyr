@@ -7,7 +7,7 @@ import { PIN_ICON } from "./row-ui.tsx";
 import { copySource, copyToClipboard } from "./copy.ts";
 import { useDraft } from "./drafts.ts";
 import { AgentStatus } from "./agent-status.tsx";
-import { formatApproval } from "./approval.ts";
+import { describeApproval, type ApprovalField, type ApprovalText } from "./approvals.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useApi } from "./api-context.ts";
@@ -288,7 +288,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       />
       {/* V0.next-step-dock: what waits on the owner stands in one dock; a question or approval first, then a Run card */}
       {showsDecision(tab) && !decision && dock && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={p.onRun} onShow={(id) => showCard(id, tab, setTab)} />}
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} onCancelAsk={p.onCancelAsk} pr={prForEffect(t, decision)} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} onCancelAsk={p.onCancelAsk} pr={prForEffect(t, decision)} cwd={t.cwd} host={t.host || undefined} />}
       <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} onRestart={() => p.onRun("thread.restart")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );
@@ -1168,6 +1168,9 @@ interface CardProps {
   onCancelAsk?(d: Decision): void;
   /** the thread's PR, to name it in a merge card */
   pr?: PullRequest | null;
+  /** the thread's working directory and host, for readable approval cards */
+  cwd?: string;
+  host?: string;
 }
 
 function asker(d: Decision): string {
@@ -1190,35 +1193,84 @@ export function EffectBody({ d, x, cls = "" }: { d: Decision; x: EffectText; cls
   );
 }
 
+const LONG_FIELD_CHARS = 260;
+const LONG_FIELD_LINES = 5;
+
+function isLongField(f: ApprovalField): boolean {
+  return f.value.length > LONG_FIELD_CHARS || f.value.split("\n").length > LONG_FIELD_LINES;
+}
+
+function ApprovalFieldRow({ f }: { f: ApprovalField }) {
+  const [open, setOpen] = useState(false);
+  const long = !f.mono && isLongField(f);
+  return (
+    <div class="appr-f">
+      <div class="appr-k">{f.label}</div>
+      {f.mono ? (
+        <pre class="appr-v mono">{f.value}</pre>
+      ) : (
+        <>
+          <div class={`appr-v prose${long && !open ? " clamp" : ""}`}>{f.value}</div>
+          {long && (
+            <button type="button" class="appr-more" onClick={() => setOpen(!open)}>
+              {open ? "Show less" : "Show full text"}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** V0.readable-approvals: the human-readable body of an approval card, shared between desktop and phone.
+ *  V0.tool-approval-judge: the sandbox badge and the judge's note stand above it on both fronts.
+ *  The raw tool name and full JSON input stay behind Details. */
+export function ApprovalBody({ a, host, cls = "" }: { a: ApprovalText; host?: string; cls?: string }) {
+  const hasInput = Object.keys(a.details.input).length > 0;
+  const whereLine = [a.where ? `in ${a.where}` : "", host ? `on ${host}` : ""].filter(Boolean).join(" · ");
+  const metaLine = [a.details.tool || "tool", a.details.cwd ? `in ${a.details.cwd}` : "", host ? `on ${host}` : ""].filter(Boolean).join(" · ");
+  return (
+    <div class={`appr ${cls}`}>
+      {a.outsideSandbox && <span class="ap-badge">Outside sandbox</span>}
+      {a.judgeNote && <div class="ap-note">Judge: {a.judgeNote}</div>}
+      {a.summary && <p class="appr-sum">{a.summary}</p>}
+      {a.command && <pre class="appr-cmd">{a.command}</pre>}
+      {a.fields.length > 0 && (
+        <div class="appr-fields">
+          {a.fields.map((f, i) => (
+            <ApprovalFieldRow key={`${f.label}-${i}`} f={f} />
+          ))}
+        </div>
+      )}
+      {a.hiddenFields > 0 && <div class="appr-hidden">+{a.hiddenFields} more in Details</div>}
+      {a.showWhere && whereLine && <div class="appr-where ell">{whereLine}</div>}
+      <details class="eff-det">
+        <summary>Details</summary>
+        <div class="eff-who">{metaLine}</div>
+        {hasInput && <pre>{JSON.stringify(a.details.input, null, 2)}</pre>}
+      </details>
+    </div>
+  );
+}
+
 function DecisionCard(p: CardProps) {
   const { d } = p;
-  const [fullCmd, setFullCmd] = useState(false);
-  useEffect(() => setFullCmd(false), [d.id]);
   if (d.kind === "ask") return p.card && p.card.decisionId === d.id ? <AskCard {...p} card={p.card} /> : null;
   const approval = d.kind === "approval";
+  const a = approval ? describeApproval(d, p.cwd) : null;
   const x = approval ? null : describeEffect(d, p.pr);
-  const ap = approval ? formatApproval(d) : null;
-  const shownCmd = ap ? (fullCmd ? ap.fullCmd : ap.cmd) : null;
   return (
     <div class="ask">
       <div class="ah">
         <StateIcon state="asking" size={14} />
         <b>{x ? x.label : "Approval"}</b>
         <span class="ell">{asker(d)}</span>
-        {ap?.outsideSandbox && <span class="ap-badge">Outside sandbox</span>}
         {p.more > 0 && <span class="ml">+{p.more} more</span>}
       </div>
       <div class="ab">
-        <div class="q">{x ? x.title : <>Allow {d.tool}?</>}</div>
-        {ap?.judgeNote && <div class="ap-note">Judge: {ap.judgeNote}</div>}
+        <div class="q">{x ? x.title : a!.title}</div>
         <div class="payload">
-          {shownCmd && <pre class="cmd">{shownCmd}</pre>}
-          {ap?.truncated && (
-            <button type="button" class="ap-more" onClick={() => setFullCmd((v) => !v)}>
-              {fullCmd ? "Show less" : `Show full command (${ap.hiddenLines} more ${ap.hiddenLines === 1 ? "line" : "lines"})`}
-            </button>
-          )}
-          {ap && Object.keys(ap.rest).length > 0 && <pre>{JSON.stringify(ap.rest, null, 2)}</pre>}
+          {a && <ApprovalBody a={a} host={p.host} />}
           {x && <EffectBody d={d} x={x} />}
         </div>
         <div class="grid4">

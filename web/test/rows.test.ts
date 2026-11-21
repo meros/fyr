@@ -13,10 +13,22 @@ test("an ask row counts its questions and shows the first", () => {
   assert.equal(rowMeta(t), "Which?");
 });
 
-test("an approval row names the tool and the command", () => {
-  const t = asking({ kind: "approval", tool: "Bash", input: { command: "ls" } });
-  assert.equal(rowState(t), "Allow Bash");
-  assert.equal(rowMeta(t), "Allow Bash ls");
+test("an approval row uses readable action words and its subject", () => {
+  const bash = asking({ kind: "approval", tool: "Bash", input: { command: "ls" } });
+  assert.equal(rowState(bash), "Run command");
+  assert.equal(rowMeta(bash), "Run command · ls");
+  assert.equal(trimEcho(rowState(bash), rowMeta(bash)), "ls");
+
+  const offer = asking({ kind: "approval", tool: "mcp__fyr__offer_action", input: { label: "Write ADR and spec", on: "thread", prompt: "..." } });
+  assert.equal(rowState(offer), "Offer action");
+  assert.equal(rowMeta(offer), "Offer action · Write ADR and spec");
+  assert.equal(trimEcho(rowState(offer), rowMeta(offer)), "Write ADR and spec");
+
+  const mcp = asking({ kind: "approval", tool: "mcp__github__get_pr", input: { title: "Fix typo" } });
+  assert.equal(rowState(mcp), "Allow GitHub get pr");
+  assert.equal(rowMeta(mcp), "Allow GitHub get pr · Fix typo");
+
+  assert.equal(rowState(asking({ kind: "approval" })), "Allow tool");
   assert.equal(rowMeta(asking({ kind: "approval" })), "Allow tool");
 });
 

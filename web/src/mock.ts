@@ -235,19 +235,35 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
+  const approvalKind = typeof location !== "undefined" ? new URLSearchParams(location.search).get("approval") ?? "" : "";
   add(
     base("t_approval", LONG_TITLE, now, 4, {
       project: LONG_PROJECT,
       attention: { state: "asking", section: "needs", reason: "Approval", group: "approve" },
       decisions: [
-        {
-          id: "d_appr",
-          kind: "approval",
-          createdAt: iso(now - 4 * 60_000),
-          agent: "",
-          tool: "Bash",
-          input: { command: "terraform apply -auto-approve -target=module.opensearch " + LONG_BRANCH, cwd: "/home/owner/src/" + LONG_PROJECT },
-        },
+        approvalKind === "offer"
+          ? {
+              id: "d_appr",
+              kind: "approval",
+              createdAt: iso(now - 4 * 60_000),
+              agent: "",
+              tool: "mcp__fyr__offer_action",
+              input: {
+                id: "write-adr",
+                label: "Write ADR and spec",
+                on: "thread",
+                prompt:
+                  "Write an architecture decision record in docs/decisions/ and a spec change note for the per-project approval design we discussed, including lightweight model defaults, timeout handling, fallback rules when a check is uncertain, and how a declined card reads in the inbox once the agent moves on.",
+              },
+            }
+          : {
+              id: "d_appr",
+              kind: "approval",
+              createdAt: iso(now - 4 * 60_000),
+              agent: "",
+              tool: "Bash",
+              input: { command: "terraform apply -auto-approve -target=module.opensearch " + LONG_BRANCH, cwd: "/home/owner/src/" + LONG_PROJECT },
+            },
       ],
       unavailable: { ...NOT_RUNNING, "thread.settle": "A question is open" },
     }),

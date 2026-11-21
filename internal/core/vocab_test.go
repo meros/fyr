@@ -24,6 +24,8 @@ var vocabAllow = map[string][]string{
 	"internal/engine/change_tools.go": {"ask"},
 	// The name of the ask tool.
 	"internal/engine/ask.go": {"ask"},
+	// The name of the ask tool and change_request's ask argument in approvalDetail.
+	"internal/front/notify.go": {"ask"},
 	// The hub's event name and the front's env key for deploy progress.
 	"internal/stream/hub.go":  {"deploy"},
 	"internal/front/front.go": {"deploy"},

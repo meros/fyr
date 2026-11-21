@@ -1,6 +1,7 @@
 // The text of an inbox row that needs you: the state word and the line after it. Pure; the desktop
 // inbox and the phone inbox draw the same words (review 2026-11-15).
 
+import { describeApproval } from "./approvals.ts";
 import { currentDecision } from "./decode.ts";
 import { describeEffect } from "./effects.ts";
 import { headerPrs, prForEffect, threadPrs } from "./offers.ts";
@@ -82,8 +83,8 @@ export function rowState(t: Thread): string {
       const n = d.questions?.length ?? 1;
       return n === 1 ? "1 question" : `${n} questions`;
     }
-    // V0.row-calm: the word names the action, as "Merge #12" does; the line under it keeps the command.
-    if (d?.kind === "approval") return `Allow ${d.tool ?? "tool"}`;
+    // V0.row-calm, V0.readable-approvals: the word names the action, as "Merge #12" does; the line under it keeps the subject.
+    if (d?.kind === "approval") return describeApproval(d, t.cwd).label;
     if (d?.kind === "effect") return describeEffect(d, prForEffect(t, d)).label;
   }
   return blockedReason(t)?.word ?? (t.attention.reason || stateLabel(st));
@@ -137,8 +138,8 @@ export function rowMeta(t: Thread, o: { keys?: boolean } = {}): string {
     // The asker is named on the card (U25); the row keeps the question, as the design draws it.
     if (d.kind === "ask") return d.questions?.[0]?.question ?? "";
     if (d.kind === "approval") {
-      const cmd = typeof d.input?.command === "string" ? ` ${d.input.command}` : "";
-      return `Allow ${d.tool ?? "tool"}${cmd}`;
+      const a = describeApproval(d, t.cwd);
+      return a.subject ? `${a.label} · ${a.subject}` : a.label;
     }
     if (d.kind === "effect") {
       const x = describeEffect(d, prForEffect(t, d));
