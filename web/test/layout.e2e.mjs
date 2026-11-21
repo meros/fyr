@@ -6238,6 +6238,45 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.phone-chips-scroll p
     failures.push(`${ctx}: ${e.message}`);
   }
 });
+// V0.quota-wait: a run the provider's quota stopped is a wait, not a failure: the row sits in Working with its reason,
+// the open thread's end of turn says "Waiting for quota", and neither offers Retry. The same on both fronts.
+section("V0.quota-wait desktop", async ({ evaluate, navigate, shot }) => {
+  const ctx = "V0.quota-wait desktop";
+  try {
+    await navigate(`${origin}/?mock=rail&quotaw=1`, "!!document.querySelector('.rw, .one')");
+    const row = await evaluate(`(() => {
+      const rs = [...document.querySelectorAll('.rw, .one')].filter((x) => /Migrate the billing tables/.test(x.textContent));
+      const r = rs[0]; if (!r) return { missing: true };
+      const line = r.innerText;
+      return { line, needs: !!r.closest('#sec-needs'), working: !!r.closest('#sec-working') };
+    })()`);
+    check(!row.missing && /Waiting for quota · resets \d\d:\d\d/.test(row.line), `${ctx}: the row does not read as a quota wait (${JSON.stringify(row)})`);
+    check(row.working && !row.needs, `${ctx}: the row is in Needs you, not Working (${JSON.stringify(row)})`);
+    await navigate(`${origin}/?mock=rail&quotaw=1&open=t_quotaw`, "!!document.querySelector('.convo .runmark, .convo .sys')");
+    const run = await evaluate(`(() => { const e = document.querySelector('.convo .runmark, .convo .sys'); return { text: e.textContent, fail: e.classList.contains('fail') }; })()`);
+    check(/^Waiting for quota: Individual quota reached/.test(run.text) && !run.fail, `${ctx}: the end of the run does not read as a wait (${JSON.stringify(run)})`);
+    await shot("quota-wait-desktop.png");
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+for (const [w, ht] of [[390, 844]]) section(`V0.quota-wait phone ${w}`, async ({ evaluate, openScreen, shot }) => {
+  const ctx = `V0.quota-wait phone ${w}x${ht}`;
+  try {
+    await openScreen({ url: "?mock=rail&quotaw=1", ready: "!!document.querySelector('.m-list, .m-inbox')" }, w, ht);
+    const row = await evaluate(`(() => {
+      const r = [...document.querySelectorAll('.rw, .one')].find((x) => /Migrate the billing tables/.test(x.textContent));
+      return r ? { line: r.innerText, needs: !!r.closest('#m-sec-needs'), working: !!r.closest('#m-sec-working') } : { missing: true };
+    })()`);
+    check(!row.missing && /Waiting for quota · resets \d\d:\d\d/.test(row.line) && row.working && !row.needs, `${ctx}: the row does not read as a quota wait (${JSON.stringify(row)})`);
+    await openScreen({ url: "?mock=rail&quotaw=1&open=t_quotaw", ready: "!!document.querySelector('.convo .runmark, .convo .sys')" }, w, ht);
+    const run = await evaluate(`(() => { const e = document.querySelector('.convo .runmark, .convo .sys'); return { text: e.textContent, fail: e.classList.contains('fail') }; })()`);
+    check(/^Waiting for quota: Individual quota reached/.test(run.text) && !run.fail, `${ctx}: the end of the run does not read as a wait (${JSON.stringify(run)})`);
+    await shot(`quota-wait-phone-${w}.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
 // FYR_SECTIONS=<regex> runs only the jobs whose name matches (a quick local run of one section; CI runs them all).
 if (process.env.FYR_SECTIONS) { const re = new RegExp(process.env.FYR_SECTIONS); for (const l of [jobs, timedJobs]) l.splice(0, l.length, ...l.filter((j) => re.test(j.name))); }
 const started = Date.now();

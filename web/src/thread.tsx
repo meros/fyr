@@ -773,15 +773,17 @@ function QuietLine({ icon, line, full, fail, und }: { icon: "settled" | "failed"
   );
 }
 
-/** The end of a turn: a small mark; a tap shows how long a failed turn ran. A failure keeps its text in one line. */
+/** The end of a turn: a small mark; a tap shows how long a failed turn ran. A failure keeps its text in one line.
+ *  V0.quota-wait: a run the provider's quota stopped waits, so it wears the waiting mark, not the failed one. */
 function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
   const [open, setOpen] = useState(false);
   const facts = it.durationMs !== undefined ? duration(it.durationMs) : "";
-  const icon = it.failure ? "failed" : it.interrupted ? "seen" : "settled";
-  const word = it.failure ? `Failed (${it.failure.class}): ${it.failure.message}` : it.interrupted ? "Interrupted" : "Finished";
+  const quota = it.failure?.class === "quota";
+  const icon = quota ? "waiting" : it.failure ? "failed" : it.interrupted ? "seen" : "settled";
+  const word = quota ? `Waiting for quota: ${it.failure?.message}` : it.failure ? `Failed (${it.failure.class}): ${it.failure.message}` : it.interrupted ? "Interrupted" : "Finished";
   if (!it.compact) {
     return (
-      <div class={`sys prose${it.failure ? " fail" : ""}`}>
+      <div class={`sys prose${it.failure && !quota ? " fail" : ""}`}>
         <StateIcon state={icon} size={14} />
         <span>{word}</span>
         {facts && <span class="tnum">{facts}</span>}
@@ -791,7 +793,7 @@ function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
   // V0.21: words, never a bare symbol.
   const lbl = runLabel(it);
   return (
-    <div class={`runmark${it.failure ? " fail" : ""}`}>
+    <div class={`runmark${it.failure && !quota ? " fail" : ""}`}>
       <button class="rm" aria-expanded={open} title={[lbl.text, lbl.more].filter(Boolean).join(" · ")} onClick={() => lbl.more && setOpen(!open)}>
         {it.failure && <StateIcon state={icon} size={12} />}
         <span class="prose">{lbl.text}</span>

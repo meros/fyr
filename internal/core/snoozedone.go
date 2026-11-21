@@ -22,18 +22,25 @@ const (
 // NeedsOwner reports a thread that waits on the owner: a question, an
 // approval or a merge ask, a failure, an agent that does not respond, a
 // change that is ready or stopped on a failure, a Run card.
-func NeedsOwner(t *Thread) bool {
-	if NeedsOwnerNow(t) {
+func NeedsOwner(t *Thread) bool { return NeedsOwnerAt(t, time.Now()) }
+
+// NeedsOwnerAt is NeedsOwner at now: a quota stop is the owner's only from
+// its reset (V0.quota-wait), so the answer moves with the clock.
+func NeedsOwnerAt(t *Thread, now time.Time) bool {
+	if NeedsOwnerNowAt(t, now) {
 		return true
 	}
 	_, n := ThreadNeed(t)
 	return n != nil
 }
 
-// NeedsOwnerNow is NeedsOwner without the changes: a question, an approval or
-// a merge ask, a failure, an agent that does not respond, a Run card.
-func NeedsOwnerNow(t *Thread) bool {
-	return len(t.Decisions) > 0 || t.Failure != nil || t.Unresponsive != nil || PendingRequest(t) != nil
+// NeedsOwnerNowAt is NeedsOwner without the changes at now: a question, an
+// approval or a merge ask, a failure, an agent that does not respond, a Run
+// card. A failure the provider's quota caused is not the owner's before its
+// reset (V0.quota-wait): the owner can do nothing about it, so the thread
+// waits; past it, the failure is theirs.
+func NeedsOwnerNowAt(t *Thread, now time.Time) bool {
+	return len(t.Decisions) > 0 || (t.Failure != nil && QuotaWaitText(t, now) == "") || t.Unresponsive != nil || PendingRequest(t) != nil
 }
 
 // WorkGoing reports that the thread's work goes on by itself: a run or a
@@ -43,13 +50,27 @@ func NeedsOwnerNow(t *Thread) bool {
 // place in the slot queue, a merge ask held for CI, CI on an open PR. A
 // message that starts the agent counts from its send (V0.settle-merge-fixes
 // (4)): the run it starts has not begun yet.
+//
+// V0.quota-wait: a thread Waiting for quota reads as work going on until the
+// reset its notice names; the time is read at now, as the attention is.
 func WorkGoing(t *Thread) bool {
-	return workGoing(t, func(Rule) bool { return true })
+	return WorkGoingAt(t, time.Now())
+}
+
+// WorkGoingAt is WorkGoing at now.
+func WorkGoingAt(t *Thread, now time.Time) bool {
+	return workGoing(t, func(Rule) bool { return true }, now)
 }
 
 // workGoing is WorkGoing, counting the agent's armed Rules that counts takes.
-func workGoing(t *Thread, counts func(Rule) bool) bool {
+func workGoing(t *Thread, counts func(Rule) bool, now time.Time) bool {
 	if t.Running || t.Starting != nil || t.RunningTasks() > 0 || t.MachineWait != nil || t.Handover != nil || len(t.Outbox) > 0 {
+		return true
+	}
+	if QuotaWaitText(t, now) != "" {
+		// V0.quota-wait: the provider's quota stopped the run, and it comes
+		// back at a time Fyr can name: the thread waits for it as it waits
+		// for CI. Past that time the failure is the owner's, as any failure.
 		return true
 	}
 	if t.SlotQueued || len(t.HeldAsks) > 0 {
@@ -69,14 +90,17 @@ func workGoing(t *Thread, counts func(Rule) bool) bool {
 }
 
 // WorkOver is the Condition's value: the snooze has nothing left to wait for.
-func WorkOver(t *Thread) bool { return t.Asleep() || NeedsOwner(t) || !WorkGoing(t) }
+func WorkOver(t *Thread) bool { return WorkOverAt(t, time.Now()) }
+
+// WorkOverAt is WorkOver at now (V0.quota-wait: a quota wait ends at its reset).
+func WorkOverAt(t *Thread, now time.Time) bool { return t.Asleep() || NeedsOwnerAt(t, now) || !WorkGoingAt(t, now) }
 
 // snoozeDoneReason is why the thread cannot take this snooze now, or "".
-func snoozeDoneReason(t *Thread) string {
+func snoozeDoneReason(t *Thread, now time.Time) string {
 	switch {
-	case NeedsOwner(t):
+	case NeedsOwnerAt(t, now):
 		return SnoozeDoneNeeded
-	case !WorkGoing(t):
+	case !WorkGoingAt(t, now):
 		return SnoozeDoneIdle
 	}
 	return ""
