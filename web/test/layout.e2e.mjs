@@ -400,7 +400,10 @@ const MEASURE = `(() => {
       const box = (e) => (e.matches('[role=switch]') ? e.closest('label, .sr') : null) || e;
       const name = (e) => (e.textContent || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.tagName).trim().slice(0, 30);
       const small = targets.map((e) => ({ t: name(e), h: box(e).getBoundingClientRect().height })).filter((x) => x.h < 43.5);
-      const right = Math.max(0, ...[...el.querySelectorAll('*')].filter(vis).map((e) => e.getBoundingClientRect().right));
+      // V0.host-tabs: a sideways scroller (the host tab strip) keeps what it holds reachable, so what is inside one
+      // may pass its edge; the scroller itself must still fit.
+      const inScroller = (e) => { for (let a = e.parentElement; a && a !== el; a = a.parentElement) if (getComputedStyle(a).overflowX === 'auto' || getComputedStyle(a).overflowX === 'scroll') return true; return false; };
+      const right = Math.max(0, ...[...el.querySelectorAll('*')].filter((e) => vis(e) && !inScroller(e)).map((e) => e.getBoundingClientRect().right));
       const lg = el.querySelector('.login');
       const login = lg ? { link: lg.querySelector('a.loginlink')?.getAttribute('href') ?? '', code: !!lg.querySelector('input'), cancel: [...lg.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel') } : null;
       const adb = el.querySelector('section[aria-label="Auto-update"] [role=switch]');
@@ -533,8 +536,9 @@ const LONG_FIT = `(() => {
       const cs = getComputedStyle(a);
       if (cs.overflowX === 'visible') continue;
       const b = a.getBoundingClientRect();
-      // The project chips, the header's chips (V0.phone-chips-scroll), the PR switcher (V0.multi-pr) and a message's table are sideways scrollers by design.
-      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, .m-chips, .m-chipsd, .prv-sw, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
+      // The project chips, the header's chips (V0.phone-chips-scroll), the PR switcher (V0.multi-pr), the host tab strip
+      // (V0.host-tabs: many hosts scroll sideways on one line) and a message's table are sideways scrollers by design.
+      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, .m-chips, .m-chipsd, .prv-sw, .htabs, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
       break;
     }
   }
@@ -1796,14 +1800,21 @@ for (const [w, hh, phone] of [[1280, 700, false], [1280, 900, false], [390, 844,
   const { send, evaluate, waitFor, settle, navigate, tapCenter } = h;
   const ctx = `V0.119 settings closes ${phone ? "phone" : `desktop ${w}x${hh}`}`;
 try {
-  // Both hosts' Updates: desk's list and the null host's line (it runs nix-d8b9560), and no crash card.
-  const UPD = `/Fyr runs v1\\.0\\.0 \\(build c705ef536566\\) · stable channel/.test(document.body.textContent) && /Fyr runs nix-d8b9560/.test(document.body.textContent) && !document.querySelector('.crash')`;
+  // V0.host-tabs: each host's Updates sits behind its own Automation tab (desk's list, and the null host's line that it
+  // runs nix-d8b9560), and opening each is no crash card.
+  const UPD = `(() => { const h = document.querySelector('.stp .hpart')?.dataset.host; const t = document.querySelector('.stp').textContent; return (h === 'desk' ? /Fyr runs v1\\.0\\.0 \\(build c705ef536566\\) · stable channel/.test(t) : false) && !document.querySelector('.crash'); })()`;
+  const UPD_OF = (name) => `(() => { const b = [...document.querySelectorAll('.stp .htabs .htab')].find((x) => x.dataset.host === '${name}'); b?.click(); return true; })()`;
   if (phone) {
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: true });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     await navigate(`${origin}/?mock=rail&hosts=2&settings=automation`, "!!document.querySelector('.m-settings .stp')");
     await waitFor(UPD, { soft: true });
-    check(await evaluate(UPD), `${ctx}: Automation does not show both hosts' Updates without a crash (${await evaluate("[...document.querySelectorAll('.crash')].map((e) => e.textContent).join(' | ')")})`);
+    check(await evaluate(UPD), `${ctx}: Automation does not show desk's Updates without a crash (${await evaluate("[...document.querySelectorAll('.crash')].map((e) => e.textContent).join(' | ')")})`);
+    // The null-updates host has its own tab: opening it is no crash either.
+    await evaluate(UPD_OF("lab"));
+    await waitFor(`document.querySelector('.stp .hpart')?.dataset.host === 'lab'`, { soft: true });
+    const labUpd = await evaluate(`({ crash: [...document.querySelectorAll('.crash')].map((e) => e.textContent), line: /Fyr runs nix-d8b9560/.test(document.body.textContent) })`);
+    check(!labUpd.crash.length && labUpd.line, `${ctx}: lab's Automation tab does not show its version without a crash (${JSON.stringify(labUpd)})`);
     await tapCenter(".m-settings .m-nh .b44[aria-label=Back]", "!document.querySelector('.m-settings .stp')");
     await waitFor("!!document.querySelector('.m-settings .stn') && !document.querySelector('.m-settings .stp')", { soft: true });
     check(await evaluate("!!document.querySelector('.m-settings .stn') && !document.querySelector('.m-settings .stp')"), `${ctx}: Back on Automation does not go to the Settings list`);
@@ -2570,16 +2581,27 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
     await evaluate(`document.querySelector('.m-load').click()`);
     await waitFor(`!!document.querySelector('.m-sheet[aria-label="Host load"] .m-lsheet')`);
     await settle();
-    const s = await evaluate(`(() => {
-      const sh = document.querySelector('.m-sheet[aria-label="Host load"]'), secs = [...sh.querySelectorAll('.mls[aria-label]')];
+    // V0.host-tabs: a tab per host (each with its own load %, the offline one marked), one host's meters, card,
+    // leftovers and provider quotas below it.
+    const SHEET = `(() => {
+      const sh = document.querySelector('.m-sheet[aria-label="Host load"]'), tabs = [...sh.querySelectorAll('.htabs .htab')], secs = [...sh.querySelectorAll('.mls[aria-label]')];
       const b = sh.getBoundingClientRect();
-      return { hosts: secs.map((x) => x.getAttribute('aria-label')), off: secs.filter((x) => x.classList.contains('off')).map((x) => x.querySelector('.mlsn small').textContent),
+      return { tabs: tabs.map((t) => ({ host: t.dataset.host, on: t.getAttribute('aria-selected') === 'true', off: t.classList.contains('off'), meta: t.querySelector('.htab-m')?.textContent ?? '' })),
+        hosts: secs.map((x) => x.getAttribute('aria-label')), off: secs.filter((x) => x.classList.contains('off')).map((x) => x.querySelector('.mlsn small').textContent),
         lines: sh.querySelector('.lcard')?.innerText ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .hmr.ld .hmv')?.textContent ?? '',
         inside: b.left >= 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5 };
-    })()`);
-    check(s.hosts.join() === "desk,host-b,lab,Quota" && s.off.length === 1 && /^Offline/.test(s.off[0]), `${ctx}: the sheet does not list every host with the offline one marked (${JSON.stringify(s)})`);
-    check(/Heavy jobs/i.test(s.lines) && /CPU\s+\d+ % of the host/.test(s.lines) && /Running\s/.test(s.lines) && /Waiting\s/.test(s.lines) && s.fig === desk[0].fig, `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
-    check(s.quotas >= 4 && s.inside, `${ctx}: the sheet has no provider quotas or leaves the screen (${JSON.stringify(s)})`);
+    })()`;
+    const s = await evaluate(SHEET);
+    check(s.tabs.map((t) => t.host).join() === "desk,host-b,lab" && s.tabs[0].on && !s.tabs[1].on && s.tabs[0].meta.endsWith("%") && s.tabs[1].off && s.tabs[1].meta === "", `${ctx}: the sheet's host tabs (${JSON.stringify(s.tabs)})`);
+    check(s.hosts.join() === "desk,Quota" && s.off.length === 0 && s.fig === desk[0].fig, `${ctx}: the sheet shows one host behind its tab (${JSON.stringify(s)})`);
+    check(/Heavy jobs/i.test(s.lines) && /CPU\s+\d+ % of the host/.test(s.lines) && /Running\s/.test(s.lines) && /Waiting\s/.test(s.lines), `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
+    // The quota panel names the shown host's providers only (desk has two; lab's two come with its tab).
+    check(s.quotas === 2 && s.inside, `${ctx}: the sheet's provider quotas are not the shown host's, or it leaves the screen (${JSON.stringify(s)})`);
+    await evaluate(`(() => { [...document.querySelectorAll('.m-sheet[aria-label="Host load"] .htabs .htab')].find((t) => t.dataset.host === 'host-b')?.click(); return true; })()`);
+    await waitFor(`document.querySelector('.m-sheet[aria-label="Host load"] .mls[aria-label="host-b"]')`, { what: "the offline host's tab" });
+    await settle();
+    const off = await evaluate(SHEET);
+    check(off.hosts.join() === "host-b,Quota" && off.off.length === 1 && /^Offline/.test(off.off[0]) && off.tabs[1].on && off.inside, `${ctx}: the offline host behind its tab (${JSON.stringify(off)})`);
     await evaluate(`history.back()`);
     await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
   } catch (e) {
@@ -3059,36 +3081,50 @@ for (const [label, w, ht] of [
       failures.push(`${ctx} ${name}: ${e.message}`);
     }
   };
-  const PARTS = `[...document.querySelectorAll('${root} .hpart')].map(p => ({ host: p.dataset.host, line: p.querySelector('.hpart-s')?.textContent ?? '', note: p.querySelector('.hnote')?.textContent ?? '', rows: [...p.querySelectorAll('.prow .sr-t')].map(e => e.textContent), add: p.querySelector('.addp')?.disabled ?? null, selects: [...p.querySelectorAll('select')].map(x => x.disabled) }))`;
-  // 1. The Providers page: one part per host.
+  // V0.host-tabs: one tab per host in the owner's order, one active panel under them (not every host stacked).
+  const pickHost = (name) =>
+    evaluate(`(() => { const b = [...document.querySelectorAll('${root} .htabs .htab')].find((x) => x.dataset.host === ${JSON.stringify(name)}); b?.click(); return !!b; })()`);
+  const waitHost = (name, ready) => waitFor(`document.querySelector('${root} .hpart[data-host=${JSON.stringify(name)}]') && (${ready})`);
+  const PART = `(() => { const p = document.querySelector('${root} .hpart'); return p && { host: p.dataset.host, line: p.querySelector('.hpart-s')?.textContent ?? '', note: p.querySelector('.hnote')?.textContent ?? '', rows: [...p.querySelectorAll('.prow .sr-t')].map(e => e.textContent), add: p.querySelector('.addp')?.disabled ?? null, selects: [...p.querySelectorAll('select')].map(x => x.disabled) }; })()`;
+  // 1. The Providers page: a tab per host, and each host's panel behind its tab.
   await step("providers", async () => {
-    await open("providers", `document.querySelectorAll('${root} .hpart').length === 4 && document.querySelectorAll('${root} .hpart .prow').length === 6`);
-    const parts = await evaluate(PARTS);
-    const by = Object.fromEntries(parts.map((x) => [x.host, x]));
-    check(parts.map((x) => x.host).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the parts ${JSON.stringify(parts.map((x) => x.host))}`);
-    check(/^Online since \d\d:\d\d$/.test(by.desk?.line ?? "") && by.desk.rows.join("|") === "Claude|Claude (work account)|DeepSeek" && by.desk.add === false, `${ctx}: desk ${JSON.stringify(by.desk)}`);
-    check(/^Online since \d\d:\d\d$/.test(by.lab?.line ?? "") && by.lab.rows.join("|") === "Claude|Z.ai" && !by.lab.note, `${ctx}: lab ${JSON.stringify(by.lab)}`);
-    // V0.host-ids: old-nuc reports no install id: its part says so, and shows nothing of it.
-    const nuc = by["old-nuc"];
+    await open("providers", `document.querySelectorAll('${root} .htabs .htab').length === 4 && document.querySelectorAll('${root} .hpart').length === 1`);
+    const tabs = await evaluate(`[...document.querySelectorAll('${root} .htabs .htab')].map((b) => ({ host: b.dataset.host, on: b.getAttribute('aria-selected') === "true", off: b.classList.contains("off"), badge: b.querySelector(".htab-b")?.textContent ?? "" }))`);
+    check(tabs.map((x) => x.host).join("|") === "desk|host-b|lab|old-nuc" && tabs[0].on && tabs.every((x, i) => x.on === (i === 0)), `${ctx}: the host tabs ${JSON.stringify(tabs)}`);
+    check(tabs[0].off === false && tabs[1].off && tabs[3].off, `${ctx}: the offline and unread hosts' tabs ${JSON.stringify(tabs)}`);
+    // The amber count is what needs the owner on that host: on Providers, desk's work account needs a login.
+    check(tabs[0].badge === "1", `${ctx}: desk's tab badge ${JSON.stringify(tabs[0])}`);
+    const desk = await evaluate(PART);
+    check(desk?.host === "desk" && /^Online since \d\d:\d\d$/.test(desk.line ?? "") && desk.rows.join("|") === "Claude|Claude (work account)|DeepSeek" && desk.add === false, `${ctx}: desk ${JSON.stringify(desk)}`);
+    await pickHost("lab");
+    await waitHost("lab", "true");
+    await settle();
+    const lab = await evaluate(PART);
+    check(lab?.host === "lab" && /^Online since \d\d:\d\d$/.test(lab.line ?? "") && lab.rows.join("|") === "Claude|Z.ai" && !lab.note, `${ctx}: lab ${JSON.stringify(lab)}`);
+    await shot(`hostsettings-providers-${label}.png`);
+    // V0.host-ids: old-nuc reports no install id: its panel says so, and shows nothing of it.
+    await pickHost("old-nuc");
+    await waitHost("old-nuc", "true");
+    await settle();
+    const nuc = await evaluate(PART);
     check(nuc?.line === "Needs an update" && /^old-nuc runs a Fyr from before install ids, so its settings cannot be read or changed from here\./.test(nuc.note) && nuc.rows.length === 0 && nuc.add === null, `${ctx}: the host with no id ${JSON.stringify(nuc)}`);
-    const off = by["host-b"];
+    await pickHost("host-b");
+    await waitHost("host-b", "true");
+    await settle();
+    const off = await evaluate(PART);
     check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^host-b is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
-    // The old Host picker is gone: each part has its own System agents.
+    // The old Host picker is gone: the one panel shows that host's own System agents.
     const sa = await evaluate(`document.querySelectorAll('${root} section[aria-label="System agents"]').length`);
-    check(sa === 3 /* old-nuc reports no install id: nothing is read from it */ && !(await evaluate(`!!document.querySelector('${root} select[aria-label="Host"]')`)), `${ctx}: System agents per host (${sa})`);
+    check(sa <= 1 && !(await evaluate(`!!document.querySelector('${root} select[aria-label="Host"]')`)), `${ctx}: System agents in the panel (${sa})`);
     if (!phone) {
       const nav = await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers] .stn-s')?.textContent`);
       check(nav === "6 · 1 needs a login", `${ctx}: the Providers line counts every host "${nav}"`);
     }
     if (phone) {
-      const small = await evaluate(`[...document.querySelectorAll('.m-settings .hpart button:not(:disabled), .m-settings .hpart select:not(:disabled)')].map(b => b.getBoundingClientRect()).filter(r => r.height > 0 && r.height < 44).length`);
+      const small = await evaluate(`[...document.querySelectorAll('.m-settings .hpart button:not(:disabled), .m-settings .hpart select:not(:disabled), .m-settings .htabs .htab')].map(b => b.getBoundingClientRect()).filter(r => r.height > 0 && r.height < 44).length`);
       const wide = await evaluate(`document.scrollingElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.m-settings .hpart')].every(p => p.getBoundingClientRect().right <= innerWidth)`);
       check(small === 0 && wide, `${ctx}: ${small} controls under 44 px, or past the edge (${wide})`);
     }
-    await evaluate(`document.querySelector('${root} .hpart[data-host="lab"]').scrollIntoView({ block: 'start' })`);
-    await settle();
-    await shot(`hostsettings-providers-${label}.png`);
-    await evaluate(`document.querySelector('${root} .hpart[data-host="host-b"]').scrollIntoView({ block: 'start' })`);
     await settle();
     await shot(`hostsettings-offline-${label}.png`);
     if (!phone) {
@@ -3098,8 +3134,12 @@ for (const [label, w, ht] of [
       await send("Emulation.setEmulatedMedia", { features: [] });
     }
   });
-  // 2. lab's Claude is its own page, with lab's quota; Esc goes back to its row.
+  // 2. lab's Claude is its own page, with lab's quota; Esc goes back to lab's tab.
   await step("provider page", async () => {
+    await open("providers", `document.querySelectorAll('${root} .htabs .htab').length === 4 && !!document.querySelector('${root} .hpart[data-host="desk"]')`);
+    await pickHost("lab");
+    await waitHost("lab", `document.querySelectorAll('${root} .hpart .prow').length === 2`);
+    await settle();
     await evaluate(`document.querySelector('${root} .hpart[data-host="lab"] .prow')?.click()`);
     await waitFor(phone ? `/settings=providers\/lab(\/|%2F)claude/.test(location.search)` : `document.querySelector('.dlg .stp')?.dataset.page === 'providers/lab/claude'`, { soft: true });
     await settle();
@@ -3108,22 +3148,44 @@ for (const [label, w, ht] of [
     await shot(`hostsettings-provider-${label}.png`);
     if (!phone) {
       await key("Escape");
-      await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'providers'`, { soft: true });
-      const esc = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, focus: document.activeElement?.dataset?.sub ?? '' })`);
-      check(esc.page === "providers" && esc.focus === "lab/claude", `${ctx}: Esc ${JSON.stringify(esc)}`);
+      // V0.host-tabs: coming back from a provider's page stays on that provider's host tab.
+      await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'providers' && !!document.querySelector('.dlg .hpart[data-host="lab"]')`, { soft: true });
+      const esc = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, host: document.querySelector('.dlg .hpart')?.dataset.host ?? '', on: document.querySelector('.dlg .htabs .htab[aria-selected=true]')?.dataset.host ?? '', focus: document.activeElement?.dataset?.sub ?? '' })`);
+      check(esc.page === "providers" && esc.host === "lab" && esc.on === "lab" && esc.focus === "lab/claude", `${ctx}: Esc ${JSON.stringify(esc)}`);
     }
   });
-  // 3. Every change names its host.
+  // 3. Every change names its host; Settings pages switch without leaving them, so the picked host stays.
   await step("commands", async () => {
-    await open("providers", `document.querySelectorAll('${root} .hpart .prow').length === 6`);
+    await open("providers", `document.querySelectorAll('${root} .htabs .htab').length === 4 && !!document.querySelector('${root} .hpart')`);
+    await pickHost("lab");
+    await waitHost("lab", `!!document.querySelector('${root} .hpart[data-host="lab"] select[aria-label="Thread titles"]')`);
+    await settle();
     await evaluate(`(() => { const s = document.querySelector('${root} .hpart[data-host="lab"] select[aria-label="Thread titles"]'); s.value = s.options[1].value; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     await waitFor(`${COMMANDS("host.systemAgents")}.length === 1`, { soft: true });
     const sa = await evaluate(`${COMMANDS("host.systemAgents")}.map(c => ({ ...c.args, host: c.host }))`);
     check(sa.length === 1 && sa[0].host === "B7LA-4QZE-9KDF-3HXW" && sa[0].job === "title", `${ctx}: System agents on lab ${JSON.stringify(sa)}`);
-    await open("automation", `document.querySelectorAll('${root} .hpart').length === 4 && !!document.querySelector('${root} .hpart[data-host="lab"] [role=switch]')`);
-    const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => ({ host: p.dataset.host, repos: [...p.querySelectorAll('.sr-t.mono, .mono.sr-t')].map(e => e.textContent), switches: [...p.querySelectorAll('[role=switch]')].map(x => x.disabled) }))`);
-    const lab = parts.find((x) => x.host === "lab"), off = parts.find((x) => x.host === "host-b");
-    check(!!lab && lab.switches.length >= 2 && lab.switches.every((d) => !d) && !!off && off.switches.every(Boolean), `${ctx}: Automation per host ${JSON.stringify(parts)}`);
+    // Change the page inside Settings (a reload would reset the picked host, as it should). On the phone the nav is
+    // the level above a page, so Back returns to it first.
+    if (phone) {
+      await evaluate(`document.querySelector('.m-settings .m-nh .b44[aria-label=Back]')?.click()`);
+      await waitFor(`!!document.querySelector('.m-settings .stn-i[data-page=automation]')`);
+    }
+    const toPage = (id) => (phone ? `document.querySelector('.m-settings .stn-i[data-page=${id}]')?.click()` : `document.querySelector('.dlg .stn-i[data-page=${id}]')?.click()`);
+    await evaluate(toPage("automation"));
+    await waitFor(`document.querySelector('${root} .stp')?.dataset.page === 'automation' && document.querySelectorAll('${root} .htabs .htab').length === 4`);
+    // Switching Settings pages keeps the host the owner picked (lab).
+    const kept = await evaluate(`({ tab: document.querySelector('${root} .htabs .htab[aria-selected=true]')?.dataset.host ?? '', panel: document.querySelector('${root} .hpart')?.dataset.host ?? '' })`);
+    check(kept.tab === "lab" && kept.panel === "lab", `${ctx}: the picked host is not kept across pages (${JSON.stringify(kept)})`);
+    const switches = (h) => evaluate(`[...document.querySelectorAll('${root} .hpart[data-host="' + ${JSON.stringify(h)} + '"] [role=switch]')].map(x => x.disabled)`);
+    const lab = await switches("lab");
+    await pickHost("host-b");
+    await waitHost("host-b", "true");
+    await settle();
+    const off = await switches("host-b");
+    check(lab.length >= 2 && lab.every((d) => !d) && off.length > 0 && off.every(Boolean), `${ctx}: Automation per host (${JSON.stringify({ lab, off })})`);
+    await pickHost("lab");
+    await waitHost("lab", "true");
+    await settle();
     await evaluate(`document.querySelector('${root} .hpart[data-host="lab"] [role=switch]').click()`);
     await waitFor(`${COMMANDS("host.autoDeploy")}.length === 1`, { soft: true });
     const dep = await evaluate(`${COMMANDS("host.autoDeploy")}.map(c => ({ ...c.args, host: c.host }))`);
@@ -3157,8 +3219,11 @@ for (const [label, w, ht] of [
       failures.push(`${ctx} ${name}: ${e.message}`);
     }
   };
-  // Slice 2b: a host is picked by its install id; the option's text is its name (", (offline)" for one that is).
-  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = [...s.options].find((o) => o.textContent.replace(/ \\(offline\\)$/, '') === ${JSON.stringify(h)})?.value ?? ''; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  // V0.host-tabs: a host is picked on the Host field's tab strip, each tab naming its host; old-nuc reports no install
+  // id, so no call can name it and it has no tab.
+  const setHost = (h) => evaluate(`(() => { const b = [...document.querySelectorAll('${root} .hostf .htab')].find((x) => x.dataset.host === ${JSON.stringify(h)}); b?.click(); return !!b; })()`);
+  const HOSTS = `[...document.querySelectorAll('${root} .hostf .htab')].map((b) => b.dataset.host)`;
+  const pickedHost = `document.querySelector('${root} .hostf .htab[aria-selected=true]')?.dataset.host ?? ''`;
   const click = (sel, text) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find(x => x.textContent.trim().startsWith(${JSON.stringify(text)})); b?.click(); return !!b; })()`);
   const PICKER = `({ title: (document.querySelector('.fsheet .m-shh') ?? document.querySelector('.fmodal .dh b'))?.textContent ?? '', rows: [...document.querySelectorAll('.fpick .fsec.browse .fpr')].map(b => b.textContent.trim()), note: document.querySelector('.fnote')?.textContent ?? '' })`;
   const closePicker = () => evaluate(`(document.querySelector('.fsheet .m-fchg') ?? document.querySelector('.fmodal .dh button'))?.click()`);
@@ -3166,15 +3231,16 @@ for (const [label, w, ht] of [
   await step("new project", async () => {
     await open(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
     if (!(await click(`${root} button`, "New project"))) throw new Error("no New project button");
-    await waitFor(`!!document.querySelector('${root} .hostf select')`);
-    const opts = await evaluate(`[...document.querySelectorAll('${root} .hostf option')].map(o => o.textContent)`);
+    await waitFor(`!!document.querySelector('${root} .hostf .htabs')`);
+    const opts = await evaluate(HOSTS);
     // Slice 2b (decision 0031 2.1): old-nuc reports no install id, so no call can name it and it is not offered.
-    check(opts.join("|") === "desk|host-b (offline)|lab", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
+    check(opts.join("|") === "desk|host-b|lab", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
     if (phone) {
-      const h = await evaluate(`document.querySelector('${root} .hostf select').getBoundingClientRect().height`);
-      check(h >= 44, `${ctx}: the Host field is ${h} px high`);
+      const h = await evaluate(`Math.min(...[...document.querySelectorAll('${root} .hostf .htab')].map((b) => b.getBoundingClientRect().height))`);
+      check(h >= 44, `${ctx}: the Host field's tabs are ${h} px high`);
     }
     await setHost("lab");
+    await waitFor(`${pickedHost} === 'lab'`);
     await click(`${root} button`, "Choose folder");
     await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
     await settle();
@@ -3195,8 +3261,9 @@ for (const [label, w, ht] of [
   await step("offline", async () => {
     await open(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
     await click(`${root} button`, "New project");
-    await waitFor(`!!document.querySelector('${root} .hostf select')`);
+    await waitFor(`!!document.querySelector('${root} .hostf .htabs')`);
     await setHost("host-b");
+    await waitFor(`${pickedHost} === 'host-b'`);
     await settle();
     const note = await evaluate(`document.querySelector('${root} .hostf .hbad')?.textContent ?? ''`);
     check(/^host-b is offline since \d\d:\d\d\. Its folders cannot be read/.test(note), `${ctx}: the offline note "${note}"`);
@@ -3215,15 +3282,16 @@ for (const [label, w, ht] of [
   });
   // 3. New thread: the host follows the project; with no project the owner picks it.
   await step("new thread", async () => {
-    await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf select')`);
-    const locked = await evaluate(`({ dis: document.querySelector('${root} .hostf select').disabled, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
+    await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf .htabs')`);
+    const locked = await evaluate(`({ n: document.querySelectorAll('${root} .hostf .htab').length, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
     // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project).
-    check(!locked.dis && /^The thread runs there\./.test(locked.line), `${ctx}: the Host field is the owner's pick ${JSON.stringify(locked)}`);
+    check(locked.n === 3 && /^The thread runs there\./.test(locked.line), `${ctx}: the Host field is the owner's pick ${JSON.stringify(locked)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
     await settle();
     await click(`${root} button, ${root} [role=option]`, "No project");
-    await waitFor(`!document.querySelector('${root} .hostf select').disabled`);
+    await settle();
     await setHost("lab");
+    await waitFor(`${pickedHost} === 'lab'`);
     await settle();
     await evaluate(`(document.querySelector('${root} .m-fchg') ?? [...document.querySelectorAll('${root} .fline .btn')][0])?.click()`);
     await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
@@ -3262,12 +3330,12 @@ for (const [label, w, ht] of [
     const q = "?mock=rail&hosts=2&hostOrder=lab,desk";
     await open(phone ? `${q}&settings=projects` : `${q}&dialog=settings&page=projects`, `document.querySelectorAll('${root} .pli').length > 3`);
     await click(`${root} button`, "New project");
-    await waitFor(`!!document.querySelector('${root} .hostf select')`);
-    const np = await evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); return { v: s.selectedOptions[0]?.textContent, first: s.options[0]?.textContent }; })()`);
+    await waitFor(`!!document.querySelector('${root} .hostf .htabs')`);
+    const np = await evaluate(`(() => { const ts = [...document.querySelectorAll('${root} .hostf .htab')]; return { v: ts.find((b) => b.getAttribute('aria-selected') === 'true')?.dataset.host, first: ts[0]?.dataset.host }; })()`);
     check(np.v === "lab" && np.first === "lab", `${ctx}: New project's default host ${JSON.stringify(np)}`);
-    await open(phone ? `${q}&settings=providers` : `${q}&dialog=settings&page=providers`, `document.querySelectorAll('${root} .hpart').length === 4`);
-    const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => p.dataset.host).join('|')`);
-    check(parts.startsWith("lab|desk"), `${ctx}: the per-host groups follow the order (${parts})`);
+    await open(phone ? `${q}&settings=providers` : `${q}&dialog=settings&page=providers`, `document.querySelectorAll('${root} .htabs .htab').length === 4`);
+    const parts = await evaluate(`[...document.querySelectorAll('${root} .htabs .htab')].map(p => p.dataset.host).join('|')`);
+    check(parts.startsWith("lab|desk"), `${ctx}: the host tabs follow the order (${parts})`);
   });
 });
 
@@ -3296,14 +3364,15 @@ for (const [label, w, ht] of [
       failures.push(`${ctx} ${name}: ${e.message}`);
     }
   };
-  // Slice 2b: a host is picked by its install id; the option's text is its name (", (offline)" for one that is).
-  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = [...s.options].find((o) => o.textContent.replace(/ \\(offline\\)$/, '') === ${JSON.stringify(h)})?.value ?? ''; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  // V0.host-tabs: the Host field is a tab strip of the hosts a call can name (old-nuc reports none, so it has no tab).
+  const setHost = (h) => evaluate(`(() => { const b = [...document.querySelectorAll('${root} .hostf .htab')].find((x) => x.dataset.host === ${JSON.stringify(h)}); b?.click(); return !!b; })()`);
+  const pickedHost = `document.querySelector('${root} .hostf .htab[aria-selected=true]')?.dataset.host ?? ''`;
   const chipName = `(document.querySelector('${root} .ppick .pln, ${root} .m-ppick .pln')?.textContent ?? '')`;
   // 1. New thread, host first.
   await step("new thread", async () => {
-    await open(phone ? "?mock=rail&hosts=2&hostOrder=lab,desk&new" : "?mock=rail&hosts=2&hostOrder=lab,desk&dialog=new", `!!document.querySelector('${root} .hostf select')`);
+    await open(phone ? "?mock=rail&hosts=2&hostOrder=lab,desk&new" : "?mock=rail&hosts=2&hostOrder=lab,desk&dialog=new", `!!document.querySelector('${root} .hostf .htabs')`);
     const s = await evaluate(`(() => { const host = document.querySelector('${root} .hostf'); const pick = document.querySelector('${root} .ppick, ${root} .m-ppick');
-      return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('select').selectedOptions[0]?.textContent, proj: ${chipName},
+      return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('.htab[aria-selected=true]')?.dataset.host, proj: ${chipName},
         provs: document.querySelector('${root} .agp .ags.agv select') ? [...document.querySelector('${root} .agp .ags.agv select').options].map(o => o.value) : null }; })()`);
     check(s.first && s.v === "lab" && s.proj === "Robot arm", `${ctx}: host first, lab, lab's project ${JSON.stringify(s)}`);
     // V0.model-choice: the choice is provider and model; its providers are the part before the NUL (both fronts: one pill)
@@ -3315,6 +3384,7 @@ for (const [label, w, ht] of [
     await shot(`hostaware-newthread-${label}.png`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
     await setHost("desk");
+    await waitFor(`${pickedHost} === 'desk'`);
     await settle();
     const d = await evaluate(`({ proj: ${chipName}, provs: document.querySelector('${root} .agp .ags.agv select') ? [...document.querySelector('${root} .agp .ags.agv select').options].map(o => o.value) : null })`);
     check(d.proj !== "Robot arm" && d.proj !== "", `${ctx}: desk's project after the switch ${JSON.stringify(d)}`);
@@ -5293,9 +5363,10 @@ try {
   const root = phone ? ".m-app" : ".dlg";
   await go(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
   await evaluate(`[...document.querySelectorAll('${root} button')].find((x) => x.textContent.trim().startsWith('New project'))?.click()`);
-  await waitFor(`!!document.querySelector('${root} .hostf .hostsel .hmark')`, { soft: true });
-  const hf = await evaluate(`document.querySelector('${root} .hostf .hostsel .hmark')?.dataset.host ?? null`);
-  check(hf === "desk", `${ctx}: the Host field's mark (${hf})`);
+  // V0.host-tabs: each tab carries its host's mark, and the picked one is desk's.
+  await waitFor(`!!document.querySelector('${root} .hostf .htab .hmark')`, { soft: true });
+  const hf = await evaluate(`({ marks: [...document.querySelectorAll('${root} .hostf .htab .hmark')].map((m) => m.dataset.host), pick: document.querySelector('${root} .hostf .htab[aria-selected=true]')?.dataset.host ?? null })`);
+  check(hf.marks.length === 3 && hf.marks.join("|") === "desk|host-b|lab" && hf.pick === "desk", `${ctx}: the Host field's marks ${JSON.stringify(hf)}`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }
@@ -5633,15 +5704,17 @@ try {
   }
   // 2. No "this install" in the pickers, the Hosts rows or the per-host groups.
   const THIS = /this install/i;
-  await go(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", "!!document.querySelector('.hostf select')");
-  const opts = await evaluate(`[...document.querySelectorAll('.hostf option')].map((o) => o.textContent)`);
-  check(opts.length > 1 && !opts.some((o) => THIS.test(o)), `${ctx}: New thread's hosts (${JSON.stringify(opts)})`);
+  await go(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", "!!document.querySelector('.hostf .htabs')");
+  // V0.host-tabs: the Host field's tabs name their hosts (and never "this install").
+  const opts = await evaluate(`[...document.querySelectorAll('.hostf .htab')].map((b) => ({ host: b.dataset.host, text: b.textContent }))`);
+  check(opts.length > 1 && !opts.some((o) => THIS.test(o.text)), `${ctx}: New thread's hosts (${JSON.stringify(opts)})`);
   await go(phone ? "?mock=rail&hosts=2&settings=hosts" : "?mock=rail&hosts=2&dialog=settings&page=hosts", "document.querySelectorAll('.sr.host').length === 4");
   const hostRows = await evaluate(`[...document.querySelectorAll('.sr.host')].map((r) => r.textContent)`);
   check(!hostRows.some((t) => THIS.test(t)), `${ctx}: a Hosts row says this install (${JSON.stringify(hostRows)})`);
-  await go(phone ? "?mock=rail&hosts=2&settings=providers" : "?mock=rail&hosts=2&dialog=settings&page=providers", "document.querySelectorAll('.hpart').length === 4");
-  const lines = await evaluate(`[...document.querySelectorAll('.hpart-h')].map((e) => e.textContent)`);
-  check(!lines.some((t) => THIS.test(t)), `${ctx}: a host group says this install (${JSON.stringify(lines)})`);
+  // V0.host-tabs: one tab per host, one host's panel under them; neither says "this install".
+  await go(phone ? "?mock=rail&hosts=2&settings=providers" : "?mock=rail&hosts=2&dialog=settings&page=providers", "document.querySelectorAll('.htabs .htab').length === 4 && document.querySelectorAll('.hpart').length === 1");
+  const lines = await evaluate(`[...document.querySelectorAll('.htabs .htab, .hpart-h')].map((e) => e.textContent)`);
+  check(!lines.some((t) => THIS.test(t)), `${ctx}: a host tab or group says this install (${JSON.stringify(lines)})`);
   // 3, 4. One host: the connection in words, no host on the rows, This device names the front.
   await go("?mock=rail", `!!document.querySelector('${L} [data-id]')`);
   const one = await evaluate(`({ conn: document.querySelector(${JSON.stringify(phone ? ".m-conn .ell" : ".rail .foot .hn")})?.textContent ?? null, marks: document.querySelectorAll('${L} [data-id] .hmark').length })`);

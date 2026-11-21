@@ -51,11 +51,14 @@ interface GHRepoItem {
 export function SetupPage({
   api,
   host,
+  hostName,
   go,
   onOpenThread,
 }: {
   api: Pick<Api, "command"> & Partial<Pick<Api, "setup" | "authAct">>;
   host: HostId | undefined;
+  /** V0.host-tabs: when several hosts are shown, the active tab's host name so Open Providers lands on it */
+  hostName?: string;
   go(r: PageRef): void;
   onOpenThread?(id: string): void;
 }) {
@@ -80,6 +83,12 @@ export function SetupPage({
   };
 
   useEffect(() => {
+    setReport(null);
+    setErr(null);
+    setNote(null);
+    setGhAuth(null);
+    setGhRepos(null);
+    setQr(null);
     void load();
   }, [host]);
 
@@ -205,7 +214,7 @@ export function SetupPage({
           qr={s.id === "phone" ? qr : null}
           canQR={!!api.authAct}
           onFix={runFix}
-          onGo={go}
+          onGo={(r) => go(r.page === "providers" && hostName ? { ...r, host: hostName } : r)}
           onStartThread={startFirstThread}
           onCloneAndStart={cloneAndStart}
           onShowQR={showPhoneQR}

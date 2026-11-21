@@ -5,6 +5,8 @@
 // is the next screen); the reason for the difference is width.
 
 import { HostMark, useHostMarks } from "./host-mark-ui.tsx";
+import { activeTabId, automationBadge, type HostTabItem } from "./host-tabs.ts";
+import { HostTabs } from "./host-tabs-ui.tsx";
 import { HOST_ICON_NAMES, hostGlyph, ownerIcon } from "./host-mark.ts";
 import { HOST_GLYPHS } from "./lucide.ts";
 import { PALETTE_NAMES } from "./projects.ts";
@@ -129,6 +131,8 @@ export interface SettingsProps {
   at: PageRef | null;
   /** open a page (null: the phone's nav) */
   go(r: PageRef | null): void;
+  /** replace the current page in history (phone: switching host tab on a host sub-page keeps Back pointing at Hosts) */
+  replace?(r: PageRef | null): void;
   /** phone: the screen's header (title, and what sits at its right) */
   header?(title: ComponentChildren, end?: ComponentChildren): ComponentChildren;
   /** no connection to the host: what was last read shows and nothing can be changed */
@@ -379,7 +383,15 @@ export function Settings(p: SettingsProps) {
   const [q, setQ] = useState("");
   const [reordering, setReordering] = useState(false);
   useEffect(() => (setAdding(false), setReordering(false), setQ("")), [p.at?.page]);
-  const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0, q, setQ, reordering, setReordering };
+  // V0.host-tabs: remember the picked host across Providers, Automation, Setup and Hosts so switching Settings pages
+  // keeps working on the same host, and returning from a provider sub-page stays on its host tab.
+  const [hostPick, setHostPick] = useState<string | null>(() => p.at?.host ?? (p.at?.page === "hosts" ? (p.at.sub ?? null) : null));
+  useEffect(() => {
+    if (p.at?.host) setHostPick(p.at.host);
+    else if (p.at?.page === "hosts" && p.at.sub) setHostPick(p.at.sub);
+  }, [p.at?.page, p.at?.host, p.at?.sub]);
+  const loadByHost = new Map(useLoad().map((h) => [h.host, h]));
+  const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0, q, setQ, reordering, setReordering, hostPick, setHostPick, loadByHost };
   const view = p.at ? pageView(p.at, p, data, ui, auth, peers) : null;
 
   // Opening a page moves focus to its heading; coming back from a sub-page focuses the row it came from.
@@ -533,6 +545,10 @@ interface PageUi {
   setQ(q: string): void;
   reordering: boolean;
   setReordering(b: boolean): void;
+  /** V0.host-tabs: active host tab shared across multi-host Settings pages */
+  hostPick: string | null;
+  setHostPick(h: string): void;
+  loadByHost: Map<string, HostLoad>;
 }
 
 function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, auth: ReturnType<typeof useAuthState>, peers: ReturnType<typeof usePeerState>): PageView {
@@ -570,10 +586,35 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
         };
       }
       // An unknown host shows the Providers page.
-      return { title: "Providers", body: <HostParts s={s} now={p.now} part={(d) => <ProvidersPage d={d} go={go} grouped={s.grouped} />} /> };
+      return {
+        title: "Providers",
+        body: (
+          <HostParts
+            s={s}
+            now={p.now}
+            picked={ui.hostPick}
+            onPick={ui.setHostPick}
+            badge={(d) => navBadge(d.providers, d.sa?.jobs.filter((j) => j.error).length ?? 0)}
+            part={(d) => <ProvidersPage d={d} go={go} grouped={s.grouped} />}
+          />
+        ),
+      };
     }
     case "automation":
-      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} focus={at.sub} />} /> };
+      return {
+        title: "Automation",
+        lede: "What Fyr does without your press. Only you change these; an agent cannot.",
+        body: (
+          <HostParts
+            s={s}
+            now={p.now}
+            picked={ui.hostPick}
+            onPick={ui.setHostPick}
+            badge={(d) => automationBadge(d.updates, ui.loadByHost.get(d.host.name))}
+            part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} focus={at.sub} />}
+          />
+        ),
+      };
     case "projects": {
       if (at.sub) {
         const rid = resolveRef(projectRecords(p.projects), at.sub!); // a link names the host's own id (C12)
@@ -610,13 +651,34 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       const rows = p.hosts ?? [];
       const h = at.sub ? rows.find((x) => x.name === at.sub) : undefined;
       // An unknown name shows the Hosts page.
-      if (h)
+      if (h) {
+        const hostTabs: HostTabItem[] = rows.map((x) => ({
+          id: x.name,
+          name: x.name,
+          label: x.name,
+          offline: !x.online,
+          badge: (x.idWas ? 1 : 0) + (updateLine(x).bad ? 1 : 0),
+        }));
         return {
           title: <span class="mono">{h.name}</span>,
           parent: "Hosts",
           end: <HostPill h={h} />,
-          body: <HostPage key={h.name} h={h} api={p.api} now={p.now} />,
+          body: (
+            <>
+              <HostTabs
+                items={hostTabs}
+                active={h.name}
+                label="Hosts"
+                onPick={(name) => {
+                  ui.setHostPick(name);
+                  (p.replace ?? go)({ page: "hosts", sub: name });
+                }}
+              />
+              <HostPage key={h.name} h={h} api={p.api} now={p.now} />
+            </>
+          ),
         };
+      }
       const runOrder = async (names: string[]) => {
         const r = await p.api.frontCommand("front.hostOrder", { ids: names.flatMap((n) => rows.find((x) => x.name === n)?.id ?? []) }); // V0.132: the rows as moved, by id
         return r.ok ? null : (r.error ?? "That did not work");
@@ -640,36 +702,66 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
     case "setup":
       return {
         title: "Setup",
-        lede: "Checked live from this host — never a stored done flag.",
-        body: <SetupPage api={p.api} host={(p.hosts ?? []).find((h) => h.online && h.id)?.id} go={go} onOpenThread={p.onOpenThread} />,
+        lede: "Checked live from the host, never a stored done flag.",
+        body: (
+          <HostParts
+            s={s}
+            now={p.now}
+            picked={ui.hostPick}
+            onPick={ui.setHostPick}
+            onlineOnly
+            part={(d) => <SetupPage key={d.host.id ?? d.host.name} api={p.api} host={d.host.id} hostName={s.grouped ? d.host.name : undefined} go={go} onOpenThread={p.onOpenThread} />}
+          />
+        ),
       };
   }
 }
 
 // ---- Providers ----
 
-/** V0.127: the per-host pages, one part per host. With one host the part has no heading, as before; with several
- *  each has the host's name and state, and an offline host's part shows what Fyr last read from it, read-only, or only
- *  says so when it has nothing. */
-function HostParts({ s, now, part }: { s: AllSettings; now: number; part(d: Data): ComponentChildren }) {
+/** V0.127, V0.host-tabs: the per-host pages, tabbed by host when the front has several. With one host the part has no
+ *  tabs or heading, as before; with several, HostTabs picks one host at a time (in the owner's host order) with its
+ *  mark, offline state and attention count, and only that host's panel renders below. */
+function HostParts({
+  s,
+  now,
+  picked,
+  onPick,
+  badge,
+  onlineOnly,
+  part,
+}: {
+  s: AllSettings;
+  now: number;
+  picked: string | null;
+  onPick(host: string): void;
+  badge?(d: Data): number;
+  onlineOnly?: boolean;
+  part(d: Data): ComponentChildren;
+}) {
   if (!s.grouped) return <>{part(s.all[0])}</>;
+  const items: HostTabItem[] = s.all.map((d) => ({
+    id: d.host.name,
+    name: d.host.name,
+    label: d.host.label,
+    offline: !d.host.online || !!d.host.noId,
+    badge: badge ? badge(d) : undefined,
+  }));
+  const activeId = activeTabId(items, picked);
+  const d = s.all.find((x) => x.host.name === activeId) ?? s.all[0];
+  const note = onlineOnly && !d.host.online && !d.host.noId ? `${d.host.label} is offline. Live setup checks run once it is back.` : readOnlyNote(d.host, d.readAt, now);
+  // V0.host-ids: a host with no install id is listed with why nothing of it shows.
+  const nothing = !!d.host.noId || (onlineOnly && !d.host.online) || (!d.host.online && !d.readAt && d.providers === null && d.deploy === null && d.repos === null);
   return (
     <>
-      {s.all.map((d) => {
-        const note = readOnlyNote(d.host, d.readAt, now);
-        // V0.host-ids: a host with no install id is listed with why nothing of it shows.
-        const nothing = !!d.host.noId || (!d.host.online && !d.readAt && d.providers === null && d.deploy === null && d.repos === null);
-        return (
-          <section key={d.host.name} class={`hpart${d.host.online && !d.host.noId ? "" : " off"}`} data-host={d.host.name} aria-label={`Settings on ${d.host.label}`}>
-            <h3 class="hpart-h">
-              <span class="mono">{d.host.label}</span>
-              <span class="hpart-s">{groupLine(d.host, now)}</span>
-            </h3>
-            {note && <div class="note hnote">{note}</div>}
-            {!nothing && <HostEnv d={d}>{part(d)}</HostEnv>}
-          </section>
-        );
-      })}
+      <HostTabs items={items} active={d.host.name} onPick={onPick} label="Hosts" />
+      <section key={d.host.name} class={`hpart${d.host.online && !d.host.noId ? "" : " off"}`} role="tabpanel" data-host={d.host.name} aria-label={`Settings on ${d.host.label}`}>
+        <div class="hpart-h">
+          <span class="hpart-s">{groupLine(d.host, now)}</span>
+        </div>
+        {note && <div class="note hnote">{note}</div>}
+        {!nothing && <HostEnv d={d}>{part(d)}</HostEnv>}
+      </section>
     </>
   );
 }
@@ -1425,11 +1517,12 @@ function LeftoverGroups({ h, host, id, api, focus }: { h: HostLoad; host: string
     const e = await run(action, args);
     setErr(e ? { key, text: e } : null);
   };
-  useEffect(() => {
-    if (focus === "leftovers") document.querySelector(".lftg")?.scrollIntoView({ block: "start" });
-  }, [focus]);
   const rows = leftoverRows(h, und.lookup, und.now());
   const temps = tempRows(h, und.lookup, und.now());
+  // V0.host-tabs: the rail's count opens automation/<host>/leftovers; the group is there once this host's load is read.
+  useEffect(() => {
+    if (focus === "leftovers") document.querySelector(".lftg")?.scrollIntoView({ block: "start" });
+  }, [focus, rows.length]);
   return (
     <>
       {rows.length > 0 && (
@@ -1573,34 +1666,38 @@ function UndeclaredGroups({ h, host, id, api }: { h: HostLoad; host: string; id?
           ))}
         </Group>
       )}
-      {h.servicePatterns && <ServiceGroup h={h} run={run} readOnly={env.readOnly} />}
-      {h.rerun && (
-        <Group
-          label="Kill and rerun"
-          title="Kill and rerun"
-          foot="When memory runs short, Fyr may kill a job of one of these instead of freezing it: when it was frozen for 2 minutes and could not resume, or when it usually ends within 5 minutes. The agent is told to run it again, and Fyr admits the rerun once memory has recovered and the job fits. A command killed 3 times in an hour is frozen instead for the rest of that hour. Nothing is here unless you add it: add only commands that are safe to run twice, such as tests, lint or a type check, never a dev server."
-        >
-          {rerunRows(h, clockTime).map((r) => (
-            <Row
-              key={r.class}
-              title={r.class}
-              mono
-              desc={r.line}
-              error={err?.key === `r:${r.class}` ? err.text : null}
-              end={
-                <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`r:${r.class}`, "host.rerunClasses", { remove: r.class })}>
-                  Remove
-                </button>
-              }
-            />
-          ))}
-          {!env.readOnly && (
-            <Row error={err?.key === "r:add" ? err.text : null} class="fieldrow">
-              <SaveField value="" label="Command to rerun" placeholder="make test" mono clears alwaysButton button="Add" onError={fail("r:add")} check={(v) => (v.trim() ? null : "Write the command, e.g. make test.")} onSave={(v) => run("host.rerunClasses", { add: v.trim() })} />
-            </Row>
-          )}
-        </Group>
-      )}
+      {h.servicePatterns && <ServiceGroup h={h} host={host} run={run} readOnly={env.readOnly} />}
+      {h.rerun && (() => {
+        const reruns = rerunRows(h, clockTime);
+        return (
+          <Group
+            label="Kill and rerun"
+            title="Kill and rerun"
+            fold={{ id: `${host}:rerun`, open: false, summary: reruns.length ? `${reruns.length} ${reruns.length === 1 ? "command" : "commands"}` : "none" }}
+            foot="When memory runs short, Fyr may kill a job of one of these instead of freezing it: when it was frozen for 2 minutes and could not resume, or when it usually ends within 5 minutes. The agent is told to run it again, and Fyr admits the rerun once memory has recovered and the job fits. A command killed 3 times in an hour is frozen instead for the rest of that hour. Nothing is here unless you add it: add only commands that are safe to run twice, such as tests, lint or a type check, never a dev server."
+          >
+            {reruns.map((r) => (
+              <Row
+                key={r.class}
+                title={r.class}
+                mono
+                desc={r.line}
+                error={err?.key === `r:${r.class}` ? err.text : null}
+                end={
+                  <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`r:${r.class}`, "host.rerunClasses", { remove: r.class })}>
+                    Remove
+                  </button>
+                }
+              />
+            ))}
+            {!env.readOnly && (
+              <Row error={err?.key === "r:add" ? err.text : null} class="fieldrow">
+                <SaveField value="" label="Command to rerun" placeholder="make test" mono clears alwaysButton button="Add" onError={fail("r:add")} check={(v) => (v.trim() ? null : "Write the command, e.g. make test.")} onSave={(v) => run("host.rerunClasses", { add: v.trim() })} />
+              </Row>
+            )}
+          </Group>
+        );
+      })()}
       {th && (
         <Group label="When a thread counts as heavy" title="When a thread counts as heavy" fold={{ id: `${host}:thresholds`, open: false }} foot="A thread's idle level is what its agent uses between jobs (the CLI and the servers it keeps running), learned per thread.">
           {th.map((r) => (
@@ -1774,16 +1871,17 @@ function GitHubGroup({ d }: { d: Data }) {
 
 /** V0.services-not-jobs: the commands this host treats as services, edited like the heavy commands; desktop and phone
  *  share it. */
-function ServiceGroup({ h, run, readOnly }: { h: HostLoad; run(action: string, args: Record<string, unknown>): Promise<string | null>; readOnly: boolean }) {
+function ServiceGroup({ h, host, run, readOnly }: { h: HostLoad; host: string; run(action: string, args: Record<string, unknown>): Promise<string | null>; readOnly: boolean }) {
   const [err, setErr] = useState<{ key: string; text: string } | null>(null);
   const act = async (key: string, args: Record<string, unknown>) => {
     const e = await run("host.servicePatterns", args);
     setErr(e ? { key, text: e } : null);
     return e;
   };
+  const list = h.servicePatterns ?? [];
   return (
-    <Group label="Services" title="Services" foot="Commands that keep running for the work beside them: dev stacks, dev servers, compose projects. Fyr reserves the memory a service needed at its peak while it runs, counts the containers a thread starts as its own, and never pauses a service. Patterns are regular expressions matched against the command.">
-      {(h.servicePatterns ?? []).map((p) => (
+    <Group label="Services" title="Services" fold={{ id: `${host}:services`, open: false, summary: `${list.length} ${list.length === 1 ? "pattern" : "patterns"}` }} foot="Commands that keep running for the work beside them: dev stacks, dev servers, compose projects. Fyr reserves the memory a service needed at its peak while it runs, counts the containers a thread starts as its own, and never pauses a service. Patterns are regular expressions matched against the command.">
+      {list.map((p) => (
         <Row
           key={p.pattern}
           title={p.pattern}

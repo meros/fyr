@@ -39,7 +39,7 @@ const dec = (s: string) => {
   }
 };
 
-/** "providers/abc" → {page, sub}; "providers/lab/abc" → {page, host, sub} (V0.127); an unknown page is providers. */
+/** "providers/abc" → {page, sub}; "providers/lab/abc" or "automation/lab/leftovers" → {page, host, sub} (V0.127, V0.host-tabs); an unknown page is providers. */
 export function parsePage(s: string | null | undefined): PageRef {
   const raw = (s ?? "").trim();
   const i = raw.indexOf("/");
@@ -47,7 +47,7 @@ export function parsePage(s: string | null | undefined): PageRef {
   const sub = i < 0 ? "" : raw.slice(i + 1);
   if (!isPage(page)) return { page: "providers" };
   const j = sub.indexOf("/");
-  if (page === "providers" && j > 0 && j < sub.length - 1) return { page, host: dec(sub.slice(0, j)), sub: dec(sub.slice(j + 1)) };
+  if ((page === "providers" || page === "automation") && j > 0 && j < sub.length - 1) return { page, host: dec(sub.slice(0, j)), sub: dec(sub.slice(j + 1)) };
   const one = dec(sub);
   return one && SUBS[page] ? { page, sub: one } : { page };
 }

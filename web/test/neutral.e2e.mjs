@@ -236,10 +236,10 @@ async function flow(through) {
   await t.waitFor(`document.querySelector('.shell')`, `${ctx}: the app for the previews`);
   await previews("before the restart");
 
-  // 5. A settings page of each host, and the Hosts page, which never says which host the front is.
+  // 5. A settings page of each host (V0.host-tabs: one tab per host, one active panel), and the Hosts page, which never says which host the front is.
   await t.navigate(`${base}/?dialog=settings&page=providers`);
-  await t.waitFor(`document.querySelectorAll('.hpart').length === 2`, `${ctx}: a settings part per host`);
-  out.settingsParts = (await t.evaluate(`[...document.querySelectorAll('.hpart')].map((p) => p.dataset.host)`)).sort();
+  await t.waitFor(`document.querySelectorAll('.htabs .htab').length === 2 && document.querySelectorAll('.hpart').length === 1`, `${ctx}: a settings host tab per host`);
+  out.settingsParts = (await t.evaluate(`[...document.querySelectorAll('.htabs .htab')].map((p) => p.dataset.host)`)).sort();
   await t.navigate(`${base}/?dialog=settings&page=hosts`);
   await t.waitFor(`document.querySelectorAll('.sr.host').length === 2`, `${ctx}: the Hosts rows`);
   out.hostRowsSayThisInstall = await t.evaluate(`[...document.querySelectorAll('.sr.host')].some((r) => /this install/i.test(r.textContent))`);

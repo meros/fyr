@@ -101,7 +101,7 @@ export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddP
           <AgentPill size="field" segs={newThreadAgent({ ...f, effort: n.effort, efforts: n.efforts }, profiles, n.pickModel, (x) => n.set({ effortPick: x }))} />
         </div>
         {n.note && <span class="srcl mnote" role="status">{n.note}</span>}
-        <ProfileQuota profile={f.profile} profiles={profiles} />
+        <ProfileQuota profile={f.profile} profiles={profiles} host={p.hosts?.find((h) => h.id === n.host)?.name} />
         <label class="fld">
           <span>Title (optional)</span>
           <input value={f.title} onInput={(e) => n.set({ title: (e.target as HTMLInputElement).value })} placeholder="From the prompt when empty" />

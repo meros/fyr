@@ -1456,7 +1456,7 @@ function MNew(p: PhoneProps) {
             <span class="ell">Live view</span>
           </label>
           {n.note && <div class="m-mnote" role="status">{n.note}</div>}
-          <QuotaList profiles={p.profiles} />
+          <QuotaList profiles={p.profiles} host={p.store.hostList.length > 1 ? p.store.hostList.find((h) => h.id === n.host)?.name : undefined} />
         </div>
         {n.err && <div class="err prose">{n.err}</div>}
       </div>
@@ -1500,13 +1500,13 @@ function MSettingsItem({ hosts, onClick }: { hosts: HostInfo[]; onClick(): void 
   return <Item label="Settings" sub="Providers, automation, projects, hosts, this device" right={need || undefined} onClick={onClick} />;
 }
 
-/** V0.166: the host load sheet: what the desktop rail's tooltips say, as text, and the provider quotas. */
+/** V0.166, V0.host-tabs: the host load sheet: what the desktop rail's tooltips say, as text, and the host's provider quotas. */
 function MLoadSheet({ hosts, profiles, onClose }: { hosts: HostInfo[]; profiles: HostProfiles; onClose(): void }) {
   const list = stripHosts(useLoad(), hosts);
   return (
     <MSheet onClose={onClose} label="Host load">
       <div class="m-shh">Host load</div>
-      <LoadSheetBody hosts={list} quotas={<QuotaList profiles={profiles} />} />
+      <LoadSheetBody hosts={list} renderQuotas={(host) => <QuotaList profiles={profiles} host={host} />} />
     </MSheet>
   );
 }

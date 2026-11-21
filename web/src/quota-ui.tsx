@@ -2,6 +2,7 @@
 // (every minute while the page is visible; the host reads providers at most every five minutes).
 
 import { profilesOf, type HostProfiles } from "./hosts.ts";
+import { quotasForHost } from "./host-tabs.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, WakeUp } from "./types.ts";
 import type { Api } from "./api.ts";
@@ -121,14 +122,15 @@ function QuotaHover({ c, at }: { c: Card; at: DOMRect }) {
 }
 
 /** The quota of one profile (new-thread dialog, under the picker); nothing when the host has none. */
-export function ProfileQuota(p: { profile: string; profiles: Profile[] }) {
-  const q = quotaFor(useQuotas(), p.profile);
+export function ProfileQuota(p: { profile: string; profiles: Profile[]; host?: string }) {
+  const q = quotaFor(useQuotas(), p.profile, p.host);
   return q ? <QuotaLine q={q} name={nameOf(p.profiles, p.profile)} /> : null;
 }
 
-/** Every profile's quota (phone new-thread screen, the load sheet), each named by its own host's provider. */
-export function QuotaList(p: { profiles: HostProfiles }) {
-  const list = useQuotas();
+/** Every profile's quota (phone new-thread screen, the load sheet), each named by its own host's provider. With `host`,
+ *  shows only that host's providers (V0.host-tabs). */
+export function QuotaList(p: { profiles: HostProfiles; host?: string }) {
+  const list = quotasForHost(useQuotas(), p.host);
   if (!list.length) return null;
   return (
     <div class="qlist" aria-label="Quota">

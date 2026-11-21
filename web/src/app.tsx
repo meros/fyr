@@ -1627,7 +1627,7 @@ function App() {
     onInstall: () => void promptInstall().then((ok) => ok && setCanInstall(false)),
   };
   /** The Settings pages, the same on the desktop (a dialog) and the phone (screens). */
-  const settingsFor = (at: PageRef | null, go: (r: PageRef | null) => void, phoneHeader?: SettingsProps["header"]) => (
+  const settingsFor = (at: PageRef | null, go: (r: PageRef | null) => void, phoneHeader?: SettingsProps["header"], replace?: (r: PageRef | null) => void) => (
     <HostsContext.Provider value={allHostsCtx}>
     <Settings
       api={api}
@@ -1637,6 +1637,7 @@ function App() {
       phone={!!phoneHeader}
       at={at}
       go={go}
+      replace={replace}
       header={phoneHeader}
       offline={store.conn === "offline"}
       onChanged={reloadProfiles}
@@ -1761,13 +1762,16 @@ function App() {
   };
 
   /** V0.119 phone: a Settings page is a screen; a project is its own screen; going to the level above goes Back. */
+  const phoneSettingsScreen = (r: PageRef | null): Nav["screen"] =>
+    r?.page === "projects" && r.sub ? { name: "project", id: r.sub } : r ? { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}), ...(r.host ? { host: r.host } : {}) } : { name: "settings" };
   const phoneSettingsGo = (r: PageRef | null) => {
-    if (r?.page === "projects" && r.sub) return navGo({ screen: { name: "project", id: r.sub }, sheet: null });
-    const screen: Nav["screen"] = r ? { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}), ...(r.host ? { host: r.host } : {}) } : { name: "settings" };
+    const screen = phoneSettingsScreen(r);
+    if (screen.name === "project") return navGo({ screen, sheet: null });
     const up = backTarget(navRef.current);
     if (up && JSON.stringify(up.screen) === JSON.stringify(screen)) navBack();
     else navGo({ screen, sheet: null });
   };
+  const phoneSettingsReplace = (r: PageRef | null) => navReplace({ screen: phoneSettingsScreen(r), sheet: null });
 
   // V0.164: undeclared work's components find a thread's title and go to a thread or to Settings through this, on both fronts.
   const undNav: UndNav = {
@@ -1827,7 +1831,7 @@ function App() {
             canInstall: canInstall && !isStandalone(),
             onInstall: () => void promptInstall().then((ok) => ok && setCanInstall(false)),
           }}
-          settings={(at, header) => settingsFor(at, phoneSettingsGo, header)}
+          settings={(at, header) => settingsFor(at, phoneSettingsGo, header, phoneSettingsReplace)}
           actions={phoneActions}
           filter={{ id: filterId, set: setProjectFilter }}
           filters={filterView}
