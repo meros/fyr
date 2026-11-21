@@ -443,6 +443,21 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         });
       }
 
+      case "pr_create": {
+        const t = str(input.title);
+        const fields: ApprovalField[] = [];
+        if (str(input.change)) fields.push({ label: "Change", value: str(input.change), mono: true });
+        if (str(input.head)) fields.push({ label: "Branch", value: str(input.head), mono: true });
+        if (str(input.base)) fields.push({ label: "Base", value: str(input.base), mono: true });
+        if (input.draft === true) fields.push({ label: "Draft", value: "Yes" });
+        return base({
+          label: "Open pull request",
+          subject: t || str(input.head) || str(input.change),
+          title: t ? `Open pull request “${clip(t, 48)}”?` : "Open a pull request?",
+          fields,
+        });
+      }
+
       case "change_request": {
         const ask = str(input.ask);
         const reason = str(input.reason);
