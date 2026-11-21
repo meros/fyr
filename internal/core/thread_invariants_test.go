@@ -571,3 +571,30 @@ func TestThreadInvariantsUnderRandomStateMachine(t *testing.T) {
 		}
 	}
 }
+
+// A merge result that arrives after the PR was observed merged must not
+// leave a mergeable condition on the non-OPEN PR.
+func TestMergeRefusedAfterMergedLeavesNoCondition(t *testing.T) {
+	now := t0.Add(10 * time.Minute)
+	th := &Thread{ID: "t1"}
+	url := "https://github.com/acme/x/pull/1"
+	c := ChangePRObserved(th, PR{URL: url, Repo: "acme/x", Number: 1, State: "MERGED", Branch: "b"}, now)
+	mergeRefused(th, url, "not merged: timed out", now)
+	if k := condition(c, CondMerge); k != nil {
+		t.Fatalf("merged PR carries a mergeable condition: %+v", k)
+	}
+}
+
+func TestRestartDropsConditionsOfNonOpenPR(t *testing.T) {
+	now := t0.Add(10 * time.Minute)
+	th := &Thread{ID: "t1"}
+	url := "https://github.com/acme/x/pull/1"
+	c := ChangePRObserved(th, PR{URL: url, Repo: "acme/x", Number: 1, State: "MERGED", Branch: "b"}, now)
+	setCondition(c, CondMerge, CondFail, "Merge refused: x", ByObserved, now)
+	if _, err := reduceRestarted(Rec{T: th}, Input{Args: RestartArgs{Kept: true}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if k := condition(c, CondMerge); k != nil {
+		t.Fatalf("condition kept: %+v", k)
+	}
+}

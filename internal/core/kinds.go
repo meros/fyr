@@ -972,6 +972,13 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 	t := r.T
 	var res Result
 	a, _ := in.Args.(RestartArgs)
+	// A record saved by an older build may hold PR conditions on a PR that
+	// is no longer open (decision 0018); drop them so the load check is clean.
+	for i := range t.Changes {
+		if c := &t.Changes[i]; c.PR != nil && c.PR.State != "OPEN" {
+			dropConditions(c, CondChecks, CondReview, CondConflict, CondMerge)
+		}
+	}
 	if t.MachineWait != nil {
 		t.MachineWait = nil
 		res.Events = append(res.Events, Event{"agent.machineWait", map[string]any{"done": true}})
