@@ -59,18 +59,23 @@ func Take() Env {
 
 // Scrub returns env without the variables.
 func Scrub(env []string) []string {
+	return Without(env, Names)
+}
+
+// Without returns env without the named variables.
+func Without(env []string, names []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
-		if !isName(name) {
+		if !isName(name, names) {
 			out = append(out, kv)
 		}
 	}
 	return out
 }
 
-func isName(n string) bool {
-	for _, m := range Names {
+func isName(n string, names []string) bool {
+	for _, m := range names {
 		if n == m {
 			return true
 		}

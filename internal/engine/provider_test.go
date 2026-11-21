@@ -85,6 +85,33 @@ func TestProviderLaunch(t *testing.T) {
 	}
 }
 
+// V0.agent-env: an agent process never inherits a credential or endpoint
+// variable from whoever started fyrd. A stale ANTHROPIC_BASE_URL in fyrd's
+// environment used to reach an account's process, which then talked to that
+// endpoint instead of the account.
+func TestAgentProcessDoesNotInheritAmbientCredentials(t *testing.T) {
+	t.Setenv("ANTHROPIC_BASE_URL", "https://ambient.example/elsewhere")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "sk-ambient-token")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ambient-key")
+	t.Setenv("ANTHROPIC_MODEL", "ambient-model")
+	t.Setenv("ANTHROPIC_DEFAULT_HAIKU_MODEL", "ambient-haiku")
+	h := providerHarness(t, map[string]provider.Profile{
+		"acct": {ID: "acct", Name: "Claude", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"},
+			Auth: cli.Auth{Kind: cli.CLILogin}, ModelCaps: []cli.Model{{ID: "claude-opus-5-5"}}},
+	})
+	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "launch", "profile": "acct", "model": "claude-opus-5-5"})
+	if !r.OK {
+		t.Fatalf("create: %+v", r)
+	}
+	th := h.wait(r.ThreadID, "run", func(t core.Thread, a core.Attention) bool {
+		return (!t.Running && t.Summary != "") || a.State == core.Failed
+	})
+	want := "launch: base= token=unset effort= model=claude-opus-5-5"
+	if th.Summary != want {
+		t.Fatalf("an account inherited the ambient endpoint: got %q, want %q", th.Summary, want)
+	}
+}
+
 // thread.setModel takes an effort alone; the thread keeps it.
 func TestSetEffort(t *testing.T) {
 	h := providerHarness(t, map[string]provider.Profile{"acct": {ID: "acct", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"},

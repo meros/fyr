@@ -229,7 +229,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 	}
 	cmd := proc.Command(ctx, bin, printArgs(l.Model, l.Effort, system)...)
 	cmd.Dir = l.Dir
-	cmd.Env = append(append(launchenv.Scrub(os.Environ()), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...) // #167
+	cmd.Env = append(append(launchenv.Without(os.Environ(), cli.CredentialVars), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...) // #167, V0.agent-env
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb

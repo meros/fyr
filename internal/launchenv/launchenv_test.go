@@ -37,6 +37,18 @@ func TestScrub(t *testing.T) {
 	}
 }
 
+// V0.agent-env: Without drops just the names it is given, keeping the rest.
+func TestWithoutDropsOnlyTheNamesGiven(t *testing.T) {
+	in := []string{"PATH=/bin", "ANTHROPIC_BASE_URL=https://somewhere.example", "ANTHROPIC_MODEL=m", "HOME=/home/me"}
+	got := Without(in, []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL"})
+	if !slices.Equal(got, []string{"PATH=/bin", "HOME=/home/me"}) {
+		t.Fatalf("Without: %v", got)
+	}
+	if got := Without(in, nil); len(got) != len(in) {
+		t.Fatalf("Without(nil): %v", got)
+	}
+}
+
 func live(data string, launcher int) Env {
 	return Env{Runner: runner.SocketPath(data), ReadyFile: filepath.Join(data, "ready"), Launcher: true, LauncherPid: launcher}
 }
