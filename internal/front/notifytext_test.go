@@ -45,10 +45,16 @@ func TestPushSaysWhatTheRowSays(t *testing.T) {
 		}), "Issue close · Waits for your approval"},
 		{"an approval with its command", th(core.Asking, "approval", func(x *core.Thread) {
 			x.Decisions = []core.Decision{{Kind: core.DecisionApproval, Tool: "Bash", Input: map[string]any{"command": "git push"}}}
-		}), "Approval · Allow Bash git push"},
-		{"an approval without one", th(core.Asking, "approval", func(x *core.Thread) {
+		}), "Approval · Run command: git push"},
+		{"an approval without input", th(core.Asking, "approval", func(x *core.Thread) {
 			x.Decisions = []core.Decision{{Kind: core.DecisionApproval, Tool: "Write"}}
-		}), "Approval · Allow Write"},
+		}), "Approval · Write file"},
+		{"an approval for an offered action", th(core.Asking, "approval", func(x *core.Thread) {
+			x.Decisions = []core.Decision{{Kind: core.DecisionApproval, Tool: "mcp__fyr__offer_action", Input: map[string]any{"label": "Write ADR and spec", "on": "thread"}}}
+		}), "Approval · Offer action: Write ADR and spec"},
+		{"an approval for an external MCP tool", th(core.Asking, "approval", func(x *core.Thread) {
+			x.Decisions = []core.Decision{{Kind: core.DecisionApproval, Tool: "mcp__github__get_pr", Input: map[string]any{"title": "Fix typo"}}}
+		}), "Approval · Allow GitHub get pr: Fix typo"},
 		{"a failure", th(core.Failed, "API error 500", func(x *core.Thread) { x.Failure = &core.Failure{Message: "API error 500"} }), "Failed · API error 500"},
 		{"a ready pull request", th(core.Blocked, "Add login: Merge", nil), "Add login: Merge"},
 		{"a command to run", th(core.Blocked, "Run: install the driver", nil), "Run: install the driver"},

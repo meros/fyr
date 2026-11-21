@@ -21,15 +21,15 @@ import { SECTIONS, connLabel, connWords, isAvailable, isPinned, unpinned, matche
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
-import { rowMeta, rowState, stateLabel } from "./rows.ts";
+import { rowDetail, rowState, stateLabel } from "./rows.ts";
 import { snoozeChoices, snoozeCommand, snoozedHint, type SnoozeChoice } from "./snooze.ts";
 import { AgentPill, newThreadAgent, showOnly, threadAgent } from "./agent-ui.tsx";
-import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
+import { AgentsStrip, ApprovalBody, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { LeftoverStrip } from "./leftovers-ui.tsx";
 import { InvariantCards } from "./invariants-ui.tsx";
+import { describeApproval } from "./approvals.ts";
 import { describeEffect } from "./effects.ts";
-import { formatApproval } from "./approval.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
@@ -1312,17 +1312,11 @@ function MAsk({ d, card, onCard, collapsed, onCollapse, submit, cancel }: { d: D
 
 function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t: Thread; host: string; collapsed: boolean; onCollapse(): void; commit(ok: boolean): void }) {
   const [choice, setChoice] = useState<Choice>(null);
-  const [fullCmd, setFullCmd] = useState(false);
-  useEffect(() => {
-    setChoice(null);
-    setFullCmd(false);
-  }, [d.id]);
+  useEffect(() => setChoice(null), [d.id]);
   const approval = d.kind === "approval";
+  const a = approval ? describeApproval(d, t.cwd) : null;
   const x = approval ? null : describeEffect(d, prForEffect(t, d));
   const c = allowCommit(d, choice);
-  const ap = approval ? formatApproval(d, { omitCwd: true }) : null;
-  const shownCmd = ap ? (fullCmd ? ap.fullCmd : ap.cmd) : null;
-  const cwd = approval && typeof d.input?.cwd === "string" ? (d.input.cwd as string) : t.cwd;
   const tile = (value: Choice, label: string, desc: string) => (
     <button class={`m-op${choice === value ? " on" : ""}`} role="radio" aria-checked={choice === value} onClick={() => setChoice(value)}>
       <i class="mk" />
@@ -1337,29 +1331,12 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
       <div class={`m-ask${collapsed ? " collapsed" : ""}`}>
         <CardHead collapsed={collapsed} onCollapse={onCollapse}>
           <b>{x ? x.label : "Approval"}</b>
-          {ap?.outsideSandbox && <span class="m-apbadge">Outside sandbox</span>}
         </CardHead>
         {!collapsed && (
           <div class="m-abody">
             {approval && <div class="m-asker">{d.agent ? `Asked by subagent “${d.agent}”` : "Asked by the thread"}</div>}
-            <div class="m-q">{x ? x.title : `Allow ${d.tool ?? "this tool"}?`}</div>
-            {ap?.judgeNote && <div class="m-apnote">Judge: {ap.judgeNote}</div>}
-            {approval && ap ? (
-              <>
-                {shownCmd && <pre class={`m-pre${fullCmd ? " full" : ""}`}>{shownCmd}</pre>}
-                {ap.truncated && (
-                  <button type="button" class="m-apmore" onClick={() => setFullCmd((v) => !v)}>
-                    {fullCmd ? "Show less" : `Show full command (${ap.hiddenLines} more ${ap.hiddenLines === 1 ? "line" : "lines"})`}
-                  </button>
-                )}
-                {Object.keys(ap.rest).length > 0 && <pre class="m-pre">{JSON.stringify(ap.rest, null, 1)}</pre>}
-                <div class="m-kv ell">
-                  in {cwd} · on {host}
-                </div>
-              </>
-            ) : (
-              x && <EffectBody d={d} x={x} cls="m-eff" />
-            )}
+            <div class="m-q">{x ? x.title : a!.title}</div>
+            {a ? <ApprovalBody a={a} host={host} cls="m-appr" /> : x && <EffectBody d={d} x={x} cls="m-eff" />}
             <div class="m-opts" role="radiogroup">
               {tile("allow", x ? x.yes : "Allow", x ? "" : "Run it once.")}
               {tile("deny", x ? x.no : "Deny", x ? "Nothing happens; the agent is told." : "The agent is told no and continues.")}
@@ -1685,7 +1662,8 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
             {t.summary && <div class="m-pkb prose">Claude: {t.summary}</div>}
             {d && (
               <div class="m-pkq">
-                <b class="s-ask">{rowState(t)}</b> · {rowMeta(t)}
+                <b class="s-ask">{rowState(t)}</b>
+                {rowDetail(t) ? ` · ${rowDetail(t)}` : ""}
               </div>
             )}
             <div class="m-pkn">Peek does not mark the thread seen.</div>

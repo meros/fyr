@@ -226,6 +226,7 @@ const SCREENS = [
   { name: "composer with chips", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in", files: ".m-cmp input[data-picker=files]" },
   { name: "question Q1", url: "?mock=rail&open=t_lasso", openOther: true },
   { name: "approval", url: "?mock=1&open=t_approval" },
+  { name: "approval mcp (V0.readable-approvals)", url: "?mock=1&open=t_approval&approval=offer" },
   { name: "effect card (V0.27)", url: "?mock=1&open=t_update" },
   { name: "effect", url: "?mock=1&open=t_effect" },
   { name: "new thread", url: "?mock=rail&new", field: ".m-ta" },
@@ -6115,7 +6116,7 @@ for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.nam
 // is one unbroken run, at the narrowest width where it hurts most; words is a long sentence, which wraps and grows.
 const LONG_DESK = [
   "?mock=rail", "?mock=1", "?mock=rail&hosts=2", "?mock=rail&open=t_mapperf", "?mock=rail&open=t_lasso", "?mock=rail&open=t_triage",
-  "?mock=1&open=t_approval", "?mock=1&open=t_update", "?mock=1&open=t_effect", "?mock=1&open=t_view", "?mock=1&open=t_w3",
+  "?mock=1&open=t_approval", "?mock=1&open=t_approval&approval=offer", "?mock=1&open=t_update", "?mock=1&open=t_effect", "?mock=1&open=t_view", "?mock=1&open=t_w3",
   "?mock=1&open=t_block&tab=pr", "?mock=1&open=t_s2&tab=pr", "?mock=1&open=t_done&tab=changes", "?mock=rail&open=t_mapperf&tab=changes", "?mock=1&open=t_ended&tab=changes",
   "?mock=rail&project=p_web", "?mock=rail&project=p_fyr", "?mock=rail&project=p_home&quiet=p_home", "?mock=rail&new", "?mock=rail&dialog=new", "?mock=1&changes",
   "?mock=rail&deploy=drain", "?mock=rail&leftovers=1", "?mock=rail&slots=queue", "?mock=rail&guard=1&undeclared=paused",
