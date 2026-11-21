@@ -20,9 +20,9 @@ The keys you are most likely to set in `config.json`:
 
 | Key | Default | What |
 |---|---|---|
-| `permissionMode` | `"auto"` | `claude --permission-mode` for every provider that sets none |
+| `permissionMode` | `"auto"` | Permission mode (`--permission-mode` / ACP mode) for every provider that sets none |
 | `idleStopMinutes` | `10` | Stop an agent process after this long without a run; the thread resumes on the next message |
-| `profiles` | found on the host | Providers: Claude logins (each its own `CLAUDE_CONFIG_DIR`) and Anthropic-compatible endpoints. Easier from Settings → Providers |
+| `profiles` | found on the host | Providers: Claude logins (each its own `CLAUDE_CONFIG_DIR`), Anthropic-compatible endpoints, and Antigravity (`agy`) logins or Gemini endpoints. Easier from Settings → Providers |
 | `scanRoots` | none | Extra folders the folder picker scans for git repositories |
 | `slots` | `2` | The share of the host heavy jobs may use before they queue: 2 is half the host per job, as a starting point that Fyr then learns per job class |
 | `role` | `"both"` | `host` (runs agents), `front` (serves the app for `hosts`), or `both` |

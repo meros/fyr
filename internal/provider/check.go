@@ -23,7 +23,7 @@ const cliTimeout = 40 * time.Second
 
 // listModels asks the provider: its Anthropic-compatible endpoint's /v1/models
 // with its key, or the provider's CLI adapter (ModelLister).
-func (r *Registry) listModels(ctx context.Context, p Provider, key string) (claudecli.Listing, error) {
+func (r *Registry) listModels(ctx context.Context, p Provider, key string) (cli.Listing, error) {
 	if r.ListModels != nil {
 		return r.ListModels(ctx, p, key)
 	}
@@ -33,7 +33,7 @@ func (r *Registry) listModels(ctx context.Context, p Provider, key string) (clau
 			c = &http.Client{}
 		}
 		ms, err := fetchModels(ctx, c, p.Endpoint.BaseURL, key, fetchLimits{})
-		out := claudecli.Listing{Models: ms}
+		out := cli.Listing{Models: ms}
 		for _, m := range ms {
 			out.Reported = append(out.Reported, m.ID)
 		}

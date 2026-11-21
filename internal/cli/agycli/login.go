@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/meros/fyr/internal/cli/claudecli"
+	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/hostfs"
 )
 
@@ -61,7 +61,7 @@ func Redact(s string) string {
 // ParseLogin reads `agy acp --login` output so far.
 func ParseLogin(b []byte) LoginOut {
 	var o LoginOut
-	text := claudecli.Plain(b)
+	text := cli.Plain(b)
 	if ms := agyURLRE.FindAllString(text, -1); len(ms) > 0 {
 		o.URL = strings.TrimRight(ms[len(ms)-1], ".,)")
 	}

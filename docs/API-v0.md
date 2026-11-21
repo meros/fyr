@@ -41,7 +41,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
 
 **The owner's login** travels in the roster (`owner-login`, signed by an untagged member that knows it). A tagged install has none of its own: it serves no tailnet browser until it is paired, then takes the login from the roster (config `ownerLogin` still wins). Settings → Hosts (`GET /api/front/peer/state`, `POST /api/front/peer/invite`, `POST /api/front/peer/join`) lists the installs and how each came in (paired, or vouched for by whom), the tailnet nodes that are not members and why (tagged, another user's, shared in, expired, or waiting for its Serve), and the Pair and Add forms.
 
-**Owner socket** (`<data>/owner.sock`, never gated by a mode): `POST /host/remove {id}`, `POST /host/rotate`, `POST /pair/invite`, `POST /pair/join {code, addr}`, `GET /host/list`, `POST /host/drive {id, on}`, `POST /session/once`, `POST /device/add`, `POST /device/approve {code}`, `POST /device/revoke {id}`, `GET /device/list`, `GET /auth/status`, `POST /auth/mode {way, mode}`. `fyr open`, `fyr device add|approve|revoke|list` and `fyr auth status|observe|enforce` use them.
+**Owner socket** (`<data>/owner.sock`, never gated by a mode): `POST /host/remove {id}`, `POST /host/rotate`, `POST /pair/invite`, `POST /pair/join {code, addr}`, `GET /host/list`, `POST /host/drive {id, on}`, `POST /session/once`, `POST /device/add`, `POST /device/approve {code}`, `POST /device/revoke {id}`, `GET /device/list`, `GET /auth/status`, `POST /auth/mode {way, mode}`, `POST /push/native {id, name, remove?}` and `GET /push/native/stream?id=…` (native desktop push queue for `Fyr.app` and `fyr-desktop`, V0.mac-notify, V0.linux-desktop). `fyr open`, `fyr device add|approve|revoke|list`, `fyr auth status|observe|enforce` and the native desktop apps use them.
 
 ## `GET /api/state`
 
@@ -72,6 +72,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
   "outbox": [{"id": "…", "state": "sent|queued"}],
   "tasks": [{"id": "a803…", "description": "Design mobile translation", "type": "local_agent", "status": "running|completed|failed|stopped", "activity": "Running build", "summary": "…", "toolUses": 14, "tokens": 143218, "startedAt": "…", "updatedAt": "…"}],
   "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false, "checksDone": 3, "checksTotal": 5, "failedChecks": ["test"], "rules": ["pull_request"], "missingChecks": ["build"], "protected": false},
+  "prs": ["all non-dismissed PR snapshots of the thread's code changes, primary first (V0.multi-pr)"],
   "settledAt": null, "archivedAt": null, "settleWhenDone": false, "settleWhenMerged": false,
   "source": "fyr|t3",
   "parent": "t_… (the thread whose agent started this one, V0.22)",
@@ -173,7 +174,8 @@ Actions and their args:
 | `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36, V0.multi-pr: optional `pr` or `change`; merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen`, `thread.pin` and `thread.unpin` (V0.104, owner only), `thread.restart` (V0.143: only while the agent does not respond) | none (or `pr?` / `change?` for `thread.dismissPR`) |
 | `thread.settle` | settles now and stops a live run; `now?: true` for bulk settle, which refuses a pinned or running thread |
 | `thread.settleWhenDone` | V0.203: settles once no run or task is live, nothing waits for the owner and no PR is open |
-| `thread.cancelWake` | V0.wakeups-via-watch: `{rule?}` cancels the agent's wake-up (its watch on a time; no rule: the soonest); the agent is told |
+| `thread.wakeOnQuota` | V0.quota-reset-wake: `{provider?, window?, note?}` arms an owner-owned wake when that provider's quota window resets and clears a stopped thread's failure |
+| `thread.cancelWake` | V0.wakeups-via-watch: `{rule?}` cancels the agent's wake-up (its watch on a time or quota reset; no rule: the soonest); the agent is told for agent-armed wakes |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.snoozeWhenDone` (V0.185): until the thread's work is done, at most 24 h; `view.snoozeUntil` is then that maximum and `view.snoozeWhenDone` is true. Unavailable, with the reason, when no work goes on or the thread needs the owner | none |
 | `thread.rename` | `title` |
@@ -184,7 +186,8 @@ Actions and their args:
 | `thread.cancelMessage` | `messageId`: withdraw a message the agent has not read (V0.33). `409` when it was read already, is unknown, or the agent cannot withdraw it |
 | `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
 | `host.deployNow` (no `threadId`) | none: a deploy that waits for running threads switches now; their turns end and each gets "continue" after the restart (V0.83). `409` when no deploy drains |
-| `provider.*` (no `threadId`) | see Providers (V0.50) |
+| `host.setupFix` (no `threadId`) | `action`, `args?`: runs one fix step of the Setup wizard (`GET /api/setup`, V0.setup-wizard) |
+| `provider.*` (no `threadId`) | see Providers (V0.50): `import`, `create`, `update`, `refreshModels`, `setKey`, `login`, `loginCode`, `loginCancel`, `delete` |
 
 ## `GET /api/threads/{id}/handover?profile=P` (SPEC 0.5 V0.45, V0.trans-host-handover)
 
@@ -265,7 +268,7 @@ Commands (through `POST /api/command`, no `threadId`):
 
 | action | args |
 |---|---|
-| `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `folder` (a full path; `""` clears it, V0.55), `image` (`""` removes the image icon and its files; V0.116), `profile`, `model`, `quiet` `[{from: "17:00", to: "06:00", days?: ["mon"…"sun"]}, …]` (at most 14 windows; a single object is read as a list of one) or `null` or `[]` to clear (V0.46, decision 0014 addendum) |
+| `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `folder` (a full path; `""` clears it, V0.55), `image` (`""` removes the image icon and its files; V0.116), `profile`, `model`, `effort` (V0.model-choice), `priority` (`normal\|high`, V0.project-priority), `agentSettle` (`chip\|auto`, V0.settle-request), `toolApproval` (`ask\|auto`, V0.tool-approval-judge), `quiet` `[{from: "17:00", to: "06:00", days?: ["mon"…"sun"]}, …]` (at most 14 windows; a single object is read as a list of one) or `null` or `[]` to clear (V0.46, decision 0014 addendum) |
 | `project.create` | `name`, `folder?`, `threadId?`: file that thread into the new project by hand in the same write (V0.30). Reply `result: {id}` |
 | `project.setupRun` | `id` (V0.116): starts the project setup run, a thread in the project's folder; the result is `{id, thread}`. No folder: `400`; a system agent that cannot run: `409` with the reason, also recorded as `setup.error` |
 | `host.setupRun` | (V0.208): starts this host's mark setup run, a thread in its home folder; the result is `{thread}`. A system agent that cannot run: `409`, recorded in the state's `agentMark.setup`. |
@@ -424,7 +427,18 @@ Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown
 | `provider.update` | `id`, then any of `name`, `configDir`, `baseURL`, `models`, `defaultModel`, `defaultEffort`, `modelEnv`, `quotaKind`, `color`, `forget` (V0.120). `models` is the on-list in order; an id the catalog lacks joins it as `manual`. A `models` list without the current default is refused (`400 "Star another model first."`) unless the same update sets `defaultModel`. `forget: [id]` drops hand-typed (`manual`) models that are off |
 | `provider.refreshModels` | `id` (V0.120): ask the provider for its models now: a Claude endpoint at `GET <baseURL>/v1/models` with its key (`x-api-key`, then `Authorization: Bearer` on 401/404; 15 s and 2 MB a page, up to 20 pages, no redirect off the host), a Claude login through its CLI's stream-json `initialize` answer plus Fyr's own list, or an Antigravity provider through `agy acp` `session/new`. `409` when the provider needs a login or a key. Waits for the check; a failed check is still `ok`, with `result.checkError` and the catalog unchanged. Result `{checkedAt, checkError, models}`. The host also checks each ready provider once a day, and a provider at once after `provider.create` |
 | `provider.setKey` | `id`, `key` (an endpoint's API key, or an account's login token from `claude setup-token`); `""` removes it |
+| `provider.login`, `provider.loginCode`, `provider.loginCancel` | `id` (and `code` for `loginCode`, `token?: true` for `login`): drives the CLI's interactive sign-in flow on the host (V0.53) |
 | `provider.delete` | `id`; `409` while threads that are not archived use it. Its stored key is removed |
+
+## Host helper & settings reads
+
+Served per host at `/api/h/<hostId>/…` (the front caches the settings reads when a host is offline):
+
+- `GET /api/setup`: live host readiness checks for the Setup wizard (machine tools, providers, GitHub/`gh`, projects, phone, peers; V0.setup-wizard).
+- `GET /api/load`: live CPU, memory headroom, PSI stall, slowdown probe, cgroup layout, oomd limit, active/queued jobs and recent guard events (V0.load-card).
+- `GET /api/autoDeploy`, `GET /api/autoMerge`, `GET /api/systemAgents`: per-host automation and system-agent settings (`Settings → Automation`).
+- `POST /api/search {q}`: searches threads and events on that host (V0.ai-search).
+- `POST /api/threads/{id}/focus` and `POST /api/board/visit`: tells the host which thread or board the owner is looking at so PR/git polling prioritises it.
 
 ## Quota (SPEC 0.5 V0.44)
 
@@ -469,9 +483,9 @@ The host protocol (front → host):
 
 Guard on the host: the loopback guard as above; on a `hostListen` tailnet address only peers whose Tailscale identity (whois of the connection) is the owner's login, and `Tailscale-User-Login` headers are ignored there. A host role never serves the web client.
 
-### Two machines on NixOS (V0.54)
+### Two machines on NixOS (V0.158, decision 0030)
 
-The laptop and host-b each run `fyrd` as host and front (`role` both, the default). Each serves the host protocol on its tailnet address and lists the other as a host; the laptop's front serves its browser on localhost, host-b's front serves the phone through Tailscale Serve. The owner applies these blocks in the NixOS configuration; tailscaled must be logged in as the owner on both machines.
+`host-a` and `host-b` each run `fyrd` as host and front (`role` both, the default). Set `peerPort` and `tailnet.enable = true` on both machines under the same Tailscale login: they discover and pair with each other automatically over mutual TLS pinned to their install keys (or pair manually across networks with `fyr pair` / Settings → Hosts).
 
 host-b:
 
@@ -480,21 +494,23 @@ services.tailscale.enable = true;
 services.fyr = {
   enable = true;
   user = "owner";
-  # role = "both";                   # the default: a host and the phone's front
-  hostPort = 7778;                   # serve fronts on this machine's tailnet address (tailnet:7778), port open on tailscale0 only
-  hosts = [ { name = "host-a"; url = "http://host-a:7778"; } ];
+  # role = "both";                   # the default: a host and a front
+  peerPort = 7779;                   # mutual-TLS peer link (pinned to install keys)
   tailnet.enable = true;             # Tailscale Serve: https://host-b.<tailnet>.ts.net:7443 → the front
   scanRoots = [ "~/git" ];
 };
 ```
 
-host-a (its existing block, plus):
+host-a:
 
 ```nix
+services.tailscale.enable = true;
 services.fyr = {
-  hostPort = 7778;
-  hosts = [ { name = "host-b"; url = "http://host-b:7778"; } ];
+  enable = true;
+  user = "owner";
+  peerPort = 7779;
+  tailnet.enable = true;
 };
 ```
 
-`host-a` and `host-b` are MagicDNS names; a full name (`host-b.<tailnet>.ts.net`) or a `100.x` address works too. Each front's local host comes first and needs no entry. The phone subscribes to notifications again on host-b's front (its own device data); a subscription made on the laptop's front stays with that front.
+Each front follows every member in its roster automatically; no static `hosts` list is needed. The phone subscribes to notifications on whichever front it opens (each front keeps its own device data).

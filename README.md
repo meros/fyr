@@ -5,8 +5,8 @@
 <h1 align="center">Fyr</h1>
 
 <p align="center">
-  <strong>A calm control room for Claude coding agents.</strong><br>
-  Run a dozen Claude Code agents on your own machines. Fyr tells you only when one needs you.
+  <strong>A calm control room for coding agents.</strong><br>
+  Run a dozen Claude Code or Antigravity agents on your own machines. Fyr tells you only when one needs you.
 </p>
 
 <p align="center">
@@ -24,13 +24,13 @@
 
 Running many coding agents at once is easy. Keeping track of them is not: terminal tabs, a question that waited 40 minutes for an answer, a red CI run nobody looked at, a merge you have to remember to press.
 
-Fyr turns that around. It runs Claude Code sessions on your machines and keeps **one list**. Threads that need you (a question, a failure, red CI, a merge to approve) rise to **Your move**. Everything else stays in **Moving without you**, one live line each, until it is done. Start a thread at your desk and answer its question from your phone. (*Fyr* is Swedish for lighthouse: it watches everything and lights up only when you have to act.)
+Fyr turns that around. It runs Claude Code and Antigravity (`agy`) sessions on your machines and keeps **one list**. Threads that need you (a question, a failure, red CI, a merge to approve) rise to **Your move**. Everything else stays in **Moving without you**, one live line each, until it is done. Start a thread at your desk and answer its question from your phone. (*Fyr* is Swedish for lighthouse: it watches everything and lights up only when you have to act.)
 
 ## What you get
 
 - **One inbox for every agent.** Each conversation is a *thread*. Asking, failed, blocked and finished threads come to the top, ordered by what to do: *Answer*, *Approve*, *Unblock*. Snooze, settle, quiet hours and per-project priority keep the list short. Press `?` for the keyboard shortcuts.
-- **Questions become cards.** When an agent asks, you get a card with its options. Answer with `1` `2` Enter on the desktop or two taps on the phone, and the answer goes straight back into the run. Questions from subagents arrive the same way.
-- **Agents ask, you approve, Fyr acts.** An agent never merges or deploys on its own. It *requests*, and you approve when it suits you:
+- **Questions become cards.** When an agent asks, you get a card with its options. Answer with `1` `2` Enter on the desktop or two taps on the phone (skip a question, step back or cancel the card), and the answer goes straight back into the run. Questions from subagents arrive the same way.
+- **Agents ask, you approve, Fyr acts.** An agent never merges or deploys on its own. It *requests*, and you approve when it suits you (and an optional per-project approval judge can auto-allow routine tool calls and escalate the rest):
   - A **merge ask** reaches you only once CI is green on the commit you will merge.
   - A **Run card** shows the exact command, root included, and runs it on that machine when you press.
   - A **deploy** of a branch builds and switches once you press.
@@ -40,14 +40,14 @@ Fyr turns that around. It runs Claude Code sessions on your machines and keeps *
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/approve-dark.png">
     <img alt="A merge ask for pull request 4170 with Merge and Not now, and a Run card that asks to run udisksctl as root, with Run as root, Copy and Not now" src="docs/images/approve-light.png" width="720">
   </picture></p>
-- **Agents stop reporting CI.** Fyr reads branches, PRs, checks and reviews from git and GitHub and shows them on the thread that owns them. It tells the agent when CI fails and can settle the thread when its PR merges.
-- **Agents get tools to work with you.** Over MCP an agent can ask you something, request a command or a merge, open a change in its own git worktree, wait for a condition (CI green, a PR merged, a time), show you a page or a screenshot, and start or message other threads.
+- **Agents stop reporting CI.** Fyr reads branches, multiple PRs per thread, checks and reviews from git and GitHub and shows them on the thread that owns them. It tells the agent when CI fails and can settle the thread when its PRs merge.
+- **Agents get tools to work with you.** Over MCP an agent can ask you something, request a command or a merge, open a PR, open a change in its own git worktree, wait for a condition (CI green, a PR merged, a quota reset, a time), show you a page or a screenshot, and start or message other threads.
 - **Your machine stays usable.** Heavy jobs (test suites, builds, e2e runs) are admitted by the CPU and memory they need, and the rest queue. A memory guard pauses runaway work before the kernel's OOM killer acts. On Linux every agent runs in its own cgroup.
 - **Agents survive restarts.** The launcher holds the agent processes, so a crash, a restart or an update of the daemon does not interrupt a run.
-- **Your phone is a full client.** It is an installable web app with push notifications. From it you can answer, steer, approve, start a thread with a screenshot, and settle.
-- **Several machines, one list.** Installs find each other over Tailscale or pair with a short code on a LAN. Every host's threads show in one inbox, and a new thread asks which machine runs it.
-- **Your own Claude subscription.** Fyr drives the `claude` CLI you already use, with your Claude login or any Anthropic-compatible endpoint. Several logins can sit side by side, and each thread shows how much of its plan's window is left.
-- **Updates that roll back.** Fyr installs only signed CI releases. It tests each one on a copy of its database first and goes back to the previous build if the new one is not healthy.
+- **Native desktop apps and a full phone client.** Run Fyr in a browser, in `Fyr.app` on macOS, or in `fyr-desktop` on Linux (window, tray icon and native desktop notifications). Your phone is an installable PWA with push notifications: answer, steer, approve, start a thread with a screenshot, and settle.
+- **Several machines, one list.** Installs find each other over Tailscale or pair with a short code on a LAN. Every host's threads show in one inbox, a new thread picks which machine runs it, and you can hand a thread over to another provider or another host.
+- **Your own agent subscriptions.** Fyr drives the `claude` CLI (Claude logins or Anthropic-compatible endpoints) and the Antigravity CLI (`agy`, Google accounts or Gemini endpoints). Several logins can sit side by side; each thread shows its plan's remaining window and waits cleanly when quota runs out.
+- **Updates that roll back.** Fyr installs only signed CI releases (on the `stable` channel of version tags or `main`'s green builds). It tests each one on a copy of its database first and goes back to the previous build if the new one is not healthy.
 
 ## Status
 
@@ -55,8 +55,8 @@ Fyr is v0. Its author uses it every day, and it changes daily. Expect breaking c
 
 ## Requirements
 
-- **Linux or macOS.** NixOS has a module; macOS has `Fyr.app` in a DMG (macOS 13+); other Linux (Debian, Ubuntu) has an install script.
-- **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (`claude`), logged in with a Claude account or set up for an Anthropic-compatible endpoint. Fyr drives every agent through it. Other agent CLIs are not supported yet ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
+- **Linux or macOS.** NixOS has a module (and optional `fyr-desktop` native app); macOS has `Fyr.app` in a DMG (macOS 13+); other Linux (Debian, Ubuntu) has an install script.
+- **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (`claude`, with a Claude account or an Anthropic-compatible endpoint) and/or **Antigravity CLI** (`agy`, via ACP, with a Google login or Gemini endpoint). Both sit behind Fyr's CLI adapter seam ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
 - **GitHub through [`gh`](https://cli.github.com/)**, logged in, for the agents' pull requests and change tracking. Projects on other forges still run threads, without it. Installing and updating Fyr need no `gh`.
 - **Optional: [Tailscale](https://tailscale.com/)**, to open Fyr from your phone and to connect machines.
 
@@ -73,6 +73,7 @@ imports = [ inputs.fyr.nixosModules.fyr ];
 services.fyr = {
   enable = true;
   user = "you"; # agents run as this user, with its logins and repositories
+  # desktop.enable = true; # optional: native Linux window, tray item and desktop notifications
 };
 ```
 
@@ -120,14 +121,14 @@ bin/fyr           # starts Fyr on http://127.0.0.1:7777
 
 ## First steps
 
-1. Open http://127.0.0.1:7777. Fyr finds your Claude login (Settings → Providers).
+1. Open http://127.0.0.1:7777 (or `Fyr.app` / `fyr-desktop`). **Settings → Setup** checks your machine and Fyr finds your existing `claude` and `agy` logins (**Settings → Providers**).
 2. Press **New** (or `c`), pick a folder, and write what the agent should do. The folder becomes a project.
-3. Go and do something else. When the agent asks, fails or finishes, its thread moves to **Your move**, and your phone is notified if you allowed it.
+3. Go and do something else. When the agent asks, fails or finishes, its thread moves to **Your move**, and your desktop or phone is notified if you allowed it.
 4. Answer, steer, or press the card's button. **Settle** a thread when you are done with it.
 
 ## How it is built
 
-`fyrd` is a Go daemon. It runs the `claude` CLI over its control protocol, keeps every thread as an event log in SQLite, reads git and GitHub, and serves a TypeScript web app with live updates. The desktop and the phone share that app. A small launcher, `fyr`, keeps `fyrd` and the agents running across updates and rollbacks.
+`fyrd` is a Go daemon. It drives the `claude` CLI (control protocol) and the `agy` CLI (ACP) behind one adapter interface, keeps every thread as an event log in SQLite, reads git and GitHub, and serves a TypeScript web app with live updates. The browser, the desktop shells (`Fyr.app`, `fyr-desktop`) and the phone PWA share that app. A small launcher, `fyr`, keeps `fyrd` and the agents running across updates and rollbacks.
 
 Each install is a *host* (it runs agents), a *front* (it serves the app and merges the threads of every host it knows), or both. Both is the default.
 

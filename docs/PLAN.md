@@ -2,9 +2,9 @@
 
 Status lives in GitHub: https://github.com/meros/fyr/milestones. This file holds the milestone definitions, their order and exit criteria only.
 
-## Where we are (20 Nov 2026)
+## Where we are (21 Nov 2026)
 
-The original goal of v1 was "the owner works only in Fyr". It has been met for weeks, and the repo is public with a README, an INSTALL guide and an MIT licence. What v1.0 lacks is not features but **a stranger's path**: Fyr still assumes NixOS or a Mac with a dev toolchain, a tailnet for the owner's identity, defaults sized for one machine, and an API with routes due for removal. Releases are named `build-<sha>`, so nothing tells a user what is stable.
+The original goal of v1 was "the owner works only in Fyr". It has been met for weeks, and the repo is public with a README, an INSTALL guide and an MIT licence. On 20–21 Nov most of the blocking v1.0 groundwork shipped: Linux without Nix (#199), share-based resource defaults (#198), plain-HTTPS releases without `gh` (#200), versioned `vX.Y.Z` releases & channels (#447), `Fyr.app` / `Fyr.dmg` + Setup wizard (#434), `fyr-desktop` on Linux (#461), Decision 0031 final route cleanup (#372), all six blocking Solid core 2 items (#450–#455), plus the Antigravity (`agy`) CLI adapter (#492), trans-host handover (#503), multi-PR tracking (#504), per-project approval judge (#507), quota waiting & reset waking (#502, #518, #519), and 35 runtime thread invariants (#520, #526). Remaining v1.0 blockers are non-tailnet owner setup (#197), README trust model (#203), fresh-machine verification (#30, #259, #236), removing T3 import (#68), and restart-survival audit (#156).
 
 | Milestone | State | What happened |
 |---|---|---|
