@@ -4301,22 +4301,38 @@ try {
   check(b.chevron && b.open && b.expanded === "true", `${ctx}: an open section's chevron points down (${JSON.stringify(b)})`);
   const lefts = await evaluate(`[...new Set([...document.querySelectorAll('${head} .sticon')].map((e) => Math.round(e.getBoundingClientRect().left)))]`);
   check(lefts.length === 1, `${ctx}: the headers' icons line up (${JSON.stringify(lefts)})`);
-  // V0.section-bands: a header with rows is a band (a background the rows do not have), closer to its rows than to the rows before it
+  // V0.section-bands, V0.empty-section-bands: every header is a band (a background the rows do not have), closer to its rows than to the rows before it
   const band = `(() => { const bg = (e, pe) => getComputedStyle(e, pe).backgroundColor, clear = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent';
-    const heads = [...document.querySelectorAll('${head}')].map((e) => ({ e, none: !!e.querySelector('.sti.none'), band: !clear(bg(e)) || !clear(bg(e, '::before')) }));
+    const fill = (e) => !clear(bg(e)) ? bg(e) : !clear(bg(e, '::before')) ? bg(e, '::before') : null;
+    const heads = [...document.querySelectorAll('${head}')].map((e) => ({ e, none: !!e.querySelector('.sti.none'), fill: fill(e) }));
     const rows = [...document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-settled [data-id]" : "#sec-settled [data-id]")})];
     const h = document.querySelector(${JSON.stringify(settled)}), prev = h.parentElement.previousElementSibling;
     const top = h.getBoundingClientRect().top + parseFloat(getComputedStyle(h).paddingTop);
-    return { withRows: heads.filter((x) => !x.none).length, banded: heads.filter((x) => !x.none && x.band).length, emptyBanded: heads.filter((x) => x.none && x.band).length,
+    return { total: heads.length, banded: heads.filter((x) => !!x.fill).length,
       rowBg: rows.filter((r) => !clear(bg(r)) && !r.matches('.sel,.sel *')).length, rows: rows.length,
       above: prev ? Math.round(top - prev.getBoundingClientRect().bottom) : -1, below: rows[0] ? Math.round(rows[0].getBoundingClientRect().top - h.getBoundingClientRect().bottom) : -1 }; })()`;
   const bd = await evaluate(band);
-  check(bd.withRows > 0 && bd.banded === bd.withRows && bd.emptyBanded === 0, `${ctx}: every header with rows is a band and no empty one is (${JSON.stringify(bd)})`);
+  check(bd.total > 0 && bd.banded === bd.total, `${ctx}: every section header is a band (${JSON.stringify(bd)})`);
   check(bd.rows > 0 && bd.above > bd.below, `${ctx}: a band has more air above it than below it (${JSON.stringify(bd)})`);
   await shot(`section-heads-${phone ? "phone" : "desktop"}.png`);
   await load("?mock=2");
-  const none = await evaluate(`(() => { const e = [...document.querySelectorAll('${head} .sti.none')]; return { n: e.length, chevrons: e.filter((x) => x.querySelector('.stc svg')).length, icons: e.filter((x) => x.querySelector('.sticon svg')).length }; })()`);
+  const none = await evaluate(`(() => {
+    const bg = (e, pe) => getComputedStyle(e, pe).backgroundColor, clear = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent';
+    const fill = (e) => !clear(bg(e)) ? bg(e) : !clear(bg(e, '::before')) ? bg(e, '::before') : null;
+    const listBg = bg(document.querySelector(${JSON.stringify(phone ? ".m-list" : ".ib")}));
+    const heads = [...document.querySelectorAll('${head}')].map((h) => ({ none: !!h.querySelector('.sti.none'), fill: fill(h) }));
+    const emptyFills = [...new Set(heads.filter((x) => x.none).map((x) => x.fill))];
+    const fullFills = [...new Set(heads.filter((x) => !x.none).map((x) => x.fill))];
+    const e = [...document.querySelectorAll('${head} .sti.none')];
+    const lefts = [...new Set([...document.querySelectorAll('${head} .sticon')].map((x) => Math.round(x.getBoundingClientRect().left)))];
+    return { n: e.length, chevrons: e.filter((x) => x.querySelector('.stc svg')).length, icons: e.filter((x) => x.querySelector('.sticon svg')).length,
+      listBg, emptyFills, fullFills, lefts };
+  })()`);
   check(none.n > 0 && none.chevrons === 0 && none.icons === none.n, `${ctx}: an empty section has its icon and no chevron (${JSON.stringify(none)})`);
+  check(none.emptyFills.length === 1 && !!none.emptyFills[0] && none.emptyFills[0] !== none.listBg && none.fullFills.length === 1 && none.emptyFills[0] !== none.fullFills[0],
+    `${ctx}: an empty section header has a distinct softer band (${JSON.stringify(none)})`);
+  check(none.lefts.length === 1, `${ctx}: empty and populated headers' icons line up (${JSON.stringify(none.lefts)})`);
+  await shot(`section-heads-empty-${phone ? "phone" : "desktop"}.png`);
 } catch (e) {
   check(false, `${ctx}: ${e.message}`);
 }

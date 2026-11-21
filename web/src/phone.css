@@ -58,13 +58,14 @@
 
 /* list and rows */
 .m-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:0 8px 8px;background:var(--raised);-webkit-overflow-scrolling:touch}
-.m-sec{display:flex;align-items:center;gap:8px;height:44px;padding:8px 8px 0;font:500 13px/16px var(--ui);color:var(--ink-muted);min-width:0}
+/* V0.section-bands, V0.empty-section-bands on the phone: every header keeps its 44 px for the finger, with the band
+   drawn inside it; an empty section uses the softer --surface fill so it steps back while keeping the icons lined up. */
+.m-sec{position:relative;isolation:isolate;display:flex;align-items:center;gap:8px;height:44px;padding:10px 10px 0;font:500 13px/16px var(--ui);color:var(--ink-muted);min-width:0}
+.m-sec::before{content:"";position:absolute;z-index:-1;inset:10px 0 0;border-radius:10px;background:var(--sunken)}
+.m-sec:has(>.sti.none)::before{background:var(--surface)}
 .m-sec .n{font:400 13px/16px var(--mono);font-variant-numeric:tabular-nums;flex:none}
 .m-sec .h{margin-left:auto;font-size:12px;max-width:62%}
 .m-sec.hasbtn{height:56px}
-/* V0.section-bands on the phone: the header keeps its 44 px for the finger, and the band is drawn inside it */
-.m-sec:has(>.sti:not(.none)){position:relative;isolation:isolate;padding:10px 10px 0}
-.m-sec:has(>.sti:not(.none))::before{content:"";position:absolute;z-index:-1;inset:10px 0 0;border-radius:10px;background:var(--sunken)}
 .m-sbtn{margin-left:auto;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;font:500 13px/16px var(--ui);color:var(--ink)}
 /* V0.row-calm: in a section header the button keeps its 44 px touch height but draws 30 px, so it fits inside the header's band */
 .m-sec .m-sbtn{position:relative;isolation:isolate;border:0;background:none;padding:0 14px;margin-right:4px}
