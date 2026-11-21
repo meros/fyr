@@ -254,6 +254,9 @@ const SCREENS = [
   // SPEC 0.5 V0.43: the PR tab with a failing check and 2 unresolved review threads, and the Merge dialog.
   { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true, ready: PR_LOADED },
   { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge", ready: PR_LOADED },
+  // V0.pr-switcher-height: a thread with a stack of PRs whose detail scrolls the tab. The switcher must keep its height:
+  // it was a row of the scrolling column with `overflow-x: auto`, so its minimum size was 0 and it was squeezed to 0.
+  { name: "PR switcher with several PRs", url: "?mock=1&open=t_stack&tab=pr", prTab: true, ready: PR_LOADED },
   // SPEC 0.5 V0.46: quiet hours. ?quiet=p_home puts Garden in quiet hours: its thread leaves the inbox, comes back
   // with the project filter (whose line says until when), and the project screen's Quiet hours row fits the phone.
   { name: "inbox with a quiet project", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "" } },
@@ -387,9 +390,14 @@ const MEASURE = `(() => {
       const targets = [...v.querySelectorAll('button, .prv-det, .prv-thh a, a.btn')].filter(e => e.getBoundingClientRect().height > 0);
       const small = targets.map(e => ({ t: e.textContent.trim().slice(0, 30), h: e.getBoundingClientRect().height })).filter(x => x.h < 43.5);
       const status = v.querySelector('.prv-st')?.textContent ?? '';
-      const right = Math.max(0, ...[...v.querySelectorAll('*')].map(e => e.getBoundingClientRect().right));
+      // V0.pr-switcher-height: the switcher is a sideways scroller on the phone, so its pills may pass its edge.
+      const right = Math.max(0, ...[...v.querySelectorAll('*')].filter(e => !e.closest('.prv-sw')).map(e => e.getBoundingClientRect().right));
       return { status, failed: v.querySelectorAll('.prv-ck.fail').length, ask: v.querySelectorAll('.prv-ask').length, threads: v.querySelectorAll('.prv-th').length,
-        askAll: v.querySelector('.prv-askall')?.textContent ?? '', merge: !!v.querySelector('.prv-merge'), mergeDisabled: !!v.querySelector('.prv-merge')?.disabled, small, right };
+        askAll: v.querySelector('.prv-askall')?.textContent ?? '', merge: !!v.querySelector('.prv-merge'), mergeDisabled: !!v.querySelector('.prv-merge')?.disabled, small, right,
+        // V0.pr-switcher-height: the strip above the PR, and the selected pill's text; a strip squeezed to 0 hides both.
+        sw: (() => { const s = v.querySelector('.prv-sw'); if (!s) return null; const b = s.getBoundingClientRect();
+          return { h: Math.round(b.height), shown: [...s.querySelectorAll('.prv-swb')].filter(e => e.getBoundingClientRect().height > 0).length,
+            on: s.querySelector('.prv-swb.on')?.textContent ?? '', top: b.top, bottom: b.bottom }; })() };
     })(),
     settings: (() => {
       // V0.119: every Settings page and sub-page, and the project screen (the same page).
@@ -704,6 +712,18 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(m.pr.threads === 2 && /address 2 review comments/.test(m.pr.askAll), `${ctx}: expected 2 open review threads and the ask button (${m.pr.threads}, "${m.pr.askAll}")`);
       check(m.pr.merge && m.pr.mergeDisabled, `${ctx}: Merge must show and be disabled on a blocked PR`);
       check(m.pr.small.length === 0, `${ctx}: targets under 44 px: ${JSON.stringify(m.pr.small)}`);
+      check(m.pr.right <= window_innerWidth(m) + 0.5, `${ctx}: the PR tab runs ${(m.pr.right - window_innerWidth(m)).toFixed(1)} px past the right edge`);
+    }
+  }
+  if (ctx.startsWith("PR switcher with several PRs")) {
+    // V0.pr-switcher-height: the switcher and each of its pills keep their height, the selected one reads its PR, and
+    // every pill is a 44 px target inside the screen.
+    check(!!m.pr, `${ctx}: no PR tab`);
+    if (m.pr) {
+      check(!!m.pr.sw && m.pr.sw.shown === 4 && m.pr.sw.h >= 43.5, `${ctx}: the PR switcher is missing or squeezed to ${m.pr.sw?.h} px (${JSON.stringify(m.pr.sw)})`);
+      check(/^stack#7203 review$/.test(m.pr.sw?.on ?? ""), `${ctx}: the selected pill reads "${m.pr.sw?.on}"`);
+      check(m.pr.sw && m.pr.sw.bottom <= m.bottom + 0.5, `${ctx}: the PR switcher sits below the visible screen (${JSON.stringify(m.pr.sw)})`);
+      check(m.pr.small.length === 0, `${ctx}: targets under 44 px: ${JSON.stringify(m.pr.small.slice(0, 4))}`);
       check(m.pr.right <= window_innerWidth(m) + 0.5, `${ctx}: the PR tab runs ${(m.pr.right - window_innerWidth(m)).toFixed(1)} px past the right edge`);
     }
   }
@@ -6190,7 +6210,7 @@ for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.nam
 const LONG_DESK = [
   "?mock=rail", "?mock=1", "?mock=rail&hosts=2", "?mock=rail&open=t_mapperf", "?mock=rail&open=t_lasso", "?mock=rail&open=t_triage",
   "?mock=1&open=t_approval", "?mock=1&open=t_approval&approval=offer", "?mock=1&open=t_update", "?mock=1&open=t_effect", "?mock=1&open=t_view", "?mock=1&open=t_w3",
-  "?mock=1&open=t_block&tab=pr", "?mock=1&open=t_s2&tab=pr", "?mock=1&open=t_done&tab=changes", "?mock=rail&open=t_mapperf&tab=changes", "?mock=1&open=t_ended&tab=changes",
+  "?mock=1&open=t_block&tab=pr", "?mock=1&open=t_s2&tab=pr", "?mock=1&open=t_stack&tab=pr", "?mock=1&open=t_done&tab=changes", "?mock=rail&open=t_mapperf&tab=changes", "?mock=1&open=t_ended&tab=changes",
   "?mock=rail&project=p_web", "?mock=rail&project=p_fyr", "?mock=rail&project=p_home&quiet=p_home", "?mock=rail&new", "?mock=rail&dialog=new", "?mock=1&changes",
   "?mock=rail&deploy=drain", "?mock=rail&leftovers=1", "?mock=rail&slots=queue", "?mock=rail&guard=1&undeclared=paused",
   ...["providers", "automation", "projects", "device", "devices", "hosts"].map((p) => `?mock=rail&hosts=2&dialog=settings&page=${p}`),

@@ -300,7 +300,9 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 
 /* PR tab (V0.43): the status line and the actions first, then checks, reviews, threads, labels, description. */
 .prv{flex:1;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;padding:16px 24px 24px;display:flex;flex-direction:column;gap:12px;scrollbar-width:thin;font:400 14px/21px var(--ui);color:var(--ink)}
-.prv-sw{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+/* V0.pr-switcher-height: the strip keeps its own height. It is a row of a column flex box, and the phone scrolls it
+   sideways (overflow-x: auto), so its automatic minimum size is zero and a PR taller than the pane squashed it to 0. */
+.prv-sw{display:flex;flex-wrap:wrap;gap:6px;min-width:0;flex:none}
 .prv-swb{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--line);background:var(--raised);font:500 12px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:100%;min-width:0;overflow:hidden;cursor:pointer}
 .prv-swb span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .prv-swb:hover{border-color:var(--line-strong);color:var(--ink)}

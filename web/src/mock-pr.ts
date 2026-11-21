@@ -55,6 +55,27 @@ The listing page shows **cards** instead of rows on every width. A card keeps th
 
 Closes #77.`;
 
+// V0.pr-switcher-height: a PR long enough that its tab scrolls on a phone: the switcher above it must keep its height
+// there (the bug was a strip squashed to 0 by the scrolling column).
+const BODY_MULTI = (n: number) => `## In short
+
+Stacked work: ${n} is the last of a series of pull requests, each merged into the branch of the one below it.
+
+## What changed
+
+${Array.from({ length: 14 }, (_, i) => `- \`module-${i}.ts\` keeps its part of the series and its tests.`).join("\n")}
+
+## How it was tested
+
+1. \`yarn test\`
+2. Playwright on chromium and webkit
+3. By hand on a phone
+
+## Not in this PR
+
+Everything else in the series.`;
+
+
 export function mockPrDetail(t: ThreadDTO | undefined, now: number, prUrl?: string): PrReply {
   const pr = prUrl ? (t?.changes ?? []).map((c) => c.pr).find((p) => p?.url === prUrl) ?? (t?.pr?.url === prUrl ? t.pr : undefined) : t?.pr;
   if (!t || !pr) return { error: prUrl ? "That PR is not linked to this thread." : "This thread has no PR." };
@@ -125,6 +146,29 @@ export function mockPrDetail(t: ThreadDTO | undefined, now: number, prUrl?: stri
       reviewDecision: "APPROVED",
       reviews: [{ author: "anna-k", state: "APPROVED", at: iso(now - 15 * 60_000) }],
       checks: PASSING.slice(0, 8).map((n, i) => run(n, "pass", now, 20, 30 + i * 11)),
+      threads: [],
+    } satisfies PrDetail;
+  }
+  if (pr.repo === "acme/stack" || pr.repo === "acme/api") {
+    // V0.pr-switcher-height: a thread with several PRs, each with a long body, so the PR tab scrolls on a phone.
+    return {
+      ...common,
+      title: pr.title || t.title,
+      body: BODY_MULTI(pr.number),
+      state: pr.state ?? "OPEN",
+      author: "claude-agent",
+      head: `stack/${pr.number}`,
+      base: pr.number === 7203 ? "main" : `stack/${pr.number - 1}`,
+      headSha: (Math.abs(hash(pr.url)).toString(16) + "0123456789abcdef").slice(0, 12),
+      additions: 240,
+      deletions: 36,
+      changedFiles: 7,
+      labels: [],
+      mergeable: "MERGEABLE",
+      mergeState: pr.state === "MERGED" ? "UNKNOWN" : "CLEAN",
+      reviewDecision: "",
+      reviews: [],
+      checks: PASSING.slice(0, 6).map((n, i) => run(n, "pass", now, 40, 30 + i * 11)),
       threads: [],
     } satisfies PrDetail;
   }
