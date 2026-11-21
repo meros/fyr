@@ -27,7 +27,8 @@ func longLived(r *http.Request) bool {
 	p := r.URL.Path
 	return p == "/api/stream" || p == "/mcp" || strings.HasPrefix(p, "/mcp/") ||
 		strings.HasPrefix(p, "/api/attachments") || strings.HasPrefix(p, "/api/previews/") ||
-		strings.HasPrefix(p, "/api/updates/")
+		strings.HasPrefix(p, "/api/updates/") ||
+		strings.HasSuffix(p, "/handover/export") || p == "/api/threads/handover/import"
 }
 
 // DeadlineBody is the 503's body past a deadline. Its code, host-stalled,

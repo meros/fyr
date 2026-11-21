@@ -116,7 +116,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
 A front serves two prefixes and nothing else under `/api/`: there is no default host. Every other `/api/` path is `404 {"ok": false, "code": "no-route"}` and reaches no host (V0.old-routes-end; the old routes, `?host=`, `args.host` and the first host as a default are gone). Every other section of this document that names an `/api/…` path describes the host protocol, which does not change: a host never sees the prefix, and a browser reaches each of those paths as `/api/h/<hostId>/<path after /api/>`.
 
 - `/api/h/<hostId>/<path after /api/>`: the host protocol on one host, named by its install id (`hosts[].id`). `GET /api/h/F7QK-2M9X-AB34-CD56/threads/t_12/events` is `GET /api/threads/t_12/events` on that host. An unknown id is `404 {"ok": false, "code": "no-host"}`; an unreachable host is `503 {"ok": false, "code": "host-offline", "link": {…}}`, except `state`, `threads/{id}` and the six settings reads, which the front answers from its cache with `X-Fyr-Read-At`. Uploads and previews use the same prefix; a preview's relative URLs resolve under it.
-- `/api/front/…`: what belongs to no host. `GET state` (`{now, user, buildId, front: {id, name}, hosts, projectOrder}`), `GET stream` (each frame of a host carries `host: <id>`), `POST command` (`front.projectOrder`, `front.hostOrder {ids}`, `front.hostId {host}`, `front.hostMark`), `POST presence {host, threadId, device}`, `push/*`, `auth/*`, `peer/*`.
+- `/api/front/…`: what belongs to no host. `GET state` (`{now, user, buildId, front: {id, name}, hosts, projectOrder}`), `GET stream` (each frame of a host carries `host: <id>`), `POST command` (`front.projectOrder`, `front.hostOrder {ids}`, `front.hostId {host}`, `front.hostMark`, `front.threadHandover`), `POST presence {host, threadId, device}`, `push/*`, `auth/*`, `peer/*`.
 - `hosts[].link` is `{state: "up"|"down", via: "peer"|"whois"|"pipe", opened, since, error?: {kind, text}}`.
 
 ## `GET /api/stream` (Server-Sent Events)
@@ -185,9 +185,16 @@ Actions and their args:
 | `host.deployNow` (no `threadId`) | none: a deploy that waits for running threads switches now; their turns end and each gets "continue" after the restart (V0.83). `409` when no deploy drains |
 | `provider.*` (no `threadId`) | see Providers (V0.50) |
 
-## `GET /api/threads/{id}/handover?profile=P` (SPEC 0.5 V0.45)
+## `GET /api/threads/{id}/handover?profile=P` (SPEC 0.5 V0.45, V0.trans-host-handover)
 
-`{"rung": "resume" | "adopt" | "brief", "note"?: "why rung 1 does not apply"}`: the rung a handover to `P` would use now. The handover itself still falls back when the rung fails.
+`{"rung": "resume" | "adopt" | "brief", "note"?: "why rung 1 does not apply", "cli"?: "claude", "git"?: {"repo"?, "branch"?, "default"?, "head"?, "ahead"?, "unpushed"?, "dirty"?, "worktree"?}}`: the rung a handover to `P` would use now, plus the source CLI family and git checkout summary for cross-host handover (decision 0039). The handover itself still falls back when the rung fails.
+
+## Trans-host handover (decision 0039, V0.trans-host-handover)
+
+- `POST /api/front/command` with `action: "front.threadHandover"` and `args: {fromHost, threadId, toHost, profile, model?, effort?, cwd?, projectId?, useWorktree?}` orchestrates a cross-host handover between two online hosts. Reply `result: {host, threadId, rung, note?, cwd?, sourceWarning?}` where `threadId` is the target thread ref `<toHost>/<rid>`.
+- `POST /api/threads/{id}/handover/export` (host protocol, `X-Fyr: 1`): validates handover availability on the source thread and exports `{thread, cli, git, events, conversation, sessionArchive?, sessionNote?, openChanges?, pr?}` (or with `{"wantBrief": true, "targetHost", "targetProfile"}`, runs rung 3 on the source and returns `{"brief": "…"}`).
+- `POST /api/threads/handover/import` (host protocol, `X-Fyr: 1`): creates the linked target thread (`handedOverFrom`), copies the prior events and open PR, attempts the 3-rung ladder (extracting `sessionArchive` for `--resume` with a queued `[Fyr] Host handover:` notice, else Adopt with `conversation`, else returning `{"needBrief": true}` or running Brief), and returns `{ok: true, threadId, rung, note?, cwd, projectId?}`.
+- `thread.handedOver` (via `POST /api/command` on the source host): records `handedOverTo`, appends a cross-host `handover` event, and settles the source thread.
 
 ## Slash commands (SPEC 0.5 V0.79)
 

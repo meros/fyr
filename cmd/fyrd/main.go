@@ -736,7 +736,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			log.Printf("host setup: started a run for this host's mark")
 		}
 	}()
-	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
+	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, HandoverExport: mgr.HandoverExport, HandoverImport: mgr.HandoverIn, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		Load:  sampler,
 		// V0.126 (#151): the update record, the pause and the bad release.

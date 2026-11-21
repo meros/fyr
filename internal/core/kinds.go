@@ -55,9 +55,10 @@ const (
 	KindDigest         = "digest"
 	KindDecisionOpened = "decision.opened"
 	KindDecisionGone   = "decision.withdrawn"
-	KindHandoverFailed = "handover.failed"
-	KindHandoverDone   = "handover.done"
-	KindSlotGranted    = "slot.granted" // V0.86: a queued slot is the thread's now
+	KindHandoverFailed   = "handover.failed"
+	KindHandoverDone     = "handover.done"
+	KindThreadHandedOver = "thread.handedOver" // decision 0039, V0.trans-host-handover
+	KindSlotGranted      = "slot.granted"      // V0.86: a queued slot is the thread's now
 	KindSlotQueued     = "slot.queued"  // V0.185: the thread joined or left the slot queue
 	KindSlotMemory     = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
 	KindSlotOver       = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
@@ -188,6 +189,10 @@ type (
 		// Effort is the thread's effort from now on (V0.model-choice); nil keeps it.
 		Effort *string
 		Data   map[string]any
+		// HostNotice, when non-empty, is queued into Feed with urgency Next
+		// so a resumed session learns about a cross-host move on its next
+		// turn (decision 0039, V0.trans-host-handover).
+		HostNotice string
 	}
 )
 
@@ -484,7 +489,7 @@ func init() {
 			r.T.Handover = nil
 			return Result{Events: []Event{{"effect.error", map[string]any{"kind": "handover", "error": msg}}}}, nil
 		}},
-		{Name: KindHandoverDone, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
+		{Name: KindHandoverDone, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[HandoverDoneArgs](in)
 			if err != nil {
 				return Result{}, err
@@ -495,12 +500,58 @@ func init() {
 				t.Effort = *a.Effort
 			}
 			t.Failure = nil
+			if a.HostNotice != "" {
+				t.Feed.Enqueue(Notice{About: "thread", Key: "handover.host", Urgency: Next, What: a.HostNotice, At: now})
+			}
 			return Result{Events: []Event{{"handover", a.Data}}}, nil
 		}},
+		{Name: KindThreadHandedOver, From: ownerOnly, Touch: true, Reduce: reduceThreadHandedOver},
 		{Name: KindThreadRename, From: agentOnly, Reduce: reduceRename},
 	} {
 		RegisterKind(k)
 	}
+}
+
+// reduceThreadHandedOver marks the source thread handed over to another host
+// and settles it (decision 0039, V0.trans-host-handover).
+func reduceThreadHandedOver(r Rec, in Input, now time.Time) (Result, error) {
+	a := mapArgs(in)
+	toHostID := a.Str("toHostId")
+	toThreadID := a.Str("toThreadId")
+	if toHostID == "" || toThreadID == "" {
+		return Result{}, reject(RejectBadArgs, "toHostId and toThreadId are required")
+	}
+	t := r.T
+	t.HandedOverTo = &HandoverLink{
+		HostID:   toHostID,
+		HostName: a.Str("toHostName"),
+		ThreadID: toThreadID,
+	}
+	t.Handover = nil
+	t.Failure = nil
+	settleNow(t, now)
+	r.V.SeenAt = now
+	Unsnooze(r.V)
+	data := map[string]any{
+		"from":       t.Profile,
+		"to":         a.Str("toProfile"),
+		"fromHost":   a.Str("fromHostName"),
+		"fromHostId": a.Str("fromHostId"),
+		"toHost":     a.Str("toHostName"),
+		"toHostId":   toHostID,
+		"toThread":   toThreadID,
+		"rung":       a.Str("rung"),
+	}
+	if m := a.Str("toModel"); m != "" {
+		data["model"] = m
+	}
+	if c := a.Str("toCwd"); c != "" {
+		data["toCwd"] = c
+	}
+	if n := a.Str("note"); n != "" {
+		data["note"] = n
+	}
+	return Result{Events: []Event{{"handover", data}}, Effects: []Effect{{Kind: EffectStop}}}, nil
 }
 
 // MaxTitle is the longest thread title in characters (V0.69).

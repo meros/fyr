@@ -346,6 +346,8 @@ func (f *Front) frontCommandRoute(w http.ResponseWriter, r *http.Request) {
 		f.projectSharedCommand(w, c.CommandID, c.Args)
 	case KindProjectAdd:
 		f.projectAddCommand(w, c.CommandID, c.Args)
+	case KindThreadHandover: // decision 0039, V0.trans-host-handover
+		f.threadHandoverCommand(w, r, c.CommandID, c.Args)
 	case KindHostOrder: // V0.host-ids: the order is kept by id
 		ids, ok := c.Args["ids"].([]any)
 		if !ok {

@@ -2037,7 +2037,19 @@ function App() {
         </Modal>
       )}
       {dialog === "handover" && handoverId && store.threads[handoverId] && (
-        <HandoverDialog t={store.threads[handoverId]} profiles={profilesOn(rawStore, store.threads[handoverId].hostId)} onClose={() => setDialog(null)} onConfirm={(pr, m, e) => cmds.handover(handoverId, pr, m, e)} />
+        <HandoverDialog
+          t={store.threads[handoverId]}
+          profiles={profilesOn(rawStore, store.threads[handoverId].hostId)}
+          projects={store.projects}
+          onClose={() => setDialog(null)}
+          onConfirm={(pr, m, e) => cmds.handover(handoverId, pr, m, e)}
+          onConfirmHost={async (args) => {
+            const r = await cmds.handoverHost(handoverId, args);
+            if (r.error) return r.error;
+            if (r.threadId) openThread(r.threadId, "open");
+            return null;
+          }}
+        />
       )}
       {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(h)} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "changes" && (

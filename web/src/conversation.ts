@@ -96,8 +96,22 @@ export type Item = (
   | { kind: "answer"; key: string; text: string; cancelled?: boolean }
   | { kind: "preview"; key: string; card: PreviewCard }
   | { kind: "task"; key: string; text: string; status: string; started: boolean }
-  /** V0.45: the thread moved to another profile */
-  | { kind: "handover"; key: string; from: string; to: string; rung: string; note?: string; atIso: string }
+  /** V0.45, V0.trans-host-handover: the thread moved to another profile or host */
+  | {
+      kind: "handover";
+      key: string;
+      from: string;
+      to: string;
+      rung: string;
+      note?: string;
+      atIso: string;
+      fromHost?: string;
+      fromHostId?: string;
+      fromThread?: string;
+      toHost?: string;
+      toHostId?: string;
+      toThread?: string;
+    }
 ) &
   ItemMeta;
 
@@ -402,7 +416,21 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break;
       }
       case "handover":
-        pushItem({ kind: "handover", key, from: str(e.data?.from), to: str(e.data?.to), rung: str(e.data?.rung), atIso: e.at, ...(str(e.data?.note) ? { note: str(e.data?.note) } : {}) });
+        pushItem({
+          kind: "handover",
+          key,
+          from: str(e.data?.from),
+          to: str(e.data?.to),
+          rung: str(e.data?.rung),
+          atIso: e.at,
+          ...(str(e.data?.note) ? { note: str(e.data?.note) } : {}),
+          ...(str(e.data?.fromHost) ? { fromHost: str(e.data?.fromHost) } : {}),
+          ...(str(e.data?.fromHostId) ? { fromHostId: str(e.data?.fromHostId) } : {}),
+          ...(str(e.data?.fromThread) ? { fromThread: str(e.data?.fromThread) } : {}),
+          ...(str(e.data?.toHost) ? { toHost: str(e.data?.toHost) } : {}),
+          ...(str(e.data?.toHostId) ? { toHostId: str(e.data?.toHostId) } : {}),
+          ...(str(e.data?.toThread) ? { toThread: str(e.data?.toThread) } : {}),
+        });
         break;
       case "effect.error": {
         // V0.45: a handover that could not start; other effect errors stay for tool details.

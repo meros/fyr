@@ -91,6 +91,18 @@ type Thread struct {
 	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	T3ID   string `json:"t3Id,omitempty"`
+	// HandedOverFrom and HandedOverTo link threads across a trans-host
+	// handover (decision 0039, V0.trans-host-handover).
+	HandedOverFrom *HandoverLink `json:"handedOverFrom,omitempty"`
+	HandedOverTo   *HandoverLink `json:"handedOverTo,omitempty"`
+}
+
+// HandoverLink points to the counterpart thread on another host after a
+// cross-host handover (decision 0039, V0.trans-host-handover).
+type HandoverLink struct {
+	HostID   string `json:"hostId"`
+	HostName string `json:"hostName,omitempty"`
+	ThreadID string `json:"threadId"`
 }
 
 // Conversation is the run state of the thread's agent session (SPEC 3.3),

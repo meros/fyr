@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import { recordUndo, undoCommands, undoKindOf, undoLive, type UndoEntry } from "./store.ts";
 import type { SendArgs } from "./thread.tsx";
+import type { CrossHostHandoverArgs } from "./handover.ts";
 
 export interface Toast {
   text: string;
@@ -28,6 +29,8 @@ export interface ThreadCommands {
   send(id: string, args: SendArgs): Promise<boolean>;
   /** V0.45: thread.handover; resolves to the host's error text, or null */
   handover(id: string | null, profile?: string, model?: string, effort?: string): Promise<string | null>;
+  /** Decision 0039, V0.trans-host-handover: front.threadHandover across hosts; resolves to new threadId or error text */
+  handoverHost(id: string | null, target: CrossHostHandoverArgs): Promise<{ threadId?: string; error?: string }>;
   doUndo(): Promise<void>;
   /** V0.108: asks Fyr for a new title from the conversation; the title changes when the model answers. */
   regenerateTitle(id: string): Promise<void>;
@@ -105,6 +108,28 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     return r.ok ? null : (r.error ?? "The handover could not start");
   };
 
+  const handoverHost = async (id: string | null, target: CrossHostHandoverArgs): Promise<{ threadId?: string; error?: string }> => {
+    if (!id || !target.profile || !target.toHost) return { error: "Pick a host and provider" };
+    const fromHost = opts.current.hostIdOf(id);
+    if (!fromHost) return { error: "This thread's host is not one Fyr follows now" };
+    const r = await api.frontCommand("front.threadHandover", {
+      fromHost,
+      threadId: id,
+      toHost: target.toHost,
+      profile: target.profile,
+      ...(target.model ? { model: target.model } : {}),
+      ...(target.effort !== undefined ? { effort: target.effort } : {}),
+      ...(target.cwd ? { cwd: target.cwd } : {}),
+      ...(target.projectId ? { projectId: target.projectId } : {}),
+      ...(target.useWorktree ? { useWorktree: true } : {}),
+    });
+    if (!r.ok) return { error: r.error ?? "The handover could not start" };
+    const tid = (r.threadId || (r.result && typeof r.result.threadId === "string" ? r.result.threadId : undefined)) as string | undefined;
+    const warn = r.result && typeof r.result.sourceWarning === "string" ? r.result.sourceWarning : "";
+    if (warn) notify(warn, true);
+    return { threadId: tid };
+  };
+
   const regenerateTitle = async (id: string) => {
     if (await run("thread.regenerateTitle", [id])) notify("Fyr is writing a new title");
   };
@@ -121,5 +146,5 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     opts.current.onUndone?.(entry, !bad);
   };
 
-  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, send, handover, doUndo, regenerateTitle, notify, showError };
+  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, send, handover, handoverHost, doUndo, regenerateTitle, notify, showError };
 }

@@ -31,6 +31,7 @@ import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
 import type { SlashCommand } from "./slash.ts";
+import { parsePlan, type HandoverPlan } from "./handover.ts";
 
 export interface ApiHandlers {
   /** Slice 2b: the front's state and each host's own, by install id */
@@ -137,6 +138,8 @@ export interface Api {
   profiles(host: HostId): Promise<Profile[]>;
   /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
   commands(source: CommandSource): Promise<SlashCommand[]>;
+  /** V0.45, V0.trans-host-handover: which rung a handover would use and the source checkout's git summary. */
+  handoverPlan?(host: HostId, threadId: string, profile?: string): Promise<HandoverPlan | null>;
   /** V0.98 (3): opening the Changes board is a visit; each host keeps the owner's boardSeenAt and returns the one
    *  before (slice 2b: the board marks a card against its own host's time; until then the first host's is returned). */
   boardVisit?(): Promise<string | null>;
@@ -604,6 +607,12 @@ function createHttpApi(): Api {
           .map(async (h) => (await eachOne<HostLoad>(h.id, "/load")).map((l) => stampLoad(l, h.id))),
       );
       return lists.flat();
+    },
+    async handoverPlan(host, threadId, profile) {
+      const q = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/handover${q}`), { headers: { Accept: "application/json" } });
+      if (!r.ok) return null;
+      return parsePlan(await r.json());
     },
     async boardVisit() {
       // Each host keeps the owner's boardSeenAt (F13); until the store is per host the first host's is the one returned.

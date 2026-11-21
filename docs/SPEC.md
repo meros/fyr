@@ -1050,7 +1050,7 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 | `thread.setProject` | projectId | | Files the thread by hand; `""` is No project. |
 | `thread.rename` | title | | Renames; `titleBy` becomes owner (V0.69). |
 | `thread.setView` | on | archived | Turns the live view on or off; off drops the view's actions. |
-| `thread.handover` | profile, model? | a handover runs; a run is live; a question is open; a message is unread | Moves the thread to another provider (V0.45). |
+| `thread.handover` | profile, model?, effort? | a handover runs; a run is live; a question is open; a message is unread | Moves the thread to another provider on the same host (V0.45). Cross-host handover runs through `front.threadHandover` (decision 0039, V0.trans-host-handover): a linked new thread on the target host with copied conversation history and `thread.handedOver` settling the source. |
 | `thread.setModel` | model?, effort? | archived | Changes the model and effort (V0.50). |
 | `thread.changesSeen`, `thread.fileViewed` | head, files; path, blob, viewed | | Stores the Changes tab's look and Viewed marks in the View (V0.65). |
 | `pr.merge`, `pr.rerunFailed` | method? | the effect's guard on the main PR (5.10) | Runs the Fyr effect on the main PR (V0.43). |

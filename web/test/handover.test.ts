@@ -1,12 +1,12 @@
-// SPEC 0.5 V0.45: the handover dialog says which rung runs; the divider says which one ran.
+// SPEC 0.5 V0.45, V0.trans-host-handover, decision 0039: the handover dialog says which rung runs; the divider says which one ran.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dividerLine, handoverTargets, parsePlan, planGuess, rungDone, rungText } from "../src/handover.ts";
+import { dividerLine, effectivePlan, gitLimitationNote, handoverTargets, handoverTargetsForHost, parsePlan, planGuess, rungDone, rungText, suggestTargetFolder } from "../src/handover.ts";
 import { modelChoices, nearestModel } from "../src/model-choice.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { threadMenu } from "../src/menu.ts";
-import { thread } from "./helpers.ts";
-import type { Profile } from "../src/types.ts";
+import { hid, thread } from "./helpers.ts";
+import type { Profile, Project } from "../src/types.ts";
 
 const profiles: Profile[] = [
   { id: "claude", name: "Claude", color: "", models: ["opus", "haiku"], defaultModel: "opus" },
@@ -71,4 +71,52 @@ test("V0.50 an unavailable provider is a target that cannot be picked", () => {
   const c = modelChoices(handoverTargets(t, ps));
   assert.equal(c[0].label, "X · needs setup");
   assert.equal(c[0].why, "Paste the token");
+});
+
+// SPEC V0.trans-host-handover, decision 0039: cross-host handover allows the same provider id on another host,
+// resolves linked projects / matching repos, adapts rungs across CLIs, and renders cross-host dividers & notices.
+test("V0.trans-host-handover targets, effective plan, folder suggestion and git limitations", () => {
+  const hostA = hid("HOST-A");
+  const hostB = hid("HOST-B");
+  const t = thread("HOST-A/t1", "seen", "seen", { hostId: hostA, profile: "claude", projectId: "HOST-A/p1" });
+
+  // Across hosts, all providers on target host (including "claude") are valid targets.
+  assert.deepEqual(handoverTargetsForHost(t, hostA, profiles).map((p) => p.id), ["acme", "bare"]);
+  assert.deepEqual(handoverTargetsForHost(t, hostB, profiles).map((p) => p.id), ["claude", "acme", "bare"]);
+
+  // Plan parses cli & git facts and falls back to adopt when CLI families differ.
+  const plan = parsePlan({ rung: "resume", cli: "claude", git: { repo: "github.com/acme/app", branch: "feat/x", default: "main", dirty: 2, unpushed: 1, worktree: true } });
+  assert.ok(plan && plan.git?.branch === "feat/x" && plan.git.dirty === 2 && plan.git.unpushed === 1 && plan.git.worktree === true);
+  assert.equal(effectivePlan(plan, hostA, hostB, { ...profiles[0], cli: "claude" }).rung, "resume");
+  assert.equal(effectivePlan(plan, hostA, hostB, { ...profiles[0], cli: "other" }).rung, "adopt");
+
+  // Linked project takes priority over matching repo; matching repo works when unlinked; otherwise scratch fallback.
+  const projA: Project = { id: "HOST-A/p1", rid: "p1", hostId: hostA, name: "App", color: "blue", icon: { kind: "monogram" }, folder: "/a/app", link: "l_1111111111111111", repo: "github.com/acme/app" };
+  const projBLinked: Project = { id: "HOST-B/p2", rid: "p2", hostId: hostB, name: "App", color: "blue", icon: { kind: "monogram" }, folder: "/b/app", link: "l_1111111111111111", repo: "github.com/acme/app" };
+  const linkedGroup: Project = { ...projA, members: [projA, projBLinked] };
+  assert.deepEqual(suggestTargetFolder(t, hostB, [linkedGroup], "github.com/acme/app"), { cwd: "/b/app", projectId: "p2", reason: "Linked project “App”" });
+
+  const projBRepo: Project = { id: "HOST-B/p3", rid: "p3", hostId: hostB, name: "RepoCopy", color: "teal", icon: { kind: "monogram" }, folder: "/b/repo", repo: "github.com/acme/app" };
+  assert.deepEqual(suggestTargetFolder(t, hostB, [projBRepo], "github.com/acme/app"), { cwd: "/b/repo", projectId: "p3", reason: "Matches repo github.com/acme/app" });
+
+  assert.equal(suggestTargetFolder(t, hostB, [], "github.com/acme/missing").cwd, "");
+
+  // Git limitation notice informs without mutating git.
+  const dirtyMsg = gitLimitationNote(plan.git, "host-a", "host-b");
+  assert.match(dirtyMsg, /2 uncommitted files and 1 unpushed commit on host-a/);
+  assert.match(dirtyMsg, /will not commit or push/);
+  const cleanMsg = gitLimitationNote({ branch: "feat/x" }, "host-a", "host-b");
+  assert.match(cleanMsg, /clean and pushed/);
+  const noGitMsg = gitLimitationNote(undefined, "host-a", "host-b");
+  assert.match(noGitMsg, /host-a.*host-b/);
+
+  // Cross-host divider names both hosts and carries counterpart link metadata.
+  assert.equal(dividerLine({ from: "claude", to: "claude", fromHost: "host-a", toHost: "host-b" }, profiles, "17:20"), "Handed over from Claude on host-a to Claude on host-b · 17:20");
+  const items = buildConversation([
+    { seq: 1, at: "2026-11-21T08:00:00Z", subject: "t", type: "handover", data: { from: "claude", to: "claude", fromHost: "host-a", fromHostId: "HOST-A", fromThread: "t_src", toHost: "host-b", toHostId: "HOST-B", toThread: "t_dst", rung: "resume" } },
+  ]);
+  const h = items[0] as Extract<(typeof items)[number], { kind: "handover" }>;
+  assert.equal(h.fromHost, "host-a");
+  assert.equal(h.toHost, "host-b");
+  assert.equal(h.toThread, "t_dst");
 });
