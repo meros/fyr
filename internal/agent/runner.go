@@ -38,6 +38,10 @@ type procMeta struct {
 	Tools string `json:"tools,omitempty"`
 	// Timers: the process has the CLI's own timers (V0.wakeups-via-watch).
 	Timers bool `json:"timers,omitempty"`
+	// MCP: the process was started with Fyr's own MCP server and its
+	// allowlist, so an adapter that reattaches must keep answering for it
+	// (V0.agy-reattach-allowlist).
+	MCP bool `json:"mcp,omitempty"`
 }
 
 // threadOf is the thread a runner process belongs to: its key, else the
@@ -243,12 +247,28 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 	}
 	var c cli.Session
 	if sre != nil {
-		c, err = sre.ReattachSession(conn, cli.ReattachState{
+		// V0.agy-reattach-allowlist: an adapter that answers for Fyr's own
+		// tools does so from its own state, not the ACP handshake, so the
+		// state the process started with has to come back with it. Without
+		// this, every mcp__fyr__* call of an adopted agy process opened an
+		// approval card the owner had never seen before the restart.
+		state := cli.ReattachState{
 			SessionID: t.SessionID,
 			Model:     t.Model,
 			Running:   t.Running,
 			Queued:    queued,
-		}, w, handlers)
+		}
+		if meta.MCP {
+			state.AllowedTools = []string{fyrMCPTools}
+			// V0.agy-reattach-allowlist: the MCP server's name is part of
+			// Fyr's MCP config, not the handshake, so the eager tool names
+			// stay translatable across the restart too.
+			state.MCPServers = []cli.Msg{{"name": fyrMCPName}}
+			if !s.timers {
+				state.DisallowedTools = TimerTools
+			}
+		}
+		c, err = sre.ReattachSession(conn, state, w, handlers)
 	} else {
 		c, err = re.Reattach(conn, w, handlers)
 	}

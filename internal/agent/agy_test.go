@@ -292,6 +292,73 @@ func TestAttachPassesQueuedOutboxToSessionReattacher(t *testing.T) {
 	}
 }
 
+// V0.agy-reattach-allowlist: the adapter answers Fyr's own MCP tools from the
+// launch's allowlist, which is not part of the ACP handshake. A process that
+// ran with Fyr's MCP server is adopted with the same allowlist, its server
+// name, and its timer policy; one that ran without it is not given Fyr's
+// tools it never had.
+func TestAttachPassesTheMCPAllowlistToSessionReattacher(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		meta  procMeta
+		allow bool
+	}{
+		{"with Fyr's MCP server", procMeta{Thread: "t1", CLI: "reattach-stub", MCP: true}, true},
+		{"without it", procMeta{Thread: "t1", CLI: "reattach-stub"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sock := runner.SocketPath(t.TempDir())
+			srv := &runner.Server{Logf: t.Logf}
+			if err := srv.Listen(sock); err != nil {
+				t.Fatal(err)
+			}
+			go srv.Serve()
+			t.Cleanup(func() { srv.Close(time.Second) })
+			rc := &runner.Client{Path: sock}
+
+			meta, _ := json.Marshal(tc.meta)
+			conn, err := rc.Spawn(runner.Spawn{
+				ID: "t1-proc", Key: "t1", Binary: "/bin/sh",
+				Args: []string{"-c", "read _"}, Dir: t.TempDir(), Meta: meta,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn.Detach()
+			procs, err := rc.List()
+			if err != nil || len(procs) != 1 {
+				t.Fatalf("runner list: %+v %v", procs, err)
+			}
+			ad := &reattachStubAdapter{}
+			host := &recordHost{th: core.Thread{ID: "t1", Profile: "p1", Cwd: t.TempDir()}}
+			m := New(host, Config{
+				Profile:  func(id string) provider.Profile { return provider.Profile{ID: id, CLI: "reattach-stub"} },
+				Adapters: map[string]cli.Adapter{"reattach-stub": ad},
+				Runner:   rc,
+				Prompt:   "-",
+			})
+			t.Cleanup(func() {
+				if c, err := rc.Attach("t1-proc"); err == nil {
+					c.Kill()
+					c.Forget()
+				}
+				m.StopAll()
+			})
+			m.Adopt(procs)
+
+			ad.mu.Lock()
+			got := ad.got
+			ad.mu.Unlock()
+			hasAllow := len(got.AllowedTools) == 1 && got.AllowedTools[0] == fyrMCPTools
+			hasName := len(got.MCPServers) == 1 && got.MCPServers[0]["name"] == fyrMCPName
+			hasTimers := len(got.DisallowedTools) > 0
+			if hasAllow != tc.allow || hasName != tc.allow || hasTimers != tc.allow {
+				t.Fatalf("allow=%v name=%v timers=%v, want %v: %+v", hasAllow, hasName, hasTimers, tc.allow, got)
+			}
+		})
+	}
+}
+
 // V0.agy-reactive-wakeup: KindDigest updates Thread.Activity only while a run
 // is active, so a late tool_result between runs never leaves stale Activity.
 func TestKindDigestActivityRequiresRunning(t *testing.T) {

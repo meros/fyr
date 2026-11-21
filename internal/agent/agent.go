@@ -602,7 +602,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		lastOut: time.Now(), sentAt: map[string]time.Time{}, held: map[string]bool{}, gone: make(chan struct{})}
 	if m.cfg.MCPURL != "" {
 		s.token = randHex(24)
-		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"fyr": map[string]any{
+		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{fyrMCPName: map[string]any{
 			"type": "http", "url": m.cfg.MCPURL, "headers": map[string]string{"Authorization": "Bearer " + s.token}}}})
 		// V0.129 (1), decision 0028: the token goes in a 0600 file, never on
 		// the command line, where /proc shows it to every local user. The CLI
@@ -612,7 +612,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 			return nil, fmt.Errorf("mcp config: %w", err)
 		}
 		defer os.Remove(path)
-		l.MCPConfigFile, l.AllowedTools = path, []string{"mcp__fyr__*"}
+		l.MCPConfigFile, l.AllowedTools = path, []string{fyrMCPTools}
 		// V0.wakeups-via-watch: the CLI's timers live in its process, which
 		// Fyr ends when idle, so a wake-up set hours ahead was lost. Fyr's
 		// timed watch outlives it; only /loop keeps the CLI's own.
@@ -693,7 +693,8 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		// adopt it.
 		l.Runner, l.ProcID, l.RunnerKey = m.cfg.Runner, s.proc, threadID
 		l.Meta, _ = json.Marshal(procMeta{Thread: threadID, CLI: ad.ID(), Token: s.token, Effort: l.Effort,
-			ViewTools: s.viewTools, ChangeTools: s.changeTools, Cgroup: s.cgroup, Tools: s.toolsHash, Timers: s.timers})
+			ViewTools: s.viewTools, ChangeTools: s.changeTools, Cgroup: s.cgroup, Tools: s.toolsHash, Timers: s.timers,
+			MCP: l.MCPConfigFile != ""})
 	}
 	c, err := ad.Start(l, cli.Handlers{
 		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },

@@ -287,6 +287,9 @@ func (Adapter) ReattachSession(p runner.Pipe, state cli.ReattachState, log io.Wr
 		Model:           state.Model,
 		ReattachRunning: state.Running,
 		ReattachQueued:  state.Queued,
+		AllowedTools:    state.AllowedTools,
+		DisallowedTools: state.DisallowedTools,
+		MCPServers:      state.MCPServers,
 	}, h, true), nil
 }
 
