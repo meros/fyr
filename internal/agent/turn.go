@@ -193,6 +193,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		} else {
 			m.toolResults(s, msg)
 		}
+		if !fromSubagent(msg) {
+			m.noteLastText(s, typ, msg)
+		}
 		o := s.digest.feed(msg)
 		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []core.Event{{Type: "msg", Data: trimMsg(msg)}}}
 		for _, u := range o.PRURLs {
@@ -208,7 +211,8 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.mu.Lock()
 		ended := s.live
 		interrupted := s.interrupt
-		s.live, s.interrupt = false, false
+		lastText := s.lastText
+		s.live, s.interrupt, s.lastText = false, false, ""
 		m.mu.Unlock()
 		s.digest.resetOpen()
 		m.mu.Lock()
@@ -238,10 +242,16 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			f = &core.Failure{Class: classify(text), Message: core.TruncHead(firstLine(text), 300)}
 		}
 		if f == nil && !interrupted {
-			// V0.quota-wait: a provider can end the run cleanly and write its
-			// out-of-quota notice as the turn's last words (agy does). It is
-			// the same wait, so it is read the same.
-			if notice := core.QuotaNotice(text); notice != "" {
+			// V0.quota-wait, V0.quota-wait-midturn: a provider can end the run
+			// cleanly and write its out-of-quota notice as the turn's last
+			// words (agy does). Check result first, then the final assistant
+			// message after the last tool call so a mid-turn quota halt after
+			// earlier prose is still recognized.
+			notice := core.QuotaNotice(text)
+			if notice == "" {
+				notice = core.QuotaNotice(lastText)
+			}
+			if notice != "" {
 				f = &core.Failure{Class: core.ClassQuota, Message: notice}
 			}
 		}
@@ -347,6 +357,49 @@ func (m *Manager) refreshView(threadID string) {
 	}
 }
 
+// noteLastText records the main agent's latest assistant text after the last
+// tool call in the current turn (V0.quota-wait-midturn).
+func (m *Manager) noteLastText(s *session, typ string, msg claude.Msg) {
+	inner, _ := msg["message"].(map[string]any)
+	blocks, _ := inner["content"].([]any)
+	if len(blocks) == 0 {
+		return
+	}
+	if typ == "user" {
+		for _, x := range blocks {
+			if b, _ := x.(map[string]any); b["type"] == "tool_result" {
+				m.mu.Lock()
+				s.lastText = ""
+				m.mu.Unlock()
+				return
+			}
+		}
+		return
+	}
+	var seg strings.Builder
+	sawTool := false
+	for _, x := range blocks {
+		b, _ := x.(map[string]any)
+		switch b["type"] {
+		case "tool_use":
+			seg.Reset()
+			sawTool = true
+		case "text":
+			if t, _ := b["text"].(string); strings.TrimSpace(t) != "" {
+				if seg.Len() > 0 {
+					seg.WriteByte('\n')
+				}
+				seg.WriteString(t)
+			}
+		}
+	}
+	if seg.Len() > 0 || sawTool {
+		m.mu.Lock()
+		s.lastText = seg.String()
+		m.mu.Unlock()
+	}
+}
+
 // turnStarted opens a run for a turn the CLI started without a send.
 func (m *Manager) turnStarted(s *session) {
 	m.mu.Lock()
@@ -355,6 +408,7 @@ func (m *Manager) turnStarted(s *session) {
 		return
 	}
 	s.live = true
+	s.lastText = ""
 	if s.idle != nil {
 		s.idle.Stop()
 	}

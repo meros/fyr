@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -95,8 +96,7 @@ func QuotaReset(f *Failure) *time.Time {
 	return nil
 }
 
-// resetsIn reads "resets in 35m47s" as a duration. The words after the
-// number are read by their first letters, so "in 30 minutes" is 30m too.
+// resetsIn reads "resets in 35m47s" (or "resets in 1d2h30m") as a duration.
 func resetsIn(msg string) (time.Duration, bool) {
 	i := strings.Index(strings.ToLower(msg), "resets in ")
 	if i < 0 {
@@ -107,16 +107,32 @@ func resetsIn(msg string) (time.Duration, bool) {
 		if r == ' ' || r == '\t' {
 			continue // "1h 56m 30s" is one duration
 		}
-		if !(r >= '0' && r <= '9') && r != 'h' && r != 'm' && r != 's' && r != '.' {
+		if !(r >= '0' && r <= '9') && r != 'd' && r != 'h' && r != 'm' && r != 's' && r != '.' {
 			break
 		}
 		b.WriteRune(r)
 	}
-	d, err := time.ParseDuration(strings.TrimRight(b.String(), "."))
-	if err != nil || d <= 0 {
+	s := strings.TrimRight(b.String(), ".")
+	var total time.Duration
+	if before, after, ok := strings.Cut(s, "d"); ok {
+		days, err := strconv.Atoi(before)
+		if err != nil || days < 0 {
+			return 0, false
+		}
+		total = time.Duration(days) * 24 * time.Hour
+		s = after
+	}
+	if s != "" {
+		d, err := time.ParseDuration(s)
+		if err != nil || d < 0 {
+			return 0, false
+		}
+		total += d
+	}
+	if total <= 0 {
 		return 0, false
 	}
-	return d, true
+	return total, true
 }
 
 // resetsAt reads "resets 23 Nov, 4am" (a zone in parentheses after it is the

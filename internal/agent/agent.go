@@ -248,6 +248,11 @@ type session struct {
 	// onward.
 	stopBlocked bool
 	summary     string
+	// lastText is the main agent's latest assistant text after the last tool
+	// call in the current turn (V0.quota-wait-midturn), so a mid-turn provider
+	// quota notice is recognized even when the CLI's result concatenates
+	// earlier prose from the same turn.
+	lastText string
 	inForced    bool
 	forcedWork  bool
 	// refresh: end the process after this run, so the next one starts
