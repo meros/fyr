@@ -1057,8 +1057,13 @@ html.list-resizing iframe{pointer-events:none}
 .qline .hot,.qchip .hot,.qfig.hot{color:var(--signal-ink);font-weight:600}
 /* V0.quota-in-thread: the quota of the thread's provider, a chip in the desktop thread's header: quiet, tabular
    figures, red only from 80 % (V0.44). It shrinks after the chips with names do. */
-.qchip{font-variant-numeric:tabular-nums;cursor:default;flex-shrink:.2}
+.qchip{font-variant-numeric:tabular-nums;cursor:default;flex-shrink:1;max-width:100%}
+.qchip.click{cursor:pointer}
+.qchip.click:hover{color:var(--ink)}
 .qchip.stale>span{opacity:.7}
+/* V0.quota-reset-wake: wake-on-reset buttons under a quota card (desktop popover and phone Details) */
+.qwake{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);min-width:0;max-width:100%}
+.qwake .btn{max-width:100%;min-width:0;height:auto;min-height:28px;padding:4px 10px;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:17px}
 /* SPEC 0.5 V0.80: the machine load in the rail, and a working thread's CPU in its row; colour only when hot. */
 .rail .rld{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:8px;font:400 10px/14px var(--mono);color:var(--ink-muted)}
 .rail .rld+.railx,.rail .rld+.foot{margin-top:8px}
@@ -1863,6 +1868,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .lcn{color:var(--ink-faint);font-variant-numeric:tabular-nums}
 .lcsrc{margin:0;font:400 11px/14px var(--ui);color:var(--ink-faint)}
 .lcpop{position:fixed;z-index:60;width:340px;max-width:calc(100vw - 24px);padding:12px 14px;background:var(--raised);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--lift-2);pointer-events:none}
+.lcpop.pop-click{pointer-events:auto}
 .lcpop .lcf{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);font:400 11px/14px var(--ui);color:var(--ink-faint)}
 .rail .rldr:focus-visible{outline:2px solid var(--harbour);outline-offset:2px;border-radius:4px}
 /* V0.next-step-dock: a Run card in the dock above the composer, short; the full card points to it while it waits */

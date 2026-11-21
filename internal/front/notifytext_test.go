@@ -8,6 +8,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/push"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // V0.notification-polish: a push says what the inbox row says (rows.ts
@@ -107,5 +108,48 @@ func TestFrontPushesOnceForATurnThatEndsTwice(t *testing.T) {
 	time.Sleep(wait + 200*time.Millisecond)
 	if n := dones(); n != 1 {
 		t.Fatalf("%d done pushes for one finished thread", n)
+	}
+}
+
+// V0.quota-reset-wake: when a host reports a quota reset for a thread, the
+// front pushes after NotifyDelay if the thread still waits, and stays silent
+// if the thread resumed working.
+func TestFrontPushesOnQuotaResetWhenThreadStillWaits(t *testing.T) {
+	a := fullHost(t, "a", "pa")
+	p := &fakePush{}
+	const wait = 80 * time.Millisecond
+	fs := startFront(t, Options{Push: p, NotifyDelay: wait}, HostConfig{Name: "a", URL: a.hs.URL})
+	online(t, fs.URL, 1)
+	idWait := create(t, fs.URL, "a", "waiting thread")
+	idRun := create(t, fs.URL, "a", "running thread")
+	coretest.Patch(a.eng, idWait, func(th *core.Thread, now time.Time) []core.Event {
+		th.Running, th.Starting, th.ActivityAt = false, nil, now
+		return nil
+	})
+	coretest.Patch(a.eng, idRun, func(th *core.Thread, now time.Time) []core.Event {
+		th.Running, th.Starting, th.ActivityAt = true, nil, now
+		return nil
+	})
+	eventually(t, "threads synced to front", func() bool {
+		st := getState(t, fs.URL)
+		aw, _ := threadOf(st, idWait)["attention"].(map[string]any)
+		ar, _ := threadOf(st, idRun)["attention"].(map[string]any)
+		return aw["state"] == "done" && ar["state"] == "working"
+	})
+	a.eng.Hub.Send(stream.FrameQuotaReset, map[string]any{"threadId": idWait, "provider": "claude", "window": "5 h", "at": time.Now()})
+	a.eng.Hub.Send(stream.FrameQuotaReset, map[string]any{"threadId": idRun, "provider": "claude", "window": "5 h", "at": time.Now()})
+	eventually(t, "quota reset push for waiting thread", func() bool {
+		for _, pl := range p.payloads() {
+			if pl.ThreadID == idWait && pl.State == "quota" {
+				return pl.Body == "Quota reset · The 5 h window reset; this thread still waits"
+			}
+		}
+		return false
+	})
+	time.Sleep(wait + 80*time.Millisecond)
+	for _, pl := range p.payloads() {
+		if pl.ThreadID == idRun && pl.State == "quota" {
+			t.Fatalf("pushed quota reset for a working thread: %+v", pl)
+		}
 	}
 }

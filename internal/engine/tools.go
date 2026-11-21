@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/meros/fyr/internal/core"
@@ -68,16 +69,16 @@ func (e *Engine) stateTool() mcp.Tool {
 // watchTool is the agent's own Rules (SPEC 7, #46): arm a watch over Fyr's
 // records that notifies the agent or settles the thread, or remove one.
 func (e *Engine) watchTool() mcp.Tool {
-	cond := map[string]any{"type": "object", "description": `A condition over Fyr's records (never the network). One of: {"kind":"runEnded"} (your current run ends); {"kind":"changeReached","change":<id, key or PR URL>,"phase":<phase>} (landed is a merge; live is also landed); {"kind":"condition","change":<id or key>,"type":"checks"|"review"|"conflict"|"deploy"|...,"status":"ok"|"fail"|"pending"}; {"kind":"at","at":<RFC 3339 time>}; {"kind":"idleFor","ms":<n>} (nothing happened on the thread for n ms); {"kind":"workDone"} (only alone, with then settle: no run or task is live, nothing waits for the owner, no PR is open); or {"any":[...]}, {"all":[...]}, {"not":{...}}.`}
+	cond := map[string]any{"type": "object", "description": `A condition over Fyr's records (never the network). One of: {"kind":"runEnded"} (your current run ends); {"kind":"changeReached","change":<id, key or PR URL>,"phase":<phase>} (landed is a merge; live is also landed); {"kind":"condition","change":<id or key>,"type":"checks"|"review"|"conflict"|"deploy"|...,"status":"ok"|"fail"|"pending"}; {"kind":"at","at":<RFC 3339 time>}; {"kind":"quota","provider":<profile id, optional (default this thread's)>,"window":<"5 h"|"7 d", optional>} (when that provider's quota window resets; refused when no fresh reset time is known); {"kind":"idleFor","ms":<n>} (nothing happened on the thread for n ms); {"kind":"workDone"} (only alone, with then settle: no run or task is live, nothing waits for the owner, no PR is open); or {"any":[...]}, {"all":[...]}, {"not":{...}}.`}
 	return mcp.Tool{Name: "watch",
-		Description: "Watch something in Fyr and act once when it becomes true: then \"notify\" tells you (for example when CI on a change passes), then \"settle\" settles the thread (never while a run is live), for example when the owner says the thread is finished once a PR merges. It fires once, when the condition goes from false to true, and is then removed. The same watch armed again returns the one already armed. The owner sees your watches on the thread. Remove one with {remove: <id>}.",
+		Description: "Watch something in Fyr and act once when it becomes true: then \"notify\" tells you (for example when CI on a change passes or a provider's quota window resets), then \"settle\" settles the thread (never while a run is live), for example when the owner says the thread is finished once a PR merges. It fires once, when the condition goes from false to true, and is then removed. The same watch armed again returns the one already armed. The owner sees your watches on the thread. Remove one with {remove: <id>}.",
 		Schema: obj(map[string]any{
 			"when":   cond,
 			"then":   map[string]any{"type": "string", "enum": []string{"notify", "settle"}},
 			"note":   str("For notify: one sentence for yourself, what to do when it fires."),
 			"remove": str("The id of a watch of yours to remove; nothing else is needed."),
 		}),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+		Call: func(ctx context.Context, th string, a map[string]any) (string, error) {
 			if id := sArg(a, "remove"); id != "" {
 				if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindRuleRemove, Thread: th, Args: id}); err != nil {
 					return "", err
@@ -88,6 +89,9 @@ func (e *Engine) watchTool() mcp.Tool {
 			b, _ := json.Marshal(a["when"])
 			if err := json.Unmarshal(b, &w); err != nil || a["when"] == nil {
 				return "", errors.New("when must be a condition object")
+			}
+			if err := e.resolveQuotaWhen(ctx, th, &w); err != nil {
+				return "", err
 			}
 			id := NewID("w_")
 			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindRuleArm, Thread: th,
@@ -106,6 +110,48 @@ func (e *Engine) watchTool() mcp.Tool {
 			}
 			return verb + " the watch " + r.ID + " (then " + sArg(a, "then") + "). Remove it with watch {remove: \"" + r.ID + "\"}." + note, nil
 		}}
+}
+
+// resolveQuotaWhen resolves every WhenQuota node in w against the host's quota
+// service (without e.mu), filling Provider, Window and At or refusing with the
+// reason (V0.quota-reset-wake).
+func (e *Engine) resolveQuotaWhen(ctx context.Context, th string, w *core.When) error {
+	for i := range w.All {
+		if err := e.resolveQuotaWhen(ctx, th, &w.All[i]); err != nil {
+			return err
+		}
+	}
+	for i := range w.Any {
+		if err := e.resolveQuotaWhen(ctx, th, &w.Any[i]); err != nil {
+			return err
+		}
+	}
+	if w.Not != nil {
+		if err := e.resolveQuotaWhen(ctx, th, w.Not); err != nil {
+			return err
+		}
+	}
+	if w.Kind != core.WhenQuota {
+		return nil
+	}
+	if e.QuotaReset == nil {
+		return errors.New("quota watches are not available on this host")
+	}
+	prov := strings.TrimSpace(w.Provider)
+	if prov == "" {
+		if t, ok := e.Thread(th); ok {
+			prov = t.Profile
+		}
+	}
+	if prov == "" {
+		return errors.New("quota needs a provider")
+	}
+	win, at, err := e.QuotaReset(ctx, prov, w.Window)
+	if err != nil {
+		return fmt.Errorf("cannot arm quota watch: %w", err)
+	}
+	w.Provider, w.Window, w.At = prov, win, &at
+	return nil
 }
 
 // obj builds an object schema. "required" is left out when empty: null is

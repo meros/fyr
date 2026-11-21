@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cardLines } from "../src/card.ts";
-import { CARD_WORD, cardState, money, quotaCard, windowName, quotaParts, quotaSummary, busiestFigure, type Quota } from "../src/quota.ts";
+import { CARD_WORD, cardState, money, quotaCard, windowName, quotaParts, quotaSummary, quotaWakeOptions, busiestFigure, type Quota } from "../src/quota.ts";
 
 const now = Date.parse("2026-11-14T10:00:00Z");
 const claude: Quota = {
@@ -112,4 +112,25 @@ test("the badge says Rate limited only for a rate limit", () => {
   assert.equal(CARD_WORD.notoken, "No token");
   assert.equal(cardState({ profile: "x", kind: "deepseek", error: "The provider failed (HTTP 502)" }), "error");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Rate limited by the provider; trying again later" }), "limited");
+});
+
+test("V0.quota-reset-wake: wake options enable only fresh windows with a future reset time", () => {
+  const opts = quotaWakeOptions(claude, undefined, now);
+  assert.equal(opts.length, 2);
+  assert.equal(opts[0].window, "5 h");
+  assert.equal(opts[0].disabledReason, undefined);
+  assert.equal(opts[1].window, "7 d");
+  assert.match(opts[1].disabledReason ?? "", /No reset time known/);
+
+  // Armed window carries its rule id so the control cancels it.
+  const armed = quotaWakeOptions(claude, [{ rule: "w_1", at: "2026-11-14T13:00:00Z", provider: "claudeAlt", window: "5 h" }], now);
+  assert.equal(armed[0].armedRule, "w_1");
+
+  // Stale reading disables every window.
+  const stale = quotaWakeOptions({ ...claude, stale: true }, undefined, now);
+  assert.match(stale[0].disabledReason ?? "", /stale/i);
+
+  // Token account without a reset time names sessions.
+  const tok = quotaWakeOptions({ profile: "tok", kind: "anthropic-oauth", source: "session", windows: [{ name: "5 h", usedPct: 90 }] }, undefined, now);
+  assert.match(tok[0].disabledReason ?? "", /token account/i);
 });

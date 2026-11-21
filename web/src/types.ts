@@ -105,6 +105,16 @@ export interface TaskDTO {
   quietSince?: string;
 }
 
+/** V0.wakeups-via-watch, V0.quota-reset-wake: one armed wake-up on a thread. */
+export interface WakeUp {
+  rule: string;
+  at: string;
+  note?: string;
+  provider?: string;
+  window?: string;
+  by?: string;
+}
+
 export interface ThreadDTO {
   /** Increases on every change, also across host restarts: keep the higher (API v0). */
   rev?: number;
@@ -153,8 +163,8 @@ export interface ThreadDTO {
   settleAsk?: { at: string; why?: string } | null;
   /** V0.59 (7): settles when the change (an id or a key) reaches the phase */
   settleWhen?: { change: string; phase: string };
-  /** V0.wakeups-via-watch: the agent's armed wake-ups (its watches on a time), soonest first; note is the prompt it runs then */
-  wakes?: { rule: string; at: string; note?: string }[];
+  /** V0.wakeups-via-watch, V0.quota-reset-wake: armed wake-ups (timed or quota reset), soonest first; note is the prompt it runs then */
+  wakes?: WakeUp[];
   source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;

@@ -106,10 +106,10 @@ func TestPushEndpoints(t *testing.T) {
 	if res["delivered"] != 1 || len(fp.one) != 1 || fp.one[0] != "https://push/e1" {
 		t.Fatalf("test to one device: %v %v", res, fp.one)
 	}
-	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"endpoint":"https://push/e1","finished":false}`); r.StatusCode != 200 || fp.prefs == nil || fp.prefs.Finished {
-		t.Fatalf("prefs off: %d %+v", r.StatusCode, fp.prefs)
+	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"endpoint":"https://push/e1","finished":false,"quotaReset":true}`); r.StatusCode != 200 || fp.prefs == nil || fp.prefs.Finished || !fp.prefs.QuotaReset {
+		t.Fatalf("prefs off+quota: %d %+v", r.StatusCode, fp.prefs)
 	}
-	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"endpoint":"https://push/e1"}`); r.StatusCode != 200 || !fp.prefs.Finished {
+	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"endpoint":"https://push/e1"}`); r.StatusCode != 200 || !fp.prefs.Finished || fp.prefs.QuotaReset {
 		t.Fatalf("prefs without a choice: %d %+v", r.StatusCode, fp.prefs)
 	}
 	if r := do(t, "POST", hs.URL+"/api/front/push/prefs", "", h, `{"finished":false}`); r.StatusCode != 400 {

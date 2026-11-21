@@ -1,6 +1,10 @@
 package desktop
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/meros/fyr/internal/core"
+)
 
 // Notification is what the shell posts on org.freedesktop.Notifications.
 type Notification struct {
@@ -88,7 +92,14 @@ func (ns *Notifications) Stale(threadID, state string) []uint32 {
 	defer ns.mu.Unlock()
 	var out []uint32
 	for ref, id := range ns.byRef {
-		if RefHasThread(ref, threadID) && ns.shown[id] != state {
+		if !RefHasThread(ref, threadID) {
+			continue
+		}
+		stale := ns.shown[id] != state
+		if ns.shown[id] == "quota" {
+			stale = state == string(core.Working) || state == string(core.Settled) || state == string(core.Archived)
+		}
+		if stale {
 			out = append(out, id)
 		}
 	}

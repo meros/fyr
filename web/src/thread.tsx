@@ -201,8 +201,16 @@ export function ThreadPane(p: ThreadPaneProps) {
           )}
           {/* V0.agent-pill: provider, model and effort in one pill; the model and the effort pick in place */}
           <AgentPill size="chip" segs={threadAgent(t, profile, provider, unavailableReason(t, "thread.setModel"), (a) => p.onRun("thread.setModel", a))} />
-          {/* V0.quota-in-thread: what is left on the account this thread uses, where the owner works */}
-          <ThreadQuotaChip profile={t.profile} host={t.host} name={provider.name} />
+          {/* V0.quota-in-thread, V0.quota-reset-wake: what is left on the account this thread uses, where the owner works; click to arm a wake when a window resets */}
+          <ThreadQuotaChip
+            profile={t.profile}
+            host={t.host}
+            name={provider.name}
+            wakes={t.wakes}
+            wakeDisabled={unavailableReason(t, "thread.wakeOnQuota") ?? undefined}
+            onWake={(window) => p.onRun("thread.wakeOnQuota", { window })}
+            onCancelWake={(rule) => p.onRun("thread.cancelWake", { rule })}
+          />
           {/* V0.98 (6): the newest open change's PR; Dismiss acts on the thread's main PR, so only when it is that one. */}
           {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") && headerPr(t)!.url === t.pr?.url ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(() => {

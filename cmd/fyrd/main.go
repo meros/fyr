@@ -207,6 +207,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	quotas.Logf = log.Printf
 	// V0.122: the data and the rate-limit wait survive a restart, so frequent deploys never mean frequent reads.
 	quotas.StatePath = filepath.Join(data, "quota-state.json")
+	quotas.OnUpdate = eng.SyncQuotaResets
 	quotas.SetProfiles(quotaList())
 	reg.OnChange = func() { quotas.SetProfiles(quotaList()) }
 	var mgr *agent.Manager
@@ -248,6 +249,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			}
 			return out
 		},
+		QuotaReset:    quotas.ResetOf,
+		QuotaSnapshot: quotas.Snapshot,
 	}
 	// V0.116: project setup. The icons live with the host's data; a new
 	// project with a folder gets a setup run, and each project from before

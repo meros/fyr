@@ -24,7 +24,10 @@ const (
 	FrameAgentMark = "agentMark"
 	// FrameUpdate is this host's update state (V0.host-updates).
 	FrameUpdate = "update"
-	FrameEvent  = "event"
+	// FrameQuotaReset reports that a provider's quota window reset passed for a
+	// thread (V0.quota-reset-wake), so the front can push if it still waits.
+	FrameQuotaReset = "quotaReset"
+	FrameEvent      = "event"
 )
 
 // Frame is one Server-Sent Event.

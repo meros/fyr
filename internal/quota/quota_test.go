@@ -534,3 +534,96 @@ func TestBackoffSurvivesRestart(t *testing.T) {
 	b, _ := os.ReadFile(state)
 	noLeak(t, nil, bytes.NewBuffer(append(log.Bytes(), b...)))
 }
+
+// V0.quota-reset-wake: ResetOf resolves a provider window's reset time, picks
+// the binding window when omitted, fires OnUpdate outside the lock, and
+// refuses stale reads, balance providers, and token accounts or windows
+// without a future reset time.
+func TestResetOfResolvesAndRefuses(t *testing.T) {
+	var body atomic.Value
+	var status atomic.Int32
+	status.Store(200)
+	body.Store(`{"five_hour":{"utilization":34,"resets_at":"2026-11-14T15:00:00Z"},"seven_day":{"utilization":61,"resets_at":"2026-11-18T08:00:00Z"}}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(int(status.Load()))
+		fmt.Fprint(w, body.Load().(string))
+	}))
+	defer srv.Close()
+
+	c, log := newClock(), &bytes.Buffer{}
+	dir := t.TempDir()
+	credentials(t, dir, c.t.Add(24*time.Hour))
+	s := svc(c, log,
+		Profile{ID: "claude", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}},
+		Profile{ID: "tok", Identity: "token:tok", Spec: &Spec{Kind: KindAnthropic, Token: true, BaseURL: srv.URL},
+			Key: func() (string, error) { return fakeToken, nil }},
+		Profile{ID: "ds", Env: []string{"DEEPSEEK_API_KEY=" + fakeKey}, Spec: &Spec{Kind: KindDeepSeek, BaseURL: srv.URL}},
+	)
+	var updates int
+	s.OnUpdate = func(sts []Status) {
+		// Calling Snapshot inside OnUpdate proves s.mu is not held.
+		if len(s.Snapshot()) != len(sts) {
+			t.Errorf("snapshot length mismatch")
+		}
+		updates++
+	}
+
+	// Omitted window picks soonest future reset (5 h) when none is exhausted.
+	win, at, err := s.ResetOf(context.Background(), "claude", "")
+	if err != nil || win != "5 h" || at.Format(time.RFC3339) != "2026-11-14T15:00:00Z" {
+		t.Fatalf("default window: %q %v %v", win, at, err)
+	}
+	if updates == 0 {
+		t.Fatal("OnUpdate did not run on fresh read")
+	}
+
+	// Aliases resolve cleanly.
+	if win, at, err := s.ResetOf(context.Background(), "claude", "seven_day"); err != nil || win != "7 d" || at.Format(time.RFC3339) != "2026-11-18T08:00:00Z" {
+		t.Fatalf("seven_day alias: %q %v %v", win, at, err)
+	}
+	if win, _, err := s.ResetOf(context.Background(), "claude", "5h"); err != nil || win != "5 h" {
+		t.Fatalf("5h alias: %q %v", win, err)
+	}
+
+	// Exhausted 7 d window wins when window is omitted.
+	body.Store(`{"five_hour":{"utilization":20,"resets_at":"2026-11-14T15:00:00Z"},"seven_day":{"utilization":100,"resets_at":"2026-11-18T08:00:00Z"}}`)
+	c.add(TTL)
+	if win, at, err := s.ResetOf(context.Background(), "claude", ""); err != nil || win != "7 d" || at.Format(time.RFC3339) != "2026-11-18T08:00:00Z" {
+		t.Fatalf("exhausted 7 d: %q %v %v", win, at, err)
+	}
+
+	// Stale reading is refused with the reason.
+	status.Store(429)
+	body.Store(`{"error":{"type":"rate_limit_error","message":"slow down"}}`)
+	c.add(TTL)
+	if _, _, err := s.ResetOf(context.Background(), "claude", "5 h"); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("stale read not refused: %v", err)
+	}
+
+	// Token account before any session is refused.
+	if _, _, err := s.ResetOf(context.Background(), "tok", ""); err == nil || !strings.Contains(err.Error(), "token account") {
+		t.Fatalf("token account without session not refused: %v", err)
+	}
+	// Token account with a session event that carries no resetsAt is refused.
+	prevUpdates := updates
+	s.Observe("tok", map[string]any{"rateLimitType": "five_hour", "utilization": 0.9})
+	if updates <= prevUpdates {
+		t.Fatal("OnUpdate did not run on Observe")
+	}
+	if _, _, err := s.ResetOf(context.Background(), "tok", "5 h"); err == nil || !strings.Contains(err.Error(), "no reset time") {
+		t.Fatalf("token account without resetsAt not refused: %v", err)
+	}
+	// Token account whose session resetsAt is in the past is refused.
+	s.Observe("tok", map[string]any{"rateLimitType": "five_hour", "utilization": 0.9, "resetsAt": float64(c.t.Add(-time.Minute).Unix())})
+	if _, _, err := s.ResetOf(context.Background(), "tok", "5 h"); err == nil || !strings.Contains(err.Error(), "no future reset time") {
+		t.Fatalf("past resetsAt not refused: %v", err)
+	}
+	// Balance provider and unknown provider are refused.
+	if _, _, err := s.ResetOf(context.Background(), "ds", ""); err == nil || !strings.Contains(err.Error(), "balance") {
+		t.Fatalf("balance provider not refused: %v", err)
+	}
+	if _, _, err := s.ResetOf(context.Background(), "unknown", ""); err == nil || !strings.Contains(err.Error(), "no quota tracking") {
+		t.Fatalf("unknown provider not refused: %v", err)
+	}
+	noLeak(t, s.Snapshot(), log)
+}

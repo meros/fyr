@@ -52,6 +52,7 @@ const (
 	KindRuleEnd    = "rule.end"
 	KindBuiltins   = "change.builtins"
 	KindClock      = "clock"
+	KindQuotaSync  = "quota.sync"
 	KindRuleArm    = "rule.arm"
 	KindRuleRemove = "rule.remove"
 	AfterDisarm    = "disarm"
@@ -65,6 +66,7 @@ const (
 	maxRejections  = 10
 	maxAgentRules  = 20
 	ObsClock       = "clock"
+	ObsQuota       = "quota"
 	BySystem       = "system" // the creator of the Rules Fyr arms itself
 )
 
@@ -122,16 +124,18 @@ type Observe struct {
 // When is a Condition (SPEC 7.2): one kind with its params, or any, all or
 // not of others.
 type When struct {
-	Kind   string     `json:"kind,omitempty"`
-	Change string     `json:"change,omitempty"`
-	Phase  Phase      `json:"phase,omitempty"`
-	Type   CondType   `json:"type,omitempty"`
-	Status CondStatus `json:"status,omitempty"`
-	At     *time.Time `json:"at,omitempty"`
-	Ms     int64      `json:"ms,omitempty"`
-	Any    []When     `json:"any,omitempty"`
-	All    []When     `json:"all,omitempty"`
-	Not    *When      `json:"not,omitempty"`
+	Kind     string     `json:"kind,omitempty"`
+	Change   string     `json:"change,omitempty"`
+	Phase    Phase      `json:"phase,omitempty"`
+	Type     CondType   `json:"type,omitempty"`
+	Status   CondStatus `json:"status,omitempty"`
+	At       *time.Time `json:"at,omitempty"`
+	Ms       int64      `json:"ms,omitempty"`
+	Provider string     `json:"provider,omitempty"`
+	Window   string     `json:"window,omitempty"`
+	Any      []When     `json:"any,omitempty"`
+	All      []When     `json:"all,omitempty"`
+	Not      *When      `json:"not,omitempty"`
 }
 
 // The Condition kinds. Each reads the thread record only.
@@ -140,6 +144,7 @@ const (
 	WhenReached     = "changeReached" // {change, phase}: the change got at least that far
 	WhenCondition   = "condition"     // {change, type, status}: a condition of the change has that status
 	WhenAt          = "at"            // anchored: {at}: now ≥ at
+	WhenQuota       = "quota"         // anchored: {provider, window, at}: now ≥ the provider window's reset time (V0.quota-reset-wake)
 	WhenIdleFor     = "idleFor"       // {ms}: nothing happened on the thread for ms
 	WhenIdle        = "idle"          // no run is live and the last one did not fail
 	WhenNoDecisions = "noDecisions"   // no question or approval waits
@@ -153,7 +158,7 @@ const (
 // AgentWhens are the kinds the agent may use in its own Rules.
 // workDone only alone and with then settle (V0.one-tool-vocabulary: it was
 // settle_when done).
-var AgentWhens = []string{WhenRunEnded, WhenReached, WhenCondition, WhenAt, WhenIdleFor, WhenWorkDone}
+var AgentWhens = []string{WhenRunEnded, WhenReached, WhenCondition, WhenAt, WhenQuota, WhenIdleFor, WhenWorkDone}
 
 // All is the Condition that holds when all of ws hold.
 func All(ws ...When) When { return When{All: ws} }
@@ -216,7 +221,7 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 	case WhenRunEnded:
 		n, _ := strconv.Atoi(armed["run"])
 		return truth(t.RunEnds > n)
-	case WhenAt:
+	case WhenAt, WhenQuota:
 		return truth(w.At != nil && !now.Before(*w.At))
 	case WhenIdleFor:
 		return truth(now.Sub(t.ActivityAt) >= time.Duration(w.Ms)*time.Millisecond)
@@ -269,7 +274,7 @@ func (w When) nextCheck(t *Thread) *time.Time {
 		take(w.Not.nextCheck(t))
 	}
 	switch w.Kind {
-	case WhenAt:
+	case WhenAt, WhenQuota:
 		take(w.At)
 	case WhenIdleFor:
 		at := t.ActivityAt.Add(time.Duration(w.Ms) * time.Millisecond)
@@ -286,7 +291,7 @@ func (w When) anchored() bool {
 			return true
 		}
 	}
-	return w.Kind == WhenRunEnded || w.Kind == WhenAt || w.Kind == WhenMoved
+	return w.Kind == WhenRunEnded || w.Kind == WhenAt || w.Kind == WhenQuota || w.Kind == WhenMoved
 }
 
 // anchor takes the snapshot of the anchored kinds in w.
@@ -619,7 +624,13 @@ func fire(r Rec, id string, onView bool, now time.Time, res *Result) {
 		}
 	}
 	if rule.Purpose != PurposeBuiltins { // a sync on every change move is not news
-		data := map[string]any{"rule": id, "purpose": rule.Purpose, "then": rule.Then, "outcome": outcome}
+		data := map[string]any{"rule": id, "purpose": rule.Purpose, "then": rule.Then, "outcome": outcome, "by": rule.CreatedBy}
+		if q := quotaWhen(rule.When); q != nil {
+			data["provider"], data["window"] = q.Provider, q.Window
+			if q.At != nil {
+				data["at"] = *q.At
+			}
+		}
 		if err != nil {
 			data["reason"] = err.Error()
 		}
@@ -772,6 +783,13 @@ func checkAgentWhen(t *Thread, w *When, depth int) error {
 		if w.At == nil {
 			return errors.New("at needs a time (RFC 3339)")
 		}
+	case WhenQuota:
+		if strings.TrimSpace(w.Provider) == "" {
+			return errors.New("quota needs a provider")
+		}
+		if w.At == nil {
+			return errors.New("quota window has no known reset time")
+		}
 	case WhenIdleFor:
 		if w.Ms <= 0 {
 			return errors.New("idleFor needs ms > 0")
@@ -830,17 +848,122 @@ func reduceRuleArm(r Rec, in Input, now time.Time) (Result, error) {
 // the same outcome as r, or nil (V0.one-tool-vocabulary): an agent that
 // retries a watch whose reply it lost gets the watch it armed.
 func sameRule(t *Thread, r Rule) *Rule {
-	want, _ := json.Marshal([]any{r.Purpose, r.When, r.Then})
+	key := func(x Rule) string {
+		b, _ := json.Marshal([]any{x.Purpose, stripQuotaAt(x.When), x.Then})
+		return string(b)
+	}
+	want := key(r)
 	for i := range t.Rules {
 		x := &t.Rules[i]
 		if x.CreatedBy != ByAgent || x.Status != RuleArmed {
 			continue
 		}
-		if got, _ := json.Marshal([]any{x.Purpose, x.When, x.Then}); string(got) == string(want) {
+		if key(*x) == want {
 			return x
 		}
 	}
 	return nil
+}
+
+// stripQuotaAt removes the resolved reset timestamp from WhenQuota nodes so
+// retrying the same quota watch matches even if ResetsAt drifted slightly.
+func stripQuotaAt(w When) When {
+	if w.Kind == WhenQuota {
+		w.At = nil
+	}
+	if len(w.All) > 0 {
+		w.All = slices.Clone(w.All)
+		for i := range w.All {
+			w.All[i] = stripQuotaAt(w.All[i])
+		}
+	}
+	if len(w.Any) > 0 {
+		w.Any = slices.Clone(w.Any)
+		for i := range w.Any {
+			w.Any[i] = stripQuotaAt(w.Any[i])
+		}
+	}
+	if w.Not != nil {
+		n := stripQuotaAt(*w.Not)
+		w.Not = &n
+	}
+	return w
+}
+
+// quotaWhen returns the first WhenQuota node inside w, or nil.
+func quotaWhen(w When) *When {
+	if w.Kind == WhenQuota {
+		return &w
+	}
+	for _, x := range slices.Concat(w.All, w.Any) {
+		if q := quotaWhen(x); q != nil {
+			return q
+		}
+	}
+	if w.Not != nil {
+		return quotaWhen(*w.Not)
+	}
+	return nil
+}
+
+// QuotaUpdate is one provider window's freshly observed reset time
+// (V0.quota-reset-wake).
+type QuotaUpdate struct {
+	Provider string
+	Window   string
+	ResetsAt time.Time
+}
+
+// QuotaSyncArgs carries fresh quota reset times into a thread so armed
+// WhenQuota rules follow a reset time that moved.
+type QuotaSyncArgs struct {
+	Updates []QuotaUpdate
+}
+
+// maxQuotaDrift bounds how far forward a fresh quota read may push an armed
+// reset time: a jump larger than an hour means a new window already started,
+// not drift of the armed window's reset.
+const maxQuotaDrift = time.Hour
+
+func syncQuotaWhen(w *When, u QuotaUpdate, now time.Time) bool {
+	changed := false
+	for i := range w.All {
+		if syncQuotaWhen(&w.All[i], u, now) {
+			changed = true
+		}
+	}
+	for i := range w.Any {
+		if syncQuotaWhen(&w.Any[i], u, now) {
+			changed = true
+		}
+	}
+	if w.Not != nil && syncQuotaWhen(w.Not, u, now) {
+		changed = true
+	}
+	if w.Kind == WhenQuota && w.Provider == u.Provider && w.Window == u.Window && w.At != nil {
+		if now.Before(*w.At) && !u.ResetsAt.Equal(*w.At) && u.ResetsAt.Sub(*w.At) <= maxQuotaDrift {
+			at := u.ResetsAt.UTC()
+			w.At = &at
+			changed = true
+		}
+	}
+	return changed
+}
+
+func reduceQuotaSync(r Rec, in Input, now time.Time) (Result, error) {
+	a, err := argsOf[QuotaSyncArgs](in)
+	if err != nil {
+		return Result{}, err
+	}
+	for i := range r.T.Rules {
+		if r.T.Rules[i].Status != RuleArmed {
+			continue
+		}
+		for _, u := range a.Updates {
+			syncQuotaWhen(&r.T.Rules[i].When, u, now)
+		}
+	}
+	return Result{}, nil
 }
 
 func reduceRuleRemove(r Rec, in Input, _ time.Time) (Result, error) {
@@ -861,6 +984,8 @@ func init() {
 		{Name: KindRuleRemove, From: agentOnly, Reduce: reduceRuleRemove},
 		// The clock: Rules due at their NextCheck are evaluated after it.
 		{Name: KindClock, From: observed, Untouched: true, Reduce: func(Rec, Input, time.Time) (Result, error) { return Result{}, nil }},
+		// V0.quota-reset-wake: follow a moving quota window reset time.
+		{Name: KindQuotaSync, From: observed, Untouched: true, Reduce: reduceQuotaSync},
 		{Name: KindRuleSettle, From: fromRule, Reduce: func(r Rec, _ Input, now time.Time) (Result, error) {
 			settleNow(r.T, now)
 			return Result{}, nil

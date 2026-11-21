@@ -731,6 +731,12 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 			what, _ := d["what"].(string)
 			f.suspect(l, "the host reported a stall: "+what)
 		}
+	case stream.FrameQuotaReset: // V0.quota-reset-wake: push if the thread still waits after the window reset
+		if d, err := decode(data); err == nil {
+			f.mu.Lock()
+			f.quotaResetLocked(l, d)
+			f.mu.Unlock()
+		}
 	default: // event and anything newer: the client ignores what it does not know
 		f.publishFrame(l, ev, data)
 	}

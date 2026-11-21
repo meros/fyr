@@ -90,6 +90,12 @@ test("a thread's notification closes when it no longer needs the user", () => {
   assert.equal(notificationIsStale("done", "working"), true);
   assert.equal(notificationIsStale("blocked", "done"), true);
   assert.equal(notificationIsStale("failed", "asking"), true);
+  // V0.quota-reset-wake: a quota reset push stays while the thread waits, and closes once it resumes or settles.
+  assert.equal(notificationIsStale("quota", "failed"), false);
+  assert.equal(notificationIsStale("quota", "done"), false);
+  assert.equal(notificationIsStale("quota", "working"), true);
+  assert.equal(notificationIsStale("quota", "settled"), true);
+  assert.equal(notificationIsStale("quota", "archived"), true);
   // one shown by a build before this change carries no state: the old rule
   assert.equal(notificationIsStale(undefined, "asking"), false);
   assert.equal(notificationIsStale(undefined, "failed"), false);
@@ -113,7 +119,7 @@ test("the open message goes to every window of the origin", () => {
 });
 
 // V0.119: Settings → This device → Notifications: the row's words and whether its switch works.
-import { pushRow, parsePushPrefs, FINISHED_DESC } from "../src/push.ts";
+import { pushRow, parsePushPrefs, FINISHED_DESC, QUOTA_RESET_DESC } from "../src/push.ts";
 const PLAIN = "When a thread needs you: a question, an approval, a failure.";
 
 test("the Notifications row per state", () => {
@@ -126,13 +132,14 @@ test("the Notifications row per state", () => {
   assert.equal(pushRow("unsupported", null, false).desc, "Notifications are not available in this browser.");
 });
 
-test("V0.notification-polish: finished threads are a choice of the device, on until it says no", () => {
-  assert.deepEqual(parsePushPrefs(null), { finished: true });
-  assert.deepEqual(parsePushPrefs("not json"), { finished: true });
-  assert.deepEqual(parsePushPrefs("{}"), { finished: true });
-  assert.deepEqual(parsePushPrefs('{"finished":false}'), { finished: false });
-  assert.deepEqual(parsePushPrefs('{"finished":true}'), { finished: true });
+test("V0.notification-polish, V0.quota-reset-wake: finished threads are on by default, quota resets opt-in", () => {
+  assert.deepEqual(parsePushPrefs(null), { finished: true, quotaReset: false });
+  assert.deepEqual(parsePushPrefs("not json"), { finished: true, quotaReset: false });
+  assert.deepEqual(parsePushPrefs("{}"), { finished: true, quotaReset: false });
+  assert.deepEqual(parsePushPrefs('{"finished":false}'), { finished: false, quotaReset: false });
+  assert.deepEqual(parsePushPrefs('{"finished":true,"quotaReset":true}'), { finished: true, quotaReset: true });
   assert.match(FINISHED_DESC, /finishes/);
+  assert.match(QUOTA_RESET_DESC, /quota window resets/);
 });
 
 test("V0.mac-notify: Fyr.app's window has no Web Push and still turns notifications on", () => {

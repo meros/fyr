@@ -6,6 +6,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -51,6 +52,12 @@ type AgentDeps struct {
 	SystemAgentResolve func(job string) (profile, model string, err error)
 	// SystemAgentProviders lists the providers the setting can pick.
 	SystemAgentProviders func() []SystemProvider
+	// QuotaReset resolves a provider's quota window reset time
+	// (V0.quota-reset-wake); nil refuses quota watches.
+	QuotaReset func(ctx context.Context, provider, window string) (resolvedWindow string, resetsAt time.Time, err error)
+	// QuotaSnapshot reads the cached quota statuses without network I/O
+	// (V0.quota-reset-wake).
+	QuotaSnapshot func() []quota.Status
 }
 
 // OutsideDeps are the effects outside the host and who hears of changes.

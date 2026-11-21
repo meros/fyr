@@ -55,7 +55,9 @@ func workGoing(t *Thread, counts func(Rule) bool) bool {
 	if t.SlotQueued || len(t.HeldAsks) > 0 {
 		return true
 	}
-	if slices.ContainsFunc(t.Rules, func(r Rule) bool { return r.CreatedBy == ByAgent && r.Status == RuleArmed && counts(r) }) {
+	if slices.ContainsFunc(t.Rules, func(r Rule) bool {
+		return (r.CreatedBy == ByAgent || r.Purpose == PurposeWatch) && r.Status == RuleArmed && counts(r)
+	}) {
 		return true
 	}
 	if t.wakeable() && slices.ContainsFunc(t.Feed.Queue, func(n Notice) bool { return n.Urgency == Wake && !n.Self }) {
