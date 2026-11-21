@@ -597,7 +597,7 @@ func init() {
 				return "Already set"
 			case t.Failure != nil:
 				return "The last run failed"
-			case WorkDone(t):
+			case WorkDoneAt(t, now):
 				return SettleDoneIdle
 			}
 			return ""
@@ -666,7 +666,7 @@ func init() {
 			if r := notArchived(t, v, now); r != "" {
 				return r
 			}
-			return snoozeDoneReason(t)
+			return snoozeDoneReason(t, now)
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			SnoozeWhenDone(v, now)

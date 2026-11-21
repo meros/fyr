@@ -88,7 +88,7 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if until, since := SnoozeOf(v); until != nil && until.After(now) {
 		// V0.185: until work is done never hides a request, whatever its age.
 		bound := SnoozedWhenDone(v)
-		woke := bound && WorkOver(t)
+		woke := bound && WorkOverAt(t, now)
 		for _, d := range asks {
 			if d.CreatedAt.After(*since) {
 				woke = true
@@ -104,9 +104,16 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 			return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until " + until.Format(time.RFC3339)}
 		}
 	}
+	quotaWait := QuotaWaitText(t, now)
 	switch {
 	case asking:
 		return Attention{State: Asking, Section: NeedsYou, Reason: string(asks[0].Kind), Group: askGroup(asks)}
+	case quotaWait != "":
+		// V0.quota-wait: the provider's quota stopped the run; nothing the
+		// owner says or does moves it before the reset the notice names, so
+		// the thread waits, as for CI, rather than needing them. Past that
+		// reset the wait is over and the failure is the owner's again.
+		return Attention{State: Waiting, Section: WorkingSec, Reason: quotaWait}
 	case t.Failure != nil:
 		return Attention{State: Failed, Section: NeedsYou, Reason: t.Failure.Message, Group: GroupUnblock}
 	case t.Unresponsive != nil:

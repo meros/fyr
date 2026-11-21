@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, callLabel, fullOutputOf, runLabel, cutOutput, friendlyName, groupStats, groupSummary, groupTone, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
+import { buildConversation, callLabel, fullOutputOf, roles, runLabel, cutOutput, friendlyName, groupStats, groupSummary, groupTone, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
 
 let seq = 0;
 const T0 = Date.parse("2026-11-14T09:00:00Z");
@@ -129,6 +129,21 @@ test("run end label", () => {
   assert.deepEqual(runLabel(run({ interrupted: true, durationMs: 120000 })), { text: "Stopped after 2 min", more: "" });
   assert.deepEqual(runLabel(run({})), { text: "Finished", more: "" });
   assert.equal(runLabel(run({ failure: { class: "api", message: "overloaded" } as never })).text, "Failed (api): overloaded");
+});
+
+// V0.quota-wait: a run the provider's quota stopped waits for the reset; it did not break, so it wears the waiting
+// mark and its end of turn is not an outcome the owner acts on.
+test("a quota stop reads as a wait", () => {
+  const run = (o: Partial<Extract<Item, { kind: "run" }>>) => ({ kind: "run", key: "k", failure: null, interrupted: false, compact: true, ...o }) as Extract<Item, { kind: "run" }>;
+  const it = run({ failure: { class: "quota", message: "Individual quota reached. Resets in 35m47s." } as never });
+  assert.deepEqual(runLabel(it), { text: "Waiting for quota: Individual quota reached. Resets in 35m47s.", more: "" });
+  const items = buildConversation([ev("run.ended", { failure: { class: "quota", message: "Individual quota reached." }, interrupted: false })]);
+  const end = items.find((i) => i.kind === "run") as Extract<Item, { kind: "run" }>;
+  assert.equal(end.failure?.class, "quota");
+  assert.equal(roles(items).find((_, i) => items[i].kind === "run"), "end", "a quota wait is not the outcome");
+  // A failure that is not the quota's still is.
+  const failed = buildConversation([ev("run.ended", { failure: { class: "api", message: "overloaded" }, interrupted: false })]);
+  assert.equal(roles(failed).find((_, i) => failed[i].kind === "run"), "outcome");
 });
 
 // SPEC 0.5 V0.37: the text of the turn Fyr forced to update the live view shows as one

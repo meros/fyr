@@ -183,6 +183,9 @@ func AttentionDetail(d api.Thread) (meta, detail string) {
 		return "Failed", d.Attention.Reason
 	case core.Done:
 		return "Done", d.Summary
+	case core.Waiting:
+		// V0.quota-wait: the reason says what it waits on, as Blocked's does.
+		return "", d.Attention.Reason
 	case core.Blocked:
 		// Every cause is its own sentence ("Add login: Merge", "Run: …",
 		// "Agent not responding since 08:58: …"), and the row shows it

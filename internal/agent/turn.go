@@ -230,12 +230,20 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		var f *core.Failure
 		isErr, _ := msg["is_error"].(bool)
+		text, _ := msg["result"].(string)
+		if text == "" {
+			text, _ = msg["subtype"].(string)
+		}
 		if isErr && !interrupted {
-			text, _ := msg["result"].(string)
-			if text == "" {
-				text, _ = msg["subtype"].(string)
-			}
 			f = &core.Failure{Class: classify(text), Message: core.TruncHead(firstLine(text), 300)}
+		}
+		if f == nil && !interrupted {
+			// V0.quota-wait: a provider can end the run cleanly and write its
+			// out-of-quota notice as the turn's last words (agy does). It is
+			// the same wait, so it is read the same.
+			if notice := core.QuotaNotice(text); notice != "" {
+				f = &core.Failure{Class: core.ClassQuota, Message: notice}
+			}
 		}
 		m.mu.Lock()
 		var due []chan claude.Msg
@@ -372,8 +380,13 @@ func (m *Manager) armIdle(s *session) {
 	})
 }
 
-// classify maps a result text to a failure class (SPEC 3.3).
+// classify maps a result text to a failure class (SPEC 3.3). V0.quota-wait:
+// the provider's out-of-quota notice is its own class, the one failure that
+// is a wait rather than the owner's move.
 func classify(text string) string {
+	if core.QuotaNotice(text) != "" {
+		return core.ClassQuota
+	}
 	l := strings.ToLower(text)
 	switch {
 	case strings.Contains(l, "auth") || strings.Contains(l, "401") || strings.Contains(l, "login"):

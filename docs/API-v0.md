@@ -66,7 +66,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
   "sessionId": "uuid", "createdAt": "…", "updatedAt": "…",
   "running": true, "runStartedAt": "…", "activity": "Bash yarn test", "subagents": 2,
   "activityAt": "…", "summary": "last assistant text, one line",
-  "failure": {"class": "api", "message": "…", "at": "…"},
+  "failure": {"class": "api|quota|auth|mcp|process|restart|error", "message": "…", "at": "…"},
   "decisions": [Decision],
   "heldAsks": [Decision],
   "outbox": [{"id": "…", "state": "sent|queued"}],

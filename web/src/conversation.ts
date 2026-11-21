@@ -818,9 +818,11 @@ function spoken(ms: number): string {
 }
 
 /** SPEC 0.5 V0.21: the words for the end of a run, and what one tap adds (a failure's duration).
- *  V0.quota-in-thread: no cost. The providers are subscriptions; the CLI's dollar figure is what the API would charge. */
+ *  V0.quota-in-thread: no cost. The providers are subscriptions; the CLI's dollar figure is what the API would charge.
+ *  V0.quota-wait: a run the provider's quota stopped waits for the reset; it did not break. */
 export function runLabel(it: Extract<Item, { kind: "run" }>): { text: string; more: string } {
   const d = it.durationMs !== undefined ? spoken(it.durationMs) : "";
+  if (it.failure?.class === "quota") return { text: `Waiting for quota: ${it.failure.message}`, more: d };
   if (it.failure) return { text: `Failed (${it.failure.class}): ${it.failure.message}`, more: d };
   const text = it.interrupted ? (d ? `Stopped after ${d}` : "Stopped") : d ? `Finished in ${d}` : "Finished";
   return { text, more: "" };
@@ -872,7 +874,8 @@ export function roles(items: Item[]): Role[] {
       case "assistant":
         return !it.quiet && lastText.get(turns[i]) === i ? "outcome" : "process";
       case "run":
-        return it.failure ? "outcome" : "end";
+        // V0.quota-wait: a quota wait is not an outcome the owner acts on.
+        return it.failure && it.failure.class !== "quota" ? "outcome" : "end";
       case "effect":
         return it.ok ? "process" : "outcome";
       case "task":

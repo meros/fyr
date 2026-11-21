@@ -230,9 +230,9 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 	case WhenNoDecisions:
 		return truth(len(t.Decisions) == 0)
 	case WhenWorkOver:
-		return truth(WorkOver(t))
+		return truth(WorkOverAt(t, now))
 	case WhenWorkDone:
-		return truth(WorkDone(t))
+		return truth(WorkDoneAt(t, now))
 	case WhenNoOpenPR:
 		return truth(!OpenPR(t))
 	}
@@ -526,7 +526,27 @@ func NextCheck(t *Thread, v *View, now time.Time) *time.Time {
 	if at := stopCheck(t); at != nil && (out == nil || at.Before(*out)) {
 		out = at
 	}
+	// V0.quota-wait: the clock re-reduces at the reset the notice names, so
+	// a thread Waiting for quota becomes the owner's again by itself.
+	if at := quotaCheck(t, now); at != nil && (out == nil || at.Before(*out)) {
+		out = at
+	}
 	return out
+}
+
+// quotaCheck is when the clock must re-reduce a thread Waiting for quota, so
+// the wait ends at the reset, or nil (a failure that is not the quota's, a
+// run since, a notice without a time, a reset already passed: then the
+// failure is the owner's and no clock ends it).
+func quotaCheck(t *Thread, now time.Time) *time.Time {
+	if !QuotaStopped(t) || t.Running || t.RunningTasks() > 0 {
+		return nil
+	}
+	at := QuotaReset(t.Failure)
+	if at == nil || !at.After(now) {
+		return nil
+	}
+	return at
 }
 
 func viewRules(v *View) []Rule {

@@ -41,8 +41,11 @@ func SettleWhenDone(t *Thread, by string, now time.Time) {
 // WorkDone reports that nothing is left on the thread (V0.203): no work goes
 // on, nothing waits for the owner, and no PR is open. The thread's own settle
 // Rules do not count as work: they are what waits for this.
-func WorkDone(t *Thread) bool {
-	if NeedsOwnerNow(t) || workGoing(t, func(r Rule) bool { return r.Purpose != PurposeSettle }) {
+func WorkDone(t *Thread) bool { return WorkDoneAt(t, time.Now()) }
+
+// WorkDoneAt is WorkDone at now (V0.quota-wait: a quota wait ends at its reset).
+func WorkDoneAt(t *Thread, now time.Time) bool {
+	if NeedsOwnerNowAt(t, now) || workGoing(t, func(r Rule) bool { return r.Purpose != PurposeSettle }, now) {
 		return false
 	}
 	return !OpenPR(t)

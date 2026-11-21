@@ -727,6 +727,17 @@ function railFixture(now: number): Fixture {
         attention: { state: "done", section: "seen" },
       }),
     );
+  // V0.quota-wait: the provider's quota stopped the run; the thread waits for
+  // the reset rather than needing the owner, and its end of turn says so.
+  if (MOCK_QUOTAW)
+    threads.push(
+      base("t_quotaw", "Migrate the billing tables", now, 5, {
+        project: "acme/web",
+        failure: { class: "quota", message: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 35m47s.", at: min(5) },
+        attention: { state: "waiting", section: "working", reason: "Waiting for quota · resets " + new Date(Date.now() + 35 * 60_000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) },
+        unavailable: { "thread.retry": "The last run did not fail" },
+      }),
+    );
   const working: [string, string, string, number, number, "working" | "waiting"][] = [
     ["t_babysit", "Babysit PR #4170", "Bash git rebase origin/main", 0, 3, "working"],
     ["t_mapperf", "Map perf", "Bash yarn vitest src/map", 2, 12, "working"],
@@ -822,6 +833,17 @@ function railFixture(now: number): Fixture {
   push(131, "decision.opened", { decision: ask });
   events.t_lasso = ev2;
   events.t_mapperf = calmTurn("t_mapperf", now);
+  // V0.quota-wait: ?quotaw=1 has a thread whose run the provider's quota
+  // stopped: its end of turn reads as a wait, on both fronts.
+  if (MOCK_QUOTAW) {
+    const T = now - 6 * 60_000;
+    events.t_quotaw = [
+      ev(1, T, "t_quotaw", "user", { id: "m_qw1", text: "Migrate the billing tables to the new schema.", images: 0 }),
+      ev(2, T, "t_quotaw", "run.started", {}),
+      ev(3, T + 20_000, "t_quotaw", "msg", assistantText("I will start with the invoices table.")),
+      ev(4, T + 40_000, "t_quotaw", "run.ended", { failure: { class: "quota", message: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 35m47s.", at: iso(T + 40_000) }, interrupted: false, durationMs: 40_000 }),
+    ];
+  }
   // V0.164: ?undeclared= has the host tell Map perf's agent about the heavy work it did not ask for (N9).
   if (MOCK_UNDECLARED) {
     const last = events.t_mapperf[events.t_mapperf.length - 1];
@@ -1845,6 +1867,7 @@ function mockDeploy() {
 /** V0.54: ?hosts=2 in the mock shows a front with two hosts, the second (host-b, with t_lasso and t_triage)
  *  offline for 25 minutes (the layout test uses it). Read once at load, as ?deploy=. */
 const MOCK_LONGTITLE = typeof location !== "undefined" ? new URLSearchParams(location.search).get("longtitle") === "1" : false;
+const MOCK_QUOTAW = typeof location !== "undefined" ? new URLSearchParams(location.search).get("quotaw") === "1" : false;
 const MOCK_RUNS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("runs") === "1" : false;
 const MOCK_ROOTPROMPT = typeof location !== "undefined" ? new URLSearchParams(location.search).get("rootprompt") === "no" : false;
 const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;
