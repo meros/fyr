@@ -182,8 +182,12 @@ func mergeRefused(t *Thread, url, text string, now time.Time) []Event {
 	id := ""
 	if c != nil {
 		p, id = c.PR, c.ID
-		setCondition(c, CondMerge, CondFail, "Merge refused: "+first, ByObserved, now)
-		c.UpdatedAt = now
+		// A PR already observed merged or closed holds no PR conditions
+		// (decision 0018); the result arrived after the observation.
+		if p == nil || p.State == "OPEN" {
+			setCondition(c, CondMerge, CondFail, "Merge refused: "+first, ByObserved, now)
+			c.UpdatedAt = now
+		}
 	}
 	return []Event{{"merge.refused", map[string]any{"pr": url, "change": id, "reason": first, "next": refusedNext(p, text)}}}
 }
