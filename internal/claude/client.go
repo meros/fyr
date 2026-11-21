@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/runner"
 )
@@ -87,8 +88,10 @@ func Start(s Spec) (*Client, error) {
 		"--permission-prompt-tool", "stdio"}
 	args := append(base, s.Args...)
 	// #167: an agent process never gets the launcher's variables, which
-	// name the live install (its runner and ready file).
-	env := append(launchenv.Scrub(os.Environ()), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
+	// name the live install (its runner and ready file). V0.agent-env: nor a
+	// credential or endpoint variable from whoever started fyrd; the
+	// adapter's (s.Env) are the only ones it gets.
+	env := append(launchenv.Without(os.Environ(), append(append([]string{}, launchenv.Names...), cli.CredentialVars...)), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
 	env = append(env, launchenv.Scrub(s.Env)...)
 	if len(s.Wrap) > 0 {
 		args = append(append(append([]string{}, s.Wrap[1:]...), s.Binary), args...)
