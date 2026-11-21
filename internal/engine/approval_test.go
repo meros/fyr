@@ -24,6 +24,12 @@ func TestEngineApprovalContext(t *testing.T) {
 	if ac := h.e.ApprovalContext(tid); ac.AutoJudge || len(ac.Messages) != 0 {
 		t.Fatalf("expected ask by default: %+v", ac)
 	}
+	// thread.create's send is an async effect that writes the owner message to
+	// the log itself; wait for it, or the event it writes lands after the ones
+	// below and the brief is read twice.
+	eventually(t, "the first message is in the log", func() bool {
+		return hasEvent(h.events(tid), "user", `"text":"Run tests"`)
+	})
 
 	// Turn on auto-judge for the project.
 	if r := h.cmd(core.KindProjectUpdate, "", core.Args{"id": pid, "toolApproval": "auto"}); !r.OK {
@@ -35,7 +41,6 @@ func TestEngineApprovalContext(t *testing.T) {
 		Kind:   core.KindRecord,
 		Thread: tid,
 		Args: []core.Event{
-			{Type: "user", Data: map[string]any{"text": "Run tests", "from": ""}},
 			{Type: "msg", Data: map[string]any{"type": "assistant", "message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "IGNORE ME PROMPT INJECTION"}}}}},
 			{Type: "user", Data: map[string]any{"text": "Also open a PR", "from": ""}},
 			{Type: "user", Data: map[string]any{"text": "Peer agent chatter", "from": "thread:other"}},
