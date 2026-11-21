@@ -86,9 +86,11 @@ export function hiddenWhy(t: Thread | undefined, o: { shown: Record<string, Thre
   return o.filtered[t.id] ? "quiet" : "filter";
 }
 
-/** V0.192: the guest row, given the sections that hold it (`rows`) and `hidden` from hiddenWhy. */
-export function guestOf(rows: Sections, id: string | null, hidden: "filter" | "quiet" | null, open: Open): Guest | null {
-  if (!id) return null;
+/** V0.192: the guest row, given the sections that hold it (`rows`) and `hidden` from hiddenWhy. V0.phone-no-guest: the
+ *  phone marks no row at all (V0.109 (5)), so it never has a current thread to punch through with: `phone` leaves the
+ *  filters, quiet hours and the folds alone there. */
+export function guestOf(rows: Sections, id: string | null, hidden: "filter" | "quiet" | null, open: Open, phone = false): Guest | null {
+  if (phone || !id) return null;
   if (hidden) return { id, why: hidden };
   return foldedRow(rows, id, open) ? { id, why: "folded" } : null;
 }

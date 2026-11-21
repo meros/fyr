@@ -104,6 +104,15 @@ test("V0.192: a folded section draws the guest alone; an open one its rows, and 
   assert.equal(guestOf(sec(), "p", null, {}), null, "pinned rows never fold");
 });
 
+test("V0.phone-no-guest: the phone marks no row, so no row punches through a fold, a filter or quiet hours", () => {
+  const sec_ = sec();
+  assert.deepEqual(guestOf(sec_, "z", null, {}, true), null, "a folded section draws nothing for the last thread opened");
+  assert.deepEqual(guestOf(sec_, "z", null, { settled: false }, true), null, "nor when it is folded by the owner's hand");
+  assert.equal(guestOf(sec_, "s2", "filter", {}, true), null, "a filter keeps the thread out");
+  assert.equal(guestOf(sec_, "s2", "quiet", {}, true), null, "and quiet hours");
+  assert.deepEqual(guestOf(sec_, "z", null, {}, false), { id: "z", why: "folded" }, "the desktop keeps its row");
+});
+
 test("V0.186: next and previous skip folded sections and leave from the header's place", () => {
   const all = ["p", "a", "w", "s1", "z"];
   const shown = ["p", "a", "s1"]; // Working is folded, and so is Settled

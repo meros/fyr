@@ -500,7 +500,9 @@ function App() {
   if (placeRef.current?.id !== sel) placeRef.current = placeOf(rows, sel);
   const place = phone || placeRef.current?.id === freed ? null : placeRef.current;
   const drawn = sec;
-  const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen), [rows, sel, hidden, sectionOpen]);
+  // V0.phone-no-guest: not on the phone, which marks no row at all (V0.109 (5)): nothing is current there, so a folded
+  // section draws no row for it either.
+  const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen, phone), [rows, sel, hidden, sectionOpen, phone]);
   const order = useMemo(() => flatOrder(drawn, limits), [drawn, limits]);
   useListAnchor(useMemo(() => flatOrder(rows, limits).join(" "), [rows, limits]), sel);
   const allRows = useMemo(() => flatOrder(rows), [rows]); // V0.186: with the rows not drawn, for the guest's place
@@ -1070,10 +1072,11 @@ function App() {
   };
 
   // V0.48, V0.196: Snoozed and Settled opened from their header close again after 10 s, on both fronts, unless the
-  // current thread is in them.
+  // current thread is in them. V0.phone-no-guest: the phone has no current thread on the list (V0.109 (5)), so there a
+  // section never waits for one.
   const [hideAt, setHideAt] = useState<HideAt>({});
   const [ahTick, setAhTick] = useState(0);
-  const activeForHide: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
+  const activeForHide: SectionKey | null = !phone && sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
   const setHide = (k: SectionKey, at: number | null) =>
     setHideAt((h) => {
       const next = { ...h };

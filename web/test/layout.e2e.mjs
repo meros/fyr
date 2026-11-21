@@ -5440,20 +5440,21 @@ try {
     const d = await evaluate(FOLD("settled"));
     check(d.id === moved && fine(d), `${ctx}: a thread moving into folded Settled (${JSON.stringify({ moved, d })})`);
   } else {
-    // 1. Back from a thread in folded Settled: it stayed folded and shows that row. 390 px is the phone's minimum.
+    // 1. Back from a thread in folded Settled: the section stayed folded and draws no row. V0.phone-no-guest: the phone
+    // marks no row (V0.109 (5)), so nothing punches through a fold there. 390 px is the phone's minimum.
     await openScreen({ url: "?mock=rail&open=t_set7", ready: "!!document.querySelector('.m-thread')" }, 390, 844);
     await evaluate(`history.back()`);
-    await waitFor(`!!document.querySelector('.m-list') && ${FOLD("settled")}.rows === 1`, { soft: true });
+    await waitFor(`!!document.querySelector('.m-list')`, { soft: true });
     await evaluate(`document.querySelector(${JSON.stringify(head("settled"))})?.scrollIntoView({ block: 'center' })`);
     await settle();
     const a = await evaluate(FOLD("settled"));
-    check(fine(a), `${ctx}: the folded section does not show the row (${JSON.stringify(a)})`);
+    check(a.expanded === "false" && a.rows === 0 && a.tag === null, `${ctx}: the folded section shows the row (${JSON.stringify(a)})`);
     await shot("folded-group-phone.png");
-    // 2. A tap only toggles.
+    // 2. A tap only toggles: it unfolds, and its rows are plain rows.
     await evaluate(`document.querySelector(${JSON.stringify(head("settled"))}).click()`);
     await waitFor(`${FOLD("settled")}.rows > 1`, { soft: true });
     const b = await evaluate(FOLD("settled"));
-    check(b.expanded === "true" && b.tag === null, `${ctx}: unfolded, the row is still tagged (${JSON.stringify(b)})`);
+    check(b.expanded === "true" && b.tag === null, `${ctx}: unfolded, a row is tagged (${JSON.stringify(b)})`);
   }
   // Last on both: the owner's fold survives a reload (a new build reloads by itself), and so does an unfold.
   const url = `${origin}/?mock=rail`;
