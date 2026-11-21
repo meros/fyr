@@ -3,30 +3,43 @@ package core
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
 // V0.wakeups-via-watch: an agent's wake-up is its watch on a time
-// ({kind: "at"}, then notify). The owner sees it on the thread and the
-// inbox row, and cancels it with thread.cancelWake.
+// ({kind: "at"}, then notify). V0.quota-reset-wake: a watch on a provider's
+// quota window ({kind: "quota"}, armed by the agent or by the owner with
+// thread.wakeOnQuota) is a wake-up too. The owner sees both on the thread
+// and the inbox row, and cancels either with thread.cancelWake.
 
-// KindCancelWake is the owner's cancel of an agent's wake-up.
+// KindCancelWake is the owner's cancel of a thread's wake-up.
 const KindCancelWake = "thread.cancelWake"
+
+// KindWakeOnQuota is the owner's action to continue a thread when a
+// provider's quota window resets (V0.quota-reset-wake).
+const KindWakeOnQuota = "thread.wakeOnQuota"
 
 // WakeUp is one armed wake-up as clients and notices read it.
 type WakeUp struct {
-	Rule string    `json:"rule"`
-	At   time.Time `json:"at"`
-	Note string    `json:"note,omitempty"`
+	Rule     string    `json:"rule"`
+	At       time.Time `json:"at"`
+	Note     string    `json:"note,omitempty"`
+	Provider string    `json:"provider,omitempty"`
+	Window   string    `json:"window,omitempty"`
+	By       string    `json:"by,omitempty"`
 }
 
 // WakeOf is the wake-up a Rule is, or nil.
 func WakeOf(r Rule) *WakeUp {
-	if r.Purpose != PurposeWatch || r.CreatedBy != ByAgent || r.Status == "suspended" || r.When.Kind != WhenAt || r.When.At == nil {
+	if r.Purpose != PurposeWatch || (r.CreatedBy != ByAgent && r.CreatedBy != ByOwner) || r.Status == RuleSuspended || r.When.At == nil {
+		return nil
+	}
+	if r.When.Kind != WhenAt && r.When.Kind != WhenQuota {
 		return nil
 	}
 	note, _ := r.Then.Args["note"].(string)
-	return &WakeUp{Rule: r.ID, At: *r.When.At, Note: note}
+	return &WakeUp{Rule: r.ID, At: *r.When.At, Note: note, Provider: r.When.Provider, Window: r.When.Window, By: r.CreatedBy}
 }
 
 // Wakes are the thread's armed wake-ups, soonest first.
@@ -42,6 +55,64 @@ func Wakes(t *Thread) []WakeUp {
 }
 
 func init() {
+	register(&Action{Name: KindWakeOnQuota, Label: "Wake when quota resets",
+		Available: func(t *Thread, v *View, now time.Time) string {
+			if t.Settle.At != nil {
+				return "Settled threads do not wake"
+			}
+			return notArchived(t, v, now)
+		},
+		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+			provider := strings.TrimSpace(a.Str("provider"))
+			if provider == "" {
+				provider = t.Profile
+			}
+			if provider == "" {
+				return nil, fmt.Errorf("%w: provider is required", ErrBadArgs)
+			}
+			at, err := time.Parse(time.RFC3339, a.Str("at"))
+			if err != nil || !at.After(now) {
+				return nil, fmt.Errorf("%w: at must be a future RFC 3339 time", ErrBadArgs)
+			}
+			at = at.UTC()
+			window := strings.TrimSpace(a.Str("window"))
+			note := strings.TrimSpace(a.Str("note"))
+			if note == "" {
+				what := "The quota window"
+				if window != "" {
+					what = "The " + window + " quota window"
+				}
+				if t.Failure != nil {
+					note = what + " has reset (the last run stopped with: " + t.Failure.Message + "). Continue from where you stopped."
+				} else {
+					note = what + " has reset. Continue from where you stopped."
+				}
+			}
+			id := strings.TrimSpace(a.Str("id"))
+			if id == "" {
+				id = "w_quota_" + provider
+				if window != "" {
+					id += "_" + strings.ReplaceAll(window, " ", "")
+				}
+			}
+			// Replace an existing armed quota wake for the same (provider, window).
+			DropRules(t, func(r Rule) bool {
+				return r.Purpose == PurposeWatch && r.When.Kind == WhenQuota && r.When.Provider == provider && r.When.Window == window
+			})
+			t.Failure = nil
+			Unsnooze(v)
+			v.SeenAt = now
+			ArmRule(t, Rule{
+				ID:        id,
+				Purpose:   PurposeWatch,
+				When:      When{Kind: WhenQuota, Provider: provider, Window: window, At: &at},
+				Then:      Then{Kind: KindRuleNotify, Args: map[string]any{"note": note}},
+				After:     AfterDisarm,
+				CreatedBy: ByOwner,
+			}, now)
+			return nil, nil
+		}})
+
 	register(&Action{Name: KindCancelWake, Label: "Cancel wake-up",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
 			if len(Wakes(t)) == 0 {
@@ -65,15 +136,22 @@ func init() {
 		}})
 }
 
-// cancelledWakes are the owner's notices for wake-ups an owner's input
-// dropped (V0.wakeups-via-watch): the agent must not count on them.
+// cancelledWakes are the owner's notices for agent wake-ups an owner's input
+// dropped (V0.wakeups-via-watch): the agent must not count on them. An
+// owner-armed wake-up cancels quietly.
 func cancelledWakes(b, a *Thread) []Notice {
 	var out []Notice
 	for _, w := range Wakes(b) {
+		if w.By == ByOwner {
+			continue
+		}
 		if x := FindRule(a, w.Rule); x != nil && WakeOf(*x) != nil {
 			continue
 		}
 		what := fmt.Sprintf("The owner cancelled your wake-up %s at %s", w.Rule, w.At.UTC().Format(time.RFC3339))
+		if w.Window != "" {
+			what += fmt.Sprintf(" (when the %s window resets)", w.Window)
+		}
 		if w.Note != "" {
 			what += fmt.Sprintf(" (%q)", w.Note)
 		}

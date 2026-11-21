@@ -102,6 +102,59 @@ func (f *Front) send(host, hostID string, m map[string]any) {
 	f.opt.Push.Notify(core.Owner, pl)
 }
 
+// quotaResetLocked plans a push when a provider's quota window resets for a
+// thread (V0.quota-reset-wake): after NotifyDelay, if the thread still waits
+// (not working, settled or archived) and push is allowed, the front notifies
+// every device that asked for quota reset pushes (push.Prefs.QuotaReset).
+func (f *Front) quotaResetLocked(l *link, d map[string]any) {
+	if f.opt.Push == nil {
+		return
+	}
+	id, _ := d["threadId"].(string)
+	if id == "" {
+		return
+	}
+	window, _ := d["window"].(string)
+	host := l.name()
+	hostID := f.idOfLocked(l)
+	time.AfterFunc(f.opt.NotifyDelay, func() {
+		f.mu.Lock()
+		cur := l.raw[id]
+		f.mu.Unlock()
+		if cur == nil {
+			return
+		}
+		if st := attentionOf(cur); st == string(core.Working) || st == string(core.Settled) || st == string(core.Archived) {
+			return
+		}
+		f.sendQuotaReset(host, hostID, cur, window)
+	})
+}
+
+func (f *Front) sendQuotaReset(host, hostID string, m map[string]any, window string) {
+	d, err := dtoOf(m)
+	if err != nil {
+		f.opt.Logf("front: push: %v", err)
+		return
+	}
+	now := time.Now()
+	if !notify.Allowed(f.presence.Watched(d.ID, now), d.QuietUntil, now) {
+		return
+	}
+	meta := "Quota reset"
+	if host != "" && len(f.all()) > 1 {
+		meta = host + " · " + meta
+	}
+	detail := "Quota window reset; this thread still waits"
+	if window != "" {
+		detail = fmt.Sprintf("The %s window reset; this thread still waits", window)
+	}
+	pl := push.PayloadFor(d.ID, d.Title, "quota", meta, detail)
+	pl.Host = hostID
+	pl.Origin = &push.Origin{Host: host, ProjectID: d.ProjectID}
+	f.opt.Push.Notify(core.Owner, pl)
+}
+
 func dtoOf(m map[string]any) (api.Thread, error) {
 	var d api.Thread
 	b, err := json.Marshal(m)

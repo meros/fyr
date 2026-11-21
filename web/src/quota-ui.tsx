@@ -2,11 +2,11 @@
 // (every minute while the page is visible; the host reads providers at most every five minutes).
 
 import { profilesOf, type HostProfiles } from "./hosts.ts";
-import { useEffect, useState } from "preact/hooks";
-import type { Profile } from "./types.ts";
+import { useEffect, useRef, useState } from "preact/hooks";
+import type { Profile, WakeUp } from "./types.ts";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { hasData, quotaCard, quotaFor, quotaParts, quotaSummary, busiestFigure, type Quota } from "./quota.ts";
+import { hasData, quotaCard, quotaFor, quotaParts, quotaSummary, quotaWakeOptions, busiestFigure, type Quota } from "./quota.ts";
 import type { Card } from "./card.ts";
 import { CardView, HoverCard, useHover } from "./card-ui.tsx";
 
@@ -139,23 +139,123 @@ export function QuotaList(p: { profiles: HostProfiles }) {
   );
 }
 
-/** V0.quota-in-thread: the quota of the provider a thread runs on, as a chip in the desktop thread's header, after the
- *  model and the effort: every window, the reset times on hover. Nothing without a reading or an error. */
-export function ThreadQuotaChip(p: { profile: string; host?: string; name: string }) {
+/** V0.quota-reset-wake: wake-on-reset buttons under a quota card, shared by the desktop quota popover and phone Details. */
+export function QuotaWakeActions(p: {
+  q: Quota;
+  wakes?: WakeUp[];
+  wakeDisabled?: string;
+  onWake(window: string): void;
+  onCancelWake?(rule: string): void;
+}) {
+  const opts = quotaWakeOptions(p.q, p.wakes, Date.now(), p.wakeDisabled);
+  if (!opts.length) return null;
+  return (
+    <div class="qwake">
+      {opts.map((o) =>
+        o.armedRule ? (
+          <button
+            key={o.window}
+            type="button"
+            class="btn sm"
+            title={`Wakes when the ${o.window} window resets. Press to cancel.`}
+            onClick={() => p.onCancelWake?.(o.armedRule!)}
+          >
+            Cancel {o.window} wake
+          </button>
+        ) : (
+          <button
+            key={o.window}
+            type="button"
+            class="btn sm"
+            disabled={!!o.disabledReason}
+            title={o.disabledReason ?? `Continue this thread when the ${o.window} window resets${o.when ? ` (${o.when})` : ""}`}
+            onClick={() => p.onWake(o.window)}
+          >
+            Wake when {o.window} resets{o.when ? ` (${o.when})` : ""}
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** V0.quota-in-thread, V0.quota-reset-wake: the quota of the provider a thread runs on, as a chip in the desktop
+ *  thread's header, after the model and the effort: every window, the reset times on hover, and click to arm or cancel
+ *  a wake when a window resets. Nothing without a reading or an error. */
+export function ThreadQuotaChip(p: {
+  profile: string;
+  host?: string;
+  name: string;
+  wakes?: WakeUp[];
+  wakeDisabled?: string;
+  onWake?(window: string): void;
+  onCancelWake?(rule: string): void;
+}) {
   const q = quotaFor(useQuotas(), p.profile, p.host);
   const hv = useHover();
+  const [openAt, setOpenAt] = useState<DOMRect | null>(null);
+  const chipRef = useRef<HTMLSpanElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openAt) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (chipRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      setOpenAt(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenAt(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openAt]);
   if (!q || !(hasData(q) || q.error)) return null;
   const parts = quotaParts(q);
+  const canOpen = !!p.onWake && !!q.windows?.length;
+  const toggle = () => {
+    if (!canOpen || !chipRef.current) return;
+    hv.close();
+    setOpenAt((prev) => (prev ? null : chipRef.current!.getBoundingClientRect()));
+  };
   return (
-    <span class={`chip m qchip${q.stale ? " stale" : ""}`} tabIndex={0} aria-label={`Quota: ${quotaSummary(q, p.name)}`} {...hv.bind}>
-      {hv.at && <QuotaHover c={quotaCard(q, p.name, Date.now())} at={hv.at} />}
+    <span
+      ref={chipRef}
+      class={`chip m qchip${q.stale ? " stale" : ""}${canOpen ? " click" : ""}`}
+      role={canOpen ? "button" : undefined}
+      aria-expanded={canOpen ? !!openAt : undefined}
+      tabIndex={0}
+      aria-label={`Quota: ${quotaSummary(q, p.name)}`}
+      {...hv.bind}
+      onClick={canOpen ? toggle : undefined}
+      onKeyDown={canOpen ? (e: KeyboardEvent) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle()) : undefined}
+    >
+      {openAt ? (
+        <HoverCard at={openAt} place="below" interactive popRef={popRef}>
+          <CardView c={quotaCard(q, p.name, Date.now())} />
+          <QuotaWakeActions
+            q={q}
+            wakes={p.wakes}
+            wakeDisabled={p.wakeDisabled}
+            onWake={(w) => (p.onWake!(w), setOpenAt(null))}
+            onCancelWake={(r) => (p.onCancelWake?.(r), setOpenAt(null))}
+          />
+        </HoverCard>
+      ) : (
+        hv.at && <QuotaHover c={quotaCard(q, p.name, Date.now())} at={hv.at} />
+      )}
       {parts.length ? (
-        parts.map((x, i) => (
-          <>
-            {i > 0 && <span class="qsep"> · </span>}
-            <span class={x.hot ? "hot" : undefined}>{x.text}</span>
-          </>
-        ))
+        <span class="qtxt">
+          {parts.map((x, i) => (
+            <>
+              {i > 0 && <span class="qsep"> · </span>}
+              <span class={x.hot ? "hot" : undefined}>{x.text}</span>
+            </>
+          ))}
+        </span>
       ) : (
         <span>No quota reading</span>
       )}
@@ -185,4 +285,9 @@ export function useThreadQuotaCard(profile: string, host: string | undefined, na
   const q = quotaFor(useQuotas(), profile, host);
   if (!q || !(hasData(q) || q.error)) return null;
   return quotaCard(q, name, Date.now());
+}
+
+/** V0.quota-reset-wake: the raw Quota for a thread's provider, for phone Details' wake controls. */
+export function useThreadQuota(profile: string, host: string | undefined): Quota | undefined {
+  return quotaFor(useQuotas(), profile, host);
 }

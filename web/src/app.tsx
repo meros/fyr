@@ -766,7 +766,7 @@ function App() {
   useEffect(() => {
     if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || api.mock) return;
     void syncPushPrefs(api, pushPrefs);
-  }, [pushPrefs.finished, pushSt, fullStore.loaded, fullStore.conn]);
+  }, [pushPrefs.finished, pushPrefs.quotaReset, pushSt, fullStore.loaded, fullStore.conn]);
 
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread ? currentDecision(viewThread) : null;

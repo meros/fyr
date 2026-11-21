@@ -65,7 +65,7 @@ import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
 import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
-import { QuotaList, ThreadQuotaFigure, useThreadQuotaCard } from "./quota-ui.tsx";
+import { QuotaList, QuotaWakeActions, ThreadQuotaFigure, useThreadQuota, useThreadQuotaCard } from "./quota-ui.tsx";
 import { CardView } from "./card-ui.tsx";
 import { ArrivedBar } from "./arrived-bar.tsx";
 import { type AnswerMove, arrive } from "./arrived.ts";
@@ -1697,7 +1697,15 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
               );
             })(),
           )}
-          <ThreadQuotaRow profile={t.profile} host={t.host} name={threadProvider(t, p.profiles).name} />
+          <ThreadQuotaRow
+            profile={t.profile}
+            host={t.host}
+            name={threadProvider(t, p.profiles).name}
+            wakes={t.wakes}
+            wakeDisabled={reason("thread.wakeOnQuota")}
+            onWake={(window) => void p.commands.run("thread.wakeOnQuota", [t.id], { window })}
+            onCancelWake={(rule) => void p.commands.run("thread.cancelWake", [t.id], { rule })}
+          />
           {row("Folder", t.cwd)}
           {t.branch && row("Branch", t.branch)}
           {/* V0.agent-pill: the desktop header's pill, at a finger's size; full width in Details so provider, model and effort never squeeze */}
@@ -1802,15 +1810,26 @@ function MProject(p: PhoneProps & { id: string }) {
   );
 }
 
-/** V0.quota-in-thread: the thread's provider quota in its Details sheet: what the desktop chip's hover says, as text. */
-function ThreadQuotaRow(p: { profile: string; host?: string; name: string }) {
+/** V0.quota-in-thread, V0.quota-reset-wake: the thread's provider quota in its Details sheet: what the desktop chip's
+ *  hover says, as text, with the same wake-on-reset buttons. */
+function ThreadQuotaRow(p: {
+  profile: string;
+  host?: string;
+  name: string;
+  wakes?: Thread["wakes"];
+  wakeDisabled?: string;
+  onWake(window: string): void;
+  onCancelWake(rule: string): void;
+}) {
   const c = useThreadQuotaCard(p.profile, p.host, p.name);
+  const q = useThreadQuota(p.profile, p.host);
   if (!c) return null;
   return (
     <div class="m-kvrow m-qrow">
       <span class="k">Quota</span>
       <span class="v">
         <CardView c={c} head={false} />
+        {q && <QuotaWakeActions q={q} wakes={p.wakes} wakeDisabled={p.wakeDisabled} onWake={p.onWake} onCancelWake={p.onCancelWake} />}
       </span>
     </div>
   );

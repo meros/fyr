@@ -27,6 +27,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/projicon"
+	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
@@ -205,11 +206,16 @@ type Engine struct {
 	titling      map[string]bool
 	textAskSlots chan struct{} // V0.210: the question job's calls at once
 	searchSlots  chan struct{} // V0.ai-search: the searches at once
+	// V0.quota-reset-wake: exhausted quota windows observed (profile\x00window
+	// -> resetsAt) and reset frames already sent (thread\x00profile\x00window -> resetsAt), under mu.
+	quotaWindows   map[string]time.Time
+	quotaResetSent map[string]time.Time
 }
 
 func New(st *store.Store) *Engine {
 	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, textAskSlots: make(chan struct{}, textAskCalls), searchSlots: make(chan struct{}, searchCalls), threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{},
+		quotaWindows: map[string]time.Time{}, quotaResetSent: map[string]time.Time{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 12, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }
 
@@ -439,6 +445,32 @@ func (e *Engine) submit(in core.Input) api.Reply {
 	}
 	if in.Kind == "thread.handover" && e.ProfileExists != nil && a.Str("profile") != "" && !e.ProfileExists(a.Str("profile")) {
 		return api.Reply{Error: "no profile " + a.Str("profile"), Status: 400}
+	}
+	if in.Kind == core.KindWakeOnQuota {
+		if e.QuotaReset == nil {
+			return api.Reply{Error: "quota wakes are not available on this host", Status: 409}
+		}
+		prov := strings.TrimSpace(a.Str("provider"))
+		if prov == "" {
+			if t, ok := e.Thread(in.Thread); ok {
+				prov = t.Profile
+			}
+		}
+		if prov == "" {
+			return api.Reply{Error: "provider is required", Status: 400}
+		}
+		win, at, err := e.QuotaReset(context.Background(), prov, a.Str("window"))
+		if err != nil {
+			return api.Reply{Error: err.Error(), Status: 409}
+		}
+		args := maps.Clone(a)
+		args["provider"] = prov
+		args["window"] = win
+		args["at"] = at.UTC().Format(time.RFC3339)
+		if args.Str("id") == "" {
+			args["id"] = NewID("w_")
+		}
+		in.Args = args
 	}
 	if in.Kind == "thread.create" || in.Kind == "thread.send" {
 		for _, id := range core.AttachmentIDs(a) {
@@ -965,6 +997,7 @@ func (e *Engine) publish(p *applied) {
 	if p.dto != nil {
 		e.notify(*p.dto, p.prev)
 	}
+	e.publishQuotaResets(p)
 	if p.newPR && e.OnPR != nil {
 		e.OnPR(p.threadID)
 	}
@@ -1148,8 +1181,13 @@ func quietKey(u *time.Time) string {
 // threads (V0.46; not an attention change, so never a push). Call it every
 // few seconds.
 func (e *Engine) Tick() {
+	var snap []quota.Status
+	if e.QuotaSnapshot != nil {
+		snap = e.QuotaSnapshot()
+	}
 	e.mu.Lock()
 	now := e.Now()
+	e.recordExhaustedQuotaLocked(snap, now)
 	quiet := map[string]bool{}
 	for pid := range e.projects {
 		if k := quietKey(e.quietUntil(pid, now)); k != e.quietSent[pid] {
@@ -1173,6 +1211,7 @@ func (e *Engine) Tick() {
 			changed = append(changed, change{d, prev})
 		}
 	}
+	qresets := e.dueQuotaResetsLocked(now)
 	e.mu.Unlock()
 	// The one timer of the Rules (#46): a Rule due at its nextCheck is
 	// evaluated after the clock's Input.
@@ -1192,8 +1231,148 @@ func (e *Engine) Tick() {
 		e.Hub.Send(stream.FrameThread, c.d)
 		e.notify(c.d, c.prev)
 	}
+	for _, q := range qresets {
+		e.Hub.Send(stream.FrameQuotaReset, q)
+	}
 	e.sweepSlots()      // V0.86
 	e.sweepQuietWaits() // V0.195
+}
+
+type quotaResetFrame struct {
+	ThreadID string    `json:"threadId"`
+	Provider string    `json:"provider"`
+	Window   string    `json:"window,omitempty"`
+	At       time.Time `json:"at"`
+}
+
+// SyncQuotaResets updates armed WhenQuota rules when a fresh provider reading
+// reports a moved ResetsAt, and remembers exhausted windows for Tick's reset
+// notices (V0.quota-reset-wake). Call it without e.mu.
+func (e *Engine) SyncQuotaResets(statuses []quota.Status) {
+	if len(statuses) == 0 {
+		return
+	}
+	var updates []core.QuotaUpdate
+	fresh := map[string]time.Time{}
+	for _, st := range statuses {
+		if st.Stale {
+			continue
+		}
+		for _, w := range st.Windows {
+			if w.ResetsAt == nil {
+				continue
+			}
+			at := w.ResetsAt.UTC()
+			fresh[st.Profile+"\x00"+w.Name] = at
+			updates = append(updates, core.QuotaUpdate{Provider: st.Profile, Window: w.Name, ResetsAt: at})
+		}
+	}
+	e.mu.Lock()
+	now := e.Now()
+	e.recordExhaustedQuotaLocked(statuses, now)
+	var affected []string
+	if len(fresh) > 0 {
+		for id, t := range e.threads {
+			if hasQuotaRuleToSync(t.Rules, fresh) {
+				affected = append(affected, id)
+			}
+		}
+	}
+	e.mu.Unlock()
+	for _, id := range affected {
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsQuota), Kind: core.KindQuotaSync, Thread: id, Args: core.QuotaSyncArgs{Updates: updates}}); err != nil {
+			log.Printf("thread %s: quota.sync: %v", id, err)
+		}
+	}
+}
+
+func hasQuotaRuleToSync(rs []core.Rule, fresh map[string]time.Time) bool {
+	for _, r := range rs {
+		if r.Status == core.RuleArmed && whenHasQuotaToSync(r.When, fresh) {
+			return true
+		}
+	}
+	return false
+}
+
+func whenHasQuotaToSync(w core.When, fresh map[string]time.Time) bool {
+	if w.Kind == core.WhenQuota && w.At != nil {
+		if at, ok := fresh[w.Provider+"\x00"+w.Window]; ok && !at.Equal(*w.At) {
+			return true
+		}
+	}
+	for _, x := range slices.Concat(w.All, w.Any) {
+		if whenHasQuotaToSync(x, fresh) {
+			return true
+		}
+	}
+	return w.Not != nil && whenHasQuotaToSync(*w.Not, fresh)
+}
+
+func (e *Engine) recordExhaustedQuotaLocked(statuses []quota.Status, now time.Time) {
+	for _, st := range statuses {
+		if st.Stale {
+			continue
+		}
+		for _, w := range st.Windows {
+			if w.UsedPct >= 100 && w.ResetsAt != nil && w.ResetsAt.After(now) {
+				e.quotaWindows[st.Profile+"\x00"+w.Name] = w.ResetsAt.UTC()
+			}
+		}
+	}
+}
+
+func (e *Engine) dueQuotaResetsLocked(now time.Time) []quotaResetFrame {
+	var out []quotaResetFrame
+	for k, at := range e.quotaWindows {
+		if at.After(now) {
+			continue
+		}
+		delete(e.quotaWindows, k)
+		prov, win, _ := strings.Cut(k, "\x00")
+		for id, t := range e.threads {
+			if t.Profile != prov || t.Failure == nil || t.Running || t.Settle.At != nil || t.ArchivedAt != nil {
+				continue
+			}
+			sk := id + "\x00" + prov + "\x00" + win
+			if e.quotaResetSent[sk].Equal(at) {
+				continue
+			}
+			e.quotaResetSent[sk] = at
+			out = append(out, quotaResetFrame{ThreadID: id, Provider: prov, Window: win, At: now})
+		}
+	}
+	return out
+}
+
+func (e *Engine) publishQuotaResets(p *applied) {
+	var frames []quotaResetFrame
+	for _, ev := range p.res.Events {
+		d, _ := ev.Data.(map[string]any)
+		if ev.Type != "rule.fired" || d["purpose"] != core.PurposeWatch || d["outcome"] != core.OutcomeOK {
+			continue
+		}
+		prov, _ := d["provider"].(string)
+		if prov == "" {
+			continue
+		}
+		win, _ := d["window"].(string)
+		at, _ := d["at"].(time.Time)
+		e.mu.Lock()
+		sk := p.threadID + "\x00" + prov + "\x00" + win
+		if !at.IsZero() && e.quotaResetSent[sk].Equal(at) {
+			e.mu.Unlock()
+			continue
+		}
+		if !at.IsZero() {
+			e.quotaResetSent[sk] = at
+		}
+		e.mu.Unlock()
+		frames = append(frames, quotaResetFrame{ThreadID: p.threadID, Provider: prov, Window: win, At: e.Now()})
+	}
+	for _, fr := range frames {
+		e.Hub.Send(stream.FrameQuotaReset, fr)
+	}
 }
 
 // EventsBefore pages back: the newest limit events older than before.

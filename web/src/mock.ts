@@ -1385,6 +1385,14 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.cancelWake": // V0.wakeups-via-watch
         put(t, { wakes: (t.wakes ?? []).filter((w) => w.rule !== args.rule) });
         break;
+      case "thread.wakeOnQuota": { // V0.quota-reset-wake
+        const win = String(args.window || "5 h");
+        const at = new Date(clock() + 2 * 3600_000).toISOString();
+        const rule = `w_q_${Date.now()}`;
+        const prev = (t.wakes ?? []).filter((w) => w.window !== win);
+        put(t, { failure: null, wakes: [...prev, { rule, at, provider: t.profile, window: win, by: "owner" }] });
+        break;
+      }
       case "thread.settleWhenDone": // V0.203
         put(t, { settleWhenDone: true });
         break;

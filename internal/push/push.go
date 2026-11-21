@@ -38,12 +38,18 @@ type Subscription struct {
 	// NoFinished: this device gets no push for a thread that finished
 	// (V0.notification-polish); what needs the owner still arrives.
 	NoFinished bool `json:"noFinished,omitempty"`
+	// QuotaReset: this device asked for a push when a provider's quota window
+	// resets and a thread still waits (V0.quota-reset-wake).
+	QuotaReset bool `json:"quotaReset,omitempty"`
 }
 
-// Prefs is what one device chose to be told about (V0.notification-polish).
+// Prefs is what one device chose to be told about (V0.notification-polish,
+// V0.quota-reset-wake).
 type Prefs struct {
 	// Finished: also a thread that finished and is unread.
 	Finished bool `json:"finished"`
+	// QuotaReset: also when a provider's quota window resets and a thread still waits.
+	QuotaReset bool `json:"quotaReset,omitempty"`
 }
 
 // HiddenProject is a project by its host's name and that host's own id. An
@@ -155,7 +161,10 @@ func (p *Pusher) SetHidden(endpoint string, h Hidden) (bool, error) {
 // (V0.notification-polish). It reports false when no such subscription is
 // stored.
 func (p *Pusher) SetPrefs(endpoint string, pr Prefs) (bool, error) {
-	return p.edit(endpoint, func(s *Subscription) { s.NoFinished = !pr.Finished })
+	return p.edit(endpoint, func(s *Subscription) {
+		s.NoFinished = !pr.Finished
+		s.QuotaReset = pr.QuotaReset
+	})
 }
 
 // edit changes one stored subscription.
@@ -213,6 +222,9 @@ func (p *Pusher) Notify(user string, pl Payload) int {
 			continue
 		}
 		if pl.State == "done" && s.NoFinished {
+			continue
+		}
+		if pl.State == "quota" && !s.QuotaReset {
 			continue
 		}
 		ok += p.deliver(s, pl)

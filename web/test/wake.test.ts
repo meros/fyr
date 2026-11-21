@@ -28,3 +28,13 @@ test("another day: the date too; no prompt: the time alone; more than one: the s
   assert.equal(c.text, `wakes ${day} 06:00 +1`);
   assert.match(c.title, /\+1 more/);
 });
+
+test("V0.quota-reset-wake: a quota wake names its reset window", () => {
+  const now = local(2026, 10, 20, 14, 0);
+  const at = new Date(local(2026, 10, 20, 18, 0)).toISOString();
+  const c = wakeChip({ wakes: [{ rule: "w_q", at, provider: "claude", window: "5 h", note: "Continue work" }] }, now)!;
+  assert.equal(c.text, "wakes 18:00, when the 5 h window resets");
+  assert.equal(c.rule, "w_q");
+  assert.match(c.title, /when the 5 h window resets/);
+  assert.match(c.title, /Continue work/);
+});

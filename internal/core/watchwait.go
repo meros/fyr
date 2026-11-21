@@ -12,14 +12,15 @@ import (
 // Attention puts it in Working as Waiting, with the watch as the reason,
 // instead of in Seen as if it were finished. workGoing already counts it.
 
-// agentWatches are the agent's armed notify watches, soonest wake-up first.
+// agentWatches are the thread's armed notify watches (agent or owner quota
+// wakes), soonest wake-up first.
 func agentWatches(t *Thread) []Rule {
 	var at, other []Rule
 	for _, r := range t.Rules {
-		if r.Purpose != PurposeWatch || r.CreatedBy != ByAgent || r.Status != RuleArmed {
+		if r.Purpose != PurposeWatch || (r.CreatedBy != ByAgent && r.CreatedBy != ByOwner) || r.Status != RuleArmed {
 			continue
 		}
-		if r.When.Kind == WhenAt && r.When.At != nil {
+		if (r.When.Kind == WhenAt || r.When.Kind == WhenQuota) && r.When.At != nil {
 			at = append(at, r)
 		} else {
 			other = append(other, r)
@@ -56,11 +57,16 @@ func watchText(t *Thread, w When, now time.Time) string {
 		if w.At == nil {
 			break
 		}
-		at, n := w.At.Local(), now.Local()
-		if at.Year() == n.Year() && at.YearDay() == n.YearDay() {
-			return "wakes " + at.Format("15:04")
+		return "wakes " + wakeClock(*w.At, now)
+	case WhenQuota:
+		if w.At == nil {
+			break
 		}
-		return "wakes " + at.Format("2 Jan 15:04")
+		when := wakeClock(*w.At, now)
+		if w.Window != "" {
+			return fmt.Sprintf("wakes %s, when the %s window resets", when, w.Window)
+		}
+		return fmt.Sprintf("wakes %s, when quota resets", when)
 	case WhenReached:
 		return "waits for " + watchedChange(t, w.Change) + " to be " + string(w.Phase)
 	case WhenCondition:
@@ -71,6 +77,16 @@ func watchText(t *Thread, w When, now time.Time) string {
 		return fmt.Sprintf("wakes after %d min idle", max(1, w.Ms/60_000))
 	}
 	return "watching"
+}
+
+// wakeClock formats at in the host's local time, adding the date when it is
+// not today.
+func wakeClock(t, now time.Time) string {
+	at, n := t.Local(), now.Local()
+	if at.Year() == n.Year() && at.YearDay() == n.YearDay() {
+		return at.Format("15:04")
+	}
+	return at.Format("2 Jan 15:04")
 }
 
 // watchedChange names a watched change with changeName, or its ref when

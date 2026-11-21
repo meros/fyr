@@ -206,3 +206,32 @@ func TestHiddenLeavesTheDeviceOut(t *testing.T) {
 		t.Fatalf("SetHidden damaged the subscriptions: %+v", subs)
 	}
 }
+
+// V0.quota-reset-wake: a quota reset push goes only to devices that turned it on.
+func TestQuotaResetIsOptInPerDevice(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "fyr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var got []string
+	p := &Pusher{DB: st, Subject: "mailto:x@example.com", Send: func(sub Subscription, _ []byte, _ Keys) (int, error) {
+		got = append(got, sub.Endpoint)
+		return 201, nil
+	}}
+	if err := p.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sub := func(ep string) Subscription {
+		return Subscription{Endpoint: ep, Keys: SubKeys{P256dh: "p", Auth: "a"}}
+	}
+	p.Subscribe("owner", sub("https://push/default"), "Phone")
+	p.Subscribe("owner", sub("https://push/opted"), "Laptop")
+	if ok, err := p.SetPrefs("https://push/opted", Prefs{Finished: true, QuotaReset: true}); !ok || err != nil {
+		t.Fatalf("SetPrefs: %v %v", ok, err)
+	}
+	n := p.Notify("owner", PayloadFor("t1", "Fix build", "quota", "Quota reset", "The 5 h window reset; this thread still waits"))
+	if n != 1 || len(got) != 1 || got[0] != "https://push/opted" {
+		t.Fatalf("delivered %d to %v, want only opted", n, got)
+	}
+}

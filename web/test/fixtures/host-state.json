@@ -168,6 +168,10 @@
       "bulk": true,
       "label": "Unsnooze",
       "name": "thread.unsnooze"
+    },
+    {
+      "label": "Wake when quota resets",
+      "name": "thread.wakeOnQuota"
     }
   ],
   "buildId": "b1",

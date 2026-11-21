@@ -41,7 +41,7 @@ import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentCh
 import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
 import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
-import { FINISHED_DESC, pushRow, type PushPrefs, type PushStatus } from "./push.ts";
+import { FINISHED_DESC, QUOTA_RESET_DESC, pushRow, type PushPrefs, type PushStatus } from "./push.ts";
 import { isNativePush, openNativeNotificationSettings } from "./pwa.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
@@ -2414,6 +2414,8 @@ function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; us
         />
         {/* V0.notification-polish: only while they are on; a device without them has nothing to choose */}
         {row.on && <Row label class="push-finished" title="Finished threads" desc={FINISHED_DESC} end={<Switch on={d.pushPrefs.finished} label="Notify for finished threads" onChange={(on) => d.setPushPrefs({ ...d.pushPrefs, finished: on })} />} />}
+        {/* V0.quota-reset-wake: opt-in per device */}
+        {row.on && <Row label class="push-quota" title="Quota resets" desc={QUOTA_RESET_DESC} end={<Switch on={d.pushPrefs.quotaReset} label="Notify on quota resets" onChange={(on) => d.setPushPrefs({ ...d.pushPrefs, quotaReset: on })} />} />}
         <Row
           title="Theme"
           stack

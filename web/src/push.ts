@@ -166,6 +166,7 @@ export function notificationOptions(p: PushPayload, now: number): Record<string,
  */
 export function notificationIsStale(shown: string | undefined, state: string): boolean {
   if (!shown) return state !== "asking" && state !== "failed";
+  if (shown === "quota") return state === "working" || state === "settled" || state === "archived";
   return shown !== state;
 }
 
@@ -229,22 +230,25 @@ export function pushRow(status: PushStatus, reason: string | null, tested: boole
   }
 }
 
-// ---- V0.notification-polish: what this device is told about ----
+// ---- V0.notification-polish, V0.quota-reset-wake: what this device is told about ----
 
 export interface PushPrefs {
   /** also a thread that finished and is unread */
   finished: boolean;
+  /** also when a provider's quota window resets and a thread still waits */
+  quotaReset: boolean;
 }
 
 export const PUSH_PREFS_KEY = "fyr.push.prefs";
-export const DEFAULT_PUSH_PREFS: PushPrefs = { finished: true };
+export const DEFAULT_PUSH_PREFS: PushPrefs = { finished: true, quotaReset: false };
 export const FINISHED_DESC = "Also when a thread finishes. Nothing arrives for the thread on screen or in a project's quiet hours.";
+export const QUOTA_RESET_DESC = "When a provider's quota window resets and a waiting thread still has not resumed.";
 
-/** The stored choice; anything unreadable is the default (everything arrives, as before the choice existed). */
+/** The stored choice; anything unreadable is the default (finished on, quota resets off until asked for). */
 export function parsePushPrefs(raw: string | null | undefined): PushPrefs {
   try {
     const j = JSON.parse(raw ?? "");
-    if (j && typeof j === "object") return { finished: j.finished !== false };
+    if (j && typeof j === "object") return { finished: j.finished !== false, quotaReset: j.quotaReset === true };
   } catch {
     /* default */
   }

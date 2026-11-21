@@ -204,6 +204,9 @@ type Service struct {
 	// restart (V0.122); empty keeps them in memory only. Set it before the
 	// first SetProfiles that should load it.
 	StatePath string
+	// OnUpdate runs outside s.mu whenever a fresh read or stream event updates
+	// quota windows (V0.quota-reset-wake).
+	OnUpdate func([]Status)
 
 	loaded  bool
 	home    string
@@ -368,9 +371,9 @@ type result struct {
 func (s *Service) apply(t target, r result) {
 	now := s.now()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	e := s.ent[t.id]
 	if e == nil {
+		s.mu.Unlock()
 		return // the providers changed while this read ran
 	}
 	e.fetching = false
@@ -379,8 +382,14 @@ func (s *Service) apply(t target, r result) {
 		e.next = now.Add(TTL)
 		e.st = Status{Kind: t.spec.Kind, Windows: r.windows, Balance: r.balance, UpdatedAt: &now}
 		s.save()
+		cb := s.OnUpdate
+		s.mu.Unlock()
+		if cb != nil {
+			cb(s.Snapshot())
+		}
 		return
 	}
+	defer s.mu.Unlock()
 	defer s.save()
 	if r.err.detail != "" {
 		s.logf("quota %s: %s (%s)", t.id, r.err.msg, r.err.detail)
@@ -412,9 +421,9 @@ func (s *Service) Observe(profile string, info map[string]any) {
 	}
 	now := s.now()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	e, ok := s.ent[s.ident[profile]]
 	if !ok || e.st.Kind != KindAnthropic {
+		s.mu.Unlock()
 		return
 	}
 	for _, w := range ws {
@@ -433,6 +442,134 @@ func (s *Service) Observe(profile string, info map[string]any) {
 	// The stream carries only the window that binds; it never hides an API error.
 	e.st.Stale = false
 	s.save()
+	cb := s.OnUpdate
+	s.mu.Unlock()
+	if cb != nil {
+		cb(s.Snapshot())
+	}
+}
+
+// NormalizeWindow maps common window spellings ("5h", "five_hour", "7d",
+// "seven_day") to Fyr's canonical names ("5 h", "7 d").
+func NormalizeWindow(name string) string {
+	s := strings.TrimSpace(name)
+	switch strings.ToLower(strings.ReplaceAll(s, " ", "")) {
+	case "5h", "five_hour", "5hours", "5hour":
+		return "5 h"
+	case "7d", "seven_day", "7days", "7day":
+		return "7 d"
+	}
+	return s
+}
+
+// ResetOf resolves the reset time of a profile's quota window for a quota wake
+// (V0.quota-reset-wake). It refreshes due OAuth profiles via Get (never polling
+// token accounts or rate-limited profiles) and refuses stale readings, token
+// accounts without a known future reset time, balance providers, and windows
+// with no reset time, never inventing a time.
+func (s *Service) ResetOf(ctx context.Context, profile, window string) (string, time.Time, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, fetchLimit)
+		defer cancel()
+	}
+	sts := s.Get(ctx)
+	var st *Status
+	for i := range sts {
+		if sts[i].Profile == profile {
+			st = &sts[i]
+			break
+		}
+	}
+	if st == nil {
+		return "", time.Time{}, fmt.Errorf("provider %q has no quota tracking", profile)
+	}
+	if st.Balance != nil || (st.Kind != KindAnthropic && len(st.Windows) == 0) {
+		return "", time.Time{}, fmt.Errorf("provider %q uses a balance, not reset windows", profile)
+	}
+	if st.Stale {
+		if st.Error != "" {
+			return "", time.Time{}, fmt.Errorf("quota for %q is stale (%s); wait for a fresh reading", profile, st.Error)
+		}
+		return "", time.Time{}, fmt.Errorf("quota for %q is stale; wait for a fresh reading", profile)
+	}
+	if len(st.Windows) == 0 {
+		if st.Source == SourceSession {
+			return "", time.Time{}, fmt.Errorf("provider %q is a token account read only from running sessions; no reset time is known", profile)
+		}
+		if st.Error != "" {
+			return "", time.Time{}, fmt.Errorf("no quota reading for %q: %s", profile, st.Error)
+		}
+		return "", time.Time{}, fmt.Errorf("no quota reading for %q yet", profile)
+	}
+	now := s.now()
+	var picked *Window
+	if want := NormalizeWindow(window); want != "" {
+		for i := range st.Windows {
+			if st.Windows[i].Name == want {
+				picked = &st.Windows[i]
+				break
+			}
+		}
+		if picked == nil {
+			names := make([]string, len(st.Windows))
+			for i, w := range st.Windows {
+				names[i] = w.Name
+			}
+			return "", time.Time{}, fmt.Errorf("provider %q has no %q quota window (available: %s)", profile, want, strings.Join(names, ", "))
+		}
+	} else {
+		// No window named: if any window is exhausted (>= 100 %), wait for the
+		// binding exhausted window (latest reset, or the exhausted one with no
+		// reset so it is refused rather than silently falling back). Otherwise
+		// pick the window whose reset comes soonest.
+		var exhausted []Window
+		for _, w := range st.Windows {
+			if w.UsedPct >= 100 {
+				exhausted = append(exhausted, w)
+			}
+		}
+		if len(exhausted) > 0 {
+			best := exhausted[0]
+			for _, w := range exhausted[1:] {
+				if w.ResetsAt == nil || !w.ResetsAt.After(now) {
+					best = w
+					break
+				}
+				if best.ResetsAt != nil && best.ResetsAt.After(now) && w.ResetsAt.After(*best.ResetsAt) {
+					best = w
+				}
+			}
+			picked = &best
+		} else {
+			best := st.Windows[0]
+			for _, w := range st.Windows[1:] {
+				if w.ResetsAt == nil || !w.ResetsAt.After(now) {
+					continue
+				}
+				if best.ResetsAt == nil || !best.ResetsAt.After(now) || w.ResetsAt.Before(*best.ResetsAt) {
+					best = w
+				}
+			}
+			picked = &best
+		}
+	}
+	if picked.ResetsAt == nil {
+		if st.Source == SourceSession {
+			return "", time.Time{}, fmt.Errorf("the %s window of %q has no reset time (token account read only from sessions)", picked.Name, profile)
+		}
+		return "", time.Time{}, fmt.Errorf("the %s window of %q has no known reset time", picked.Name, profile)
+	}
+	if !picked.ResetsAt.After(now) {
+		if st.Source == SourceSession {
+			return "", time.Time{}, fmt.Errorf("the %s window of %q has no future reset time (last session reading is from before its reset)", picked.Name, profile)
+		}
+		return "", time.Time{}, fmt.Errorf("the %s window of %q has no future reset time", picked.Name, profile)
+	}
+	return picked.Name, picked.ResetsAt.UTC(), nil
 }
 
 var windowNames = map[string]string{"five_hour": "5 h", "seven_day": "7 d"}

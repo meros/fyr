@@ -600,6 +600,12 @@ func watchNotices(r Reduced) []Notice {
 			note = strings.TrimSpace(str(th.Args["note"]))
 		}
 		what := "Your watch " + id + " fired"
+		if d["by"] == ByOwner {
+			what = "The quota wake fired"
+			if win := str(d["window"]); win != "" {
+				what = "The " + win + " quota window reset"
+			}
+		}
 		if note != "" {
 			what += ": " + strings.TrimSuffix(note, ".")
 		}

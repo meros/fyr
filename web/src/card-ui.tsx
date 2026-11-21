@@ -2,7 +2,7 @@
 // hover: each place that opens a card on hover on the desktop shows the same CardView as text on the phone (the load
 // sheet, the thread's Details, a quota line's tap).
 
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, RefObject } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { createPortal } from "preact/compat";
 import type { Card } from "./card.ts";
@@ -56,8 +56,9 @@ export type HoverPlace = "right" | "below";
 
 /** The desktop's hover card: on document.body (the rail's containment and a header's overflow would clip it), beside or
  *  under its anchor, kept inside the window. Not for the phone: no hover there. */
-export function HoverCard({ at, place = "right", children }: { at: DOMRect; place?: HoverPlace; children: ComponentChildren }) {
-  const ref = useRef<HTMLDivElement>(null);
+export function HoverCard({ at, place = "right", interactive = false, popRef, children }: { at: DOMRect; place?: HoverPlace; interactive?: boolean; popRef?: RefObject<HTMLDivElement | null>; children: ComponentChildren }) {
+  const inner = useRef<HTMLDivElement>(null);
+  const ref = popRef ?? inner;
   const start = place === "right" ? { left: at.right + 10, top: at.top } : { left: at.left, top: at.bottom + 6 };
   const [pos, setPos] = useState(start);
   useLayoutEffect(() => {
@@ -69,7 +70,7 @@ export function HoverCard({ at, place = "right", children }: { at: DOMRect; plac
     if (left !== pos.left || top !== pos.top) setPos({ left, top });
   });
   return createPortal(
-    <div ref={ref} class="lcpop" role="tooltip" style={{ left: `${pos.left}px`, top: `${pos.top}px` }}>
+    <div ref={ref} class={`lcpop${interactive ? " pop-click" : ""}`} role={interactive ? "dialog" : "tooltip"} style={{ left: `${pos.left}px`, top: `${pos.top}px` }}>
       {children}
     </div>,
     document.body,

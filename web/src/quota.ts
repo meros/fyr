@@ -1,6 +1,7 @@
 // SPEC 0.5 V0.44: provider quota per profile, as words. Pure.
 import type { HostId } from "./hostid.ts";
 import type { Card, CardRow } from "./card.ts";
+import type { WakeUp } from "./types.ts";
 import { relTime, untilLabel } from "./format.ts";
 
 export interface QuotaWindow {
@@ -164,4 +165,32 @@ export const CARD_WORD: Record<CardState, string> = {
 export function quotaFor(list: Quota[], profile: string, host?: string): Quota | undefined {
   if (host) return list.find((q) => q.profile === profile && (!q.host || q.host === host)); // V0.127
   return list.find((q) => q.profile === profile);
+}
+
+/** V0.quota-reset-wake: one window's wake-on-reset control, shared by the desktop quota popover and phone Details. */
+export interface QuotaWakeOption {
+  window: string;
+  resetsAt?: string;
+  when: string;
+  armedRule?: string;
+  disabledReason?: string;
+}
+
+/** Per-window wake controls for a provider's quota windows. Never invents a reset time: stale readings and windows
+ *  without a future reset time (including token accounts read only from sessions) carry the reason they are off. */
+export function quotaWakeOptions(q: Quota, wakes: WakeUp[] | undefined, now: number, unavailable?: string): QuotaWakeOption[] {
+  const ws = q.windows ?? [];
+  return ws.map((w) => {
+    const armed = wakes?.find((x) => x.window === w.name && (!x.provider || x.provider === q.profile));
+    const when = untilLabel(w.resetsAt, now);
+    if (armed) return { window: w.name, resetsAt: w.resetsAt, when, armedRule: armed.rule };
+    let disabledReason = unavailable;
+    if (!disabledReason && q.stale) disabledReason = "Quota reading is stale; wait for a fresh reading";
+    if (!disabledReason && !w.resetsAt) disabledReason = q.source === "session" ? "No reset time known (token account read only from sessions)" : "No reset time known";
+    if (!disabledReason && w.resetsAt) {
+      const ms = Date.parse(w.resetsAt);
+      if (Number.isNaN(ms) || ms <= now) disabledReason = "No future reset time";
+    }
+    return { window: w.name, resetsAt: w.resetsAt, when, disabledReason };
+  });
 }

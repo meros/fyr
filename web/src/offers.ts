@@ -270,9 +270,9 @@ export function settleLine(t: Pick<Thread, "settleWhenDone" | "settleWhenMerged"
   return `settles when ${c?.title || w.change} is ${w.phase}`;
 }
 
-/** V0.wakeups-via-watch: the agent's soonest wake-up as a chip, in the owner's local time: "wakes 06:00", with the date when
- *  it is not today ("wakes 21 Nov 06:00"); null when none is armed. V0.watch-waits: the agent's note is its own prompt, often
- *  a paragraph, so it is only in the title, never in the chip's text. */
+/** V0.wakeups-via-watch, V0.quota-reset-wake: the soonest wake-up as a chip, in the owner's local time: "wakes 06:00",
+ *  with the date when it is not today ("wakes 21 Nov 06:00"), or "wakes 18:00, when the 5 h window resets" for a quota
+ *  watch; null when none is armed. V0.watch-waits: the note is only in the title, never in the chip's text. */
 export function wakeChip(t: Pick<Thread, "wakes">, now: number): { text: string; title: string; rule: string } | null {
   const w = t.wakes?.[0];
   if (!w) return null;
@@ -282,11 +282,12 @@ export function wakeChip(t: Pick<Thread, "wakes">, now: number): { text: string;
   const hm = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const today = at.getFullYear() === n.getFullYear() && at.getMonth() === n.getMonth() && at.getDate() === n.getDate();
   const when = today ? hm : `${at.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm}`;
+  const quota = w.window ? `, when the ${w.window} window resets` : w.provider ? ", when quota resets" : "";
   const note = (w.note ?? "").trim();
   const n2 = (t.wakes?.length ?? 0) - 1;
   return {
-    text: n2 > 0 ? `wakes ${when} +${n2}` : `wakes ${when}`,
-    title: `The agent wakes at ${when}${note ? ` and runs: ${note}` : ""}${n2 > 0 ? ` (+${n2} more)` : ""}`,
+    text: n2 > 0 ? `wakes ${when}${quota} +${n2}` : `wakes ${when}${quota}`,
+    title: `The agent wakes at ${when}${quota}${note ? ` and runs: ${note}` : ""}${n2 > 0 ? ` (+${n2} more)` : ""}`,
     rule: w.rule,
   };
 }
