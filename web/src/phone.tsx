@@ -32,6 +32,7 @@ import { describeApproval } from "./approvals.ts";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import { createSubmitGuard } from "./send-guard.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { changeChip, headerPrs, prForEffect, settleLine, threadPrs } from "./offers.ts";
@@ -1083,6 +1084,8 @@ function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: strin
   const [text, setText] = useDraft(t.id);
   const att = useAttachments(t.hostId);
   const ta = useRef<HTMLTextAreaElement>(null);
+  const [sending, setSending] = useState(false);
+  const guard = useRef(createSubmitGuard(setSending)).current;
   const reason = unavailableReason(t, "thread.send");
   const plan = sendArgs(text, att.chips);
   const empty = !text.trim() && !att.chips.length;
@@ -1095,13 +1098,18 @@ function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: strin
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 22 * 5 + 22) + "px";
   }, [text]);
-  const send = async () => {
-    if (reason || !plan.ok) return;
-    if (await sendFrom(tab, plan.args, (a) => p.commands.send(t.id, a), setTab)) {
-      haptic();
-      setText("");
-      att.clear();
-    }
+  const send = () => {
+    if (reason || !plan.ok || guard.busy()) return;
+    const args = plan.args;
+    void guard.run(async () => {
+      const ok = await sendFrom(tab, args, (a) => p.commands.send(t.id, a), setTab);
+      if (ok) {
+        haptic();
+        setText("");
+        att.clear();
+      }
+      return ok;
+    });
   };
   return (
     <div class="m-cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
@@ -1126,7 +1134,7 @@ function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: strin
             {I.stop}
           </button>
         ) : (
-          <button class="m-send" aria-label="Send" title={plan.ok ? "Send" : plan.reason} disabled={!!reason || !plan.ok} onClick={() => void send()}>
+          <button class="m-send" aria-label="Send" title={sending ? "Sending…" : (plan.ok ? "Send" : plan.reason)} disabled={sending || !!reason || !plan.ok} onClick={send}>
             {I.send}
           </button>
         )}

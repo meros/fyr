@@ -72,7 +72,7 @@ func stateThread(b *strings.Builder, t *Thread, now time.Time) {
 	if w := QuotaWaitText(t, now); w != "" {
 		fmt.Fprintf(b, " · %s", w)
 	} else if t.Failure != nil {
-		fmt.Fprintf(b, " · last run failed (%s): %s", t.Failure.Class, t.Failure.Message)
+		fmt.Fprintf(b, " · last run failed (%s): %s", t.Failure.Class, FailureReason(t, now))
 	}
 	if t.ProjectID != "" {
 		fmt.Fprintf(b, " · project %s", t.ProjectID)

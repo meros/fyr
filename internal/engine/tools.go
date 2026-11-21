@@ -134,20 +134,11 @@ func (e *Engine) resolveQuotaWhen(ctx context.Context, th string, w *core.When) 
 	if w.Kind != core.WhenQuota {
 		return nil
 	}
-	if e.QuotaReset == nil {
-		return errors.New("quota watches are not available on this host")
-	}
-	prov := strings.TrimSpace(w.Provider)
-	if prov == "" {
-		if t, ok := e.Thread(th); ok {
-			prov = t.Profile
-		}
-	}
-	if prov == "" {
-		return errors.New("quota needs a provider")
-	}
-	win, at, err := e.QuotaReset(ctx, prov, w.Window)
+	prov, win, at, err := e.resolveQuotaReset(ctx, th, w.Provider, w.Window)
 	if err != nil {
+		if errors.Is(err, core.ErrBadArgs) {
+			return errors.New("quota needs a provider")
+		}
 		return fmt.Errorf("cannot arm quota watch: %w", err)
 	}
 	w.Provider, w.Window, w.At = prov, win, &at

@@ -31,7 +31,11 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 	t.Failure = f
 	t.RunEnds++
 	t.RunEndedAt = &now // V0.101: Stopped on a failure counts from here
-	if f != nil {
+	if f == nil || f.Class != ClassQuota {
+		t.QuotaResumes = 0
+		t.QuotaResumedAt = nil
+	}
+	if f != nil && (f.Class != ClassQuota || t.QuotaResumes >= MaxQuotaAutoResumes) {
 		dropSettleDone(t) // the run did not finish
 	}
 }

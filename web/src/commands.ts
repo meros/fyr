@@ -7,6 +7,7 @@ import type { CommandReply } from "./types.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import { recordUndo, undoCommands, undoKindOf, undoLive, type UndoEntry } from "./store.ts";
+import { createSendDedupe } from "./send-guard.ts";
 import type { SendArgs } from "./thread.tsx";
 import type { CrossHostHandoverArgs } from "./handover.ts";
 
@@ -63,6 +64,7 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
   opts.current = o;
   const undoRef = useRef(undo);
   undoRef.current = undo;
+  const dedupeSend = useRef(createSendDedupe<boolean>()).current;
 
   useEffect(() => {
     if (!toast) return;
@@ -96,11 +98,12 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     return ok.length;
   };
 
-  const send = async (id: string, args: SendArgs): Promise<boolean> => {
-    const r = await to(id, "thread.send", { ...args });
-    if (!r.ok) showError(r.error ?? "Could not send");
-    return r.ok;
-  };
+  const send = (id: string, args: SendArgs): Promise<boolean> =>
+    dedupeSend(id, args, async () => {
+      const r = await to(id, "thread.send", { ...args });
+      if (!r.ok) showError(r.error ?? "Could not send");
+      return r.ok;
+    });
 
   const handover = async (id: string | null, profile?: string, model?: string, effort?: string): Promise<string | null> => {
     if (!id || !profile) return "Pick a profile";

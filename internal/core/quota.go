@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,23 @@ import (
 // is the one class that is a wait rather than the owner's move (attention.go,
 // snoozedone.go).
 const ClassQuota = "quota"
+
+// V0.quota-auto-continue: automatic continuation parameters and loop bounds.
+const (
+	// QuotaResumeBuffer waits briefly past the notice's exact reset second so
+	// the provider's quota clock has rolled over before Fyr resumes the thread.
+	QuotaResumeBuffer = 15 * time.Second
+	// MaxQuotaAutoResumes bounds consecutive automatic continues without a
+	// non-quota turn completion or an owner move.
+	MaxQuotaAutoResumes = 3
+	// QuotaQuickFail is how soon after an automatic continue another quota
+	// stop counts as an immediate rejection and incurs backoff.
+	QuotaQuickFail = 2 * time.Minute
+)
+
+// quotaQuickBackoff is the minimum wait before the next automatic continue
+// when the provider immediately rejected the previous one with quota again.
+var quotaQuickBackoff = []time.Duration{time.Minute, 5 * time.Minute}
 
 // quotaWords are the openings of the providers' own out-of-quota notices.
 var quotaWords = []string{
@@ -59,22 +77,119 @@ func QuotaStopped(t *Thread) bool {
 	return t.Failure != nil && t.Failure.Class == ClassQuota
 }
 
+// QuotaResumeAt is when Fyr should automatically continue a quota-stopped
+// thread (QuotaReset + QuotaResumeBuffer, with backoff on immediate repeated
+// quota rejections), or nil when auto-continue does not apply (not quota-
+// stopped, no reset time in the notice, or loop protection bound reached).
+func QuotaResumeAt(t *Thread) *time.Time {
+	if !QuotaStopped(t) || t.QuotaResumes >= MaxQuotaAutoResumes {
+		return nil
+	}
+	reset := QuotaReset(t.Failure)
+	if reset == nil {
+		return nil
+	}
+	at := reset.Add(QuotaResumeBuffer)
+	if t.QuotaResumes > 0 && t.QuotaResumedAt != nil && !t.Failure.At.IsZero() &&
+		t.Failure.At.Sub(*t.QuotaResumedAt) < QuotaQuickFail {
+		backoff := quotaQuickBackoff[min(t.QuotaResumes-1, len(quotaQuickBackoff)-1)]
+		if floor := t.Failure.At.Add(backoff); floor.After(at) {
+			at = floor
+		}
+	}
+	return &at
+}
+
+// QuotaCanAutoContinue reports whether t is eligible to auto-continue at
+// QuotaResumeAt (V0.quota-auto-continue): quota-stopped with a resume time,
+// awake, idle, and not blocked on a decision, handover, or unread message.
+func QuotaCanAutoContinue(t *Thread) bool {
+	return !t.Asleep() && !t.Running && t.Starting == nil && t.Handover == nil &&
+		len(t.Decisions) == 0 && len(t.Outbox) == 0 && QuotaResumeAt(t) != nil
+}
+
 // QuotaWaitText is the Waiting reason of a thread whose quota is out, or "":
 // "Waiting for quota · resets 18:41", the notice's own time (QuotaReset) in
-// the host's local time, as V0.143's. Once that time has passed nothing waits
-// on the quota any more: the thread is the owner's again, and its failure
-// says so.
+// the host's local time, as V0.143's. While auto-continue is armed, the thread
+// stays Waiting across the reset buffer until KindClock resumes it
+// (V0.quota-auto-continue); once loop protection stops auto-continuing, it
+// returns "" so the thread surfaces as Failed in Needs you.
 func QuotaWaitText(t *Thread, now time.Time) string {
-	if !QuotaStopped(t) {
+	if !QuotaStopped(t) || t.QuotaResumes >= MaxQuotaAutoResumes {
 		return ""
 	}
-	if at := QuotaReset(t.Failure); at != nil {
-		if !at.After(now) {
+	if reset := QuotaReset(t.Failure); reset != nil {
+		if resume := QuotaResumeAt(t); resume != nil && QuotaCanAutoContinue(t) {
+			if !now.Before(*resume) {
+				return "Waiting for quota · resuming"
+			}
+			if resume.After(reset.Add(QuotaResumeBuffer)) {
+				return "Waiting for quota · retries " + wakeClock(*resume, now)
+			}
+			return "Waiting for quota · resets " + wakeClock(*reset, now)
+		}
+		if !reset.After(now) {
 			return ""
 		}
-		return "Waiting for quota · resets " + wakeClock(*at, now)
+		return "Waiting for quota · resets " + wakeClock(*reset, now)
 	}
 	return "Waiting for quota"
+}
+
+// FailureReason formats t.Failure for owner-facing views (Attention and
+// fyr_state). For a ClassQuota failure that surfaces as Failed, it avoids
+// leaking a stale relative "Resets in …" countdown (V0.quota-auto-continue).
+func FailureReason(t *Thread, now time.Time) string {
+	if t.Failure == nil {
+		return ""
+	}
+	if t.Failure.Class != ClassQuota {
+		return t.Failure.Message
+	}
+	reset := QuotaReset(t.Failure)
+	if t.QuotaResumes >= MaxQuotaAutoResumes && t.QuotaResumedAt != nil {
+		if reset != nil && reset.After(now) {
+			return fmt.Sprintf("Quota still exhausted after %d automatic retries · resets %s", MaxQuotaAutoResumes, wakeClock(*reset, now))
+		}
+		return fmt.Sprintf("Quota still exhausted after %d automatic retries", MaxQuotaAutoResumes)
+	}
+	if reset != nil {
+		if !reset.After(now) {
+			return "Quota reset passed (" + wakeClock(*reset, now) + ") — ready to retry"
+		}
+		return "Quota limit reached · resets " + wakeClock(*reset, now)
+	}
+	return t.Failure.Message
+}
+
+// quotaContinueAfter runs inside Reduce on KindClock: when a quota-stopped
+// thread reaches QuotaResumeAt, it clears the quota failure, marks the thread
+// Starting, records the auto-resume attempt, and emits quota.continued so the
+// agent feed wakes the agent (V0.quota-auto-continue).
+func quotaContinueAfter(t *Thread, in Input, now time.Time) []Event {
+	if in.Kind != KindClock || !QuotaCanAutoContinue(t) {
+		return nil
+	}
+	resume := QuotaResumeAt(t)
+	if resume == nil || now.Before(*resume) {
+		return nil
+	}
+	prev := *t.Failure
+	reset := QuotaReset(&prev)
+	t.Failure = nil
+	t.QuotaResumes++
+	at := now
+	t.QuotaResumedAt = &at
+	t.Starting = &at
+	t.Stopped = false
+	data := map[string]any{
+		"attempt": t.QuotaResumes,
+		"message": prev.Message,
+	}
+	if reset != nil {
+		data["resetAt"] = reset.UTC()
+	}
+	return []Event{{Type: "quota.continued", Data: data}}
 }
 
 // QuotaReset is when the provider's quota comes back, as the notice says, or

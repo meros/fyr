@@ -68,6 +68,17 @@ func queued(t *testing.T, th *Thread, key string) Notice {
 // has its test here.
 func TestNoticeRules(t *testing.T) {
 	rows := map[string]func(t *testing.T){
+		// V0.quota-auto-continue: reaching quota reset + buffer wakes the agent.
+		"quota.continue": func(t *testing.T) {
+			th := feedThread()
+			th.Failure = &Failure{Class: ClassQuota, Message: "Individual quota reached. Resets in 30m.", At: ct0}
+			at := ct0.Add(30*time.Minute + QuotaResumeBuffer)
+			th, res := fstep(t, th, Input{Source: Observer(ObsClock), Kind: KindClock}, at)
+			n := queued(t, th, "quota.continue")
+			if n.Urgency != Wake || n.Budget || !wakes(res) || !strings.Contains(n.What, "provider quota has reset") {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+		},
 		// V0.195: a background command sits quiet: an observer's wake, once.
 		"task.quiet": func(t *testing.T) {
 			th := feedThread()

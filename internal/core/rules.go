@@ -544,19 +544,14 @@ func NextCheck(t *Thread, v *View, now time.Time) *time.Time {
 	return out
 }
 
-// quotaCheck is when the clock must re-reduce a thread Waiting for quota, so
-// the wait ends at the reset, or nil (a failure that is not the quota's, a
-// run since, a notice without a time, a reset already passed: then the
-// failure is the owner's and no clock ends it).
-func quotaCheck(t *Thread, now time.Time) *time.Time {
-	if !QuotaStopped(t) || t.Running || t.RunningTasks() > 0 {
+// quotaCheck is when the clock must re-reduce a thread Waiting for quota so
+// Fyr automatically continues it after the reset + buffer (V0.quota-auto-continue),
+// or nil when auto-continue does not apply.
+func quotaCheck(t *Thread, _ time.Time) *time.Time {
+	if !QuotaCanAutoContinue(t) {
 		return nil
 	}
-	at := QuotaReset(t.Failure)
-	if at == nil || !at.After(now) {
-		return nil
-	}
-	return at
+	return QuotaResumeAt(t)
 }
 
 func viewRules(v *View) []Rule {

@@ -150,6 +150,8 @@ func OpenMain(t *Thread) *Change {
 // failure, the settle and the snooze, and counts as seeing the thread.
 func revive(t *Thread, v *View, now time.Time) {
 	t.Failure = nil
+	t.QuotaResumes = 0
+	t.QuotaResumedAt = nil
 	t.Settle.At = nil
 	dropSettleDone(t) // a new run: "when done" was for the last one
 	t.SettleAsk = nil // V0.settle-request: so was the agent's word
@@ -546,6 +548,8 @@ func init() {
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.Failure = nil
+			t.QuotaResumes = 0
+			t.QuotaResumedAt = nil
 			v.SeenAt = now
 			return nil, nil
 		}})
@@ -580,6 +584,8 @@ func init() {
 			}
 			settleNow(t, now)
 			t.Failure = nil
+			t.QuotaResumes = 0
+			t.QuotaResumedAt = nil
 			v.SeenAt = now
 			Unsnooze(v)
 			return fx, nil
@@ -754,8 +760,16 @@ func init() {
 			}
 			return ""
 		},
-		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
+		Apply: func(t *Thread, _ *View, _ Args, now time.Time) ([]Effect, error) {
 			t.ArchivedAt = nil
+			// V0.quota-auto-continue: unarchiving a thread whose quota reset
+			// already passed surfaces the failure for the owner instead of
+			// launching a surprise run.
+			if QuotaStopped(t) {
+				if at := QuotaResumeAt(t); at != nil && !at.After(now) {
+					t.QuotaResumes = MaxQuotaAutoResumes
+				}
+			}
 			return nil, nil
 		}})
 

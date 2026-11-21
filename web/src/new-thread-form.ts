@@ -76,6 +76,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   useEffect(() => setF((x) => settleForm(x, ctxRef.current, o.projectFilter, last)), [offered.length, profileCount, o.hosts?.length]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const picker = useFolderPick();
 
   keep.current = f.projectId ?? undefined;
@@ -96,29 +97,34 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const missing = o.onAddProject && wanted && hereId && (o.hosts?.length ?? 0) > 1 && !making && !memberOn(wanted, hereId) ? wanted : null;
 
   const submit = async () => {
-    if (busy) return;
+    if (busyRef.current || busy) return;
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     // V0.132: nothing is made on an offline host, and nothing falls back to another.
     const on = formHost(f, ctx);
     const down = hostOfflineNote(on, o.hosts, Date.now() + off);
     if (down || !on) return setErr(down);
+    busyRef.current = true;
     setBusy(true);
     setErr(null);
-    // V0.63: Start with the New project step open makes the project first, then files the thread in it.
-    let pid = f.projectId ?? undefined;
-    if (making) {
-      const name = making.name.trim();
-      if (!name) return (setBusy(false), setErr("A project needs a name."));
-      const r = await o.onNewProject(name, making.folder, on);
-      if (r.error || !r.id) return (setBusy(false), setErr(r.error ?? "The project was not made."));
-      const id = r.id;
-      setF((x) => madeProject(x, id, name, making.folder, ctxRef.current));
-      pid = id;
+    try {
+      // V0.63: Start with the New project step open makes the project first, then files the thread in it.
+      let pid = f.projectId ?? undefined;
+      if (making) {
+        const name = making.name.trim();
+        if (!name) return setErr("A project needs a name.");
+        const r = await o.onNewProject(name, making.folder, on);
+        if (r.error || !r.id) return setErr(r.error ?? "The project was not made.");
+        const id = r.id;
+        setF((x) => madeProject(x, id, name, making.folder, ctxRef.current));
+        pid = id;
+      }
+      const e = await o.onCreate(createArgs(f, ctx, plan.args, pid, effort));
+      if (e) return setErr(e);
+      saveRemembered(storage(), { projectId: pid ?? "", profile: f.profile, model: f.model });
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
-    const e = await o.onCreate(createArgs(f, ctx, plan.args, pid, effort));
-    setBusy(false);
-    if (e) return setErr(e);
-    saveRemembered(storage(), { projectId: pid ?? "", profile: f.profile, model: f.model });
   };
 
   return {

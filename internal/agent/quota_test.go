@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
@@ -178,5 +180,103 @@ func TestSubagentOrProseAfterToolIsNotAQuotaStop(t *testing.T) {
 	})
 	if a := h.runEnded(); a == nil || a.Failure != nil {
 		t.Fatalf("false positive quota stop: %+v", a)
+	}
+}
+
+// V0.quota-auto-continue: when KindClock auto-continues a quota-stopped thread
+// and emits EffectFeed, Manager.Do(EffectFeed) takes the waking continue notice
+// and delivers it to the agent to resume the turn.
+type quotaFeedHost struct {
+	mu      sync.Mutex
+	th      *core.Thread
+	v       *core.View
+	now     time.Time
+	sent    string
+	summary string
+}
+
+func (h *quotaFeedHost) Apply(in core.Input) (any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if in.Kind == core.KindMessageSent {
+		if a, ok := in.Args.(core.MessageSentArgs); ok {
+			h.sent = a.Text
+		}
+	}
+	if in.Kind == core.KindDigest {
+		if a, ok := in.Args.(core.DigestArgs); ok && a.Summary != "" {
+			h.summary = a.Summary
+		}
+	}
+	nt, nv, res, err := core.Reduce(h.th, h.v, in, h.now)
+	if err != nil {
+		return nil, err
+	}
+	h.th, h.v = nt, nv
+	return res.Reply, nil
+}
+
+func (h *quotaFeedHost) Thread(id string) (core.Thread, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return *core.CloneThread(h.th), true
+}
+
+func TestQuotaAutoContinueWakesAgentViaFeed(t *testing.T) {
+	t0 := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	h := &quotaFeedHost{
+		th: &core.Thread{
+			ID:        "t_qauto",
+			Profile:   "fake",
+			Cwd:       t.TempDir(),
+			SessionID: "s_q1",
+			Conversation: core.Conversation{
+				Failure: &core.Failure{Class: core.ClassQuota, Message: "⚠ Individual quota reached. Resets in 30m.", At: t0},
+			},
+		},
+		v:   &core.View{User: core.Owner, Entity: "t_qauto", SeenAt: t0},
+		now: t0.Add(30*time.Minute + core.QuotaResumeBuffer),
+	}
+	nt, nv, res, err := core.Reduce(h.th, h.v, core.Input{Source: core.Observer(core.ObsClock), Kind: core.KindClock, Thread: "t_qauto"}, h.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.th, h.v = nt, nv
+	var feedEff *core.Effect
+	for i := range res.Effects {
+		if res.Effects[i].Kind == core.EffectFeed {
+			feedEff = &res.Effects[i]
+			break
+		}
+	}
+	if feedEff == nil {
+		t.Fatalf("no EffectFeed emitted on quota auto-continue: %+v", res.Effects)
+	}
+
+	m := New(h, Config{
+		Profile: func(string) provider.Profile {
+			return provider.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
+		},
+		MCPURL: "http://127.0.0.1:1/mcp",
+		Prompt: "-",
+	})
+	t.Cleanup(m.StopAll)
+
+	if err := m.Do("t_qauto", *feedEff); err != nil {
+		t.Fatalf("EffectFeed failed: %v", err)
+	}
+	if !waitFor(8*time.Second, func() bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.sent != "" && h.summary != ""
+	}) {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		t.Fatalf("agent did not resume from quota auto-continue: sent=%q summary=%q", h.sent, h.summary)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !strings.Contains(h.sent, "[Fyr] The provider quota has reset") {
+		t.Fatalf("unexpected continue notice sent to agent: %q", h.sent)
 	}
 }

@@ -122,6 +122,11 @@ type Conversation struct {
 	Summary      string     `json:"summary,omitempty"` // last assistant text, one line
 	Tasks        []Task     `json:"tasks,omitempty"`   // subagents and background tasks (V0.16)
 	Failure      *Failure   `json:"failure,omitempty"`
+	// QuotaResumes counts consecutive automatic continues after a provider
+	// quota stop (V0.quota-auto-continue): bounded so a provider that keeps
+	// rejecting with quota stops for the owner instead of looping.
+	QuotaResumes   int        `json:"quotaResumes,omitempty"`
+	QuotaResumedAt *time.Time `json:"quotaResumedAt,omitempty"`
 	// RunEnds counts the runs that ended: runEnded Rules compare with it.
 	RunEnds int `json:"runEnds,omitempty"`
 	// RunEndedAt is when the last run ended (V0.101): a failure is the

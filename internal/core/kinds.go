@@ -535,6 +535,8 @@ func init() {
 				t.Effort = *a.Effort
 			}
 			t.Failure = nil
+			t.QuotaResumes = 0
+			t.QuotaResumedAt = nil
 			if a.HostNotice != "" {
 				t.Feed.Enqueue(Notice{About: "thread", Key: "handover.host", Urgency: Next, What: a.HostNotice, At: now})
 			}
@@ -564,6 +566,8 @@ func reduceThreadHandedOver(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	t.Handover = nil
 	t.Failure = nil
+	t.QuotaResumes = 0
+	t.QuotaResumedAt = nil
 	settleNow(t, now)
 	r.V.SeenAt = now
 	Unsnooze(r.V)

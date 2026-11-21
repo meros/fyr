@@ -38,6 +38,7 @@ import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./proje
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import { createSubmitGuard } from "./send-guard.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { Filmstrip, PreviewCardView, openMarkdownImage } from "./preview-ui.tsx";
@@ -1393,6 +1394,8 @@ function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerPr
   const [draft, setDraft] = useDraft(t.id);
   const att = useAttachments(t.hostId);
   const ta = useRef<HTMLTextAreaElement>(null);
+  const [sending, setSending] = useState(false);
+  const guard = useRef(createSubmitGuard(setSending)).current;
   const sendReason = unavailableReason(t, "thread.send");
   const text = answer ? answer.text : draft;
   const setText = answer ? answer.setText : setDraft;
@@ -1408,13 +1411,17 @@ function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerPr
   }, [text]);
 
   const plan = sendArgs(text, att.chips);
-  const send = async () => {
-    if (sendReason || !plan.ok) return;
-    const ok = await onSend(plan.args);
-    if (ok) {
-      setText("");
-      att.clear();
-    }
+  const send = () => {
+    if (sendReason || !plan.ok || guard.busy()) return;
+    const args = plan.args;
+    void guard.run(async () => {
+      const ok = await onSend(args);
+      if (ok) {
+        setText("");
+        att.clear();
+      }
+      return ok;
+    });
   };
 
   const placeholder = answer
@@ -1446,11 +1453,11 @@ function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerPr
           onPaste={att.onPaste}
           onKeyDown={(e) => {
             if (slash.onKeyDown(e)) return;
-            if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+            if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.repeat) return;
             e.preventDefault();
             e.stopPropagation();
             if (answer && !(e.metaKey || e.ctrlKey)) answer.submit();
-            else void send();
+            else send();
           }}
         />
         {answer && !sendReason && <span class="hint">⌘⏎ queue</span>}
@@ -1464,7 +1471,7 @@ function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerPr
             Answer <kbd>⏎</kbd>
           </button>
         ) : (
-          <button class="btn p" disabled={!!sendReason || !plan.ok} title={sendReason ?? (plan.ok ? "Send (Enter)" : plan.reason)} onClick={() => void send()}>
+          <button class="btn p" disabled={sending || !!sendReason || !plan.ok} title={sending ? "Sending…" : (sendReason ?? (plan.ok ? "Send (Enter)" : plan.reason))} onClick={send}>
             Send <kbd>⏎</kbd>
           </button>
         )}

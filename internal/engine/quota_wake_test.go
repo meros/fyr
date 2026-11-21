@@ -151,3 +151,140 @@ func TestWatchQuotaResolvesFollowsResetAndFires(t *testing.T) {
 		t.Fatal("no FrameQuotaReset emitted for unarmed failed thread when exhausted window reset")
 	}
 }
+
+// V0.quota-auto-continue: Engine.Tick auto-continues a quota-stopped thread
+// after its reset + buffer via KindClock + EffectFeed without ever flickering
+// through Failed or sending a Failed attention notification.
+func TestQuotaAutoContinueViaEngineTick(t *testing.T) {
+	e, _, now := bare(t)
+	fed := make(chan string, 8)
+	e.Agents = fakeAgents(func(id string, ef core.Effect) error {
+		if ef.Kind == core.EffectFeed {
+			fed <- id
+		}
+		return nil
+	})
+	var states []core.State
+	e.OnAttention = func(d api.Thread, _ core.State) {
+		states = append(states, d.Attention.State)
+	}
+
+	id := bareThread(t, e)
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunStarted, Thread: id}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id, Args: core.RunEndedArgs{
+		Failure: &core.Failure{Class: core.ClassQuota, Message: "⚠ Individual quota reached. Resets in 1h."},
+		Data:    map[string]any{},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	resetAt := now.Add(time.Hour)
+	states = nil
+
+	// At exact reset (inside buffer): still Waiting, no Failed notification.
+	*now = resetAt
+	e.Tick()
+	th, _ := e.Thread(id)
+	if th.Failure == nil {
+		t.Fatal("resumed before buffer elapsed")
+	}
+
+	// Past reset + buffer: Tick auto-continues via KindClock -> EffectFeed, never hits Failed.
+	*now = resetAt.Add(time.Minute)
+	e.Tick()
+
+	select {
+	case got := <-fed:
+		if got != id {
+			t.Fatalf("fed wrong thread %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("EffectFeed not dispatched on quota reset")
+	}
+	th, _ = e.Thread(id)
+	if th.Failure != nil {
+		t.Fatalf("failure not cleared after Tick: %+v", th.Failure)
+	}
+	if len(th.Feed.Queue) == 0 || !strings.Contains(th.Feed.Queue[0].What, "quota has reset") {
+		t.Fatalf("continue notice missing: %+v", th.Feed.Queue)
+	}
+	for _, st := range states {
+		if st == core.Failed {
+			t.Fatalf("thread flickered to Failed during quota auto-continue: %v", states)
+		}
+	}
+}
+
+// V0.quota-auto-continue: both thread.wakeOnQuota and watch {when: {kind: "quota"}}
+// fall back to core.QuotaReset(t.Failure) on providers without quota.Service
+// polling (such as antigravity) when the notice's reset time is in the future,
+// and refuse expired/missing notices, mismatched providers, or unknown windows.
+func TestQuotaWakeFallsBackToNoticeReset(t *testing.T) {
+	e, _, now := bare(t)
+	e.QuotaReset = func(_ context.Context, provider, _ string) (string, time.Time, error) {
+		return "", time.Time{}, errors.New(`provider "` + provider + `" has no quota tracking`)
+	}
+	guardDeps(t, e)
+
+	// 1. Agent watch {when: {kind: "quota"}} resolves from the thread's quota notice.
+	a := bareThread(t, e)
+	coretest.Patch(e, a, func(x *core.Thread, n time.Time) []core.Event {
+		x.Profile = "antigravity"
+		x.Starting = nil
+		x.Failure = &core.Failure{Class: core.ClassQuota, Message: "⚠ Individual quota reached. Resets in 2h.", At: n}
+		return nil
+	})
+	wantReset := now.Add(2 * time.Hour).UTC()
+	out, isErr := callAs(t, e, a, "watch", map[string]any{"when": map[string]any{"kind": "quota"}, "then": "notify", "note": "continue review"})
+	if isErr || !strings.HasPrefix(out, "Armed the watch w_") {
+		t.Fatalf("watch fallback failed: %v %q", isErr, out)
+	}
+	thA, _ := e.Thread(a)
+	if ws := core.Wakes(&thA); len(ws) != 1 || !ws[0].At.Equal(wantReset) || ws[0].Provider != "antigravity" {
+		t.Fatalf("watch fallback wakes: %+v (want %v)", ws, wantReset)
+	}
+
+	// Explicit unknown window or different provider must still be refused.
+	if _, isErr := callAs(t, e, a, "watch", map[string]any{"when": map[string]any{"kind": "quota", "window": "5 h"}, "then": "notify", "note": "x"}); !isErr {
+		t.Fatal("watch fallback accepted an explicit unknown window")
+	}
+	if _, isErr := callAs(t, e, a, "watch", map[string]any{"when": map[string]any{"kind": "quota", "provider": "other"}, "then": "notify", "note": "x"}); !isErr {
+		t.Fatal("watch fallback used notice for a different provider")
+	}
+
+	// 2. Owner thread.wakeOnQuota resolves from the thread's quota notice even when e.QuotaReset is nil.
+	b := bareThread(t, e)
+	coretest.Patch(e, b, func(x *core.Thread, n time.Time) []core.Event {
+		x.Profile = "antigravity"
+		x.Starting = nil
+		x.Failure = &core.Failure{Class: core.ClassQuota, Message: "⚠ Individual quota reached. Resets in 90m.", At: n}
+		return nil
+	})
+	e.QuotaReset = nil
+	r := e.Command(api.Cmd{CommandID: "q-fallback-1", Action: core.KindWakeOnQuota, ThreadID: b, Args: core.Args{}})
+	if !r.OK {
+		t.Fatalf("wakeOnQuota fallback failed: %+v", r)
+	}
+	thB, _ := e.Thread(b)
+	wantB := now.Add(90 * time.Minute).UTC()
+	if thB.Failure != nil || len(core.Wakes(&thB)) != 1 || !core.Wakes(&thB)[0].At.Equal(wantB) {
+		t.Fatalf("wakeOnQuota fallback state: failure=%+v wakes=%+v", thB.Failure, core.Wakes(&thB))
+	}
+
+	// 3. Past/expired notice is refused.
+	c := bareThread(t, e)
+	coretest.Patch(e, c, func(x *core.Thread, n time.Time) []core.Event {
+		x.Profile = "antigravity"
+		x.Starting = nil
+		x.Failure = &core.Failure{Class: core.ClassQuota, Message: "⚠ Individual quota reached. Resets in 10m.", At: n.Add(-time.Hour)}
+		return nil
+	})
+	if r := e.Command(api.Cmd{CommandID: "q-fallback-past", Action: core.KindWakeOnQuota, ThreadID: c, Args: core.Args{}}); r.OK {
+		t.Fatalf("expired notice was accepted: %+v", r)
+	}
+}
+
+type fakeAgents func(id string, ef core.Effect) error
+
+func (f fakeAgents) Do(id string, ef core.Effect) error { return f(id, ef) }
