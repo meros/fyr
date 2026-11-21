@@ -32,7 +32,7 @@ const (
 )
 
 // sharedKeys are the values a link's members share.
-var sharedKeys = []string{"name", "color", "icon", "quiet", "priority", "agentSettle"} // V0.linked-agent-settle: agentSettle too
+var sharedKeys = []string{"name", "color", "icon", "quiet", "priority", "agentSettle", "toolApproval"} // V0.linked-agent-settle, V0.tool-approval-judge
 
 // linkTarget is one project record a link command writes.
 type linkTarget struct {
@@ -249,11 +249,11 @@ func sharedAtOf(p map[string]any) time.Time {
 	return at
 }
 
-// sharedOf is a record's shared values; a cleared quiet list and a normal
-// priority (V0.project-priority) and ask (V0.linked-agent-settle) are sent
-// as null.
+// sharedOf is a record's shared values; a cleared quiet list, a normal
+// priority (V0.project-priority), and ask for agentSettle / toolApproval
+// are sent as null.
 func sharedOf(p map[string]any) map[string]any {
-	out := map[string]any{"quiet": p["quiet"], "priority": p["priority"], "agentSettle": p["agentSettle"]}
+	out := map[string]any{"quiet": p["quiet"], "priority": p["priority"], "agentSettle": p["agentSettle"], "toolApproval": p["toolApproval"]}
 	for _, k := range sharedKeys[:3] {
 		if v, ok := p[k]; ok {
 			out[k] = v
@@ -356,6 +356,11 @@ func checkShared(args map[string]any) error {
 	if v, ok := args["agentSettle"]; ok && v != nil {
 		if s, _ := v.(string); s != core.AgentSettleAsk && s != core.AgentSettleAuto {
 			return fmt.Errorf("agentSettle must be ask or auto")
+		}
+	}
+	if v, ok := args["toolApproval"]; ok && v != nil {
+		if s, _ := v.(string); s != core.ToolApprovalAsk && s != core.ToolApprovalAuto {
+			return fmt.Errorf("toolApproval must be ask or auto")
 		}
 	}
 	if v, ok := args["quiet"]; ok && v != nil {

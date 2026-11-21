@@ -29,7 +29,7 @@ func (m *Manager) read(s *session) {
 		delete(m.sessions, s.thread)
 	}
 	delete(m.tokens, s.token)
-	live := s.live || len(s.asks) > 0
+	live := s.live || len(s.asks) > 0 || len(s.judging) > 0
 	for _, w := range s.results {
 		close(w.ch)
 	}
@@ -37,6 +37,10 @@ func (m *Manager) read(s *session) {
 	for id, ch := range s.asks {
 		close(ch)
 		delete(s.asks, id)
+	}
+	for id, cancel := range s.judging {
+		cancel()
+		delete(s.judging, id)
 	}
 	if s.idle != nil {
 		s.idle.Stop()

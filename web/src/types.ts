@@ -62,6 +62,8 @@ export interface Decision {
   questions?: Question[];
   tool?: string;
   input?: Record<string, unknown>;
+  /** V0.tool-approval-judge: the judge's short reason when it escalated a tool call to the owner. */
+  judgeNote?: string;
   effect?: Effect;
   /** V0.ask-tool: asked with Fyr's ask tool; the agent is not waiting in a tool call. */
   async?: boolean;
@@ -298,6 +300,8 @@ export interface Project {
   priority?: "high" | "low";
   /** V0.settle-request: what an agent's settle_request does; absent is ask (a Settle chip) */
   agentSettle?: "auto";
+  /** V0.tool-approval-judge: how agent tool approvals run; absent is ask (always ask the owner) */
+  toolApproval?: "auto";
   /** V0.46: the end of the quiet hours the project is in now (RFC 3339); absent when not quiet */
   quietUntil?: string;
   /** V0.58: only on the stream, `{id, deleted: true}` after project.delete */

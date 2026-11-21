@@ -101,7 +101,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
 ```json
 {"id": "d_…", "kind": "ask|approval|effect", "createdAt": "…", "agent": "subagent name or empty",
  "questions": [{"question": "…", "header": "…", "multiSelect": false, "options": [{"label": "…", "description": "…"}]}],
- "tool": "Bash", "input": {"command": "…"},
+ "tool": "Bash", "input": {"command": "…"}, "judgeNote": "optional approval judge escalation reason",
  "effect": {"action": "pr.merge", "args": {"pr": "…", "method": "squash"}, "reason": "…"}}
 ```
 
@@ -140,6 +140,7 @@ A front serves two prefixes and nothing else under `/api/`: there is no default 
 | `run.ended` | `{"failure": Failure \| null, "interrupted": false, "durationMs": 1200}` |
 | `decision.opened` | `{"decision": Decision}` |
 | `decision.closed` | `{"id": "…", "answer": "text shown in the log"}` |
+| `decision.autoApproved` | `{"tool": "Bash", "summary": "…", "reason": "…", "model"?: "…", "durationMs": 420, "cached"?: true}` quiet audit record when the per-project approval judge auto-allows a tool call (V0.tool-approval-judge) |
 | `task` | `{"kind": "started" \| "ended", "id", "description", "status", "summary"}` a subagent or background task started or ended (V0.16) |
 | `preview` | `{"kind": "image" \| "html", "attachmentId", "title", "caption", "width", "height", "url"?}` something the agent showed with the `show` tool (V0.19). Images load from `/api/attachments/{id}`; HTML loads in an iframe from `/api/previews/{id}`; an HTML preview without `size` has no `width` and `height` (V0.47: the card is 16:10) |
 | `effect.result` | `{"action": "pr.merge", "ok": true, "text": "…", "by"?: "owner"}`; `by: owner` marks a merge or re-run the owner started in the PR tab (V0.43) |

@@ -215,7 +215,7 @@ test("moveToast says where the threads went, or the error", () => {
 });
 
 // V0.119: Settings → Projects and the project page.
-import { nameError, patchFor, projectSearchLine, searchProjects, settingsProjects } from "../src/projects.ts";
+import { nameError, patchFor, projectSearchLine, searchProjects, settingsProjects, splitSharedPatch, toolApprovalOf } from "../src/projects.ts";
 
 test("each save sends only its own field", () => {
   assert.deepEqual(patchFor("color", "teal"), { color: "teal" });
@@ -225,6 +225,11 @@ test("each save sends only its own field", () => {
   assert.deepEqual(patchFor("model", "claude-opus-5-5"), { model: "claude-opus-5-5" });
   assert.deepEqual(patchFor("quiet", []), { quiet: null }, "no windows turns quiet hours off");
   assert.deepEqual(patchFor("quiet", [{ from: "17:00", to: "06:00", days: ["mon"] }]), { quiet: [{ from: "17:00", to: "06:00", days: ["mon"] }] });
+  assert.deepEqual(patchFor("toolApproval", "auto"), { toolApproval: "auto" });
+  assert.deepEqual(patchFor("toolApproval", "ask"), { toolApproval: null });
+  assert.equal(toolApprovalOf(undefined), "ask");
+  assert.equal(toolApprovalOf({ toolApproval: "auto" }), "auto");
+  assert.deepEqual(splitSharedPatch({ toolApproval: "auto", model: "m" }), { shared: { toolApproval: "auto" }, own: { model: "m" } });
   assert.equal(nameError("  "), "A project needs a name.");
   assert.equal(nameError("x"), null);
 });

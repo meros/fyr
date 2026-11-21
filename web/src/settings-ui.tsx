@@ -37,7 +37,7 @@ import type { Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { changeLines, changesLabel, githubPause, githubRows, githubState, releaseSource, updateRow, updateState, type UpdatesView } from "./updates.ts";
-import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
+import { jobLine, jobProviderOptions, jobShowsModel, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
 import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
 import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
@@ -830,6 +830,7 @@ function SystemAgents({ d }: { d: Data }) {
       {v.jobs.map((j) => {
         const line = jobLine(v, j);
         const own = j.choice.profile ?? def.profile ?? "";
+        const showModel = jobShowsModel(j);
         return (
           <Row
             key={j.id}
@@ -837,11 +838,11 @@ function SystemAgents({ d }: { d: Data }) {
             desc={line.error ? undefined : line.text}
             error={rowErr(j.id) ?? (line.error ? line.text : null)}
             stack
-            class={`sajob${j.override ? " two" : ""}`}
+            class={`sajob${showModel ? " two" : ""}`}
             end={
               <>
-                <Select label={j.name} value={j.override ? (j.choice.profile ?? "") : "="} options={[{ value: "=", label: "Same as default" }, ...providerOptions(v).slice(1)]} onPick={(x) => void set(j.id, j.id, x === "=" ? null : { profile: x })} />
-                {j.override && <Select label="Model" value={j.choice.model ?? ""} options={withCurrent(modelOptions(v, own), j.choice.model)} onPick={(x) => void set(j.id, j.id, { profile: j.choice.profile, model: x })} />}
+                <Select label={j.name} value={j.override ? (j.choice.profile ?? "") : "="} options={jobProviderOptions(v, j)} onPick={(x) => void set(j.id, j.id, x === "=" ? null : { profile: x })} />
+                {showModel && <Select label="Model" value={j.choice.model ?? ""} options={withCurrent(modelOptions(v, own), j.choice.model)} onPick={(x) => void set(j.id, j.id, { profile: j.choice.profile, model: x })} />}
               </>
             }
           />

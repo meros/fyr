@@ -453,6 +453,18 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         if (e.data?.cancelled === true) pushItem({ kind: "answer", key, text: str(e.data?.answer), cancelled: true });
         else if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
         break;
+      case "decision.autoApproved": {
+        // V0.tool-approval-judge: quiet audit record folded with process work (V0.41).
+        const tool = str(e.data?.tool);
+        const summary = str(e.data?.summary);
+        const reason = str(e.data?.reason);
+        const model = str(e.data?.model);
+        const what = summary && summary !== tool ? `${tool} (${summary})` : tool || "tool call";
+        const line = reason ? `Auto-approved ${what} — ${reason}` : `Auto-approved ${what}`;
+        const text = model ? `${line} [${model}]` : line;
+        pushItem({ kind: "note", key, text, line });
+        break;
+      }
       default:
         break; // decision.opened and unknown types are not shown in the log
     }

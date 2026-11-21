@@ -225,6 +225,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		Cgroups: tree, Runner: rn.client(),
 		// V0.115: the system agents run on this host, on the owner's setting.
 		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
+		// V0.tool-approval-judge: project/thread/owner context for auto-judging tool approvals.
+		ApprovalContext: eng.ApprovalContext,
 		// V0.tool-reload: a process from an older build that has not read
 		// this build's tools ends at its next idle point.
 		Tools: mcpSrv.Hash, ToolsCurrent: mcpSrv.Current, Build: BuildID(),

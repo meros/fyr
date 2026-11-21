@@ -485,6 +485,10 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .payload pre{margin:0 0 6px;padding:8px 10px;border-radius:8px;background:var(--sunken);font:400 12px/18px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 .payload pre:last-child{margin-bottom:0}
 .payload pre.cmd{font-size:13px;color:var(--ink)}
+.ap-badge{flex:none;padding:1px 7px;border-radius:999px;border:1px solid var(--line-strong);background:var(--raised);font:500 11px/16px var(--ui);color:var(--beam-ink);white-space:nowrap}
+.ap-note{font:400 13px/18px var(--ui);color:var(--ink-muted);margin:-4px 0 8px;flex:none;overflow-wrap:anywhere}
+.ap-more{display:inline-flex;align-items:center;height:26px;padding:0 2px;margin:-2px 0 6px;font:500 12px/16px var(--ui);color:var(--harbour)}
+.ap-more:hover{text-decoration:underline}
 
 /* composer */
 .cmpw{flex:none;margin:10px 24px 16px;min-width:0}

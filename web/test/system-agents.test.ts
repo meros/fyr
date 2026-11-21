@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { jobLine, modelOptions, providerOptions, type SystemAgentsView } from "../src/system-agents.ts";
+import { jobLine, jobProviderOptions, jobShowsModel, modelOptions, PROFILE_SYSTEM_DEFAULT, providerOptions, type SystemAgentsView } from "../src/system-agents.ts";
 
 const view: SystemAgentsView = {
   default: {},
@@ -46,4 +46,24 @@ test("the model choices start with the provider's Haiku", () => {
 test("a job line says what the job runs on, or why not", () => {
   assert.deepEqual(jobLine(view, view.jobs[0]), { text: "Runs on Claude · claude-haiku-5-5", error: false });
   assert.deepEqual(jobLine(view, view.jobs[1]), { text: "Z.ai has no Haiku model: pick a model in Settings → System agents", error: true });
+});
+
+// V0.tool-approval-judge: thread-defaulting job offers Thread's provider (auto), Same as default, and concrete providers.
+test("a thread-defaulting job defaults to each thread's provider and supports overrides", () => {
+  const ap = { id: "approval", name: "Tool approvals", defaultThread: true, choice: {} };
+  assert.deepEqual(jobLine(view, ap), { text: "Runs on each thread's provider (fast model)", error: false });
+  assert.deepEqual(jobProviderOptions(view, ap).slice(0, 3), [
+    { value: "=", label: "Thread's provider (auto)" },
+    { value: PROFILE_SYSTEM_DEFAULT, label: "Same as default" },
+    { value: "claude", label: "Claude" },
+  ]);
+  assert.equal(jobShowsModel(ap), false);
+  assert.equal(jobShowsModel({ ...ap, override: true, choice: { profile: PROFILE_SYSTEM_DEFAULT } }), false);
+  assert.equal(jobShowsModel({ ...ap, override: true, choice: { profile: "claude" } }), true);
+  const agyView: SystemAgentsView = {
+    default: {},
+    providers: [{ id: "agy", name: "Antigravity", models: ["gemini-4-neon", "gemini-4-hydrogen"], haiku: "gemini-4-hydrogen" }],
+    jobs: [],
+  };
+  assert.deepEqual(modelOptions(agyView, "agy")[0], { value: "", label: "Fast (gemini-4-hydrogen)" });
 });

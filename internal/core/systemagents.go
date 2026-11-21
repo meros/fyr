@@ -20,24 +20,48 @@ const (
 	JobSetup    = "setup"    // the project setup run: icon, colour and name
 	JobQuestion = "question" // V0.210: does a turn's end wait on the owner
 	JobSearch   = "search"   // V0.ai-search: which threads fit the owner's words
+	JobApproval = string(DecisionApproval) // V0.tool-approval-judge: allow or escalate a tool approval
+
+	// ProfileSystemDefault is a sentinel profile value on a thread-defaulting
+	// job (JobApproval) that makes it follow SystemAgents.Default instead of
+	// the thread's own provider.
+	ProfileSystemDefault = "$default"
 )
 
 // SystemJob is one kind of call Fyr starts itself.
 type SystemJob struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	DefaultThread bool   `json:"defaultThread,omitempty"`
 }
 
 // SystemJobs are the jobs in the order Settings lists them.
-var SystemJobs = []SystemJob{{JobTitle, "Thread titles"}, {JobSetup, "Project setup"}, {JobQuestion, "Questions in text"}, {JobSearch, "Thread search"}}
+var SystemJobs = []SystemJob{
+	{ID: JobTitle, Name: "Thread titles"},
+	{ID: JobSetup, Name: "Project setup"},
+	{ID: JobQuestion, Name: "Questions in text"},
+	{ID: JobSearch, Name: "Thread search"},
+	{ID: JobApproval, Name: "Tool approvals", DefaultThread: true},
+}
 
 // IsSystemJob says whether Fyr knows the job.
 func IsSystemJob(id string) bool {
 	return slices.ContainsFunc(SystemJobs, func(j SystemJob) bool { return j.ID == id })
 }
 
+// JobUsesThread reports whether job defaults to running on each thread's own
+// provider when no override is set.
+func JobUsesThread(id string) bool {
+	for _, j := range SystemJobs {
+		if j.ID == id {
+			return j.DefaultThread
+		}
+	}
+	return false
+}
+
 // SystemAgentChoice is a provider (a profile id; "" is the host's default
-// provider) and a model ("" is that provider's Haiku model).
+// provider) and a model ("" is that provider's fast model).
 type SystemAgentChoice struct {
 	Profile string `json:"profile,omitempty"`
 	Model   string `json:"model,omitempty"`
@@ -49,12 +73,39 @@ type SystemAgents struct {
 	Jobs    map[string]SystemAgentChoice `json:"jobs,omitempty"`
 }
 
+// UsesThread reports whether job currently runs on each thread's own provider
+// (a DefaultThread job with no override).
+func (s SystemAgents) UsesThread(job string) bool {
+	if !JobUsesThread(job) {
+		return false
+	}
+	o, ok := s.Jobs[job]
+	return !ok || o == (SystemAgentChoice{})
+}
+
 // For is the choice of a job: its override, else the default. An override
 // that names a provider is taken whole (its model, or that provider's
-// Haiku), since the default's model may not be on that provider; one that
-// names only a model runs it on the default's provider.
+// fast model), since the default's model may not be on that provider; one that
+// names only a model runs it on the default's provider. For a DefaultThread
+// job with no override, For returns an empty SystemAgentChoice (check
+// UsesThread first); ProfileSystemDefault resolves to s.Default.
 func (s SystemAgents) For(job string) SystemAgentChoice {
 	o, ok := s.Jobs[job]
+	if JobUsesThread(job) {
+		switch {
+		case !ok || o == (SystemAgentChoice{}):
+			return SystemAgentChoice{}
+		case o.Profile == ProfileSystemDefault:
+			if o.Model != "" {
+				return SystemAgentChoice{Profile: s.Default.Profile, Model: o.Model}
+			}
+			return s.Default
+		case o.Profile != "":
+			return o
+		default:
+			return SystemAgentChoice{Model: o.Model}
+		}
+	}
 	switch {
 	case !ok || o == (SystemAgentChoice{}):
 		return s.Default

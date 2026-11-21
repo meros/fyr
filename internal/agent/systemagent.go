@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/core"
@@ -20,10 +21,13 @@ type SystemAgent struct {
 }
 
 // SystemAgent reads the owner's setting for a job (core.JobTitle,
-// core.JobSetup): the job's override, else the default; no provider is the
-// host's default provider, no model is that provider's Haiku model. A
-// provider or model that cannot run is an error that says why; it never
-// falls back to another provider or a bigger model.
+// core.JobSetup, core.JobQuestion, core.JobSearch, core.JobApproval): the
+// job's override, else the default; no provider is the host's default
+// provider, no model is that provider's fast model. For a thread-defaulting
+// job (core.JobApproval) with no override, it returns an empty SystemAgent
+// (use ResolveApprovalJudge with the thread's provider). A provider or model
+// that cannot run is an error that says why; it never falls back to another
+// provider or a bigger model.
 func (m *Manager) SystemAgent(job string) (SystemAgent, error) {
 	if !core.IsSystemJob(job) {
 		return SystemAgent{}, fmt.Errorf("unknown system job %q", job)
@@ -31,6 +35,9 @@ func (m *Manager) SystemAgent(job string) (SystemAgent, error) {
 	var s core.SystemAgents
 	if m.cfg.SystemAgents != nil {
 		s = m.cfg.SystemAgents()
+	}
+	if s.UsesThread(job) {
+		return SystemAgent{}, nil
 	}
 	c := s.For(job)
 	if c.Profile != "" && m.cfg.ProfileExists != nil && !m.cfg.ProfileExists(c.Profile) {
@@ -49,6 +56,37 @@ func (m *Manager) SystemAgent(job string) (SystemAgent, error) {
 	return SystemAgent{Host: m.cfg.HostName, Profile: p, Model: model}, nil
 }
 
+// ResolveApprovalJudge resolves the provider and model for core.JobApproval
+// given a thread's own profile and model (V0.tool-approval-judge). When the
+// owner has not overridden JobApproval, it uses the thread's own provider with
+// its fast model (Haiku on Claude, Gemini 4 Hydrogen / Flash on Antigravity),
+// falling back to the provider's DefaultModel or the thread's model for custom
+// endpoints that have no dedicated fast model.
+func (m *Manager) ResolveApprovalJudge(threadProfileID, threadModel string) (SystemAgent, error) {
+	var s core.SystemAgents
+	if m.cfg.SystemAgents != nil {
+		s = m.cfg.SystemAgents()
+	}
+	if !s.UsesThread(core.JobApproval) {
+		return m.SystemAgent(core.JobApproval)
+	}
+	p := m.cfg.Profile(threadProfileID)
+	if p.Unavailable != "" {
+		return SystemAgent{}, fmt.Errorf("%s cannot run: %s", name(p), p.Unavailable)
+	}
+	model := HaikuModel(p)
+	if model == "" {
+		model = p.DefaultModel
+	}
+	if model == "" {
+		model = threadModel
+	}
+	if model == "" {
+		return SystemAgent{}, fmt.Errorf("%s has no model to run the approval judge", name(p))
+	}
+	return SystemAgent{Host: m.cfg.HostName, Profile: p, Model: model}, nil
+}
+
 // SystemPrint runs one system job: a print run of its provider and model in
 // the system temp folder, so no project instructions load, with system as
 // the whole system prompt (V0.108). The job's error says why it did not run.
@@ -57,6 +95,13 @@ func (m *Manager) SystemPrint(ctx context.Context, job, system, prompt string) (
 	if err != nil {
 		return "", err
 	}
+	return m.printOn(ctx, a, system, prompt)
+}
+
+// printOn runs a one-shot Print call on a resolved SystemAgent, using low
+// reasoning effort when the model advertises effort levels (e.g. Gemini 4
+// Hydrogen defaults to high thinking).
+func (m *Manager) printOn(ctx context.Context, a SystemAgent, system, prompt string) (string, error) {
 	p := a.Profile
 	ad, err := m.adapter(p)
 	if err != nil {
@@ -66,7 +111,19 @@ func (m *Manager) SystemPrint(ctx context.Context, job, system, prompt string) (
 	if !ok {
 		return "", fmt.Errorf("the %s CLI cannot run a system job", ad.ID())
 	}
-	l := cli.Launch{Binary: p.Binary, Dir: os.TempDir(), Auth: authOf(p), Endpoint: p.Endpoint, Env: p.Env, Model: a.Model}
+	caps := p.ModelCaps
+	if len(caps) == 0 {
+		caps = ad.Caps().Models
+	}
+	l := cli.Launch{
+		Binary:   p.Binary,
+		Dir:      os.TempDir(),
+		Auth:     authOf(p),
+		Endpoint: p.Endpoint,
+		Env:      p.Env,
+		Model:    a.Model,
+		Effort:   lowEffort(caps, a.Model),
+	}
 	if p.Key != nil {
 		k, kerr := p.Key()
 		if (kerr != nil || k == "") && (p.KeyRequired || l.Auth.Kind == cli.APIKey) {
@@ -75,6 +132,17 @@ func (m *Manager) SystemPrint(ctx context.Context, job, system, prompt string) (
 		l.Key = k
 	}
 	return pr.Print(ctx, l, system, prompt)
+}
+
+// lowEffort returns "low" when model explicitly declares "low" among its
+// supported effort levels, and "" otherwise (e.g. Haiku or custom models).
+func lowEffort(caps []cli.Model, model string) string {
+	for _, m := range caps {
+		if m.ID == model && slices.Contains(m.Efforts, "low") {
+			return "low"
+		}
+	}
+	return ""
 }
 
 // HaikuModel is a provider's default fast/small model for system jobs:

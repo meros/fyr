@@ -30,6 +30,10 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 		b, _ := json.Marshal(input["questions"])
 		json.Unmarshal(b, &d.Questions)
 	} else {
+		// Deterministic policy gates always win before the judge or the owner.
+		if why := core.Gate(tool, input); why != "" {
+			return claude.Msg{"behavior": "deny", "message": why}
+		}
 		d.Kind, d.Tool, d.Input = core.DecisionApproval, tool, input
 	}
 	// V0.90: an adopted process's open question has its channel already
@@ -41,6 +45,50 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 	delete(s.adopted, d.ID)
 	m.mu.Unlock()
 	known := pre || m.hasDecision(s.thread, d.ID)
+
+	// V0.tool-approval-judge: on projects with toolApproval="auto", judge new
+	// tool approval requests before waking the owner.
+	if d.Kind == core.DecisionApproval && !known && m.cfg.ApprovalContext != nil {
+		if ac := m.cfg.ApprovalContext(s.thread); ac.AutoJudge {
+			jctx, jcancel := context.WithCancel(context.Background())
+			m.mu.Lock()
+			if s.judging == nil {
+				s.judging = map[string]context.CancelFunc{}
+			}
+			s.judging[reqID] = jcancel
+			m.mu.Unlock()
+
+			allow, reason, model, dur, cached := m.judgeApproval(jctx, s, tool, input, agentID, ac)
+			cancelled := jctx.Err() != nil
+
+			m.mu.Lock()
+			delete(s.judging, reqID)
+			m.mu.Unlock()
+			jcancel()
+
+			if cancelled {
+				return claude.Msg{"behavior": "deny", "message": "The approval request was cancelled."}
+			}
+			if allow {
+				data := map[string]any{
+					"tool":       tool,
+					"summary":    core.ApprovalToolSummary(tool, input),
+					"reason":     reason,
+					"durationMs": dur.Milliseconds(),
+				}
+				if model != "" {
+					data["model"] = model
+				}
+				if cached {
+					data["cached"] = true
+				}
+				m.observe(s.thread, core.KindRecord, []core.Event{{Type: core.EventDecisionAutoApproved, Data: data}})
+				return claude.Msg{"behavior": "allow", "updatedInput": input}
+			}
+			d.JudgeNote = reason
+		}
+	}
+
 	m.mu.Lock()
 	if ch == nil {
 		ch = make(chan core.Effect, 1)
@@ -152,6 +200,10 @@ func (m *Manager) cancelAsk(threadID, id string) error {
 
 func (m *Manager) cancelRequest(s *session, reqID string) {
 	m.mu.Lock()
+	if cancel := s.judging[reqID]; cancel != nil {
+		cancel()
+		delete(s.judging, reqID)
+	}
 	id := s.reqs[reqID]
 	ch := s.asks[id]
 	if ch != nil {
