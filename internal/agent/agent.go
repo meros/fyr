@@ -252,9 +252,9 @@ type session struct {
 	// call in the current turn (V0.quota-wait-midturn), so a mid-turn provider
 	// quota notice is recognized even when the CLI's result concatenates
 	// earlier prose from the same turn.
-	lastText string
-	inForced    bool
-	forcedWork  bool
+	lastText   string
+	inForced   bool
+	forcedWork bool
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag. reloadWhy: the refresh loads the new tools
 	// (V0.tool-reload); the thread gets this line when the process ends.
@@ -275,6 +275,9 @@ type session struct {
 	inputClosed bool
 	// tools: tool_use id → tool name, until its result (V0.133).
 	tools map[string]string
+	// openTools: count of currently open top-level tool calls in the active turn
+	// (mirrored from digest.openTools under m.mu for Inspect, V0.thread-invariants).
+	openTools int
 	// V0.143, the watchdog. lastOut: the process's last output;
 	// unresponsive: Fyr reported it unresponsive; restartAt restarts it;
 	// sentAt: when each unread message was written; held: messages Fyr
@@ -428,12 +431,15 @@ func (m *Manager) Live(thread string) bool {
 // SessionState is a snapshot of one thread's agent process state for
 // thread-state invariant checking (V0.thread-invariants).
 type SessionState struct {
-	Live     bool
-	Starting bool
-	TurnLive bool
-	Asks     []string
-	Outbox   []string
-	BG       int
+	Live      bool
+	Starting  bool
+	TurnLive  bool
+	Asks      []string
+	Outbox    []string
+	BG        int
+	LastOut   time.Time
+	OpenTools int
+	Judging   int
 }
 
 // Inspect returns a lock-free-to-use snapshot of every thread with a live
@@ -450,6 +456,9 @@ func (m *Manager) Inspect() map[string]SessionState {
 		st.Live = true
 		st.TurnLive = s.live
 		st.BG = s.bg
+		st.LastOut = s.lastOut
+		st.OpenTools = s.openTools
+		st.Judging = len(s.judging)
 		if len(s.asks) > 0 {
 			st.Asks = make([]string, 0, len(s.asks))
 			for id := range s.asks {

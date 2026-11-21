@@ -158,6 +158,85 @@ func TestThreadInvariantsPureStateViolations(t *testing.T) {
 			t.Fatalf("expected %s, got %+v", InvThreadFeedInvalid, vs)
 		}
 	})
+
+	t.Run("fyr-tool-approval", func(t *testing.T) {
+		// V0.agy-reattach-allowlist: Fyr's own MCP tools must never open an owner approval card.
+		th := &Thread{ID: "t1", Decisions: []Decision{{ID: "d1", Kind: DecisionApproval, Assignee: Owner, Tool: "mcp__fyr__fyr_state", CreatedAt: t0}}}
+		if vs := CheckThread(th, &View{}, now, nil); !hasViolation(vs, InvThreadFyrToolApproval) {
+			t.Fatalf("expected %s for mcp__fyr__*, got %+v", InvThreadFyrToolApproval, vs)
+		}
+		thEager := &Thread{ID: "t2", Decisions: []Decision{{ID: "d2", Kind: DecisionApproval, Assignee: Owner, Tool: "mcp_fyr_change_list", CreatedAt: t0}}}
+		if vs := CheckThread(thEager, &View{}, now, nil); !hasViolation(vs, InvThreadFyrToolApproval) {
+			t.Fatalf("expected %s for mcp_fyr_*, got %+v", InvThreadFyrToolApproval, vs)
+		}
+		// Policy-gated Bash calls (core.Gate) must be denied before reaching owner approvals.
+		thGate := &Thread{ID: "t3", Decisions: []Decision{{ID: "d3", Kind: DecisionApproval, Assignee: Owner, Tool: "Bash", Input: map[string]any{"command": "gh pr merge 42"}, CreatedAt: t0}}}
+		if vs := CheckThread(thGate, &View{}, now, nil); !hasViolation(vs, InvThreadFyrToolApproval) {
+			t.Fatalf("expected %s for policy-gated Bash, got %+v", InvThreadFyrToolApproval, vs)
+		}
+		// Ordinary tool approval is clean.
+		thOK := &Thread{ID: "t4", Decisions: []Decision{{ID: "d4", Kind: DecisionApproval, Assignee: Owner, Tool: "Bash", Input: map[string]any{"command": "make test"}, CreatedAt: t0}}}
+		if vs := CheckThread(thOK, &View{}, now, nil); hasViolation(vs, InvThreadFyrToolApproval) {
+			t.Fatalf("unexpected %s for ordinary Bash approval: %+v", InvThreadFyrToolApproval, vs)
+		}
+	})
+
+	t.Run("quota-misclassified", func(t *testing.T) {
+		// Quota notice filed under a non-quota failure class.
+		th := &Thread{ID: "t1", Conversation: Conversation{Failure: &Failure{Class: "api", Message: "⚠ Individual quota reached. Resets in 1h.", At: t0}}}
+		if vs := CheckThread(th, &View{}, now, nil); !hasViolation(vs, InvThreadQuotaMisclass) {
+			t.Fatalf("expected %s for wrong failure class, got %+v", InvThreadQuotaMisclass, vs)
+		}
+		// Properly classified quota wait is clean.
+		thOK := &Thread{ID: "t2", Conversation: Conversation{Failure: &Failure{Class: ClassQuota, Message: "⚠ Individual quota reached. Resets in 1h.", At: t0}}}
+		if vs := CheckThread(thOK, &View{}, now, nil); hasViolation(vs, InvThreadQuotaMisclass) {
+			t.Fatalf("unexpected %s for valid quota wait: %+v", InvThreadQuotaMisclass, vs)
+		}
+	})
+
+	t.Run("rule-invalid-dead-when-and-compound-unwatchable", func(t *testing.T) {
+		// Dead WhenAt / WhenQuota without timestamp.
+		th1 := &Thread{ID: "t1", Rules: []Rule{{ID: "w1", Purpose: PurposeWatch, When: When{Kind: WhenAt}, Then: Then{Kind: KindRuleNotify}, Status: RuleArmed}}}
+		if vs := CheckThread(th1, &View{}, now, nil); !hasViolation(vs, InvThreadRuleInvalid) {
+			t.Fatalf("expected %s for nil WhenAt, got %+v", InvThreadRuleInvalid, vs)
+		}
+		th2 := &Thread{ID: "t2", Rules: []Rule{{ID: "w2", Purpose: PurposeWatch, When: When{Kind: WhenQuota, Provider: "claude"}, Then: Then{Kind: KindRuleNotify}, Status: RuleArmed}}}
+		if vs := CheckThread(th2, &View{}, now, nil); !hasViolation(vs, InvThreadRuleInvalid) {
+			t.Fatalf("expected %s for nil WhenQuota.At, got %+v", InvThreadRuleInvalid, vs)
+		}
+		// Compound settle rule wrapping an unwatchable PR condition on a landed change.
+		th3 := &Thread{ID: "t3",
+			Changes: []Change{{ID: "c1", Key: "k1", Kind: KindCode, Phase: PhaseLanded, PhaseBy: ByObserved, LandedAt: ptr(t0), Done: &DoneMark{At: t0, By: ByObserved, Reason: "merged"}}},
+			Rules:   []Rule{{ID: "s1", Purpose: PurposeSettle, About: "c1", When: All(When{Kind: WhenCondition, Change: "c1", Type: CondChecks, Status: CondOK}, When{Kind: WhenIdle}), Then: Then{Kind: KindRuleSettle}, Status: RuleArmed, After: AfterDisarm}},
+		}
+		if vs := CheckThread(th3, &View{}, now, nil); !hasViolation(vs, InvThreadRuleInvalid) {
+			t.Fatalf("expected %s for compound unwatchable rule, got %+v", InvThreadRuleInvalid, vs)
+		}
+	})
+
+	t.Run("change-invalid-non-open-pr-condition-any-phaseby", func(t *testing.T) {
+		th := &Thread{ID: "t1", Changes: []Change{{
+			ID: "c1", Key: "k1", Kind: KindCode, Phase: PhaseAbandoned, PhaseBy: ByOwner,
+			PR:         &PR{URL: testPR, State: "CLOSED"},
+			Conditions: []Condition{{Type: CondMerge, Status: CondFail, Reason: "stale"}},
+		}}}
+		if vs := CheckThread(th, &View{}, now, nil); !hasViolation(vs, InvThreadChangeInvalid) {
+			t.Fatalf("expected %s for non-OPEN PR condition with PhaseBy=owner, got %+v", InvThreadChangeInvalid, vs)
+		}
+	})
+
+	t.Run("serialization-drift", func(t *testing.T) {
+		// Clean thread has zero round-trip drift.
+		th := &Thread{ID: "t1", CreatedAt: t0, Changes: []Change{{
+			ID: "c1", Key: "k1", Kind: KindCode, Phase: PhaseLanded, PhaseBy: ByObserved,
+			LandedAt: ptr(t0), Done: &DoneMark{At: t0, By: ByObserved, Reason: "merged"},
+			PR:         &PR{URL: testPR, State: "MERGED"},
+			Conditions: []Condition{}, // non-nil empty slice; V0.rule-digest-stable keeps digest stable
+		}}}
+		if vs := CheckSerialization(th, &View{User: Owner, Entity: "t1"}, now, nil); len(vs) != 0 {
+			t.Fatalf("unexpected serialization drift on clean thread: %+v", vs)
+		}
+	})
 }
 
 func TestThreadInvariantsTransitionViolations(t *testing.T) {
@@ -231,6 +310,15 @@ func TestThreadInvariantsTransitionViolations(t *testing.T) {
 		vs := CheckTransition(th, &View{}, th, &View{}, Input{Source: Observer(ObsClock), Kind: KindClock}, res, now, nil)
 		if !hasViolation(vs, InvThreadRuleLoop) {
 			t.Fatalf("expected %s, got %+v", InvThreadRuleLoop, vs)
+		}
+	})
+
+	t.Run("void-merge-ask-closed-as-gate", func(t *testing.T) {
+		th := &Thread{ID: "t1"}
+		res := Result{Events: []Event{{Type: "decision.closed", Data: map[string]any{"id": "d1", "gate": true, "reason": "the PR is not open"}}}}
+		vs := CheckTransition(th, &View{}, th, &View{}, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved}, res, now, nil)
+		if !hasViolation(vs, InvThreadDecisionInvalid) {
+			t.Fatalf("expected %s for void ask closed as gate, got %+v", InvThreadDecisionInvalid, vs)
 		}
 	})
 }
@@ -347,6 +435,51 @@ func TestThreadInvariantUncoveredFixes(t *testing.T) {
 		}
 		if th.Starting == nil {
 			t.Fatal("expected Starting to remain set")
+		}
+		if vs := CheckThread(th, v, now, nil); len(vs) != 0 {
+			t.Fatalf("violations: %+v", vs)
+		}
+	})
+
+	t.Run("settle and archive clear machineWait and ignore late machineWait", func(t *testing.T) {
+		th := &Thread{ID: "t1", CreatedAt: t0, Conversation: Conversation{MachineWait: &MachineWait{Since: t0, Why: "memory critical"}}}
+		v := &View{User: Owner, Entity: "t1"}
+		th, v, _, err := Reduce(th, v, Input{Source: FromOwner, Kind: "thread.settle"}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if th.MachineWait != nil {
+			t.Fatalf("settle left machineWait set: %+v", th.MachineWait)
+		}
+		// Late machineWait while settled is ignored.
+		th, v, _, err = Reduce(th, v, Input{Source: Observer(ObsProcess), Kind: KindMachineWait, Args: MachineWaitArgs{Why: "memory critical"}}, now.Add(time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if th.MachineWait != nil {
+			t.Fatalf("settled thread acquired machineWait: %+v", th.MachineWait)
+		}
+		if vs := CheckThread(th, v, now.Add(time.Second), nil); len(vs) != 0 {
+			t.Fatalf("violations: %+v", vs)
+		}
+	})
+
+	t.Run("compound unwatchable settle rule drops when PR merges", func(t *testing.T) {
+		th0 := withPR(Thread{ID: "t1", CreatedAt: t0}, PR{State: "OPEN", Checks: ChecksPending})
+		v0 := &View{User: Owner, Entity: "t1"}
+		th, v, _, err := Reduce(&th0, v0, Input{
+			Source: FromAgent, Kind: KindRuleArm,
+			Args: RuleArmArgs{ID: "w_settle_ci", When: When{Kind: WhenCondition, Change: th0.Changes[0].ID, Type: CondChecks, Status: CondOK}, Then: "settle"},
+		}, t0.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		th, v, _, err = Reduce(th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Args: pr(PR{State: "MERGED", Checks: ChecksPass})}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if FindRule(th, "w_settle_ci") != nil {
+			t.Fatalf("compound unwatchable settle rule survived merge: %+v", th.Rules)
 		}
 		if vs := CheckThread(th, v, now, nil); len(vs) != 0 {
 			t.Fatalf("violations: %+v", vs)
@@ -522,16 +655,16 @@ func TestThreadInvariantsUnderRandomStateMachine(t *testing.T) {
 				}
 				name := cmds[rng.Intn(len(cmds))]
 				args := Args{
-					"text":    "hello",
-					"title":   fmt.Sprintf("Owner title %d", step),
-					"model":   "sonnet",
-					"profile": "other",
-					"on":      rng.Intn(2) == 0,
-					"until":   now.Add(time.Hour).Format(time.RFC3339),
-					"at":      now.Add(time.Hour).Format(time.RFC3339),
+					"text":     "hello",
+					"title":    fmt.Sprintf("Owner title %d", step),
+					"model":    "sonnet",
+					"profile":  "other",
+					"on":       rng.Intn(2) == 0,
+					"until":    now.Add(time.Hour).Format(time.RFC3339),
+					"at":       now.Add(time.Hour).Format(time.RFC3339),
 					"provider": "claude",
-					"window":  "5 h",
-					"allow":   rng.Intn(2) == 0,
+					"window":   "5 h",
+					"allow":    rng.Intn(2) == 0,
 				}
 				if len(th.Decisions) > 0 {
 					d := th.Decisions[0]
@@ -562,6 +695,9 @@ func TestThreadInvariantsUnderRandomStateMachine(t *testing.T) {
 			}
 			if vs := CheckThread(nextT, nextV, now, nil); len(vs) != 0 {
 				t.Fatalf("run %d step %d (%s/%s): state violations: %+v", run, step, in.Kind, in.Source, vs)
+			}
+			if vs := CheckSerialization(nextT, nextV, now, nil); len(vs) != 0 {
+				t.Fatalf("run %d step %d (%s/%s): serialization violations: %+v", run, step, in.Kind, in.Source, vs)
 			}
 			if in.Kind == KindClock {
 				if ov := OverdueRule(nextT, nextV, now); ov != "" {

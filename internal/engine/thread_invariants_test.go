@@ -438,3 +438,165 @@ func TestThreadInvariantSelfWakeChurn(t *testing.T) {
 		t.Fatalf("quota-refused self-starts did not count:\n%s", out2)
 	}
 }
+
+func TestThreadInvariantDuplicateSend(t *testing.T) {
+	e, _, now := bare(t)
+	e.Agents = &sends{}
+	out := invLog(t, e)
+	id := bareThread(t, e)
+
+	send := func(cmdID, text, actor string) {
+		t.Helper()
+		r := e.submit(core.Input{Source: core.FromOwner, Actor: actor, Kind: "thread.send", Thread: id, Args: core.Args{"text": text}, CmdID: cmdID})
+		if !r.OK {
+			t.Fatalf("send %s: %+v", cmdID, r)
+		}
+	}
+
+	send("c1", "Status?", "device:d1")
+	// Different text immediately is fine.
+	*now = now.Add(500 * time.Millisecond)
+	send("c2", "Any news?", "device:d1")
+	if n := invLines(out, InvThreadDuplicateSend); n != 0 {
+		t.Fatalf("fired on distinct text:\n%s", out)
+	}
+	// Identical text with a new commandId within InvDuplicateSendWindow fires.
+	*now = now.Add(2 * time.Millisecond)
+	send("c3", "Any news?", "device:d1")
+	if n := invLines(out, InvThreadDuplicateSend); n != 1 {
+		t.Fatalf("want 1 %s, got %d:\n%s", InvThreadDuplicateSend, n, out)
+	}
+	// Past window does not fire.
+	*now = now.Add(InvDuplicateSendWindow + time.Second)
+	send("c4", "Any news?", "device:d1")
+	if n := invLines(out, InvThreadDuplicateSend); n != 1 {
+		t.Fatalf("fired past window:\n%s", out)
+	}
+}
+
+func TestThreadInvariantFailureChurn(t *testing.T) {
+	e, _, now := bare(t)
+	e.Agents = &sends{}
+	out := invLog(t, e)
+	id := bareThread(t, e)
+
+	failRun := func(class, msg string) {
+		t.Helper()
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunStarted, Thread: id}); err != nil {
+			t.Fatal(err)
+		}
+		*now = now.Add(2 * time.Second)
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id, Args: core.RunEndedArgs{
+			Failure: &core.Failure{Class: class, Message: msg},
+			Data:    map[string]any{"interrupted": false, "durationMs": float64(500)},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		*now = now.Add(20 * time.Second)
+	}
+
+	// Owner manual retry between failures resets the streak and never fires.
+	failRun("api", "API 500")
+	failRun("api", "API 500")
+	if r := e.Command(api.Cmd{CommandID: "retry1", Action: "thread.retry", ThreadID: id}); !r.OK {
+		t.Fatalf("retry: %+v", r)
+	}
+	failRun("api", "API 500")
+	if n := invLines(out, InvThreadFailureChurn); n != 0 {
+		t.Fatalf("fired across owner retry:\n%s", out)
+	}
+
+	// Three consecutive unattended failures within window fire once.
+	failRun(core.ClassQuota, "Individual quota reached. Resets in 1h.")
+	failRun(core.ClassQuota, "Individual quota reached. Resets in 1h.")
+	if n := invLines(out, InvThreadFailureChurn); n != 1 {
+		t.Fatalf("want 1 %s, got %d:\n%s", InvThreadFailureChurn, n, out)
+	}
+}
+
+func TestThreadInvariantCleanEndQuotaNotice(t *testing.T) {
+	e, _, now := bare(t)
+	out := invLog(t, e)
+	id := bareThread(t, e)
+
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunStarted, Thread: id}); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(time.Second)
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindDigest, Thread: id, Args: core.DigestArgs{
+		Summary: "⚠ Individual quota reached. Please upgrade your subscription. Resets in 1h.",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(time.Second)
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id, Args: core.RunEndedArgs{
+		Data: map[string]any{"interrupted": false, "durationMs": float64(2000)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := invLines(out, core.InvThreadQuotaMisclass); n != 1 {
+		t.Fatalf("want 1 %s for missed mid-turn quota notice, got %d:\n%s", core.InvThreadQuotaMisclass, n, out)
+	}
+}
+
+func TestThreadInvariantGhostDecisionLiveOutboxGhostBGAndSilentRun(t *testing.T) {
+	e, _, now := bare(t)
+	e.Agents = &sends{}
+	snap := map[string]AgentState{}
+	e.AgentInspect = func() map[string]AgentState { return snap }
+	guardDeps(t, e)
+	out := invLog(t, e)
+
+	tGhostDec := bareThread(t, e)
+	tLiveOutbox := bareThread(t, e)
+	tGhostBG := bareThread(t, e)
+	tSilent := bareThread(t, e)
+
+	e.mu.Lock()
+	e.threads[tGhostDec].Starting = nil
+	snap[tGhostDec] = AgentState{Live: true, TurnLive: true, Asks: []string{"d_orphaned"}}
+
+	e.threads[tLiveOutbox].Starting = nil
+	e.threads[tLiveOutbox].Outbox = []core.OutMsg{{ID: "m_orphan", State: "queued"}}
+	snap[tLiveOutbox] = AgentState{Live: true, TurnLive: false, Outbox: nil}
+
+	e.threads[tGhostBG].Starting = nil
+	snap[tGhostBG] = AgentState{Live: true, TurnLive: false, BG: 2}
+
+	e.threads[tSilent].Starting = nil
+	e.threads[tSilent].Running = true
+	start := *now
+	e.threads[tSilent].RunStartedAt = &start
+	e.threads[tSilent].Activity = "Fyr thread rename"
+	snap[tSilent] = AgentState{Live: true, TurnLive: true, LastOut: start, OpenTools: 0, Judging: 0}
+	e.mu.Unlock()
+
+	e.Tick()
+	*now = now.Add(InvProcessDriftGrace + time.Second)
+	e.Tick()
+	for _, id := range []string{InvThreadGhostDecision, InvThreadPhantomOutbox, InvThreadPhantomTasks} {
+		if n := invLines(out, id); n != 1 {
+			t.Errorf("%s: want 1 line, got %d:\n%s", id, n, out)
+		}
+	}
+	if invLines(out, InvThreadRunSilentStuck) != 0 {
+		t.Fatalf("%s fired before threshold:\n%s", InvThreadRunSilentStuck, out)
+	}
+
+	// Open tool suppresses silent-run invariant even past threshold.
+	snap[tSilent] = AgentState{Live: true, TurnLive: true, LastOut: start, OpenTools: 1}
+	*now = start.Add(InvRunSilentStuck + time.Minute)
+	e.Tick()
+	if invLines(out, InvThreadRunSilentStuck) != 0 {
+		t.Fatalf("%s fired while a tool was open:\n%s", InvThreadRunSilentStuck, out)
+	}
+
+	// With no open tools and silence past InvRunSilentStuck, it fires once.
+	snap[tSilent] = AgentState{Live: true, TurnLive: true, LastOut: start, OpenTools: 0}
+	e.Tick()
+	*now = now.Add(time.Minute)
+	e.Tick()
+	if n := invLines(out, InvThreadRunSilentStuck); n != 1 {
+		t.Fatalf("want 1 %s, got %d:\n%s", InvThreadRunSilentStuck, n, out)
+	}
+}

@@ -237,7 +237,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			raw := mgr.Inspect()
 			out := make(map[string]engine.AgentState, len(raw))
 			for id, s := range raw {
-				out[id] = engine.AgentState{Live: s.Live, Starting: s.Starting, TurnLive: s.TurnLive, Asks: s.Asks, Outbox: s.Outbox, BG: s.BG}
+				out[id] = engine.AgentState{Live: s.Live, Starting: s.Starting, TurnLive: s.TurnLive, Asks: s.Asks, Outbox: s.Outbox, BG: s.BG, LastOut: s.LastOut, OpenTools: s.OpenTools, Judging: s.Judging}
 			}
 			return out
 		},

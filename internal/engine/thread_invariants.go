@@ -34,8 +34,12 @@ const (
 	InvThreadGhostRunning      = "thread-ghost-running"
 	InvThreadPhantomTasks      = "thread-phantom-tasks"
 	InvThreadPhantomDecision   = "thread-phantom-decision"
+	InvThreadGhostDecision     = "thread-ghost-decision"
 	InvThreadPhantomOutbox     = "thread-phantom-outbox"
 	InvThreadSelfWakeChurn     = "thread-self-wake-churn"
+	InvThreadDuplicateSend     = "thread-duplicate-send"
+	InvThreadFailureChurn      = "thread-failure-churn"
+	InvThreadRunSilentStuck    = "thread-run-silent-stuck"
 )
 
 // Thresholds for temporal and process-consistency thread invariants.
@@ -66,6 +70,15 @@ const (
 	// task waking the thread now and then; it is a loop.
 	InvSelfWakeRuns   = 3
 	InvSelfWakeWindow = 10 * time.Minute
+	// InvDuplicateSendWindow: identical owner text sent with a new commandId within this window.
+	InvDuplicateSendWindow = 3 * time.Second
+	// InvFailureChurnRuns and InvFailureChurnWindow: unattended consecutive
+	// failed runs within this window (without an intervening owner send/retry).
+	InvFailureChurnRuns   = 3
+	InvFailureChurnWindow = 10 * time.Minute
+	// InvRunSilentStuck: a live turn with no open tools, decisions, judge, tasks,
+	// or machine wait that emits no stream output for longer than this.
+	InvRunSilentStuck = 15 * time.Minute
 )
 
 // engineThreadInvTexts describes each engine/runtime thread invariant in one sentence.
@@ -83,10 +96,14 @@ var engineThreadInvTexts = map[string]string{
 	InvThreadSlotQueueDrift:    "A thread's SlotQueued flag disagreed with the host's heavy-job queue after sync.",
 	InvThreadPhantomRunning:    "A thread is marked Running, but the agent manager has no live turn for it for more than 30 seconds.",
 	InvThreadGhostRunning:      "The agent manager has a live turn for a thread that the engine marks as not Running for more than 30 seconds.",
-	InvThreadPhantomTasks:      "A thread has running background tasks, but no live agent process exists for more than 30 seconds.",
+	InvThreadPhantomTasks:      "A thread's running background tasks disagreed with its agent process for more than 30 seconds.",
 	InvThreadPhantomDecision:   "A thread has an open process-bound question or approval that the agent manager is not waiting on for more than 30 seconds.",
-	InvThreadPhantomOutbox:     "A thread has unread messages in its outbox, but no agent process is live or starting for more than 30 seconds.",
+	InvThreadGhostDecision:     "The agent manager is blocked waiting on a permission or question that is not open on the thread for more than 30 seconds.",
+	InvThreadPhantomOutbox:     "A thread has unread messages in its outbox that the agent manager is not tracking for more than 30 seconds.",
 	InvThreadSelfWakeChurn:     "The CLI started 3 or more turns by itself within 10 minutes, each ended before the model answered or refused by the provider's quota.",
+	InvThreadDuplicateSend:     "The same owner message text arrived twice on one thread within 3 seconds with distinct command ids.",
+	InvThreadFailureChurn:      "A thread hit 3 or more consecutive failed runs within 10 minutes without an owner send or retry.",
+	InvThreadRunSilentStuck:    "A live turn with no open tools, tasks, decisions, or approval judge emitted no stream output for more than 15 minutes.",
 }
 
 // engineThreadInvOrder is the display order of the engine/runtime thread invariants.
@@ -106,8 +123,12 @@ var engineThreadInvOrder = []string{
 	InvThreadGhostRunning,
 	InvThreadPhantomTasks,
 	InvThreadPhantomDecision,
+	InvThreadGhostDecision,
 	InvThreadPhantomOutbox,
 	InvThreadSelfWakeChurn,
+	InvThreadDuplicateSend,
+	InvThreadFailureChurn,
+	InvThreadRunSilentStuck,
 }
 
 // threadInvOrder is every thread invariant in display order (core pure + engine runtime).
@@ -184,6 +205,9 @@ func (e *Engine) checkThreadApplied(s *staged, autoMerge map[string]bool, lastAf
 	for _, v := range core.CheckThread(s.t, s.v, s.now, on) {
 		vs = append(vs, violation{id: v.ID, evidence: fmt.Sprintf("after=%s %s", s.in.Kind, v.Evidence), thread: s.t.ID})
 	}
+	for _, v := range core.CheckSerialization(s.t, s.v, s.now, on) {
+		vs = append(vs, violation{id: v.ID, evidence: fmt.Sprintf("after=%s %s", s.in.Kind, v.Evidence), thread: s.t.ID})
+	}
 	if hasLast && lastAfter != afterAtt.State {
 		vs = append(vs, violation{
 			id:       InvThreadAttentionDrift,
@@ -194,7 +218,173 @@ func (e *Engine) checkThreadApplied(s *staged, autoMerge map[string]bool, lastAf
 	if v := e.selfWakeRun(s); v != nil {
 		vs = append(vs, *v)
 	}
+	dupV, isDup := e.duplicateSend(s)
+	if dupV != nil {
+		vs = append(vs, *dupV)
+	}
+	if v := e.failureChurn(s, isDup); v != nil {
+		vs = append(vs, *v)
+	}
+	if v := e.cleanEndQuotaNotice(s); v != nil {
+		vs = append(vs, *v)
+	}
 	e.reportThreadViolations(vs, s.now)
+}
+
+// duplicateSend flags identical non-empty owner thread.send texts arriving on
+// the same thread within InvDuplicateSendWindow with distinct command ids
+// (V0.thread-invariants-recent-bugs: catches double-submit / duplicate-handler
+// storms such as three identical sends arriving within milliseconds).
+func (e *Engine) duplicateSend(s *staged) (*violation, bool) {
+	if s.in.Kind != "thread.send" || s.in.Source != core.FromOwner {
+		return nil, false
+	}
+	a, _ := s.in.Args.(core.Args)
+	if a == nil {
+		if m, ok := s.in.Args.(map[string]any); ok {
+			a = core.Args(m)
+		}
+	}
+	text := strings.TrimSpace(a.Str("text"))
+	if text == "" || hasMediaArgs(a) {
+		return nil, false
+	}
+	id := s.t.ID
+	actor := s.in.Actor
+	c := &e.inv
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lastSend == nil {
+		c.lastSend = map[string]sendRecord{}
+	}
+	prev, ok := c.lastSend[id]
+	c.lastSend[id] = sendRecord{text: text, actor: actor, at: s.now}
+	if !ok || prev.text != text || prev.actor != actor {
+		return nil, false
+	}
+	delta := s.now.Sub(prev.at)
+	if delta < 0 || delta > InvDuplicateSendWindow {
+		return nil, false
+	}
+	return &violation{
+		id:       InvThreadDuplicateSend,
+		evidence: fmt.Sprintf("thread=%s actor=%q delta=%s len=%d cmdId=%s", id, actor, delta.Round(time.Millisecond), len(text), s.in.CmdID),
+		thread:   id,
+	}, true
+}
+
+func hasMediaArgs(a core.Args) bool {
+	if a == nil {
+		return false
+	}
+	for _, k := range []string{"images", "attachments"} {
+		switch v := a[k].(type) {
+		case []any:
+			if len(v) > 0 {
+				return true
+			}
+		case []string:
+			if len(v) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// failureChurn flags 3 or more consecutive failed runs on a thread within
+// InvFailureChurnWindow without an intervening owner send or retry
+// (V0.thread-invariants-recent-bugs: catches unattended quota auto-continue
+// loops, feed-wake failure loops, and watchdog crash loops).
+func (e *Engine) failureChurn(s *staged, isDupSend bool) *violation {
+	id := s.t.ID
+	c := &e.inv
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failRuns == nil {
+		c.failRuns = map[string][]time.Time{}
+	}
+	switch s.in.Kind {
+	case "thread.send", "thread.retry":
+		if s.in.Source == core.FromOwner && !isDupSend {
+			delete(c.failRuns, id)
+		}
+		return nil
+	case core.KindRunEnded:
+		a, _ := s.in.Args.(core.RunEndedArgs)
+		if a.Failure == nil {
+			delete(c.failRuns, id)
+			return nil
+		}
+		return e.recordFailureChurnLocked(id, a.Failure.Class, s.now)
+	case core.KindSendFailed:
+		return e.recordFailureChurnLocked(id, "process", s.now)
+	case core.KindProcessLost:
+		if s.t.Failure != nil && s.t.Failure != s.cur.Failure {
+			return e.recordFailureChurnLocked(id, s.t.Failure.Class, s.now)
+		}
+	}
+	return nil
+}
+
+func (e *Engine) recordFailureChurnLocked(id, class string, now time.Time) *violation {
+	c := &e.inv
+	runs := append(c.failRuns[id], now)
+	runs = slices.DeleteFunc(runs, func(t time.Time) bool { return now.Sub(t) > InvFailureChurnWindow })
+	c.failRuns[id] = runs
+	if len(runs) >= InvFailureChurnRuns {
+		c.failRuns[id] = nil
+		return &violation{
+			id:       InvThreadFailureChurn,
+			evidence: fmt.Sprintf("thread=%s failures=%d class=%s in %s last=%s", id, len(runs), class, InvFailureChurnWindow, now.Format(time.RFC3339)),
+			thread:   id,
+		}
+	}
+	return nil
+}
+
+// cleanEndQuotaNotice flags a run that ended cleanly (no Failure, not
+// interrupted) while the summary produced during that run opens with a
+// provider out-of-quota notice (V0.quota-wait-midturn: catches adapters or
+// manager paths that fail to classify a mid-turn quota halt as ClassQuota).
+func (e *Engine) cleanEndQuotaNotice(s *staged) *violation {
+	id := s.t.ID
+	c := &e.inv
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.summaryInRun == nil {
+		c.summaryInRun = map[string]bool{}
+	}
+	switch s.in.Kind {
+	case core.KindRunStarted:
+		c.summaryInRun[id] = false
+	case core.KindMessageSent:
+		if a, ok := s.in.Args.(core.MessageSentArgs); ok && a.First {
+			c.summaryInRun[id] = false
+		}
+	case core.KindDigest:
+		if a, ok := s.in.Args.(core.DigestArgs); ok && a.Summary != "" {
+			c.summaryInRun[id] = true
+		}
+	case core.KindRunEnded:
+		dirty := c.summaryInRun[id]
+		delete(c.summaryInRun, id)
+		a, _ := s.in.Args.(core.RunEndedArgs)
+		interrupted, _ := a.Data["interrupted"].(bool)
+		if a.Summary != nil && *a.Summary != "" {
+			dirty = true
+		}
+		if s.cur.Running && !interrupted && a.Failure == nil && s.t.Failure == nil && dirty {
+			if notice := core.QuotaNotice(s.t.Summary); notice != "" {
+				return &violation{
+					id:       core.InvThreadQuotaMisclass,
+					evidence: fmt.Sprintf("thread=%s clean run.ended with quota notice in summary: %q", id, notice),
+					thread:   id,
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // selfWakeRun follows thread-self-wake-churn. KindRunStarted exists only for
@@ -301,6 +491,16 @@ func (e *Engine) checkThreadLoad() {
 		}
 		for _, v := range core.CheckThread(t, it.v, now, on) {
 			vs = append(vs, violation{id: v.ID, evidence: "at=load " + v.Evidence, thread: t.ID})
+		}
+		for _, v := range core.CheckSerialization(t, it.v, now, on) {
+			vs = append(vs, violation{id: v.ID, evidence: "at=load " + v.Evidence, thread: t.ID})
+		}
+		if overdue := core.OverdueRule(t, it.v, now); overdue != "" {
+			vs = append(vs, violation{
+				id:       InvThreadRuleOverdue,
+				evidence: fmt.Sprintf("at=load thread=%s %s", t.ID, overdue),
+				thread:   t.ID,
+			})
 		}
 	}
 	e.reportThreadViolations(vs, now)
@@ -532,6 +732,15 @@ func (e *Engine) checkThreadTick(tickNow time.Time) {
 					})
 				}
 			}
+			if st.Live && !st.TurnLive && !t.Running && st.BG > 0 && t.RunningTasks() == 0 {
+				if d, ok := graceFired("ghost-bg:"+t.ID, InvProcessDriftGrace); ok {
+					vs = append(vs, violation{
+						id:       InvThreadPhantomTasks,
+						evidence: fmt.Sprintf("thread=%s runningTasks=0 agent.bg=%d idle for=%s", t.ID, st.BG, d.Round(time.Second)),
+						thread:   t.ID,
+					})
+				}
+			}
 			for _, dec := range t.Decisions {
 				if dec.NeedsProcess() && (!st.Live || !slices.Contains(st.Asks, dec.ID)) {
 					if d, ok := graceFired("phantom-dec:"+t.ID+":"+dec.ID, InvProcessDriftGrace); ok {
@@ -543,6 +752,19 @@ func (e *Engine) checkThreadTick(tickNow time.Time) {
 					}
 				}
 			}
+			if st.Live {
+				for _, askID := range st.Asks {
+					if !slices.ContainsFunc(t.Decisions, func(d core.Decision) bool { return d.ID == askID }) {
+						if d, ok := graceFired("ghost-dec:"+t.ID+":"+askID, InvProcessDriftGrace); ok {
+							vs = append(vs, violation{
+								id:       InvThreadGhostDecision,
+								evidence: fmt.Sprintf("thread=%s agent.ask=%s missing from engine decisions for=%s", t.ID, askID, d.Round(time.Second)),
+								thread:   t.ID,
+							})
+						}
+					}
+				}
+			}
 			if len(t.Outbox) > 0 && t.MachineWait == nil && !st.Live && !st.Starting {
 				if d, ok := graceFired("phantom-outbox:"+t.ID, InvProcessDriftGrace); ok {
 					vs = append(vs, violation{
@@ -550,6 +772,34 @@ func (e *Engine) checkThreadTick(tickNow time.Time) {
 						evidence: fmt.Sprintf("thread=%s outbox=%d agent.live=false for=%s", t.ID, len(t.Outbox), d.Round(time.Second)),
 						thread:   t.ID,
 					})
+				}
+			}
+			if st.Live && t.MachineWait == nil {
+				for _, m := range t.Outbox {
+					if !slices.Contains(st.Outbox, m.ID) {
+						if d, ok := graceFired("phantom-outbox-id:"+t.ID+":"+m.ID, InvProcessDriftGrace); ok {
+							vs = append(vs, violation{
+								id:       InvThreadPhantomOutbox,
+								evidence: fmt.Sprintf("thread=%s outbox=%s state=%s missing from live agent outbox for=%s", t.ID, m.ID, m.State, d.Round(time.Second)),
+								thread:   t.ID,
+							})
+						}
+					}
+				}
+			}
+			if t.Running && st.Live && st.TurnLive && st.OpenTools == 0 && st.Judging == 0 && len(t.Decisions) == 0 && t.RunningTasks() == 0 && t.MachineWait == nil && t.Unresponsive == nil {
+				since := st.LastOut
+				if t.RunStartedAt != nil && t.RunStartedAt.After(since) {
+					since = *t.RunStartedAt
+				}
+				if !since.IsZero() {
+					if d := now.Sub(since); d > InvRunSilentStuck && first("silent-run:"+t.ID+"@"+since.Format(time.RFC3339Nano)) {
+						vs = append(vs, violation{
+							id:       InvThreadRunSilentStuck,
+							evidence: fmt.Sprintf("thread=%s silentFor=%s activity=%q", t.ID, d.Round(time.Second), t.Activity),
+							thread:   t.ID,
+						})
+					}
 				}
 			}
 		}

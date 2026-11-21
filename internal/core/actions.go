@@ -740,6 +740,7 @@ func init() {
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.ArchivedAt = &now
 			t.Starting = nil
+			t.MachineWait = nil
 			t.PinnedAt = nil // V0.104
 			t.SettleAsk = nil
 			DropSettleRules(t)

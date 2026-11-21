@@ -129,6 +129,17 @@ type invariants struct {
 	// behind them, within InvSelfWakeWindow.
 	wakeStart map[string]time.Time
 	wakeRuns  map[string][]time.Time
+	// V0.thread-invariants-recent-bugs: per-thread tracking for duplicate
+	// rapid sends, unattended failure churn, and clean-end quota notices.
+	lastSend     map[string]sendRecord
+	failRuns     map[string][]time.Time
+	summaryInRun map[string]bool
+}
+
+type sendRecord struct {
+	text  string
+	actor string
+	at    time.Time
 }
 
 // lineRing keeps the guard's last log lines with when they were written.
