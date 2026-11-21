@@ -64,6 +64,32 @@ func TestMergeAskIsVoidWhenThePRMergesElsewhere(t *testing.T) {
 	}
 }
 
+// V0.void-held-ask-and-prompts: a held merge ask whose PR merges closes as
+// void (not a gate failure telling the agent to ask again).
+func TestHeldMergeAskClosesAsVoidWhenPRMerges(t *testing.T) {
+	now := time.Date(2026, 11, 21, 14, 0, 0, 0, time.UTC)
+	th, _ := heldAsk(t, now)
+	later := now.Add(time.Minute)
+	th, _, res, err := Reduce(th, &View{}, askPR(later, func(p *PR) { p.State, p.Checks = "MERGED", ChecksPass }), later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.HeldAsks) != 0 || len(th.Decisions) != 0 {
+		t.Fatalf("held ask remained: held=%+v dec=%+v", th.HeldAsks, th.Decisions)
+	}
+	d := closedEvent(res, "d_merge")
+	if d == nil || d["void"] != true || d["gate"] != nil {
+		t.Fatalf("expected void decision.closed without gate=true, got %+v", d)
+	}
+	var said string
+	for _, n := range resultNotices(Reduced{Before: th, After: th, Events: res.Events}) {
+		said += n.What
+	}
+	if !strings.Contains(said, "Do not ask again") || strings.Contains(said, "then ask again") {
+		t.Fatalf("contradictory notice text: %q", said)
+	}
+}
+
 // V0.136: a failed check closes a merge ask (the agent hears why); an
 // open PR whose checks pass keeps it.
 func TestMergeAskStaysWhileThePRIsOpen(t *testing.T) {

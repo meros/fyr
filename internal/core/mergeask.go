@@ -237,7 +237,12 @@ func gateMergeAsks(t *Thread, now time.Time) []Event {
 	var held []Decision
 	for _, d := range t.HeldAsks {
 		if why := askVoid(t, d); why != "" {
-			closed(d, why, "nothing; the work it was about is over")
+			// Decision 0024 §5, V0.void-held-ask-and-prompts: a void held ask
+			// closes as void (not as a retryable gate close).
+			evs = append(evs, Event{"decision.closed", map[string]any{
+				"id": d.ID, "answer": "void: " + why, "void": true, "reason": why,
+				"action": d.Effect.Action, "args": d.Effect.Args,
+			}})
 			continue
 		}
 		switch g, why, next := mergeGate(t, d.Effect); g {
