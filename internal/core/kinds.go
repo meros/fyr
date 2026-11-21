@@ -359,6 +359,19 @@ func init() {
 			if err != nil {
 				return Result{}, err
 			}
+			// V0.thread-invariants: clear any message marked lost/cancelled/read in the failure log.
+			for _, ev := range a.Log {
+				if ev.Type != "message.state" {
+					continue
+				}
+				if d, ok := ev.Data.(map[string]any); ok {
+					if id, _ := d["id"].(string); id != "" {
+						if st, _ := d["state"].(string); st != "" && st != "sent" && st != "queued" {
+							SetOutbox(r.T, id, st)
+						}
+					}
+				}
+			}
 			RunEnded(r.T, &Failure{Class: "process", Message: a.Message, At: now}, now)
 			return Result{Events: a.Log}, nil
 		}},
@@ -393,7 +406,11 @@ func init() {
 		}},
 		{Name: KindProcessLost, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			msg, _ := in.Args.(string)
+			wasFail := r.T.Failure
 			ProcessLost(r.T, "process", msg, now)
+			if r.T.Failure == nil || r.T.Failure == wasFail {
+				return Result{}, nil
+			}
 			return Result{Events: []Event{{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": msg}}}}}, nil
 		}},
 		{Name: KindUnresponsive, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {

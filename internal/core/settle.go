@@ -99,6 +99,7 @@ func SettleWhenMerged(t *Thread, by string, now time.Time) bool {
 // (V0.104).
 func settleNow(t *Thread, now time.Time) {
 	t.Settle.At = &now
+	t.Starting = nil
 	t.PinnedAt = nil
 	t.SettleAsk = nil
 	DropSettleRules(t)
@@ -203,6 +204,9 @@ const (
 func reduceSettleRequest(r Rec, in Input, now time.Time) (Result, error) {
 	a := mapArgs(in)
 	t := r.T
+	if t.ArchivedAt != nil {
+		return Result{}, reject(RejectUnavailable, "the thread is archived")
+	}
 	if t.Settle.At != nil {
 		return Result{}, errors.New("the thread is already settled")
 	}

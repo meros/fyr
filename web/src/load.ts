@@ -1,6 +1,6 @@
 // SPEC 0.5 V0.80: the machine load (rail) and each working thread's CPU (rows), as words. Pure.
 import type { HostId } from "./hostid.ts";
-import type { Guard } from "./guard.ts";
+import type { Guard, Invariants } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
 import type { Card, CardRow } from "./card.ts";
 
@@ -93,6 +93,8 @@ export interface HostLoad {
   temps?: Temp[];
   /** V0.services-not-jobs: the commands this host treats as services */
   servicePatterns?: ServicePattern[];
+  /** V0.thread-invariants: invariants view fallback when slots are off */
+  invariants?: Invariants;
 }
 /** V0.164: when a thread counts as heavy: shares of what the host gives its agents, and for how many seconds. */
 export interface UndeclaredSettings {

@@ -30,6 +30,7 @@ func (m *Manager) read(s *session) {
 	}
 	delete(m.tokens, s.token)
 	live := s.live || len(s.asks) > 0 || len(s.judging) > 0
+	bg := s.bg > 0
 	for _, w := range s.results {
 		close(w.ch)
 	}
@@ -92,7 +93,7 @@ func (m *Manager) read(s *session) {
 	if !live && s.unresponsive {
 		m.observe(s.thread, core.KindResponsive, nil)
 	}
-	if live {
+	if live || bg {
 		msg := "The agent process exited during the run"
 		if err := s.c.Err(); err != nil {
 			msg += ": " + core.TruncHead(strings.TrimSpace(err.Error()), 600)

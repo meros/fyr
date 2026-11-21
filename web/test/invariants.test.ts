@@ -57,4 +57,38 @@ test("both fronts draw the card under Needs you, with both buttons (one shared c
   assert.match(ui, /"host\.invariantDismiss"/);
   assert.match(ui, />\s*Fix it\s*</);
   assert.match(ui, />\s*Dismiss\s*</);
+  const settings = src("settings-ui.tsx");
+  assert.match(settings, /label="Load invariants"/);
+  assert.match(settings, /label="Thread invariants"/);
+});
+
+test("V0.thread-invariants: thread cards name Thread, show transitions, split in Settings, and work without slots", () => {
+  const tCard = {
+    id: "thread-phantom-running",
+    kind: "thread" as const,
+    text: "A thread is marked Running, but the agent manager has no live turn for it.",
+    at: iso(5),
+    evidence: "thread=t_x engine.running=true agent.live=false",
+    lines: ["14:26:00 run.started (observer:process) seen→working running=true"],
+  };
+  const mixedStats = [
+    ...stats.map((s) => ({ ...s, kind: "load" as const })),
+    { id: "thread-phantom-running", kind: "thread" as const, text: tCard.text, count: 1, last: iso(5) },
+    { id: "thread-rule-invalid", kind: "thread" as const, text: "Rule invalid.", count: 0 },
+  ];
+  const h = host("desk", { cards: [card, tCard], stats: mixedStats, fixDir: "/home/o/git/fyr" });
+  const cs = invariantCards([h]);
+  assert.equal(cs[0].card.id, "thread-phantom-running");
+  assert.equal(cardHead(cs[0], 1), "Thread invariant broken: thread-phantom-running");
+  assert.equal(cardHead(cs[0], 2), "Thread invariant broken: thread-phantom-running on desk");
+  assert.equal(linesLabel(tCard), "1 recent transition");
+  assert.equal(linesLabel({ ...tCard, lines: ["a", "b"] }), "2 recent transitions");
+
+  assert.deepEqual(invariantRows(h, NOW, "load").map((r) => r.id), ["thaw-into-critical", "probe-silent"]);
+  assert.deepEqual(invariantRows(h, NOW, "thread").map((r) => [r.id, r.open]), [["thread-phantom-running", true], ["thread-rule-invalid", false]]);
+
+  // Fallback when slots are off: invariants live directly on HostLoad.
+  const noSlots = { host: "mac", cores: 8, load: [1, 1, 1], cgroups: false, threads: [], invariants: { cards: [tCard], stats: mixedStats } } as unknown as HostLoad;
+  assert.equal(invariantCards([noSlots]).length, 1);
+  assert.equal(invariantRows(noSlots, NOW, "thread").length, 2);
 });

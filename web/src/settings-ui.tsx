@@ -1489,19 +1489,33 @@ function HeavyJobsGroup({ host, id, api, focus }: { host: string; id?: HostId; a
   );
 }
 
-/** V0.load-invariants: the load guard's invariants, each with its last violation and how often it broke. A broken one
- *  is a card in Needs you (invariants-ui.tsx). Desktop and phone share it; absent from a host before it. */
+/** V0.load-invariants, V0.thread-invariants: the load guard's and thread state machine's invariants, each with its last
+ *  violation and how often it broke. A broken one is a card in Needs you (invariants-ui.tsx). Desktop and phone share it. */
 function InvariantGroup({ h, host }: { h: HostLoad; host: string }) {
   const und = useUnd();
-  const rows = invariantRows(h, und.now());
-  if (!rows.length) return null;
-  const broken = rows.filter((r) => r.desc !== "never broken").length;
+  const now = und.now();
+  const loadRows = invariantRows(h, now, "load");
+  const threadRows = invariantRows(h, now, "thread");
+  if (!loadRows.length && !threadRows.length) return null;
+  const loadBroken = loadRows.filter((r) => r.desc !== "never broken").length;
+  const threadBroken = threadRows.filter((r) => r.desc !== "never broken").length;
   return (
-    <Group label="Load invariants" title="Load invariants" fold={{ id: `${host}:invariants`, open: false, summary: broken ? `${broken} of ${rows.length} broken` : `${rows.length} held` }} foot="Fyr checks these on each tick of the memory guard. A broken one writes an invariant line to fyrd's log and, at most once a day, a card in Needs you with the evidence; its Fix it starts a thread in this host's Fyr checkout. Fyr never starts the fix by itself.">
-      {rows.map((r) => (
-        <Row key={r.id} class="invrow" title={r.id} mono desc={`${r.text} ${r.desc}.`} />
-      ))}
-    </Group>
+    <>
+      {loadRows.length > 0 && (
+        <Group label="Load invariants" title="Load invariants" fold={{ id: `${host}:invariants`, open: false, summary: loadBroken ? `${loadBroken} of ${loadRows.length} broken` : `${loadRows.length} held` }} foot="Fyr checks these on each tick of the memory guard. A broken one writes an invariant line to fyrd's log and, at most once a day, a card in Needs you with the evidence; its Fix it starts a thread in this host's Fyr checkout. Fyr never starts the fix by itself.">
+          {loadRows.map((r) => (
+            <Row key={r.id} class="invrow" title={r.id} mono desc={`${r.text} ${r.desc}.`} />
+          ))}
+        </Group>
+      )}
+      {threadRows.length > 0 && (
+        <Group label="Thread invariants" title="Thread invariants" fold={{ id: `${host}:thread-invariants`, open: false, summary: threadBroken ? `${threadBroken} of ${threadRows.length} broken` : `${threadRows.length} held` }} foot="Fyr checks these on every thread transition, on host restart, and on each tick. A broken one writes an invariant line to fyrd's log and, at most once a day, a card in Needs you with the evidence and recent transitions; its Fix it starts a thread in this host's Fyr checkout.">
+          {threadRows.map((r) => (
+            <Row key={r.id} class="invrow" title={r.id} mono desc={`${r.text} ${r.desc}.`} />
+          ))}
+        </Group>
+      )}
+    </>
   );
 }
 

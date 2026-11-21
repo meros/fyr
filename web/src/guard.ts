@@ -51,20 +51,24 @@ export interface Guard {
   invariants?: Invariants;
 }
 
-/** V0.load-invariants: a load invariant's violation, a card in Needs you until Fix it or Dismiss. */
+/** V0.load-invariants, V0.thread-invariants: an invariant's violation, a card in Needs you until Fix it or Dismiss. */
 export interface InvariantCard {
   id: string;
+  /** "load" (absent on older hosts) or "thread" */
+  kind?: "load" | "thread";
   /** the invariant in one sentence */
   text: string;
   at: string;
   /** the signals and the facts of the violation */
   evidence: string;
-  /** the guard's log lines of the ten minutes before */
+  /** the guard's log lines of the ten minutes before, or the thread's recent transitions */
   lines?: string[];
 }
 
 export interface InvariantStat {
   id: string;
+  /** "load" (absent on older hosts) or "thread" */
+  kind?: "load" | "thread";
   text: string;
   count: number;
   last?: string;

@@ -313,6 +313,9 @@ func (e *Engine) Load() error {
 		e.last[id] = core.ComputeWith(t, e.view(id), now, e.autoMergeOn).State
 	}
 	e.publishRanksLocked()
+	e.mu.Unlock()
+	e.checkThreadLoad() // V0.thread-invariants: verify post-restart state
+	e.mu.Lock()
 	return nil
 }
 
@@ -815,9 +818,9 @@ type applied struct {
 // UpdatedAt: an event alone does not move it up the list (#36).
 func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if in.CmdID != "" {
 		if r, done := e.replay(in.CmdID); done {
+			e.mu.Unlock()
 			if r.Status == 500 {
 				return nil, errors.New(r.Error)
 			}
@@ -829,6 +832,7 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 		if cur = e.threads[in.Thread]; cur == nil {
 			// A kind that makes its thread (T3 adoption) names the new id.
 			if k := core.Kinds[in.Kind]; k == nil || !k.Makes || in.Thread == "" {
+				e.mu.Unlock()
 				return nil, &core.Rejection{Code: core.RejectNotFound, Reason: "no thread " + in.Thread}
 			}
 			fresh = &core.Thread{ID: in.Thread}
@@ -837,16 +841,23 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 	}
 	s, err := e.stage(cur, in, e.Now(), fresh != nil)
 	if err != nil {
+		e.mu.Unlock()
 		return nil, err
 	}
 	if s.idle() {
+		e.mu.Unlock()
 		return s.applied, nil
 	}
 	if _, err := e.st.Write(s.persist); err != nil {
+		e.mu.Unlock()
 		log.Printf("thread %s: %s: %v", cur.ID, in.Kind, err)
 		return nil, err
 	}
 	e.commit(s, false)
+	autoMerge := maps.Clone(e.autoMerge)
+	lastAfter, hasLast := e.last[s.t.ID]
+	e.mu.Unlock()
+	e.checkThreadApplied(s, autoMerge, lastAfter, hasLast) // V0.thread-invariants
 	return s.applied, nil
 }
 
@@ -855,7 +866,7 @@ type staged struct {
 	*applied
 	in                             core.Input
 	cur, t                         *core.Thread
-	v                              *core.View
+	prevView, v                    *core.View
 	now                            time.Time
 	changed, viewChanged, feedOnly bool
 	fromEffect                     bool
@@ -866,6 +877,7 @@ type staged struct {
 // with e.mu held.
 func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh bool) (*staged, error) {
 	in.Thread = cur.ID
+	prevView := cloneViewCopy(e.views[cur.ID], cur.ID)
 	t, v, res, err := core.Reduce(cur, e.views[cur.ID], in, now)
 	if err != nil {
 		return nil, err
@@ -874,7 +886,7 @@ func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh boo
 	if in.Source == core.FromOwner || fresh {
 		e.assignProject(t)
 	}
-	s := &staged{in: in, cur: cur, t: t, v: v, now: now}
+	s := &staged{in: in, cur: cur, t: t, prevView: prevView, v: v, now: now}
 	was, _ := json.Marshal(cur)
 	is, _ := json.Marshal(t)
 	s.changed = fresh || string(was) != string(is)
@@ -1253,8 +1265,12 @@ func (e *Engine) Tick() {
 	for _, q := range qresets {
 		e.Hub.Send(stream.FrameQuotaReset, q)
 	}
-	e.sweepSlots()      // V0.86
-	e.sweepQuietWaits() // V0.195
+	e.sweepSlots()          // V0.86
+	e.sweepQuietWaits()     // V0.195
+	e.checkThreadTick(now)  // V0.thread-invariants
+	if e.Slots != nil {
+		e.publishGuard(e.Now())
+	}
 }
 
 type quotaResetFrame struct {
