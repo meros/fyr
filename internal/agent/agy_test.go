@@ -30,7 +30,7 @@ func TestAgyAdapterSystemModelAndHandoverPlan(t *testing.T) {
 
 	agyProf := provider.Profile{
 		ID: "agy", Name: "Antigravity", CLI: agycli.ID, Binary: "agy",
-		Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: gdir},
+		Auth:   cli.Auth{Kind: cli.CLILogin, ConfigDir: gdir},
 		Models: []string{"gemini-4-neon", "gemini-3.8-flash"}, DefaultModel: "gemini-4-neon",
 	}
 	agy2 := provider.Profile{
@@ -289,5 +289,35 @@ func TestAttachPassesQueuedOutboxToSessionReattacher(t *testing.T) {
 	}
 	if !cancelled {
 		t.Fatal("expected cancelled message.state for m-queued")
+	}
+}
+
+// V0.agy-reactive-wakeup: KindDigest updates Thread.Activity only while a run
+// is active, so a late tool_result between runs never leaves stale Activity.
+func TestKindDigestActivityRequiresRunning(t *testing.T) {
+	idle := &core.Thread{ID: "t1"}
+	afterIdle, _, _, err := core.Reduce(idle, &core.View{}, core.Input{
+		Source: core.Observer(core.ObsProcess),
+		Kind:   core.KindDigest,
+		Args:   core.DigestArgs{Activity: "Thinking"},
+	}, idle.CreatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterIdle.Activity != "" {
+		t.Fatalf("idle thread got Activity %q", afterIdle.Activity)
+	}
+
+	running := &core.Thread{ID: "t1", Conversation: core.Conversation{Running: true, Activity: "Fyr thread rename"}}
+	afterRun, _, _, err := core.Reduce(running, &core.View{}, core.Input{
+		Source: core.Observer(core.ObsProcess),
+		Kind:   core.KindDigest,
+		Args:   core.DigestArgs{Activity: "Thinking"},
+	}, running.CreatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterRun.Activity != "Thinking" {
+		t.Fatalf("running thread Activity = %q, want Thinking", afterRun.Activity)
 	}
 }
