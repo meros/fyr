@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 )
 
@@ -182,5 +183,47 @@ func TestRunRequestLongRunTellsStart(t *testing.T) {
 	})
 	if hasEvent(h.events(id), core.EventActionLong, `"run-2"`) {
 		t.Fatal("a short run told that it started")
+	}
+}
+
+// V0.run-card-rerun: action.run and action.dismiss sent through CommandAs
+// record the acting device and front on their stored action events.
+func TestActionEventsRecordDeviceThroughEngine(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	callAs(t, h.e, id, "run_request", map[string]any{"command": "echo hi", "why": "Say hi"})
+	th, _ := h.e.Thread(id)
+	o := findOffer(th.Offers, "run-1")
+	h.e.LiveScripts = func(ctx context.Context, dir string, a []string, out func(string)) (string, int, error) {
+		return "hi\n", 0, nil
+	}
+	r := h.e.CommandAs(api.Cmd{
+		CommandID: "p-actor",
+		Action:    "action.run",
+		ThreadID:  id,
+		Args:      core.Args{"on": "thread", "action": "run-1", "digest": o.Digest},
+	}, "device:dev_abc", "FRNT-0000-0000-0000")
+	if !r.OK {
+		t.Fatalf("press: %+v", r)
+	}
+	eventually(t, "run ended", func() bool {
+		th, _ := h.e.Thread(id)
+		return len(th.Runs) == 1 && !th.Runs[0].Running
+	})
+	if !hasEvent(h.events(id), "action", `"actor":"device:dev_abc"`) || !hasEvent(h.events(id), "action", `"front":"FRNT-0000-0000-0000"`) {
+		t.Fatalf("stored action press event missing actor/front: %+v", h.events(id))
+	}
+	r = h.e.CommandAs(api.Cmd{
+		CommandID: "d-actor",
+		Action:    "action.dismiss",
+		ThreadID:  id,
+		Args:      core.Args{"on": "thread", "action": "run-1"},
+	}, "device:dev_xyz", "FRNT-1111-1111-1111")
+	if !r.OK {
+		t.Fatalf("dismiss: %+v", r)
+	}
+	if !hasEvent(h.events(id), "action", `"actor":"device:dev_xyz"`) || !hasEvent(h.events(id), "action", `"front":"FRNT-1111-1111-1111"`) {
+		t.Fatalf("stored action dismiss event missing actor/front: %+v", h.events(id))
 	}
 }

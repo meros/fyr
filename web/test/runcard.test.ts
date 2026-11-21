@@ -1,7 +1,7 @@
 // SPEC V0.149: the Run card: a command the agent wants the owner to run, wrapped, with the host, the folder and why.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardLook, cardsKey, copyText, dismissArgs, foldOutput, placeCards, requests, shortStore, splitProse, stopArgs } from "../src/runcard.ts";
+import { cardLook, cardsKey, copyText, dismissArgs, foldOutput, placeCards, pressRunCard, requests, rerunAsk, shortStore, splitProse, stopArgs } from "../src/runcard.ts";
 import { actionEventLine } from "../src/offers.ts";
 import { buildConversation, roles, type Item } from "../src/conversation.ts";
 import type { FyrEvent, Offer, OfferRun } from "../src/types.ts";
@@ -136,4 +136,40 @@ test("V0.run-cards-in-conversation: the view follows a card whose output grows",
   const a = cardsKey({ ...o, runs: [{ action: "run-1", label: "Run", by: "owner", at: "", running: true, ok: false, output: "a" }] });
   const b = cardsKey({ ...o, runs: [{ action: "run-1", label: "Run", by: "owner", at: "", running: true, ok: false, output: "ab" }] });
   assert.notEqual(a, b);
+});
+
+test("V0.run-card-rerun: a succeeded Run card asks before running again; fresh and failed run directly", async () => {
+  const o = req({ root: true });
+  assert.equal(rerunAsk(o, "fresh", { host: "desk" }), null);
+  assert.equal(rerunAsk(o, "running", { host: "desk" }), null);
+  assert.equal(rerunAsk(o, "failed", { host: "desk" }), null);
+  const a = rerunAsk(o, "ok", { host: "desk" })!;
+  assert.equal(a.title, "Run again?");
+  assert.equal(a.text, "“Mount the SD card” already succeeded on desk.");
+  assert.equal(a.confirm, "Run again as root");
+  assert.equal(a.command?.full, "udisksctl mount -b /dev/sdc1");
+  assert.equal(a.command?.folder, "~/src/fyr");
+  assert.equal(a.command?.note, "Runs as root");
+  assert.equal(rerunAsk(req({}), "ok")?.confirm, "Run again");
+  assert.equal(rerunAsk(req({}), "ok")?.text, "“Mount the SD card” already succeeded.");
+
+  const sent: unknown[] = [];
+  const onRun = (action: string, args?: Record<string, unknown>) => void sent.push([action, args]);
+  let asks = 0;
+  const no = async () => (asks++, false);
+  const yes = async () => (asks++, true);
+
+  assert.equal(await pressRunCard(o, "fresh", { host: "desk" }, no, onRun), true);
+  assert.equal(await pressRunCard(o, "failed", { host: "desk" }, no, onRun), true);
+  assert.equal(asks, 0);
+  assert.equal(sent.length, 2);
+
+  assert.equal(await pressRunCard(o, "ok", { host: "desk" }, no, onRun), false);
+  assert.equal(asks, 1);
+  assert.equal(sent.length, 2, "cancelling Run again sends nothing");
+
+  assert.equal(await pressRunCard(o, "ok", { host: "desk" }, yes, onRun), true);
+  assert.equal(asks, 2);
+  assert.equal(sent.length, 3);
+  assert.deepEqual(sent[2], ["action.run", { on: "thread", action: "run-1", digest: "d1" }]);
 });

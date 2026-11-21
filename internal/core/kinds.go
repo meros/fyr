@@ -938,7 +938,7 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	h.Started(a, now)
 	res := Result{Reply: map[string]any{"on": on, "action": a.ID},
-		Events: []Event{{"action", pressData(on, title, a, map[string]any{"by": "owner"})}}}
+		Events: []Event{{"action", withActor(pressData(on, title, a, map[string]any{"by": "owner"}), in)}}}
 	press := &Press{On: on, Title: title, Action: a}
 	switch a.Run {
 	case RunFyr:
