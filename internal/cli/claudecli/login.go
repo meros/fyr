@@ -1,9 +1,11 @@
 package claudecli
 
 import (
-	"github.com/meros/fyr/internal/hostfs"
 	"regexp"
 	"strings"
+
+	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/hostfs"
 )
 
 // SPEC 0.5 V0.53: the CLI's own login, run by Fyr. Two kinds:
@@ -67,36 +69,13 @@ type LoginOut struct {
 }
 
 var (
-	// An OSC 8 hyperlink carries the whole link even when its visible text
-	// wraps: the hyperlink becomes its link.
-	osc8RE  = regexp.MustCompile("(?s)\x1b\\]8;[^;\x07\x1b]*;(https://[^\x07\x1b]+)(?:\x07|\x1b\\\\).*?\x1b\\]8;;(?:\x07|\x1b\\\\)")
-	oscRE   = regexp.MustCompile("\x1b\\][^\x07\x1b]*(?:\x07|\x1b\\\\)")
-	fwdRE   = regexp.MustCompile("\x1b\\[\\d*[CG]")   // cursor forward or to a column: a space on screen
-	downRE  = regexp.MustCompile("\x1b\\[\\d*[ABEF]") // cursor up or down: a new line
-	csiRE   = regexp.MustCompile("\x1b(?:\\[[0-?]*[ -/]*[@-~]|[()][0-9A-Za-z]|[78=>NOcM])")
 	urlRE   = regexp.MustCompile(`https://claude\.(?:com|ai)/\S+|https://\S*oauth\S+`)
 	tokenRE = regexp.MustCompile(`sk-ant-[a-z]+\d*-[A-Za-z0-9_-]{20,}`)
 	longRE  = regexp.MustCompile(`[A-Za-z0-9_\-#]{32,}`)
 )
 
-// Plain is terminal output as text: escapes removed, cursor moves as
-// spaces, line ends as \n.
-func Plain(b []byte) string {
-	s := string(b)
-	s = osc8RE.ReplaceAllString(s, " $1 ")
-	s = oscRE.ReplaceAllString(s, "")
-	s = fwdRE.ReplaceAllString(s, " ")
-	s = downRE.ReplaceAllString(s, "\n")
-	s = csiRE.ReplaceAllString(s, "")
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return strings.Map(func(r rune) rune {
-		if r < 0x20 && r != '\n' && r != '\t' {
-			return -1
-		}
-		return r
-	}, s)
-}
+// Plain is terminal output as text (shared in internal/cli).
+func Plain(b []byte) string { return cli.Plain(b) }
 
 // Redact removes anything token-like from a line meant for a person.
 func Redact(s string) string {

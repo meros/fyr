@@ -1,8 +1,8 @@
 // Package cli is what Fyr needs from an agent CLI (SPEC 0.5 V0.50, decision
 // 0015): an Adapter launches a session process with a provider's auth and
 // endpoint, speaks its protocol, says where its sessions live (handover
-// rung 1) and what it can do. The claude adapter (package claudecli) is the
-// only one today; another CLI is a new Adapter, not a special case.
+// rung 1) and what it can do. Adapters (claudecli, agycli) sit behind this
+// package boundary as independent siblings, not special cases.
 //
 // The event stream a Session emits is Fyr's observation format: the
 // stream-json messages of the claude CLI (system/init, assistant, user,

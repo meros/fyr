@@ -1116,7 +1116,7 @@ function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: strin
           rows={1}
           value={text}
           disabled={!!reason}
-          placeholder={reason ?? (t.running ? "Steer the run…" : "Message Claude…")}
+          placeholder={reason ?? (t.running ? "Steer the run…" : "Message…")}
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => void slash.onKeyDown(e)}
           onPaste={att.onPaste}
