@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -326,6 +329,91 @@ func (f *Front) syncLinksLocked() {
 			}(m, sharedOf(best.p), best.at)
 		}
 	}
+	f.syncImagesLocked()
+}
+
+func imageAtOf(p map[string]any) time.Time {
+	s, _ := p["imageAt"].(string)
+	at, _ := time.Parse(time.RFC3339Nano, s)
+	return at
+}
+
+// syncImagesLocked gives each online member of a link the image that was set
+// last (V0.linked-values-sync): the member whose imageAt is newest is the
+// source, and an online member with an older imageAt gets its picture (read
+// from the source's host, so that host must be online) or its removal, with
+// the source's imageAt. The image has its own stamp, so a name edit copies no
+// picture. The caller holds f.mu.
+func (f *Front) syncImagesLocked() {
+	for link, ms := range f.linksLocked() {
+		best := ms[0]
+		for _, m := range ms[1:] {
+			if imageAtOf(m.p).After(imageAtOf(best.p)) {
+				best = m
+			}
+		}
+		at := imageAtOf(best.p)
+		if at.IsZero() {
+			continue
+		}
+		image, _ := best.p["image"].(string)
+		by := ""
+		if b, ok := best.p["by"].(map[string]any); ok {
+			by, _ = b["image"].(string)
+		}
+		for _, m := range ms {
+			key := "image:" + link + ":" + at.UTC().Format(time.RFC3339Nano) + ":" + m.id
+			if !m.l.online || !at.After(imageAtOf(m.p)) || f.linkSync[key] || (image != "" && !best.l.online) {
+				continue
+			}
+			if f.linkSync == nil || len(f.linkSync) > 1000 {
+				f.linkSync = map[string]bool{}
+			}
+			f.linkSync[key] = true
+			go func(m, src linkMember) {
+				err := f.copyImage(context.Background(), src, m, link, image, by, at, key)
+				if err != nil {
+					f.opt.Logf("front: project image to %s: %v", m.l.name(), err)
+					f.mu.Lock()
+					delete(f.linkSync, key) // the next frame tries again
+					f.mu.Unlock()
+				}
+			}(m, best)
+		}
+	}
+}
+
+// copyImage stores src's image (or its removal, image "") on m's record.
+func (f *Front) copyImage(ctx context.Context, src, m linkMember, link, image, by string, at time.Time, commandID string) error {
+	args := map[string]any{"id": m.id, "link": link, "at": at.UTC().Format(time.RFC3339Nano), "image": image, "by": by}
+	if image != "" {
+		png, err := f.iconOf(ctx, src)
+		if err != nil {
+			return err
+		}
+		args["png"] = base64.StdEncoding.EncodeToString(png)
+	}
+	_, err := f.hostCommand(ctx, m.l, core.KindProjectSharedImage, commandID, args)
+	return err
+}
+
+// iconOf reads a member's stored icon, the larger square.
+func (f *Front) iconOf(ctx context.Context, m linkMember) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", m.l.base.String()+"/api/projects/"+url.PathEscape(m.id)+"/icon?size=128", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := m.l.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("%s: icon: %s", m.l.name(), resp.Status)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 }
 
 // checkShared refuses a value no host would take, before any host is written.

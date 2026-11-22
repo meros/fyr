@@ -115,6 +115,10 @@ type ProjectSetup struct {
 	Thread string    `json:"thread,omitempty"`
 	At     time.Time `json:"at"`
 	Error  string    `json:"error,omitempty"`
+	// All: the owner asked for this run (New project, Set up automatically),
+	// so it sets every field, the owner's too (V0.linked-values-sync). The
+	// pass for projects from before keeps the owner's.
+	All bool `json:"all,omitempty"`
 }
 
 // The fields the setup agent fills (V0.116); the keys of Project.By.
@@ -264,6 +268,12 @@ const (
 	// KindProjectShared stores the values a link's members share: args {id,
 	// link, at, name, color, icon, quiet, priority}. An older stamp changes nothing.
 	KindProjectShared = "project.shared"
+	// KindProjectSharedImage is a linked project's image as another member set
+	// it (V0.linked-values-sync): args {id, link, at, image, by?}; the engine
+	// stores the picture (png, base64) first. It is stamped by imageAt, not by
+	// sharedAt, so a name edit never copies a picture: an older at changes
+	// nothing, image "" removes it.
+	KindProjectSharedImage = "project.sharedImage"
 )
 
 // ValidLink reports whether s is a link id: l_ and 16 to 32 hex digits.
@@ -290,11 +300,13 @@ func init() {
 		{Name: KindProjectSetup, On: RecProject, From: agentOnly, Reduce: reduceProjectSetup},
 		{Name: KindProjectSetupRun, On: RecProject, From: []string{ByOwner, ByObserved}, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a := mapArgs(in)
-			r.P.Setup = &ProjectSetup{Thread: a.Str("thread"), At: now, Error: a.Str("error")}
+			all, _ := a["all"].(bool)
+			r.P.Setup = &ProjectSetup{Thread: a.Str("thread"), At: now, Error: a.Str("error"), All: all}
 			return Result{Events: []Event{{"project.setupRun", map[string]any{"thread": a.Str("thread"), "error": a.Str("error")}}}, Reply: map[string]any{"id": r.P.ID, "thread": a.Str("thread")}}, nil
 		}},
 		{Name: KindProjectLink, On: RecProject, From: ownerOnly, Reduce: reduceProjectLink},
 		{Name: KindProjectShared, On: RecProject, From: ownerOnly, Reduce: reduceProjectShared},
+		{Name: KindProjectSharedImage, On: RecProject, From: ownerOnly, Reduce: reduceProjectSharedImage},
 		{Name: KindProjectMatched, From: observed, Untouched: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 			a, err := argsOf[ProjectMatch](in)
 			if err == nil {
@@ -482,6 +494,30 @@ func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	p.SharedAt = at
 	return res, nil
+}
+
+// reduceProjectSharedImage takes another member's image when it was set later
+// than this record's (V0.linked-values-sync).
+func reduceProjectSharedImage(r Rec, in Input, _ time.Time) (Result, error) {
+	a := mapArgs(in)
+	p := r.P
+	if l := a.Str("link"); l == "" || l != p.Link {
+		return Result{}, reject(RejectBadArgs, "project %s is not in link %s", p.ID, l)
+	}
+	at, err := time.Parse(time.RFC3339Nano, a.Str("at"))
+	if err != nil {
+		return Result{}, reject(RejectBadArgs, "at must be a time")
+	}
+	if !at.After(p.ImageAt) {
+		return Result{Reply: map[string]any{"id": p.ID, "kept": true}}, nil
+	}
+	p.fillBy()
+	by := a.Str("by")
+	if by != ByAgent && by != "" {
+		by = ByOwner
+	}
+	p.Image, p.ImageAt, p.By[SetupImage] = a.Str("image"), at, by
+	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID, "image": p.Image}}, nil
 }
 
 // reduceProjectSetup is the setup agent's fields (V0.116): each one the

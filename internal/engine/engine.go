@@ -436,7 +436,12 @@ func (e *Engine) submit(in core.Input) api.Reply {
 		return e.startHostSetup(in.CmdID)
 	}
 	if in.Kind == core.KindProjectSetupRun { // V0.116: the thread first
-		return e.startSetup(a.Str("id"), in.Source, in.CmdID)
+		return e.startSetup(a.Str("id"), in.Source, in.CmdID, true) // V0.linked-values-sync: the owner asked
+	}
+	if in.Kind == core.KindProjectSharedImage { // V0.linked-values-sync: the picture first
+		if r, ok := e.storeSharedImage(a); !ok {
+			return r
+		}
 	}
 	if k.On == core.RecProject {
 		r := e.applyProject(in)

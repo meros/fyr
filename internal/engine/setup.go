@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -19,20 +20,28 @@ import (
 // project the owner has not set (the image icon, the colour from it, the
 // name) with the tool project_setup. It runs once when a project is made
 // with a folder, once for each project from before, and when the owner
-// presses "Set up automatically".
+// presses "Set up automatically". V0.linked-values-sync: a run the owner
+// asked for (New project, Set up automatically) sets every field, the
+// owner's too; only the pass for projects from before keeps them.
 
-// setupBrief is the setup run's first message.
-func setupBrief(p core.Project) string {
+// setupBrief is the setup run's first message; all says the run sets every
+// field (V0.linked-values-sync).
+func setupBrief(p core.Project, all bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Fyr project setup for the project %q (id %s), folder %s.\n\n", p.Name, p.ID, p.Folder)
 	b.WriteString("Fill in the project's identity in Fyr with the tool project_setup {project: \"" + p.ID + "\", icon?, name?, color?}. ")
-	b.WriteString("Fyr keeps every field the owner set and tells you which; do not try again for those. Do not ask the owner anything, do not change files in the folder, and finish in a few minutes.\n\n")
+	if all {
+		b.WriteString("The owner asked for this run: Fyr sets every field you give, also one the owner set before, so give the icon and the name. ")
+	} else {
+		b.WriteString("Fyr keeps every field the owner set and tells you which; do not try again for those. ")
+	}
+	b.WriteString("Do not ask the owner anything, do not change files in the folder, and finish in a few minutes.\n\n")
 	b.WriteString("1. Icon. Look in the folder for the project's own image: a favicon or apple-touch-icon, logo files, public/, static/, assets/, the web manifest's icons, an image at the top of the README. ")
 	b.WriteString("Prefer a square logo mark of at least 64 px over a wide wordmark or a screenshot. Pass its full path as icon.\n")
 	b.WriteString("2. If the folder has none, fetch one online, but only the project's own branding: its own website's icon or the avatar of its GitHub owner (https://github.com/<owner>.png) from the folder's git remote. ")
 	b.WriteString("No stock images, no pictures of other projects, nothing whose licence does not allow it. Pass the https URL as icon. If nothing fits, set no icon: the glyph stays.\n")
 	b.WriteString("3. Fyr reads PNG, JPEG and GIF up to 2 MB and makes it square. Convert an SVG, WebP or ICO to a PNG first in a temp folder (rsvg-convert, magick or similar), outside the project folder.\n")
-	b.WriteString("4. Name. If the name is only the folder's name, give the project's real name from package.json, go.mod, Cargo.toml, pyproject.toml, the README title or the repo name; keep it short. ")
+	b.WriteString("4. Name. If the name is only the folder's name, or this run sets every field, give the project's real name from package.json, go.mod, Cargo.toml, pyproject.toml, the README title or the repo name; keep it short. ")
 	b.WriteString("Leave the colour out: Fyr takes it from the icon.\n\n")
 	b.WriteString("End with one line saying what you set and where the icon came from.")
 	return b.String()
@@ -48,6 +57,10 @@ func (e *Engine) afterProject(in core.Input, r api.Reply) {
 		if v, ok := a["image"].(string); ok && v == "" && e.Icons != nil {
 			e.Icons.Remove(a.Str("id"))
 		}
+	case core.KindProjectSharedImage: // V0.linked-values-sync: another member removed it
+		if kept, _ := r.Result.(map[string]any)["kept"].(bool); !kept && a.Str("image") == "" && e.Icons != nil {
+			e.Icons.Remove(a.Str("id"))
+		}
 	case core.KindProjectDelete:
 		if e.Icons != nil {
 			e.Icons.Remove(a.Str("id"))
@@ -56,7 +69,8 @@ func (e *Engine) afterProject(in core.Input, r api.Reply) {
 		id, _ := r.Result.(map[string]any)["id"].(string)
 		// Decision 0034: a member of a link has the link's name and look.
 		if e.AutoSetup && id != "" && a.Str("folder") != "" && a.Str("link") == "" {
-			if r := e.startSetup(id, core.Observer(core.ObsHost), NewID("setup_")); !r.OK {
+			// V0.linked-values-sync: the owner just made it, so the run sets every field.
+			if r := e.startSetup(id, core.Observer(core.ObsHost), NewID("setup_"), true); !r.OK {
 				log.Printf("project setup %s: %s", id, r.Error)
 			}
 		}
@@ -66,8 +80,9 @@ func (e *Engine) afterProject(in core.Input, r api.Reply) {
 // startSetup starts a setup run for project id: a thread in its folder,
 // filed in it, on the system agent's provider and model, then the record
 // on the project. A system agent that cannot run is recorded on the project
-// (the project screen shows it) and answered as 409.
-func (e *Engine) startSetup(id string, src core.Source, cmdID string) api.Reply {
+// (the project screen shows it) and answered as 409. all: the run sets every
+// field, the owner's too (V0.linked-values-sync).
+func (e *Engine) startSetup(id string, src core.Source, cmdID string, all bool) api.Reply {
 	e.mu.Lock()
 	cur := e.projects[id]
 	var p core.Project
@@ -100,7 +115,7 @@ func (e *Engine) startSetup(id string, src core.Source, cmdID string) api.Reply 
 	if err != nil {
 		return fail(err.Error())
 	}
-	args := core.Args{"cwd": p.Folder, "projectId": id, "title": "Set up " + p.Name, "text": setupBrief(p)}
+	args := core.Args{"cwd": p.Folder, "projectId": id, "title": "Set up " + p.Name, "text": setupBrief(p, all)}
 	if profile != "" {
 		args["profile"] = profile
 	}
@@ -113,7 +128,7 @@ func (e *Engine) startSetup(id string, src core.Source, cmdID string) api.Reply 
 	if !t.OK {
 		return fail(t.Error)
 	}
-	return record(core.Args{"thread": t.ThreadID}, cmdID)
+	return record(core.Args{"thread": t.ThreadID, "all": all}, cmdID)
 }
 
 // SetupExisting starts one setup run for each project with a folder, no
@@ -136,7 +151,7 @@ func (e *Engine) SetupExisting(gap time.Duration) int {
 		if i > 0 && gap > 0 {
 			time.Sleep(gap)
 		}
-		r := e.startSetup(id, core.Observer(core.ObsHost), NewID("setup_"))
+		r := e.startSetup(id, core.Observer(core.ObsHost), NewID("setup_"), false)
 		if !r.OK {
 			log.Printf("project setup %s: %s", id, r.Error)
 			continue
@@ -152,6 +167,50 @@ func (e *Engine) ProjectIconPath(id string, n int) string {
 		return ""
 	}
 	return e.Icons.Path(id, n)
+}
+
+// storeSharedImage stores the picture a project.sharedImage carries (png,
+// base64) before the record takes its version (V0.linked-values-sync). A
+// stamp no newer than the record's stores nothing: the files are the
+// record's. ok false is the reply to give.
+func (e *Engine) storeSharedImage(a core.Args) (api.Reply, bool) {
+	id := a.Str("id")
+	raw := a.Str("png")
+	delete(a, "png")
+	at, err := time.Parse(time.RFC3339Nano, a.Str("at"))
+	if err != nil {
+		return api.Reply{Error: "at must be a time", Status: 400}, false
+	}
+	e.mu.Lock()
+	p := e.projects[id]
+	var cur time.Time
+	if p != nil {
+		cur = p.ImageAt
+	}
+	e.mu.Unlock()
+	if p == nil {
+		return api.Reply{Error: "no project " + id, Status: 404}, false
+	}
+	if raw == "" || !at.After(cur) {
+		return api.Reply{}, true
+	}
+	if e.Icons == nil {
+		return api.Reply{Error: "this host stores no project icons", Status: 409}, false
+	}
+	b, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return api.Reply{Error: "png must be base64", Status: 400}, false
+	}
+	img, err := projicon.Decode(b)
+	if err != nil {
+		return api.Reply{Error: err.Error(), Status: 400}, false
+	}
+	v, err := e.Icons.Save(id, img)
+	if err != nil {
+		return api.Reply{Error: err.Error(), Status: 500}, false
+	}
+	a["image"] = v
+	return api.Reply{}, true
 }
 
 // UploadProjectImage is the owner's upload (V0.116): the picture becomes
@@ -218,9 +277,6 @@ func (e *Engine) setupTools(s *mcp.Server) {
 		Call: func(ctx context.Context, self string, a map[string]any) (string, error) {
 			th, inThread := e.Thread(self)
 			asked, _ := a["ownerAsked"].(bool)
-			if asked && (!inThread || th.LastAsker == "") {
-				return "", errors.New("ownerAsked needs the newest message in this thread to be the owner's own; it is not, so ask the owner")
-			}
 			key := sArg(a, "project")
 			if key == "" && inThread {
 				key = th.ProjectID
@@ -232,6 +288,13 @@ func (e *Engine) setupTools(s *mcp.Server) {
 			if !ok {
 				return "", fmt.Errorf("no project %q on this host", key)
 			}
+			// V0.linked-values-sync: the run the owner asked for, on its own
+			// project, sets every field as if the owner had asked in it.
+			all := inThread && p.Setup != nil && p.Setup.All && p.Setup.Thread == self
+			if asked && !all && (!inThread || th.LastAsker == "") {
+				return "", errors.New("ownerAsked needs the newest message in this thread to be the owner's own; it is not, so ask the owner")
+			}
+			asked = asked || all
 			// args go in as the agent's and keep the owner's values; owner are what the owner asked for
 			// here; shared are those of a linked project, which the front passes to its other hosts.
 			args, owner, shared := core.Args{"id": p.ID}, core.Args{"id": p.ID}, core.Args{"id": p.ID, "link": p.Link}
@@ -272,7 +335,13 @@ func (e *Engine) setupTools(s *mcp.Server) {
 					} else {
 						args["image"] = v
 					}
-					if sArg(a, "color") == "" && p.SetBy(core.SetupColor) != core.ByOwner {
+					switch {
+					case sArg(a, "color") != "":
+					case all && p.Link != "":
+						shared["color"] = projicon.MainColor(img)
+					case all:
+						owner["color"] = projicon.MainColor(img)
+					case p.SetBy(core.SetupColor) != core.ByOwner:
 						args["color"] = projicon.MainColor(img)
 					}
 				}
@@ -344,7 +413,7 @@ func (e *Engine) setupTools(s *mcp.Server) {
 				out = strings.TrimSpace(out + " Kept the " + strings.Join(ks, ", ") + ": the owner set it.")
 			}
 			if _, image := owner["image"]; p.Link != "" && (image || len(shared) > 2) {
-				out += " This project is linked across hosts: its other hosts follow when Fyr's front next hears from them. The image stays on this host and shows while this host is online."
+				out += " This project is linked across hosts: its other hosts follow, the image too, when Fyr's front next hears from them."
 			}
 			return out, nil
 		}})

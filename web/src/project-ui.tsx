@@ -4,6 +4,7 @@
 
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
+import type { HostInfo } from "./hosts.ts";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
@@ -634,7 +635,9 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
         profiles={profiles}
         linked={linked}
         shown={linked ? p.linking!.group : undefined}
-        imageTargets={(linked ? rawMembers : [p.project]).filter((m) => hs.hosts?.find((h) => h.id === m.hostId)?.online !== false)}
+        // V0.linked-values-sync: an image goes to this host's record (else the first online member); the front copies it,
+        // or its removal, to the other members, also to one that is offline now once it is back.
+        imageTargets={imageTarget(linked ? rawMembers : [p.project], p.project, hs.hosts)}
         host={
           linked && p.linking ? (
             <>
@@ -800,7 +803,15 @@ function LinkRows({ project, linking, tabbed }: { project: Project; linking: Pro
   );
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) or the Host group (single-host), under the header */ host?: ComponentChildren; /** V0.host-tabs: compact folded linking actions for a linked project */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0034: the records an image goes to: every online member */ imageTargets: Project[] }) {
+/** V0.linked-values-sync: the one record an upload or Remove image goes to: this one when its host is online, else the
+ *  first online member; none while every host is offline. */
+function imageTarget(members: Project[], own: Project, hosts: readonly HostInfo[] | undefined): Project[] {
+  const on = (m: Project) => hosts?.find((h) => h.id === m.hostId)?.online !== false;
+  const t = on(own) ? own : members.find(on);
+  return t ? [t] : [];
+}
+
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) or the Host group (single-host), under the header */ host?: ComponentChildren; /** V0.host-tabs: compact folded linking actions for a linked project */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** V0.linked-values-sync: the record an image goes to; the front copies it to the other members */ imageTargets: Project[] }) {
   // Decision 0034: name, colour, icon, quiet hours, priority, agentSettle and toolApproval are the link's; the rest of the page is this host's record.
   if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
