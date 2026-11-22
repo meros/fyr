@@ -34,7 +34,7 @@ export function slashOpen(text: string, list: SlashCommand[], dismissedAt: strin
   return matchCommands(list, q).length > 0;
 }
 
-export type SlashKey = { kind: "move"; index: number } | { kind: "pick"; command: SlashCommand } | { kind: "close" };
+type SlashKey = { kind: "move"; index: number } | { kind: "pick"; command: SlashCommand } | { kind: "close" };
 
 /** What a key does while the list is open; null lets the field have it. */
 export function slashKey(key: string, items: SlashCommand[], index: number): SlashKey | null {

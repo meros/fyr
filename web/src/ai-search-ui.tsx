@@ -10,7 +10,7 @@ import type { Thread } from "./types.ts";
 
 type Phase = { name: "idle" } | { name: "running" } | { name: "done"; hits: AiHit[]; missed: string } | { name: "failed"; why: string };
 
-export interface AiSearch {
+interface AiSearch {
   query: string;
   phase: Phase;
   byId: Map<string, Thread>;

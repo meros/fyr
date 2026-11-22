@@ -14,7 +14,7 @@ import { haptic } from "./native.ts";
 import { useSet } from "./settings-rows.tsx";
 
 /** What a list does with a new order: save it. A string is why it did not save (the order goes back). */
-export type OnMove = (next: string[], from: number, to: number) => Promise<string | null | void> | string | null | void;
+type OnMove = (next: string[], from: number, to: number) => Promise<string | null | void> | string | null | void;
 
 export interface Reorder {
   /** the order to draw: the one just made on this device until the list catches up, else the list's own */

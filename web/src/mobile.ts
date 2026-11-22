@@ -6,7 +6,8 @@ import { answerOf, questionsOf, settledOf, type CardState } from "./question.ts"
 
 /** Single-select picks move on after this delay; multi-select and the last question never do. */
 export const ADVANCE_MS = 250;
-/** The phone's Undo toast. */
+/** The phone's Undo toast. One second shorter than the desktop's UNDO_MS (store.ts): a thumb reaches the toast sooner than a
+ *  pointer crosses the window, and the toast sits over the bottom bar the next tap lands on, so it must clear sooner. */
 export const PHONE_UNDO_MS = 5000;
 
 export interface Commit {

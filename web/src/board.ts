@@ -5,9 +5,9 @@ import type { Change, Project, Thread } from "./types.ts";
 import { changeList, ended, isDone, needsOwner } from "./offers.ts";
 import { findProject, projectOf } from "./projects.ts";
 
-export type Column = "needs" | "working" | "review" | "landed" | "live" | "ended";
+type Column = "needs" | "working" | "review" | "landed" | "live" | "ended";
 
-export const COLUMNS: { key: Column; label: string }[] = [
+const COLUMNS: { key: Column; label: string }[] = [
   { key: "needs", label: "Needs you" },
   { key: "working", label: "Working" },
   { key: "review", label: "Review" },
@@ -22,7 +22,7 @@ export interface BoardItem {
   project?: Project;
 }
 
-export interface BoardFilter {
+interface BoardFilter {
   /** null: every project */
   projectId?: string | null;
   /** matches the change's title, key, targets and group, and the thread's title */
@@ -34,7 +34,7 @@ export interface BoardFilter {
 }
 
 /** V0.78 (#54): a thread whose work is put away. Its changes are history unless one needs the owner. */
-export function putAway(t: Thread): boolean {
+function putAway(t: Thread): boolean {
   return t.attention.section === "settled" || t.attention.section === "snoozed";
 }
 

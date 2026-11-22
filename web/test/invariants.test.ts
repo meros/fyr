@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { HostLoad } from "../src/load.ts";
+import type { HostLoad } from "../src/host-load.ts";
 import type { Invariants } from "../src/guard.ts";
 import { cardHead, cardWhen, fixState, invariantCards, invariantRows, linesLabel } from "../src/invariants.ts";
 

@@ -3,9 +3,9 @@
 import type { HostId } from "./hostid.ts";
 import type { Profile, Project, Thread } from "./types.ts";
 
-export type Rung = "resume" | "adopt" | "brief";
+type Rung = "resume" | "adopt" | "brief";
 
-export interface HandoverGit {
+interface HandoverGit {
   repo?: string;
   branch?: string;
   default?: string;
@@ -33,7 +33,7 @@ export interface CrossHostHandoverArgs {
   useWorktree?: boolean;
 }
 
-export interface TargetFolderSuggestion {
+interface TargetFolderSuggestion {
   cwd: string;
   projectId: string;
   reason: string;

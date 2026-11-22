@@ -8,7 +8,9 @@ import type { HostInfo } from "./hosts.ts";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, toolApprovalLine, toolApprovalOf, type ToolApproval, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, toolApprovalLine, toolApprovalOf, type ToolApproval, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon } from "./projects.ts";
+import { tildePath } from "./paths.ts";
+import { browserStorage } from "./prefs.ts";
 import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -164,7 +166,7 @@ export function FromThreadMessage({ fromId, text, children }: { fromId: string; 
 }
 
 /** The picker's first row (V0.30): New project, named by the search text when nothing matches. */
-export interface NewRow {
+interface NewRow {
   /** from a thread: "New project from this thread" */
   fromThread: boolean;
   /** what it starts with, one line */
@@ -306,14 +308,6 @@ export function QuietHold({ count, showUntil, show, hide, text }: { count: numbe
   );
 }
 
-function quietStorage(): Storage | null {
-  try {
-    return typeof localStorage !== "undefined" ? localStorage : null;
-  } catch {
-    return null;
-  }
-}
-
 export interface QuietUnlock {
   /** the end of the unlock on this device on the host's clock, or 0 when none runs */
   showUntil: number;
@@ -325,10 +319,10 @@ export interface QuietUnlock {
  *  quiet thread all read it, so one hold opens every path and Hide shuts every path; another tab follows through
  *  the storage event. It re-renders when the 30 minutes end. clockOffset: the host's clock minus this browser's. */
 export function useQuietUnlock(clockOffset = 0): QuietUnlock {
-  const [end, setEnd] = useState(() => loadQuietShow(quietStorage()));
+  const [end, setEnd] = useState(() => loadQuietShow(browserStorage()));
   useEffect(() => {
     const off = subscribeQuietShow(setEnd);
-    const onStorage = (e: StorageEvent) => e.key === "fyr.quietShowUntil" && setEnd(loadQuietShow(quietStorage()));
+    const onStorage = (e: StorageEvent) => e.key === "fyr.quietShowUntil" && setEnd(loadQuietShow(browserStorage()));
     window.addEventListener("storage", onStorage);
     return () => (off(), window.removeEventListener("storage", onStorage));
   }, []);
@@ -341,8 +335,8 @@ export function useQuietUnlock(clockOffset = 0): QuietUnlock {
   }, [end, clockOffset]);
   return {
     showUntil: end > Date.now() + clockOffset ? end : 0,
-    show: () => void setQuietShow(quietStorage(), Date.now() + clockOffset),
-    hide: () => void setQuietShow(quietStorage(), null),
+    show: () => void setQuietShow(browserStorage(), Date.now() + clockOffset),
+    hide: () => void setQuietShow(browserStorage(), null),
   };
 }
 
@@ -365,7 +359,7 @@ export function QuietGate({ project, now, unlock, what }: { project?: Project; n
 
 /** A project's one folder (V0.55): the short path and what it does with "Change…" through the host folder picker, or
  *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given. */
-export function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: HostId; onPick(path: string): void; onClear?(): void }) {
+function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: HostId; onPick(path: string): void; onClear?(): void }) {
   const picker = useFolderPick();
   const pick = async () => {
     const path = await picker.pick({ title, ...(host ? { host } : {}) });
@@ -378,12 +372,12 @@ export function FolderField({ folder, title, host, onPick, onClear }: { folder: 
         <div class="src pfolder">
           <span class="srcb">
             <span class="ell" title={folder}>
-              {shortPath(folder)}
+              {tildePath(folder)}
             </span>
             <span class="srcl">{FOLDER_LINE}</span>
           </span>
           {onClear && (
-            <button class="src-x" aria-label={`Leave out ${shortPath(folder)}`} title="Leave out" onClick={onClear}>
+            <button class="src-x" aria-label={`Leave out ${tildePath(folder)}`} title="Leave out" onClick={onClear}>
               ×
             </button>
           )}
@@ -481,7 +475,7 @@ export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: {
   const cur = one ? projectOf(one, projects) : undefined;
   // V0.132: a project made from threads lives on their host.
   if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} host={threads[0]?.hostId} onCreate={onCreate} onCancel={() => setDraft(null)} />;
-  const sub = base.folder ? `${base.name} · threads in ${shortPath(base.folder)} land there` : "Just a name; file threads here by hand";
+  const sub = base.folder ? `${base.name} · threads in ${tildePath(base.folder)} land there` : "Just a name; file threads here by hand";
   return (
     <>
       <ProjectList
@@ -547,7 +541,7 @@ function TimePick({ value, label, onChange }: { value: string; label: string; on
 /** V0.46, the decision 0014 addendum, V0.119: the project page's Quiet hours group. One row per window: from–to in
  *  24-hour time, an All day switch, ×, and the seven day chips under them; the last row adds a window or a preset
  *  that is not there yet; the foot says what all the rows do. No rows is off. */
-export function QuietGroup({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
+function QuietGroup({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
   const env = useSet();
   const set = (i: number, w: QuietHours) => onChange(value.map((x, k) => (k === i ? w : x)));
   const presets = QUIET_PRESETS.filter((p) => !hasWindow(value, p.window));
@@ -626,7 +620,7 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
     .map((m) => {
       const mc = hostChip(m.hostId, hs.hosts, hs.now);
       const name = mc?.name ?? m.host ?? "";
-      return { id: m.id!, name, label: name, offline: !!mc?.offline, title: m.folder ? `${name} · ${shortPath(m.folder)}` : name };
+      return { id: m.id!, name, label: name, offline: !!mc?.offline, title: m.folder ? `${name} · ${tildePath(m.folder)}` : name };
     });
   return (
     <SetContext.Provider value={{ ...env, readOnly: env.readOnly || !!chip?.offline }}>
@@ -674,7 +668,7 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
 }
 
 /** Decision 0034: what the project screen needs to show and change a project's links. */
-export interface ProjectLinking {
+interface ProjectLinking {
   /** the project as the lists show it */
   group: Project;
   candidates: Project[];
@@ -723,7 +717,7 @@ function LinkRows({ project, linking, tabbed }: { project: Project; linking: Pro
                 key={m.id}
                 class="hostrow"
                 title={chip ? <HostChip chip={chip} /> : m.host}
-                desc={`Also here: ${m.folder ? shortPath(m.folder) : "no folder"}`}
+                desc={`Also here: ${m.folder ? tildePath(m.folder) : "no folder"}`}
                 end={
                   <button type="button" class="btn" onClick={() => linking.open(m.id!)}>
                     Open
@@ -887,7 +881,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
         <div class="plt">
           <span class="pln big">{project.name}</span>
           <span class="pls2">
-            {project.folder ? shortPath(project.folder) : "No folder"} · {n === 1 ? "1 thread" : `${n} threads`}
+            {project.folder ? tildePath(project.folder) : "No folder"} · {n === 1 ? "1 thread" : `${n} threads`}
           </span>
         </div>
       </div>
@@ -1016,7 +1010,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
             project.folder ? (
               <span class="pfolder">
                 <span class="ell mono" title={project.folder}>
-                  {shortPath(project.folder)}
+                  {tildePath(project.folder)}
                 </span>{" "}
                 · <span class="srcl">{FOLDER_LINE}</span>
               </span>

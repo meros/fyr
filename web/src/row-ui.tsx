@@ -24,7 +24,7 @@ import { WakeChip } from "./wake-ui.tsx";
 import { GUEST_TEXT, type GuestWhy } from "./selection.ts";
 
 /** What differs between the fronts, each for a reason. */
-export interface RowLook {
+interface RowLook {
   /** the phone has no keyboard, so its rows name no keys */
   keys: boolean;
   /** a tap on the phone opens the row, so "started by" is not a link there */
@@ -130,7 +130,7 @@ function GuestTag({ why }: { why: GuestWhy }) {
   );
 }
 
-export function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
+function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
   const c = changeChip(t, short); // V0.59 (8): a change that is not a PR, when no PR is open
   if (c)
     return (
@@ -257,13 +257,13 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
  *  Ready change, bound to the head the row shows (V0.97; V0.merge-label: the head is in its title, not on the button),
  *  and "Answer" for an ask, which opens the thread. */
 /** The button a Needs you cause shows on its row ("Merge", "Answer"), or "" when it shows only the beam dot. */
-export function needButton(change: Change, need: ChangeNeed): string {
+function needButton(change: Change, need: ChangeNeed): string {
   const merge = (change.offers ?? []).some((o) => o.run === "fyr" && o.effect === "pr.merge");
   const canMerge = need.cause === "ready" && merge && !!need.head;
   return need.cause === "ask" || canMerge ? needLook(need).button : "";
 }
 
-export function NeedButton({ t, change, need }: { t: Thread; change: Change; need: ChangeNeed }) {
+function NeedButton({ t, change, need }: { t: Thread; change: Change; need: ChangeNeed }) {
   const api = useApi();
   const ask = useAsk();
   const look = needLook(need);

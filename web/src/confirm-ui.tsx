@@ -7,7 +7,7 @@ import type { Ask } from "./confirm.ts";
 import { copyToClipboard } from "./copy.ts";
 import { BottomSheet, DialogScrim } from "./motion-ui.tsx";
 
-export type AskFn = (a: Ask) => Promise<boolean>;
+type AskFn = (a: Ask) => Promise<boolean>;
 
 const ConfirmContext = createContext<AskFn>(async () => false);
 export const ConfirmProvider = ConfirmContext.Provider;

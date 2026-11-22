@@ -37,7 +37,7 @@ export type ActionId =
   | "copyLink";
 
 /** A sheet the action opens: a dialog on the desktop, a sheet on the phone. */
-export type SheetId = "snooze" | "project" | "handover" | "details";
+type SheetId = "snooze" | "project" | "handover" | "details";
 
 export type ThreadAction = {
   id: ActionId;
@@ -85,7 +85,7 @@ export function settleToast(t: Pick<Thread, "running"> | undefined): string | un
 }
 
 /** The link Copy link copies. */
-export function threadLink(origin: string, id: string): string {
+function threadLink(origin: string, id: string): string {
   return `${origin}/?open=${id}`;
 }
 

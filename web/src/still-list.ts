@@ -6,7 +6,7 @@ import { needsGroupRank } from "./rows.ts";
 import type { Thread } from "./types.ts";
 
 /** The group whose order is arrival, or null (Seen, Snoozed and Settled keep their own order, the queue its own). */
-export function arrivalKey(t: Thread): string | null {
+function arrivalKey(t: Thread): string | null {
   const k = sectionOf(t);
   if (k === "needs") return `needs:${needsGroupRank(t)}`;
   return k === "working" || k === "unread" ? k : null;

@@ -1,10 +1,11 @@
 // SPEC V0.176: leftover processes (what a thread left running outside its CLI) and the settled threads' worktrees, as
 // words for the open thread's strip, the rail, the phone's load sheet and Settings. Pure texts; the components print them.
+import { ago } from "./format.ts";
 import type { HostId } from "./hostid.ts";
 import type { Card } from "./card.ts";
-import type { HostLoad, Lookup } from "./load.ts";
+import type { HostLoad, Lookup } from "./host-load.ts";
 
-export interface LeftoverKeep {
+interface LeftoverKeep {
   thread: string;
   pid?: number;
   match?: string;
@@ -44,16 +45,13 @@ export interface Temp {
 }
 
 /** "1.9 GB", "60 MB": 1e9 and 1e6, as the rest of the load. */
-export function sizeText(b: number): string {
+function sizeText(b: number): string {
   return b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`;
 }
 
 /** "25 min", "10 h", "2 d": a span from now, rounded down, at least 1 min. */
 function inText(iso: string, now: number): string {
-  const min = Math.max(0, Math.floor((Date.parse(iso) - now) / 60_000));
-  if (min < 60) return `${Math.max(1, min)} min`;
-  if (min < 48 * 60) return `${Math.floor(min / 60)} h`;
-  return `${Math.floor(min / 1440)} d`;
+  return ago(Math.max(60_000, Date.parse(iso) - now));
 }
 
 const heavy = (l: Leftover) => l.rss >= 100e6;
@@ -117,7 +115,7 @@ export function hostLeftovers(h: HostLoad): { count: number; text: string; card:
   };
 }
 
-export interface LeftoverRow {
+interface LeftoverRow {
   id: string;
   title: string;
   desc: string;
@@ -138,7 +136,7 @@ export function leftoverRows(h: HostLoad, lookup: Lookup, now: number): Leftover
   });
 }
 
-export interface TempRow {
+interface TempRow {
   path: string;
   title: string;
   desc: string;

@@ -1,12 +1,13 @@
 // SPEC V0.126 (#151): the update record (GET /api/updates): every attempt to update Fyr on this host, why it ran,
 // how it ended and the logs kept with its build; whether a local build pauses auto-update.
+import { ago } from "./format.ts";
 
-export interface UpdatePhase {
+interface UpdatePhase {
   name: string;
   at: string;
 }
 
-export interface UpdateRecord {
+interface UpdateRecord {
   build: string;
   commit?: string;
   trigger: string; // deployable, agent, owner
@@ -26,7 +27,7 @@ export interface UpdateRecord {
   changesAll?: number;
 }
 
-export interface UpdateChange {
+interface UpdateChange {
   commit: string;
   title: string;
 }
@@ -58,7 +59,7 @@ export function versionLabel(v: { version?: string; build?: string; channel?: st
 }
 
 /** V0.release-without-gh: the key a host verifies releases with (config updateKey, else the built-in one). */
-export interface ReleaseKey {
+interface ReleaseKey {
   fingerprint?: string;
   builtIn?: boolean;
   error?: string;
@@ -82,8 +83,7 @@ function short(s: string | undefined): string {
 function took(a: string, b: string | undefined): string {
   const t = b ? Date.parse(b) - Date.parse(a) : NaN;
   if (Number.isNaN(t) || t < 0) return "";
-  const s = Math.round(t / 1000);
-  return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`;
+  return ago(t);
 }
 
 function when(iso: string, now: number): string {
@@ -138,14 +138,14 @@ export function updateState(v: UpdatesView): string {
 
 // SPEC V0.173: what this host's fyrd spent of the account's GitHub API limit, and what the account has left (shared by
 // every caller of the login: fyrd and agents on every host, and the owner's own gh).
-export interface GitHubUse {
+interface GitHubUse {
   kind: string;
   repo?: string;
   calls: number;
   free?: number;
 }
 
-export interface GitHubView {
+interface GitHubView {
   rate?: { limit: number; remaining: number; reset: string; graphqlRemaining: number; at: string } | null;
   since: string;
   uses: GitHubUse[] | null;

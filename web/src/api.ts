@@ -18,7 +18,7 @@ import { addressable, bare, decodeFront, hostOfFrame, reachabilityChanged, ref, 
 import type { HostId } from "./hostid.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
-import type { HostLoad } from "./load.ts";
+import type { HostLoad } from "./host-load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { AutoDeploySetting, AutoMergeRepo } from "./automerge.ts";
 import type { UpdatesView } from "./updates.ts";
@@ -33,7 +33,7 @@ import { reloadForNewBuild } from "./pwa.ts";
 import type { SlashCommand } from "./slash.ts";
 import { parsePlan, type HandoverPlan } from "./handover.ts";
 
-export interface ApiHandlers {
+interface ApiHandlers {
   /** Slice 2b: the front's state and each host's own, by install id */
   state(snap: Snapshot): void;
   thread(t: ThreadDTO): void;
@@ -147,7 +147,7 @@ export interface Api {
 export type CommandSource = { host: HostId; threadId: string } | { host: HostId; cwd: string; profile: string };
 
 /** V0.127: a per-host settings read; readAt is set when the host is offline and this is what the front last read. */
-export interface HostRead<T> {
+interface HostRead<T> {
   data: T;
   readAt?: string;
 }
@@ -189,7 +189,7 @@ export function newCommandId(): string {
 }
 
 /** The mock scenario of `?mock=…`, or null for the real host. */
-export function mockScenario(search: string): string | null {
+function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
   if (!m || m[1] === "0" || m[1] === "") return null;
   return decodeURIComponent(m[1]);
@@ -219,12 +219,18 @@ function createHttpApi(): Api {
     return r.reload;
   };
 
+  /** V0.157: the front's answer to /state, for signout.ts: its status and body. */
+  const probeState = async (): Promise<{ status: number; body: unknown }> => {
+    const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+
   /** The front's state, then every host's own, in parallel: the snapshot the store reads, one state per host
    *  (hostfeed.snapshotOf). A host whose state cannot be read is listed and has no records. */
   const loadAll = async (): Promise<Snapshot> => {
     const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
     if (!r.ok) {
-      if (r.status === 401) void reloadIfSignedOut(); // V0.157: a revoked device lands on the signed-out page
+      if (r.status === 401) void reloadIfSignedOut(probeState); // V0.157: a revoked device lands on the signed-out page
       throw new Error(`state ${r.status}`);
     }
     const f = decodeFront(await r.json());
@@ -334,7 +340,7 @@ function createHttpApi(): Api {
     });
     es.onerror = () => {
       if (gen === generation) {
-        void reloadIfSignedOut(); // V0.157: a revoked device lands on the signed-out page
+        void reloadIfSignedOut(probeState); // V0.157: a revoked device lands on the signed-out page
         retry();
       }
     };

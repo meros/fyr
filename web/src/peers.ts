@@ -3,7 +3,7 @@
 
 import { linkLine, type HostLink } from "./hosts.ts";
 
-export interface MemberRow {
+interface MemberRow {
   id: string;
   name: string;
   self?: boolean;
@@ -17,7 +17,7 @@ export interface MemberRow {
   link?: HostLink & { opened?: string };
 }
 
-export interface CandidateRow {
+interface CandidateRow {
   name: string;
   online: boolean;
   kind: "tagged" | "other-user" | "shared" | "expired" | "waiting" | string;

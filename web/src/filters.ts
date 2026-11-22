@@ -8,7 +8,7 @@
 // picked, a host off); a selected value stays until the owner changes it. V0.114: a quiet project's threads count
 // only while the unlock runs.
 import { shortID, type HostInfo } from "./hosts.ts";
-import { shortHostNames } from "./load.ts";
+import { shortHostNames } from "./host-load.ts";
 import { findProject, projectOf } from "./projects.ts";
 import { hideQuiet, quietLocked, reachable } from "./quiet.ts";
 import { isOpen, sectionOf, type SectionKey } from "./store.ts";
@@ -86,7 +86,7 @@ export function hostKey(h: Pick<HostInfo, "id" | "name">): string {
 }
 
 /** The key of the host a thread runs on (hostKey): its install id, which every thread in the store has (V0.client-per-host). */
-export function threadHostKey(t: Pick<Thread, "hostId">): string {
+function threadHostKey(t: Pick<Thread, "hostId">): string {
   return t.hostId;
 }
 
@@ -112,7 +112,7 @@ export function applyFilters(threads: Record<string, Thread>, sel: FilterSel, pr
   return out;
 }
 
-export interface FilterInput {
+interface FilterInput {
   threads: Record<string, Thread>;
   projects: Project[];
   /** the front's hosts, in the owner's order (V0.132) */

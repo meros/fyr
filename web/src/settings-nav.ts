@@ -27,7 +27,7 @@ export const PAGES: { id: PageId; title: string }[] = [
 /** Automation's sub is not a page: it names the group to scroll to ("leftovers"). */
 const SUBS: Record<PageId, boolean> = { providers: true, automation: true, projects: true, hosts: true, devices: false, device: false, setup: false };
 
-export function isPage(s: string | null | undefined): s is PageId {
+function isPage(s: string | null | undefined): s is PageId {
   return !!s && PAGES.some((p) => p.id === s);
 }
 

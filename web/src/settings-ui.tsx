@@ -20,7 +20,7 @@ import { resolveRef } from "./store.ts";
 import { hostUrl } from "./urls.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
-import { budgetLine, jobLines, type HostLoad } from "./load.ts";
+import { budgetLine, jobLines, type HostLoad } from "./host-load.ts";
 import { useUnd } from "./undeclared-ctx.tsx";
 import { UndIcon } from "./undeclared-ctx.tsx";
 import { GuardChart } from "./guard-ui.tsx";

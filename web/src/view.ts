@@ -4,7 +4,7 @@
 import type { Change, Thread } from "./types.ts";
 import { threadPrs } from "./offers.ts";
 
-export interface LiveViewDTO {
+interface LiveViewDTO {
   pageId: string;
   state: Record<string, unknown>;
   updatedAt: string;
@@ -55,9 +55,9 @@ export function staleLabel(updatedAt: string, now: number): string {
 }
 
 /** The view takes at most this share of the pane. */
-export const VIEW_MAX_SHARE = 0.6;
+const VIEW_MAX_SHARE = 0.6;
 /** Before the page reports its height. */
-export const VIEW_START = 120;
+const VIEW_START = 120;
 const VIEW_MIN = 40;
 
 /** The frame's height: what the page reports, at least 40 px, at most 60 % of the pane. */
@@ -70,7 +70,7 @@ export function viewHeight(reported: number, pane: number): number {
 /** A press carries at most this much text. */
 export const PRESS_MAX = 2000;
 
-export type BridgeIn = { kind: "ready" } | { kind: "size"; height: number } | { kind: "press"; text: string; id: string | number | null } | { kind: "action"; action: string; id: string | number | null };
+type BridgeIn = { kind: "ready" } | { kind: "size"; height: number } | { kind: "press"; text: string; id: string | number | null } | { kind: "action"; action: string; id: string | number | null };
 
 /**
  * A message from the view's iframe, or null. Only the view's own frame counts (`source === frame`): any other window,
@@ -131,9 +131,9 @@ export function defaultTab(t: Pick<Thread, "live" | "pr"> & { changes?: Change[]
   return requested ?? (has ? "view" : "conv");
 }
 
-export type ThreadTab = "view" | "conv" | "changes" | "pr";
+type ThreadTab = "view" | "conv" | "changes" | "pr";
 
-export const TAB_LABEL: Record<ThreadTab, string> = { view: "View", conv: "Conversation", changes: "Changes", pr: "PR" };
+const TAB_LABEL: Record<ThreadTab, string> = { view: "View", conv: "Conversation", changes: "Changes", pr: "PR" };
 
 /** V0.multi-pr: the PR tab reads "PRs (N)" when the thread tracks more than one non-dismissed PR. */
 export function tabLabel(t: Pick<Thread, "pr"> & { changes?: Change[] }, tab: ThreadTab): string {

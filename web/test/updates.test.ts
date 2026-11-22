@@ -15,7 +15,7 @@ test("V0.126 a release that went live names its commit, why it ran and how long 
 test("V0.126 a local build that rolled back says its branch and the reason", () => {
   const r = updateRow({ build: "20261116-231000", commit: "1a2b3c4d", trigger: "agent", local: true, branch: "v0.124-key", result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: "2026-11-16T23:10:00", endedAt: "2026-11-16T23:11:30" }, now);
   assert.equal(r.title, "Local build of v0.124-key (1a2b3c4) · rolled back");
-  assert.match(r.desc, /an agent asked · 23:10 · 2 min · was not healthy/);
+  assert.match(r.desc, /an agent asked · 23:10 · 1 min · was not healthy/);
   assert.equal(r.fail, true);
 });
 

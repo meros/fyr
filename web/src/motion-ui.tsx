@@ -82,7 +82,7 @@ function canScroll(target: Element, panel: HTMLElement): boolean {
   return false;
 }
 
-export function useSheetMotion(root: ElRef, back: ElRef, panel: ElRef, kind: SheetKind, onClose?: () => void) {
+function useSheetMotion(root: ElRef, back: ElRef, panel: ElRef, kind: SheetKind, onClose?: () => void) {
   const close = useRef(onClose);
   close.current = onClose;
   const flung = useRef(0);

@@ -6,7 +6,7 @@
  *  Uses a plain closure flag (not async UI state) so rapid double-taps,
  *  multi-clicks, or key repeats within the same millisecond cannot launch
  *  duplicate commands before a re-render disables the button. */
-export interface SubmitGuard {
+interface SubmitGuard {
   /** Whether a submit is currently in flight. */
   busy(): boolean;
   /** Runs `fn` unless a submit is already in flight; returns false when skipped. */

@@ -14,7 +14,7 @@ import { ContextMenu } from "./menu-ui.tsx";
 import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
 import { railUndeclared } from "./undeclared.ts";
 import { hostLeftovers } from "./leftovers.ts";
-import { loadCard, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, STRIP_MAX, type LoadCard, type StripHost, threadCPU, threadJob, threadService, threadSlot, type HostLoad, type Slots } from "./load.ts";
+import { loadCard, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, STRIP_MAX, type LoadCard, type StripHost, threadCPU, threadJob, threadService, threadSlot, type HostLoad, type Slots } from "./host-load.ts";
 
 const POLL_MS = 5_000;
 
@@ -47,11 +47,6 @@ export function refreshLoad(): void {
   void poll();
 }
 
-/** V0.row-calm: whether a thread has a CPU reading, so its row has chips to show. */
-export function useHasCPU(id: string): boolean {
-  return !!threadCPU(useLoad(), id);
-}
-
 export function useLoad(): HostLoad[] {
   const api = useApi();
   const [l, setL] = useState(current);
@@ -75,7 +70,7 @@ export function useLoad(): HostLoad[] {
 }
 
 /** V0.167: what the two meters are; the foot of every host's card. */
-export const METERS_LEGEND = "ld: the load as a share of the cores · job: heavy jobs' use of their budget";
+const METERS_LEGEND = "ld: the load as a share of the cores · job: heavy jobs' use of their budget";
 
 /** V0.167: one host's load and heavy jobs as two labelled meters, the same on the desktop rail, the phone's strip and
  *  its sheet: the host's name (when given), "ld" with a bar in the load colour (V0.99's and decision 0029's rule) and
@@ -124,7 +119,7 @@ export function HostMeters({ h, name, full, offline }: { h?: HostLoad; name?: st
 }
 
 /** V0.load-card: one host's load as a card (CardView): the same on the rail's hover card and the phone's sheet. */
-export function LoadCardView({ c, head }: { c: LoadCard; head?: boolean }) {
+function LoadCardView({ c, head }: { c: LoadCard; head?: boolean }) {
   return <CardView c={c} head={!!head} />;
 }
 
@@ -287,11 +282,6 @@ export function ThreadService({ text: s }: { text: string | null }) {
       </span>
     </>
   );
-}
-
-/** Decision 0029 S1: the job a thread's slot runs ("yarn build · 3.0 GB"), or null; the row puts it first on its line. */
-export function useThreadJob(id: string): string | null {
-  return threadJob(useLoad(), id);
 }
 
 export function ThreadJob({ text }: { text: string }) {

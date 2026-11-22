@@ -2,7 +2,7 @@
 // tooltip, a job's row, the queue's reason and Settings → Heavy jobs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetLine, cardLines, loadCard, jobLines, normalizeLoad, railBudget, railLabel, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
+import { budgetLine, cardLines, loadCard, jobLines, normalizeLoad, railBudget, railLabel, threadJob, threadSlot, type HostLoad } from "../src/host-load.ts";
 
 const host: HostLoad = {
   host: "desk",

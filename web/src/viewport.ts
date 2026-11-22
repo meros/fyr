@@ -8,7 +8,7 @@ export const VIEWPORT_VV_EVENTS = ["resize", "scroll"] as const;
 /** A keyboard is open when the visible area is this much shorter than the layout viewport. */
 export const KEYBOARD_MIN_PX = 120;
 
-export interface ViewportSizes {
+interface ViewportSizes {
   /** window.innerHeight (the layout viewport) */
   innerHeight: number;
   /** visualViewport.height and offsetTop; undefined when the browser has no visualViewport */
@@ -16,7 +16,7 @@ export interface ViewportSizes {
   vvOffsetTop?: number;
 }
 
-export interface ViewportVars {
+interface ViewportVars {
   /** --app-h: the height of the app */
   height: string;
   /** --app-top: where the app starts (iOS scrolls the layout viewport when the keyboard opens) */

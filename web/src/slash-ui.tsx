@@ -36,7 +36,7 @@ function load(api: Api, s: CommandSource): Promise<SlashCommand[]> {
   return p;
 }
 
-export interface Slash {
+interface Slash {
   open: boolean;
   items: SlashCommand[];
   index: number;

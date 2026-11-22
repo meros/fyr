@@ -17,7 +17,7 @@ export function orderTasks(tasks: TaskDTO[] | null | undefined): TaskDTO[] {
   });
 }
 
-export interface TaskGroups {
+interface TaskGroups {
   /** always shown */
   running: TaskDTO[];
   /** shown behind "N finished" until expanded */
@@ -35,7 +35,7 @@ export function visibleTasks(tasks: TaskDTO[] | null | undefined, expanded: bool
   return expanded ? [...g.running, ...g.ended] : g.running;
 }
 
-export function agentsLabel(n: number): string {
+function agentsLabel(n: number): string {
   return n === 1 ? "1 agent" : `${n} agents`;
 }
 
@@ -45,7 +45,7 @@ function isCommand(t: TaskDTO): boolean {
 }
 
 /** What the running tasks are called: agents, or background commands when any is one. */
-export function runningLabel(running: TaskDTO[]): string {
+function runningLabel(running: TaskDTO[]): string {
   const commands = running.filter(isCommand).length;
   if (!commands) return agentsLabel(running.length);
   return running.length === 1 ? "1 background command" : `${running.length} background tasks`;

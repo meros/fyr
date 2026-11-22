@@ -6,7 +6,7 @@ import { shortModel } from "./format.ts";
 import { effortsFor } from "./providers.ts";
 
 /** The effort levels from least to most, for "the nearest one". */
-export const EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"];
+const EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"];
 
 /** A model's readable name: the provider's own name for it, else the id made readable ("claude-opus-5-5" → "Opus 5.5"). */
 export function modelName(p: Profile | undefined, id: string): string {
@@ -21,7 +21,7 @@ export function choiceLabel(p: Profile, model: string): string {
   return `${p.name} · ${model ? modelName(p, model) : "its default model"}`;
 }
 
-export interface ModelChoice {
+interface ModelChoice {
   /** the select's value: profile and model, joined by a NUL */
   value: string;
   profile: string;

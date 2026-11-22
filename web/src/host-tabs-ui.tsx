@@ -7,7 +7,7 @@ import { HostMark } from "./host-mark-ui.tsx";
 import { stepTabIndex, type HostTabItem } from "./host-tabs.ts";
 import { SlideMark } from "./motion-ui.tsx";
 
-export interface HostTabsProps {
+interface HostTabsProps {
   items: HostTabItem[];
   active: string;
   onPick(id: string): void;

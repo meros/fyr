@@ -1,15 +1,15 @@
 // SPEC 0.5 V0.50: Settings → Providers, as words and command arguments. Pure.
 import type { Profile, Project } from "./types.ts";
 import { move } from "./reorder.ts";
-import { shortModel } from "./format.ts";
+import { ago, shortModel } from "./format.ts";
 
-export interface ProviderModel {
+interface ProviderModel {
   id: string;
   name?: string;
   efforts?: string[];
 }
 
-export type ProviderKind = "claude-account" | "agy-account" | "endpoint";
+type ProviderKind = "claude-account" | "agy-account" | "endpoint";
 
 export interface ProviderDTO {
   id: string;
@@ -130,10 +130,6 @@ export function parseModelIds(text: string): string[] {
     if (id && !out.includes(id)) out.push(id);
   }
   return out;
-}
-
-export function modelsText(ms: ProviderModel[]): string {
-  return ms.map((m) => m.id).join("\n");
 }
 
 /** "Opus 5.5, Sonnet 5.5 + 2" */
@@ -357,9 +353,9 @@ function dayWord(t: Date, now: number): string {
 /** When a check was: "just now", "12 min ago", "today 09:10", "yesterday 14:02", "14 Nov 14:02". */
 function checkedWhen(at: string, now: number): string {
   const t = new Date(at);
-  const min = Math.floor((now - t.getTime()) / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
+  const ms = now - t.getTime();
+  if (ms < 60_000) return "just now";
+  if (ms < 3600_000) return `${ago(ms)} ago`;
   return `${dayWord(t, now)} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
 }
 

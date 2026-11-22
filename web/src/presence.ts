@@ -1,6 +1,8 @@
 // Presence (SPEC 0.5 V0.20): the host does not push for a thread the user
 // is watching, so the client reports the thread it shows while visible.
 
+import { browserStorage, storedGet, storedSet } from "./prefs.ts";
+
 /** The thread to report: the open one while the page is visible, else "". */
 export function presenceTarget(openId: string | null, visibility: DocumentVisibilityState | string): string {
   return openId && visibility === "visible" ? openId : "";
@@ -19,14 +21,11 @@ export function shouldBeat(s: BeatState, target: string, now: number): boolean {
 
 /** A stable id for this browser, so beats from two devices do not mix. */
 export function deviceId(): string {
-  try {
-    let id = localStorage.getItem("fyr.device");
-    if (!id) {
-      id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      localStorage.setItem("fyr.device", id);
-    }
-    return id;
-  } catch {
-    return "nostorage";
+  if (!browserStorage()) return "nostorage";
+  let id = storedGet("fyr.device");
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    storedSet("fyr.device", id);
   }
+  return id;
 }

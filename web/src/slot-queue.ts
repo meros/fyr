@@ -1,7 +1,7 @@
 // SPEC V0.137: the threads that wait for a slot for a heavy job (V0.86) have their own section in the thread list,
 // numbered by their real place in their host's queue, and the owner reorders it. Pure.
 
-import type { HostLoad } from "./load.ts";
+import type { HostLoad } from "./host-load.ts";
 import { move } from "./reorder.ts";
 import type { Thread } from "./types.ts";
 
@@ -54,7 +54,7 @@ export function queueParts(q: QueueEntry[]): QueuePart[] {
 
 /** A row of the section: a priority wait (no thread) or a queued thread the list shows. A thread the list hides (a
  *  filter, a search, a quiet project) has no row, and the others keep their real numbers. */
-export interface QueueRow {
+interface QueueRow {
   entry: QueueEntry;
   thread: Thread | null;
 }

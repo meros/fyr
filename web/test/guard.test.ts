@@ -1,10 +1,10 @@
 // SPEC V0.188 (decision 0032): the memory guard's chart and words. Pure texts and geometry; the component only prints them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mockLoad, withGuard } from "../src/mock.ts";
+import { mockLoad, withGuard } from "../src/mock-load.ts";
 import { GUARD_WINDOW, findGuard, guardChart, guardLine, guardLog, guardSummary, type GuardEvent } from "../src/guard.ts";
 import { rowUndeclared } from "../src/undeclared.ts";
-import { withUndeclared } from "../src/mock.ts";
+import { withUndeclared } from "../src/mock-load.ts";
 
 const NOW = Date.parse("2026-11-18T08:00:00");
 const title = (t: string) => ({ t_mapperf: "Map perf", t_babysit: "Babysit PR #4170" })[t] ?? t;

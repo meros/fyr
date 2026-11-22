@@ -11,7 +11,7 @@ import { createSendDedupe } from "./send-guard.ts";
 import type { SendArgs } from "./thread.tsx";
 import type { CrossHostHandoverArgs } from "./handover.ts";
 
-export interface Toast {
+interface Toast {
   text: string;
   undo: boolean;
   error?: boolean;
@@ -39,12 +39,12 @@ export interface ThreadCommands {
   showError(text: string): void;
 }
 
-export interface RunOptions {
+interface RunOptions {
   /** the toast's text for n threads taken, in place of the undo label (V0.162: a bulk settle names the pinned it kept) */
   label?: (n: number) => string;
 }
 
-export interface CommandOptions {
+interface CommandOptions {
   /** how long Undo stays offered (the phone gives it less time) */
   undoMs: number;
   /** after an undo; ok is false when the host refused one of the inverse commands */

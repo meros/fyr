@@ -11,7 +11,7 @@ export const HostMarksContext = createContext<OwnerMarks>({});
 export const useHostMarks = () => useContext(HostMarksContext);
 
 /** The colours of the front's hosts, computed once per hosts list and owner's marks. */
-export function useHostColors(): Map<string, string> {
+function useHostColors(): Map<string, string> {
   const { hosts } = useHosts();
   const marks = useHostMarks();
   return useMemo(() => hostColors(hosts, marks), [hosts, marks]);

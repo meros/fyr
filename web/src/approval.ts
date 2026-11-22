@@ -5,7 +5,7 @@ import type { Decision } from "./types.ts";
 /** Commands longer than this many lines start clamped with a "Show full command" toggle. */
 export const MAX_CMD_LINES = 8;
 
-export interface FormattedApproval {
+interface FormattedApproval {
   cmd: string | null;
   fullCmd: string | null;
   truncated: boolean;

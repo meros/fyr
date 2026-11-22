@@ -3,7 +3,7 @@
 // (load.ts), the quota card (quota.ts), the rail's undeclared and leftover cards (undeclared.ts, leftovers.ts) are
 // each one of these; CardView (card-ui.tsx) draws them all.
 
-export type CardLevel = "calm" | "warm" | "hot";
+type CardLevel = "calm" | "warm" | "hot";
 
 export interface CardRow {
   label: string;

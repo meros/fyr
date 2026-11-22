@@ -7,35 +7,28 @@ import { useApi } from "./api-context.ts";
 import { HOME_LOG, HOME_MOVES, homeDay, homeLog, hourTicks, openAt, type HomeDay, homeMoves, homeNeeds, homeRunning, homeSummary, lookWindow, runningLine, startOfDay, type HomeMove } from "./home.ts";
 import { profilesOf, type HostInfo, type HostProfiles } from "./hosts.ts";
 import { HostMeters, ThreadCPU, useLoad } from "./load-ui.tsx";
-import { stripHosts } from "./load.ts";
+import { stripHosts } from "./host-load.ts";
 import { ProjectIcon } from "./project-ui.tsx";
 import { projectOf } from "./projects.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { SECTIONS, type Sections } from "./store.ts";
-import { clockTime, relTime } from "./format.ts";
+import { clockTime, minuteOf, relTime } from "./format.ts";
+import { storedGet, storedSet } from "./prefs.ts";
 import { hostVersions } from "./updates.ts";
 import type { Project, Thread } from "./types.ts";
 
 const LOOK_KEY = "fyr.home.lookedAt";
 
 function readLook(): number | null {
-  try {
-    const v = localStorage.getItem(LOOK_KEY);
-    return v ? Number(v) : null;
-  } catch {
-    return null;
-  }
+  const v = storedGet(LOOK_KEY);
+  return v ? Number(v) : null;
 }
 
 function writeLook(at: number): void {
-  try {
-    localStorage.setItem(LOOK_KEY, String(at));
-  } catch {
-    /* storage blocked: the next visit covers a day */
-  }
+  storedSet(LOOK_KEY, String(at));
 }
 
-export interface HomeProps {
+interface HomeProps {
   /** what the inbox shows (its filters and quiet hours hold here too) */
   sec: Sections;
   projects: Project[];
@@ -71,8 +64,8 @@ export function HomeScreen(p: HomeProps) {
     };
   }, []);
   const log = useMemo(() => homeLog(byId, p.projects, since), [byId, p.projects, since]);
-  const mergedToday = useMemo(() => homeLog(byId, p.projects, startOfDay(p.now)).filter((e) => e.kind === "merged").length, [byId, p.projects, Math.floor(p.now / 60_000)]);
-  const today = useMemo(() => homeDay(byId, p.projects, p.now), [byId, p.projects, Math.floor(p.now / 60_000)]);
+  const mergedToday = useMemo(() => homeLog(byId, p.projects, startOfDay(p.now)).filter((e) => e.kind === "merged").length, [byId, p.projects, minuteOf(p.now)]);
+  const today = useMemo(() => homeDay(byId, p.projects, p.now), [byId, p.projects, minuteOf(p.now)]);
   const day = new Date(p.now).toLocaleDateString(undefined, { weekday: "long" });
 
   if (!p.loaded) return null;

@@ -58,7 +58,7 @@ function CopyCmd({ text }: { text: string }) {
 
 /** One run request: what runs, where, why, its run's output and the owner's buttons. `docked`: it waits in the dock
  *  (V0.next-step-dock (5)), so the buttons are there and this card points to them: one place to press. */
-export function RunCard({ o, t, host, onRun, docked }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; onRun: Run; docked?: boolean }) {
+function RunCard({ o, t, host, onRun, docked }: { o: Offer; t: Pick<Thread, "runs" | "rootPrompt">; host?: string; onRun: Run; docked?: boolean }) {
   const l = cardLook(o, t.runs, { host, rootPrompt: t.rootPrompt });
   const ask = useAsk();
   const [all, setAll] = useState(false);

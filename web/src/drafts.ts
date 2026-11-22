@@ -2,6 +2,7 @@
 // message, a card that opens, a screen change and a reload (a deploy reloads
 // the page). One draft per thread; sending clears it.
 import { useState } from "preact/hooks";
+import { browserStorage } from "./prefs.ts";
 
 export interface KV {
   getItem(k: string): string | null;
@@ -35,14 +36,6 @@ export function draftStore(storage: KV | null) {
       }
     },
   };
-}
-
-function browserStorage(): KV | null {
-  try {
-    return typeof localStorage !== "undefined" ? localStorage : null;
-  } catch {
-    return null;
-  }
 }
 
 const drafts = draftStore(browserStorage());

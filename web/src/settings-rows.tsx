@@ -10,7 +10,7 @@ import { haptic } from "./native.ts";
 import { readFold, writeFold } from "./settings-fold.ts";
 
 /** What every control on a page reads: the page is read-only (no connection), it is the phone, and how to show Saved. */
-export interface SetEnv {
+interface SetEnv {
   readOnly: boolean;
   phone: boolean;
   /** a command answered ok: show "Saved" for 2 s */
@@ -192,7 +192,7 @@ export function Seg<T extends string>({ value, options, label, onChange, disable
   );
 }
 
-export interface SaveFieldProps {
+interface SaveFieldProps {
   value: string;
   /** the error, or null; the text stays on an error */
   onSave(v: string): Promise<string | null>;

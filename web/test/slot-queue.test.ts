@@ -2,7 +2,7 @@
 // queue, and the owner reorders it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { HostLoad } from "../src/load.ts";
+import type { HostLoad } from "../src/host-load.ts";
 import { flatOrder, sections, SECTIONS } from "../src/store.ts";
 import { queueParts, reorderOwners, slotQueue, withQueue } from "../src/slot-queue.ts";
 import { thread } from "./helpers.ts";

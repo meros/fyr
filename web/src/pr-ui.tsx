@@ -13,7 +13,7 @@ import { StateIcon } from "./icons.tsx";
 import { Modal } from "./dialogs.tsx";
 
 
-export interface PrViewProps {
+interface PrViewProps {
   t: Thread;
   /** all non-dismissed PRs of the thread (V0.multi-pr); the switcher shows when length > 1 */
   prs: PullRequest[];

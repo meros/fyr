@@ -1,7 +1,8 @@
 // SPEC 0.5 V0.25: the Changes tab's pure logic: patch parsing, path shortening, sorting, the summary line.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parsePatch, shortenPath, sortFiles, statusMark, summaryLine, type ChangedFile } from "../src/changes.ts";
+import { parsePatch, sortFiles, statusMark, summaryLine, type ChangedFile } from "../src/changes.ts";
+import { shortenPath } from "../src/paths.ts";
 
 const PATCH = [
   "diff --git a/web/src/map.ts b/web/src/map.ts",

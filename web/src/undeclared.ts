@@ -4,7 +4,7 @@
 
 import type { Card } from "./card.ts";
 import { guardLine } from "./guard.ts";
-import { cpuText, gbText, spanText, undeclaredTip, usedMeasures, type HostLoad, type Lookup, type UndeclaredUse } from "./load.ts";
+import { cpuText, gbText, spanText, undeclaredTip, usedMeasures, type HostLoad, type Lookup, type UndeclaredUse } from "./host-load.ts";
 
 export { undeclaredTip, type Lookup };
 
@@ -89,7 +89,7 @@ export function railUndeclared(h: HostLoad, lookup: Lookup, now: number): RailUn
   };
 }
 
-export interface StripView {
+interface StripView {
   head: string;
   /** what the host does about it */
   body: string;
@@ -112,7 +112,7 @@ export function stripView(h: HostLoad, u: UndeclaredUse): StripView | null {
 
 // ---- Settings → Automation → Heavy jobs ----
 
-export interface UndeclaredRow {
+interface UndeclaredRow {
   thread: string;
   title: string;
   project: string;
@@ -148,8 +148,8 @@ export function addedRows(h: HostLoad): { pattern: string; line: string }[] {
   }));
 }
 
-export type ThresholdKey = "cpu" | "memory" | "after";
-export interface ThresholdRow {
+type ThresholdKey = "cpu" | "memory" | "after";
+interface ThresholdRow {
   key: ThresholdKey;
   title: string;
   now: string;

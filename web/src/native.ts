@@ -11,7 +11,7 @@ export function haptic(kind: "light" | "firm" = "light"): void {
   }
 }
 
-export type NavDir = "fwd" | "back";
+type NavDir = "fwd" | "back";
 
 type VTDoc = Document & { startViewTransition?: (cb: () => Promise<void> | void) => unknown };
 

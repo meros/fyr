@@ -30,7 +30,7 @@ export interface ModeRow {
   by?: string;
 }
 
-export interface AuditRow {
+interface AuditRow {
   at: string;
   event: string;
   by: string;

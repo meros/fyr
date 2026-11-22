@@ -39,7 +39,7 @@ function openCard(card: PreviewCard, all: PreviewCard[]) {
   openImages(items, items.findIndex((x) => x.key === `pv-${card.seq}`));
 }
 
-export function previewDomId(seq: number): string {
+function previewDomId(seq: number): string {
   return `pv-${seq}`;
 }
 

@@ -6,7 +6,7 @@ import type { HostInfo } from "./hosts.ts";
 import { decodeHosts } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
 import type { DeployProgress } from "./deploy.ts";
-import type { HostLoad, Slots } from "./load.ts";
+import type { HostLoad, Slots } from "./host-load.ts";
 import type { FyrEvent, Project, StateDTO, ThreadDTO } from "./types.ts";
 
 /** /api/front/state: what belongs to no host. */
@@ -104,8 +104,8 @@ export function stampSlots(x: Slots, host: HostId): Slots {
   const r = (id: string) => (id === "self-deploy" ? id : ref(host, id));
   return {
     ...x,
-    held: x.held.map((h) => ({ ...h, owner: r(h.owner) })),
-    waiting: x.waiting.map((h) => ({ ...h, owner: r(h.owner) })),
+    held: (x.held ?? []).map((h) => ({ ...h, owner: r(h.owner) })),
+    waiting: (x.waiting ?? []).map((h) => ({ ...h, owner: r(h.owner) })),
     ...(x.undeclared ? { undeclared: x.undeclared.map((u) => ({ ...u, thread: r(u.thread) })) } : {}),
   };
 }
@@ -151,7 +151,7 @@ export interface Snapshot {
 }
 
 /** One host's state as the store keeps it: its records stamped with the host, its deploy and stall named by it. */
-export function stampState(state: StateDTO, h: HostInfo & { id: HostId }): StateDTO {
+function stampState(state: StateDTO, h: HostInfo & { id: HostId }): StateDTO {
   return {
     ...state,
     threads: (state.threads ?? []).map((t) => stampThread(t, h)),

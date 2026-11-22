@@ -2,16 +2,13 @@
 // lock and where the dump is, × dismisses it on this device. Desktop and phone share this component (CLAUDE.md); the
 // phone's targets are 44 px (touch).
 import { useState } from "preact/hooks";
+import { storedGet, storedSet } from "./prefs.ts";
 import { shownStall, stallKey, stallLine, type StallInfo } from "./stall.ts";
 
 const DISMISSED_KEY = "fyr.stall.dismissed";
 
 function readDismissed(): string | null {
-  try {
-    return localStorage.getItem(DISMISSED_KEY);
-  } catch {
-    return null;
-  }
+  return storedGet(DISMISSED_KEY);
 }
 
 export function StallBanner({ stalls, multiHost, phone }: { stalls: StallInfo[]; multiHost: boolean; phone?: boolean }) {
@@ -23,11 +20,7 @@ export function StallBanner({ stalls, multiHost, phone }: { stalls: StallInfo[];
   const dismiss = () => {
     const k = stallKey(s);
     setHidden(k);
-    try {
-      localStorage.setItem(DISMISSED_KEY, k);
-    } catch {
-      /* storage blocked: this page only */
-    }
+    storedSet(DISMISSED_KEY, k);
   };
   return (
     <div class={`dbn fail${phone ? " m" : ""}${open ? " open" : ""}`} role="status" aria-live="polite">

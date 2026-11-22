@@ -14,7 +14,7 @@ import { ProjectIcon } from "./project-ui.tsx";
 import { colorVar } from "./projects.ts";
 import { boardSettledPref, setBoardSettledPref } from "./prefs.ts";
 
-export interface BoardProps {
+interface BoardProps {
   threads: Record<string, Thread>;
   projects: Project[];
   /** a thread command, for example action.run */

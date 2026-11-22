@@ -40,12 +40,12 @@ export function stateLabel(s: AttentionState): string {
 
 /** V0.your-move: what the owner has to do, the groups of Your move in their order. (V0.text-ask-nudge: a question Fyr
  *  only read in the agent's text is no longer a group; Fyr tells the agent, which asks on a card.) */
-export const NEEDS_GROUPS = [
+const NEEDS_GROUPS = [
   { key: "answer", label: "Answer" },
   { key: "approve", label: "Approve" },
   { key: "unblock", label: "Unblock" },
 ] as const;
-export type NeedsGroup = (typeof NEEDS_GROUPS)[number]["key"];
+type NeedsGroup = (typeof NEEDS_GROUPS)[number]["key"];
 
 /** V0.your-move: a question to answer, something to say yes to (an approval, a merge, a ready PR, a command to run), or
  *  something broken. V0.row-group-code: the host sends the group as a code; the row never reads the reason's words. */

@@ -6,7 +6,7 @@ import type { Api } from "./api.ts";
 import { autoNotice, codeShow, deviceLine, devicesNeed, modeLine, splitDevices, typedCode, type AuthState, type DeviceRow } from "./devices.ts";
 import { Empty, Group, LoadError, Row, Skeleton, Switch, useSet } from "./settings-rows.tsx";
 
-export type DevicesApi = Pick<Api, "authState" | "authAct">;
+type DevicesApi = Pick<Api, "authState" | "authAct">;
 
 /** The state of Settings → Devices, read by the page and by the nav's line; it reloads every 5 s while shown. */
 export function useAuthState(api: Partial<DevicesApi>, live: boolean): { s: AuthState | null; err: string | null; reload(): void } {

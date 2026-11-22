@@ -16,7 +16,7 @@ import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
 import type { HostId } from "./hostid.ts";
 import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
 import { HomeScreen } from "./home-ui.tsx";
-import { stripHosts } from "./load.ts";
+import { stripHosts } from "./host-load.ts";
 import { SECTIONS, connLabel, connWords, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";

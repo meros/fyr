@@ -5,7 +5,7 @@
 import type { ComponentChildren, VNode } from "preact";
 import { useMemo, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import type { Slots } from "./load.ts";
+import type { Slots } from "./host-load.ts";
 import { patchSlots, refreshLoad, useLoad } from "./load-ui.tsx";
 import { MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
 import { priorityLabel, queueParts, reorderOwners, slotQueue, withQueue, type QueueEntry, type QueuePart } from "./slot-queue.ts";
@@ -20,7 +20,7 @@ export function useSlotQueue(): QueueEntry[] {
   return useMemo(() => slotQueue(load), [load]);
 }
 
-export interface SlotRowArgs {
+interface SlotRowArgs {
   /** "#2": the grip on the desktop, a plain label on the phone */
   lead: VNode;
   /** the reorder control's ref and its lift and drop class, for the row's root */

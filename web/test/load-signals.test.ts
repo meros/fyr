@@ -2,7 +2,7 @@
 // provider; the tooltip names them; a slot holder's row names its job; Settings lists the measured job classes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardLines, jobLines, loadCard, railMeter, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
+import { cardLines, jobLines, loadCard, railMeter, threadJob, threadSlot, type HostLoad } from "../src/host-load.ts";
 
 const host: HostLoad = {
   host: "desk",

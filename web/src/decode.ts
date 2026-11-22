@@ -59,7 +59,7 @@ export function decodeProject(raw: unknown): Project {
 }
 
 /** The state with its threads decoded (#41). */
-export type DecodedState = Omit<StateDTO, "threads"> & { threads: Thread[] };
+type DecodedState = Omit<StateDTO, "threads"> & { threads: Thread[] };
 
 /** One host's state (slice 2b), its threads that host's. */
 export function decodeState(raw: unknown, host: HostId): DecodedState {
