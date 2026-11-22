@@ -43,50 +43,6 @@ type frozenJob struct {
 	class, cmd string
 }
 
-// Decision 0029 S5: how long memory must be fine before a frozen job thaws,
-// and the longest a job stays frozen while memory does not stall critically
-// (V0.oomd-guard: on 18 and 19 Nov each of six thaws at the limit let a job
-// back into a critical stall, and oomd killed under fyr.service).
-const (
-	ThawAfterOK = 30 * time.Second
-	FreezeMax   = 10 * time.Minute
-	// FreezeCeiling ends a hold past FreezeMax (V0.guard-tidy): work frozen
-	// this long thaws even while the agents' memory stalls critically, unless
-	// its class is rerunnable (V0.rerun-classes kills it instead).
-	FreezeCeiling = 30 * time.Minute
-)
-
-// Decision 0032 slice 1: one long episode of undeclared work can be frozen
-// again after a thaw (the freeze is a time slice, not a once-only verdict),
-// once the work has run RefreezeAfter, and at most MaxFreezes times, so a
-// job that never settles is let run in the end instead of flapping.
-const (
-	RefreezeAfter = 60 * time.Second
-	MaxFreezes    = 8
-)
-
-// WorkMemShare is the least share of a flagged thread's memory its work's
-// processes must hold to be frozen or take turns (V0.guard-tidy). On 19 Nov
-// at 16:02 the guard took turns among 3 parts that each read 0.0 GB while the
-// thread's 3.3 GB stayed charged to its cli/.
-const WorkMemShare = 0.25
-
-// V0.multi-freeze: while memory stays short AddFreezeAfter after the newest
-// freeze, the guard freezes one more thread; when it is fine again it thaws
-// them one at a time, so the thawed work does not page back in all at once.
-// V0.guard-wake (decision 0036 E3, E4): the oldest freeze wakes first, at
-// most one each WakeEvery, and up to the running threads less one are frozen
-// at once (maxFrozen; it was 3).
-const (
-	AddFreezeAfter = 60 * time.Second
-	WakeEvery      = 10 * time.Second
-)
-
-// TriggerFresh is how long after the PSI trigger fired the agents' stall is
-// critical and the guard may freeze work that grows without waiting the
-// detector's window (V0.freeze-fast-class-name): two ticks.
-const TriggerFresh = slots.TriggerFresh
-
 // frozenJobOf says the guard holds thread's job (not undeclared work) frozen
 // now; under mu.
 func (e *Engine) frozenJobOf(thread string) bool {
@@ -163,9 +119,6 @@ func guardSignals(sig slots.Signals) string {
 	}
 	return out
 }
-
-// guardKeep is how many decisions the front's history holds.
-const guardKeep = 60
 
 // guardRecord adds a decision to the history the front shows (decision 0032).
 func (e *Engine) guardRecord(ev slots.GuardEvent, sig slots.Signals) {
@@ -297,11 +250,8 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	// the host's or the agents'. V0.guard-agents-stall (decision 0036 B, act
 	// before oomd): either makes memory short, and so does the unit's stall
 	// near oomd's limit; the host's alone used to.
-	critical, _ := sig.Critical()
-	agentsCritical := sig.AgentsStall == slots.StallCritical
-	nearOomd := sig.NearOomd()
-	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy)) || critical || nearOomd)
-	calm := !critical && !nearOomd && sig.Stall != slots.StallElevated && sig.AgentsStall != slots.StallElevated
+	mem := memoryState(sig, e.SlotPolicy)
+	critical, nearOomd, short := mem.critical, mem.nearOomd, mem.short
 	e.mu.Lock()
 	if e.frozeHolds == nil {
 		e.frozeHolds = map[string]time.Time{}
@@ -327,7 +277,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	capNow := e.guardCap
 	// With a cap the wake waits for the stall alone (below elevated); without
 	// one, also for the headroom (reserve + 5 %), as before.
-	fine := calm && (capNow > 0 || sig.Headroom == nil || *sig.Headroom >= sig.Reserve(e.SlotPolicy)+0.05)
+	fine := wakeFine(mem, sig, e.SlotPolicy, capNow)
 	switch {
 	case !fine:
 		e.guardOK = time.Time{}
@@ -357,11 +307,6 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	slices.Sort(retry)
 	for _, th := range retry { // V0.guard-wake (E1): the commands the gate held
 		e.slotNotice(th, map[string]any{"retry": true})
-	}
-	type thawing struct {
-		f                         frozenJob
-		holding, emptied, ceiling bool
-		woke                      string // the wake rule's reason, "" for the others
 	}
 	var keep []frozenJob
 	var thaws []thawing
@@ -395,35 +340,21 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		// holds the work (the host's can come from the desktop, which the
 		// frozen work does not feed), and not past FreezeCeiling unless the
 		// work is rerunnable: then V0.rerun-classes's kill ends it.
-		overMax := now.Sub(f.at) >= FreezeMax
-		ceiling := now.Sub(f.at) >= FreezeCeiling && e.rerunEntry(f, now) == ""
-		// V0.sim-fixes (1): a hold or episode that ended while its work is
-		// still there (a call's result came while the job was frozen) ends, but
-		// its work does not thaw into the critical stall it was frozen for: it
-		// thaws when the stall is below critical, or at the ceiling.
-		if !holding && !emptied && (critical || agentsCritical) && !ceiling {
+		v := judgeFrozen(mem, frozenFacts{holding: holding, emptied: emptied, age: now.Sub(f.at), rerunnable: now.Sub(f.at) >= FreezeCeiling && e.rerunEntry(f, now) != ""},
+			func() (bool, string) { return e.roomToThaw(f, sig) })
+		switch v.why {
+		case whyEnded:
 			e.guardOnce(now, "ended:"+f.owner, fmt.Sprintf("keeping thread=%s frozen: its hold or episode ended but its work is still there, and memory stalls critically (%s)", f.owner, guardSignals(sig)))
-			keep = append(keep, f)
-			continue
-		}
-		// V0.sim-fixes (3): the timed thaw waits while what of the work is out
-		// of RAM would not fit above the reserve: it comes back with the thaw.
-		// Work frozen on headroom saw a calm stall at 10 min because nothing
-		// ran, thawed, and paged its memory back into the same shortage.
-		timed := overMax && !agentsCritical
-		if timed && holding && !emptied && !ceiling {
-			if ok, why := e.roomToThaw(f, sig); !ok {
-				e.guardOnce(now, "pastmax:"+f.owner, fmt.Sprintf("keeping thread=%s frozen past the %s limit: %s; it thaws when it fits, or at %s", f.owner, FreezeMax, why, FreezeCeiling))
-				keep = append(keep, f)
-				continue
-			}
-		}
-		if !holding || emptied || timed || ceiling {
-			thaws = append(thaws, thawing{f: f, holding: holding, emptied: emptied, ceiling: ceiling && agentsCritical})
-			continue
-		}
-		if overMax {
+		case whyNoRoom:
+			e.guardOnce(now, "pastmax:"+f.owner, fmt.Sprintf("keeping thread=%s frozen past the %s limit: %s; it thaws when it fits, or at %s", f.owner, FreezeMax, v.room, FreezeCeiling))
+		case whyCritical:
 			e.guardOnce(now, "pastmax:"+f.owner, fmt.Sprintf("keeping thread=%s frozen past the %s limit: the agents' memory stalls critically (%s); it thaws when the stall is below critical, or at %s", f.owner, FreezeMax, guardSignals(sig), FreezeCeiling))
+		}
+		switch v.act {
+		case actThaw:
+			thaws = append(thaws, thawing{f: f, holding: holding, emptied: emptied, ceiling: v.ceiling})
+			continue
+		case actKeepPastMax:
 			if !f.pastMax {
 				f.pastMax = true
 				pastMax = append(pastMax, f)
@@ -502,22 +433,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	e.mu.Unlock()
 	for _, t := range thaws {
 		f := t.f
-		reason, why := "memory fine for 30 s", "memory"
-		switch {
-		case t.emptied:
-			reason, why = "its processes are gone", "gone"
-		case !t.holding:
-			reason, why = "episode or hold ended", "ended"
-		case t.woke != "":
-			reason = t.woke
-		case t.ceiling:
-			reason, why = fmt.Sprintf("%s ceiling, the agents' memory still stalls critically", frozenWords(FreezeCeiling)), "ceiling"
-		case now.Sub(f.at) >= FreezeMax:
-			reason, why = "10 min limit", "limit"
-			if f.pastMax {
-				reason = "10 min limit, stall no longer critical"
-			}
-		}
+		reason, why := thawWords(t, now)
 		kind, work := "job", "job"
 		if f.undeclared {
 			kind, work = "undeclared work", "undeclared"
