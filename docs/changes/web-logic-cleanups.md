@@ -1,4 +1,4 @@
-# V0.web-logic-cleanups
+# V0.web-logic-cleanups: pure-logic cleanups in the web client, one helper each for spans, paths and storage, and a null-list fix
 
 Pure-logic cleanups in the web client, no change a person sees but for the rounding below.
 

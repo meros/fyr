@@ -910,7 +910,7 @@ const px=new Uint8Array(4);g.readPixels(c.width>>1,c.height>>1,1,1,g.RGBA,g.UNSI
 
 // V0.37: the live view page as the host stores it: the Fyr theme around a fragment, the bridge first in <head>.
 // TestMockBridgeMatches (Go) keeps VIEW_BRIDGE equal to the host's bridge.
-const VIEW_BRIDGE = `<script>(function(){
+export const VIEW_BRIDGE = `<script>(function(){
 var state={},subs=[],n=0,wait={};
 function post(m){m.jsonrpc="2.0";parent.postMessage(m,"*")}
 function pick(o,p){return p.split(".").reduce(function(a,k){return a==null?a:a[k]},o)}
