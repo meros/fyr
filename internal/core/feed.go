@@ -30,7 +30,17 @@ const (
 )
 
 // rank orders urgencies for a merge: the earlier delivery wins.
-func (u Urgency) rank() int { return map[Urgency]int{Wake: 3, Next: 2, Stop: 1}[u] }
+func (u Urgency) rank() int {
+	switch u {
+	case Wake:
+		return 3
+	case Next:
+		return 2
+	case Stop:
+		return 1
+	}
+	return 0
+}
 
 // Notice is one thing the agent is told: one sentence about one record.
 type Notice struct {
