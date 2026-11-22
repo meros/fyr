@@ -57,6 +57,10 @@ interface ApiHandlers {
 
 export interface Api {
   readonly mock: boolean;
+  /** the device may keep this host's events and state (a mock scenario's fixtures are not kept) */
+  readonly cache: boolean;
+  /** the host takes this device's push settings (hidden list, preferences) */
+  readonly pushes: boolean;
   start(h: ApiHandlers): void;
   /** A host's command (decision 0031: the host is named in the path, never in `args`). `host` is its install id. */
   command(host: HostId, action: string, threadId?: string, args?: Record<string, unknown>): Promise<CommandReply>;
@@ -423,6 +427,8 @@ function createHttpApi(): Api {
 
   return {
     mock: false,
+    cache: true,
+    pushes: true,
     async fsList(host, path) {
       const l = await getJson<FsListing>(hostPath(host, `/fs/list?path=${encodeURIComponent(path)}`));
       return { path: l.path, parent: l.parent ?? "", dirs: l.dirs ?? [] };

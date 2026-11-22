@@ -17,7 +17,12 @@ export interface Commit {
   act: "submit" | "next" | "none" | "cancel";
 }
 
-/** The sticky commit button always names its result (README, Decisions). V0.ask-cancel: a skipped
+/** Why this is not derived from question.ts submitState: the phone button is sticky and always shown, so it
+ *  also has a disabled "Answer · n of m left" state, it counts a question as settled by its pick alone
+ *  (single-select auto-advances after ADVANCE_MS, so it never offers "Next question" for one), and it
+ *  words the result "Answer" where the desktop says "Send answer". The counts (answered, skipped, left)
+ *  and the cancel-when-nothing-answered rule are the same as submitState's.
+ *  The sticky commit button always names its result (README, Decisions). V0.ask-cancel: a skipped
  *  question counts as passed, and a card with no answer at all can only be cancelled. */
 export function askCommit(cs: CardState, d: Decision): Commit {
   const qs = questionsOf(d);
@@ -47,7 +52,7 @@ export function allowCommit(d: Decision, choice: Choice): Commit {
   return { label: e ? "Pick one" : "Allow or deny", enabled: false, act: "none" };
 }
 
-/** Step dots up to 5 questions; beyond that, "1 of 9999". */
+/** The wording is the same on both branches by design; only `dots` differs (the desktop has no dots, it prints progressText). Step dots up to 5 questions; beyond that, "1 of 9999". */
 export function stepLabel(index: number, n: number): { dots: boolean; text: string } {
   return n <= 5 ? { dots: true, text: `Question ${index + 1} of ${n}` } : { dots: false, text: `Question ${index + 1} of ${n}` };
 }
