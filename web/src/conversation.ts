@@ -574,7 +574,7 @@ export function resultText(content: unknown): string {
   return "";
 }
 
-const SERVERS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", playwright: "Playwright", fyr: "", t3: "T3", slack: "Slack", linear: "Linear", sentry: "Sentry" };
+const SERVERS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", playwright: "Playwright", fyr: "", slack: "Slack", linear: "Linear", sentry: "Sentry" };
 const BUILTIN: Record<string, string> = { WebSearch: "Web search", WebFetch: "Web fetch", MultiEdit: "Edit", NotebookEdit: "Notebook edit", NotebookRead: "Notebook read", TodoWrite: "Todo list", AskUserQuestion: "Question", BashOutput: "Shell output", KillShell: "Stop shell", KillBash: "Stop shell" };
 
 /** Tool names as words: mcp__fyr__show → Show, mcp__github__get_pr → GitHub get pr, mcp__x__y → X y. */

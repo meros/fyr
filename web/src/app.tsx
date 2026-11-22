@@ -67,7 +67,7 @@ import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
 import { ListResizer } from "./list-resize-ui.tsx";
 import { PreviewViewer } from "./preview-ui.tsx";
-import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
+import { Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
 import { snoozeChoiceForKey, snoozeChoices, snoozeCommand, snoozeKeyCount, type SnoozeChoice } from "./snooze.ts";
 import type { NewThreadArgs } from "./new-thread.ts";
 import { clearThreadNotification, disablePush, syncPushHidden, syncPushPrefs, syncPushStatus, testPush, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
@@ -198,7 +198,7 @@ const PAGE = 400;
 const hostApi = await createApi(); // #42: the mock Api is a chunk loaded only in mock mode
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "picker" | "handover" | "settings" | "changes" | null;
+type Dialog = "new" | "snooze" | "picker" | "handover" | "settings" | "changes" | null;
 type Zone = "list" | "thread";
 
 function readTheme(): Theme {
@@ -642,7 +642,7 @@ function App() {
       setTracker((tr) => openView(tr, first, "open", Date.now(), document.hasFocus()));
     }
     const d = params.get("dialog");
-    if (d === "new" || d === "adopt" || d === "settings" || d === "changes") setDialog(d);
+    if (d === "new" || d === "settings" || d === "changes") setDialog(d);
     if (d === "snooze" && first) {
       setSnoozeTargets([first]);
       setDialog("snooze");
@@ -1343,14 +1343,6 @@ function App() {
     return null;
   };
 
-  const adopt = async (ids: string[], host: HostId): Promise<string | null> => {
-    const r = await api.command(host, "t3.adopt", undefined, { t3Ids: ids }); // V0.139
-    if (!r.ok) return r.error ?? "Could not adopt";
-    setDialog(null);
-    cmds.notify(ids.length === 1 ? "Adopted 1 thread" : `Adopted ${ids.length} threads`);
-    return null;
-  };
-
   // V0.83: Restart now on the update banner: Fyr's confirmation first, then the deploy stops waiting and switches.
   const restartNow = async () => {
     const p = bannerDeploy(store);
@@ -1849,18 +1841,6 @@ function App() {
             </>
           }
         />
-        {nav.sheet?.kind === "adopt" && (
-          <AdoptDialog
-            load={(h) => api.t3Candidates(h)}
-            now={now}
-            onClose={navBack}
-            onAdopt={async (ids, h) => {
-              const e = await adopt(ids, h);
-              if (!e) navBack();
-              return e;
-            }}
-          />
-        )}
         </Boundary>
         </ProfilesContext.Provider>
         </ConfirmProvider>
@@ -1924,7 +1904,6 @@ function App() {
           onBackground={closeThread}
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
-          onAdopt={() => setDialog("adopt")}
           filter={filterView}
           unlock={unlock}
           quietHits={quietHits}
@@ -2058,7 +2037,6 @@ function App() {
           }}
         />
       )}
-      {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(h)} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "changes" && (
         <Modal title="Changes" wide onClose={() => setDialog(null)}>
           <div class="db">

@@ -1547,7 +1547,6 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
         <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
         <MSettingsItem hosts={p.store.hostList} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />
-        <Item label="Adopt from T3" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "adopt" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
       </MSheet>
     );

@@ -378,18 +378,6 @@ export interface CommandReply {
   result?: { id?: string; messageId?: string; [k: string]: unknown };
 }
 
-export interface T3Candidate {
-  t3Id: string;
-  title: string;
-  cwd: string;
-  profile?: string;
-  model?: string;
-  sessionId?: string;
-  prUrl?: string;
-  updatedAt?: string;
-  hasTranscript?: boolean;
-}
-
 /** V0.59 (decision 0018): one change a thread makes or asks for. */
 export type ChangePhase = "working" | "review" | "landed" | "live" | "abandoned" | "reverted";
 
