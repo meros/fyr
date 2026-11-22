@@ -33,6 +33,27 @@ func TestExternalLinksLeaveForTheBrowser(t *testing.T) {
 	}
 }
 
+// V0.desktop-popup-links: a window the page asks for is Fyr's own when its
+// link is a Fyr page or an empty, about:, data: or blob: one; every other
+// link leaves for the default browser.
+func TestChildWindowsAreFyrPagesOnly(t *testing.T) {
+	o := "http://fyr.localhost:7777"
+	for link, want := range map[string]bool{
+		"http://fyr.localhost:7777/?preview=x":     true,
+		"http://FYR.localhost:7777/api/previews/x": true,
+		"about:blank":                         true,
+		"blob:http://fyr.localhost:7777/123":  true,
+		"https://github.com/meros/fyr/pull/1": false,
+		"http://localhost:9999/":              false,
+		"mailto:a@example.com":                false,
+		"javascript:void(0)":                  false,
+	} {
+		if got := ChildWindow(o, link); got != want {
+			t.Errorf("ChildWindow(%q) = %v, want %v", link, got, want)
+		}
+	}
+}
+
 func TestSigninAsksAtMostOncePerGap(t *testing.T) {
 	var s Signin
 	t0 := time.Now()

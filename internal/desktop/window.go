@@ -88,6 +88,26 @@ func External(origin, link string) bool {
 	return true
 }
 
+// ChildWindow reports whether a page that asked for a window of its own
+// (target=_blank, window.open) gets one in the app: a Fyr page, as a preview
+// does, and the empty, about:, data: and blob: pages a script makes for
+// itself. Every other link goes to the default browser (V0.desktop-popup-links):
+// WebKitGTK reports no navigation decision for such a request, it reaches the
+// shell's create handler directly, so only that handler can send it out.
+func ChildWindow(origin, link string) bool {
+	u, err := url.Parse(link)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return !External(origin, link)
+	case "", "about", "data", "blob":
+		return true
+	}
+	return false
+}
+
 // OpenPath is the page a click on a notification opens: the thread, as a
 // tap on a push does (/?open=, V0.15), or the inbox for a push about no
 // thread.
