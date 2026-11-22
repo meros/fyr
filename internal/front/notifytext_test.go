@@ -136,11 +136,11 @@ func TestFrontPushesOnQuotaResetWhenThreadStillWaits(t *testing.T) {
 		th.Running, th.Starting, th.ActivityAt = true, nil, now
 		return nil
 	})
+	// The front's own copy must hold both states before the reset arrives:
+	// getState reads through to the host and says nothing about it, and the
+	// reset's timer reads that copy.
 	eventually(t, "threads synced to front", func() bool {
-		st := getState(t, fs.URL)
-		aw, _ := threadOf(st, idWait)["attention"].(map[string]any)
-		ar, _ := threadOf(st, idRun)["attention"].(map[string]any)
-		return aw["state"] == "done" && ar["state"] == "working"
+		return fs.frontAttention(idWait) == "done" && fs.frontAttention(idRun) == "working"
 	})
 	a.eng.Hub.Send(stream.FrameQuotaReset, map[string]any{"threadId": idWait, "provider": "claude", "window": "5 h", "at": time.Now()})
 	a.eng.Hub.Send(stream.FrameQuotaReset, map[string]any{"threadId": idRun, "provider": "claude", "window": "5 h", "at": time.Now()})

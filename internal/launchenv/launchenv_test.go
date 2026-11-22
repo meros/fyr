@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/meros/fyr/internal/runner"
@@ -105,5 +106,28 @@ func TestInitForce(t *testing.T) {
 	e, _ := Init(t.TempDir(), "/explicit/runner.sock")
 	if e.Runner != "/explicit/runner.sock" {
 		t.Fatalf("an explicit runner was not used: %+v", e)
+	}
+}
+
+func TestClaudeEnv(t *testing.T) {
+	t.Setenv(Runner, "/live.sock")
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("HOME_KEEP", "1")
+	env := ClaudeEnv("X=1")
+	has := func(kv string) bool {
+		for _, e := range env {
+			if e == kv {
+				return true
+			}
+		}
+		return false
+	}
+	for _, e := range env {
+		if strings.HasPrefix(e, Runner+"=") || strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
+			t.Fatalf("leaked %s", e)
+		}
+	}
+	if !has("HOME_KEEP=1") || !has("CLAUDE_CODE_ENTRYPOINT=sdk-go") || env[len(env)-1] != "X=1" {
+		t.Fatalf("env %v", env)
 	}
 }

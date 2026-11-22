@@ -157,12 +157,12 @@ func (d *Deployer) olderThanLive(ctx context.Context, run Runner, dir string) st
 	if live == "" {
 		return ""
 	}
-	b, err := run(ctx, dir, "git", "-C", dir, "rev-parse", "HEAD")
+	b, err := run(ctx, dir, proc.GitArgv(dir, "rev-parse", "HEAD")...)
 	head := strings.TrimSpace(string(b))
 	if err != nil || head == "" || strings.HasPrefix(head, live) {
 		return ""
 	}
-	if _, err := run(ctx, dir, "git", "-C", dir, "merge-base", "--is-ancestor", head, live); err == nil {
+	if _, err := run(ctx, dir, proc.GitArgv(dir, "merge-base", "--is-ancestor", head, live)...); err == nil {
 		short := head
 		if len(short) > 12 {
 			short = short[:12]
@@ -201,10 +201,10 @@ type Shipped struct {
 // source reads the checkout's HEAD and origin remote before the build
 // (V0.82); either is "" when git cannot say.
 func source(ctx context.Context, run Runner, dir string) (commit, remote string) {
-	if b, err := run(ctx, dir, "git", "-C", dir, "rev-parse", "HEAD"); err == nil {
+	if b, err := run(ctx, dir, proc.GitArgv(dir, "rev-parse", "HEAD")...); err == nil {
 		commit = strings.TrimSpace(string(b))
 	}
-	if b, err := run(ctx, dir, "git", "-C", dir, "remote", "get-url", "origin"); err == nil {
+	if b, err := run(ctx, dir, proc.GitArgv(dir, "remote", "get-url", "origin")...); err == nil {
 		remote = strings.TrimSpace(string(b))
 	}
 	if strings.ContainsAny(commit, " \n\t") {
@@ -231,7 +231,7 @@ func (d *Deployer) ship(run Runner, build, commit, remote, dir string) {
 		if dir == "" {
 			return d.Releases.Contains(ctx, commit, sha)
 		}
-		_, err := run(ctx, dir, "git", "-C", dir, "merge-base", "--is-ancestor", sha, commit)
+		_, err := run(ctx, dir, proc.GitArgv(dir, "merge-base", "--is-ancestor", sha, commit)...)
 		return err == nil
 	}})
 }
@@ -416,7 +416,7 @@ func withLocal(args map[string]any, branch string) map[string]any {
 }
 
 func gitBranch(ctx context.Context, run Runner, dir string) string {
-	b, err := run(ctx, dir, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
+	b, err := run(ctx, dir, proc.GitArgv(dir, "rev-parse", "--abbrev-ref", "HEAD")...)
 	s := strings.TrimSpace(string(b))
 	if err != nil || strings.ContainsAny(s, " \n") {
 		return ""
@@ -678,7 +678,7 @@ func localChanges(ctx context.Context, run Runner, dir, from, to string) ([]Chan
 	if strings.HasPrefix(from, "-") || strings.HasPrefix(to, "-") {
 		return nil, 0, errors.New("not a commit")
 	}
-	b, err := run(ctx, dir, "git", "-C", dir, "log", "--format=%H%x09%s", "-n", "1000", from+".."+to)
+	b, err := run(ctx, dir, proc.GitArgv(dir, "log", "--format=%H%x09%s", "-n", "1000", from+".."+to)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("git log: %v %s", err, tail(b, 300))
 	}

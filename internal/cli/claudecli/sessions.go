@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"io"
 	"io/fs"
 	"os"
@@ -58,27 +59,7 @@ func CopySession(src, fromDir, toDir, sid string) error {
 	return copyTree(filepath.Join(fromDir, "file-history", sid), filepath.Join(toDir, "file-history", sid))
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	tmp := dst + ".fyr-tmp"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
-}
+func copyFile(src, dst string) error { return fsutil.CopyFile(src, dst, 0o600) }
 
 // copyTree copies a folder if it exists; a missing one is not an error.
 func copyTree(src, dst string) error {
@@ -236,33 +217,37 @@ func ImportSession(archive []byte, toDir, targetCwd, sid string, maxBytes int64)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 			return err
 		}
-		tmp := dst + ".fyr-tmp"
-		out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-		if err != nil {
+		cr := &capReader{r: tr, left: maxBytes - total}
+		if err := fsutil.WriteAtomicFrom(dst, cr, 0o600); err != nil {
 			return err
 		}
-		n, err := io.Copy(out, io.LimitReader(tr, maxBytes-total+1))
-		closeErr := out.Close()
-		if err != nil {
-			os.Remove(tmp)
-			return err
-		}
-		if closeErr != nil {
-			os.Remove(tmp)
-			return closeErr
-		}
-		total += n
-		if total > maxBytes {
-			os.Remove(tmp)
-			return ErrSessionTooLarge
-		}
-		if err := os.Rename(tmp, dst); err != nil {
-			os.Remove(tmp)
-			return err
-		}
+		total = maxBytes - cr.left
 	}
 	if !gotMain {
 		return errors.New("session archive is missing session.jsonl")
 	}
 	return nil
+}
+
+// capReader reads r until it has given left bytes more; a byte beyond that
+// is ErrSessionTooLarge, so an archive larger than allowed is never kept.
+type capReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		var one [1]byte
+		if n, _ := c.r.Read(one[:]); n > 0 {
+			return 0, ErrSessionTooLarge
+		}
+		return 0, io.EOF
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }

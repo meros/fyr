@@ -19,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"log"
 	"os"
 	"os/signal"
@@ -123,12 +124,7 @@ func install(data, buildDir string) error {
 		os.Remove(prev)
 		os.Symlink(t, prev)
 	}
-	tmp := cur + ".tmp"
-	os.Remove(tmp)
-	if err := os.Symlink(filepath.Join("builds", id), tmp); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, cur); err != nil {
+	if err := fsutil.SymlinkAtomic(filepath.Join("builds", id), cur); err != nil {
 		return err
 	}
 	fmt.Println("current →", dir)

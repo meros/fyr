@@ -162,8 +162,7 @@ func exclude(common string) {
 // runGit runs git in dir with no prompt and returns its trimmed stdout; an
 // error carries git's own line.
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := proc.Command(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	cmd := proc.Git(ctx, dir, args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {

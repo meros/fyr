@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -140,7 +141,9 @@ func LoadNext(dir string) (*Key, error) {
 func Promote(dir string) error {
 	cur := filepath.Join(dir, File)
 	if b, err := os.ReadFile(cur); err == nil {
-		os.WriteFile(filepath.Join(dir, File+".old"), b, 0o600)
+		if err := fsutil.WriteAtomic(filepath.Join(dir, File+".old"), b, 0o600); err != nil {
+			return fmt.Errorf("keeping the old key: %w", err)
+		}
 	}
 	return os.Rename(filepath.Join(dir, NextFile), cur)
 }

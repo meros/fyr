@@ -2,13 +2,13 @@ package agycli
 
 import (
 	"encoding/json"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/fsutil"
 	"github.com/meros/fyr/internal/hostfs"
 )
 
@@ -105,27 +105,7 @@ func hasOnboardingComplete(path string) bool {
 	return o.OnboardingComplete || o.ConsumerOnboardingComplete || o.EnterpriseOnboardingComplete
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	tmp := dst + ".fyr-tmp"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
-}
+func copyFile(src, dst string) error { return fsutil.CopyFile(src, dst, 0o600) }
 
 func copyTree(src, dst string) error {
 	if _, err := os.Stat(src); err != nil {

@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"encoding/json"
+	"github.com/meros/fyr/internal/fsutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -55,11 +56,8 @@ func (p Prefs) Save(path string) error {
 		return err
 	}
 	b, _ := json.MarshalIndent(p, "", "  ")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	// 0o644 as before: window geometry and the endpoint, not a secret.
+	return fsutil.WriteAtomic(path, b, 0o644)
 }
 
 // OriginOf is the scheme://host:port of a link, "" when it has none.

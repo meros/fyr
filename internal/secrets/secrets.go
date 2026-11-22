@@ -9,6 +9,7 @@ package secrets
 import (
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -110,27 +111,7 @@ func (f *fileBackend) Put(name string, value []byte) error {
 		return fmt.Errorf("secret store: %w", err)
 	}
 	os.Chmod(f.dir, 0o700)
-	tmp, err := os.CreateTemp(f.dir, ".tmp-*")
-	if err != nil {
-		return fmt.Errorf("secret store: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("secret store: %w", err)
-	}
-	if _, err := tmp.Write(append(value, '\n')); err != nil {
-		tmp.Close()
-		return fmt.Errorf("secret store: write failed")
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("secret store: write failed")
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("secret store: write failed")
-	}
-	if err := os.Rename(tmp.Name(), f.path(name)); err != nil {
+	if err := fsutil.WriteAtomic(f.path(name), append(value, '\n'), 0o600); err != nil {
 		return fmt.Errorf("secret store: %w", err)
 	}
 	return nil

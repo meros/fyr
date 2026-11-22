@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -78,5 +80,15 @@ func TestImportSessionRejectsTraversal(t *testing.T) {
 	gz.Close()
 	if err := ImportSession(buf.Bytes(), t.TempDir(), "/work", "s1", 1<<20); err == nil {
 		t.Fatal("expected traversal rejection")
+	}
+}
+
+func TestCapReader(t *testing.T) {
+	b, err := io.ReadAll(&capReader{r: strings.NewReader("abcd"), left: 4})
+	if err != nil || string(b) != "abcd" {
+		t.Fatalf("exact fit: %q %v", b, err)
+	}
+	if _, err := io.ReadAll(&capReader{r: strings.NewReader("abcde"), left: 4}); !errors.Is(err, ErrSessionTooLarge) {
+		t.Fatalf("over the cap: %v", err)
 	}
 }

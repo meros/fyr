@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"io"
 	"log"
 	"net"
@@ -601,14 +602,8 @@ func (d *Drive) Off() []string {
 	return ids
 }
 
-func readFile(p string) ([]byte, error) { return os.ReadFile(p) }
-func writeFile(p string, b []byte) error {
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, p)
-}
+func readFile(p string) ([]byte, error)  { return os.ReadFile(p) }
+func writeFile(p string, b []byte) error { return fsutil.WriteAtomic(p, b, 0o600) }
 
 // Member, DeviceRevoked and MayDrive make an Env the gate of the host's peer
 // handler (server.PeerGate).

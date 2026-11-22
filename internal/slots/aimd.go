@@ -13,6 +13,7 @@ package slots
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"log"
 	"os"
 	"strings"
@@ -184,12 +185,7 @@ func (a *AIMD) save(now time.Time) {
 	if err != nil {
 		return
 	}
-	tmp := a.Path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		log.Printf("slots: cannot keep the budget: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, a.Path); err != nil {
+	if err := fsutil.WriteAtomic(a.Path, b, 0o600); err != nil {
 		log.Printf("slots: cannot keep the budget: %v", err)
 		return
 	}
