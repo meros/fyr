@@ -481,7 +481,7 @@ func (e *Engine) submit(in core.Input) api.Reply {
 			return r
 		}
 		now := e.Now()
-		fresh = &core.Thread{ID: NewID("t_"), Owner: core.Owner, Visibility: "private", CreatedAt: now, Source: "fyr"}
+		fresh = &core.Thread{ID: NewID("t_"), Owner: core.Owner, Visibility: "private", CreatedAt: now}
 		// V0.42: thread.create files into projectId; without a cwd it starts
 		// in the project's folder (V0.55), else in a fresh scratch folder.
 		args := maps.Clone(a)

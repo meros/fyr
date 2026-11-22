@@ -174,7 +174,6 @@ export interface ThreadDTO {
   settleWhen?: { change: string; phase: string };
   /** V0.wakeups-via-watch, V0.quota-reset-wake: armed wake-ups (timed or quota reset), soonest first; note is the prompt it runs then */
   wakes?: WakeUp[];
-  source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;
   /** what "New project from this thread" starts with (V0.30, V0.55): the thread's folder; absent: a name only */

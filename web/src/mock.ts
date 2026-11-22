@@ -69,7 +69,6 @@ function base(id: string, title: string, now: number, ageMin: number, extra: Par
     archivedAt: null,
     settleWhenDone: false,
     settleWhenMerged: false,
-    source: "fyr",
     attention: { state: "seen", section: "seen", reason: "" },
     view: { seenAt: null, snoozeUntil: null },
     unavailable: extra.running ? {} : { "thread.snoozeWhenDone": "Nothing is working", "thread.settleWhenDone": "Nothing to wait for" },

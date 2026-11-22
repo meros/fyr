@@ -201,7 +201,6 @@ func (e *Engine) PrepareHandIn(ctx context.Context, spec HandInSpec) (threadID, 
 		CreatedAt:    now,
 		UpdatedAt:  now,
 		ActivityAt: now,
-		Source:     "fyr",
 		HandedOverFrom: &core.HandoverLink{
 			HostID:   spec.FromHostID,
 			HostName: spec.FromHostName,

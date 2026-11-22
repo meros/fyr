@@ -503,7 +503,7 @@ func TestThreadInvariantsUnderRandomStateMachine(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	for run := range 400 {
 		now := t0
-		th, v, _, err := Reduce(&Thread{ID: fmt.Sprintf("t_%d", run), Owner: Owner, Visibility: "private", CreatedAt: now, Source: "fyr"}, nil,
+		th, v, _, err := Reduce(&Thread{ID: fmt.Sprintf("t_%d", run), Owner: Owner, Visibility: "private", CreatedAt: now}, nil,
 			Input{Source: FromOwner, Kind: "thread.create", Args: Args{"cwd": "/repo", "text": "start work"}}, now)
 		if err != nil {
 			t.Fatalf("run %d create: %v", run, err)

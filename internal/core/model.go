@@ -91,9 +91,7 @@ type Thread struct {
 	Feed       Feed       `json:"feed,omitzero"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 
-	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
-	T3ID   string `json:"t3Id,omitempty"`
 	// HandedOverFrom and HandedOverTo link threads across a trans-host
 	// handover (decision 0039, V0.trans-host-handover).
 	HandedOverFrom *HandoverLink `json:"handedOverFrom,omitempty"`
