@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/meros/fyr/internal/authtest"
 	"github.com/meros/fyr/internal/tailnet"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func TestCondition1(t *testing.T) {

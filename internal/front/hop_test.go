@@ -22,10 +22,10 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/authn"
-	"github.com/meros/fyr/internal/authtest"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 type memKV struct {

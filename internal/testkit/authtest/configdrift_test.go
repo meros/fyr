@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func TestARunningFyrdSaysItsConfigChanged(t *testing.T) {

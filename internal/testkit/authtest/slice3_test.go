@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/authtest"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peerlink"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func mesh(t *testing.T, specs ...authtest.MeshSpec) *authtest.Mesh {

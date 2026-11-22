@@ -51,7 +51,7 @@ jobs:
       - name: gitleaks over the full history
         run: nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact --log-opts=--all .
       # make test's parts, with the layout timing budgets on. FYR_CHROME and FYR_LAYOUT_TIMING go to the web tests
-      # only: a Go test (internal/authtest, neutrality) fails when the environment carries any FYR_ variable, and
+      # only: a Go test (internal/testkit/authtest, neutrality) fails when the environment carries any FYR_ variable, and
       # make exports a command-line variable.
       - name: go vet, go test, typecheck, web unit, layout with timing, auth e2e
         run: |

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 // step is one slice's change to the live install. Slice 0 changes nothing:

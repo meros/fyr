@@ -1,0 +1,3 @@
+# V0.testkit-authtest: the auth test harness lives in internal/testkit/authtest
+
+No behaviour change. `internal/authtest` (the fake tailscaled, the Serve emulator, the scratch fyrd starter and the `authstack` and `neutralstack` dev commands) moved to `internal/testkit/authtest`, so the tree says it is test and dev support and the package comment says no shipped binary imports it. Imports in `peer`, `front` and the harness's own tests, the `go build` paths in `web/test/*.e2e.mjs`, and the comments in the Makefile and `test.yml` follow. Older change-log files and SPEC rows that name `internal/authtest` describe the tree of their day and are left as written. The harness finds the repository root with `go env GOMOD`, so the move needs no path change inside it.

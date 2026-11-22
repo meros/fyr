@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func withIP(n authtest.Node, ip string) authtest.Node { n.IP = ip; return n }

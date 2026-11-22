@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 type lanNode struct {

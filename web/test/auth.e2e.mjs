@@ -1,5 +1,5 @@
 // Authentication in a real browser (decision 0030 Part 4.5, slice 0): headless Chrome against scratch fyrds and a
-// fake tailscaled, from `internal/authtest/cmd/authstack`. Slice 0 pins what works today: a phone that reaches the
+// fake tailscaled, from `internal/testkit/authtest/cmd/authstack`. Slice 0 pins what works today: a phone that reaches the
 // install through Tailscale Serve signs in by its tailnet identity, at the desktop and the phone size; a browser
 // that holds the fixture's session cookie is let in and not given another. Later slices add the QR link, the
 // approval code, a revoked device, Settings → Devices and Hosts.
@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // The stack: build once, run, read its one line. Every FYR_* variable out of its environment (#167, V0.131).
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("FYR_CHROME") && !k.startsWith("FYR_")));
 const bin = join(mkdtempSync(join(tmpdir(), "fyr-authstack-")), "authstack");
-const build = spawnSync("go", ["build", "-o", bin, "./internal/authtest/cmd/authstack"], { cwd: root, env: { ...env, CGO_ENABLED: "0" }, encoding: "utf8" });
+const build = spawnSync("go", ["build", "-o", bin, "./internal/testkit/authtest/cmd/authstack"], { cwd: root, env: { ...env, CGO_ENABLED: "0" }, encoding: "utf8" });
 if (build.status !== 0) {
   console.error(`auth e2e: go build authstack failed\n${build.stderr}`);
   process.exit(1);
