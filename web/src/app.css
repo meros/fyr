@@ -1196,8 +1196,10 @@ html.list-resizing iframe{pointer-events:none}
 .hpart-h{margin:-6px 0 -4px;display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;font:600 15px/22px var(--ui);min-width:0;overflow-wrap:anywhere}
 .hpart-s{font:400 13px/18px var(--ui);color:var(--ink-muted)}
 .hpart.off .hpart-s{color:var(--ink-faint)}
-/* V0.host-tabs: one shared tabbed host switcher for Settings, linked projects, load sheet, and HostField pickers. */
-.htabs{position:relative;display:flex;align-items:center;gap:2px;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid var(--line)}
+/* V0.host-tabs: one shared tabbed host switcher for Settings, linked projects, load sheet, and HostField pickers.
+   flex:none: the strip scrolls sideways (overflow-x:auto), which makes a flex item's automatic minimum height 0, so
+   inside the scrolling .stp column it shrank to its 1px border and the switcher was invisible (V0.host-tabs-visible). */
+.htabs{position:relative;flex:none;display:flex;align-items:center;gap:2px;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid var(--line)}
 .htabs::-webkit-scrollbar{display:none}
 .htab{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:0;background:none;color:var(--ink-muted);font:500 13px/18px var(--ui);white-space:nowrap;cursor:pointer}
 .htab:hover{color:var(--ink)}

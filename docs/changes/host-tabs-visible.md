@@ -1,0 +1,11 @@
+# V0.host-tabs-visible: the host switcher shows at its own height on every Settings page, instead of collapsing to its border
+
+→ V0.host-tabs, V0.127. *Fixes V0.host-tabs (2), which put `HostTabs` above one host's panel on Providers, Automation, Setup and a Hosts sub-page: the strip was in the page, but it was not on the screen.*
+
+With several hosts, Settings → Providers, Automation and Setup (and a Hosts sub-page) draw one host's panel, in the owner's order, with the tab strip that picks which host's. The strip was built, had its tabs, answered a press, and was invisible: it took up one pixel, the line of its own bottom border. Every one of those pages read as a single host's, with no way to reach another host's settings from the page — the panel under it was always the first host in the owner's order, and the only way to another host was the Hosts page.
+
+(1) **The cause.** `.htabs` scrolls sideways (`overflow-x: auto`) for many hosts, and a flex item whose overflow is not visible has an automatic minimum height of 0. Inside `.stp`, the settings pane, which is a scrolling column that holds every group, the strip was a flex item with nothing holding its height: the pane had more content than room, the strip was allowed to shrink, and it shrank to its bottom border. `min-height` was `auto`, which resolved to 0 rather than to the tabs' height.
+
+(2) **The fix.** The strip does not shrink (`flex: none`): the pane scrolls instead, as it does for every other group. It is one line of CSS next to the reason it is there, and it holds on the desktop and the phone, at every window height, and in the compact pill variant inside the Host fields (New thread, New project, Adopt, Hand over), which had its own room and was never affected.
+
+(3) **The gap in the tests.** The layout test pressed a tab with `element.click()`, which runs even when nothing is on the screen, so the test that switched hosts passed while a person could not. Every check of the strip now measures the strip and one of its tabs (`getBoundingClientRect`): at least 30 px high, inside the viewport, and as wide as its tabs. On a page that renders no strip (one host) it is not asked for. The measurements were taken on both builds: 1 px before, 37 px on the desktop (45 px on the phone) after.
