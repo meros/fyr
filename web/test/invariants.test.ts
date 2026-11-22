@@ -57,7 +57,7 @@ test("both fronts draw the card under Needs you, with both buttons (one shared c
   assert.match(ui, /"host\.invariantDismiss"/);
   assert.match(ui, />\s*Fix it\s*</);
   assert.match(ui, />\s*Dismiss\s*</);
-  const settings = src("settings-ui.tsx");
+  const settings = src("settings-ui.tsx") + src("settings-automation.tsx");
   assert.match(settings, /label="Load invariants"/);
   assert.match(settings, /label="Thread invariants"/);
 });

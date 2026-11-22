@@ -7,8 +7,9 @@ import { PIN_ICON } from "./row-ui.tsx";
 import { copySource, copyToClipboard } from "./copy.ts";
 import { useDraft } from "./drafts.ts";
 import { AgentStatus } from "./agent-status.tsx";
-import { describeApproval, type ApprovalField, type ApprovalText } from "./approvals.ts";
-import { describeEffect, type EffectText } from "./effects.ts";
+import { approvalView } from "./approval-view.ts";
+import { type ApprovalField, type ApprovalText } from "./approvals.ts";
+import { type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useApi } from "./api-context.ts";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -1259,33 +1260,32 @@ export function ApprovalBody({ a, host, cls = "" }: { a: ApprovalText; host?: st
 function DecisionCard(p: CardProps) {
   const { d } = p;
   if (d.kind === "ask") return p.card && p.card.decisionId === d.id ? <AskCard {...p} card={p.card} /> : null;
-  const approval = d.kind === "approval";
-  const a = approval ? describeApproval(d, p.cwd) : null;
-  const x = approval ? null : describeEffect(d, p.pr);
+  const v = approvalView(d, { cwd: p.cwd, host: p.host }, p.pr);
+  const { approval: a, effect: x } = v;
   return (
     <div class="ask">
       <div class="ah">
         <StateIcon state="asking" size={14} />
-        <b>{x ? x.label : "Approval"}</b>
+        <b>{v.label}</b>
         <span class="ell">{asker(d)}</span>
         {p.more > 0 && <span class="ml">+{p.more} more</span>}
       </div>
       <div class="ab">
-        <div class="q">{x ? x.title : a!.title}</div>
+        <div class="q">{v.title}</div>
         <div class="payload">
-          {a && <ApprovalBody a={a} host={p.host} />}
+          {a && <ApprovalBody a={a} host={v.host} />}
           {x && <EffectBody d={d} x={x} />}
         </div>
         <div class="grid4">
           <button class="op" onClick={() => p.onAllow(d, true)}>
-            <span class="a ell">{x ? x.yes : "Allow"}</span>
+            <span class="a ell">{v.yes}</span>
             <kbd>1</kbd>
-            {approval && <span class="d">Run it once.</span>}
+            {v.yesDesc && <span class="d">{v.yesDesc}</span>}
           </button>
           <button class="op" onClick={() => p.onAllow(d, false)}>
-            <span class="a ell">{x ? x.no : "Deny"}</span>
+            <span class="a ell">{v.no}</span>
             <kbd>2</kbd>
-            <span class="d">{approval ? "The agent is told no and continues." : "Nothing happens; the agent is told."}</span>
+            <span class="d">{v.noDesc}</span>
           </button>
         </div>
       </div>

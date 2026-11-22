@@ -13,13 +13,14 @@ const files = readdirSync(SRC).filter((f) => /\.tsx?$/.test(f) && !f.startsWith(
 const read = (f: string) => readFileSync(join(SRC, f), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
 
 test("only the modules of 2.6 read the front's identity", () => {
-  const ALLOWED = new Set(["app.tsx", "settings-ui.tsx", "deploy-ui.tsx", "buildid.ts", "hostfeed.ts", "store.ts", "api.ts", "decode.ts"]);
+  const ALLOWED = new Set(["app-hosts.tsx", "settings-ui.tsx", "deploy-ui.tsx", "buildid.ts", "hostfeed.ts", "store.ts", "api.ts", "decode.ts"]);
   const pat = /\b(?:store|fullStore|rawStore|p\.store)\.(?:host|hostId|machine|front)\b|\bfront\.front\b/;
   const bad = files.filter((f) => !ALLOWED.has(f) && pat.test(read(f)));
   assert.deepEqual(bad, []);
-  // app.tsx reads it once: to hand the name to Settings → This device. The banner reads it through store.ts
+  // app-hosts.tsx (the settings props) reads it once: to hand the name to Settings → This device. The banner reads it through store.ts
   // (bannerDeploy). Slice 2b: the store has no host, hostId or machine of the front's at all.
-  assert.deepEqual(read("app.tsx").match(/\b(?:store|fullStore|rawStore)\.(?:host|hostId|machine|front)\b/g) ?? [], ["store.front"]);
+  assert.deepEqual(read("app-hosts.tsx").match(/\b(?:store|fullStore|rawStore)\.(?:host|hostId|machine|front)\b/g) ?? [], ["store.front"]);
+  assert.deepEqual(read("app.tsx").match(/\b(?:store|fullStore|rawStore)\.(?:host|hostId|machine|front)\b/g) ?? [], []);
   assert.ok(!/^\s*(?:host|hostId|machine):/m.test(read("store.ts").split("export interface Store {")[1].split("\n}")[0]), "the Store keeps no host of the front's");
 });
 

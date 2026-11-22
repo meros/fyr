@@ -1,0 +1,8 @@
+# V0.web-modules: the web shell, Settings and the phone are split by concern, and both fronts' approval cards read one view
+
+No behaviour changes except the one below.
+
+1. `web/src/approval-view.ts` (`approvalView`) builds the words of an approval or effect card once (header, question, body source, Allow and Deny with their lines, host). The desktop `DecisionCard` and the phone `MAllow` use it; markup stays per front. Both show the working folder and the host in the body (the more informative of the two earlier behaviours).
+2. The phone's `askCommit` is not derived from the desktop's `submitState`: the phone's button is sticky and always shown, so it has a disabled state and counts a single-select pick as settled (it moves on by itself). `mobile.ts` says so next to the code, and a test holds that the two agree once nothing is left to answer.
+3. `App()` of `app.tsx` is split along its sections into hooks in `app-*.tsx` (`useAppState`, `useNavHistory`, `useConnection`, `useDecisionCards`, `useThreadActions`, `useContextMenu`, `useThreadList`, `useProjectActions`, `useKeyboard`, `useHostActions`, `usePhoneNav`), each taking and returning plain objects; `app-util.tsx` holds what they share. `Api` now says what it supports (`cache`, `pushes`) instead of the shell asking whether it is the mock.
+4. `settings-ui.tsx` keeps the shell and the page router; the Providers, Automation, Hosts and Projects pages are `settings-providers.tsx`, `settings-automation.tsx`, `settings-hosts.tsx`, `settings-projects.tsx`. `phone.tsx` keeps the screens; its decision cards, icons, sheets and New screen are `phone-cards.tsx`, `phone-icons.tsx`, `phone-sheets.tsx`.

@@ -319,6 +319,8 @@ export function createMockApi(scenario: string): Api {
   const long = q.get("long");
   const api: Api = {
     mock: true,
+    cache: false,
+    pushes: false,
     start(h) {
       h.conn("connecting");
       watch = observeBuildId(watch, server.buildId).watch;
