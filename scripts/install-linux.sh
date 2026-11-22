@@ -402,5 +402,5 @@ root systemctl restart fyr.service
 echo "started fyr.service; open http://127.0.0.1:7777 · log: journalctl -u fyr, $data/daemon.log"
 echo "fyrd installs each new release of the $follow channel by itself (Settings → Auto-update)"
 if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
-  echo "tailnet: to reach Fyr from your phone, publish it once: sudo tailscale serve --bg --https=7443 unix:$data/serve.sock"
+  echo "tailnet (optional): to reach Fyr from your phone over Tailscale, set your Tailscale login once (fyr auth owner <you@example.com>) and publish it: sudo tailscale serve --bg --https=7443 unix:$data/serve.sock"
 fi

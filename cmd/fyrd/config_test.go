@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -94,5 +95,44 @@ func TestTailscaleSocketConfig(t *testing.T) {
 	c := loadConfig(p)
 	if got := c.tsSocket(); got != "/tmp/x/ts.sock" {
 		t.Errorf("configured %q", got)
+	}
+}
+
+// V0.owner-without-tailnet (#197): override never falls back to tailnet.Self;
+// ownerLogin comes only from config or -owner-login (or the roster).
+func TestOverrideDoesNotFallBackToTailnetSelf(t *testing.T) {
+	dir, err := os.MkdirTemp("", "fyrcfg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "ts.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Self":{"UserID":1,"DNSName":"box.tail.ts.net."},"User":{"1":{"LoginName":"tailnet@example.com"}}}`))
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+
+	// Sanity check: the fake tailscaled answers tailnet.Self.
+	if login, _, err := tailnet.Self(sock); err != nil || login != "tailnet@example.com" {
+		t.Fatalf("fake tailscaled: %q %v", login, err)
+	}
+	c := config{TailscaleSocket: sock}
+	c.override("", "", "", "", "")
+	if c.OwnerLogin != "" {
+		t.Fatalf("override fell back to tailnet.Self: got %q, want empty", c.OwnerLogin)
+	}
+	c2 := config{TailscaleSocket: sock, OwnerLogin: "cfg@example.com"}
+	c2.override("", "", "", "", "")
+	if c2.OwnerLogin != "cfg@example.com" {
+		t.Fatalf("config ownerLogin lost: %q", c2.OwnerLogin)
+	}
+	c2.override("", "flag@example.com", "", "", "")
+	if c2.OwnerLogin != "flag@example.com" {
+		t.Fatalf("-owner-login did not override config: %q", c2.OwnerLogin)
 	}
 }

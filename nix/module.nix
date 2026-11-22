@@ -86,10 +86,12 @@ in
       default = null;
       example = "you@example.com";
       description = ''
-        The Tailscale login that owns this Fyr over the tailnet (V0.14). Unset,
-        fyrd takes this machine's Tailscale user. A tagged node (tag:server)
-        has no user, so it must be set there, or Fyr serves no browser over
-        the tailnet (decision 0028, slice 0).
+        The Tailscale login allowed to sign in over the tailnet (V0.14,
+        V0.owner-without-tailnet). Required for Tailscale Serve browser sign-in
+        and automatic tailnet pairing unless set once in the roster
+        (`fyr auth owner <login>`) or learned from a paired install; fyrd never
+        falls back to tailscaled's own user automatically. Not needed when
+        running without Tailscale.
       '';
     };
     permissionMode = lib.mkOption {
@@ -154,10 +156,11 @@ in
       example = 7779;
       description = ''
         The peer port (decision 0030 3.6, V0.158): other Fyr installs reach this
-        one here, over TLS 1.3 pinned to install keys, on any interface (the
-        tailnet, a LAN). It serves only installs in this install's roster;
-        installs of the same tailnet user pair by themselves (Tailscale Serve
-        must be up on both). Null: no peer port.
+        one here, over TLS 1.3 pinned to install keys, on any interface (a LAN
+        or an optional tailnet). It serves only installs in this install's
+        roster; installs on a LAN find each other by mDNS and pair with
+        `fyr pair`, and untagged installs with the same configured `ownerLogin`
+        and Tailscale Serve up can also pair automatically. Null: no peer port.
       '';
     };
     openFirewall = lib.mkOption {

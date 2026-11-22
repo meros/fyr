@@ -330,3 +330,69 @@ func TestV183TheOwnerRoutesAnswerWithTheirCodes(t *testing.T) {
 		t.Fatal("no restart after a rotation")
 	}
 }
+
+// V0.owner-without-tailnet (#197): Start does not take OwnerLogin from tailnet.Self;
+// config's OwnerLogin is written to the roster, and /auth/owner reads and sets it.
+func TestOwnerLoginComesFromConfigOrOwnerRouteNotTailnetSelf(t *testing.T) {
+	// 1. Self returns a Tailscale user, config has no OwnerLogin: roster stays empty.
+	r := newRig(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	d := Deps{
+		Name: "desk", Key: r.key, Env: r.env, Port: &r.port,
+		Dial:   &peerlink.Dialer{Key: r.key, Resolve: func(string) string { return "127.0.0.1:1" }},
+		Config: Config{Every: time.Hour},
+		Self:   func() (string, string, error) { return "tailnet@example.com", "desk.ts.net", nil },
+	}
+	r.env.Dial = d.Dial
+	Start(ctx, d)
+	if got := r.ros.OwnerLogin(); got != "" {
+		t.Fatalf("Start took ownerLogin %q from tailnet.Self", got)
+	}
+
+	// 2. OwnerRoutes: GET/POST /auth/owner sets the roster login and refuses blanks.
+	mux := http.NewServeMux()
+	OwnerRoutes(Owner{Env: r.env, Key: r.key, Data: r.dir})(mux)
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+		return w
+	}
+	if w := do("GET", "/auth/owner", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"ownerLogin":""`) {
+		t.Fatalf("GET empty: %d %s", w.Code, w.Body)
+	}
+	for _, bad := range []string{`{"login":""}`, `{"login":"  "}`, `{"login":"has space@example.com"}`} {
+		if w := do("POST", "/auth/owner", bad); w.Code != http.StatusBadRequest {
+			t.Errorf("POST %s: %d (want 400)", bad, w.Code)
+		}
+	}
+	if w := do("POST", "/auth/owner", `{"login":"owner@example.com"}`); w.Code != 200 || r.ros.OwnerLogin() != "owner@example.com" {
+		t.Fatalf("POST valid: %d %s (roster=%q)", w.Code, w.Body, r.ros.OwnerLogin())
+	}
+	if w := do("GET", "/auth/owner", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"ownerLogin":"owner@example.com"`) || !strings.Contains(w.Body.String(), `"source":"roster"`) {
+		t.Fatalf("GET after set: %d %s", w.Code, w.Body)
+	}
+
+	// 3. Config's OwnerLogin is written to the roster on Start and wins over the roster.
+	r2 := newRig(t)
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	t.Cleanup(cancel2)
+	d2 := Deps{
+		Name: "desk2", Key: r2.key, Env: r2.env, Port: &r2.port,
+		Dial:   &peerlink.Dialer{Key: r2.key, Resolve: func(string) string { return "127.0.0.1:1" }},
+		Config: Config{Every: time.Hour, OwnerLogin: "cfg@example.com"},
+		Self:   func() (string, string, error) { return "tailnet@example.com", "desk2.ts.net", nil },
+	}
+	r2.env.Dial = d2.Dial
+	Start(ctx2, d2)
+	if got := r2.ros.OwnerLogin(); got != "cfg@example.com" {
+		t.Fatalf("config OwnerLogin not recorded in roster: %q", got)
+	}
+	mux2 := http.NewServeMux()
+	OwnerRoutes(Owner{Env: r2.env, Key: r2.key, Data: r2.dir, ConfigOwner: "cfg@example.com"})(mux2)
+	w := httptest.NewRecorder()
+	mux2.ServeHTTP(w, httptest.NewRequest("GET", "/auth/owner", nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ownerLogin":"cfg@example.com"`) || !strings.Contains(w.Body.String(), `"source":"config"`) {
+		t.Fatalf("GET config source: %d %s", w.Code, w.Body)
+	}
+}

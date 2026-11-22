@@ -45,7 +45,7 @@ Fyr turns that around. It runs Claude Code and Antigravity (`agy`) sessions on y
 - **Your machine stays usable.** Heavy jobs (test suites, builds, e2e runs) are admitted by the CPU and memory they need, and the rest queue. A memory guard pauses runaway work before the kernel's OOM killer acts. On Linux every agent runs in its own cgroup.
 - **Agents survive restarts.** The launcher holds the agent processes, so a crash, a restart or an update of the daemon does not interrupt a run.
 - **Native desktop apps and a full phone client.** Run Fyr in a browser, in `Fyr.app` on macOS, or in `fyr-desktop` on Linux (window, tray icon and native desktop notifications). Your phone is an installable PWA with push notifications: answer, steer, approve, start a thread with a screenshot, and settle.
-- **Several machines, one list.** Installs find each other over Tailscale or pair with a short code on a LAN. Every host's threads show in one inbox, a new thread picks which machine runs it, and you can hand a thread over to another provider or another host.
+- **Several machines, one list.** Installs find each other on a LAN (mDNS) or over an optional tailnet and pair with an invite code. Every host's threads show in one inbox, a new thread picks which machine runs it, and you can hand a thread over to another provider or another host.
 - **Your own agent subscriptions.** Fyr drives the `claude` CLI (Claude logins or Anthropic-compatible endpoints) and the Antigravity CLI (`agy`, Google accounts or Gemini endpoints). Several logins can sit side by side; each thread shows its plan's remaining window and waits cleanly when quota runs out.
 - **Updates that roll back.** Fyr installs only signed CI releases (on the `stable` channel of version tags or `main`'s green builds). It tests each one on a copy of its database first and goes back to the previous build if the new one is not healthy.
 
@@ -58,7 +58,7 @@ Fyr is v0. Its author uses it every day, and it changes daily. Expect breaking c
 - **Linux or macOS.** NixOS has a module (and optional `fyr-desktop` native app); macOS has `Fyr.app` in a DMG (macOS 13+); other Linux (Debian, Ubuntu) has an install script.
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (`claude`, with a Claude account or an Anthropic-compatible endpoint) and/or **Antigravity CLI** (`agy`, via ACP, with a Google login or Gemini endpoint). Both sit behind Fyr's CLI adapter seam ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
 - **GitHub through [`gh`](https://cli.github.com/)**, logged in, for the agents' pull requests and change tracking. Projects on other forges still run threads, without it. Installing and updating Fyr need no `gh`.
-- **Optional: [Tailscale](https://tailscale.com/)**, to open Fyr from your phone and to connect machines.
+- **Optional: [Tailscale](https://tailscale.com/)**, as one route to open Fyr from your phone away from home and to connect machines. Fyr also runs on a single machine or a plain LAN without it.
 
 ## Install
 

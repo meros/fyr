@@ -7,7 +7,7 @@
 //	fyr install BUILD_DIR   make BUILD_DIR/fyrd the current build
 //	fyr --version           the launcher's version and the current build's (V0.versioned-releases)
 //	fyr open [-app]         sign this machine's browser in and open Fyr (V0.130)
-//	fyr auth status|observe|enforce [way]   the modes of the ways in (V0.157)
+//	fyr auth status|observe|enforce [way]|owner [LOGIN]   modes and Tailscale owner login (V0.157, V0.owner-without-tailnet)
 //	fyr device add|approve CODE|revoke ID|list   the signed-in devices (V0.157)
 //	fyr pair [CODE [-addr host:port]]   open an invite, or join with one (V0.159)
 //	fyr host list|remove ID|drive ID on|off   (V0.158, V0.160)

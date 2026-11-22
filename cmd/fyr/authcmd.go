@@ -86,7 +86,7 @@ func authCommand(word string, args []string) error {
 		return nil
 	}
 	if len(rest) == 0 && word != "rotate-key" {
-		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer]", "device": "add [-name N] | approve CODE | revoke ID | list", "host": "list | remove ID | drive ID on|off", "pair": "[CODE [-addr host:port]]", "rotate-key": ""}[word])
+		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer] | owner [LOGIN]", "device": "add [-name N] | approve CODE | revoke ID | list", "host": "list | remove ID | drive ID on|off", "pair": "[CODE [-addr host:port]]", "rotate-key": ""}[word])
 	}
 	verb, more := rest[0], rest[1:]
 	switch word + " " + verb {
@@ -96,6 +96,30 @@ func authCommand(word string, args []string) error {
 			return err
 		}
 		printStatus(out)
+	case "auth owner":
+		if len(more) > 1 {
+			return fmt.Errorf("usage: fyr auth owner [LOGIN]")
+		}
+		if len(more) == 0 {
+			out, err := ownerCall(*data, "GET", "/auth/owner", nil)
+			if err != nil {
+				return err
+			}
+			if owner, _ := out["ownerLogin"].(string); owner != "" {
+				fmt.Printf("%s (%v)\n", owner, out["source"])
+			} else {
+				fmt.Println("No Tailscale owner login is set (loopback and LAN work without one; set one with: fyr auth owner <login>, or ownerLogin in config.json).")
+			}
+			return nil
+		}
+		out, err := ownerCall(*data, "POST", "/auth/owner", map[string]string{"login": more[0]})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Tailscale owner login set to %v (stored in the roster; paired installs learn it by sync).\n", out["rosterOwner"])
+		if cfg, _ := out["configOwner"].(string); cfg != "" && cfg != out["rosterOwner"] {
+			fmt.Printf("Note: config ownerLogin (%s) overrides the roster until you change or remove it.\n", cfg)
+		}
 	case "auth observe", "auth enforce":
 		way := "browser"
 		if len(more) > 0 {
@@ -218,6 +242,11 @@ func printStatus(out map[string]any) {
 			line += "; not ready: " + why
 		}
 		fmt.Println(line)
+	}
+	if owner, _ := out["ownerLogin"].(string); owner != "" {
+		fmt.Printf("%-8s %s (%v)\n", "owner", owner, out["ownerSource"])
+	} else {
+		fmt.Printf("%-8s not set (Tailscale Serve sign-in is off; loopback and LAN work without one)\n", "owner")
 	}
 	if n, ok := out["legacyFronts"].(float64); ok && n > 0 {
 		fmt.Printf("%d requests from a front without Fyr-Actor were served (an older install).\n", int(n))

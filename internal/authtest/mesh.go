@@ -35,6 +35,9 @@ type MeshSpec struct {
 	// HostListen gives the install a loopback host port (the old way a front reached a
 	// host, decision 0030 slice 5), at MeshNode.HostPort.
 	HostListen bool
+	// NoOwnerLogin leaves ownerLogin unset in the config even for an untagged node
+	// (V0.owner-without-tailnet: tests that fyrd does not fall back to tailnet.Self).
+	NoOwnerLogin bool
 }
 
 // MeshNode is a started install of a Mesh.
@@ -154,6 +157,13 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 		}
 		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.PeerPort)), "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile,
 			"linkBackoffMillis": 100, "linkDialMillis": 700}
+		if !caller.Spec.NoOwnerLogin && caller.Spec.UserID != 0 && len(caller.Spec.Tags) == 0 {
+			for _, u := range users {
+				if u.ID == caller.Spec.UserID {
+					extra["ownerLogin"] = u.Login
+				}
+			}
+		}
 		caller.resolveFile, caller.m = rf, m
 		if caller.Spec.HostListen {
 			if caller.HostPort, err = m.reserve(); err != nil {

@@ -40,18 +40,24 @@ func WellKnownHandler(self func() WellKnown) http.Handler {
 // loopback port Tailscale Serve proxies to over TCP (the macOS app cannot
 // reach a Unix socket). Any local process may connect there, so it trusts
 // nothing and serves no page or session; a tailnet login other than owner
-// is refused.
+// (or self().Owner when owner is empty) is refused.
 func OnlyWellKnown(owner string, self func() WellKnown) http.Handler {
-	h := WellKnownHandler(self)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/.well-known/fyr" {
 			http.Error(w, "this port answers only GET /.well-known/fyr", http.StatusNotFound)
 			return
 		}
-		if login := r.Header.Get("Tailscale-User-Login"); login != "" && login != owner {
+		wk := self()
+		want := owner
+		if want == "" {
+			want = wk.Owner
+		}
+		if login := r.Header.Get("Tailscale-User-Login"); login != "" && (want == "" || login != want) {
 			http.Error(w, "this Fyr belongs to another tailnet user", http.StatusForbidden)
 			return
 		}
-		h.ServeHTTP(w, r)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(wk)
 	})
 }

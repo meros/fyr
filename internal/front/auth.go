@@ -613,7 +613,8 @@ func (f *Front) authState() map[string]any {
 	if len(audit) > 20 {
 		audit = audit[len(audit)-20:]
 	}
-	return map[string]any{"devices": st.List(), "modes": st.Modes(), "audit": audit, "legacyFronts": f.legacyFronts()}
+	return map[string]any{"devices": st.List(), "modes": st.Modes(), "audit": audit, "legacyFronts": f.legacyFronts(),
+		"ownerLogin": f.ownerLogin(), "ownerSource": f.ownerSource()}
 }
 
 // authAPI is Settings → Devices (desktop and phone): the browser's calls
@@ -908,6 +909,16 @@ func (f *Front) ownerLogin() string {
 	}
 	if f.opt.OwnerFn != nil {
 		return f.opt.OwnerFn()
+	}
+	return ""
+}
+
+func (f *Front) ownerSource() string {
+	if f.opt.OwnerLogin != "" {
+		return "config"
+	}
+	if f.opt.OwnerFn != nil && f.opt.OwnerFn() != "" {
+		return "roster"
 	}
 	return ""
 }

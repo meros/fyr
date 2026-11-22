@@ -53,8 +53,10 @@ type Server struct {
 	ID   string
 	Host string // host name shown in the rail; default os.Hostname
 	// OwnerLogin is the Tailscale login allowed over the tailnet (V0.14).
-	// Empty refuses every tailnet request.
+	// OwnerFn supplies the roster's login when OwnerLogin is empty
+	// (V0.owner-without-tailnet); empty in both refuses every tailnet request.
 	OwnerLogin string
+	OwnerFn    func() string
 	// Attach stores uploaded files (V0.18); optional.
 	Attach   *attach.Store
 	Profiles []provider.Profile
@@ -102,12 +104,25 @@ type PRDetails interface {
 	Get(ctx context.Context, url string, fresh bool) (github.Detail, error)
 }
 
+func (s *Server) ownerLogin() string {
+	if s.OwnerLogin != "" {
+		return s.OwnerLogin
+	}
+	if s.OwnerFn != nil {
+		return s.OwnerFn()
+	}
+	return ""
+}
+
 // Handler is the host's loopback listener, behind the browser guard (V0.14).
 // Fyr-Actor and Fyr-Origin mean nothing here: only the pipe and the peer
 // listeners, where the channel proved which install speaks, read them
 // (decision 0030 3.3).
 func (s *Server) Handler() http.Handler {
-	return httpguard.Guard(s.OwnerLogin, httpguard.Gzip(withDeadline(s.routes(true))))
+	inner := httpguard.Gzip(withDeadline(s.routes(true)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpguard.Guard(s.ownerLogin(), inner).ServeHTTP(w, r)
+	})
 }
 
 // PipeHandler serves the in-process pipe between a front and its own host
@@ -126,12 +141,15 @@ func (s *Server) PipeHandler() http.Handler {
 // as a legacy front, and counted (LegacyFronts).
 func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
 	inner := withActor(actorPeer, "", &s.legacyFronts, httpguard.Gzip(withDeadline(s.routes(false))))
-	return PeerGuard(s.OwnerLogin, peers, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	marked := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.OnWhois != nil { // a request over the old link: what the peer way's enforce will refuse
 			s.OnWhois()
 		}
 		inner.ServeHTTP(w, r)
-	}))
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		PeerGuard(s.ownerLogin(), peers, marked).ServeHTTP(w, r)
+	})
 }
 
 // PeerGate is what the host asks of the roster on the peer port (decision 0030
