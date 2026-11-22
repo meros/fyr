@@ -27,6 +27,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/projicon"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
@@ -39,9 +40,7 @@ type Agents interface {
 }
 
 // Providers runs a provider command. *provider.Registry implements it.
-type Providers interface {
-	Run(c api.Cmd) api.Reply
-}
+type Providers = provider.Runner
 
 // EffectRunner performs an approved async effect (SPEC 5.10), e.g. pr.merge.
 type EffectRunner interface {

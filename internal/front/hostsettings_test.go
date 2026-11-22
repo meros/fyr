@@ -17,6 +17,7 @@ import (
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/provider"
+	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/secrets"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
@@ -71,11 +72,11 @@ func newSettingsHostID(t *testing.T, name, id string) *settingsHost {
 	if err := os.MkdirAll(filepath.Join(home, "only-on-"+name), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, ID: id, Providers: registryAPI{reg}, ProfileList: reg.Profiles,
+	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, ID: id, Providers: reg, ProfileList: reg.Profiles,
 		FS: &hostfs.FS{Home: home, Folders: h.eng.ProjectFolders, Recent: h.eng.RecentFolders},
 		// Every host has a provider "claude"; its quota says whose it is.
-		Quota: func(context.Context) any {
-			return []map[string]any{{"profile": "claude", "kind": "anthropic-oauth", "error": "on " + name}}
+		Quota: func(context.Context) []quota.Status {
+			return []quota.Status{{Profile: "claude", Kind: "anthropic-oauth", Error: "on " + name}}
 		}}
 	inner := s.Handler()
 	sh := &settingsHost{host: h, reg: reg, home: home, srv: s}
@@ -97,12 +98,6 @@ func newSettingsHostID(t *testing.T, name, id string) *settingsHost {
 	t.Cleanup(func() { h.hs.CloseClientConnections(); h.hs.Close(); st.Close() })
 	return sh
 }
-
-// registryAPI is fyrd's providerAPI: the registry as the server reads it.
-type registryAPI struct{ *provider.Registry }
-
-func (r registryAPI) List() any  { return r.Registry.List() }
-func (r registryAPI) Found() any { return r.Registry.Found() }
 
 func providerNamed(r *provider.Registry, name string) *provider.Provider {
 	for _, p := range r.Providers() {
