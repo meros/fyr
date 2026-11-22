@@ -15,7 +15,7 @@ export interface PrCheck {
   url?: string;
 }
 
-export interface PrComment {
+interface PrComment {
   author: string;
   body: string;
   at?: string;
@@ -30,7 +30,7 @@ export interface PrThread {
   comments: PrComment[];
 }
 
-export interface PrReview {
+interface PrReview {
   author: string;
   state: string;
   at?: string;
@@ -67,7 +67,7 @@ export interface PrDetail {
 
 export type PrReply = PrDetail | { error: string };
 
-export type Tone = "ok" | "warn" | "fail" | "busy" | "muted";
+type Tone = "ok" | "warn" | "fail" | "busy" | "muted";
 
 export interface MergeStatus {
   text: string;
@@ -186,7 +186,7 @@ export function pickPr(prs: PullRequest[], selected?: string, preferred?: string
   return prs[0];
 }
 
-export interface CheckGroups {
+interface CheckGroups {
   failed: PrCheck[];
   running: PrCheck[];
   passed: PrCheck[];
@@ -244,7 +244,7 @@ function oneLine(s: string, max = COMMENT_MAX): string {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
 }
 
-export function threadPlace(t: PrThread): string {
+function threadPlace(t: PrThread): string {
   return `${t.path}${t.line ? `:${t.line}` : ""}`;
 }
 

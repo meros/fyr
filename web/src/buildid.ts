@@ -2,7 +2,7 @@
 // The first buildId seen is remembered. A later one that differs reloads once; a missing one never
 // reloads (an old daemon without buildId would otherwise reload forever).
 
-export interface BuildWatch {
+interface BuildWatch {
   first: string | null;
   reloading: boolean;
 }

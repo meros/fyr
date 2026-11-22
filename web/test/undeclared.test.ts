@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildConversation } from "../src/conversation.ts";
 import { mockLoad, mockUndeclaredCommand, withUndeclared } from "../src/mock.ts";
-import { cardLines, loadCard, railBudget, threadSlot, type HostLoad, type UndeclaredUse } from "../src/load.ts";
+import { cardLines, loadCard, railBudget, threadSlot, type HostLoad, type UndeclaredUse } from "../src/host-load.ts";
 import {
   addedRows,
   findUndeclared,

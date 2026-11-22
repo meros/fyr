@@ -8,16 +8,16 @@
 
 import type { Thread } from "./types.ts";
 
-export const SWIPE_START_PX = 12;
-export const SWIPE_MAX_ANGLE = 30;
+const SWIPE_START_PX = 12;
+const SWIPE_MAX_ANGLE = 30;
 export const EDGE_PX = 24;
-export const SETTLE_AT = 0.5;
-export const SNOOZE_AT = 0.3;
+const SETTLE_AT = 0.5;
+const SNOOZE_AT = 0.3;
 export const LONG_PRESS_MS = 400;
-export const LONG_PRESS_SLOP = 8;
+const LONG_PRESS_SLOP = 8;
 /** V0.native-feel: a quick flick commits short of the distance, once the row has moved this far. */
-export const FLICK_PX_S = 700;
-export const FLICK_MIN_PX = 40;
+const FLICK_PX_S = 700;
+const FLICK_MIN_PX = 40;
 
 export type Phase = "idle" | "pending" | "swipe" | "scroll" | "edge";
 
@@ -49,7 +49,7 @@ export function swipeMove(s: Swipe, x: number, y: number): Swipe {
   return { ...s, phase: "scroll", dx: 0 };
 }
 
-export interface Side {
+interface Side {
   ok: boolean;
   /** the exact Action name ("Settle", "Settle when done") or the reason it is unavailable */
   label: string;
@@ -81,7 +81,7 @@ function shortReason(reason: string, t: Thread): string {
   return reason;
 }
 
-export type SwipeResult = { kind: "settle" } | { kind: "snooze" } | { kind: "none"; reason?: string };
+type SwipeResult = { kind: "settle" } | { kind: "snooze" } | { kind: "none"; reason?: string };
 
 /** Past the distance that commits on release; the row says so while the finger is still down. */
 export function swipeArmed(s: Swipe, width: number, avail: SwipeAvail): boolean {

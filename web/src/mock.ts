@@ -5,7 +5,7 @@ import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHo
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
-import type { HostLoad, Slots, UndeclaredUse } from "./load.ts";
+import type { HostLoad, Slots, UndeclaredUse } from "./host-load.ts";
 import type { Guard, GuardEvent } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
 import { mockPrDetail } from "./mock-pr.ts";
@@ -616,7 +616,7 @@ function sparseFixture(now: number): Fixture {
 
 
 // ?mock=rail: the exact content of the first (light) frame of the rail direction (decision 0006).
-export function railNow(real: number): number {
+function railNow(real: number): number {
   const d = new Date(real);
   d.setHours(14, 32, 0, 0);
   return d.getTime();
@@ -920,7 +920,7 @@ const px=new Uint8Array(4);g.readPixels(c.width>>1,c.height>>1,1,1,g.RGBA,g.UNSI
 
 // V0.37: the live view page as the host stores it: the Fyr theme around a fragment, the bridge first in <head>.
 // TestMockBridgeMatches (Go) keeps VIEW_BRIDGE equal to the host's bridge.
-export const VIEW_BRIDGE = `<script>(function(){
+const VIEW_BRIDGE = `<script>(function(){
 var state={},subs=[],n=0,wait={};
 function post(m){m.jsonrpc="2.0";parent.postMessage(m,"*")}
 function pick(o,p){return p.split(".").reduce(function(a,k){return a==null?a:a[k]},o)}
@@ -1065,7 +1065,7 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
 }
 
 // ---- projects (V0.23, V0.55): every colour and icon kind, one folder each, and a label without a folder ----
-export function mockProjects(now: number): Project[] {
+function mockProjects(now: number): Project[] {
   const ago = (h: number) => iso(now - h * 3600_000);
   return [
     // V0.116: an image icon the setup agent set (name and colour too); the glyph stays the fallback.
@@ -1112,9 +1112,9 @@ function mockTree(extra: string[]): { dirs: Set<string>; repos: Set<string> } {
 
 /** The fixture's one state: the hosts' records together, and the front's own host (its name, install id and machine), which
  *  mock-api.ts splits into one state per host as the real front's hosts send them. */
-export type MockState = StateDTO & { host?: string; hostId?: string; machine?: string };
+type MockState = StateDTO & { host?: string; hostId?: string; machine?: string };
 
-export interface MockServer {
+interface MockServer {
   buildId: string;
   state(): MockState;
   subscribe(h: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void }): void;
@@ -1138,7 +1138,7 @@ export interface MockServer {
 }
 
 /** A P-256 public key in the VAPID format; the mock has no private key and never pushes. */
-export const MOCK_VAPID_KEY = "BDJF2xtzzliD3JVf2tm-yBnwg5fyq3ePXxiuCwxmswDZykUsCBJdi4cRLPO3Q3EvmJ_7ngetcIYIviMRUSCaUV0";
+const MOCK_VAPID_KEY = "BDJF2xtzzliD3JVf2tm-yBnwg5fyq3ePXxiuCwxmswDZykUsCBJdi4cRLPO3Q3EvmJ_7ngetcIYIviMRUSCaUV0";
 
 export function createMockServer(scenario: string, real0: number): MockServer {
   // ?mock=rail runs on the design's clock (14:32 today), so times read as in the frame.
@@ -1851,7 +1851,7 @@ const MOCK_PAUSED = typeof location !== "undefined" ? new URLSearchParams(locati
 /** V0.164: ?undeclared=1 (Map perf runs heavy work it did not ask for), =paused (the memory guard froze it), =2 (Map perf
  *  and Babysit PR #4170, and Nix flake update dismissed: the rail's menu and Settings' three states). Read once at load. */
 const MOCK_UNDECLARED = typeof location !== "undefined" ? new URLSearchParams(location.search).get("undeclared") ?? "" : "";
-export const UNDECLARED_NOTICE = {
+const UNDECLARED_NOTICE = {
   undeclared:
     "This thread runs heavy work Fyr did not admit: about 2.8 GB memory (20 % of laptop) and 2.1 cores (52 %) for 45 s, from `node test/layout.e2e.mjs`. Before a heavy job call mcp__fyr__slot_acquire {\"kind\":\"e2e\",\"command\":\"node test/layout.e2e.mjs\"}, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. If it still runs, call it now. If it has ended, there is nothing to do for it, but ask before you run it or anything like it again. Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
   mem: 2.8e9,

@@ -8,7 +8,7 @@ export function isTransient(status: number | null): boolean {
 }
 
 /** Waits between tries: about 19.5 s in all. */
-export const RETRY_WAITS = [500, 1000, 1500, 2000, 3000, 3500, 4000, 4000];
+const RETRY_WAITS = [500, 1000, 1500, 2000, 3000, 3500, 4000, 4000];
 
 /** Calls send until it gets a non-transient status or the waits run out. */
 export async function sendWithRetry(

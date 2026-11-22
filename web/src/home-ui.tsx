@@ -7,7 +7,7 @@ import { useApi } from "./api-context.ts";
 import { HOME_LOG, HOME_MOVES, homeDay, homeLog, hourTicks, openAt, type HomeDay, homeMoves, homeNeeds, homeRunning, homeSummary, lookWindow, runningLine, startOfDay, type HomeMove } from "./home.ts";
 import { profilesOf, type HostInfo, type HostProfiles } from "./hosts.ts";
 import { HostMeters, ThreadCPU, useLoad } from "./load-ui.tsx";
-import { stripHosts } from "./load.ts";
+import { stripHosts } from "./host-load.ts";
 import { ProjectIcon } from "./project-ui.tsx";
 import { projectOf } from "./projects.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
@@ -28,7 +28,7 @@ function writeLook(at: number): void {
   storedSet(LOOK_KEY, String(at));
 }
 
-export interface HomeProps {
+interface HomeProps {
   /** what the inbox shows (its filters and quiet hours hold here too) */
   sec: Sections;
   projects: Project[];

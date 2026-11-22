@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the rail and each working thread's CPU, as words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardLines, cpuText, loadCard, railBudget, railLoad, railMeter, shortHostNames, stripHosts, threadCPU, threadService, threadSlot, type HostLoad } from "../src/load.ts";
+import { cardLines, cpuText, loadCard, railBudget, railLoad, railMeter, shortHostNames, stripHosts, threadCPU, threadService, threadSlot, type HostLoad } from "../src/host-load.ts";
 
 const busy: HostLoad = {
   host: "laptop",

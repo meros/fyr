@@ -16,12 +16,12 @@ export interface CardState {
 }
 
 /** What a card sends: the questions the owner answered, and the ones left without an answer. */
-export interface Submit {
+interface Submit {
   answers: Record<string, string>;
   skipped: string[];
 }
 
-export interface KeyResult {
+interface KeyResult {
   state: CardState;
   handled: boolean;
   /** the answers and skips, when Enter submits */
@@ -68,7 +68,7 @@ export function settledOf(cs: CardState, d: Decision, i: number): boolean {
 }
 
 /** The answers, or null while a question has neither an answer nor a skip. */
-export function answersOf(cs: CardState, d: Decision): Record<string, string> | null {
+function answersOf(cs: CardState, d: Decision): Record<string, string> | null {
   const qs = questionsOf(d);
   const out: Record<string, string> = {};
   for (let i = 0; i < qs.length; i++) {
@@ -83,7 +83,7 @@ export function answersOf(cs: CardState, d: Decision): Record<string, string> | 
 }
 
 /** V0.ask-cancel: the questions the owner left without an answer. */
-export function skippedOf(cs: CardState, d: Decision): string[] {
+function skippedOf(cs: CardState, d: Decision): string[] {
   return questionsOf(d)
     .filter((_, i) => !!cs.skipped[i] && answerOf(cs, d, i) === null)
     .map((q) => q.question);
@@ -157,7 +157,7 @@ export function setOther(cs: CardState, d: Decision, text: string): CardState {
   return { ...cs, picks, skipped, other: replaceAt(cs.other, cs.index, text === "" ? null : text) };
 }
 
-export function closeOther(cs: CardState): CardState {
+function closeOther(cs: CardState): CardState {
   const text = (cs.other[cs.index] ?? "").trim();
   return { ...cs, otherOpen: false, other: text ? cs.other : replaceAt(cs.other, cs.index, null) };
 }

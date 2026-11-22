@@ -16,7 +16,7 @@ export function mayReload(last: number | null, now: number): boolean {
 const KEY = "fyr.signedOutReload";
 
 /** What the front answers to GET /state: its status and body. The Api makes the call (api.ts), so this file has no fetch. */
-export type StateProbe = () => Promise<{ status: number; body: unknown }>;
+type StateProbe = () => Promise<{ status: number; body: unknown }>;
 
 /** Ask whether the host refuses this device; if it says signed out, reload (once in 10 s). */
 export async function reloadIfSignedOut(probe: StateProbe): Promise<boolean> {

@@ -16,7 +16,7 @@ export interface DeployProgress {
   host?: string;
 }
 
-export type DeployLine = { text: string; tone: "busy" | "ok" | "fail"; more?: string };
+type DeployLine = { text: string; tone: "busy" | "ok" | "fail"; more?: string };
 
 function minutes(fromIso: string | undefined, now: number): string {
   const t = fromIso ? Date.parse(fromIso) : NaN;

@@ -1,5 +1,5 @@
 // SPEC 0.5 V0.34: what a Copy button puts on the clipboard.
-export type CopyWhat = { kind: "message"; text: string } | { kind: "block"; text: string };
+type CopyWhat = { kind: "message"; text: string } | { kind: "block"; text: string };
 
 export function copySource(w: CopyWhat): string {
   return w.kind === "block" ? w.text.replace(/\n+$/, "") : w.text;

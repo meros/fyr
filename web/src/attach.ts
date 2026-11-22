@@ -5,7 +5,7 @@ import { hostUrl } from "./urls.ts";
 
 export const MAX_BYTES = 25 * 1024 * 1024;
 
-export type ChipStatus = "uploading" | "done" | "error";
+type ChipStatus = "uploading" | "done" | "error";
 
 export interface Chip {
   /** client key, stable for the chip's life */
@@ -23,7 +23,7 @@ export interface Chip {
   preview?: string;
 }
 
-export interface NewFile {
+interface NewFile {
   key: string;
   name: string;
   size: number;
@@ -77,7 +77,7 @@ export function removeChip(chips: Chip[], key: string): Chip[] {
   return chips.filter((c) => c.key !== key);
 }
 
-export type SendPlan = { ok: true; args: { text: string; attachments?: string[] } } | { ok: false; reason: string };
+type SendPlan = { ok: true; args: { text: string; attachments?: string[] } } | { ok: false; reason: string };
 
 /** What a send carries: the text and the uploaded ids. A message may be attachments only. */
 export function sendArgs(text: string, chips: Chip[]): SendPlan {

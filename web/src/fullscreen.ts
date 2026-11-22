@@ -5,7 +5,7 @@
 
 import { useLayoutEffect, useRef } from "preact/hooks";
 
-export function canFullscreen(): boolean {
+function canFullscreen(): boolean {
   return typeof document !== "undefined" && !!document.fullscreenEnabled;
 }
 

@@ -3,13 +3,13 @@ import type { Profile, Project } from "./types.ts";
 import { move } from "./reorder.ts";
 import { ago, shortModel } from "./format.ts";
 
-export interface ProviderModel {
+interface ProviderModel {
   id: string;
   name?: string;
   efforts?: string[];
 }
 
-export type ProviderKind = "claude-account" | "agy-account" | "endpoint";
+type ProviderKind = "claude-account" | "agy-account" | "endpoint";
 
 export interface ProviderDTO {
   id: string;
@@ -130,10 +130,6 @@ export function parseModelIds(text: string): string[] {
     if (id && !out.includes(id)) out.push(id);
   }
   return out;
-}
-
-export function modelsText(ms: ProviderModel[]): string {
-  return ms.map((m) => m.id).join("\n");
 }
 
 /** "Opus 5.5, Sonnet 5.5 + 2" */

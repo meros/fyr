@@ -5,7 +5,7 @@ import type { Offer, Project } from "./types.ts";
 import { shortArg, shortFolder } from "./paths.ts";
 import { pressArgs, quote } from "./offers.ts";
 
-export interface AskCommand {
+interface AskCommand {
   /** the command with its paths shortened */
   short: string;
   /** the command exactly as it runs; Copy takes this */

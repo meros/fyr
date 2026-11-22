@@ -107,7 +107,7 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
   return (await navigator.serviceWorker.getRegistration("/")) ?? null;
 }
 
-export async function currentPushStatus(): Promise<PushStatus> {
+async function currentPushStatus(): Promise<PushStatus> {
   const n = nativePush();
   if (n) {
     try {
@@ -178,7 +178,7 @@ export async function syncPushHidden(api: Api, hidden: PushHidden): Promise<void
   }
 }
 
-export type PushResult = { status: PushStatus; error?: string };
+type PushResult = { status: PushStatus; error?: string };
 
 export async function enablePush(api: Api): Promise<PushResult> {
   const n = nativePush();

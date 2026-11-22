@@ -22,7 +22,7 @@ function mdOrigin(): string {
   return originOverride ?? (typeof location !== "undefined" ? location.origin : "http://localhost");
 }
 
-export function escapeHtml(s: string): string {
+function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 

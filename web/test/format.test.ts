@@ -1,7 +1,7 @@
 // The shared span words: ago, span and minuteOf round down, so a span never reads longer than it was.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ago, minuteOf, relTime, span } from "../src/format.ts";
+import { ago, daysBetween, minuteOf, relTime, span } from "../src/format.ts";
 
 test("ago rounds down and never goes negative", () => {
   assert.equal(ago(-5), "0 s");
@@ -24,4 +24,10 @@ test("relTime and minuteOf", () => {
   assert.equal(relTime("nope", now), "");
   assert.equal(minuteOf(now), minuteOf(now + 59_000));
   assert.notEqual(minuteOf(now), minuteOf(now + 60_000));
+});
+
+test("daysBetween counts calendar days, not 24 h spans", () => {
+  assert.equal(daysBetween(new Date(2026, 0, 1, 23, 59), new Date(2026, 0, 2, 0, 1)), 1);
+  assert.equal(daysBetween(new Date(2026, 0, 2, 8), new Date(2026, 0, 2, 20)), 0);
+  assert.equal(daysBetween(new Date(2026, 2, 28, 12), new Date(2026, 2, 30, 12)), 2, "across a DST change");
 });

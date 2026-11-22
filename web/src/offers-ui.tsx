@@ -15,7 +15,7 @@ type Run = (action: string, args?: Record<string, unknown>) => void;
 /** V0.101 (decision 0024 sections 5 and 9): why the change waits on the owner, inline on its card. An ask shows its
  *  answer (a merge ask bound to its head) and Not now, which declines it; Ready shows Merge bound to the head and Not
  *  now; a failure the agent stopped on shows Not now; a failure while the agent runs is muted, without the beam. */
-export function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
+function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
   const n = c.need!;
   const look = needLook(n);
   const merge = (c.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
@@ -52,7 +52,7 @@ const hhmm = (iso: string) => {
   return Number.isNaN(d.getTime()) ? "" : d.toTimeString().slice(0, 5);
 };
 
-export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string; offers?: Offer[]; runs?: OfferRun[]; change?: Change; cwd?: string; onRun: Run }) {
+function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string; offers?: Offer[]; runs?: OfferRun[]; change?: Change; cwd?: string; onRun: Run }) {
   const list = shownOffers(offers, change);
   const [open, setOpen] = useState<string | null>(null);
   const ask = useAsk();

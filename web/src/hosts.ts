@@ -34,7 +34,7 @@ export interface HostInfo {
 }
 
 /** V0.host-updates (#154): what a host runs, the release it wants, how far behind, its last update, a release it holds back. */
-export interface HostUpdate {
+interface HostUpdate {
   running?: string;
   build?: string;
   wanted?: string;
@@ -213,7 +213,7 @@ export function hostState(h: HostInfo, now: number): string {
   return updating(h) ? `${s} · updating Fyr` : s;
 }
 
-export type Route = "this machine" | "tailnet" | "LAN" | "by address" | "";
+type Route = "this machine" | "tailnet" | "LAN" | "by address" | "";
 
 function ipv4(host: string): number[] | null {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);

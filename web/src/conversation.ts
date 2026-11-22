@@ -61,10 +61,10 @@ export function agentPrompt(c: ToolCall): string {
 }
 
 /** SPEC 0.5 V0.33: where a message is on its way to the agent; "" for messages from before tracking. */
-export type Delivery = "" | "sent" | "queued" | "read" | "cancelled" | "lost";
+type Delivery = "" | "sent" | "queued" | "read" | "cancelled" | "lost";
 
 /** V0.41: when the event arrived and which run it belongs to (undefined outside a run). */
-export interface ItemMeta {
+interface ItemMeta {
   at?: number;
   run?: number;
 }
@@ -116,7 +116,7 @@ export type Item = (
 ) &
   ItemMeta;
 
-export interface BuildOptions {
+interface BuildOptions {
   /** V0.33: ids of the messages the host still holds; others are not waiting, whatever events arrived */
   outbox?: string[];
   /** "Show tool details": every machine line in full (V0.21) */
@@ -143,7 +143,7 @@ function lines(v: unknown): number {
 }
 
 /** "+42 −18" for edits, from the tool input. */
-export function diffStat(name: string, input: unknown): string {
+function diffStat(name: string, input: unknown): string {
   const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   let add = 0;
   let del = 0;
@@ -528,9 +528,9 @@ function finish(c: ToolCall | undefined, b: Block, at: number, cutSeq?: number) 
   c.durationMs = c.startedAt && at ? Math.max(0, at - c.startedAt) : null;
 }
 
-export const AGENT_TOOLS = new Set(["Task", "Agent"]);
+const AGENT_TOOLS = new Set(["Task", "Agent"]);
 
-export type ToolRow = { kind: "call"; call: ToolCall } | { kind: "agents"; calls: ToolCall[] };
+type ToolRow = { kind: "call"; call: ToolCall } | { kind: "agents"; calls: ToolCall[] };
 
 /** Consecutive Task/Agent calls in one card read as one row: "3 subagents · explore gestures". */
 export function toolRows(calls: ToolCall[]): ToolRow[] {
@@ -548,11 +548,11 @@ export function toolRows(calls: ToolCall[]): ToolRow[] {
 // ---- V0.21: calm tool output ----
 
 /** Calls whose result has its own card in the log: the call itself never shows (unless it failed). */
-export const CARD_TOOLS = new Set(["mcp__fyr__view_publish", "mcp__fyr__view_state", "mcp__fyr__view_unchanged", "mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "mcp__fyr__ask", "AskUserQuestion"]);
+const CARD_TOOLS = new Set(["mcp__fyr__view_publish", "mcp__fyr__view_state", "mcp__fyr__view_unchanged", "mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "mcp__fyr__ask", "AskUserQuestion"]);
 /** Plumbing: tool loading and bookkeeping. Extend here. */
-export const PLUMBING_TOOLS = new Set(["ToolSearch", "TodoWrite", "TodoRead", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
+const PLUMBING_TOOLS = new Set(["ToolSearch", "TodoWrite", "TodoRead", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
 /** Shell bookkeeping: a Bash call whose whole command is one of these. */
-export const PLUMBING_COMMANDS = [/^\s*settask\b/];
+const PLUMBING_COMMANDS = [/^\s*settask\b/];
 
 export function hiddenCall(c: Pick<ToolCall, "name" | "isError" | "input">): boolean {
   if (c.isError) return false; // a failed hidden call is shown
@@ -565,7 +565,7 @@ export function hiddenCall(c: Pick<ToolCall, "name" | "isError" | "input">): boo
 }
 
 /** A tool_result's content as text. */
-export function resultText(content: unknown): string {
+function resultText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content))
     return content
@@ -628,7 +628,7 @@ function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
-export interface GroupStats {
+interface GroupStats {
   failed: number;
   running: number;
   /** #91: the last call failed (a failure earlier in the group that a later call got past is not the outcome) */
@@ -648,7 +648,7 @@ export function groupStats(calls: ToolCall[]): GroupStats {
 }
 
 /** #91: how a folded group reads. Red only when it ended in a failure; amber when a later call got past one. */
-export type GroupTone = "failed" | "recovered" | "running" | "ok";
+type GroupTone = "failed" | "recovered" | "running" | "ok";
 export function groupTone(st: Pick<GroupStats, "failed" | "running" | "lastFailed">): GroupTone {
   if (st.running) return "running";
   if (st.lastFailed) return "failed";
@@ -656,7 +656,7 @@ export function groupTone(st: Pick<GroupStats, "failed" | "running" | "lastFaile
 }
 
 /** A tool group splits into folded runs of plain calls and the subagent rows, which stay as they are (V0.16). */
-export type Segment = { kind: "fold"; calls: ToolCall[] } | { kind: "agents"; calls: ToolCall[] };
+type Segment = { kind: "fold"; calls: ToolCall[] } | { kind: "agents"; calls: ToolCall[] };
 export function segments(calls: ToolCall[]): Segment[] {
   const out: Segment[] = [];
   for (const r of toolRows(calls)) {
@@ -671,7 +671,7 @@ export function segments(calls: ToolCall[]): Segment[] {
 /** V0.26: an opened tool group shows at most this many calls (the last ones) before "+N more tools". */
 export const VISIBLE_CALLS = 3;
 
-export type CallView = { kind: "call"; call: ToolCall } | { kind: "more"; count: number; label: string };
+type CallView = { kind: "call"; call: ToolCall } | { kind: "more"; count: number; label: string };
 
 /** The rows of an opened group: the last calls and every failed call; the rest behind one "+N more tools" row. */
 export function capCalls(calls: ToolCall[], expanded: boolean, max = VISIBLE_CALLS): CallView[] {
@@ -684,7 +684,7 @@ export function capCalls(calls: ToolCall[], expanded: boolean, max = VISIBLE_CAL
   return [{ kind: "more", count: hidden, label: `+${hidden} more ${hidden === 1 ? "tool" : "tools"}` }, ...shown];
 }
 
-export const OUTPUT_LINES = 200;
+const OUTPUT_LINES = 200;
 /** Long output is cut at 200 lines behind "Show all". */
 export function cutOutput(text: string, max = OUTPUT_LINES): { text: string; hidden: number } {
   const lines = text.split("\n");
@@ -832,7 +832,7 @@ export function fullOutputOf(ev: { data?: unknown }, toolUseId: string): string 
 // ---- V0.41: pacing. What the owner reads (outcome) at full weight; the work (process) quiet and folded ----
 
 /** outcome: read at full weight; process: quiet; end: the small line that closes a run. */
-export type Role = "outcome" | "process" | "end";
+type Role = "outcome" | "process" | "end";
 
 export type Entry =
   | { kind: "item"; key: string; item: Item; role: Role }

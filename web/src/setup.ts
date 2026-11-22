@@ -1,8 +1,8 @@
 // Pure state & labels for the Setup Wizard (decision 0037, #434).
 
-export type SetupStatus = "ok" | "fixable" | "missing";
+type SetupStatus = "ok" | "fixable" | "missing";
 
-export interface SetupFix {
+interface SetupFix {
   id: string;
   label: string;
 }

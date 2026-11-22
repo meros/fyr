@@ -41,7 +41,7 @@ export function pushStatus(env: PushEnv, permission: NotificationPermission, sub
   return permission === "granted" && subscribed ? "on" : "off";
 }
 
-export type PushEvent =
+type PushEvent =
   | { type: "permission"; result: NotificationPermission }
   | { type: "subscribed" }
   | { type: "unsubscribed" }
@@ -108,7 +108,7 @@ export function deviceLabel(ua: string): string {
 }
 
 /** The payload the host sends (SPEC V0.15). */
-export interface PushPayload {
+interface PushPayload {
   title: string;
   body?: string;
   threadId?: string;
@@ -119,7 +119,7 @@ export interface PushPayload {
 
 /** V0.client-refs: the thread a push is about, as the client names it: `<host>/<threadId>`, or the id alone from an
  *  older front (the app then opens the one thread that has it, decision 0031 C12). */
-export function payloadRef(p: Pick<PushPayload, "host" | "threadId">): string | undefined {
+function payloadRef(p: Pick<PushPayload, "host" | "threadId">): string | undefined {
   if (!p.threadId) return undefined;
   return p.host ? `${p.host}/${p.threadId}` : p.threadId;
 }
@@ -240,7 +240,7 @@ export interface PushPrefs {
 }
 
 export const PUSH_PREFS_KEY = "fyr.push.prefs";
-export const DEFAULT_PUSH_PREFS: PushPrefs = { finished: true, quotaReset: false };
+const DEFAULT_PUSH_PREFS: PushPrefs = { finished: true, quotaReset: false };
 export const FINISHED_DESC = "Also when a thread finishes. Nothing arrives for the thread on screen or in a project's quiet hours.";
 export const QUOTA_RESET_DESC = "When a provider's quota window resets and a waiting thread still has not resumed.";
 

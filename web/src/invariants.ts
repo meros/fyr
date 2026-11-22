@@ -4,7 +4,7 @@
 // Pure: invariants-ui.tsx prints them, on the desktop and the phone alike.
 import type { HostId } from "./hostid.ts";
 import type { Guard, InvariantCard, Invariants } from "./guard.ts";
-import type { HostLoad } from "./load.ts";
+import type { HostLoad } from "./host-load.ts";
 import { relTime, whenLabel } from "./format.ts";
 
 /** One open card and the host it is of. */

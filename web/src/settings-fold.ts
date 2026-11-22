@@ -3,7 +3,7 @@
 
 import { storedGet, storedSet } from "./prefs.ts";
 
-export const SETTINGS_FOLD_KEY = "fyr.settingsFold";
+const SETTINGS_FOLD_KEY = "fyr.settingsFold";
 
 /** What the device stored; anything else counts as nothing. */
 export function parseFolds(raw: string | null): Record<string, boolean> {

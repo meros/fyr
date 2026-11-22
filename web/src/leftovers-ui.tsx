@@ -9,7 +9,7 @@ import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { findLeftovers, stripText } from "./leftovers.ts";
 
 /** A host command on a leftover (End, Keep, Remove), then a fresh read of the load; the error text or null. */
-export function useLeftoverCommand(): (host: HostId | undefined, action: string, args: Record<string, unknown>) => Promise<string | null> {
+function useLeftoverCommand(): (host: HostId | undefined, action: string, args: Record<string, unknown>) => Promise<string | null> {
   const api = useApi();
   return async (host, action, args) => {
     if (!host) return "This host reports no install id, so nothing can be sent to it until it updates";

@@ -9,14 +9,14 @@ import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { modelName } from "./model-choice.ts";
 import { EffortSelect, ModelSelect } from "./model-choice-ui.tsx";
 
-export interface AgentOption {
+interface AgentOption {
   value: string;
   label: string;
 }
 
 /** One part: what it shows (k is its class: agv provider, agm model, age effort), and how it picks, if it can:
  *  options for a plain select, or a picker element (a select) laid over the part. */
-export interface AgentSeg {
+interface AgentSeg {
   k: "agv" | "agm" | "age";
   text: ComponentChildren;
   title: string;
@@ -28,7 +28,7 @@ export interface AgentSeg {
 }
 
 /** The effort meter: one bar per level the model takes, filled up to the current one; none filled for the CLI default. */
-export function EffortBars({ efforts, cur }: { efforts: string[]; cur: string }) {
+function EffortBars({ efforts, cur }: { efforts: string[]; cur: string }) {
   const at = efforts.indexOf(cur);
   return (
     <span class="agb" aria-hidden="true">

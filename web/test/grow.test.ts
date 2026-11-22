@@ -3,7 +3,7 @@
 // section has no row for it, but it keeps its place for a reorder. Shared code, so desktop and phone match.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { threadJob, threadSlot, type HostLoad } from "../src/load.ts";
+import { threadJob, threadSlot, type HostLoad } from "../src/host-load.ts";
 import { slotQueue, withQueue } from "../src/slot-queue.ts";
 import { sections } from "../src/store.ts";
 import { thread } from "./helpers.ts";

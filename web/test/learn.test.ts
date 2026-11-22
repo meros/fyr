@@ -1,7 +1,7 @@
 // Decision 0029 S3 (#187), V0.163: Settings shows each class's learned need on this host and how many runs it comes from.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { jobLines, type HostLoad } from "../src/load.ts";
+import { jobLines, type HostLoad } from "../src/host-load.ts";
 
 const h: HostLoad = {
   host: "desk",

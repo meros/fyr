@@ -10,7 +10,7 @@ import { withLongValues } from "./mock-long.ts";
 import { decodeHosts } from "./hosts.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
-import type { HostLoad } from "./load.ts";
+import type { HostLoad } from "./host-load.ts";
 import type { ThreadDTO, Project, CommandReply, StateDTO } from "./types.ts";
 import type { HostInfo } from "./hosts.ts";
 import { addressable, bare, ref, stampDeploy, stampEvent, stampLoad, stampProject, stampSlots, stampThread, unrefDeep, type Snapshot } from "./hostfeed.ts";

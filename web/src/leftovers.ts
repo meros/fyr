@@ -3,9 +3,9 @@
 import { ago } from "./format.ts";
 import type { HostId } from "./hostid.ts";
 import type { Card } from "./card.ts";
-import type { HostLoad, Lookup } from "./load.ts";
+import type { HostLoad, Lookup } from "./host-load.ts";
 
-export interface LeftoverKeep {
+interface LeftoverKeep {
   thread: string;
   pid?: number;
   match?: string;
@@ -45,7 +45,7 @@ export interface Temp {
 }
 
 /** "1.9 GB", "60 MB": 1e9 and 1e6, as the rest of the load. */
-export function sizeText(b: number): string {
+function sizeText(b: number): string {
   return b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`;
 }
 
@@ -115,7 +115,7 @@ export function hostLeftovers(h: HostLoad): { count: number; text: string; card:
   };
 }
 
-export interface LeftoverRow {
+interface LeftoverRow {
   id: string;
   title: string;
   desc: string;
@@ -136,7 +136,7 @@ export function leftoverRows(h: HostLoad, lookup: Lookup, now: number): Leftover
   });
 }
 
-export interface TempRow {
+interface TempRow {
   path: string;
   title: string;
   desc: string;

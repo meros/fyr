@@ -6,7 +6,7 @@ import type { Change, ChangeNeed, ChangePhase, Offer, OfferRun, PullRequest, Thr
 import { shortHead } from "./pr.ts";
 import type { Ask } from "./confirm.ts";
 
-export const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
+const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
 
 export const ended = (p: ChangePhase) => p === "abandoned" || p === "reverted";
 
@@ -84,7 +84,7 @@ export function lastRun(runs: OfferRun[] | undefined, id: string): OfferRun | un
 
 /** V0.75 (1), #62: an action's state from its newest run: fresh (never run, or not since the last look), running,
  *  ok, failed. The bar draws a used action quiet in place instead of adding a line for its result. */
-export type RunState = "fresh" | "running" | "ok" | "failed";
+type RunState = "fresh" | "running" | "ok" | "failed";
 export function runState(runs: OfferRun[] | undefined, id: string): RunState {
   const r = lastRun(runs, id);
   return !r ? "fresh" : r.running ? "running" : r.ok ? "ok" : "failed";
@@ -151,7 +151,7 @@ export const declineArgs = (n: Pick<ChangeNeed, "ask">) => ({ decisionId: n.ask 
 export const allowArgs = (n: Pick<ChangeNeed, "ask">) => ({ decisionId: n.ask ?? "", allow: true });
 
 /** V0.101: when a parked change comes back (decision 0024 section 5: Not now is keyed to the head). */
-export const BACK_TEXT = "back when the head changes";
+const BACK_TEXT = "back when the head changes";
 
 /** V0.84, V0.101: the quiet line of a parked change, or null. `clock` turns the time into hh:mm. */
 export const parkedLine = (c: Pick<Change, "parked">, clock: (iso: string) => string): string | null => (c.parked ? `Not now · ${clock(c.parked.at)} · ${BACK_TEXT}` : null);
@@ -224,7 +224,7 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
 }
 
 /** Canonical key for deduplicating PR URLs (ignores /files, #fragments, and case). */
-export function prUrlKey(url: string): string {
+function prUrlKey(url: string): string {
   return (/^(.*?\/pull\/\d+)/i.exec(url)?.[1] ?? url).toLowerCase();
 }
 

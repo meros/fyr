@@ -52,7 +52,7 @@ export function CardView({ c, head = true }: { c: Card; /** false: the place aro
 }
 
 /** Where a hover card opens: beside its anchor (the rail, on the left edge) or under it (a chip in a header). */
-export type HoverPlace = "right" | "below";
+type HoverPlace = "right" | "below";
 
 /** The desktop's hover card: on document.body (the rail's containment and a header's overflow would clip it), beside or
  *  under its anchor, kept inside the window. Not for the phone: no hover there. */

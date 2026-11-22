@@ -91,7 +91,7 @@ export function lineName(v: string): string | null {
   return name in LINE_ICONS ? name : null;
 }
 
-export type ResolvedIcon = { kind: "monogram"; value: string } | { kind: "emoji"; value: string } | { kind: "line"; value: string };
+type ResolvedIcon = { kind: "monogram"; value: string } | { kind: "emoji"; value: string } | { kind: "line"; value: string };
 
 /** The icon to draw: emoji (its first grapheme), a known line icon, else the monogram. */
 export function resolveIcon(icon: ProjectIconSpec | undefined, name: string): ResolvedIcon {
@@ -385,7 +385,7 @@ export function setupLine(p: Pick<Project, "setup" | "folder">): { text: string;
 }
 
 /** The owner's upload is checked before it is sent: an image, at most 2 MB (the host checks it again). */
-export const ICON_MAX_BYTES = 2 * 1024 * 1024;
+const ICON_MAX_BYTES = 2 * 1024 * 1024;
 export function iconFileError(f: { type: string; size: number }): string | null {
   if (!/^image\/(png|jpeg|gif)$/.test(f.type)) return "Choose a PNG, JPEG or GIF image.";
   if (f.size > ICON_MAX_BYTES) return "The image is over 2 MB.";
@@ -395,7 +395,7 @@ export function iconFileError(f: { type: string; size: number }): string | null 
 // ---- V0.119: Settings → Projects and the project page ----
 
 /** The fields of project.update the project page saves, one at a time. */
-export interface ProjectFields {
+interface ProjectFields {
   name: string;
   color: string;
   icon: { kind: string; value: string };
@@ -408,7 +408,7 @@ export interface ProjectFields {
   agentSettle: AgentSettle;
   toolApproval: ToolApproval;
 }
-export type ProjectFieldPatch = { toolApproval?: "auto" | null; agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; effort?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
+type ProjectFieldPatch = { toolApproval?: "auto" | null; agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; effort?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
 
 /** V0.project-priority: a project's priority as the page shows it; normal is stored as none. */
 export type ProjectPriority = "high" | "normal" | "low";

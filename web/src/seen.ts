@@ -6,7 +6,7 @@ import type { Thread } from "./types.ts";
 
 export const SEEN_DELAY_MS = 1500;
 
-export type ViewMode = "open" | "peek";
+type ViewMode = "open" | "peek";
 
 export interface SeenTracker {
   threadId: string | null;

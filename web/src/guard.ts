@@ -2,7 +2,7 @@
 // A "lane" is one thread over the last stretch of time: when its work ran and when the guard held it frozen, on a
 // band that marks when the host's memory was short.
 
-import { spanText, type HostLoad } from "./load.ts";
+import { spanText, type HostLoad } from "./host-load.ts";
 
 export interface GuardEvent {
   at: string;
@@ -23,13 +23,13 @@ export interface GuardEvent {
 }
 
 /** V0.rerun-classes: a rerunnable class the guard killed in the last hour. */
-export interface GuardRerun {
+interface GuardRerun {
   class: string;
   kills: number;
   cappedUntil?: string;
 }
 
-export interface GuardThread {
+interface GuardThread {
   thread: string;
   n: number;
   frozen: boolean;
@@ -65,7 +65,7 @@ export interface InvariantCard {
   lines?: string[];
 }
 
-export interface InvariantStat {
+interface InvariantStat {
   id: string;
   /** "load" (absent on older hosts) or "thread" */
   kind?: "load" | "thread";
@@ -85,12 +85,12 @@ export interface Invariants {
 export const GUARD_WINDOW = 15 * 60 * 1000;
 
 /** A stretch of a lane, as shares of the window (0 left, 1 now). */
-export interface Span {
+interface Span {
   a: number;
   b: number;
 }
 
-export interface Lane {
+interface Lane {
   thread: string;
   title: string;
   /** when the guard held the work frozen */

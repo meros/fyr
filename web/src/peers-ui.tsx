@@ -6,7 +6,7 @@ import type { Api } from "./api.ts";
 import { candidateWords, configNote, inviteFromUrl, memberLink, needsInvite, others, typedInvite, viaWords, type InviteInfo, type PeerState } from "./peers.ts";
 import { Group, Row, useSet } from "./settings-rows.tsx";
 
-export type PeersApi = Pick<Api, "peerState" | "peerAct">;
+type PeersApi = Pick<Api, "peerState" | "peerAct">;
 
 /** The roster as the page reads it; reloads every 5 s while shown. */
 export function usePeerState(api: Partial<PeersApi>, live: boolean): { s: PeerState | null; err: string | null; reload(): void } {

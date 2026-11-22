@@ -25,7 +25,7 @@ import { useDirectory } from "./project-ui.tsx";
 import { ref } from "./hostfeed.ts";
 import type { HostId } from "./hostid.ts";
 
-export interface HandoverProps {
+interface HandoverProps {
   t: Thread;
   /** the profiles of the thread's host (fallback when ProfilesContext is empty in isolated tests) */
   profiles: Profile[];

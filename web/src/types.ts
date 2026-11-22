@@ -36,7 +36,7 @@ export interface Failure {
   at?: string;
 }
 
-export interface QuestionOption {
+interface QuestionOption {
   label: string;
   description?: string;
 }
@@ -48,7 +48,7 @@ export interface Question {
   options: QuestionOption[];
 }
 
-export interface Effect {
+interface Effect {
   action: string;
   args?: Record<string, unknown>;
   reason?: string;
@@ -118,7 +118,7 @@ export interface WakeUp {
 }
 
 /** Decision 0039, V0.trans-host-handover: link to the counterpart thread on another host. */
-export interface HandoverLink {
+interface HandoverLink {
   hostId: string;
   hostName?: string;
   threadId: string;
@@ -449,7 +449,7 @@ export interface CiAnnotation {
   check: string;
 }
 
-export interface ChangeCondition {
+interface ChangeCondition {
   type: string;
   status: "ok" | "fail" | "pending";
   reason?: string;

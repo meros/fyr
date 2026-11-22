@@ -42,7 +42,7 @@ export function connWords(c: Conn): string {
 
 /** Decision 0031 2.5 (slice 2b, V0.client-per-host): what the client keeps of one host, as that host sent it. Nothing here is another host's,
  *  and nothing is merged: a thread's actions and profiles are read from its own host's. */
-export interface HostState {
+interface HostState {
   /** the host's threads by ref */
   threads: Record<string, Thread>;
   /** the host's project records, each stamped with the host (a linked project is one record per host, decision 0034) */
@@ -318,7 +318,7 @@ function activity(t: Thread): number {
 }
 
 /** When the thread's work started: the run, else (waiting) the earliest running agent; 0 when unknown. */
-export function workStartedAt(t: Thread): number {
+function workStartedAt(t: Thread): number {
   const run = ts(t.runStartedAt);
   if (run) return run;
   const starts = t.tasks.filter((x) => x.status === "running").map((x) => ts(x.startedAt)).filter((n) => n > 0);
@@ -341,22 +341,22 @@ export function naturalAt(t: Thread): number {
 /** V0.stable-groups: oldest arrival first, so a new row goes to the bottom and nothing a thread does moves it within its
  *  group. Your move keeps its groups (V0.your-move) and orders by arrival inside each. Amends V0.26 (Working newest
  *  started first), V0.207 (Unread newest first) and the state order inside a Your move group. */
-export function compareArrival(arrivals: Readonly<Record<string, Arrival>>): (a: Thread, b: Thread) => number {
+function compareArrival(arrivals: Readonly<Record<string, Arrival>>): (a: Thread, b: Thread) => number {
   const at = (t: Thread) => arrivals[t.id]?.at ?? naturalAt(t);
   return (a, b) => at(a) - at(b) || a.id.localeCompare(b.id);
 }
 
-export function compareNeeds(arrivals: Readonly<Record<string, Arrival>> = {}): (a: Thread, b: Thread) => number {
+function compareNeeds(arrivals: Readonly<Record<string, Arrival>> = {}): (a: Thread, b: Thread) => number {
   const byArrival = compareArrival(arrivals);
   return (a, b) => needsGroupRank(a) - needsGroupRank(b) || byArrival(a, b);
 }
 
-export function compareActivityDesc(a: Thread, b: Thread): number {
+function compareActivityDesc(a: Thread, b: Thread): number {
   return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }
 
 /** V0.207: Seen, the thread read last first. Reading is the owner's act, so nothing else moves a row here. */
-export function compareSeen(a: Thread, b: Thread): number {
+function compareSeen(a: Thread, b: Thread): number {
   return (ts(b.view?.seenAt) || activity(b)) - (ts(a.view?.seenAt) || activity(a)) || a.id.localeCompare(b.id);
 }
 
@@ -455,9 +455,10 @@ export function unavailableReason(t: Thread | undefined, action: string): string
 
 // ---- undo of deferred actions (settle, archive, snooze) ----
 
+/** The desktop's Undo toast. Longer than the phone's PHONE_UNDO_MS (mobile.ts): a pointer has farther to travel. */
 export const UNDO_MS = 6000;
 
-export type UndoKind = "settle" | "archive" | "snooze";
+type UndoKind = "settle" | "archive" | "snooze";
 
 export interface UndoEntry {
   kind: UndoKind;
@@ -532,7 +533,7 @@ export function undoLive(u: UndoEntry | null, now: number): boolean {
   return !!u && now - u.at < UNDO_MS;
 }
 
-export interface PlannedCommand {
+interface PlannedCommand {
   action: string;
   threadId?: string;
   args?: Record<string, unknown>;
@@ -618,7 +619,7 @@ export function setProfiles(s: Store, host: HostId, profiles: Profile[]): Store 
 }
 
 /** RFC 7396 JSON Merge Patch: objects merge key by key, null deletes, anything else replaces. */
-export function mergePatch(target: unknown, patch: unknown): unknown {
+function mergePatch(target: unknown, patch: unknown): unknown {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) return patch;
   const out: Record<string, unknown> = target && typeof target === "object" && !Array.isArray(target) ? { ...(target as Record<string, unknown>) } : {};
   for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {

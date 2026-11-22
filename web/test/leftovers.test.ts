@@ -2,7 +2,7 @@
 // Settings. Pure texts; the components only print them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { HostLoad } from "../src/load.ts";
+import type { HostLoad } from "../src/host-load.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { cardLines } from "../src/card.ts";
 import { findLeftovers, hostLeftovers, leftoverRows, stripText, tempRows, type Leftover } from "../src/leftovers.ts";

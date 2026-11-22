@@ -33,16 +33,20 @@ export function relTime(iso: string | null | undefined, now: number): string {
   return ago(now - t);
 }
 
+/** Calendar days from `a` to `b` in this device's time zone (DST-safe: rounds the day starts). */
+export function daysBetween(a: Date, b: Date): number {
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  return Math.round((day(b) - day(a)) / 86400_000);
+}
+
 /** "14:20" today, "Mon 06:00" this week, "12 Nov" before that. */
 export function whenLabel(iso: string | null | undefined, now: number): string {
   if (!iso) return "";
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
   const d = new Date(t);
-  const n = new Date(now);
-  const hm = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((day(n) - day(d)) / 86400_000);
+  const hm = clockTime(iso);
+  const diff = daysBetween(d, new Date(now));
   if (diff === 0) return hm;
   if (diff > 0 && diff < 7) return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hm}`;
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -53,9 +57,7 @@ export function dayTime(iso: string | null | undefined, now: number): string {
   const hm = clockTime(iso);
   if (!hm) return "";
   const d = new Date(Date.parse(iso!));
-  const n = new Date(now);
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((day(n) - day(d)) / 86400_000);
+  const diff = daysBetween(d, new Date(now));
   if (diff === 0) return hm;
   if (diff > 0 && diff < 7) return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hm}`;
   return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm}`;
@@ -74,10 +76,8 @@ export function untilLabel(iso: string | null | undefined, now: number): string 
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
   const d = new Date(t);
-  const n = new Date(now);
-  const hm = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((day(d) - day(n)) / 86400_000);
+  const hm = clockTime(iso);
+  const diff = daysBetween(new Date(now), d);
   if (diff === 0) return hm;
   if (diff === 1) return `tomorrow ${hm}`;
   if (diff < 7) return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hm}`;

@@ -166,7 +166,7 @@ export function FromThreadMessage({ fromId, text, children }: { fromId: string; 
 }
 
 /** The picker's first row (V0.30): New project, named by the search text when nothing matches. */
-export interface NewRow {
+interface NewRow {
   /** from a thread: "New project from this thread" */
   fromThread: boolean;
   /** what it starts with, one line */
@@ -359,7 +359,7 @@ export function QuietGate({ project, now, unlock, what }: { project?: Project; n
 
 /** A project's one folder (V0.55): the short path and what it does with "Change…" through the host folder picker, or
  *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given. */
-export function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: HostId; onPick(path: string): void; onClear?(): void }) {
+function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: HostId; onPick(path: string): void; onClear?(): void }) {
   const picker = useFolderPick();
   const pick = async () => {
     const path = await picker.pick({ title, ...(host ? { host } : {}) });
@@ -541,7 +541,7 @@ function TimePick({ value, label, onChange }: { value: string; label: string; on
 /** V0.46, the decision 0014 addendum, V0.119: the project page's Quiet hours group. One row per window: from–to in
  *  24-hour time, an All day switch, ×, and the seven day chips under them; the last row adds a window or a preset
  *  that is not there yet; the foot says what all the rows do. No rows is off. */
-export function QuietGroup({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
+function QuietGroup({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
   const env = useSet();
   const set = (i: number, w: QuietHours) => onChange(value.map((x, k) => (k === i ? w : x)));
   const presets = QUIET_PRESETS.filter((p) => !hasWindow(value, p.window));
@@ -668,7 +668,7 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
 }
 
 /** Decision 0034: what the project screen needs to show and change a project's links. */
-export interface ProjectLinking {
+interface ProjectLinking {
   /** the project as the lists show it */
   group: Project;
   candidates: Project[];

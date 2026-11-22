@@ -170,7 +170,7 @@ export function ClipPicker({ onFiles, disabled }: { onFiles(f: FileList): void; 
   return <Picker cls="btn clip" label="Attach files" multiple icon={ICON.clip} disabled={disabled} onFiles={onFiles} />;
 }
 
-export interface SentAttachment {
+interface SentAttachment {
   id: string;
   name: string;
   mediaType: string;

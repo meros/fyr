@@ -18,13 +18,15 @@ export function storedGet(key: string): string | null {
   }
 }
 
-/** Keep a value; null forgets it. Storage blocked: the choice lasts this page only. */
-export function storedSet(key: string, value: string | null): void {
+/** Keep a value; null forgets it. Returns false when storage is blocked or full: the choice then lasts this page only,
+ *  and a caller that must say so can. */
+export function storedSet(key: string, value: string | null): boolean {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
+    return true;
   } catch {
-    /* blocked: this page only */
+    return false;
   }
 }
 

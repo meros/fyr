@@ -104,7 +104,7 @@ export function cardsKey(t: Pick<Thread, "runs"> & { offers?: Offer[] }): string
 
 export type CardState = "fresh" | "running" | "ok" | "failed";
 
-export interface CardLook {
+interface CardLook {
   /** "Run on lab", or "Run" when the host is not known */
   title: string;
   why: string;
@@ -210,7 +210,7 @@ const FENCE = /^[ \t]*```([A-Za-z0-9_+-]*)[^\n]*\n([\s\S]*?)\n?[ \t]*```[ \t]*$/
 const SHELL = new Set(["sh", "bash", "shell", "console", "zsh"]);
 const ASK_RUN = /\b(run this|run these|please run|can you run|could you run|you need to run|you'll need to run|you will need to run|run the following|run:)/i;
 
-export type ProsePart = { kind: "md"; text: string } | { kind: "cmd"; text: string };
+type ProsePart = { kind: "md"; text: string } | { kind: "cmd"; text: string };
 
 /** An agent message cut into markdown and the commands it asks the owner to run (a `! cmd` block, or a shell block
  *  after a line that asks to run it), each block one script with "! " dropped. */

@@ -1,6 +1,6 @@
 // The key-hint bar: which keys work right now. Pure.
 
-export interface HintContext {
+interface HintContext {
   dialog: string | null;
   /** SPEC 0.5 V0.67: how many snooze presets the menu shows (4 or 5) */
   snoozeCount?: number;
@@ -16,7 +16,7 @@ export interface HintContext {
   inText: boolean;
 }
 
-export type Hint = [key: string, label: string];
+type Hint = [key: string, label: string];
 
 export function keyHints(c: HintContext): Hint[] {
   if (c.dialog === "snooze") return [[`1–${c.snoozeCount ?? 5}`, "snooze"], ["Esc", "close"]];

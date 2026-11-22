@@ -49,7 +49,7 @@ export interface DiffLine {
 }
 
 /** The host lists at most this many files (then `truncated`). */
-export const MAX_FILES = 1000;
+const MAX_FILES = 1000;
 
 const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
@@ -131,7 +131,7 @@ export interface Look {
 }
 
 /** What the reply says is new since the look. */
-export interface SinceDTO {
+interface SinceDTO {
   head: string;
   at: string;
   mode: "ancestor" | "rebased" | "missing";

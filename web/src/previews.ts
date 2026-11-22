@@ -5,7 +5,7 @@ import type { HostId } from "./hostid.ts";
 import { attachmentUrl, type ContentUrls } from "./attach.ts";
 import { AGENT_ATTACHMENT, hostUrl } from "./urls.ts";
 
-export interface PreviewData {
+interface PreviewData {
   kind: "image" | "html";
   attachmentId: string;
   title: string;
@@ -24,9 +24,9 @@ export interface PreviewCard extends PreviewData {
 }
 
 /** Desktop thumbnails are at most this tall; phones show the full width. */
-export const THUMB_MAX_H = 360;
+const THUMB_MAX_H = 360;
 /** An HTML frame starts at most this tall... */
-export const FRAME_START_MAX = 600;
+const FRAME_START_MAX = 600;
 /** ...and never grows past this. */
 export const FRAME_MAX = 2000;
 const FRAME_DEFAULT = 400;

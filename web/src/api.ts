@@ -18,7 +18,7 @@ import { addressable, bare, decodeFront, hostOfFrame, reachabilityChanged, ref, 
 import type { HostId } from "./hostid.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
-import type { HostLoad } from "./load.ts";
+import type { HostLoad } from "./host-load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { AutoDeploySetting, AutoMergeRepo } from "./automerge.ts";
 import type { UpdatesView } from "./updates.ts";
@@ -33,7 +33,7 @@ import { reloadForNewBuild } from "./pwa.ts";
 import type { SlashCommand } from "./slash.ts";
 import { parsePlan, type HandoverPlan } from "./handover.ts";
 
-export interface ApiHandlers {
+interface ApiHandlers {
   /** Slice 2b: the front's state and each host's own, by install id */
   state(snap: Snapshot): void;
   thread(t: ThreadDTO): void;
@@ -147,7 +147,7 @@ export interface Api {
 export type CommandSource = { host: HostId; threadId: string } | { host: HostId; cwd: string; profile: string };
 
 /** V0.127: a per-host settings read; readAt is set when the host is offline and this is what the front last read. */
-export interface HostRead<T> {
+interface HostRead<T> {
   data: T;
   readAt?: string;
 }
@@ -189,7 +189,7 @@ export function newCommandId(): string {
 }
 
 /** The mock scenario of `?mock=…`, or null for the real host. */
-export function mockScenario(search: string): string | null {
+function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
   if (!m || m[1] === "0" || m[1] === "") return null;
   return decodeURIComponent(m[1]);

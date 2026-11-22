@@ -3,7 +3,7 @@
 // for the two helpers at the end that touch `history`.
 
 /** A desktop history entry. It is also a phone Nav (nav.ts), so a window that narrows to a phone reads it. */
-export interface DeskEntry {
+interface DeskEntry {
   screen: { name: "thread"; id: string; tab?: string };
   sheet: null;
   /** the entry's place in Fyr's stack; tells a pop's direction */

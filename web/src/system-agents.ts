@@ -8,7 +8,7 @@ export interface SystemAgentChoice {
 }
 
 /** A provider of the host as the setting offers it. */
-export interface SystemProvider {
+interface SystemProvider {
   id: string;
   name: string;
   models: string[];
@@ -21,7 +21,7 @@ export interface SystemProvider {
 export const PROFILE_SYSTEM_DEFAULT = "$default";
 
 /** One job: its override, and what it runs on now or why it cannot run. */
-export interface SystemJob {
+interface SystemJob {
   id: string;
   name: string;
   defaultThread?: boolean;

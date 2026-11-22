@@ -2,7 +2,7 @@
 // Automation, Setup, Hosts, linked projects, the phone Host load sheet, and HostField pickers). Pure.
 
 import type { HostInfo } from "./hosts.ts";
-import type { HostLoad } from "./load.ts";
+import type { HostLoad } from "./host-load.ts";
 import type { Quota } from "./quota.ts";
 import type { Project } from "./types.ts";
 import { githubState, type UpdatesView } from "./updates.ts";

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { activeTabId, automationBadge, orderedMembers, quotasForHost, stepTabIndex } from "../src/host-tabs.ts";
 import { pageUrl, parsePage } from "../src/settings-nav.ts";
 import type { HostInfo } from "../src/hosts.ts";
-import type { HostLoad } from "../src/load.ts";
+import type { HostLoad } from "../src/host-load.ts";
 import type { Quota } from "../src/quota.ts";
 import type { Project } from "../src/types.ts";
 import type { UpdatesView } from "../src/updates.ts";

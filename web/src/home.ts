@@ -66,9 +66,9 @@ export function runningLine(t: Thread): string {
   return (t.running && t.activity) || rowState(t);
 }
 
-export type LogKind = "merged" | "done" | "settled" | "failed";
+type LogKind = "merged" | "done" | "settled" | "failed";
 
-export interface LogEntry {
+interface LogEntry {
   at: string;
   kind: LogKind;
   /** the word before the text */
@@ -122,7 +122,7 @@ export function startOfDay(now: number): number {
 }
 
 /** V0.day-chart: one merge on the day's chart. */
-export interface DayMerge {
+interface DayMerge {
   at: number;
   text: string;
   thread: string;

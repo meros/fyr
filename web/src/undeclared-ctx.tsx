@@ -2,7 +2,7 @@
 
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import type { Lookup } from "./load.ts";
+import type { Lookup } from "./host-load.ts";
 import type { PageRef } from "./settings-nav.ts";
 
 /** What the components cannot know alone: a thread's title and project, and the app's two ways to go somewhere (the

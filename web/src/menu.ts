@@ -19,7 +19,7 @@ export type MenuTarget =
 const SEP: MenuEntry = { sep: true };
 
 /** Actions as menu entries, a line between groups. */
-export function menuEntries(acts: ThreadAction[]): MenuEntry[] {
+function menuEntries(acts: ThreadAction[]): MenuEntry[] {
   const out: MenuEntry[] = [];
   acts.forEach((a, i) => {
     if (i && acts[i - 1].group !== a.group) out.push(SEP);

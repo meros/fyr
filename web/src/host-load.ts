@@ -4,7 +4,7 @@ import type { Guard, Invariants } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
 import type { Card, CardRow } from "./card.ts";
 
-export interface ThreadLoad {
+interface ThreadLoad {
   /** a thread id, or "self-deploy" */
   id: string;
   /** cores over the last read; absent on a host's first read */
@@ -29,12 +29,12 @@ export interface ThreadService {
   reserve: number;
 }
 /** V0.services-not-jobs: a service pattern of the host; a built-in one can be removed and added back. */
-export interface ServicePattern {
+interface ServicePattern {
   pattern: string;
   builtIn?: boolean;
 }
 /** Decision 0029 S1: one measured job class (its newest run's measures, the median wall time of its last ten). */
-export interface JobClass {
+interface JobClass {
   class: string;
   runs: number;
   cores: number;
@@ -97,13 +97,13 @@ export interface HostLoad {
   invariants?: Invariants;
 }
 /** V0.164: when a thread counts as heavy: shares of what the host gives its agents, and for how many seconds. */
-export interface UndeclaredSettings {
+interface UndeclaredSettings {
   on: boolean;
   cpu: number;
   memory: number;
   after: number;
 }
-export interface HeavyAdded {
+interface HeavyAdded {
   pattern: string;
   kind: string;
   at: string;
@@ -128,7 +128,7 @@ export interface UndeclaredUse {
   overMem: boolean;
 }
 /** One owner of a slot or a place in the queue: a thread id, or "self-deploy". */
-export interface SlotHolder {
+interface SlotHolder {
   owner: string;
   /** "test", "build" or "e2e" */
   kind: string;
@@ -211,11 +211,11 @@ export function normalizeLoad(list: HostLoad[]): HostLoad[] {
 }
 
 /** A thread at or above this many cores is coloured. */
-export const HOT_CORES = 2;
+const HOT_CORES = 2;
 /** CPU pressure at or above this share colours the rail figure. */
-export const HOT_PRESSURE = 40;
+const HOT_PRESSURE = 40;
 
-export interface LoadPart {
+interface LoadPart {
   text: string;
   hot: boolean;
 }
@@ -230,10 +230,10 @@ export function railLoad(h: HostLoad): LoadPart {
 }
 
 /** V0.99: the rail ring's level. calm under 70 % of the cores, warm up to the cores, hot as railLoad. */
-export type LoadLevel = "calm" | "warm" | "hot";
-export const WARM_SHARE = 0.7;
+type LoadLevel = "calm" | "warm" | "hot";
+const WARM_SHARE = 0.7;
 
-export interface RailMeter {
+interface RailMeter {
   text: string;
   /** the 1-minute load over the cores, 0 to 1; a full ring past the cores */
   share: number;
@@ -241,12 +241,12 @@ export interface RailMeter {
 }
 
 /** Decision 0029 S1: the slowdown that colours the ring warm, and hot. */
-export const WARM_SLOWDOWN = 1.5;
-export const HOT_SLOWDOWN = 3;
+const WARM_SLOWDOWN = 1.5;
+const HOT_SLOWDOWN = 3;
 
 /** Decision 0029 S1: the ring's level from the slowdown and the memory stall level; null when the host measures
  *  neither (no provider), so the V0.99 rule holds. */
-export function signalLevel(h: HostLoad): LoadLevel | null {
+function signalLevel(h: HostLoad): LoadLevel | null {
   if (h.slowdown === undefined && h.memoryStall === undefined) return null;
   const s = h.slowdown ?? 1;
   if (s >= HOT_SLOWDOWN || h.memoryStall === "critical") return "hot";
@@ -282,7 +282,7 @@ export function threadCPU(list: HostLoad[], id: string): LoadPart | null {
 
 // SPEC 0.5 V0.86: the slots for heavy jobs.
 
-export interface RailBudget {
+interface RailBudget {
   text: string;
   /** V0.152: "full", "1 waits" or "" */
   note: string;
@@ -339,7 +339,7 @@ export function shortHostNames(names: string[]): Map<string, string> {
 /** V0.admission-tidy: a holder that also waits, to grow its slot for a heavier command, is in both of the host's lists;
  *  its one row says so after its job: " · waiting to grow: needs ≈ 8.6 GB memory, 2.0 GB free" at the queue's head,
  *  " · waiting to grow (1 ahead)" behind it; "" when it does not wait. */
-export function growNote(s: Slots, id: string): string {
+function growNote(s: Slots, id: string): string {
   const i = s.waiting.findIndex((x) => x.owner === id);
   if (i < 0) return "";
   return i === 0 && s.why ? ` · waiting to grow: ${s.why}` : ` · waiting to grow (${i} ahead)`;
@@ -465,7 +465,7 @@ export interface LoadCard extends Card {
 }
 
 /** V0.oomd-guard: the guard warns when the stall comes within this many points of oomd's limit (OomdNearMargin). */
-export const OOMD_NEAR = 10;
+const OOMD_NEAR = 10;
 const VERDICT: Record<LoadLevel, string> = { calm: "Calm", warm: "Busy", hot: "Overloaded" };
 const pct = (n: number) => `${Math.round(n)} %`;
 

@@ -32,7 +32,7 @@ export interface NewThreadArgs {
 // ---- the one remembered-defaults record ----
 
 /** What this device used for its last new thread. */
-export interface Remembered {
+interface Remembered {
   /** "" for No project */
   projectId?: string;
   profile?: string;
@@ -45,7 +45,7 @@ const OLD_PROJECT_KEY = "fyr.lastProject";
 /** ...and the phone the folder, profile and model here. */
 const OLD_DEFAULTS_KEY = "fyr.newDefaults";
 
-export type KeyValue = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+type KeyValue = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
@@ -141,7 +141,7 @@ function profilesOn(ctx: FormCtx, host: HostId | undefined): Profile[] {
 }
 
 /** V0.139: a host's projects (every project with one host). */
-export function hostProjects(ctx: FormCtx, host: HostId | undefined): Project[] {
+function hostProjects(ctx: FormCtx, host: HostId | undefined): Project[] {
   if (!multiHost(ctx.hosts)) return ctx.projects;
   return projectRecords(ctx.projects).filter((p) => !!host && p.hostId === host); // decision 0034: each host's own record
 }
@@ -223,7 +223,7 @@ function profileFor(pr: Project | undefined, there: Profile[], current: { profil
 
 /** V0.model-choice (#23): why a project's default provider is not used: it cannot run, or this host has no such
  *  provider; "" when the project has no default. */
-export function defaultNote(pr: Project, there: Profile[]): string {
+function defaultNote(pr: Project, there: Profile[]): string {
   if (!pr.profile) return "";
   const p = there.find((x) => x.id === pr.profile);
   if (!p) return `${pr.name}'s default provider is not on this host`;

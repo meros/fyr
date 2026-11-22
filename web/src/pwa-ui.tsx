@@ -28,7 +28,7 @@ const INSTALL = (
   </svg>
 );
 
-export interface PwaControlsProps {
+interface PwaControlsProps {
   push: PushStatus;
   /** why push is unavailable; shown as the title. A reason is only rendered as a dimmed bell when `showUnsupported`. */
   pushReason: string | null;

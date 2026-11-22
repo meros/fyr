@@ -4,12 +4,12 @@ import type { Card, CardRow } from "./card.ts";
 import type { WakeUp } from "./types.ts";
 import { relTime, untilLabel } from "./format.ts";
 
-export interface QuotaWindow {
+interface QuotaWindow {
   name: string;
   usedPct: number;
   resetsAt?: string;
 }
-export interface QuotaBalance {
+interface QuotaBalance {
   amount?: number;
   spent?: number;
   currency: string;
@@ -32,14 +32,14 @@ export interface Quota {
 }
 
 /** A window at or above this share is coloured; nothing else is. */
-export const HOT = 80;
+const HOT = 80;
 
-export interface QuotaPart {
+interface QuotaPart {
   text: string;
   hot: boolean;
 }
 
-export function pctText(p: number): string {
+function pctText(p: number): string {
   return `${Math.round(p)} %`;
 }
 
@@ -168,7 +168,7 @@ export function quotaFor(list: Quota[], profile: string, host?: string): Quota |
 }
 
 /** V0.quota-reset-wake: one window's wake-on-reset control, shared by the desktop quota popover and phone Details. */
-export interface QuotaWakeOption {
+interface QuotaWakeOption {
   window: string;
   resetsAt?: string;
   when: string;

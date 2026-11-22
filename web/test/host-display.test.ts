@@ -2,7 +2,7 @@
 // board names its thread's host, with several hosts; with one, nothing changes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { railLabel, type HostLoad } from "../src/load.ts";
+import { railLabel, type HostLoad } from "../src/host-load.ts";
 import { cardHost } from "../src/board.ts";
 
 const desk: HostLoad = { host: "desk", cores: 8, load: [2.6, 2, 1], threads: [], slots: { n: 2, held: [{ thread: "t1", kind: "test" }] as never, waiting: [] as never } } as unknown as HostLoad;
