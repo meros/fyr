@@ -26,6 +26,9 @@ The keys you are most likely to set in `config.json`:
 | `scanRoots` | none | Extra folders the folder picker scans for git repositories |
 | `slots` | `2` | The share of the host heavy jobs may use before they queue: 2 is half the host per job, as a starting point that Fyr then learns per job class |
 | `role` | `"both"` | `host` (runs agents), `front` (serves the app for `hosts`), or `both` |
+| `ownerLogin` | none | Optional: Tailscale login allowed to sign in through Tailscale Serve and auto-pair on a tailnet. Fyr never reads it from `tailscaled` automatically; set it here, with `-owner-login`, or once with `fyr auth owner <login>`. Not needed without Tailscale |
+| `peerListen` | none | Address for the mutual-TLS peer port (e.g. `"0.0.0.0:7779"`), so other installs can link over a LAN or an optional tailnet |
+| `tls` | none | `{cert, key, listen, name}` to serve the front over HTTPS on a LAN without Tailscale ([The phone](#the-phone)) |
 | `updateChannel` | `"main"` (a new install from the scripts: `"stable"`) | Which releases the host follows: `stable` (versions), `main` (every green commit) or a version such as `"v1.2.3"` to stay on it, read at start ([Channels and versions](#channels-and-versions)) |
 | `updateEveryMinutes` | `60` | How often the host checks for a new release |
 | `updateRepo` | `"meros/fyr"` | The GitHub repository releases come from (`owner/name`), read at start |
@@ -68,7 +71,7 @@ Then `systemctl daemon-reload`, `enable` and `restart fyr.service`. These are th
 
 **Updates** are the updater's ([below](#updates)). It needs no `gh` login for a public release repo.
 
-**The phone over Tailscale:** run `tailscale serve --bg --https=7443 unix:$HOME/.local/share/fyr/serve.sock` once as root (the module's `tailnet.enable` does the same). The script prints it when Tailscale is up.
+**The phone over Tailscale (optional):** set your Tailscale login once (`fyr auth owner you@example.com`, or `ownerLogin` in `config.json`), then run `sudo tailscale serve --bg --https=7443 unix:$HOME/.local/share/fyr/serve.sock` (the module's `tailnet.enable` does the same). The script prints this when Tailscale is up. Without Tailscale, serve over HTTPS on your LAN with `tls` and `fyr device add` ([below](#the-phone)).
 
 ## The Linux app
 
@@ -84,18 +87,21 @@ It installs `fyr-desktop`, starts it in the tray at login, and lets you pause an
 
 The app is a PWA: open it in the phone's browser and add it to the home screen. Allow notifications in Settings → This device.
 
-The phone has to reach your front. With **Tailscale**, set `services.fyr.tailnet.enable = true` on NixOS. Fyr is then served by Tailscale Serve on `https://<machine>.<tailnet>.ts.net:7443`, to your Tailscale login only (`ownerLogin` sets the login on a tagged node). On a **LAN**, serve the front over HTTPS with the `tls` keys of `config.json` and pair the phone: `fyr device add` prints a one-time link (valid for 10 minutes) to open on the phone.
+The phone needs a trusted HTTPS origin to reach your front (Fyr serves no plain HTTP and no self-signed browser page off loopback). Pick whichever route fits your setup:
+
+- **LAN without Tailscale:** configure `tls` (`cert`, `key`, `listen`, `name`) in `config.json` with a certificate your phone trusts (from your own CA or ACME DNS-01), then pair the phone: `fyr device add` prints a QR code and one-time link (valid for 10 minutes), or type the approval code shown on the phone into `fyr device approve CODE` / Settings → Devices.
+- **Tailscale (optional route, works at home and away):** set your Tailscale login once (`fyr auth owner you@example.com`, or `ownerLogin` in `config.json` / NixOS `services.fyr.ownerLogin`), and publish `serve.sock` with Tailscale Serve (`services.fyr.tailnet.enable = true` on NixOS, or `sudo tailscale serve --bg --https=7443 unix:$HOME/.local/share/fyr/serve.sock`). Fyr is then served on `https://<machine>.<tailnet>.ts.net:7443` to that login only.
 
 On macOS the Tailscale app cannot proxy to Fyr's socket, so the macOS install publishes only the address that other installs use to find it (see below), not the app.
 
 ## More machines
 
-Every install has its own key. Installs pair once and then trust each other's keys, on the tailnet or a LAN ([decision 0030](decisions/0030-every-hop-names-who-acts.md)):
+Every install has its own Ed25519 key. Installs pair once and then trust each other's keys over mutual TLS on any network; a tailnet is one optional route, not a requirement ([decision 0026](decisions/0026-keys-not-networks.md), [decision 0030](decisions/0030-every-hop-names-who-acts.md)):
 
-- **Same Tailscale user:** set a `peerPort` (NixOS: `services.fyr.peerPort = 7779;`) and Tailscale Serve on both. They find and pair with each other.
-- **Anything else:** run `fyr pair` on one install. It prints a code; run `fyr pair CODE -addr host:port` on the other.
+- **Plain LAN or any network (no Tailscale):** set `peerListen` (e.g. `"0.0.0.0:7779"`, NixOS `services.fyr.peerPort = 7779; services.fyr.openFirewall = true;`). Installs on the same LAN discover each other by mDNS (`_fyr._tcp.local`). Run `fyr pair` on one install to print an invite code, then run `fyr pair CODE` on the other (add `-addr host:port` across subnets or without mDNS).
+- **Tailscale (optional shortcut):** on untagged installs with the same configured `ownerLogin` (via `config.json` or `fyr auth owner <login>`), `peerListen` (`services.fyr.peerPort`) and Tailscale Serve up on both, installs find and pair with each other automatically. Tagged nodes pair once with `fyr pair` and learn the owner login from the roster.
 
-`fyr host list` shows the paired installs, and `fyr host remove ID` forgets one. Each front shows the threads of every host it knows, and a new thread asks which host runs it.
+`fyr host list` shows the paired installs and unpaired candidates, and `fyr host remove ID` forgets one. Each front shows the threads of every host it knows, and a new thread asks which host runs it.
 
 ## Updates
 

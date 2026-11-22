@@ -266,7 +266,9 @@ func loadConfig(path string) config {
 }
 
 // override applies the command line over the config file and fills the
-// defaults: the role (V0.51), the front's hosts and the tailnet owner (V0.14).
+// defaults: the role (V0.51) and the front's hosts. OwnerLogin comes only from
+// config, -owner-login, or the roster (fyr auth owner), never from
+// tailnet.Self (V0.owner-without-tailnet, #197).
 func (c *config) override(listen, ownerLogin, role, hosts, hostListen string) {
 	if listen != "" {
 		c.Listen = listen
@@ -295,15 +297,6 @@ func (c *config) override(listen, ownerLogin, role, hosts, hostListen string) {
 	}
 	for i := range c.Hosts {
 		c.Hosts[i].Remote = true
-	}
-	if c.OwnerLogin == "" {
-		// V0.14: the Tailscale user of this machine owns it over the tailnet.
-		if login, dns, err := tailnet.Self(c.tsSocket()); err == nil {
-			c.OwnerLogin = login
-			log.Printf("tailnet owner %s on %s", login, dns)
-		} else {
-			log.Printf("tailnet: %v; serving loopback only", err)
-		}
 	}
 }
 

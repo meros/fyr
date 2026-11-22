@@ -163,7 +163,7 @@ func TestTailnetNodesInEnforce(t *testing.T) {
 func TestFirstNodeOfAnEmptyInstallIsApprovedAndTheSecondWaits(t *testing.T) {
 	l := live(t)
 	phone2, _ := extraNodes(l)
-	f, err := authtest.Start(authtest.Options{Name: "fresh", Tailscale: l.TS, Extra: map[string]any{"serveSocketUsers": []int{authtest.OSUID()}}})
+	f, err := authtest.Start(authtest.Options{Name: "fresh", Tailscale: l.TS, Extra: map[string]any{"serveSocketUsers": []int{authtest.OSUID()}, "ownerLogin": l.OwnerLogin}})
 	if err != nil {
 		t.Fatal(err)
 	}

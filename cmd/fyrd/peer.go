@@ -108,12 +108,24 @@ func newPeerSide(cfg config, data, name string, key *identity.Key) *peerSide {
 	p := &peerSide{cfg: cfg, name: name, data: data, key: key}
 	p.dial = &peerlink.Dialer{Key: key, Resolve: resolver(cfg.ResolveFile)}
 	p.env = &peer.Env{Key: key, Roster: ros, Name: name, Serve: serveClient(cfg), ServePort: servePort(cfg), Dial: p.dial,
-		Drive: peer.OpenDrive(data), Invites: &peer.Invites{}, Logf: log.Printf, Port: func() int { return int(p.port.Load()) }}
+		Drive: peer.OpenDrive(data), Invites: &peer.Invites{}, Logf: log.Printf, Port: func() int { return int(p.port.Load()) },
+		OwnerLogin: p.effectiveOwner}
 	p.dial.Opts = p.env.DialOptions // a rotated peer is accepted by its chain; this install shows its own
-	if tailnet.Available(cfg.tsSocket()) && cfg.OwnerLogin != "" {
+	if tailnet.Available(cfg.tsSocket()) {
 		p.env.TS = tsStatus{cfg.tsSocket()}
 	}
 	return p
+}
+
+// effectiveOwner is the Tailscale owner login from config, else the roster.
+func (p *peerSide) effectiveOwner() string {
+	if p == nil {
+		return ""
+	}
+	if p.cfg.OwnerLogin != "" {
+		return p.cfg.OwnerLogin
+	}
+	return p.env.Roster.OwnerLogin()
 }
 
 // envOrNil is the environment, nil-safe.
@@ -175,7 +187,7 @@ func (p *peerSide) peerPort() int {
 
 // ownerRoutes adds the roster's calls to the owner socket (internal/peerwire).
 func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
-	return peerwire.OwnerRoutes(peerwire.Owner{Env: p.env, Key: p.key, Data: p.data, WhoisLinkUses: fr.WhoisLinkUses, ConfigNote: p.cfg.watch.Note,
+	return peerwire.OwnerRoutes(peerwire.Owner{Env: p.env, Key: p.key, Data: p.data, ConfigOwner: p.cfg.OwnerLogin, WhoisLinkUses: fr.WhoisLinkUses, ConfigNote: p.cfg.watch.Note,
 		Restart: func() { syscall.Kill(os.Getpid(), syscall.SIGHUP) }})
 }
 

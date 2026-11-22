@@ -107,21 +107,39 @@ type Deps struct {
 func Start(ctx context.Context, d Deps) {
 	cfg, env, ros, key, name := d.Config, d.Env, d.Env.Roster, d.Key, d.Name
 	dial := d.Dial
+	if cfg.OwnerLogin != "" {
+		// V0.owner-without-tailnet: config's ownerLogin is recorded in the roster so
+		// paired installs (a tagged server among them) learn it by sync.
+		ros.SetOwnerLogin(cfg.OwnerLogin)
+	}
 	self := d.Self
-	if self == nil {
+	if self == nil && tailnet.Available(cfg.TSSocket) {
 		self = func() (string, string, error) { return tailnet.Self(cfg.TSSocket) }
 	}
 	selfHost := ""
-	tagged := true
-	if login, dns, err := self(); err == nil || errors.Is(err, tailnet.ErrTagged) {
-		selfHost = dns
-		if err == nil {
-			tagged = false
-			ros.SetOwnerLogin(login) // an untagged install knows whose it is, and says so; a tagged one learns it by sync
+	if self == nil {
+		log.Printf("tailnet: off (tailscaled not running); serving without a tailnet")
+	} else {
+		// V0.owner-without-tailnet (#197): tailnet.Self supplies only the MagicDNS
+		// address hint; owner identity never falls back to it.
+		_, dns, err := self()
+		if err == nil || errors.Is(err, tailnet.ErrTagged) {
+			selfHost = dns
 		}
-	}
-	if tagged && cfg.OwnerLogin == "" {
-		log.Printf("peer: this install is tagged and has no owner login yet: pair it with an invite, and it learns the owner's login from the roster")
+		owner, source := cfg.OwnerLogin, "config"
+		if owner == "" {
+			owner, source = ros.OwnerLogin(), "roster"
+		}
+		switch {
+		case owner != "":
+			log.Printf("tailnet: owner %s (%s)", owner, source)
+		case errors.Is(err, tailnet.ErrTagged):
+			log.Printf("peer: this install is tagged and has no owner login yet: set ownerLogin, run 'fyr auth owner <login>', or pair it with an invite to learn it from the roster")
+		case err == nil:
+			log.Printf("tailnet: no ownerLogin configured; set ownerLogin in config.json or run 'fyr auth owner <login>' to allow Tailscale Serve sign-in")
+		default:
+			log.Printf("tailnet: off (%v); serving without a tailnet", err)
+		}
 	}
 	// The mesh (decision 0030 Amendment 1): one two-way link per member, opened by either
 	// side. The peer handler serves the requests a peer sends over any link.

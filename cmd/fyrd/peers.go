@@ -72,6 +72,9 @@ func installID(data string) string {
 // Serve on: the node's MagicDNS name and the first peer port (default 7443,
 // the NixOS module's); "" without tailscaled.
 func servePublic(cfg config) string {
+	if !tailnet.Available(cfg.tsSocket()) {
+		return ""
+	}
 	_, dns, err := tailnet.Self(cfg.tsSocket())
 	if (err != nil && !errors.Is(err, tailnet.ErrTagged)) || dns == "" {
 		return ""

@@ -9,7 +9,7 @@ Each listener has **one way to name its caller**, and nothing reads identity fro
 | Listener | Authenticator | Notes |
 |---|---|---|
 | `<data>/owner.sock` | the peer's user is fyrd's own or root | `POST /session/once` gives a one-time link (`fyr open`) |
-| `<data>/serve.sock` | the peer's user is root (tailscaled; config `serveSocketUsers` adds users for a test), then the `fyr_session` cookie, else the owner's `Tailscale-User-Login` mints one | a request there takes the public origin (`X-Forwarded-Host` when it is a `ts.net` name, else the node's MagicDNS name and the first `peerPorts`, default 7443), over https |
+| `<data>/serve.sock` | the peer's user is root (tailscaled; config `serveSocketUsers` adds users for a test), then the `fyr_session` cookie, else `Tailscale-User-Login` matching the configured owner (`ownerLogin` or roster) mints one | optional Tailscale route; a request there takes the public origin (`X-Forwarded-Host` when it is a `ts.net` name, else the node's MagicDNS name and the first `peerPorts`, default 7443), over https |
 | Loopback TCP (the front, and a host's main port) | a loopback `Host` (`127.0.0.1:*`, `localhost:*`, `[::1]:*`, any `*.localhost`), the `fyr_session` cookie; `POST` needs `X-Fyr: 1` | **a front's listener answers `400` to any request with `Fyr-Actor` or `Fyr-Origin`**. A request with no session is still served in this release as the `legacy` principal and logged |
 | The in-process pipe (role both: front to its own host) | only this process can dial it: no browser guard | **`Fyr-Actor` is required**: missing or malformed is `401`, never a default. No `/mcp` |
 | A host's tailnet listener (`hostListen`, V0.51) | tailscaled whois of the connection is the owner's login; a request with `Origin`, or a `Host` that is neither an address, a `ts.net` name nor one of the node's own names, is `403`; `POST` needs `X-Fyr: 1` | `Fyr-Actor` is read when present. A front of an older build sends none and is still served as `legacy`, and counted. **No `/mcp`** |
@@ -39,9 +39,9 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
 
 **Removal, rotation and the old link ends (V0.160).** `fyr host remove ID` (or Settings → Hosts → Remove, a signed-in device) on any member writes an `install-remove` statement: the install is gone for ever, what it signed counts for nothing (the members only it vouched for are signed for again by the remover in the same batch), its open requests close within a second, and the next sync tells every member; a front stops following a host it reached only through it. A host that only the removed install could reach learns of it when it next meets another member, or when the owner runs the removal there. `fyr rotate-key` writes a `key-rotate` statement signed by the old key, a new key waits in `identity.key.next` and takes over at the restart (fyrd exits 75; the launcher restarts it); the certificate of the new key carries the rotation, so a peer that was offline follows it by the chain, and the old key is refused (`identity.key.old` is kept for the owner's records). A key that may be stolen is removed and paired again, not rotated. **Step-up** (config `stepUpMinutes`, default 5; the owner socket is never asked): approving a device or code, Add a device, Pair and Add need a session that is at least that old. **The peer way in** can enforce (by hand, by a signed-in device, or by itself after three clean days when every followed host is on a pinned link and a request has come over the link): the whois listener and the loopback host port are then not started, a device no member signed in and the legacy principal are `401` on the peer port; `fyr auth observe peer` brings the listeners back. `fyrd selftest` loads the install key, the roster and the device table, so a build that cannot read them is not switched to.
 
-**The owner's login** travels in the roster (`owner-login`, signed by an untagged member that knows it). A tagged install has none of its own: it serves no tailnet browser until it is paired, then takes the login from the roster (config `ownerLogin` still wins). Settings → Hosts (`GET /api/front/peer/state`, `POST /api/front/peer/invite`, `POST /api/front/peer/join`) lists the installs and how each came in (paired, or vouched for by whom), the tailnet nodes that are not members and why (tagged, another user's, shared in, expired, or waiting for its Serve), and the Pair and Add forms.
+**The owner's login (V0.owner-without-tailnet).** Tailscale is one optional route; without it no owner login is needed. When using Tailscale Serve or condition 1 auto-pairing, the Tailscale owner login comes from config (`ownerLogin` / `-owner-login`), from the first-run CLI step (`fyr auth owner <login>`, stored in `<data>/roster.json`), or by roster sync from a paired install (`owner-login` statement); `fyrd` never falls back to `tailnet.Self`. Config `ownerLogin` wins over the roster. Settings → Hosts (`GET /api/front/peer/state`, `POST /api/front/peer/invite`, `POST /api/front/peer/join`) lists the installs and how each came in (paired, or vouched for by whom), unpaired candidates (LAN mDNS or tailnet), and the Pair and Add forms.
 
-**Owner socket** (`<data>/owner.sock`, never gated by a mode): `POST /host/remove {id}`, `POST /host/rotate`, `POST /pair/invite`, `POST /pair/join {code, addr}`, `GET /host/list`, `POST /host/drive {id, on}`, `POST /session/once`, `POST /device/add`, `POST /device/approve {code}`, `POST /device/revoke {id}`, `GET /device/list`, `GET /auth/status`, `POST /auth/mode {way, mode}`, `POST /push/native {id, name, remove?}` and `GET /push/native/stream?id=…` (native desktop push queue for `Fyr.app` and `fyr-desktop`, V0.mac-notify, V0.linux-desktop). `fyr open`, `fyr device add|approve|revoke|list`, `fyr auth status|observe|enforce` and the native desktop apps use them.
+**Owner socket** (`<data>/owner.sock`, never gated by a mode): `POST /host/remove {id}`, `POST /host/rotate`, `POST /pair/invite`, `POST /pair/join {code, addr}`, `GET /host/list`, `POST /host/drive {id, on}`, `POST /session/once`, `POST /device/add`, `POST /device/approve {code}`, `POST /device/revoke {id}`, `GET /device/list`, `GET /auth/status`, `POST /auth/mode {way, mode}`, `GET /auth/owner`, `POST /auth/owner {login}`, `POST /push/native {id, name, remove?}` and `GET /push/native/stream?id=…` (native desktop push queue for `Fyr.app` and `fyr-desktop`, V0.mac-notify, V0.linux-desktop). `fyr open`, `fyr device add|approve|revoke|list`, `fyr auth status|observe|enforce|owner` and the native desktop apps use them.
 
 ## `GET /api/state`
 
@@ -480,18 +480,20 @@ Guard on the host: the loopback guard as above; on a `hostListen` tailnet addres
 
 ### Two machines on NixOS (V0.158, decision 0030)
 
-`host-a` and `host-b` each run `fyrd` as host and front (`role` both, the default). Set `peerPort` and `tailnet.enable = true` on both machines under the same Tailscale login: they discover and pair with each other automatically over mutual TLS pinned to their install keys (or pair manually across networks with `fyr pair` / Settings → Hosts).
+`host-a` and `host-b` each run `fyrd` as host and front (`role` both, the default). Set `peerPort` (and `openFirewall = true` on a LAN) on both machines: they find each other over mDNS on a LAN and pair once with `fyr pair` / `fyr pair CODE`, over mutual TLS pinned to their install keys. Tailscale is an optional route: adding `tailnet.enable = true` and `ownerLogin` (or running `fyr auth owner <login>` once) also publishes the front on `*.ts.net` and lets untagged installs pair automatically.
 
-host-b:
+host-b (LAN, with optional Tailscale lines commented):
 
 ```nix
-services.tailscale.enable = true;
 services.fyr = {
   enable = true;
   user = "owner";
   # role = "both";                   # the default: a host and a front
   peerPort = 7779;                   # mutual-TLS peer link (pinned to install keys)
-  tailnet.enable = true;             # Tailscale Serve: https://host-b.<tailnet>.ts.net:7443 → the front
+  openFirewall = true;               # allow LAN peers to reach peerPort
+  # Optional tailnet route:
+  # ownerLogin = "you@example.com";  # or set once with `fyr auth owner you@example.com`
+  # tailnet.enable = true;           # Tailscale Serve: https://host-b.<tailnet>.ts.net:7443 → the front
   scanRoots = [ "~/git" ];
 };
 ```
@@ -499,12 +501,14 @@ services.fyr = {
 host-a:
 
 ```nix
-services.tailscale.enable = true;
 services.fyr = {
   enable = true;
   user = "owner";
   peerPort = 7779;
-  tailnet.enable = true;
+  openFirewall = true;
+  # Optional tailnet route:
+  # ownerLogin = "you@example.com";
+  # tailnet.enable = true;
 };
 ```
 

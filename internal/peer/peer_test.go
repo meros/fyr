@@ -57,6 +57,22 @@ func TestCondition1(t *testing.T) {
 			t.Errorf("accepted %q", bad)
 		}
 	}
+	// V0.owner-without-tailnet (#197): when OwnerLogin is wired, Condition 1
+	// requires a configured owner matching self.Login.
+	owner := ""
+	e.OwnerLogin = func() string { return owner }
+	answer = `{"fyr":1,"name":"b","id":"ABCD-EFGH-IJKL-MNOP","peer":7779,"owner":"owner@example.com"}`
+	if _, err := e.Condition1(ctx, self, node); !errors.Is(err, ErrNoOwner) {
+		t.Errorf("no owner configured: %v (want ErrNoOwner)", err)
+	}
+	owner = "someone-else@example.com"
+	if _, err := e.Condition1(ctx, self, node); !errors.Is(err, ErrNotSameUser) {
+		t.Errorf("mismatched owner: %v (want ErrNotSameUser)", err)
+	}
+	owner = "owner@example.com"
+	if f, err := e.Condition1(ctx, self, node); err != nil || f.ID != "ABCD-EFGH-IJKL-MNOP" {
+		t.Errorf("matching owner: %+v %v", f, err)
+	}
 }
 
 func with(n tailnet.StatusNode, f func(*tailnet.StatusNode)) tailnet.StatusNode { f(&n); return n }

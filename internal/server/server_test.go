@@ -684,3 +684,29 @@ func TestT3CandidatesNotFound(t *testing.T) {
 		t.Fatalf("GET /api/t3/candidates: got %d, want 404", r.StatusCode)
 	}
 }
+
+// V0.owner-without-tailnet: Server.OwnerFn supplies the owner login dynamically
+// (from the roster) when OwnerLogin is not set in config.
+func TestServerOwnerFnDynamic(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	rosterOwner := ""
+	s := &Server{Engine: engine.New(st), BuildID: "b1", OwnerFn: func() string { return rosterOwner }}
+	hs := httptest.NewServer(httpguard.ViaServe(s.Handler()))
+	defer hs.Close()
+	if r := do(t, "GET", hs.URL+"/api/state", "localhost", map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 403 {
+		t.Fatalf("empty owner accepted Serve login: %d", r.StatusCode)
+	}
+	rosterOwner = "owner@example.com"
+	if r := do(t, "GET", hs.URL+"/api/state", "localhost", map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 200 {
+		t.Fatalf("roster owner refused on Serve: %d", r.StatusCode)
+	}
+	pg := s.PeerHandler(fakePeers{"100.64.0.2:5000": "owner@example.com"})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://100.64.0.1:7778/api/state", nil)
+	r.RemoteAddr = "100.64.0.2:5000"
+	pg.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("PeerHandler with dynamic OwnerFn: %d", w.Code)
+	}
+}

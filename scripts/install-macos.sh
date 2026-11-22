@@ -384,7 +384,7 @@ PY
     echo "tailnet: https://$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))'):7443 answers /.well-known/fyr"
   fi
 else
-  echo "tailnet: Tailscale is not running here; other installs will not find this one (run this again once it is)"
+  echo "tailnet: Tailscale is not running (optional); to connect machines on a LAN, set peerListen in $cfg and run fyr pair"
 fi
 
 # The old labels go first (V0.release-without-gh): both would start the

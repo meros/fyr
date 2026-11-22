@@ -87,6 +87,7 @@ type Roster struct {
 	Members       []Member
 	WhoisLinkUses int64
 	Rounds        int64
+	OwnerLogin    string
 }
 
 // Roster reads the install's roster through the owner socket.

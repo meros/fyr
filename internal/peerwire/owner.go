@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/identity"
@@ -16,6 +17,8 @@ type Owner struct {
 	Env  *peer.Env
 	Key  *identity.Key
 	Data string // where a rotated key waits (identity.WriteNext)
+	// ConfigOwner is config's ownerLogin (wins over the roster when non-empty).
+	ConfigOwner string
 	// WhoisLinkUses counts the front's requests over the old whois link
 	// (fyr host list); nil: 0.
 	WhoisLinkUses func() int64
@@ -28,14 +31,47 @@ type Owner struct {
 }
 
 // OwnerRoutes adds the roster's calls to the owner socket: fyr host list,
-// fyr pair, fyr host remove, fyr rotate-key and fyr host drive.
+// fyr pair, fyr host remove, fyr rotate-key, fyr host drive and fyr auth owner.
 func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 	return func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /host/list", func(w http.ResponseWriter, r *http.Request) {
+			owner, _ := p.ownerInfo()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{"members": p.Env.Members(), "candidates": p.Env.Candidates(r.Context()),
-				"whoisLinkUses": p.whoisLinkUses(), "rounds": p.Env.Rounds.Load(), "ownerLogin": p.Env.Roster.OwnerLogin(),
+				"whoisLinkUses": p.whoisLinkUses(), "rounds": p.Env.Rounds.Load(), "ownerLogin": owner,
 				"configChanged": p.configNote()})
+		})
+		// V0.owner-without-tailnet (#197): first-run / owner-socket step to read or
+		// set the Tailscale owner login without falling back to tailnet.Self.
+		mux.HandleFunc("GET /auth/owner", func(w http.ResponseWriter, r *http.Request) {
+			owner, source := p.ownerInfo()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"ownerLogin":  owner,
+				"source":      source,
+				"configOwner": p.ConfigOwner,
+				"rosterOwner": p.Env.Roster.OwnerLogin(),
+			})
+		})
+		mux.HandleFunc("POST /auth/owner", func(w http.ResponseWriter, r *http.Request) {
+			var b struct{ Login string }
+			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+			login := strings.TrimSpace(b.Login)
+			w.Header().Set("Content-Type", "application/json")
+			if login == "" || strings.ContainsAny(login, " \t\r\n") {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": "owner login must be a non-empty Tailscale login without spaces (e.g. you@example.com)"})
+				return
+			}
+			p.Env.Roster.SetOwnerLogin(login)
+			owner, source := p.ownerInfo()
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok":          true,
+				"ownerLogin":  owner,
+				"source":      source,
+				"configOwner": p.ConfigOwner,
+				"rosterOwner": p.Env.Roster.OwnerLogin(),
+			})
 		})
 		// The owner's invite (decision 0030 3.6 condition 3): open one here, or join
 		// with one from another install. The owner socket is never gated.
@@ -107,6 +143,16 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 			json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		})
 	}
+}
+
+func (p Owner) ownerInfo() (login, source string) {
+	if p.ConfigOwner != "" {
+		return p.ConfigOwner, "config"
+	}
+	if r := p.Env.Roster.OwnerLogin(); r != "" {
+		return r, "roster"
+	}
+	return "", ""
 }
 
 func (p Owner) whoisLinkUses() int64 {

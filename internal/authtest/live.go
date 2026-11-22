@@ -128,7 +128,7 @@ func NewLive() (l *Live, err error) {
 	// Serve's emulator is not root: decision 0030 3.2 closes serve.sock to
 	// every user but root, so the harness names its own user (config
 	// serveSocketUsers).
-	l.Laptop, err = Start(Options{Name: "laptop", Data: data, Tailscale: l.TS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}},
+	l.Laptop, err = Start(Options{Name: "laptop", Data: data, Tailscale: l.TS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}, "ownerLogin": l.OwnerLogin},
 		Hosts: []HostEntry{{Name: "server", URL: l.Rec.URL}}})
 	if err != nil {
 		return nil, err
@@ -267,7 +267,7 @@ func (l *Live) EnablePeers() (*Mac, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), "peerEverySeconds": 1, "resolveFile": resolve, "rootCAs": pemFile, "linkBackoffMillis": 100, "linkDialMillis": 700}, nil
+		return map[string]any{"serveSocketUsers": []int{os.Getuid()}, "ownerLogin": l.OwnerLogin, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), "peerEverySeconds": 1, "resolveFile": resolve, "rootCAs": pemFile, "linkBackoffMillis": 100, "linkDialMillis": 700}, nil
 	}
 	// The release restarts the laptop with a peer port; its data stays.
 	l.Laptop.Stop()

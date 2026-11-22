@@ -376,7 +376,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		func(thread, c string) string {
 			return strings.TrimSpace(heavy.WorkerHint(c, cgroup.Workers(capOf())) + "\n" + services.Notice(thread, capOf()))
 		})
-	pool.Guard = eng.GuardView     // decision 0032
+	pool.Guard = eng.GuardView             // decision 0032
 	sampler.Invariants = eng.InvariantView // V0.thread-invariants: fallback when slots are off
 	if tree == nil {
 		// V0.164 section 10, V0.process-tree-hosts: no cgroup tree, so each thread is its
@@ -754,7 +754,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView(), "repo": dep.Releases.Name(), "key": releaseKey(dep.Releases), "version": version, "channel": dep.Releases.ChannelName()}
 		},
 		UpdateLog:   dep.UpdateLog,
-		UpdateState: func() any { return dep.Summary() }, // V0.host-updates
+		UpdateState: func() any { return dep.Summary() },                              // V0.host-updates
 		Setup:       func(ctx context.Context) any { return setupChecker.Check(ctx) }, // decision 0037
 		Focus: func(device, thread string, on bool) { // V0.85
 			if on {
@@ -809,8 +809,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	authStore := openAuth(h.st, cfg.stepUp()) // the browser sessions of a front, and the stored mode of each way in (decision 0030 5.1)
 	old := &oldListeners{}
 	if cfg.Role == "host" {
-		srvs.serve(ln, deploy.Health(hostHandler, health...))
 		ps := newPeerSide(cfg, data, hostName, key)
+		srv.OwnerFn = ps.ownerLogin
+		srvs.serve(ln, deploy.Health(hostHandler, health...))
 		peerEnvPtr.Store(ps.envOrNil())
 		ps.start(ctx, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
 	} else {
@@ -823,6 +824,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		hosts := append([]front.HostConfig{{Name: hostName, URL: front.LocalURL, Dial: link.Dial}}, cfg.Hosts...)
 		fe = startFront(ctx, frontParts{cfg: cfg, webFS: webFS, name: hostName, data: data, key: key, st: h.st, auth: authStore,
 			hosts: hosts, local: hostName, hostURL: hostURL(cfg.HostListen)}, srv, old)
+		srv.OwnerFn = fe.ownerLogin
 		peerEnvPtr.Store(fe.peer)
 		fr := fe.fr
 		// V0.81: a client-only deploy swaps the client this front serves.

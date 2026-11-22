@@ -68,6 +68,11 @@ type Env struct {
 	// one-way per-request dial of slice 3.
 	Mesh *peerlink.Mesh
 
+	// OwnerLogin returns the configured Tailscale owner login (config or roster).
+	// When non-nil, Condition 1 requires it to be set and match this node's user
+	// (V0.owner-without-tailnet, #197).
+	OwnerLogin func() string
+
 	kickc   chan struct{}
 	kickMu  sync.Mutex
 	trackMu sync.Mutex
@@ -119,6 +124,7 @@ type Found struct {
 
 // Why a node is not paired by condition 1.
 var (
+	ErrNoOwner     = errors.New("no owner login configured (set ownerLogin or run fyr auth owner)")
 	ErrNotSameUser = errors.New("not the same tailnet user")
 	ErrTagged      = errors.New("a tagged node: a tag says who may reach a node, not whose it is")
 	ErrShared      = errors.New("a node shared in from another tailnet")
@@ -133,6 +139,15 @@ var (
 // by root or the node's operator, so no other program on that node, and no
 // phone app, can answer for it. It returns the id and the peer port.
 func (e *Env) Condition1(ctx context.Context, self, node tailnet.StatusNode) (f Found, err error) {
+	if e.OwnerLogin != nil {
+		owner := e.OwnerLogin()
+		if owner == "" {
+			return Found{}, ErrNoOwner
+		}
+		if self.Login != owner {
+			return Found{}, ErrNotSameUser
+		}
+	}
 	switch {
 	case !self.Untagged() || self.UserID == 0:
 		return Found{}, ErrTagged
@@ -375,6 +390,9 @@ func (e *Env) PairRound(ctx context.Context) {
 		return // a member removed this install: it pairs with no one until the owner pairs it again
 	}
 	if e.TS == nil || e.Port == nil || e.Port() == 0 {
+		return
+	}
+	if e.OwnerLogin != nil && e.OwnerLogin() == "" {
 		return
 	}
 	self, nodes, err := e.TS.Status(ctx)

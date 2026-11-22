@@ -54,3 +54,31 @@ func TestOnlyWellKnownServesNothingElse(t *testing.T) {
 		t.Fatalf("another user: %d", w.Code)
 	}
 }
+
+// V0.owner-without-tailnet: when owner is empty, OnlyWellKnown reads the owner
+// dynamically from self().Owner (the roster) and refuses Tailscale logins until set.
+func TestOnlyWellKnownDynamicOwner(t *testing.T) {
+	owner := ""
+	h := OnlyWellKnown("", func() WellKnown {
+		return WellKnown{Fyr: 1, Name: "air", Owner: owner}
+	})
+	req := func(login string) int {
+		r := httptest.NewRequest("GET", "/.well-known/fyr", nil)
+		if login != "" {
+			r.Header.Set("Tailscale-User-Login", login)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	if code := req("owner@example.com"); code != http.StatusForbidden {
+		t.Fatalf("unset owner accepted login: %d", code)
+	}
+	owner = "owner@example.com"
+	if code := req("owner@example.com"); code != http.StatusOK {
+		t.Fatalf("roster owner refused: %d", code)
+	}
+	if code := req("other@example.com"); code != http.StatusForbidden {
+		t.Fatalf("other login accepted: %d", code)
+	}
+}
