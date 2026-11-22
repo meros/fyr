@@ -6,7 +6,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/meros/fyr/internal/machine"
 	"io"
@@ -691,7 +690,7 @@ func (s *Server) handoverPlan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 	var c api.Cmd
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<20)).Decode(&c); err != nil {
+	if err := httpguard.ReadJSON(w, r, &c, 64<<20); err != nil {
 		api.WriteJSON(w, 400, api.Reply{Error: "bad JSON: " + err.Error()})
 		return
 	}
@@ -938,7 +937,7 @@ func (s *Server) fsRoutes(mux *http.ServeMux) {
 			Parent string `json:"parent"`
 			Name   string `json:"name"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&b); err != nil {
+		if err := httpguard.ReadJSON(w, r, &b, 8<<10); err != nil {
 			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
 			return
 		}
@@ -960,7 +959,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		Query string   `json:"query"`
 		IDs   []string `json:"ids"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&q); err != nil {
+	if err := httpguard.ReadJSON(w, r, &q, 1<<20); err != nil {
 		api.WriteJSON(w, 400, map[string]any{"error": "bad JSON: " + err.Error()})
 		return
 	}
@@ -1015,7 +1014,7 @@ func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
 		Device string `json:"device"`
 		Off    bool   `json:"off"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&b); err != nil || b.Device == "" {
+	if err := httpguard.ReadJSON(w, r, &b, 4<<10); err != nil || b.Device == "" {
 		api.WriteJSON(w, 400, map[string]any{"error": "device is required"})
 		return
 	}

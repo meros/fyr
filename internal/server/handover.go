@@ -1,7 +1,7 @@
 package server
 
 import (
-	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 
 	"github.com/meros/fyr/internal/agent"
@@ -32,7 +32,7 @@ func (s *Server) handoverExport(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req handoverExportRequest
 	if r.Body != nil {
-		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
+		httpguard.DecodeLoose(w, r, &req, 1<<20)
 	}
 	if s.HandoverExport == nil {
 		api.WriteJSON(w, 501, map[string]any{"ok": false, "error": "this host does not support trans-host handover export"})
@@ -115,7 +115,7 @@ func (s *Server) handoverImport(w http.ResponseWriter, r *http.Request) {
 	}
 	// Allow up to 36 MB JSON body (covers 20 MB base64-encoded session archive + events).
 	var req handoverImportRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 36<<20)).Decode(&req); err != nil {
+	if err := httpguard.ReadJSON(w, r, &req, 36<<20); err != nil {
 		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
 		return
 	}

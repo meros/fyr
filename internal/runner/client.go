@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,14 +25,26 @@ func (c *Client) dial() (net.Conn, error) {
 // answer: the launcher starts it before fyrd, but a fyrd must never miss
 // the processes it holds (V0.90 (3)).
 func (c *Client) ListWait(wait time.Duration) ([]Proc, error) {
-	deadline := time.Now().Add(wait)
+	return c.ListWaitContext(context.Background(), wait)
+}
+
+// ListWaitContext is ListWait that also stops when ctx ends.
+func (c *Client) ListWaitContext(ctx context.Context, wait time.Duration) ([]Proc, error) {
+	ctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	retry := time.NewTicker(200 * time.Millisecond)
+	defer retry.Stop()
 	for {
 		ps, err := c.List()
 		var ve *VersionError
-		if err == nil || errors.As(err, &ve) || time.Now().After(deadline) {
+		if err == nil || errors.As(err, &ve) {
 			return ps, err
 		}
-		time.Sleep(200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ps, err
+		case <-retry.C:
+		}
 	}
 }
 

@@ -1,9 +1,9 @@
 package front
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/httpguard"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -91,7 +91,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 			Subscription push.Subscription `json:"subscription"`
 			Device       string            `json:"device"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil {
+		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil {
 			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
 			return
 		}
@@ -108,7 +108,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil || b.Endpoint == "" {
+		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil || b.Endpoint == "" {
 			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
 			return
 		}
@@ -119,7 +119,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 64<<10)
 		api.WriteJSON(w, 200, map[string]bool{"known": b.Endpoint != "" && p.Known(b.Endpoint)})
 	})
 	// V0.207: what this device hides, so its pushes leave those out.
@@ -128,7 +128,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 			Endpoint string `json:"endpoint"`
 			push.Hidden
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil || b.Endpoint == "" {
+		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil || b.Endpoint == "" {
 			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
 			return
 		}
@@ -145,7 +145,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 			Endpoint string `json:"endpoint"`
 			push.Prefs
 		}{Prefs: push.Prefs{Finished: true}}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil || b.Endpoint == "" {
+		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil || b.Endpoint == "" {
 			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
 			return
 		}
@@ -162,7 +162,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 64<<10)
 		pl := push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"}
 		n := 0
 		if b.Endpoint != "" {
