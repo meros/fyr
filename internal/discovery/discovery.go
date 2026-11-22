@@ -2,7 +2,7 @@
 // (decision 0030 3.6). A source yields (id?, address) candidates and never
 // trust: the link's handshake must prove the id that was meant. The tailnet
 // and mDNS sources of the later slices implement Source; the test harness's
-// in-memory bus (internal/authtest) implements it too, so a test can add,
+// in-memory bus (internal/testkit/authtest) implements it too, so a test can add,
 // spoof and withdraw answers.
 package discovery
 

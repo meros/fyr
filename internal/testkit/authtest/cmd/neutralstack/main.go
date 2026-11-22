@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/attach"
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func fail(err error) {

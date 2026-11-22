@@ -14,7 +14,7 @@ import (
 	"syscall"
 
 	"github.com/meros/fyr/internal/auth"
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func main() {

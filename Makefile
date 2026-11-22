@@ -62,7 +62,7 @@ web-unit: web-deps
 web-layout: web-deps
 	cd web && FYR_LAYOUT_TIMING=$(FYR_LAYOUT_TIMING) npm run test:layout
 
-# Decision 0030 (4.5): sign-in in a real browser, against scratch fyrds and a fake tailscaled (internal/authtest).
+# Decision 0030 (4.5): sign-in in a real browser, against scratch fyrds and a fake tailscaled (internal/testkit/authtest).
 # Needs web/dist built (the fyrd it builds embeds it) and Go on the PATH.
 web-auth: web-deps
 	cd web && npm run test:auth

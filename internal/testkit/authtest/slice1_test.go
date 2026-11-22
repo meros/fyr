@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 // A browser-facing listener takes no Fyr-Actor: a page or a process could

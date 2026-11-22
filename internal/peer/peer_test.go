@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/meros/fyr/internal/authtest"
+	"github.com/meros/fyr/internal/testkit/authtest"
 	"github.com/meros/fyr/internal/tailnet"
 )
 

@@ -1,4 +1,4 @@
-// Package authtest is the harness of decision 0030 (Part 4.1): a fake
+// Package authtest is a test and dev harness only (no shipped binary imports it), the harness of decision 0030 (Part 4.1): a fake
 // tailscaled with a Tailscale Serve emulator, an HTTPS front with a test CA, a
 // real-process fyrd starter, an in-memory mDNS bus and a fixture of the live
 // install's state. Nothing here is imported by the product; tests and the

@@ -1,5 +1,5 @@
 // Decision 0031 test 1 through the browser (slice 4, V0.forget-front): the neutrality test. Two scratch fyrds a and b
-// (internal/authtest/cmd/neutralstack), paired, each following the other. One script of flows runs in headless Chrome
+// (internal/testkit/authtest/cmd/neutralstack), paired, each following the other. One script of flows runs in headless Chrome
 // through a's front, then, on a fresh pair, through b's: list the hosts; make a project and start a thread with an
 // attachment on each host, the way the client calls them; see both in the inbox, each with its host; open each; open a
 // preview of each host whose page loads its own file; read a settings page of each host; reorder the hosts; restart the
@@ -27,7 +27,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("FYR_")));
 const binDir = mkdtempSync(join(tmpdir(), "fyr-neutralstack-"));
 const bin = join(binDir, "neutralstack");
-const build = spawnSync("go", ["build", "-o", bin, "./internal/authtest/cmd/neutralstack"], { cwd: root, env: { ...env, CGO_ENABLED: "0" }, encoding: "utf8" });
+const build = spawnSync("go", ["build", "-o", bin, "./internal/testkit/authtest/cmd/neutralstack"], { cwd: root, env: { ...env, CGO_ENABLED: "0" }, encoding: "utf8" });
 if (build.status !== 0) {
   console.error(`neutral e2e: go build neutralstack failed\n${build.stderr}`);
   process.exit(1);
