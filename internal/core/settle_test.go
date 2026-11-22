@@ -132,6 +132,28 @@ func TestDecodeThreadBefore33(t *testing.T) {
 	}
 }
 
+// SPEC V0.remove-t3 (#68): a thread JSON carrying the removed t3Id and source
+// fields loads without error, keeps its history identity, and saves without them.
+func TestDecodeThreadDropsT3Fields(t *testing.T) {
+	old := `{"id":"t_1","title":"Adopted thread","cwd":"/src/app","profile":"claudeAlt","sessionId":"sess-1","source":"t3","t3Id":"t3_abc"}`
+	th, err := DecodeThread([]byte(old))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if th.ID != "t_1" || th.Title != "Adopted thread" || th.Cwd != "/src/app" || th.SessionID != "sess-1" {
+		t.Fatalf("adopted fields lost: %+v", th)
+	}
+	b, err := json.Marshal(th)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{`"t3Id"`, `"source"`} {
+		if strings.Contains(string(b), k) {
+			t.Fatalf("marshaled again with %s: %s", k, b)
+		}
+	}
+}
+
 // V0.203: "settle when done" waits for the work itself: the run, an open
 // question and every open PR. It fires in the Reduce that ends the last one.
 func TestSettleWhenDoneWaitsForTheWork(t *testing.T) {

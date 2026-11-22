@@ -3,7 +3,6 @@
 // (decision 0016, V0.51).
 //
 //	fyrd [serve] [-role both|host|front] [-listen 127.0.0.1:7777] [-hosts name=url,…] [-host-listen ADDR] [-data DIR] [-web DIR]
-//	fyrd import-t3 [-list]
 //
 // This file only wires the parts together; the rules live in their packages.
 package main
@@ -86,8 +85,6 @@ func main() {
 	listen := fl.String("listen", "", "listen address (loopback only), default from config or 127.0.0.1:7777")
 	webDir := fl.String("web", "", "serve the client from this directory instead of the embedded build (development)")
 	ownerLogin := fl.String("owner-login", "", "Tailscale login allowed over the tailnet (default from config ownerLogin)")
-	t3Dir := fl.String("t3", filepath.Join(home(), ".t3", "userdata"), "T3 Code user data directory")
-	list := fl.Bool("list", false, "import-t3: only list the candidates")
 	role := fl.String("role", "", "host, front or both (default from config role, else both)")
 	hostsFlag := fl.String("hosts", "", "front: other hosts as name=url,… (default from config hosts)")
 	// V0.retire-discovery: the tailnet discovery that probed these is gone; the flag is
@@ -108,7 +105,7 @@ func main() {
 		log.Printf("launcher: pid %d, runner %q", os.Getppid(), le.Runner)
 	}
 	os.MkdirAll(*data, 0o700)
-	cfg := loadConfig(*cfgPath, filepath.Join(*t3Dir, "settings.json"))
+	cfg := loadConfig(*cfgPath)
 	// A systemd unit has a minimal PATH; agents need the user's tools: the
 	// config's agentPath, the login shell's PATH (V0.linux-without-nix) and
 	// the profile folders that exist (decision 0007).
@@ -168,11 +165,9 @@ func main() {
 	if cmd == "serve" {
 		rn = keptProcs(launchenv.Current().Runner)
 	}
-	h := openHost(cfg, *data, filepath.Join(*t3Dir, "statev2.sqlite"), rn.threads())
+	h := openHost(cfg, *data, rn.threads())
 	defer h.st.Close()
 	switch cmd {
-	case "import-t3":
-		importT3(h.t3, *list)
 	case "serve":
 		h.serve(cfg, webFS, hostName, *data, tree, rn)
 	default:
@@ -245,7 +240,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		TextJudge:        mgr.JudgeText,     // V0.210
 		Searcher:         mgr.SearchThreads, // V0.ai-search
 		Providers:        h.reg,             // #48: provider commands go down the engine's path
-		Adopt:            h.t3.Adopt,
 		AttachmentExists: func(id string) bool { _, err := att.Get(id); return err == nil },
 		ProfileExists:    func(id string) bool { _, ok := h.profile(id); return ok },
 		SystemAgentResolve: func(job string) (string, string, error) { // V0.115: Settings shows what each job runs
@@ -768,8 +762,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			} else {
 				tree.Unfocus(device, thread, time.Now())
 			}
-		},
-		T3Candidates: func() (any, error) { return h.t3.Candidates() }}
+		}}
 	if tree != nil {
 		go func() { // V0.85: a focus whose beats stopped drops back
 			t := time.NewTicker(5 * time.Second)

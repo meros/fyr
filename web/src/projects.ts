@@ -59,7 +59,7 @@ export function monogram(name: string): string {
   return words.length >= 2 ? first(words[0]) + first(words[1]) : first(words[0]);
 }
 
-/** T3 and lucide names (PascalCase, kebab, snake) onto the curated set; older lucide names map to new ones. */
+/** Lucide names (PascalCase, kebab, snake) onto the curated set; older lucide names map to new ones. */
 const ALIASES: Record<string, string> = {
   home: "house",
   "bar-chart": "chart-column",

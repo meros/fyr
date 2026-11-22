@@ -570,7 +570,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .phone-only{display:none}
 
 @media (max-width:760px){
-  /* Dialogs reused on the phone (Notifications, Adopt from T3) open as bottom sheets. */
+  /* Dialogs reused on the phone open as bottom sheets. */
   .scrim{place-items:end stretch;padding:0}
   .dlg,.dlg.wide{width:100%;max-height:88vh;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom)}
   .btn{min-height:44px;height:auto}
@@ -578,7 +578,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
   .dh .x{width:44px;height:44px}
   /* 16 px in fields, so iOS does not zoom on focus. */
   input,textarea,select{font-size:16px}
-  /* V0.host-tabs: dialogs reused on the phone (Adopt, Handover) keep 44 px tab targets */
+  /* V0.host-tabs: dialogs reused on the phone (Handover) keep 44 px tab targets */
   .htab,.htabs.compact .htab{height:44px;min-height:44px;padding:0 12px;font-size:14px}
   .htab-n{font-size:13.5px}
 }

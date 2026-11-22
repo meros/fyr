@@ -145,11 +145,6 @@ const PLUS = (
     <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
   </svg>
 );
-const ADOPT = (
-  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M8 2.5v7.5M4.8 6.8 8 10l3.2-3.2M3 12.8h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-  </svg>
-);
 
 interface InboxProps {
   /** V0.184: the handle on the list's edge (the desktop's; see app.tsx) */
@@ -175,7 +170,6 @@ interface InboxProps {
   onToggle(k: SectionKey): void;
   onExpand(k: SectionKey): void;
   onNew(): void;
-  onAdopt(): void;
   onFocusZone(): void;
   /** V0.status-home: a click on the list's empty space (no row, no header) closes the open thread */
   onBackground?(): void;
@@ -216,9 +210,6 @@ export function Inbox(p: InboxProps) {
           <kbd>⌘K</kbd>
         </label>
         {p.extra && <span class="phone-only">{p.extra}</span>}
-        <button class="ibtn" onClick={p.onAdopt} title="Adopt from T3" aria-label="Adopt from T3">
-          {ADOPT}
-        </button>
         <button class="ibtn" onClick={p.onNew} title="New thread (c)" aria-label="New thread">
           {PLUS}
         </button>

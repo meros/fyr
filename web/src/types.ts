@@ -174,7 +174,6 @@ export interface ThreadDTO {
   settleWhen?: { change: string; phase: string };
   /** V0.wakeups-via-watch, V0.quota-reset-wake: armed wake-ups (timed or quota reset), soonest first; note is the prompt it runs then */
   wakes?: WakeUp[];
-  source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;
   /** what "New project from this thread" starts with (V0.30, V0.55): the thread's folder; absent: a name only */
@@ -376,18 +375,6 @@ export interface CommandReply {
   error?: string;
   /** project.create: the new project's id; thread.send and thread.create: { messageId } (V0.33) */
   result?: { id?: string; messageId?: string; [k: string]: unknown };
-}
-
-export interface T3Candidate {
-  t3Id: string;
-  title: string;
-  cwd: string;
-  profile?: string;
-  model?: string;
-  sessionId?: string;
-  prUrl?: string;
-  updatedAt?: string;
-  hasTranscript?: boolean;
 }
 
 /** V0.59 (decision 0018): one change a thread makes or asks for. */

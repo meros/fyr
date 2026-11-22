@@ -9,7 +9,7 @@ import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { cache, hostSince, nextHostState } from "./cache.ts";
 import type { Conn, ThreadPatch } from "./store.ts";
-import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
 import { attachmentUrl, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
@@ -69,8 +69,6 @@ export interface Api {
   thread(host: HostId, threadId: string): Promise<ThreadDTO | null>;
   /** V0.38: one event whole (the stream and the list cut large tool output) */
   fullEvent(host: HostId, threadId: string, seq: number): Promise<FyrEvent | null>;
-  /** V0.139: that host's T3 */
-  t3Candidates(host: HostId): Promise<T3Candidate[]>;
   /** Web Push (SPEC V0.15): the front's VAPID public key, base64url. */
   pushKey(): Promise<string>;
   pushSubscribe(subscription: PushSubscriptionJSON, device: string): Promise<PushReply>;
@@ -491,12 +489,6 @@ function createHttpApi(): Api {
       if (!r.ok) throw new Error(`events ${r.status}`);
       const j = (await r.json()) as { events?: FyrEvent[] };
       return (j.events ?? []).map((e) => stampEvent(e, host));
-    },
-    async t3Candidates(host) {
-      const r = await fetch(hostPath(host, "/t3/candidates")); // V0.139: that host's T3
-      if (!r.ok) throw new Error(`candidates ${r.status}`);
-      const j = (await r.json()) as { threads?: T3Candidate[] };
-      return j.threads ?? [];
     },
     async pushKey() {
       const r = await fetch(frontPath("/push/key"));

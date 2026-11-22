@@ -1,6 +1,5 @@
 // Package cgroup gives every process Fyr starts a cgroup of its own under
-// one budget for agent work (SPEC 0.5 V0.80), as T3's launcher did for its
-// server (t3code.nix in the machine's NixOS config):
+// one budget for agent work (SPEC 0.5 V0.80):
 //
 //	fyr.service/          Delegate=cpu memory; holds no process once split
 //	  server/             the launcher and fyrd: cpu.weight 1000, memory.low

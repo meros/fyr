@@ -208,9 +208,7 @@ func Start(o Options) (*Fyrd, error) {
 	if err := os.WriteFile(cfgPath, b, 0o600); err != nil {
 		return nil, err
 	}
-	t3 := filepath.Join(root, "t3")
-	os.MkdirAll(t3, 0o700)
-	args := []string{"serve", "-data", f.Data, "-config", cfgPath, "-t3", t3}
+	args := []string{"serve", "-data", f.Data, "-config", cfgPath}
 	if o.Web != "" {
 		args = append(args, "-web", o.Web)
 	}

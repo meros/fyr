@@ -9,3 +9,5 @@ Date: 2026-11-14 · Status: accepted · Spec: 0.4 (cut-over), 0.5
 **Decision.** `fyr import-t3` (and the matching UI action) reads T3 read-only and adopts open top-level threads: title, cwd, profile, model, Claude session id, the latest PR, and the last 400 transcript messages as history. The next message resumes the same Claude session with `--resume`.
 
 **Consequences.** A thread must not run in both apps at once: two resumes of one session fork it. Fyr marks adopted threads with their T3 id and skips them on a second import. Subagent child threads and settled threads are not adopted.
+
+Closed 15 Nov 2026: Fyr stands alone; the bridge is removed in V0.remove-t3.

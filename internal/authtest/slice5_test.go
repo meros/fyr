@@ -325,6 +325,6 @@ func selftest(t *testing.T, bin, dir string) (string, error) {
 	os.WriteFile(filepath.Join(web, "index.html"), []byte("<title>Fyr</title>"), 0o600)
 	cfg := filepath.Join(dir, "config.json")
 	os.WriteFile(cfg, []byte(`{"tailscaleSocket":"`+filepath.Join(dir, "no.sock")+`"}`), 0o600)
-	out, err := authtest.Command(bin, "selftest", "-data", dir, "-config", cfg, "-web", web, "-t3", filepath.Join(dir, "t3")).CombinedOutput()
+	out, err := authtest.Command(bin, "selftest", "-data", dir, "-config", cfg, "-web", web).CombinedOutput()
 	return string(out), err
 }

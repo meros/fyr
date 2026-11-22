@@ -1,7 +1,7 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, Offer, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, Offer, StateDTO, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
@@ -38,7 +38,6 @@ const SIX_LINE_QUESTION = [
 interface Fixture {
   threads: ThreadDTO[];
   events: Record<string, FyrEvent[]>;
-  t3: T3Candidate[];
 }
 
 function iso(ms: number): string {
@@ -70,7 +69,6 @@ function base(id: string, title: string, now: number, ageMin: number, extra: Par
     archivedAt: null,
     settleWhenDone: false,
     settleWhenMerged: false,
-    source: "fyr",
     attention: { state: "seen", section: "seen", reason: "" },
     view: { seenAt: null, snoozeUntil: null },
     unavailable: extra.running ? {} : { "thread.snoozeWhenDone": "Nothing is working", "thread.settleWhenDone": "Nothing to wait for" },
@@ -519,11 +517,6 @@ function fullFixture(now: number): Fixture {
   for (const t of threads) if (t.id === "t_w2") t.parent = "t_w3";
   events.t_w2 = [...events.t_w2, ev(events.t_w2.length + 1, now - 60_000, "t_w2", "user", { text: "Use the new index for the map tiles; " + LONG_URL, from: "t_w3" })];
 
-  const t3: T3Candidate[] = [
-    { t3Id: "t3_a", title: "Refactor booking calendar", cwd: "/home/owner/src/acme/web", profile: "claudeAlt", model: "claude-opus-5-5", updatedAt: iso(now - 3600_000), hasTranscript: true, prUrl: "https://github.com/acme/web/pull/4100" },
-    { t3Id: "t3_b", title: LONG_TITLE, cwd: "/home/owner/src/" + LONG_PROJECT, profile: "claudeAlt", model: "claude-opus-5-5", updatedAt: iso(now - 7200_000), hasTranscript: false },
-    { t3Id: "t3_c", title: "Översätt e-postmallar", cwd: "/home/owner/src/acme/mail", profile: "codex", model: "gpt-5", updatedAt: iso(now - 86400_000), hasTranscript: true },
-  ];
   // V0.59, V0.60: changes that are not a PR, with actions, on one thread.
   const ops = threads.find((x) => x.id === "t_done");
   if (ops) {
@@ -608,7 +601,7 @@ function fullFixture(now: number): Fixture {
       { id: "token", on: "thread", label: "Set the Acme token", run: "script", argv: ["bash", `${scratch}/set-acme-token.sh`], cwd: scratch, by: "agent", digest: dg("token") },
     ];
   }
-  return { threads, events, t3 };
+  return { threads, events };
 }
 
 function sparseFixture(now: number): Fixture {
@@ -618,7 +611,7 @@ function sparseFixture(now: number): Fixture {
   ];
   const events: Record<string, FyrEvent[]> = {};
   for (const t of threads) events[t.id] = simpleEvents(t.id, now, "Update the flake", "Updated nixpkgs.");
-  return { threads, events, t3: [] };
+  return { threads, events };
 }
 
 
@@ -887,7 +880,7 @@ function railFixture(now: number): Fixture {
     ...events.t_babysit,
     ev(events.t_babysit.length + 1, now - 2 * 60_000, "t_babysit", "user", { text: "The map tests pass on map-perf now. Rebase on it before you merge #4170.", from: "t_mapperf" }),
   ];
-  return { threads, events, t3: [] };
+  return { threads, events };
 }
 
 
@@ -1127,7 +1120,6 @@ export interface MockServer {
   subscribe(h: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void }): void;
   command(commandId: string, action: string, threadId: string | undefined, args: Record<string, unknown>): CommandReply;
   events(threadId: string, after: number, limit: number): FyrEvent[];
-  t3Candidates(): T3Candidate[];
   pushKey(): string;
   pushSubscribe(subscription: PushSubscriptionJSON, device: string): { ok: boolean; error?: string };
   pushUnsubscribe(endpoint: string): { ok: boolean; error?: string };
@@ -1372,20 +1364,6 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const p = putProject({ id: `p_new${nextId++}`, name, folder, threads: ft ? 1 : 0, lastUsed: new Date(clock()).toISOString(), ...(typeof args.host === "string" && args.host ? { host: args.host } : {}) }); // V0.132
       if (ft) put(ft, { projectId: p.id, project: p.name });
       return { ok: true, result: { id: p.id } };
-    }
-    if (action === "t3.adopt") {
-      const ids = (args.t3Ids as string[]) ?? [];
-      for (const tid of ids) {
-        const c = fx.t3.find((x) => x.t3Id === tid);
-        if (!c) continue;
-        const id = `t_t3_${tid}`;
-        const nt = base(id, c.title, clock(), 0, { cwd: c.cwd, project: c.cwd.split("/").slice(-2).join("/"), source: "t3", unavailable: quiet });
-        threads.set(id, nt);
-        events[id] = [];
-        setTimeout(() => sub?.thread(nt), 30);
-      }
-      fx.t3 = fx.t3.filter((c) => !ids.includes(c.t3Id));
-      return { ok: true };
     }
     if (action === "host.deployNow") {
       // V0.83: the drain stops and the mock host switches; a real one restarts here.
@@ -1657,9 +1635,6 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const list = events[threadId] ?? [];
       if (after > 0) return list.filter((e) => e.seq > after).slice(0, limit);
       return list.slice(-limit);
-    },
-    t3Candidates() {
-      return fx.t3;
     },
     fsList(path) {
       const p = expand(path);

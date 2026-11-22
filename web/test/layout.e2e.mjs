@@ -2002,7 +2002,7 @@ try {
   await tapCenter(".m-ih [aria-label=More]", "!!document.querySelector('.m-sheet .m-mi')");
   await waitFor(`/needs a login/.test([...document.querySelectorAll('.m-sheet .m-mi')].find((b) => b.textContent.startsWith('Settings'))?.textContent ?? '')`, { soft: true });
   const more = await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].map((b) => ({ label: b.querySelector('.ell')?.firstChild?.textContent ?? '', right: b.querySelector('.w')?.textContent ?? '' }))`);
-  check(more.map((x) => x.label).join("|") === "Select threads|Status|Changes|Settings|Filter by project…|Adopt from T3|Show tool details" && more.find((x) => x.label === "Settings")?.right === "1 needs a login", `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
+  check(more.map((x) => x.label).join("|") === "Select threads|Status|Changes|Settings|Filter by project…|Show tool details" && more.find((x) => x.label === "Settings")?.right === "1 needs a login", `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
 } catch (e) {
   failures.push(`V0.119 phone: ${e.message}`);
 } finally {

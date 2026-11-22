@@ -481,7 +481,7 @@ func (e *Engine) submit(in core.Input) api.Reply {
 			return r
 		}
 		now := e.Now()
-		fresh = &core.Thread{ID: NewID("t_"), Owner: core.Owner, Visibility: "private", CreatedAt: now, Source: "fyr"}
+		fresh = &core.Thread{ID: NewID("t_"), Owner: core.Owner, Visibility: "private", CreatedAt: now}
 		// V0.42: thread.create files into projectId; without a cwd it starts
 		// in the project's folder (V0.55), else in a fresh scratch folder.
 		args := maps.Clone(a)
@@ -569,22 +569,6 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 		if err := e.Agents.Do(in.Thread, ef); err != nil {
 			return fail(409, err.Error())
 		}
-	case core.EffectAdopt:
-		if e.Adopt == nil {
-			return fail(409, "T3 adoption is not configured")
-		}
-		var ids []string
-		raw, _ := ef.Request.Args["t3Ids"].([]any)
-		for _, x := range raw {
-			if s, ok := x.(string); ok {
-				ids = append(ids, s)
-			}
-		}
-		n, err := e.Adopt(ids)
-		if err != nil {
-			return fail(500, err.Error())
-		}
-		reply.Result = map[string]any{"adopted": n}
 	case core.EffectDeployNow:
 		if e.DeployNow == nil {
 			return fail(409, "This host runs no deploy")
@@ -822,7 +806,7 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 	cur := fresh
 	if cur == nil {
 		if cur = e.threads[in.Thread]; cur == nil {
-			// A kind that makes its thread (T3 adoption) names the new id.
+			// A kind that makes its thread (trans-host handover) names the new id.
 			if k := core.Kinds[in.Kind]; k == nil || !k.Makes || in.Thread == "" {
 				e.mu.Unlock()
 				return nil, &core.Rejection{Code: core.RejectNotFound, Reason: "no thread " + in.Thread}
@@ -1450,16 +1434,4 @@ func (e *Engine) EventsBefore(id string, before int64, limit int) ([]store.Event
 // Events reads the timeline of one thread; after == 0 gives the newest limit.
 func (e *Engine) Events(id string, after int64, limit int) ([]store.Event, error) {
 	return e.st.EventsFor(id, after, limit, after == 0)
-}
-
-// HasT3 reports whether a T3 thread was already adopted.
-func (e *Engine) HasT3(t3ID string) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	for _, t := range e.threads {
-		if t.T3ID == t3ID {
-			return true
-		}
-	}
-	return false
 }

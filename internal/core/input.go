@@ -38,7 +38,6 @@ const (
 	ObsDeploy  = "deployments"
 	ObsHost    = "host" // the host itself: a restart
 	ObsGit     = "git"  // the git observer: host change records (#35)
-	ObsT3      = "t3"   // T3 adoption (V0.9)
 )
 
 // Observer is the source of an observer's Inputs.
@@ -93,7 +92,7 @@ type Event struct {
 type Result struct {
 	Events []Event
 	// At are the times of the first Events when they happened before the
-	// reduce (an adopted thread's history); an event without one is now.
+	// reduce (a handed-in thread's history); an event without one is now.
 	At      []time.Time
 	Effects []Effect
 	// Follow are Inputs to other threads that this reduce sends (a new
@@ -142,7 +141,7 @@ const (
 	RecThread  Record = ""        // a thread and the owner's view of it
 	RecProject Record = "project" // a project (3.15)
 	// RecHost changes no record of the state: the host's own setup (the
-	// provider registry, T3 adoption), done by the kind's effects.
+	// provider registry, deploy/update controls), done by the kind's effects.
 	RecHost Record = "host"
 )
 
@@ -170,8 +169,8 @@ type InputKind struct {
 	Makes bool
 	// Await: the sender's reply waits for the kind's effects, which the
 	// engine runs before it answers and before it stores the receipt (a
-	// message cancel needs the agent's answer; T3 adoption and the provider
-	// commands report what they did).
+	// message cancel needs the agent's answer; the provider commands report
+	// what they did).
 	Await bool
 }
 

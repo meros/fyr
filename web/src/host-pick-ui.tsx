@@ -1,4 +1,4 @@
-// SPEC V0.132, V0.host-tabs: where a new project, thread, adopt or handover lives, with several hosts. One tabbed host
+// SPEC V0.132, V0.host-tabs: where a new project, thread or handover lives, with several hosts. One tabbed host
 // bar (HostTabs) for the desktop and the phone; the phone's 44 px comes from its stylesheet. The hosts come from the
 // shell (HostsContext), so a form deep in a screen needs no props for them.
 import { createContext } from "preact";
@@ -15,7 +15,7 @@ export const useHosts = () => useContext(HostsContext);
 /** Each host's providers by install id (slice 2b: no merged list): a thread's provider is its own host's (V0.206). */
 export const ProfilesContext = createContext<HostProfiles>({});
 
-/** The Host field, where the host is a choice (New project, New thread, Adopt, Hand over: host first, V0.139; tabbed
+/** The Host field, where the host is a choice (New project, New thread, Hand over: host first, V0.139; tabbed
  *  with each host's mark in V0.host-tabs): nothing with one host; an offline host's note says why nothing can be made there. */
 export function HostField({ value, onPick, what = "It lives there: its folders and providers are that host's." }: { value: HostId | undefined; onPick(h: HostId): void; what?: string }) {
   const { hosts, now } = useHosts();

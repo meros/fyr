@@ -676,3 +676,11 @@ func TestServeSocketNeedsNoTailnetHost(t *testing.T) {
 		t.Fatalf("other login on the Serve socket: %d", r.StatusCode)
 	}
 }
+
+// SPEC V0.remove-t3 (#68): the T3 candidates endpoint is gone and returns 404.
+func TestT3CandidatesNotFound(t *testing.T) {
+	hs, _ := newServer(t)
+	if r := do(t, "GET", hs.URL+"/api/t3/candidates", "", nil, ""); r.StatusCode != 404 {
+		t.Fatalf("GET /api/t3/candidates: got %d, want 404", r.StatusCode)
+	}
+}

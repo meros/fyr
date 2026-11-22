@@ -279,3 +279,36 @@ func TestLoadThreadBeforePROnChange(t *testing.T) {
 	}
 	check("saved again", load())
 }
+
+// SPEC V0.remove-t3 (#68): a thread stored with t3Id and source loads without
+// error, keeps its thread data and Claude session, and saves without those fields.
+func TestStoreDropsT3FieldsOnSave(t *testing.T) {
+	s, _ := open(t)
+	old := `{"id":"t_old","title":"From T3","cwd":"/src/app","profile":"claudeAlt","sessionId":"sess-42","source":"t3","t3Id":"t3_legacy"}`
+	if _, err := s.db.Exec(`INSERT INTO threads(id,data) VALUES('t_old',?)`, old); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := s.Threads()
+	if err != nil {
+		t.Fatalf("load old thread: %v", err)
+	}
+	if len(ts) != 1 || ts[0].ID != "t_old" || ts[0].Title != "From T3" || ts[0].SessionID != "sess-42" {
+		t.Fatalf("unexpected thread: %+v", ts)
+	}
+	if _, err := s.Write(func(tx *Tx) error { return tx.PutThread(ts[0]) }); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err := s.db.QueryRow(`SELECT data FROM threads WHERE id='t_old'`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]any
+	if err := json.Unmarshal([]byte(raw), &top); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"t3Id", "source"} {
+		if _, ok := top[k]; ok {
+			t.Fatalf("saved again with %q: %s", k, raw)
+		}
+	}
+}
