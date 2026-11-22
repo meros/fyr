@@ -207,7 +207,15 @@ export function undeclaredTip(h: HostLoad, lookup: Lookup, now: number): string 
 
 /** V0.163: `heavy` (the API's name) or an older host's `slots`, read as one field. */
 export function normalizeLoad(list: HostLoad[]): HostLoad[] {
-  return list.map((h) => (h.heavy && !h.slots ? { ...h, slots: h.heavy } : h));
+  return list.map((h) => {
+    const slots = h.slots ?? h.heavy;
+    return slots ? { ...h, slots: withLists(slots) } : h;
+  });
+}
+
+/** The host encodes an empty list as null (a Go nil slice), so the two lists of a pool may arrive as null: read them as empty. */
+export function withLists(s: Slots): Slots {
+  return { ...s, held: s.held ?? [], waiting: s.waiting ?? [] };
 }
 
 /** A thread at or above this many cores is coloured. */

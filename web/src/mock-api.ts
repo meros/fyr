@@ -3,8 +3,9 @@
 
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQueueLoad, mockQuota } from "./mock.ts";
-import { mockLeftoverCommand, mockRerunCommand, mockUndeclaredCommand } from "./mock.ts";
+import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab } from "./mock.ts";
+import { mockChanges, mockFilePatch } from "./mock-changes.ts";
+import { mockLeftoverCommand, mockLoad, mockQueueLoad, mockQuota, mockRerunCommand, mockUndeclaredCommand } from "./mock-load.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { withLongValues } from "./mock-long.ts";
 import { decodeHosts } from "./hosts.ts";

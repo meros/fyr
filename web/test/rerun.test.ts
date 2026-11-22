@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { guardChart, guardLog, rerunRows, type Guard } from "../src/guard.ts";
-import { mockRerunCommand } from "../src/mock.ts";
+import { mockRerunCommand } from "../src/mock-load.ts";
 import type { HostLoad } from "../src/host-load.ts";
 
 const clock = (iso: string) => iso.slice(11, 16);

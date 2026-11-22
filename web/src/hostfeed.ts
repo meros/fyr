@@ -104,8 +104,8 @@ export function stampSlots(x: Slots, host: HostId): Slots {
   const r = (id: string) => (id === "self-deploy" ? id : ref(host, id));
   return {
     ...x,
-    held: x.held.map((h) => ({ ...h, owner: r(h.owner) })),
-    waiting: x.waiting.map((h) => ({ ...h, owner: r(h.owner) })),
+    held: (x.held ?? []).map((h) => ({ ...h, owner: r(h.owner) })),
+    waiting: (x.waiting ?? []).map((h) => ({ ...h, owner: r(h.owner) })),
     ...(x.undeclared ? { undeclared: x.undeclared.map((u) => ({ ...u, thread: r(u.thread) })) } : {}),
   };
 }

@@ -6,7 +6,7 @@ import type { HostLoad } from "../src/host-load.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { cardLines } from "../src/card.ts";
 import { findLeftovers, hostLeftovers, leftoverRows, stripText, tempRows, type Leftover } from "../src/leftovers.ts";
-import { mockLeftoverCommand, withLeftovers, mockLoad } from "../src/mock.ts";
+import { mockLeftoverCommand, withLeftovers, mockLoad } from "../src/mock-load.ts";
 
 const NOW = Date.parse("2026-11-17T14:32:00Z");
 const iso = (minAgo: number) => new Date(NOW - minAgo * 60_000).toISOString();

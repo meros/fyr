@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildConversation } from "../src/conversation.ts";
-import { mockLoad, mockUndeclaredCommand, withUndeclared } from "../src/mock.ts";
+import { mockLoad, mockUndeclaredCommand, withUndeclared } from "../src/mock-load.ts";
 import { cardLines, loadCard, railBudget, threadSlot, type HostLoad, type UndeclaredUse } from "../src/host-load.ts";
 import {
   addedRows,
