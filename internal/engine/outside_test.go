@@ -2,8 +2,6 @@ package engine
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +10,6 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/github"
-	"github.com/meros/fyr/internal/t3"
 )
 
 // #38 (moved from fyrd): the Fyr effects that reach past the host go to
@@ -88,48 +85,6 @@ func TestPRWatchAndThreadsOn(t *testing.T) {
 	}
 	if n := e.ThreadsOn("p1"); n != 0 {
 		t.Fatalf("an archived thread counts: %d", n)
-	}
-}
-
-// #38 (moved from fyrd), SPEC 0.5 V0.9: a T3 thread is adopted once, on its
-// profile or the default one, with its PR and the last assistant text as
-// its summary.
-func TestT3Adopt(t *testing.T) {
-	e, _, _ := bare(t)
-	home := t.TempDir()
-	dir := filepath.Join(home, ".claude", "projects", "-src-app")
-	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "s1.jsonl"), []byte(
-		`{"type":"user","message":{"role":"user","content":"Fix the lasso"},"timestamp":"2026-11-13T10:00:00Z"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Fixed the lasso."}]},"timestamp":"2026-11-13T10:00:05Z"}
-`), 0o644)
-	x := T3{E: e, Home: home, Profiles: func() []string { return []string{"claudeAlt", "claudeAcme"} }}
-	at := time.Date(2026, 11, 13, 11, 0, 0, 0, time.UTC)
-	cs := []t3.Candidate{
-		{T3ID: "a", Title: "A", Cwd: "/src/app", Profile: "gone", SessionID: "s1", PRURL: "https://github.com/acme/app/pull/4", UpdatedAt: at},
-		{T3ID: "b", Title: "B", Cwd: "/src/app", Profile: "claudeAcme", SessionID: "s2", UpdatedAt: at},
-	}
-	if n, err := x.adopt(cs, []string{"a", "b"}); err != nil || n != 2 {
-		t.Fatalf("adopt: %d %v", n, err)
-	}
-	if n, _ := x.adopt(cs, []string{"a", "b"}); n != 0 {
-		t.Fatalf("adopted again: %d", n)
-	}
-	got := map[string]api.Thread{}
-	for _, d := range e.Snapshot() {
-		got[d.T3ID] = d
-	}
-	a, b := got["a"], got["b"]
-	if a.Thread == nil || a.Profile != "claudeAlt" || a.Source != "t3" || a.PR == nil || a.PR.Number != 4 || a.Summary != "Fixed the lasso." {
-		t.Fatalf("a: %+v", a.Thread)
-	}
-	if b.Thread == nil || b.Profile != "claudeAcme" || b.PR != nil {
-		t.Fatalf("b: %+v", b.Thread)
-	}
-	// #48: adopted through the path, it keeps T3's time and its history's.
-	evs, _ := e.Events(a.ID, 0, 100)
-	if !a.UpdatedAt.Equal(at) || len(evs) == 0 || !evs[0].At.Equal(time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)) {
-		t.Fatalf("times: updated %v, history %+v", a.UpdatedAt, evs)
 	}
 }
 

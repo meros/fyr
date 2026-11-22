@@ -38,7 +38,6 @@ const (
 	ObsDeploy  = "deployments"
 	ObsHost    = "host" // the host itself: a restart
 	ObsGit     = "git"  // the git observer: host change records (#35)
-	ObsT3      = "t3"   // T3 adoption (V0.9)
 )
 
 // Observer is the source of an observer's Inputs.
@@ -93,7 +92,7 @@ type Event struct {
 type Result struct {
 	Events []Event
 	// At are the times of the first Events when they happened before the
-	// reduce (an adopted thread's history); an event without one is now.
+	// reduce (a handed-in thread's history); an event without one is now.
 	At      []time.Time
 	Effects []Effect
 	// Follow are Inputs to other threads that this reduce sends (a new

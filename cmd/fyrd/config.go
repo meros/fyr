@@ -11,11 +11,11 @@ import (
 
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/cgroup"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
-	"github.com/meros/fyr/internal/t3"
 	"github.com/meros/fyr/internal/tailnet"
 )
 
@@ -89,7 +89,7 @@ type config struct {
 	OwnerLogin         string             `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
 	Profiles           []provider.Profile `json:"profiles"`
 	// ScratchRoots: folders whose children are scratch folders (V0.28);
-	// empty means ~/.t3/scratch and ~/.local/share/fyr/scratch.
+	// empty means ~/.local/share/fyr/scratch.
 	ScratchRoots []string `json:"scratchRoots"`
 	// ScanRoots: extra folders the folder picker scans for git repositories,
 	// two levels deep (V0.42); `~` is the home folder.
@@ -237,7 +237,7 @@ func (c config) tsSocket() string {
 
 func home() string { h, _ := os.UserHomeDir(); return h }
 
-func loadConfig(path, t3Settings string) config {
+func loadConfig(path string) config {
 	c := config{Listen: "127.0.0.1:7777", IdleStopMinutes: 10}
 	b, err := os.ReadFile(path)
 	if err == nil {
@@ -247,13 +247,12 @@ func loadConfig(path, t3Settings string) config {
 	}
 	c.watch = watchLoaded(path, b, err == nil)
 	if len(c.Profiles) == 0 {
-		if ps, err := t3.Profiles(t3Settings); err == nil {
-			c.Profiles = ps
+		models := make([]string, len(claudecli.Models))
+		for i, m := range claudecli.Models {
+			models[i] = m.ID
 		}
-	}
-	if len(c.Profiles) == 0 {
 		c.Profiles = []provider.Profile{{ID: "claudeAlt", Name: "Claude", Binary: "claude", Color: "#d97757",
-			Models: t3.DefaultModels, DefaultModel: t3.DefaultModels[0]}}
+			Models: models, DefaultModel: models[0]}}
 	}
 	for i := range c.Profiles {
 		if c.Profiles[i].PermissionMode == "" {

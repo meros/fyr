@@ -474,8 +474,6 @@ func friendlyApprovalTool(name string) string {
 				label = "Playwright"
 			case "fyr":
 				label = ""
-			case "t3":
-				label = "T3"
 			case "slack":
 				label = "Slack"
 			case "linear":

@@ -49,8 +49,8 @@ type Found struct {
 // Host is what detection looks at.
 type Host struct {
 	Home string
-	// Profiles: what fyrd runs today (the config's profiles or the ones
-	// seeded from T3's settings), with their ids, binaries, env and quota.
+	// Profiles: what fyrd runs today (the config's profiles), with their ids,
+	// binaries, env and quota.
 	Profiles []Profile
 	Getenv   func(string) string
 	LookPath func(string) (string, error)

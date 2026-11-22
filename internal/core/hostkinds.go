@@ -10,9 +10,6 @@ import "time"
 // then the effect and the receipt with its outcome.
 const (
 	KindCancelMessage = "thread.cancelMessage"
-	// KindThreadAdopted is one thread adopted from T3, with its history:
-	// args Adopted.
-	KindThreadAdopted = "thread.adopted"
 	// KindThreadHandedIn creates a thread received from another host, with its
 	// copied conversation history (decision 0039, V0.trans-host-handover):
 	// args Adopted.
@@ -45,8 +42,8 @@ const (
 	EffectHostSetupFix EffectKind = "host.setupFix"
 )
 
-// Adopted is a thread T3 adoption made, its owner's view and its history
-// with the times it happened.
+// Adopted is a thread received with its owner's view and its history
+// with the times it happened (trans-host handover).
 type Adopted struct {
 	Thread  *Thread
 	View    *View
@@ -93,6 +90,5 @@ func init() {
 		r.T.ID, r.V.Entity = in.Thread, in.Thread
 		return Result{Events: a.History, At: a.At}, nil
 	}
-	RegisterKind(&InputKind{Name: KindThreadAdopted, From: observed, Makes: true, Untouched: true, Reduce: adoptReduce})
 	RegisterKind(&InputKind{Name: KindThreadHandedIn, From: observed, Makes: true, Untouched: true, Reduce: adoptReduce})
 }

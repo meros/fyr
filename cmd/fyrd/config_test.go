@@ -15,12 +15,12 @@ func TestV080ConfigCgroups(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
 	os.WriteFile(p, []byte(`{"cgroups": {"enable": true, "serverMemoryLow": "1G", "agentsCpuMax": "400000 100000",
 	  "agentsMemoryHigh": "13G", "agentsMemoryMax": "14G", "agentsMemorySwapMax": "16G"}}`), 0o600)
-	c := loadConfig(p, filepath.Join(t.TempDir(), "none.json"))
+	c := loadConfig(p)
 	if g := c.Cgroups; g == nil || !g.Enable || g.ServerMemoryLow != "1G" || g.AgentsCPUMax != "400000 100000" ||
 		g.AgentsMemoryHigh != "13G" || g.AgentsMemoryMax != "14G" || g.AgentsMemorySwapMax != "16G" {
 		t.Fatalf("%+v", c.Cgroups)
 	}
-	if c := loadConfig(filepath.Join(t.TempDir(), "none.json"), filepath.Join(t.TempDir(), "none.json")); c.Cgroups != nil {
+	if c := loadConfig(filepath.Join(t.TempDir(), "none.json")); c.Cgroups != nil {
 		t.Fatalf("%+v", c.Cgroups)
 	}
 }
@@ -40,7 +40,7 @@ func TestConfigQuotaByProfile(t *testing.T) {
 	    "claudeDeepseek": {"kind": "deepseek", "keyFile": "/run/secrets/deepseek"}
 	  }
 	}`), 0o600)
-	c := loadConfig(p, filepath.Join(t.TempDir(), "none.json"))
+	c := loadConfig(p)
 	ps := c.Profiles
 	if ps[0].Quota != nil || ps[1].Quota.Kind != "anthropic-oauth" || ps[1].Quota.ConfigDir != "~/.claude-acme" ||
 		ps[2].Quota.KeyFile != "/run/secrets/deepseek" || ps[2].Quota.KeyEnv != "" {
@@ -67,7 +67,7 @@ func TestRoleFlags(t *testing.T) {
 			t.Errorf("tailnetIP(%s) = %v", ip, got)
 		}
 	}
-	c := loadConfig(filepath.Join(t.TempDir(), "none.json"), "")
+	c := loadConfig(filepath.Join(t.TempDir(), "none.json"))
 	if c.Role != "" || len(c.Hosts) != 0 || c.HostListen != "" {
 		t.Fatalf("a missing config must leave the role to the default (both): %+v", c)
 	}
@@ -91,7 +91,7 @@ func TestTailscaleSocketConfig(t *testing.T) {
 	}
 	p := filepath.Join(t.TempDir(), "config.json")
 	os.WriteFile(p, []byte(`{"tailscaleSocket": "/tmp/x/ts.sock"}`), 0o600)
-	c := loadConfig(p, filepath.Join(t.TempDir(), "none.json"))
+	c := loadConfig(p)
 	if got := c.tsSocket(); got != "/tmp/x/ts.sock" {
 		t.Errorf("configured %q", got)
 	}

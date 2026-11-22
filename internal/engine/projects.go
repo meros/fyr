@@ -44,15 +44,9 @@ func (e *Engine) scratchDir() string {
 }
 
 // scratchRoots are the folders whose children are throwaway places (SPEC 0.5
-// V0.28): ScratchRoots when set, else T3's scratch root; Fyr's own scratch
-// folder is always one (V0.42).
+// V0.28): ScratchRoots when set, plus Fyr's own scratch folder (V0.42).
 func (e *Engine) scratchRoots() []string {
 	roots := e.ScratchRoots
-	if roots == nil {
-		if home, _ := os.UserHomeDir(); home != "" {
-			roots = []string{filepath.Join(home, ".t3", "scratch")}
-		}
-	}
 	if d := e.scratchDir(); d != "" {
 		for _, r := range roots {
 			if filepath.Clean(r) == d {
