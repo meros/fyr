@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -121,9 +122,7 @@ func (r *Releases) lsRemote(ctx context.Context, tag string) (string, error) {
 		git = func(ctx context.Context, args ...string) ([]byte, error) {
 			c, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			cmd := proc.Command(c, "git", args...)
-			cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-			return cmd.Output()
+			return proc.Git(c, "", args...).Output()
 		}
 	}
 	ref := "refs/tags/" + tag
@@ -247,7 +246,9 @@ func (r *Releases) fetch(ctx context.Context, sha, dir string) (release.Info, er
 		}
 	}
 	if info.ServerSum != "" {
-		os.WriteFile(filepath.Join(dir, sumFile), []byte(info.ServerSum+"\n"), 0o644)
+		if err := fsutil.WriteAtomic(filepath.Join(dir, sumFile), []byte(info.ServerSum+"\n"), 0o644); err != nil {
+			return info, err
+		}
 	}
 	return info, nil
 }
@@ -302,7 +303,10 @@ func (d *Deployer) install(ctx context.Context, run Runner, prog *Progress, gen 
 			os.RemoveAll(tmp)
 			return failed(firstErr(fail(fmt.Errorf("%w; nothing was switched", ferr))))
 		}
-		os.WriteFile(filepath.Join(tmp, verifiedMark), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+		if err := fsutil.WriteAtomic(filepath.Join(tmp, verifiedMark), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+			os.RemoveAll(tmp)
+			return failed(err)
+		}
 		os.RemoveAll(out)
 		if err := os.Rename(tmp, out); err != nil {
 			os.RemoveAll(tmp)

@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"github.com/meros/fyr/internal/proc"
 	"strings"
 )
 
@@ -16,7 +17,7 @@ func Gate(ctx context.Context, run Runner, dir string) (commit, why string) {
 		run = execRunner
 	}
 	git := func(args ...string) (string, error) {
-		b, err := run(ctx, dir, append([]string{"git", "-C", dir}, args...)...)
+		b, err := run(ctx, dir, proc.GitArgv(dir, args...)...)
 		return strings.TrimSpace(string(b)), err
 	}
 	head, err := git("rev-parse", "HEAD")

@@ -48,3 +48,18 @@ func TestTwoInstallsDiffer(t *testing.T) {
 		t.Fatal("two keys, one id")
 	}
 }
+
+func TestPromoteReportsAFailedKeep(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, File), []byte("old"), 0o600)
+	os.WriteFile(filepath.Join(dir, NextFile), []byte("new"), 0o600)
+	// A folder where the .old file belongs makes keeping the old key fail.
+	os.Mkdir(filepath.Join(dir, File+".old"), 0o700)
+	os.WriteFile(filepath.Join(dir, File+".old", "x"), nil, 0o600)
+	if err := Promote(dir); err == nil {
+		t.Fatal("a failed keep of the old key was swallowed")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, File)); string(b) != "old" {
+		t.Fatal("the key was rotated though the old one was not kept")
+	}
+}

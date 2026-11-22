@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/meros/fyr/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,16 +79,14 @@ var regenerable = map[string]bool{
 	".test-out": true, ".parcel-cache": true, ".tox": true, "vendor": true,
 }
 
-func gitCmd(dir string, args ...string) *exec.Cmd {
-	// --no-optional-locks: a look never rewrites the index, so it never
-	// counts as work in the worktree.
-	cmd := exec.Command("git", append([]string{"--no-optional-locks", "-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
-	return cmd
+func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	// NoOptionalLocks: a look never rewrites the index, so it never counts
+	// as work in the worktree. SSHBatch: a fetch never waits for a prompt.
+	return proc.GitWith(ctx, dir, proc.GitOpts{NoOptionalLocks: true, SSHBatch: true}, args...)
 }
 
 func gitOut(dir string, args ...string) string {
-	out, err := gitCmd(dir, args...).Output()
+	out, err := gitCmd(context.Background(), dir, args...).Output()
 	if err != nil {
 		return ""
 	}
@@ -123,7 +122,7 @@ func worktreesOf(dir string) []wtree {
 // worktreeSafe: nothing uncommitted, untracked or ignored outside a build
 // folder, and HEAD kept on the remote (a branch or a PR's head).
 func worktreeSafe(path string) (bool, string) {
-	st, err := gitCmd(path, "status", "--porcelain", "--ignored=matching").Output()
+	st, err := gitCmd(context.Background(), path, "status", "--porcelain", "--ignored=matching").Output()
 	if err != nil {
 		return false, "not a git worktree"
 	}
@@ -241,9 +240,7 @@ func (tp *Temps) fetchPulls(common, dir string, now time.Time) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := gitCmd(dir, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "origin", "+refs/pull/*/head:refs/fyr/pull/*")
-	cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+	cmd := gitCmd(ctx, dir, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "origin", "+refs/pull/*/head:refs/fyr/pull/*")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		tp.logf("worktrees: fetch the PR heads of %s: %v %s", dir, err, strings.TrimSpace(string(out)))
 	}
@@ -260,10 +257,10 @@ func (tp *Temps) removeWorktree(w wtree, common, thread string, now time.Time) e
 		head = gitOut(w.path, "rev-parse", "HEAD")
 	}
 	pin := "refs/fyr/worktrees/" + name + "-" + short(head) // two folders of one name never share a pin
-	if out, err := gitCmd(w.path, "update-ref", "-m", "fyr: worktree removed", pin, "HEAD").CombinedOutput(); err != nil {
+	if out, err := gitCmd(context.Background(), w.path, "update-ref", "-m", "fyr: worktree removed", pin, "HEAD").CombinedOutput(); err != nil {
 		return fmt.Errorf("pin HEAD: %s", strings.TrimSpace(string(out)))
 	}
-	if out, err := gitCmd(w.path, "worktree", "remove", w.path).CombinedOutput(); err != nil {
+	if out, err := gitCmd(context.Background(), w.path, "worktree", "remove", w.path).CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree remove: %s", strings.TrimSpace(string(out)))
 	}
 	rs := tp.removed()
@@ -313,7 +310,7 @@ func (tp *Temps) Restore(dir string) (bool, error) {
 	repo := r.Common
 	var errs []string
 	try := func(args ...string) bool {
-		out, err := gitCmd(repo, append([]string{"worktree", "add", "-q", r.Path}, args...)...).CombinedOutput()
+		out, err := gitCmd(context.Background(), repo, append([]string{"worktree", "add", "-q", r.Path}, args...)...).CombinedOutput()
 		if err != nil {
 			errs = append(errs, strings.TrimSpace(string(out)))
 		}

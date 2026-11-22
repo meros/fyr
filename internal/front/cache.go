@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"github.com/meros/fyr/internal/fsutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -162,12 +163,7 @@ func (f *Front) save(now time.Time, force bool) {
 		return
 	}
 	for _, j := range jobs {
-		tmp := j.path + ".tmp"
-		if err := os.WriteFile(tmp, j.b, 0o600); err != nil {
-			failed(j, err)
-			continue
-		}
-		if err := os.Rename(tmp, j.path); err != nil {
+		if err := fsutil.WriteAtomic(j.path, j.b, 0o600); err != nil {
 			failed(j, err)
 		} else if j.legacy != "" && j.legacy != j.path {
 			os.Remove(j.legacy)

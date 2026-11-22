@@ -16,6 +16,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -364,9 +366,8 @@ func (r *Roster) saveLocked() {
 		return list[i].ID() < list[j].ID()
 	})
 	b, _ := json.MarshalIndent(list, "", " ")
-	tmp := r.path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, r.path)
+	if err := fsutil.WriteAtomic(r.path, b, 0o600); err != nil {
+		log.Printf("roster: cannot save %s: %v", r.path, err)
 	}
 }
 

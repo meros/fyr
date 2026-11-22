@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"image"
 	"image/color"
 	"image/draw"
@@ -156,19 +157,8 @@ func (s *Store) Save(id string, img image.Image) (string, error) {
 			return "", err
 		}
 		h.Write(b.Bytes())
-		tmp, err := os.CreateTemp(dir, ".icon-*")
-		if err != nil {
-			return "", err
-		}
-		_, err = tmp.Write(b.Bytes())
-		if cerr := tmp.Close(); err == nil {
-			err = cerr
-		}
-		if err == nil {
-			err = os.Rename(tmp.Name(), s.Path(id, n))
-		}
-		if err != nil {
-			os.Remove(tmp.Name())
+		// 0o600 as CreateTemp made it before.
+		if err := fsutil.WriteAtomic(s.Path(id, n), b.Bytes(), 0o600); err != nil {
 			return "", err
 		}
 	}

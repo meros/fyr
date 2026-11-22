@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/meros/fyr/internal/cli/claudecli"
+	"github.com/meros/fyr/internal/fsutil"
 	"github.com/meros/fyr/internal/hostfs"
 	"io"
 	"math"
@@ -906,12 +907,7 @@ func (s *Service) save() {
 	if err != nil {
 		return
 	}
-	tmp := s.StatePath + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		s.logf("quota: cannot save its state: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, s.StatePath); err != nil {
+	if err := fsutil.WriteAtomic(s.StatePath, b, 0o600); err != nil {
 		s.logf("quota: cannot save its state: %v", err)
 	}
 }

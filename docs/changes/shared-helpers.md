@@ -1,0 +1,8 @@
+# V0.shared-helpers: one atomic file write, one claude environment, one git command
+
+Several packages each wrote their own temporary file and rename, built the claude process environment, or set the git environment, and they differed by accident (some never synced, some swallowed errors, one left its temporary file behind).
+
+1. `internal/fsutil`: `WriteAtomic`, `WriteAtomicFrom`, `CopyFile` (temporary file in the same folder, chmod, fsync, rename, removed on error) and `SymlinkAtomic`. Used by slots, quota, peer, roster, front cache, desktop prefs, secrets, projicon, identity, deploy (client, launcher, release marks), setup, claudecli and agycli sessions, `fyr install` and the authtest LAN. Errors that were swallowed (roster save, the identity `.old` copy, the release `verified` and server-sum marks) are logged or returned. Modes are kept per site: 0o600 for state, 0o644 for desktop prefs and the release marks, 0o755 for the gh binary.
+2. `launchenv.ClaudeEnv(extra...)`: the environment of a claude process, without the launcher's variables and credential variables, with `CLAUDE_CODE_ENTRYPOINT=sdk-go`. The claudecli calls now also drop the launcher's variables (fyrd already removes them at start). agycli and the login environment differ in what they drop and keep their own code.
+3. `proc.Git`, `proc.GitWith`, `proc.GitArgv`: git with `-C`, `GIT_TERMINAL_PROMPT=0`, `LC_ALL=C`; options `NoOptionalLocks` and `SSHBatch`. Used by agent, gitdiff, cgroup worktrees and the deploy release and gate. The cgroup calls now also run in `LC_ALL=C` and in their own process group.
+4. The session archive import caps its read with a reader that fails with `ErrSessionTooLarge`, so an oversized entry is never renamed into place.

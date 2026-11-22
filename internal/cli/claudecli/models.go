@@ -93,7 +93,7 @@ func (a Adapter) ask(ctx context.Context, l cli.Launch, wait time.Duration) ([]c
 	if cmd.Dir == "" {
 		cmd.Dir = os.TempDir()
 	}
-	cmd.Env = append(append(launchenv.Without(os.Environ(), cli.CredentialVars), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...) // #167, V0.agent-env
+	cmd.Env = launchenv.ClaudeEnv(env...) // #167, V0.agent-env
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, false, err

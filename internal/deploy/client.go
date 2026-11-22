@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"io"
 	"io/fs"
 	"os"
@@ -171,12 +172,7 @@ func (d *Deployer) switchClient(ctx context.Context, run Runner, dir, out, id st
 
 // setLink points name at target atomically.
 func setLink(name, target string) error {
-	tmp := name + ".tmp"
-	os.Remove(tmp)
-	if err := os.Symlink(target, tmp); err != nil {
-		return err
-	}
-	return os.Rename(tmp, name)
+	return fsutil.SymlinkAtomic(target, name)
 }
 
 // copyDir copies the regular files and folders of src into dst.

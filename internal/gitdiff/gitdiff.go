@@ -80,9 +80,8 @@ func runGit(ctx context.Context, dir string, stdout io.Writer, args ...string) e
 func runGitIn(ctx context.Context, dir string, stdin io.Reader, stdout io.Writer, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	full := append([]string{"-C", dir, "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.quotepath=off"}, args...)
-	cmd := proc.Command(ctx, "git", full...)
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C", "GIT_TERMINAL_PROMPT=0")
+	full := append([]string{"--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.quotepath=off"}, args...)
+	cmd := proc.GitWith(ctx, dir, proc.GitOpts{NoOptionalLocks: true}, full...)
 	cmd.Stdout = stdout
 	cmd.Stdin = stdin
 	err := cmd.Run()

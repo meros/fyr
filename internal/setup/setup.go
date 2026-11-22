@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"io"
 	"net/http"
 	"os"
@@ -737,13 +738,8 @@ func (c *Checker) installGH(ctx context.Context) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	tmp := filepath.Join(dir, ".gh.tmp")
 	dst := filepath.Join(dir, "gh")
-	if err := os.WriteFile(tmp, bin, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
+	if err := fsutil.WriteAtomic(dst, bin, 0o755); err != nil {
 		return "", err
 	}
 	EnsureToolsOnPath(dir)

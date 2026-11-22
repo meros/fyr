@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/fsutil"
 	"log"
 	"os"
 	"os/exec"
@@ -82,12 +83,7 @@ func (l *Launcher) relink(name, from string) error {
 	if err != nil {
 		return err
 	}
-	tmp := l.path(name + ".tmp")
-	os.Remove(tmp)
-	if err := os.Symlink(target, tmp); err != nil {
-		return err
-	}
-	return os.Rename(tmp, l.path(name))
+	return fsutil.SymlinkAtomic(target, l.path(name))
 }
 
 // Signal forwards a signal to the daemon and makes Run return after it exits.

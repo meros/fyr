@@ -3,10 +3,11 @@ package authtest
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"log"
 	"sync"
 
 	"github.com/meros/fyr/internal/discovery"
+	"github.com/meros/fyr/internal/fsutil"
 )
 
 // LAN is an in-memory mDNS bus behind discovery.Source (decision 0030 4.1):
@@ -34,9 +35,8 @@ func (l *LAN) flush() {
 		return
 	}
 	b, _ := json.Marshal(l.answers)
-	tmp := l.file + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, l.file)
+	if err := fsutil.WriteAtomic(l.file, b, 0o600); err != nil {
+		log.Printf("authtest: cannot write %s: %v", l.file, err)
 	}
 }
 
