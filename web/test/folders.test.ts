@@ -1,7 +1,8 @@
 // SPEC 0.5 V0.42: the host folder picker's pure helpers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { breadcrumbs, complete, completions, filterSections, folderNameError, isPathQuery, splitPath, tildePath } from "../src/folders.ts";
+import { breadcrumbs, complete, completions, filterSections, folderNameError, isPathQuery, splitPath } from "../src/folders.ts";
+import { tildePath } from "../src/paths.ts";
 
 const H = "/home/owner";
 const d = (name: string, dir = H) => ({ name, path: `${dir}/${name}` });

@@ -1,5 +1,6 @@
 // SPEC V0.126 (#151): the update record (GET /api/updates): every attempt to update Fyr on this host, why it ran,
 // how it ended and the logs kept with its build; whether a local build pauses auto-update.
+import { ago } from "./format.ts";
 
 export interface UpdatePhase {
   name: string;
@@ -82,8 +83,7 @@ function short(s: string | undefined): string {
 function took(a: string, b: string | undefined): string {
   const t = b ? Date.parse(b) - Date.parse(a) : NaN;
   if (Number.isNaN(t) || t < 0) return "";
-  const s = Math.round(t / 1000);
-  return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`;
+  return ago(t);
 }
 
 function when(iso: string, now: number): string {

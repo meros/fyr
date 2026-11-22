@@ -1,4 +1,5 @@
 // SPEC 0.5 V0.39: where an update of Fyr is, in words, for the banner.
+import { ago } from "./format.ts";
 import type { Thread } from "./types.ts";
 import type { Ask } from "./confirm.ts";
 
@@ -20,8 +21,7 @@ export type DeployLine = { text: string; tone: "busy" | "ok" | "fail"; more?: st
 function minutes(fromIso: string | undefined, now: number): string {
   const t = fromIso ? Date.parse(fromIso) : NaN;
   if (Number.isNaN(t)) return "";
-  const s = Math.max(0, Math.round((now - t) / 1000));
-  return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`;
+  return ago(now - t);
 }
 
 export function deployLine(p: DeployProgress | null | undefined, threads: Record<string, Thread>, now: number, conn: string): DeployLine | null {

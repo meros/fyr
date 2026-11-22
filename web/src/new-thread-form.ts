@@ -6,6 +6,7 @@ import { useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { hostOfflineNote } from "./hosts.ts";
+import { browserStorage } from "./prefs.ts";
 import type { HostId } from "./hostid.ts";
 import {
   changeOptions,
@@ -26,7 +27,6 @@ import {
   saveRemembered,
   settleForm,
   type FormCtx,
-  type KeyValue,
   type NewThreadArgs,
   type NewThreadForm,
 } from "./new-thread.ts";
@@ -48,14 +48,6 @@ export interface NewThreadFormOptions extends FormCtx {
   onAddProject?(id: string, host: HostId, folder: string): Promise<{ error: string | null; id?: string }>;
 }
 
-function storage(): KeyValue | null {
-  try {
-    return typeof localStorage !== "undefined" ? localStorage : null;
-  } catch {
-    return null;
-  }
-}
-
 export function useNewThreadForm(o: NewThreadFormOptions) {
   // V0.74: quiet projects stay out of the list until a 30 s hold shows them for 30 minutes; the picked one stays.
   // V0.114: the unlock is the one every path shares.
@@ -69,7 +61,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const ctx: FormCtx = { projects: offered, profiles: o.profiles, hosts: o.hosts };
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
-  const last = useMemo(() => loadRemembered(storage()), []);
+  const last = useMemo(() => loadRemembered(browserStorage()), []);
   const [f, setF] = useState<NewThreadForm>(() => settleForm(initialForm(), ctx, o.projectFilter, last));
   // The projects and profiles may arrive after the form opens (phone deep link, reconnect).
   const profileCount = Object.values(o.profiles).reduce((n, ps) => n + ps.length, 0);
@@ -120,7 +112,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
       }
       const e = await o.onCreate(createArgs(f, ctx, plan.args, pid, effort));
       if (e) return setErr(e);
-      saveRemembered(storage(), { projectId: pid ?? "", profile: f.profile, model: f.model });
+      saveRemembered(browserStorage(), { projectId: pid ?? "", profile: f.profile, model: f.model });
     } finally {
       busyRef.current = false;
       setBusy(false);

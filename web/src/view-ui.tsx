@@ -7,22 +7,21 @@ import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDi
 import { FRAME_ALLOW } from "./previews.ts";
 import { FsBar, FsButton, useFrameFullscreen } from "./preview-ui.tsx";
 import { useApi } from "./api-context.ts";
+import { storedGet, storedSet } from "./prefs.ts";
 import type { Thread, Offer } from "./types.ts";
 
 const COLLAPSED_KEY = "fyr.view.collapsed";
 
 function loadCollapsed(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as string[]);
+    return new Set(JSON.parse(storedGet(COLLAPSED_KEY) ?? "[]") as string[]);
   } catch {
     return new Set();
   }
 }
 
 function saveCollapsed(s: Set<string>) {
-  try {
-    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...s].slice(-200)));
-  } catch {}
+  storedSet(COLLAPSED_KEY, JSON.stringify([...s].slice(-200)));
 }
 
 /** V0.37: the full view (the View tab). V0.56: no headline bar in Conversation; the tab is the way in. */

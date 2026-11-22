@@ -4,7 +4,8 @@
 
 import type { Offer, OfferRun, Thread } from "./types.ts";
 import { lastRun, pressArgs, quote } from "./offers.ts";
-import { shortFolder, type Ask } from "./confirm.ts";
+import type { Ask } from "./confirm.ts";
+import { shortFolder } from "./paths.ts";
 import type { Item } from "./conversation.ts";
 
 /** A Nix store path shortened in the middle: /nix/store/<32-char hash>-name as /nix/store/<4>…-name. */

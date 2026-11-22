@@ -5,7 +5,8 @@ import type { HostId } from "./hostid.ts";
 import { createContext } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { FsDir, FsListing } from "./types.ts";
-import { breadcrumbs, complete, completions, filterSections, folderNameError, isPathQuery, joinPath, splitPath, tildePath, visibleDirs, type PickerSection } from "./folders.ts";
+import { breadcrumbs, complete, completions, filterSections, folderNameError, isPathQuery, joinPath, splitPath, visibleDirs, type PickerSection } from "./folders.ts";
+import { tildePath } from "./paths.ts";
 
 /** The host calls the picker needs (api.ts implements them). */
 export interface FsApi {

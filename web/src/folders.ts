@@ -1,15 +1,9 @@
 // The host folder picker (SPEC 0.5 V0.42): pure helpers for search, typed paths, completion, breadcrumbs and new
 // folder names. The host resolves and confines every path; these only shape what the owner types and sees.
 
+import { tildePath } from "./paths.ts";
 import type { FsDir } from "./types.ts";
 
-const HOME_RE = /^\/home\/[^/]+(?=\/|$)/;
-
-/** A path as the owner reads it: the home folder as ~. */
-export function tildePath(p: string, home = ""): string {
-  if (home && (p === home || p.startsWith(home + "/"))) return "~" + p.slice(home.length);
-  return p.replace(HOME_RE, "~");
-}
 
 /** The picker's one field: a path (~ or /) browses, anything else searches. */
 export function isPathQuery(q: string): boolean {

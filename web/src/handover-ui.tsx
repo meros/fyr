@@ -7,7 +7,6 @@ import {
   effectivePlan,
   gitLimitationNote,
   handoverTargetsForHost,
-  parsePlan,
   planGuess,
   rungText,
   suggestTargetFolder,
@@ -18,7 +17,6 @@ import { handoverPick, mappingLine, modelName } from "./model-choice.ts";
 import { EffortSelect, ModelSelect } from "./model-choice-ui.tsx";
 import { effortsFor } from "./providers.ts";
 import { Modal } from "./dialogs.tsx";
-import { hostPath } from "./urls.ts";
 import { useApi } from "./api-context.ts";
 import { HostField, ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { hostChoices, hostOfflineNote, profilesOf } from "./hosts.ts";
@@ -42,14 +40,8 @@ export interface HandoverProps {
 
 async function fetchPlan(api: ReturnType<typeof useApi>, t: Thread, profile: string): Promise<HandoverPlan> {
   try {
-    if (api.handoverPlan) {
-      const p = await api.handoverPlan(t.hostId, t.id, profile);
-      if (p) return p;
-    } else {
-      const q = profile ? `?profile=${encodeURIComponent(profile)}` : "";
-      const r = await fetch(hostPath(t.hostId, `/threads/${encodeURIComponent(t.rid ?? t.id)}/handover${q}`), { headers: { Accept: "application/json" } });
-      if (r.ok) return parsePlan(await r.json()) ?? planGuess(t);
-    }
+    const p = await api.handoverPlan?.(t.hostId, t.id, profile);
+    if (p) return p;
   } catch {
     /* the mock client and old hosts have no plan */
   }

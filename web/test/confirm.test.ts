@@ -1,7 +1,8 @@
 // SPEC V0.68: what Fyr's own confirmation says, for a script, a fyr effect and a destructive action.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deleteProjectAsk, offerAsk, press, removeProviderAsk, shortArg, shortFolder } from "../src/confirm.ts";
+import { deleteProjectAsk, offerAsk, press, removeProviderAsk } from "../src/confirm.ts";
+import { shortArg, shortFolder } from "../src/paths.ts";
 import type { Offer } from "../src/types.ts";
 
 const SCRATCH = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-acme-claude-long-term-token";

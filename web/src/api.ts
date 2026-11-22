@@ -219,12 +219,18 @@ function createHttpApi(): Api {
     return r.reload;
   };
 
+  /** V0.157: the front's answer to /state, for signout.ts: its status and body. */
+  const probeState = async (): Promise<{ status: number; body: unknown }> => {
+    const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+
   /** The front's state, then every host's own, in parallel: the snapshot the store reads, one state per host
    *  (hostfeed.snapshotOf). A host whose state cannot be read is listed and has no records. */
   const loadAll = async (): Promise<Snapshot> => {
     const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
     if (!r.ok) {
-      if (r.status === 401) void reloadIfSignedOut(); // V0.157: a revoked device lands on the signed-out page
+      if (r.status === 401) void reloadIfSignedOut(probeState); // V0.157: a revoked device lands on the signed-out page
       throw new Error(`state ${r.status}`);
     }
     const f = decodeFront(await r.json());
@@ -334,7 +340,7 @@ function createHttpApi(): Api {
     });
     es.onerror = () => {
       if (gen === generation) {
-        void reloadIfSignedOut(); // V0.157: a revoked device lands on the signed-out page
+        void reloadIfSignedOut(probeState); // V0.157: a revoked device lands on the signed-out page
         retry();
       }
     };

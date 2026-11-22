@@ -1,5 +1,6 @@
 // Changes and actions in the client (SPEC 0.5 V0.59, V0.60, decision 0018). Pure: what a change shows, which
 // actions the owner can press now, and the words for the conversation lines.
+import { ago } from "./format.ts";
 
 import type { Change, ChangeNeed, ChangePhase, Offer, OfferRun, PullRequest, Thread } from "./types.ts";
 import { shortHead } from "./pr.ts";
@@ -187,9 +188,8 @@ export const canRefresh = (c: Pick<Change, "phase" | "done" | "pr" | "branch" | 
 
 /** V0.101: "checked 30 s ago", from when Fyr last read the change's PR. */
 export function checkedText(iso: string, now: number): string {
-  const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (Number.isNaN(s)) return "";
-  return s < 60 ? `checked ${s} s ago` : s < 3600 ? `checked ${Math.round(s / 60)} min ago` : `checked ${Math.round(s / 3600)} h ago`;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? "" : `checked ${ago(now - t)} ago`;
 }
 
 /** V0.101: the inbox row's cause: the first change of the thread in Needs you, newest first. */

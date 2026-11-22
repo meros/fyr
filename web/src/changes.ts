@@ -85,21 +85,6 @@ export function parsePatch(patch: string): DiffLine[] {
   return lines;
 }
 
-/** Shortens a path in the middle to at most `max` characters; the file name stays whole when it fits. */
-export function shortenPath(path: string, max: number): string {
-  if (path.length <= max) return path;
-  const cut = path.lastIndexOf("/");
-  const name = path.slice(cut + 1);
-  if (name.length + 2 > max) return "…" + path.slice(-(max - 1));
-  let prefix = "";
-  for (const seg of path.slice(0, Math.max(cut, 0)).split("/")) {
-    const next = `${prefix}${seg}/`;
-    if (next.length + 2 + name.length > max) break;
-    prefix = next;
-  }
-  return `${prefix}…/${name}`;
-}
-
 /** Files by path, as the host sends them (a copy). */
 export function sortFiles(files: ChangedFile[]): ChangedFile[] {
   return [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));

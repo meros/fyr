@@ -1,6 +1,7 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
 import { hostUrl } from "./urls.ts";
+import { tildePath } from "./paths.ts";
 import { bare } from "./hostfeed.ts";
 import type { NewProjectDraft, Profile, Project, ProjectIconSpec, QuietHours, SetupField, Thread } from "./types.ts";
 import { effortsFor } from "./providers.ts";
@@ -236,7 +237,7 @@ export function filterByProject(threads: Record<string, Thread>, projectId: stri
 /** Where a project lives, for a subtitle: its folder, else that threads are filed by hand (V0.55). */
 export function projectSubtitle(p: Project): string {
   if (p.members) return `On ${p.members.length} hosts`; // decision 0034: each has its own folder
-  return p.folder ? shortPath(p.folder) : "No folder: filed by hand";
+  return p.folder ? tildePath(p.folder) : "No folder: filed by hand";
 }
 
 /** V0.121 (amends V0.30's order by last use): the owner's one project order. The projects named in `order` first,
@@ -303,14 +304,10 @@ export function newProjectDraft(t: Pick<Thread, "newProject">): NewProjectDraft 
 export const NO_FOLDER_LINE = "No folder: you file threads here by hand";
 export const FOLDER_LINE = "Threads started in this folder or below land here.";
 
-export function shortPath(p: string): string {
-  return p.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
-}
-
 /** The new thread's folder (V0.42): the picked one, else the project's folder, else a fresh scratch folder. */
 export function newThreadFolder(picked: string, project: Pick<Project, "folder"> | undefined): { cwd?: string; label: string; scratch: boolean } {
   const cwd = picked.trim() || project?.folder || "";
-  return cwd ? { cwd, label: shortPath(cwd), scratch: false } : { label: "A fresh scratch folder", scratch: true };
+  return cwd ? { cwd, label: tildePath(cwd), scratch: false } : { label: "A fresh scratch folder", scratch: true };
 }
 
 /** The picker's first row: from a thread "New project from this thread"; typed text that matches nothing names it. */
@@ -348,7 +345,7 @@ export function startProject(projects: Project[], filterId: string | null | unde
 /** V0.63: what the new-thread project chip shows. While the New project step is open it shows the project being
  *  made, never the one picked before. */
 export function projectChip(cur: Project | undefined, draft: { name: string; folder: string } | null): { name: string; sub: string; isNew: boolean } {
-  if (draft) return { name: draft.name.trim() || "New project", sub: draft.folder ? `New · ${shortPath(draft.folder)}` : "New · no folder", isNew: true };
+  if (draft) return { name: draft.name.trim() || "New project", sub: draft.folder ? `New · ${tildePath(draft.folder)}` : "New · no folder", isNew: true };
   return cur ? { name: cur.name, sub: projectSubtitle(cur), isNew: false } : { name: "No project", sub: "Not filed", isNew: false };
 }
 

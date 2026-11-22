@@ -3,8 +3,6 @@
 // that is why: an /api/state answer of 401 with signedOut reloads the page, which the front then answers with the
 // sign-in page. Reloading is rate limited so a page that cannot be signed in does not reload in a loop.
 
-import { frontPath } from "./urls.ts";
-
 /** Whether a 401 body is the front's "this device is not signed in". */
 export function isSignedOut(status: number, body: unknown): boolean {
   return status === 401 && typeof body === "object" && body !== null && (body as { signedOut?: unknown }).signedOut === true;
@@ -17,12 +15,14 @@ export function mayReload(last: number | null, now: number): boolean {
 
 const KEY = "fyr.signedOutReload";
 
+/** What the front answers to GET /state: its status and body. The Api makes the call (api.ts), so this file has no fetch. */
+export type StateProbe = () => Promise<{ status: number; body: unknown }>;
+
 /** Ask whether the host refuses this device; if it says signed out, reload (once in 10 s). */
-export async function reloadIfSignedOut(): Promise<boolean> {
+export async function reloadIfSignedOut(probe: StateProbe): Promise<boolean> {
   try {
-    const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
-    if (r.status !== 401) return false;
-    if (!isSignedOut(r.status, await r.json().catch(() => null))) return false;
+    const r = await probe();
+    if (!isSignedOut(r.status, r.body)) return false;
     let last: number | null = null;
     try {
       last = Number(sessionStorage.getItem(KEY)) || null;

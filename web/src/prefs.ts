@@ -1,13 +1,37 @@
 // Per-device preferences in localStorage, with change listeners. "Show tool details" (V0.21).
 
+/** The browser's storage, or null where there is none (a test, a blocked page): reading the global may itself throw. */
+export function browserStorage(): Storage | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One stored value, or null when none is kept or storage is blocked. The one way the client reads localStorage. */
+export function storedGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/** Keep a value; null forgets it. Storage blocked: the choice lasts this page only. */
+export function storedSet(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    /* blocked: this page only */
+  }
+}
+
 const DETAILS_KEY = "fyr.toolDetails";
 
 function read(): boolean {
-  try {
-    return localStorage.getItem(DETAILS_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return storedGet(DETAILS_KEY) === "1";
 }
 
 let details = typeof localStorage === "undefined" ? false : read();
@@ -19,12 +43,7 @@ export function toolDetails(): boolean {
 
 export function setToolDetails(on: boolean): void {
   details = on;
-  try {
-    if (on) localStorage.setItem(DETAILS_KEY, "1");
-    else localStorage.removeItem(DETAILS_KEY);
-  } catch {
-    /* storage blocked: this page only */
-  }
+  storedSet(DETAILS_KEY, on ? "1" : null);
   listeners.forEach((f) => f(on));
 }
 
@@ -46,20 +65,12 @@ export function listShown(pref: boolean | null, width: number, threadOpen: boole
 }
 
 export function listPref(): boolean | null {
-  try {
-    const v = localStorage.getItem(LIST_KEY);
-    return v === "1" ? true : v === "0" ? false : null;
-  } catch {
-    return null;
-  }
+  const v = storedGet(LIST_KEY);
+  return v === "1" ? true : v === "0" ? false : null;
 }
 
 export function setListPref(on: boolean): void {
-  try {
-    localStorage.setItem(LIST_KEY, on ? "1" : "0");
-  } catch {
-    /* the choice lasts this session */
-  }
+  storedSet(LIST_KEY, on ? "1" : "0");
 }
 
 // ---- the thread list's width (SPEC V0.184) ----
@@ -103,21 +114,12 @@ export function listWidthForKey(key: string, shift: boolean, w: number, win: num
 
 /** The width the owner set in this browser, as set: the window limits what is applied, not what is kept. */
 export function listWidthPref(): number | null {
-  try {
-    return parseListWidth(localStorage.getItem(LIST_WIDTH_KEY));
-  } catch {
-    return null;
-  }
+  return parseListWidth(storedGet(LIST_WIDTH_KEY));
 }
 
 /** null goes back to the default. */
 export function setListWidthPref(w: number | null): void {
-  try {
-    if (w === null) localStorage.removeItem(LIST_WIDTH_KEY);
-    else localStorage.setItem(LIST_WIDTH_KEY, String(w));
-  } catch {
-    /* the width lasts this session */
-  }
+  storedSet(LIST_WIDTH_KEY, w === null ? null : String(w));
 }
 
 // ---- the Changes board (SPEC 0.5 V0.78, #54) ----
@@ -126,18 +128,9 @@ const BOARD_SETTLED_KEY = "fyr.board.settled";
 
 /** Show the changes of settled and snoozed threads on the board; off by default. */
 export function boardSettledPref(): boolean {
-  try {
-    return localStorage.getItem(BOARD_SETTLED_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return storedGet(BOARD_SETTLED_KEY) === "1";
 }
 
 export function setBoardSettledPref(on: boolean): void {
-  try {
-    if (on) localStorage.setItem(BOARD_SETTLED_KEY, "1");
-    else localStorage.removeItem(BOARD_SETTLED_KEY);
-  } catch {
-    /* the choice lasts this session */
-  }
+  storedSet(BOARD_SETTLED_KEY, on ? "1" : null);
 }

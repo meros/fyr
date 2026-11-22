@@ -14,7 +14,6 @@ import {
   lookOf,
   parsePatch,
   rangeDiffRows,
-  shortenPath,
   sinceLabel,
   sinceLine,
   sortFiles,
@@ -30,6 +29,7 @@ import {
   type Marks,
   type RangeRow,
 } from "./changes.ts";
+import { shortenPath } from "./paths.ts";
 import { relTime } from "./format.ts";
 import type { Change } from "./types.ts";
 import { SlideMark } from "./motion-ui.tsx";

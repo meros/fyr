@@ -3,6 +3,7 @@
 // sentence while Fyr updates, a press shows the whole sentence and the details; a success shows a few seconds and goes;
 // a failure stays, in red, with Details, until it is dismissed. Desktop and phone share this component (CLAUDE.md).
 import { useEffect, useState } from "preact/hooks";
+import { storedGet, storedSet } from "./prefs.ts";
 import { canRestartNow, deployLine, deployShown, OK_SHOW_MS, type DeployProgress } from "./deploy.ts";
 import type { Thread } from "./types.ts";
 
@@ -10,19 +11,11 @@ const DISMISSED_KEY = "fyr.deploy.dismissed";
 
 /** #85: the update result the owner dismissed on this device; it outlives a reload and the next start. */
 function readDismissed(): string | null {
-  try {
-    return localStorage.getItem(DISMISSED_KEY);
-  } catch {
-    return null;
-  }
+  return storedGet(DISMISSED_KEY);
 }
 
 function saveDismissed(key: string): void {
-  try {
-    localStorage.setItem(DISMISSED_KEY, key);
-  } catch {
-    /* storage blocked: this page only */
-  }
+  storedSet(DISMISSED_KEY, key);
 }
 
 export function DeployBanner({

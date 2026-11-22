@@ -2,7 +2,7 @@
 // them as a bottom sheet on the phone and a dialog on the desktop.
 
 import type { Offer, Project } from "./types.ts";
-import { tildePath } from "./folders.ts";
+import { shortArg, shortFolder } from "./paths.ts";
 import { pressArgs, quote } from "./offers.ts";
 
 export interface AskCommand {
@@ -29,26 +29,6 @@ export interface Ask {
   choice?: { label: string; options: { value: string; label: string }[]; value: string };
   /** V0.72: an optional line of text; the sheet writes it back here */
   reason?: { label: string; value: string; max?: number };
-}
-
-// <anything>/scratch/<name><rest>: Fyr's scratch folders (V0.42) live under ~/.local/share/fyr/scratch.
-const SCRATCH = /^(.*)\/scratch\/([^/]+)(\/.*)?$/;
-
-/** A folder for the muted "in …" line: the home folder as ~, a scratch folder as ~/…/scratch/<name>. */
-export function shortFolder(p: string): string {
-  const t = tildePath(p);
-  const m = SCRATCH.exec(t);
-  if (!m) return t;
-  return `${m[1].startsWith("~") ? "~/…" : "…"}/scratch/${m[2]}${m[3] ?? ""}`;
-}
-
-/** One argument: an absolute path inside a scratch folder as …/<folder>/<rest>, else the home folder as ~;
- *  anything else as written. */
-export function shortArg(a: string): string {
-  if (!a.startsWith("/")) return a;
-  const m = SCRATCH.exec(a);
-  if (m?.[3]) return `…/${m[2]}${m[3]}`;
-  return tildePath(a);
 }
 
 /** The argument shortened, quoted as the original would need. */

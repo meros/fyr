@@ -1,17 +1,36 @@
 // Display helpers. Pure.
 
-/** "0 s", "4 min", "3 h", "12 d" relative time; `now` is the server-adjusted clock. */
-export function relTime(iso: string | null | undefined, now: number): string {
-  if (!iso) return "";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
-  const sec = Math.floor(Math.max(0, now - t) / 1000);
+/** "0 s", "4 min", "3 h", "12 d": how long ago, or how far off, a span of ms is. Always rounded down; never negative. */
+export function ago(ms: number): string {
+  const sec = Math.floor(Math.max(0, ms) / 1000);
   if (sec < 60) return `${sec} s`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
   if (h < 24) return `${h} h`;
   return `${Math.floor(h / 24)} d`;
+}
+
+/** A duration as people say it: "40 s", "14 min", "1 h 5 min". Rounded down. */
+export function span(ms: number): string {
+  const sec = Math.floor(Math.max(0, ms) / 1000);
+  if (sec < 60) return `${sec} s`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+/** The minute a clock reading falls in: the memo key for a view that shows minutes. */
+export function minuteOf(now: number): number {
+  return Math.floor(now / 60_000);
+}
+
+/** "0 s", "4 min", "3 h", "12 d" relative time; `now` is the server-adjusted clock. */
+export function relTime(iso: string | null | undefined, now: number): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  return ago(now - t);
 }
 
 /** "14:20" today, "Mon 06:00" this week, "12 Nov" before that. */

@@ -1,5 +1,6 @@
 // SPEC V0.176: leftover processes (what a thread left running outside its CLI) and the settled threads' worktrees, as
 // words for the open thread's strip, the rail, the phone's load sheet and Settings. Pure texts; the components print them.
+import { ago } from "./format.ts";
 import type { HostId } from "./hostid.ts";
 import type { Card } from "./card.ts";
 import type { HostLoad, Lookup } from "./load.ts";
@@ -50,10 +51,7 @@ export function sizeText(b: number): string {
 
 /** "25 min", "10 h", "2 d": a span from now, rounded down, at least 1 min. */
 function inText(iso: string, now: number): string {
-  const min = Math.max(0, Math.floor((Date.parse(iso) - now) / 60_000));
-  if (min < 60) return `${Math.max(1, min)} min`;
-  if (min < 48 * 60) return `${Math.floor(min / 60)} h`;
-  return `${Math.floor(min / 1440)} d`;
+  return ago(Math.max(60_000, Date.parse(iso) - now));
 }
 
 const heavy = (l: Leftover) => l.rss >= 100e6;

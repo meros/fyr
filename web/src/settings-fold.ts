@@ -1,6 +1,8 @@
 // V0.automation-folds: a settings group that folds to its header line. The folds are remembered per device, keyed by
 // the group and its host, so a group the owner opened stays open and one they closed stays closed.
 
+import { storedGet, storedSet } from "./prefs.ts";
+
 export const SETTINGS_FOLD_KEY = "fyr.settingsFold";
 
 /** What the device stored; anything else counts as nothing. */
@@ -23,11 +25,7 @@ export function foldOpen(folds: Record<string, boolean>, id: string, byDefault: 
 }
 
 function read(): Record<string, boolean> {
-  try {
-    return parseFolds(localStorage.getItem(SETTINGS_FOLD_KEY));
-  } catch {
-    return {};
-  }
+  return parseFolds(storedGet(SETTINGS_FOLD_KEY));
 }
 
 export function readFold(id: string, byDefault: boolean): boolean {
@@ -35,9 +33,5 @@ export function readFold(id: string, byDefault: boolean): boolean {
 }
 
 export function writeFold(id: string, open: boolean): void {
-  try {
-    localStorage.setItem(SETTINGS_FOLD_KEY, JSON.stringify({ ...read(), [id]: open }));
-  } catch {
-    // a private window: the fold lasts until the page closes
-  }
+  storedSet(SETTINGS_FOLD_KEY, JSON.stringify({ ...read(), [id]: open }));
 }
