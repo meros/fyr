@@ -86,6 +86,7 @@ func fullHostID(t *testing.T, name, profile, id string) *host {
 type runningFront struct {
 	*httptest.Server
 	stop func() // ends Run and waits for it (the cache is written)
+	f    *Front
 }
 
 func startFront(t *testing.T, opt Options, hosts ...HostConfig) *runningFront {
@@ -106,7 +107,21 @@ func startFront(t *testing.T, opt Options, hosts ...HostConfig) *runningFront {
 		})
 	}
 	t.Cleanup(stop)
-	return &runningFront{fs, stop}
+	return &runningFront{fs, stop, f}
+}
+
+// frontAttention is the attention state of thread id in the front's own copy
+// of its host's thread, as the front's pushes read it. getState does not
+// show that copy: its thread list is read through to the host.
+func (r *runningFront) frontAttention(id string) string {
+	r.f.mu.Lock()
+	defer r.f.mu.Unlock()
+	for _, l := range r.f.all() {
+		if m := l.raw[id]; m != nil {
+			return attentionOf(m)
+		}
+	}
+	return ""
 }
 
 func create(t *testing.T, base, host, text string) string {
