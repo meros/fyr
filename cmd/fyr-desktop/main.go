@@ -373,3 +373,14 @@ func goExternal(uri *C.char) C.int {
 	}
 	return 0
 }
+
+// goWindowLeaves: a window the page asked for goes to the default browser unless its
+// link stays on Fyr (V0.desktop-popup-links).
+//
+//export goWindowLeaves
+func goWindowLeaves(uri *C.char) C.int {
+	if desktop.ChildWindow(the.originNow(), C.GoString(uri)) {
+		return 0
+	}
+	return 1
+}

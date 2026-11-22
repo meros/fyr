@@ -27,6 +27,7 @@ extern void goNotified(int token, guint32 id);
 extern void goNotifyAction(guint32 id, char *action);
 extern void goNotifyClosed(guint32 id);
 extern int goExternal(char *uri);
+extern int goWindowLeaves(char *uri);
 extern int goIsFyr(char *uri);
 extern void goBridge(char *msg, void *reply);
 
@@ -116,11 +117,20 @@ static gboolean on_policy(WebKitWebView *v, WebKitPolicyDecision *dec, WebKitPol
 	return FALSE;
 }
 
-// A Fyr page opened in a new window (a preview) gets its own window with
-// the same session.
+// A page that asks for a window of its own (target=_blank, window.open) gets
+// one with the same session when the link stays on Fyr, a preview's page; any
+// other goes to the default browser. WebKitGTK sends such a request here and
+// never to decide-policy, so this handler is where a link a page opens in a
+// window leaves the app (V0.desktop-popup-links). Returning NULL tells WebKit
+// the window was not given.
 static void on_ready(WebKitWebView *v, gpointer w) { gtk_widget_show_all(GTK_WIDGET(w)); }
 static void on_child_close(WebKitWebView *v, gpointer w) { gtk_widget_destroy(GTK_WIDGET(w)); }
 static GtkWidget *on_create(WebKitWebView *v, WebKitNavigationAction *a, gpointer d) {
+	const char *uri = a ? webkit_uri_request_get_uri(webkit_navigation_action_get_request(a)) : NULL;
+	if (uri && goWindowLeaves((char *)uri)) {
+		open_external(uri);
+		return NULL;
+	}
 	GtkWidget *child = webkit_web_view_new_with_related_view(v);
 	GtkWidget *w = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_default_size(GTK_WINDOW(w), 1000, 760);

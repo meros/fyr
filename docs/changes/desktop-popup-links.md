@@ -1,0 +1,13 @@
+# V0.desktop-popup-links: in the Linux app a link a page opens in a window goes to the browser, not to an Fyr window of that page
+
+→ V0.linux-desktop (3), decision 0038 ("External links (a new window, or a click off Fyr's origin) open in the default browser"). Amends V0.linux-desktop (3).
+
+**Why.** The app's own right-click menu, "Open link", opens a link with `window.open(href, "_blank", "noopener")`, and `target=_blank` links on Fyr's pages ask the same way. In the app that opened nothing in a browser: the link showed in an Fyr window in the app's own style, without the browser's session and extensions, and `window.open` that reached no handler at all could navigate the app's window itself away from Fyr. Only an ordinary click on a link was sent out, because only that navigation reaches WebKit's decide-policy handler with a user gesture.
+
+(1) **What WebKitGTK does.** A page asking for a window (`target=_blank`, `window.open`) is reported to the `create` signal and never to `decide-policy`: the shell's `create` handler made a child window with the session for every such request, whatever the link. The handler now asks `desktop.ChildWindow` first: a link that stays on Fyr's origin (a preview's page) gets the child window as before; every other link goes to the default browser, and the handler returns NULL, so WebKit is told no window was given.
+
+(2) **A script's own page.** `about:`, `data:` and `blob:` links stay in the app: a page may make one for its own script, and no other application should be asked to open it. An empty link (a new window with nothing in it yet) stays too.
+
+(3) **Tests.** `TestChildWindowsAreFyrPagesOnly` in `internal/desktop` (a Fyr page and a script's own page stay, a link off Fyr's origin, another origin and a `mailto:` leave), beside the existing `External` and `cmd/fyr` tests. By hand on Xvfb with a private D-Bus and a stand-in default browser: `window.open(href, "_blank", "noopener")`, `window.open(href, "_blank")`, `window.open(href)`, a `target=_blank` anchor and WebKit's own "Open Link in New Window" menu entry each reached the default browser (before, all but the anchor made an Fyr window of that page, and `window.open` was seen to navigate the app's own window), and a same-origin `window.open` still made a child window that loaded its page.
+
+(4) **Still open: a link inside a preview.** A preview runs in a sandboxed frame without `allow-same-origin` (V0.47), so a `target=_blank` link in it is refused by the sandbox before the app hears of it (in any browser, not only the app). Such a page needs to hand its links to the client through the frame bridge; that is not in this change.
