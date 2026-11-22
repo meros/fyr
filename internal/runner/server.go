@@ -96,6 +96,7 @@ type rproc struct {
 	// reaches nothing, and fyrd learns it from the process's info.
 	inClosed bool
 	exited   bool
+	done     chan struct{} // closed once exited is set, so Close waits on it instead of polling
 	err      string
 	stderr   *tail
 }
@@ -175,10 +176,15 @@ func (s *Server) Close(grace time.Duration) {
 	for _, p := range ps {
 		p.in.Close()
 	}
-	deadline := time.Now().Add(grace)
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
 	for _, p := range ps {
-		for !p.isExited() && time.Now().Before(deadline) {
-			time.Sleep(20 * time.Millisecond)
+		select {
+		case <-p.done:
+		case <-timer.C:
+			// Grace is spent: a timer fires once, so every process still
+			// running now is killed, and the rest are checked without waiting.
+			timer.Reset(0)
 		}
 		if !p.isExited() {
 			p.kill()
@@ -388,7 +394,7 @@ func (s *Server) spawn(sp Spawn) (*rproc, error) {
 	}
 	defer closeCg()
 	now := s.now()
-	p := &rproc{id: sp.ID, key: sp.Key, meta: sp.Meta, started: now, alone: now, cmd: cmd, stderr: &tail{max: 4096}}
+	p := &rproc{id: sp.ID, key: sp.Key, meta: sp.Meta, started: now, alone: now, cmd: cmd, stderr: &tail{max: 4096}, done: make(chan struct{})}
 	p.cond = sync.NewCond(&p.mu)
 	cmd.Stderr = p.stderr
 	if p.in, err = cmd.StdinPipe(); err != nil {
@@ -436,6 +442,7 @@ func (s *Server) read(p *rproc) {
 	}
 	p.mu.Lock()
 	p.exited, p.err = true, msg
+	close(p.done)
 	p.cond.Broadcast()
 	p.mu.Unlock()
 	s.logf("runner: %s exited %s", p.id, msg)

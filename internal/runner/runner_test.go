@@ -415,3 +415,17 @@ func TestListenRefusesALiveRunner(t *testing.T) {
 		t.Fatalf("second Listen = %v, want ErrListening", err)
 	}
 }
+
+// ListWaitContext returns at once when its context ends, not after the wait.
+func TestListWaitContextCancel(t *testing.T) {
+	c := &runner.Client{Path: t.TempDir() + "/none.sock"}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := c.ListWaitContext(ctx, time.Minute); err == nil {
+		t.Fatal("no runner, want an error")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("did not stop with its context")
+	}
+}
