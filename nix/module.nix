@@ -170,9 +170,7 @@ in
       default = [ ];
       description = ''
         Agent profiles (SPEC V0.11): a claude-compatible binary with a name,
-        colour and model list. Empty means: read T3 Code's provider instances,
-        else plain `claude`. Ids should match T3's instance ids so adopted
-        threads keep their profile.
+        colour and model list. Empty means plain `claude`.
       '';
     };
     scanRoots = lib.mkOption {

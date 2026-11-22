@@ -74,7 +74,6 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
   "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false, "checksDone": 3, "checksTotal": 5, "failedChecks": ["test"], "rules": ["pull_request"], "missingChecks": ["build"], "protected": false},
   "prs": ["all non-dismissed PR snapshots of the thread's code changes, primary first (V0.multi-pr)"],
   "settledAt": null, "archivedAt": null, "settleWhenDone": false, "settleWhenMerged": false,
-  "source": "fyr|t3",
   "parent": "t_… (the thread whose agent started this one, V0.22)",
   "branch": "fix/map-lasso (empty when not a git checkout)",
   "rev": 1794643457123456789,
@@ -185,7 +184,6 @@ Actions and their args:
 | `thread.setModel` | `model?`, `effort?` (at least one; V0.50: an effort alone keeps the model; `""` returns to the provider's default). The thread DTO carries `effort` when set |
 | `thread.handover` | `profile`, `model?` (default: the profile's default model): hand the thread over to another profile (V0.45). `409` while a run is live, a question is open, a handover is going or the thread is archived; `400` for an unknown profile or the thread's own. While it runs the thread has `"handover": {"to": "…", "model": "…", "at": "…"}` and sends are unavailable |
 | `thread.cancelMessage` | `messageId`: withdraw a message the agent has not read (V0.33). `409` when it was read already, is unknown, or the agent cannot withdraw it |
-| `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
 | `host.deployNow` (no `threadId`) | none: a deploy that waits for running threads switches now; their turns end and each gets "continue" after the restart (V0.83). `409` when no deploy drains |
 | `host.setupFix` (no `threadId`) | `action`, `args?`: runs one fix step of the Setup wizard (`GET /api/setup`, V0.setup-wizard) |
 | `provider.*` (no `threadId`) | see Providers (V0.50): `import`, `create`, `update`, `refreshModels`, `setKey`, `login`, `loginCode`, `loginCancel`, `delete` |
@@ -208,10 +206,6 @@ Actions and their args:
 `GET /api/commands?cwd=<folder>&profile=<id>` returns `{"commands": […]}`, the newest list for a provider and folder (New thread); without `profile`, the host's first profile.
 
 The client sends a command as an ordinary message (`/review 12`); the CLI runs it.
-
-## `GET /api/t3/candidates`
-
-`{"threads": [{"t3Id": "…", "title": "…", "cwd": "…", "profile": "claudeAlt", "model": "…", "sessionId": "…", "prUrl": "…", "updatedAt": "…", "hasTranscript": true}]}`, open top-level T3 threads not yet adopted.
 
 ## Web Push (SPEC 0.5 V0.15)
 

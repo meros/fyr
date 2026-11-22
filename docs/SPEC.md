@@ -93,7 +93,6 @@ The spec was grounded in eleven days of real use of another agent workbench by o
 | Pin | – | `thread.pin`, `thread.unpin` (`pinned` is always 0 in v1) |
 | Hours | the `hours` schema and `push: hold` (12.8) | `ruleRuns: hold` |
 | Sending Documents | – | the `email` and `deliver` modules, `document.send` |
-| Cut-over | `fyr import-t3`: reads T3 Code's database read-only and adopts its open threads by their Claude session id (title, cwd, PR links) | – |
 | Everything else in this spec | as written, unless the text says post-v1 | – |
 
 ### 0.5 v0: the first viable version
@@ -114,7 +113,7 @@ v0 is the smallest Fyr the owner can work in every day. It is binding for milest
 | V0.6 | → 3.3. A host restart never shows a wrong state: a run or a question that was live when the host stopped becomes `failed` with class `restart`; Retry resumes the session. |
 | V0.7 | An agent process with no run and no open Decision for 10 minutes is stopped; the next message resumes it (8.3, process stop). |
 | V0.8 | → 3.13. PR: a URL printed by `gh pr create` links the PR to the thread; open PRs are polled with `gh` every 2 minutes; badge on rows; settle when merged. |
-| V0.9 | T3 adoption (decision 0004): adopt open top-level T3 threads, with history from the Claude transcript. |
+| V0.9 | *Superseded by V0.remove-t3.* T3 adoption (decision 0004): adopt open top-level T3 threads, with history from the Claude transcript. |
 | V0.10 | Desktop UI: inbox sections (6.3), thread view with the conversation, collapsed tool calls and subagent count, the docked question card (13.2), a composer that accepts pasted images, the keys of 13.1 that apply, and a new-thread dialog with folder, profile and model. |
 | V0.11 | → 3.16. Agent profiles: a profile is a `claude`-compatible binary with a name, a colour and a model list. Profiles come from `~/.config/fyr/config.json`, or from T3's provider instances when that file is missing. |
 | V0.12 | → 5.10, 5.12. **Fyr tools for agents (minimal).** Each session gets Fyr's MCP server (16.2 MCP binding): HTTP at `/mcp` on the host, a per-session bearer token passed with `--mcp-config`, revoked when the session ends, and the tools allowed with `--allowedTools mcp__fyr__*`. Tools: `pr_link(url)` links a PR to the thread; `effect_request(action, args, reason)` with the one v0 action `pr.merge {pr, method}` opens an `effect` Decision and returns at once (5.10); `settle_when(condition: done \| merged)` arms the settle. After approval Fyr runs `gh pr merge` and sends the result to the thread as a message (`effect.result`), which starts a turn when the thread is idle. Steering has three layers: (1) tool descriptions and a short Fyr block in `--append-system-prompt`; (2) the tool gate (12.3): a PreToolUse hook on `Bash` denies `gh pr merge` with the reason "Use mcp__fyr__effect_request with action pr.merge"; (3) post-v0, the credential broker removes merge rights from the agent's token. |
@@ -575,8 +574,7 @@ type Thread = Conversation & {
   rules?: Rule[];                  // 7.1
   feed?: Feed;                     // notices not delivered yet (5.14)
   archivedAt?: Time;
-  source: "fyr" | "t3"; parent?: string;   // the thread whose agent started it (V0.22, V0.71)
-  t3Id?: string;
+  parent?: string;                 // the thread whose agent started it (V0.22, V0.71)
 };
 
 type LiveView = {
@@ -983,9 +981,8 @@ type Rejection = { code: "conflict" | "badArgs" | "notFound" | "rights" | "unava
 - **The engine's path.** One function takes every Input: replay the receipt when `cmdId` has one; load the records; reduce; store the records, their events, the receipt and the durable effects in one transaction; publish the thread to the clients; start the effects. A thread that the reduce leaves unchanged is not written and keeps its `updatedAt`.
 - **Host change records** have their own pure reducer (`ReduceRecord`, 3.14) and the same path: a record that moves becomes one `change.observed` Input per thread that shows it.
 - **Projects** have their own pure reducer (`ReduceProject`, 3.15) and the same path: replay the receipt, reduce the project, reduce the thread Inputs it causes (`follow`, and matching), store it all in one transaction, broadcast the project and the threads.
-- **Host kinds** change no record of the state: the provider commands (3.16) and `t3.adopt` (V0.9). `ReduceHost` checks the sender and returns the kind's effect.
-- **Await.** A kind whose reply needs its effect's outcome (`thread.cancelMessage`, which needs the CLI's answer before it can say the agent never sees the message (V0.33); `t3.adopt`; `provider.*`) is reduced and stored without its receipt; the engine runs its effects in order, then stores the receipt with the outcome. A failure that may pass on a retry (409, 5xx) stores no receipt. One lock covers the receipt check, the work and the receipt.
-- **Adopted threads.** T3 adoption sends each thread as the Input `thread.adopted` (source `observer:t3`), which makes the thread with its view and its history at the times it happened, and keeps T3's `updatedAt`.
+- **Host kinds** change no record of the state: the provider commands (3.16) and host control commands. `ReduceHost` checks the sender and returns the kind's effect.
+- **Await.** A kind whose reply needs its effect's outcome (`thread.cancelMessage`, which needs the CLI's answer before it can say the agent never sees the message (V0.33); `provider.*`; host control commands) is reduced and stored without its receipt; the engine runs its effects in order, then stores the receipt with the outcome. A failure that may pass on a retry (409, 5xx) stores no receipt. One lock covers the receipt check, the work and the receipt.
 - **A new feature** is a record field, an Input kind, a reducer case, and perhaps a Condition kind (7.2) and a notice rule (5.14). It never needs a new path for state, effects or telling the agent.
 
 **Rules**
@@ -1148,7 +1145,7 @@ A reducer never does work. It returns effects, and Fyr's effect runner executes 
 | `thread.create` | a new thread for an agent action with `in: "new"` | no |
 | `agent.feed` | deliver the thread's notices (5.14) | no |
 | `git.observe` | read git after a run (3.14) | no |
-| `t3.adopt`, `provider` | adopt T3 threads; run a provider command (3.16). The engine runs them before it answers (Await, 5.1) | no |
+| `provider` | run a provider command (3.16). The engine runs it before it answers (Await, 5.1) | no |
 
 **At most once.** A durable effect is stored with the reduce that returned it. The runner claims it (`pending → started`) before the work, so it runs at most once, also across a restart. The result is stored (`started → finished`) and lands as an Input `effect.result` with source `effect:<id>`, which the same reducer applies. An effect that was `started` when Fyr stopped is not run again: it lands as a failure with the text "Fyr restarted while this ran, so Fyr does not know whether it finished; it was not run again. Check its outcome before you retry." A deploy reports its own result later, from the new daemon (V0.13).
 
