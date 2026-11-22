@@ -5,6 +5,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/meros/fyr/internal/httpguard"
+	"log"
 	"net/http"
 	"time"
 
@@ -222,5 +225,24 @@ type LinkError struct {
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("api: write json: %v", err)
+	}
+}
+
+// DecodeBody reads the request body as JSON into v, at most limit bytes. On a
+// failure it answers {"ok":false,"error":...} (400, or 413 over the cap) and
+// returns false: the one answer of the host and the front to a bad body.
+func DecodeBody(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	err := httpguard.ReadJSON(w, r, v, limit)
+	if err == nil {
+		return true
+	}
+	var big *http.MaxBytesError
+	if errors.As(err, &big) {
+		WriteJSON(w, http.StatusRequestEntityTooLarge, Reply{Error: "request body too large"})
+	} else {
+		WriteJSON(w, http.StatusBadRequest, Reply{Error: "bad JSON: " + err.Error()})
+	}
+	return false
 }

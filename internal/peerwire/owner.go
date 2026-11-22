@@ -2,6 +2,7 @@ package peerwire
 
 import (
 	"errors"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"strings"
@@ -36,7 +37,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 	return func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /host/list", func(w http.ResponseWriter, r *http.Request) {
 			owner, _ := p.ownerInfo()
-			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"members": p.Env.Members(), "candidates": p.Env.Candidates(r.Context()),
+			api.WriteJSON(w, http.StatusOK, map[string]any{"members": p.Env.Members(), "candidates": p.Env.Candidates(r.Context()),
 				"whoisLinkUses": p.whoisLinkUses(), "rounds": p.Env.Rounds.Load(), "ownerLogin": owner,
 				"configChanged": p.configNote()})
 		})
@@ -44,7 +45,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 		// set the Tailscale owner login without falling back to tailnet.Self.
 		mux.HandleFunc("GET /auth/owner", func(w http.ResponseWriter, r *http.Request) {
 			owner, source := p.ownerInfo()
-			httpguard.WriteJSON(w, http.StatusOK, map[string]any{
+			api.WriteJSON(w, http.StatusOK, map[string]any{
 				"ownerLogin":  owner,
 				"source":      source,
 				"configOwner": p.ConfigOwner,
@@ -56,12 +57,12 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 			httpguard.DecodeLoose(w, r, &b, 4096)
 			login := strings.TrimSpace(b.Login)
 			if login == "" || strings.ContainsAny(login, " \t\r\n") {
-				httpguard.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "owner login must be a non-empty Tailscale login without spaces (e.g. you@example.com)"})
+				api.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "owner login must be a non-empty Tailscale login without spaces (e.g. you@example.com)"})
 				return
 			}
 			p.Env.Roster.SetOwnerLogin(login)
 			owner, source := p.ownerInfo()
-			httpguard.WriteJSON(w, http.StatusOK, map[string]any{
+			api.WriteJSON(w, http.StatusOK, map[string]any{
 				"ok":          true,
 				"ownerLogin":  owner,
 				"source":      source,
@@ -77,26 +78,26 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 			if m, err := qr.Encode(code); err == nil {
 				out["qr"] = m.Text()
 			}
-			httpguard.WriteJSON(w, http.StatusOK, out)
+			api.WriteJSON(w, http.StatusOK, out)
 		})
 		mux.HandleFunc("POST /pair/join", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ Code, Addr string }
 			httpguard.DecodeLoose(w, r, &b, 4096)
 			res, err := p.Env.Join(r.Context(), b.Code, b.Addr)
 			if err != nil {
-				httpguard.WriteJSON(w, joinStatus(err), map[string]any{"error": err.Error()})
+				api.WriteJSON(w, joinStatus(err), map[string]any{"error": err.Error()})
 				return
 			}
-			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "name": res.Name, "id": res.ID, "addr": res.Addr})
+			api.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "name": res.Name, "id": res.ID, "addr": res.Addr})
 		})
 		mux.HandleFunc("POST /host/remove", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ ID string }
 			httpguard.DecodeLoose(w, r, &b, 4096)
 			if err := p.Env.Remove(b.ID); err != nil {
-				httpguard.WriteJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+				api.WriteJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 				return
 			}
-			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+			api.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 		})
 		// fyr rotate-key: a new key waits beside the old, the roster says so (signed by the
 		// old key), and fyrd restarts on the new one. A key that may be stolen is removed
@@ -107,11 +108,11 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 				err = identity.WriteNext(p.Data, nk)
 			}
 			if err != nil {
-				httpguard.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+				api.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 				return
 			}
 			p.Env.Roster.Rotate(nk.Public)
-			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "from": p.Key.ID(), "to": nk.ID()})
+			api.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "from": p.Key.ID(), "to": nk.ID()})
 			go func() { // the launcher restarts fyrd on exit 75, as for a release
 				time.Sleep(300 * time.Millisecond)
 				p.Restart()
@@ -128,7 +129,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 				return
 			}
 			p.Env.Drive.Set(b.ID, b.On)
-			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+			api.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 		})
 	}
 }
