@@ -10,6 +10,7 @@ package front
 
 import (
 	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"net/url"
 	"slices"
@@ -321,7 +322,7 @@ func (f *Front) frontCommandRoute(w http.ResponseWriter, r *http.Request) {
 		Action    string         `json:"action"`
 		Args      map[string]any `json:"args"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&c); err != nil {
+	if err := httpguard.ReadJSON(w, r, &c, 1<<20); err != nil {
 		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
 		return
 	}
@@ -381,7 +382,7 @@ func (f *Front) presenceRoute2(w http.ResponseWriter, r *http.Request) {
 		ThreadID string `json:"threadId"`
 		Device   string `json:"device"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&b); err != nil || b.Device == "" {
+	if err := httpguard.ReadJSON(w, r, &b, 4<<10); err != nil || b.Device == "" {
 		http.Error(w, "host, threadId and device are required", 400)
 		return
 	}

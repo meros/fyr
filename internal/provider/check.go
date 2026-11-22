@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
+	"github.com/meros/fyr/internal/httpguard"
 )
 
 // CheckEvery is how often the host checks each provider by itself (V0.120).
@@ -30,7 +30,7 @@ func (r *Registry) listModels(ctx context.Context, p Provider, key string) (cli.
 	if p.Auth.Kind == cli.APIKey && p.Endpoint.BaseURL != "" && (p.CLI == "" || p.CLI == claudecli.ID) {
 		c := r.Client
 		if c == nil {
-			c = &http.Client{}
+			c = httpguard.NewClient()
 		}
 		ms, err := fetchModels(ctx, c, p.Endpoint.BaseURL, key, fetchLimits{})
 		out := cli.Listing{Models: ms}

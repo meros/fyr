@@ -2,7 +2,6 @@ package front
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/meros/fyr/internal/httpguard"
 	"log"
 	"net/http"
@@ -43,7 +42,7 @@ func (f *Front) authOnce(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(oncePage))
 	case http.MethodPost:
 		var body struct{ Token string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+		httpguard.DecodeLoose(w, r, &body, 4096)
 		session, d, err := f.opt.Auth.Redeem(body.Token, cookieOf(r), BrowserName(r.UserAgent()))
 		if err != nil {
 			api.WriteJSON(w, http.StatusGone, map[string]any{"ok": false, "error": err.Error()})
@@ -212,7 +211,7 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ Code, ID string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		var d *auth.Device
 		var err error
 		if b.ID != "" {
@@ -232,7 +231,7 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ ID string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		api.WriteJSON(w, 200, map[string]any{"ok": st.Deny(b.ID, "device:"+p.ID)})
 	})
 	mux.HandleFunc("POST /api/front/auth/revoke", func(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +240,7 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ ID string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		gone := st.Revoke(b.ID, "device:"+p.ID)
 		api.WriteJSON(w, 200, map[string]any{"ok": len(gone) > 0, "revoked": gone})
 	})
@@ -251,7 +250,7 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ Name string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		origin := originOf(r)
 		api.WriteJSON(w, 200, f.oneTimeLink(func(tok string) string { return origin + "/auth/once#" + tok }, auth.HowLink, nameOr(b.Name, "a new device"), p.ID, 10*time.Minute))
 	})
@@ -261,7 +260,7 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ Way, Mode string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		if err := st.SetMode(b.Way, b.Mode, "device:"+p.ID); err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 			return

@@ -1,8 +1,8 @@
 package peerwire
 
 import (
-	"encoding/json"
 	"errors"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"strings"
 	"time"
@@ -36,8 +36,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 	return func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /host/list", func(w http.ResponseWriter, r *http.Request) {
 			owner, _ := p.ownerInfo()
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"members": p.Env.Members(), "candidates": p.Env.Candidates(r.Context()),
+			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"members": p.Env.Members(), "candidates": p.Env.Candidates(r.Context()),
 				"whoisLinkUses": p.whoisLinkUses(), "rounds": p.Env.Rounds.Load(), "ownerLogin": owner,
 				"configChanged": p.configNote()})
 		})
@@ -45,8 +44,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 		// set the Tailscale owner login without falling back to tailnet.Self.
 		mux.HandleFunc("GET /auth/owner", func(w http.ResponseWriter, r *http.Request) {
 			owner, source := p.ownerInfo()
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			httpguard.WriteJSON(w, http.StatusOK, map[string]any{
 				"ownerLogin":  owner,
 				"source":      source,
 				"configOwner": p.ConfigOwner,
@@ -55,17 +53,15 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 		})
 		mux.HandleFunc("POST /auth/owner", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ Login string }
-			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+			httpguard.DecodeLoose(w, r, &b, 4096)
 			login := strings.TrimSpace(b.Login)
-			w.Header().Set("Content-Type", "application/json")
 			if login == "" || strings.ContainsAny(login, " \t\r\n") {
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]any{"error": "owner login must be a non-empty Tailscale login without spaces (e.g. you@example.com)"})
+				httpguard.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "owner login must be a non-empty Tailscale login without spaces (e.g. you@example.com)"})
 				return
 			}
 			p.Env.Roster.SetOwnerLogin(login)
 			owner, source := p.ownerInfo()
-			json.NewEncoder(w).Encode(map[string]any{
+			httpguard.WriteJSON(w, http.StatusOK, map[string]any{
 				"ok":          true,
 				"ownerLogin":  owner,
 				"source":      source,
@@ -81,48 +77,41 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 			if m, err := qr.Encode(code); err == nil {
 				out["qr"] = m.Text()
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(out)
+			httpguard.WriteJSON(w, http.StatusOK, out)
 		})
 		mux.HandleFunc("POST /pair/join", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ Code, Addr string }
-			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+			httpguard.DecodeLoose(w, r, &b, 4096)
 			res, err := p.Env.Join(r.Context(), b.Code, b.Addr)
-			w.Header().Set("Content-Type", "application/json")
 			if err != nil {
-				w.WriteHeader(joinStatus(err))
-				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				httpguard.WriteJSON(w, joinStatus(err), map[string]any{"error": err.Error()})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": res.Name, "id": res.ID, "addr": res.Addr})
+			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "name": res.Name, "id": res.ID, "addr": res.Addr})
 		})
 		mux.HandleFunc("POST /host/remove", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ ID string }
-			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
-			w.Header().Set("Content-Type", "application/json")
+			httpguard.DecodeLoose(w, r, &b, 4096)
 			if err := p.Env.Remove(b.ID); err != nil {
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				httpguard.WriteJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 		})
 		// fyr rotate-key: a new key waits beside the old, the roster says so (signed by the
 		// old key), and fyrd restarts on the new one. A key that may be stolen is removed
 		// and paired again instead.
 		mux.HandleFunc("POST /host/rotate", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
 			nk, err := identity.New()
 			if err == nil {
 				err = identity.WriteNext(p.Data, nk)
 			}
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				httpguard.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 				return
 			}
 			p.Env.Roster.Rotate(nk.Public)
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "from": p.Key.ID(), "to": nk.ID()})
+			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "from": p.Key.ID(), "to": nk.ID()})
 			go func() { // the launcher restarts fyrd on exit 75, as for a release
 				time.Sleep(300 * time.Millisecond)
 				p.Restart()
@@ -133,14 +122,13 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 				ID string
 				On bool
 			}
-			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+			httpguard.DecodeLoose(w, r, &b, 4096)
 			if _, ok := p.Env.Roster.Member(b.ID); !ok || b.ID == p.Env.Key.ID() {
 				http.Error(w, `{"error":"no such install in the roster"}`, http.StatusNotFound)
 				return
 			}
 			p.Env.Drive.Set(b.ID, b.On)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			httpguard.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 		})
 	}
 }

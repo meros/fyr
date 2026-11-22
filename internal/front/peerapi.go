@@ -6,7 +6,7 @@ package front
 // another install). Desktop and phone from the same page.
 
 import (
-	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 
 	"github.com/meros/fyr/internal/api"
@@ -72,7 +72,7 @@ func (f *Front) peerAPI(mux muxer) {
 			return
 		}
 		var b struct{ ID string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		if err := p.Remove(b.ID); err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 			return
@@ -84,7 +84,7 @@ func (f *Front) peerAPI(mux muxer) {
 			return
 		}
 		var b struct{ Code, Addr string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		res, err := p.Join(r.Context(), b.Code, b.Addr)
 		if err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})

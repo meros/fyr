@@ -1,7 +1,7 @@
 package front
 
 import (
-	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"strings"
 	"time"
@@ -39,7 +39,7 @@ func (f *Front) OwnerHandler(origin string) http.Handler {
 			return
 		}
 		var b struct{ Name string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		add := link
 		if o := f.lanOrigin.Load(); o != nil && *o != "" { // a phone is far from the owner socket's own origin: its link is the HTTPS one
 			add = func(tok string) string { return strings.TrimRight(*o, "/") + "/auth/once#" + tok }
@@ -51,7 +51,7 @@ func (f *Front) OwnerHandler(origin string) http.Handler {
 			return
 		}
 		var b struct{ Code string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		d, err := f.opt.Auth.ApproveCode(b.Code, "")
 		if err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
@@ -64,7 +64,7 @@ func (f *Front) OwnerHandler(origin string) http.Handler {
 			return
 		}
 		var b struct{ ID string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		gone := f.opt.Auth.Revoke(b.ID, "owner.sock")
 		if len(gone) == 0 {
 			api.WriteJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "no such device"})
@@ -87,7 +87,7 @@ func (f *Front) OwnerHandler(origin string) http.Handler {
 			return
 		}
 		var b struct{ Way, Mode string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		if err := f.opt.Auth.SetMode(b.Way, b.Mode, "owner.sock"); err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 			return
@@ -120,7 +120,7 @@ func nativeRoutes(mux *http.ServeMux, p Pusher) {
 	}
 	mux.HandleFunc("POST /push/native", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Endpoint, Device string }
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		httpguard.DecodeLoose(w, r, &b, 4096)
 		ep, err := np.NewNative(core.Owner, b.Endpoint, nameOr(b.Device, "Fyr.app"))
 		if err != nil {
 			api.WriteJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
