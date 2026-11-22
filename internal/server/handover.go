@@ -115,8 +115,7 @@ func (s *Server) handoverImport(w http.ResponseWriter, r *http.Request) {
 	}
 	// Allow up to 36 MB JSON body (covers 20 MB base64-encoded session archive + events).
 	var req handoverImportRequest
-	if err := httpguard.ReadJSON(w, r, &req, 36<<20); err != nil {
-		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
+	if !api.DecodeBody(w, r, &req, 36<<20) {
 		return
 	}
 	if req.FromHostID == "" || req.FromThreadID == "" || req.Profile == "" {

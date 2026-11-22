@@ -690,8 +690,7 @@ func (s *Server) handoverPlan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 	var c api.Cmd
-	if err := httpguard.ReadJSON(w, r, &c, 64<<20); err != nil {
-		api.WriteJSON(w, 400, api.Reply{Error: "bad JSON: " + err.Error()})
+	if !api.DecodeBody(w, r, &c, 64<<20) {
 		return
 	}
 	actor, front := "", ""
@@ -937,8 +936,7 @@ func (s *Server) fsRoutes(mux *http.ServeMux) {
 			Parent string `json:"parent"`
 			Name   string `json:"name"`
 		}
-		if err := httpguard.ReadJSON(w, r, &b, 8<<10); err != nil {
-			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
+		if !api.DecodeBody(w, r, &b, 8<<10) {
 			return
 		}
 		p, err := s.FS.Mkdir(b.Parent, b.Name)
@@ -959,8 +957,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		Query string   `json:"query"`
 		IDs   []string `json:"ids"`
 	}
-	if err := httpguard.ReadJSON(w, r, &q, 1<<20); err != nil {
-		api.WriteJSON(w, 400, map[string]any{"error": "bad JSON: " + err.Error()})
+	if !api.DecodeBody(w, r, &q, 1<<20) {
 		return
 	}
 	hits, err := s.Engine.SearchThreads(r.Context(), q.Query, q.IDs)

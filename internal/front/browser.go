@@ -91,8 +91,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 			Subscription push.Subscription `json:"subscription"`
 			Device       string            `json:"device"`
 		}
-		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil {
-			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
+		if !api.DecodeBody(w, r, &b, 64<<10) {
 			return
 		}
 		if err := p.Subscribe(core.Owner, b.Subscription, b.Device); err != nil {

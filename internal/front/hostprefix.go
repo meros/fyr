@@ -322,8 +322,7 @@ func (f *Front) frontCommandRoute(w http.ResponseWriter, r *http.Request) {
 		Action    string         `json:"action"`
 		Args      map[string]any `json:"args"`
 	}
-	if err := httpguard.ReadJSON(w, r, &c, 1<<20); err != nil {
-		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
+	if !api.DecodeBody(w, r, &c, 1<<20) {
 		return
 	}
 	nameOf := func(id string) (string, bool) {

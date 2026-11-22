@@ -9,40 +9,8 @@ import (
 	"time"
 )
 
-// DefaultBodyLimit caps a request body DecodeJSON reads.
-const DefaultBodyLimit int64 = 1 << 20
-
 // DefaultClientTimeout bounds a whole request of a client from NewClient.
 const DefaultClientTimeout = 30 * time.Second
-
-// WriteJSON answers with code and v as JSON.
-func WriteJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("httpguard: write json: %v", err)
-	}
-}
-
-// DecodeJSON reads the request body into v, at most DefaultBodyLimit bytes.
-// On failure it answers 400 (413 for a body over the limit) and returns false.
-func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	return DecodeJSONLimit(w, r, v, DefaultBodyLimit)
-}
-
-// DecodeJSONLimit is DecodeJSON with its own cap.
-func DecodeJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
-	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(v)
-	if err == nil {
-		return true
-	}
-	if _, big := err.(*http.MaxBytesError); big {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-	} else {
-		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
-	}
-	return false
-}
 
 // NewClient is an HTTP client with a timeout, for callers that need no more.
 func NewClient() *http.Client { return &http.Client{Timeout: DefaultClientTimeout} }
