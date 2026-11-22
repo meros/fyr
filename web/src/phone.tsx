@@ -4,6 +4,7 @@
 // image paste); thread commands, undo and toasts are the desktop's too (#41);
 // everything else here uses its own m- classes so the desktop CSS never applies.
 
+import { storedGet, storedSet } from "./prefs.ts";
 import { MNew, MSheets } from "./phone-sheets.tsx";
 import { MAsk, MAllow } from "./phone-cards.tsx";
 import { I } from "./phone-icons.tsx";
@@ -186,21 +187,6 @@ export interface PhoneProps {
 
 const STORAGE_IOS = "fyr.iosRowDismissed";
 
-function store(key: string, value: string | null) {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    /* storage blocked */
-  }
-}
-function load(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
 
 // ---- shell ----
 
@@ -318,7 +304,7 @@ function MInbox(p: PhoneProps) {
   const queue = useSlotQueue();
   const listRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<SectionKey | null>("needs");
-  const [iosDismissed, setIosDismissed] = useState(() => load(STORAGE_IOS) === "1");
+  const [iosDismissed, setIosDismissed] = useState(() => storedGet(STORAGE_IOS) === "1");
   const showIos = p.device.ios && !p.device.standalone && !iosDismissed;
 
   const onScroll = () => {
@@ -430,7 +416,7 @@ function MInbox(p: PhoneProps) {
           <button class="m-tbtn" onClick={() => p.nav.go({ screen: { name: "settings", page: "device" }, sheet: null })}>
             How
           </button>
-          <button class="b44" aria-label="Dismiss" onClick={() => (store(STORAGE_IOS, "1"), setIosDismissed(true))}>
+          <button class="b44" aria-label="Dismiss" onClick={() => (storedSet(STORAGE_IOS, "1"), setIosDismissed(true))}>
             {I.close}
           </button>
         </div>

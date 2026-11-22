@@ -1,6 +1,7 @@
 // Helpers the app shell and its hooks share: the page parameters, the theme, the phone query, storage.
 
 
+import { storedGet, storedSet } from "./prefs.ts";
 import { useEffect, useState } from "preact/hooks";
 import { type Theme } from "./inbox.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -96,24 +97,14 @@ export type Dialog = "new" | "snooze" | "picker" | "handover" | "settings" | "ch
 export type Zone = "list" | "thread";
 
 export function readTheme(): Theme {
-  try {
-    const t = localStorage.getItem("fyr.theme");
-    if (t === "light" || t === "dark") return t;
-  } catch {
-    /* storage blocked */
-  }
-  return "system";
+  const t = storedGet("fyr.theme");
+  return t === "light" || t === "dark" ? t : "system";
 }
 
 export function applyTheme(t: Theme) {
   if (t === "system") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme", t);
-  try {
-    if (t === "system") localStorage.removeItem("fyr.theme");
-    else localStorage.setItem("fyr.theme", t);
-  } catch {
-    /* storage blocked */
-  }
+  storedSet("fyr.theme", t === "system" ? null : t);
 }
 
 export function isTextTarget(t: EventTarget | null): boolean {

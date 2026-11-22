@@ -2,6 +2,7 @@
 
 // The app shell: state, commands and the keyboard.
 
+import { storedGet, storedSet } from "./prefs.ts";
 import { applyTheme, sessionStore, params, PAGE, idle } from "./app-util.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
@@ -125,12 +126,8 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
 
   // The filters read again what a host's rotation moved.
   const rereadFilters = () => {
-    try {
-      setProjectFilterState(localStorage.getItem(FILTER_KEY));
-      setHostsOffState(parseHostsOff(localStorage.getItem(HOSTS_OFF_KEY)));
-    } catch {
-      /* storage blocked */
-    }
+    setProjectFilterState(storedGet(FILTER_KEY));
+    setHostsOffState(parseHostsOff(storedGet(HOSTS_OFF_KEY)));
   };
   // Decision 0031 2.1, 2.5: a host listed with a new id and the one it had (idWas): what the device keeps under the old
   // id moves to the new one (the keys, the stored timelines, the store, the thread on screen).
@@ -280,20 +277,10 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
 
   // V0.notification-polish: what this device is told about, kept in this browser and sent to the front like the hidden
   // list: again when push turns on and on a reconnect.
-  const [pushPrefs, setPushPrefsState] = useState<PushPrefs>(() => {
-    try {
-      return parsePushPrefs(localStorage.getItem(PUSH_PREFS_KEY));
-    } catch {
-      return parsePushPrefs(null);
-    }
-  });
+  const [pushPrefs, setPushPrefsState] = useState<PushPrefs>(() => parsePushPrefs(storedGet(PUSH_PREFS_KEY)));
   const setPushPrefs = (p: PushPrefs) => {
     setPushPrefsState(p);
-    try {
-      localStorage.setItem(PUSH_PREFS_KEY, JSON.stringify(p));
-    } catch {
-      /* storage denied: the choice holds until a reload */
-    }
+    storedSet(PUSH_PREFS_KEY, JSON.stringify(p)); // blocked storage: the choice holds until a reload
   };
   useEffect(() => {
     if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || !api.pushes) return;

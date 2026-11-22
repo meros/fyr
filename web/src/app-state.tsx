@@ -2,6 +2,7 @@
 
 // The app shell: state, commands and the keyboard.
 
+import { storedGet, storedSet } from "./prefs.ts";
 import { type Zone, type Dialog, readTheme, usePhone, useViewportVars, useStaticPage, params } from "./app-util.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Thread } from "./types.ts";
@@ -35,7 +36,7 @@ import { pushEnv } from "./pwa.ts";
 import { unsupportedReason, type PushStatus } from "./push.ts";
 import { useQuietUnlock } from "./project-ui.tsx";
 import { FILTER_KEY, findProject } from "./projects.ts";
-import { HIDDEN_KEY, NOTHING_HIDDEN, applyHidden, hiddenCount, parseHidden, type Hidden } from "./hidden.ts";
+import { HIDDEN_KEY, applyHidden, hiddenCount, parseHidden, type Hidden } from "./hidden.ts";
 import { HOSTS_OFF_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { initialEntries, type Nav } from "./nav.ts";
@@ -54,21 +55,10 @@ export function useAppState() {
   const hostOfId = (id: string) => hostOfThread(rawRef.current, id);
   // V0.207: what this device hides is gone from `store`, so every list on both fronts follows. Settings and the cache
   // read `fullStore`.
-  const [deviceHidden, setHiddenState] = useState<Hidden>(() => {
-    try {
-      return parseHidden(localStorage.getItem(HIDDEN_KEY));
-    } catch {
-      return NOTHING_HIDDEN;
-    }
-  });
+  const [deviceHidden, setHiddenState] = useState<Hidden>(() => parseHidden(storedGet(HIDDEN_KEY)));
   const setHidden = (h: Hidden) => {
     setHiddenState(h);
-    try {
-      if (hiddenCount(h)) localStorage.setItem(HIDDEN_KEY, JSON.stringify(h));
-      else localStorage.removeItem(HIDDEN_KEY);
-    } catch {
-      /* storage blocked */
-    }
+    storedSet(HIDDEN_KEY, hiddenCount(h) ? JSON.stringify(h) : null);
   };
   const store = useMemo(() => applyHidden(fullStore, deviceHidden), [fullStore, deviceHidden]);
   const threadsRef = useRef(store.threads);
@@ -88,19 +78,9 @@ export function useAppState() {
   const [tracker, setTracker] = useState<SeenTracker>(initialTracker);
   const [cards, setCards] = useState<Record<string, CardState>>({});
   // V0.186: the owner's folds, kept per device; a reload (a new build does one by itself) must not undo them.
-  const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>(() => {
-    try {
-      return parseSectionOpen(localStorage.getItem(SECTION_OPEN_KEY));
-    } catch {
-      return {};
-    }
-  });
+  const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>(() => parseSectionOpen(storedGet(SECTION_OPEN_KEY)));
   useEffect(() => {
-    try {
-      localStorage.setItem(SECTION_OPEN_KEY, JSON.stringify(sectionOpen));
-    } catch {
-      /* private mode: the folds last until the reload */
-    }
+    storedSet(SECTION_OPEN_KEY, JSON.stringify(sectionOpen)); // blocked storage: the folds last until the reload
   }, [sectionOpen]);
   const [query, setQuery] = useState("");
   const [help, setHelp] = useState(false);
@@ -146,38 +126,16 @@ export function useAppState() {
 
   const now = tick + store.clockOffset;
   // The project filter (V0.23), remembered per device.
-  const [projectFilter, setProjectFilterState] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(FILTER_KEY);
-    } catch {
-      return null;
-    }
-  });
+  const [projectFilter, setProjectFilterState] = useState<string | null>(() => storedGet(FILTER_KEY));
   const setProjectFilter = (id: string | null) => {
     setProjectFilterState(id);
-    try {
-      if (id) localStorage.setItem(FILTER_KEY, id);
-      else localStorage.removeItem(FILTER_KEY);
-    } catch {
-      /* storage blocked */
-    }
+    storedSet(FILTER_KEY, id || null);
   };
   // V0.169: the hosts turned off, remembered per device beside the project filter.
-  const [hostsOff, setHostsOffState] = useState<string[]>(() => {
-    try {
-      return parseHostsOff(localStorage.getItem(HOSTS_OFF_KEY));
-    } catch {
-      return [];
-    }
-  });
+  const [hostsOff, setHostsOffState] = useState<string[]>(() => parseHostsOff(storedGet(HOSTS_OFF_KEY)));
   const setHostsOff = (keys: string[]) => {
     setHostsOffState(keys);
-    try {
-      if (keys.length) localStorage.setItem(HOSTS_OFF_KEY, JSON.stringify(keys));
-      else localStorage.removeItem(HOSTS_OFF_KEY);
-    } catch {
-      /* storage blocked */
-    }
+    storedSet(HOSTS_OFF_KEY, keys.length ? JSON.stringify(keys) : null);
   };
   // V0.119: the page the desktop Settings dialog shows (`?dialog=settings&page=providers/<id>` for screenshots).
   const [settingsAt, setSettingsAt] = useState<PageRef>(() => parsePage(params.get("page")));
