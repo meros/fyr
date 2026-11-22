@@ -15,10 +15,10 @@ import (
 
 type fakeProviders struct{ cmds []api.Cmd }
 
-func (f *fakeProviders) List() any {
-	return []map[string]any{{"id": "p1", "keySet": true, "keyLast4": "zz12"}}
+func (f *fakeProviders) List() []provider.DTO {
+	return []provider.DTO{{ID: "p1", KeySet: true, KeyLast4: "zz12"}}
 }
-func (f *fakeProviders) Found() any { return []map[string]any{{"id": "openrouter"}} }
+func (f *fakeProviders) Found() []provider.Found { return []provider.Found{{ID: "openrouter"}} }
 func (f *fakeProviders) Run(c api.Cmd) api.Reply {
 	f.cmds = append(f.cmds, c)
 	return api.Reply{OK: true}

@@ -273,6 +273,19 @@ func (r *Registry) dirFor(cliID, d string) string {
 
 // DTO is what clients see of a provider: never a secret, only whether one
 // is set and its last 4 characters.
+// Runner runs a provider command (provider.* actions); the engine needs only this.
+type Runner interface {
+	Run(c api.Cmd) api.Reply
+}
+
+// Service is what the engine and the host's provider endpoints share:
+// *Registry implements it.
+type Service interface {
+	Runner
+	List() []DTO
+	Found() []Found
+}
+
 type DTO struct {
 	ID            string            `json:"id"`
 	Name          string            `json:"name"`

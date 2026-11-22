@@ -785,8 +785,8 @@ func (w *wiring) wireListeners() {
 			log.Printf("host setup: started a run for this host's mark")
 		}
 	}()
-	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, HandoverExport: mgr.HandoverExport, HandoverImport: mgr.HandoverIn, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
-		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
+	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: reg, HandoverPlan: mgr.HandoverPlan, HandoverExport: mgr.HandoverExport, HandoverImport: mgr.HandoverIn, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
+		Quota: quotas.Get,
 		Load:  sampler,
 		// V0.126 (#151): the update record, the pause and the bad release.
 		Updates: func() any {
@@ -794,8 +794,8 @@ func (w *wiring) wireListeners() {
 			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView(), "repo": dep.Releases.Name(), "key": releaseKey(dep.Releases), "version": version, "channel": dep.Releases.ChannelName()}
 		},
 		UpdateLog:   dep.UpdateLog,
-		UpdateState: func() any { return dep.Summary() },                              // V0.host-updates
-		Setup:       func(ctx context.Context) any { return setupChecker.Check(ctx) }, // decision 0037
+		UpdateState: dep.Summary,        // V0.host-updates
+		Setup:       setupChecker.Check, // decision 0037
 		Focus: func(device, thread string, on bool) { // V0.85
 			if on {
 				tree.Focus(device, thread, time.Now())

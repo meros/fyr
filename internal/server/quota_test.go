@@ -24,7 +24,7 @@ func TestQuotaEndpointAndProfileKind(t *testing.T) {
 	defer st.Close()
 	s := &Server{Engine: engine.New(st),
 		Profiles: []provider.Profile{{ID: "ds", Name: "DeepSeek", Quota: &quota.Spec{Kind: "deepseek", KeyFile: "/run/secrets/deepseek", KeyEnv: "SECRET_VAR"}}},
-		Quota: func(context.Context) any {
+		Quota: func(context.Context) []quota.Status {
 			return []quota.Status{{Profile: "ds", Kind: "deepseek", Error: "No API key: set keyFile or keyEnv"}}
 		}}
 	hs := httptest.NewServer(s.Handler())

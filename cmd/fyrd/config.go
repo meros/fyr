@@ -317,12 +317,6 @@ func parseHosts(s string) ([]front.HostConfig, error) {
 	return out, nil
 }
 
-// providerAPI adapts the registry to the server.
-type providerAPI struct{ r *provider.Registry }
-
-func (p providerAPI) List() any  { return p.r.List() }
-func (p providerAPI) Found() any { return p.r.Found() }
-
 func quotaProfiles(ps []provider.Profile) []quota.Profile {
 	out := make([]quota.Profile, 0, len(ps))
 	for _, p := range ps {

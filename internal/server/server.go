@@ -29,6 +29,7 @@ import (
 	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/github"
@@ -36,6 +37,8 @@ import (
 	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/projicon"
 	"github.com/meros/fyr/internal/provider"
+	"github.com/meros/fyr/internal/quota"
+	"github.com/meros/fyr/internal/setup"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
 )
@@ -64,7 +67,7 @@ type Server struct {
 	// PR reads PR details for the PR tab (V0.43); optional.
 	PR PRDetails
 	// Quota lists the profiles' provider quota (V0.44); optional.
-	Quota func(ctx context.Context) any
+	Quota func(ctx context.Context) []quota.Status
 	// Focus raises or drops the CPU weight of a thread a device shows
 	// (V0.85); optional.
 	Focus func(device, thread string, on bool)
@@ -86,17 +89,13 @@ type Server struct {
 	UpdateLog func(build, name string) ([]byte, error)
 	// UpdateState is this host's update state for its fronts
 	// (V0.host-updates); nil sends none.
-	UpdateState func() any
+	UpdateState func() deploy.HostUpdate
 	// Setup reports this host's setup wizard checks (decision 0037). Optional.
-	Setup func(ctx context.Context) any
+	Setup func(ctx context.Context) setup.Report
 }
 
-// Providers is what the provider endpoints need (*provider.Registry
-// adapted in fyrd).
-type Providers interface {
-	List() any
-	Found() any
-}
+// Providers is what the provider endpoints need: *provider.Registry.
+type Providers = provider.Service
 
 // PRDetails is what the PR tab needs (*github.Details implements it).
 type PRDetails interface {
