@@ -1853,12 +1853,17 @@ try {
   // runs nix-d8b9560), and opening each is no crash card.
   const UPD = `(() => { const h = document.querySelector('.stp .hpart')?.dataset.host; const t = document.querySelector('.stp').textContent; return (h === 'desk' ? /Fyr runs v1\\.0\\.0 \\(build c705ef536566\\) · stable channel/.test(t) : false) && !document.querySelector('.crash'); })()`;
   const UPD_OF = (name) => `(() => { const b = [...document.querySelectorAll('.stp .htabs .htab')].find((x) => x.dataset.host === '${name}'); b?.click(); return true; })()`;
+  // V0.host-tabs-visible: the switcher itself is on screen at its own height, not collapsed to its border. Clicking a tab
+  // through the DOM works even when the strip is invisible, so the strip is measured, not just its tabs.
+  const stripOf = () => evaluate(`(() => { const b = document.querySelector('.stp .htabs, .m-settings .htabs'); if (!b) return null; const r = b.getBoundingClientRect(), on = b.querySelector('.htab.on') ?? b.querySelector('.htab'); const o = on?.getBoundingClientRect(); return { h: Math.round(r.height), w: Math.round(r.width), top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, onH: o ? Math.round(o.height) : 0 }; })()`);
+  const stripShown = async () => { const s = await stripOf(); return !!s && s.h >= 30 && s.onH >= 30 && s.bottom > s.top && s.bottom <= s.vh && s.w > 0; };
   if (phone) {
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: true });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     await navigate(`${origin}/?mock=rail&hosts=2&settings=automation`, "!!document.querySelector('.m-settings .stp')");
     await waitFor(UPD, { soft: true });
     check(await evaluate(UPD), `${ctx}: Automation does not show desk's Updates without a crash (${await evaluate("[...document.querySelectorAll('.crash')].map((e) => e.textContent).join(' | ')")})`);
+    check(await stripShown(), `${ctx}: Automation's host tab strip is not shown (${JSON.stringify(await stripOf())})`);
     // The null-updates host has its own tab: opening it is no crash either.
     await evaluate(UPD_OF("lab"));
     await waitFor(`document.querySelector('.stp .hpart')?.dataset.host === 'lab'`, { soft: true });
@@ -1882,6 +1887,7 @@ try {
     await waitFor("!!document.querySelector('.dlg.settings .stn-i[data-page=automation]')", { soft: true });
     await evaluate("document.querySelector('.dlg.settings .stn-i[data-page=automation]')?.click()");
     await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'automation' && ${UPD}`, { soft: true });
+    check(await stripShown(), `V0.host-tabs-visible desktop ${hh}: Automation's host tab strip is not shown (${JSON.stringify(await stripOf())})`);
     await settle();
     const s = await evaluate(`({ open: !!document.querySelector('.dlg.settings'), page: document.querySelector('.dlg .stp')?.dataset.page ?? null, updates: ${UPD}, runs: document.querySelector('.dlg .stp')?.textContent.match(/Fyr runs \\S+/g) ?? [], crash: [...document.querySelectorAll('.crash')].map((e) => e.textContent) })`);
     check(s.open && s.page === "automation" && s.updates && !s.crash.length, `${ctx}: Settings at Automation before closing by ${how} (${JSON.stringify(s)})`);
