@@ -42,6 +42,9 @@ type Releases struct {
 	// Token, when it returns one, is sent to the API (a higher limit, a
 	// private fork); nil or "" reads anonymously.
 	Token func() string
+	// KV keeps the GitHub API rate-limit hold across restarts
+	// (V0.persist-runtime-state); nil keeps it in memory only.
+	KV    KV
 	Now   func() time.Time // tests
 	state apiState
 	// Channel is the config's updateChannel (V0.versioned-releases): "" or

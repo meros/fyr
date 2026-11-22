@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"slices"
@@ -8,6 +9,51 @@ import (
 
 	"github.com/meros/fyr/internal/slots"
 )
+
+const rerunKillsKey = "engine.rerunKills"
+
+func (e *Engine) loadRerunKillsLocked(now time.Time) {
+	if e.st == nil {
+		return
+	}
+	raw, _ := e.st.GetKV(rerunKillsKey)
+	if raw == "" {
+		return
+	}
+	var m map[string][]time.Time
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return
+	}
+	for entry, ks := range m {
+		if ks = recent(ks, now); len(ks) > 0 {
+			if e.rerunKills == nil {
+				e.rerunKills = map[string][]time.Time{}
+			}
+			e.rerunKills[entry] = ks
+		}
+	}
+}
+
+func (e *Engine) saveRerunKillsLocked(now time.Time) {
+	if e.st == nil {
+		return
+	}
+	out := map[string][]time.Time{}
+	for entry, ks := range e.rerunKills {
+		if ks = recent(ks, now); len(ks) > 0 {
+			out[entry] = ks
+		} else {
+			delete(e.rerunKills, entry)
+		}
+	}
+	if len(out) == 0 {
+		e.st.SetKV(rerunKillsKey, "")
+		return
+	}
+	if b, err := json.Marshal(out); err == nil {
+		e.st.SetKV(rerunKillsKey, string(b))
+	}
+}
 
 // V0.rerun-classes (decision 0036 (F)): a job of a class the owner marked
 // rerunnable is killed instead of frozen when it was frozen and could not wake
@@ -99,8 +145,15 @@ func (e *Engine) rerunKill(f frozenJob, entry, why string, sig slots.Signals, no
 		kind, work = "undeclared work", "undeclared"
 	}
 	e.mu.Lock()
+	if e.rerunKills == nil {
+		e.rerunKills = map[string][]time.Time{}
+	}
+	if e.rerunWait == nil {
+		e.rerunWait = map[string]string{}
+	}
 	ks := append(recent(e.rerunKills[entry], now), now)
 	e.rerunKills[entry] = ks
+	e.saveRerunKillsLocked(now)
 	e.rerunWait[f.owner] = entry
 	if f.undeclared {
 		u := e.undFroze[f.owner]

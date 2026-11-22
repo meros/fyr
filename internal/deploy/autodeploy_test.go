@@ -74,7 +74,8 @@ func TestDeployBusy(t *testing.T) {
 	if !d.Busy() {
 		t.Fatal("not busy during the probation")
 	}
-	d.ReportPending()
+	markProbationOK(t, d, "b2")
+	d.ReportPending(t.Context())
 	select {
 	case <-idle:
 	case <-time.After(time.Second):

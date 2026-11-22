@@ -51,7 +51,8 @@ func TestV082DeployRecordsCommitAndShips(t *testing.T) {
 	d2.Run = shipRunner("c0ffee", map[string]bool{"m71": true}, d2.Run)
 	got := make(chan Shipped, 1)
 	d2.OnShipped = func(s Shipped) { got <- s }
-	d2.ReportPending()
+	markProbationOK(t, d2, "")
+	d2.ReportPending(t.Context())
 	var s Shipped
 	select {
 	case s = <-got:
@@ -78,7 +79,7 @@ func TestV082RollbackShipsNothing(t *testing.T) {
 	writeFailed(t, d)
 	shipped := false
 	d.OnShipped = func(Shipped) { shipped = true }
-	d.ReportPending()
+	d.ReportPending(t.Context())
 	time.Sleep(30 * time.Millisecond)
 	if shipped {
 		t.Fatal("a rolled-back build was shipped")

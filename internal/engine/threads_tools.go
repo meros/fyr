@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,12 +15,70 @@ import (
 )
 
 // window allows max calls per key in a sliding span: the runaway limits of
-// agent tools (V0.22 threads, V0.19 screenshots).
+// agent tools (V0.22 threads, V0.19 screenshots). When st and key are set,
+// timestamps survive fyrd restarts (V0.persist-runtime-state).
 type window struct {
 	mu   sync.Mutex
+	st   *store.Store
+	key  string
 	hits map[string][]time.Time
 	max  int
 	span time.Duration
+}
+
+func (w *window) load(now time.Time) {
+	if w.st == nil || w.key == "" {
+		return
+	}
+	raw, _ := w.st.GetKV(w.key)
+	if raw == "" {
+		return
+	}
+	var m map[string][]time.Time
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.hits = map[string][]time.Time{}
+	for k, ts := range m {
+		var keep []time.Time
+		for _, t := range ts {
+			if now.Sub(t) < w.span {
+				keep = append(keep, t)
+			}
+		}
+		if len(keep) > 0 {
+			w.hits[k] = keep
+		}
+	}
+}
+
+func (w *window) saveLocked(now time.Time) {
+	if w.st == nil || w.key == "" {
+		return
+	}
+	out := map[string][]time.Time{}
+	for k, ts := range w.hits {
+		var keep []time.Time
+		for _, t := range ts {
+			if now.Sub(t) < w.span {
+				keep = append(keep, t)
+			}
+		}
+		if len(keep) > 0 {
+			out[k] = keep
+		} else {
+			delete(w.hits, k)
+		}
+	}
+	if len(out) == 0 {
+		w.st.SetKV(w.key, "")
+		return
+	}
+	if b, err := json.Marshal(out); err == nil {
+		w.st.SetKV(w.key, string(b))
+	}
 }
 
 func (w *window) allow(key string, now time.Time) bool {
@@ -39,6 +98,7 @@ func (w *window) allow(key string, now time.Time) bool {
 		return false
 	}
 	w.hits[key] = append(keep, now)
+	w.saveLocked(now)
 	return true
 }
 
@@ -165,7 +225,7 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			if len(t.Decisions) > 0 {
 				return "", errors.New("that thread has an open question or approval for the user; only the user can answer it")
 			}
-			if !e.sendLimit.allow(self, time.Now()) {
+			if !e.sendLimit.allow(self, e.Now()) {
 				return "", errors.New("send limit: 30 messages an hour per thread")
 			}
 			// #48: the receiving thread's Input is the agent's, naming this thread.
@@ -216,7 +276,7 @@ func (e *Engine) threadTools(s *mcp.Server) {
 		Schema: obj(map[string]any{"cwd": str("The folder to work in (absolute path)."), "text": str("The first message: a full brief."),
 			"title": str("A short title."), "model": str("Optional model id.")}, "cwd", "text"),
 		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
-			if !e.newLimit.allow(self, time.Now()) {
+			if !e.newLimit.allow(self, e.Now()) {
 				return "", errors.New("limit: 12 new threads an hour per thread")
 			}
 			args := core.Args{}

@@ -28,14 +28,15 @@ func IsNative(endpoint string) bool {
 // device (webpushSend's TTL); the newest push of a thread replaces its older
 // one (Topic).
 const (
-	nativeKeep = 20
-	nativeTTL  = 12 * time.Hour
+	nativeKeep     = 20
+	nativeTTL      = 12 * time.Hour
+	nativeQueueKey = "push.nativeQueue"
 )
 
 type nativeMsg struct {
-	topic string
-	at    time.Time
-	body  []byte
+	Topic string    `json:"topic,omitempty"`
+	At    time.Time `json:"at"`
+	Body  []byte    `json:"body"`
 }
 
 // nativeQueue is one native device: what waits for it, and its listener.
@@ -45,8 +46,76 @@ type nativeQueue struct {
 }
 
 type natives struct {
-	mu sync.Mutex
-	q  map[string]*nativeQueue
+	mu     sync.Mutex
+	loaded bool
+	q      map[string]*nativeQueue
+}
+
+func (p *Pusher) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
+}
+
+func (p *Pusher) loadNativeLocked() {
+	if p.native.loaded {
+		return
+	}
+	p.native.loaded = true
+	if p.DB == nil {
+		return
+	}
+	raw, _ := p.DB.GetKV(nativeQueueKey)
+	if raw == "" {
+		return
+	}
+	var m map[string][]nativeMsg
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return
+	}
+	cutoff := p.now().Add(-nativeTTL)
+	for ep, ms := range m {
+		var keep []nativeMsg
+		for _, msg := range ms {
+			if msg.At.After(cutoff) {
+				keep = append(keep, msg)
+			}
+		}
+		if len(keep) > nativeKeep {
+			keep = keep[len(keep)-nativeKeep:]
+		}
+		if len(keep) > 0 {
+			p.native.queue(ep).waiting = keep
+		}
+	}
+}
+
+func (p *Pusher) saveNativeLocked() {
+	if p.DB == nil {
+		return
+	}
+	cutoff := p.now().Add(-nativeTTL)
+	out := map[string][]nativeMsg{}
+	for ep, q := range p.native.q {
+		var keep []nativeMsg
+		for _, msg := range q.waiting {
+			if msg.At.After(cutoff) {
+				keep = append(keep, msg)
+			}
+		}
+		q.waiting = keep
+		if len(keep) > 0 {
+			out[ep] = keep
+		}
+	}
+	if len(out) == 0 {
+		p.DB.SetKV(nativeQueueKey, "")
+		return
+	}
+	if b, err := json.Marshal(out); err == nil {
+		p.DB.SetKV(nativeQueueKey, string(b))
+	}
 }
 
 func (n *natives) queue(endpoint string) *nativeQueue {
@@ -81,18 +150,23 @@ func (p *Pusher) NewNative(user, endpoint, device string) (string, error) {
 func (p *Pusher) Listen(endpoint string) (<-chan []byte, func()) {
 	p.native.mu.Lock()
 	defer p.native.mu.Unlock()
+	p.loadNativeLocked()
 	q := p.native.queue(endpoint)
 	if q.listen != nil {
 		close(q.listen)
 	}
 	ch := make(chan []byte, nativeKeep)
-	cutoff := time.Now().Add(-nativeTTL)
+	cutoff := p.now().Add(-nativeTTL)
+	had := len(q.waiting) > 0
 	for _, m := range q.waiting {
-		if m.at.After(cutoff) {
-			ch <- m.body
+		if m.At.After(cutoff) {
+			ch <- m.Body
 		}
 	}
 	q.waiting = nil
+	if had {
+		p.saveNativeLocked()
+	}
 	q.listen = ch
 	return ch, func() {
 		p.native.mu.Lock()
@@ -109,6 +183,7 @@ func (p *Pusher) Listen(endpoint string) (<-chan []byte, func()) {
 func (p *Pusher) deliverNative(endpoint string, pl Payload, body []byte) int {
 	p.native.mu.Lock()
 	defer p.native.mu.Unlock()
+	p.loadNativeLocked()
 	q := p.native.queue(endpoint)
 	if q.listen != nil {
 		select {
@@ -117,10 +192,10 @@ func (p *Pusher) deliverNative(endpoint string, pl Payload, body []byte) int {
 		default: // the app is not reading: keep it with the rest
 		}
 	}
-	m := nativeMsg{topic: Topic(pl), at: time.Now(), body: body}
-	if m.topic != "" {
+	m := nativeMsg{Topic: Topic(pl), At: p.now(), Body: body}
+	if m.Topic != "" {
 		for i, w := range q.waiting {
-			if w.topic == m.topic {
+			if w.Topic == m.Topic {
 				q.waiting = append(q.waiting[:i], q.waiting[i+1:]...)
 				break
 			}
@@ -130,6 +205,7 @@ func (p *Pusher) deliverNative(endpoint string, pl Payload, body []byte) int {
 	if len(q.waiting) > nativeKeep {
 		q.waiting = q.waiting[len(q.waiting)-nativeKeep:]
 	}
+	p.saveNativeLocked()
 	return 1
 }
 
@@ -137,11 +213,16 @@ func (p *Pusher) deliverNative(endpoint string, pl Payload, body []byte) int {
 func (p *Pusher) dropNative(endpoint string) {
 	p.native.mu.Lock()
 	defer p.native.mu.Unlock()
+	p.loadNativeLocked()
 	if q := p.native.q[endpoint]; q != nil {
 		if q.listen != nil {
 			close(q.listen)
 			q.listen = nil // its stop finds nothing more to close
 		}
+		had := len(q.waiting) > 0
 		delete(p.native.q, endpoint)
+		if had {
+			p.saveNativeLocked()
+		}
 	}
 }

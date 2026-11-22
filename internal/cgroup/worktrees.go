@@ -47,7 +47,10 @@ const DoneGrace = time.Hour
 // pullFetchEvery: how often a repository's PR heads are fetched.
 const pullFetchEvery = time.Hour
 
-const removedKey = "worktrees-removed"
+const (
+	removedKey = "worktrees-removed"
+	fetchedKey = "worktrees-fetched"
+)
 
 // Removed is a worktree Fyr removed, as Restore needs it.
 type Removed struct {
@@ -174,9 +177,57 @@ func inside(dir, root string) bool {
 
 var unsafeRef = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
+func (tp *Temps) loadFetchedLocked(now time.Time) {
+	if tp.fetchedLoaded {
+		return
+	}
+	tp.fetchedLoaded = true
+	if tp.KV == nil {
+		return
+	}
+	raw, _ := tp.KV.GetKV(fetchedKey)
+	if raw == "" {
+		return
+	}
+	var m map[string]time.Time
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return
+	}
+	if tp.fetched == nil {
+		tp.fetched = map[string]time.Time{}
+	}
+	for k, at := range m {
+		if !at.IsZero() && now.Sub(at) < pullFetchEvery {
+			tp.fetched[k] = at
+		}
+	}
+}
+
+func (tp *Temps) saveFetchedLocked(now time.Time) {
+	if tp.KV == nil {
+		return
+	}
+	out := map[string]time.Time{}
+	for k, at := range tp.fetched {
+		if !at.IsZero() && now.Sub(at) < pullFetchEvery {
+			out[k] = at
+		} else {
+			delete(tp.fetched, k)
+		}
+	}
+	if len(out) == 0 {
+		tp.KV.SetKV(fetchedKey, "")
+		return
+	}
+	if b, err := json.Marshal(out); err == nil {
+		tp.KV.SetKV(fetchedKey, string(b))
+	}
+}
+
 // fetchPulls fetches the PR heads of origin into refs/fyr/pull/*, at most
 // once an hour per repository. A remote that is not GitHub has none.
 func (tp *Temps) fetchPulls(common, dir string, now time.Time) {
+	tp.loadFetchedLocked(now)
 	if tp.NoFetch || now.Sub(tp.fetched[common]) < pullFetchEvery {
 		return
 	}
@@ -184,6 +235,7 @@ func (tp *Temps) fetchPulls(common, dir string, now time.Time) {
 		tp.fetched = map[string]time.Time{}
 	}
 	tp.fetched[common] = now
+	tp.saveFetchedLocked(now)
 	if gitOut(dir, "remote", "get-url", "origin") == "" {
 		return
 	}

@@ -528,14 +528,16 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// read every 10 minutes (free), for daemon.log and Settings.
 	// V0.178: one budget: polls give way while the account is low or
 	// rate limited; the updater, merges, re-runs and the PR tab run.
-	ghBudget := &github.Budget{}
+	// V0.persist-runtime-state: GitHub caches, budget and poller state survive restarts.
+	github.UseCache(h.st)
+	ghBudget := &github.Budget{KV: h.st}
 	ghMeter := &github.Meter{OnRate: ghBudget.SetRate}
 	metered := ghMeter.Wrap(github.Gh)
 	gh, pollGh := ghBudget.Runner(metered, github.Act), ghBudget.Runner(metered, github.Poll)
 	go ghMeter.Run(ctx, github.Gh)
 	// V0.release-without-gh: releases are read over HTTPS, no gh; a token
 	// (github.env, else gh's login when gh is there) is optional.
-	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Key: cfg.UpdateKey, Channel: cfg.UpdateChannel, Token: deploy.TokenFromEnv(), HTTP: &http.Client{Timeout: 15 * time.Minute}}
+	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Key: cfg.UpdateKey, Channel: cfg.UpdateChannel, Token: deploy.TokenFromEnv(), KV: h.st, HTTP: &http.Client{Timeout: 15 * time.Minute}}
 	dep.LiveVersion = version
 	// V0.versioned-releases: the channel; a bad one follows main, said once.
 	if _, err := deploy.ParseChannel(cfg.UpdateChannel); err != nil {
@@ -653,7 +655,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	go watcher.Run(ctx)
 	ghView := func() github.MeterView { v := ghMeter.View(); v.Paused = ghBudget.Paused(); return v }
 	prDetails := &github.Details{Gh: gh} // V0.43: the PR tab's details, cached 30 s
-	poller := &github.Poller{Gh: pollGh, Src: engine.PRWatch{E: eng}}
+	poller := &github.Poller{Gh: pollGh, Src: engine.PRWatch{E: eng}, KV: h.st}
 	createPR := func(ctx context.Context, req github.CreatePRReq) (string, error) {
 		r := ghBudget.Runner(ghMeter.Wrap(github.GhIn(req.Dir)), github.Act)
 		return github.CreatePR(ctx, r, req)
@@ -869,7 +871,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(h.profiles()))
 	deploy.MarkReady(ln.Addr().String())
-	dep.ReportPending()
+	dep.ReportPending(ctx)
 	eng.AutoDeploySweep() // V0.111: the deploy asks that waited across the restart
 
 	<-ctx.Done()

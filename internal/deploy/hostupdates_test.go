@@ -137,7 +137,8 @@ func TestBadMarkShowsWhileItHoldsBack(t *testing.T) {
 	// A release that rolled back before and now goes live ends its mark.
 	d.markBad(relSHA, "rolled back")
 	d.DB.SetKV("pending_deploy", `{"build":"0123456","commit":"`+relSHA+`"}`)
-	d.ReportPending()
+	markProbationOK(t, d, "0123456")
+	d.ReportPending(t.Context())
 	for i := 0; i < 400; i++ {
 		if c, _ := d.Bad(); c == "" {
 			return

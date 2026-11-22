@@ -183,7 +183,14 @@ type ciFact struct {
 
 func markCI(repo string) {
 	if k := core.RepoKey(repo); k != "" {
-		ciRepos.Store(k, ciFact{has: true})
+		now := nowCache()
+		if v, ok := ciRepos.Load(k); ok {
+			if f := v.(ciFact); f.has && !f.at.IsZero() && now.Sub(f.at) < time.Hour {
+				return
+			}
+		}
+		ciRepos.Store(k, ciFact{has: true, at: now})
+		saveCIRepos()
 	}
 }
 
@@ -204,8 +211,9 @@ func RepoHasCI(ctx context.Context, gh Runner, repo string) bool {
 	if k == "" {
 		return true
 	}
+	now := nowCache()
 	if v, ok := ciRepos.Load(k); ok {
-		if f := v.(ciFact); f.has || time.Since(f.at) < CIRecheck {
+		if f := v.(ciFact); f.valid(now) {
 			return f.has
 		}
 	}
@@ -219,7 +227,8 @@ func RepoHasCI(ctx context.Context, gh Runner, repo string) bool {
 	if err != nil {
 		return true
 	}
-	ciRepos.Store(k, ciFact{has: n > 0, at: time.Now()})
+	ciRepos.Store(k, ciFact{has: n > 0, at: nowCache()})
+	saveCIRepos()
 	return n > 0
 }
 
@@ -252,7 +261,8 @@ func readRules(ctx context.Context, gh Runner, repo, base string) ruleSet {
 		return ruleSet{}
 	}
 	key := k + "@" + base
-	if v, ok := baseRules.Load(key); ok && time.Since(v.(ruleSet).at) < RulesRecheck {
+	now := nowCache()
+	if v, ok := baseRules.Load(key); ok && now.Sub(v.(ruleSet).at) < RulesRecheck {
 		return v.(ruleSet)
 	}
 	out, err := gh(ctx, "api", "repos/"+k+"/rules/branches/"+url.PathEscape(base))
@@ -272,7 +282,7 @@ func readRules(ctx context.Context, gh Runner, repo, base string) ruleSet {
 	if json.Unmarshal(out, &rules) != nil {
 		return ruleSet{}
 	}
-	rs := ruleSet{at: time.Now()}
+	rs := ruleSet{at: nowCache()}
 	for _, r := range rules {
 		if !slices.Contains(rs.types, r.Type) {
 			rs.types = append(rs.types, r.Type)
@@ -301,6 +311,7 @@ func readRules(ctx context.Context, gh Runner, repo, base string) ruleSet {
 		}
 	}
 	baseRules.Store(key, rs)
+	saveBaseRules()
 	return rs
 }
 
@@ -312,16 +323,24 @@ var defaultBranches sync.Map
 // (V0.98 (1)): GitHub's compare of the default branch with the merge
 // commit is "behind" or "identical". A read that fails leaves it unknown.
 func readStacked(ctx context.Context, gh Runner, p *core.PR) {
-	def, ok := defaultBranches.Load(p.Repo)
-	if !ok {
+	now := nowCache()
+	var def string
+	if v, ok := defaultBranches.Load(p.Repo); ok {
+		if f := v.(defaultBranchFact); f.valid(now) {
+			def = f.branch
+		}
+	}
+	if def == "" {
 		out, err := gh(ctx, "api", "repos/"+p.Repo, "--jq", ".default_branch")
 		name := strings.TrimSpace(string(out))
 		if err != nil || name == "" || strings.ContainsAny(name, " {\n") {
 			return
 		}
-		def, _ = defaultBranches.LoadOrStore(p.Repo, name)
+		defaultBranches.Store(p.Repo, defaultBranchFact{branch: name, at: nowCache()})
+		saveDefaultBranches()
+		def = name
 	}
-	if def.(string) == p.Base {
+	if def == p.Base {
 		return
 	}
 	p.Stacked = true
@@ -391,7 +410,11 @@ type Poller struct {
 	Gh       Runner
 	Src      Source
 	Interval time.Duration
-	notes    map[string]noteCache // V0.66 (7): by PR URL
+	// KV keeps deployAt and failing-check annotations across restarts
+	// (V0.persist-runtime-state); nil keeps them in memory only.
+	KV     KV
+	loaded bool
+	notes  map[string]noteCache // V0.66 (7): by PR URL
 	// Now is the clock (tests); nil is time.Now.
 	Now func() time.Time
 	// missing is when GitHub first said a PR does not exist (V0.72), by URL.
@@ -476,6 +499,7 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 func (p *Poller) pollAll(ctx context.Context) {
+	p.loadState()
 	// V0.178: the PRs of one repo are read in one GraphQL query (up to
 	// BatchMax each); a PR the batch did not answer is read alone. A repo
 	// with one PR is read the same way (V0.review-threads): one query
@@ -508,10 +532,15 @@ func (p *Poller) pollAll(ctx context.Context) {
 			watched[d.Repo+"@"+d.SHA] = true
 			p.pollDeploy(ctx, ds, d)
 		}
+		pruned := false
 		for k := range p.deployAt {
 			if !watched[k] {
 				delete(p.deployAt, k)
+				pruned = true
 			}
+		}
+		if pruned {
+			p.saveDeployAt()
 		}
 	}
 }
@@ -582,11 +611,13 @@ func (p *Poller) pollBatch(ctx context.Context, repo string, ts []PRThread) {
 }
 
 func (p *Poller) observe(c context.Context, t PRThread, pr core.PR, failed int) {
+	p.loadState()
 	delete(p.missing, t.URL)
 	if pr.State == "OPEN" && pr.Checks == core.ChecksFail && pr.Head != "" {
 		pr.Annotations = p.annotations(c, t.URL, pr, failed)
-	} else {
+	} else if _, had := p.notes[t.URL]; had {
 		delete(p.notes, t.URL)
+		p.saveNotes()
 	}
 	p.Src.Observe(t.ID, pr)
 }
