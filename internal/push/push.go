@@ -107,6 +107,7 @@ type Pusher struct {
 	DB      *store.Store
 	Subject string // VAPID subject, mailto: or https:
 	Send    Sender
+	Now     func() time.Time
 	keys    Keys
 	native  natives // V0.mac-notify: the native devices' queues
 }

@@ -40,13 +40,53 @@ func (e errRateLimited) Error() string {
 	return "GitHub's API limit is spent until " + e.until.Local().Format("15:04:05")
 }
 
+// KV is the store's key-value table (*store.Store).
+type KV interface {
+	GetKV(k string) (string, error)
+	SetKV(k, v string) error
+}
+
+const apiHoldKey = "deploy.apiHold"
+
 // apiState is what a Releases keeps between calls: the answers it may ask
 // for again with If-None-Match, and the time GitHub said to wait until.
 type apiState struct {
-	mu    sync.Mutex
-	etags map[string]etagged
-	order []string
-	hold  time.Time
+	mu     sync.Mutex
+	loaded bool
+	etags  map[string]etagged
+	order  []string
+	hold   time.Time
+}
+
+func (r *Releases) loadHoldLocked() {
+	st := &r.state
+	if st.loaded {
+		return
+	}
+	st.loaded = true
+	if r.KV == nil {
+		return
+	}
+	raw, _ := r.KV.GetKV(apiHoldKey)
+	if raw == "" {
+		return
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil && r.now().Before(t) {
+		st.hold = t
+	} else {
+		r.KV.SetKV(apiHoldKey, "") // passed or unreadable
+	}
+}
+
+func (r *Releases) saveHoldLocked() {
+	if r.KV == nil {
+		return
+	}
+	if r.now().Before(r.state.hold) {
+		r.KV.SetKV(apiHoldKey, r.state.hold.UTC().Format(time.RFC3339Nano))
+	} else {
+		r.KV.SetKV(apiHoldKey, "")
+	}
 }
 
 type etagged struct {
@@ -97,9 +137,13 @@ func (r *Releases) api(ctx context.Context, path string) ([]byte, error) {
 	u := r.apiBase() + "/" + strings.TrimLeft(path, "/")
 	st := &r.state
 	st.mu.Lock()
+	r.loadHoldLocked()
 	if hold := st.hold; r.now().Before(hold) {
 		st.mu.Unlock()
 		return nil, errRateLimited{hold}
+	} else if !hold.IsZero() {
+		st.hold = time.Time{}
+		r.saveHoldLocked()
 	}
 	cached, have := st.etags[u]
 	st.mu.Unlock()
@@ -139,6 +183,7 @@ func (r *Releases) api(ctx context.Context, path string) ([]byte, error) {
 			st.mu.Lock()
 			if until.After(st.hold) {
 				st.hold = until
+				r.saveHoldLocked()
 			}
 			st.mu.Unlock()
 			return nil, errRateLimited{until}

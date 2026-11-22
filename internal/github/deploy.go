@@ -39,12 +39,98 @@ type noteCache struct {
 	sha    string
 	failed int
 	notes  []core.Annotation
+	at     time.Time
+}
+
+type savedNoteCache struct {
+	SHA    string            `json:"sha"`
+	Failed int               `json:"failed"`
+	Notes  []core.Annotation `json:"notes,omitempty"`
+	At     time.Time         `json:"at"`
+}
+
+func (p *Poller) loadState() {
+	if p.loaded {
+		return
+	}
+	p.loaded = true
+	if p.KV == nil {
+		return
+	}
+	now := p.now()
+	if raw, _ := p.KV.GetKV(deployAtKey); raw != "" {
+		var m map[string]time.Time
+		if json.Unmarshal([]byte(raw), &m) == nil {
+			for k, t := range m {
+				if !t.IsZero() && now.Sub(t) < DeployAtKeep {
+					if p.deployAt == nil {
+						p.deployAt = map[string]time.Time{}
+					}
+					p.deployAt[k] = t
+				}
+			}
+		}
+	}
+	if raw, _ := p.KV.GetKV(notesKey); raw != "" {
+		var m map[string]savedNoteCache
+		if json.Unmarshal([]byte(raw), &m) == nil {
+			for k, v := range m {
+				if !v.At.IsZero() && now.Sub(v.At) < NotesKeep {
+					if p.notes == nil {
+						p.notes = map[string]noteCache{}
+					}
+					p.notes[k] = noteCache{sha: v.SHA, failed: v.Failed, notes: v.Notes, at: v.At}
+				}
+			}
+		}
+	}
+}
+
+func (p *Poller) saveDeployAt() {
+	if p.KV == nil {
+		return
+	}
+	now := p.now()
+	m := map[string]time.Time{}
+	for k, t := range p.deployAt {
+		if !t.IsZero() && now.Sub(t) < DeployAtKeep {
+			m[k] = t
+		}
+	}
+	if len(m) == 0 {
+		p.KV.SetKV(deployAtKey, "")
+		return
+	}
+	if b, err := json.Marshal(m); err == nil {
+		p.KV.SetKV(deployAtKey, string(b))
+	}
+}
+
+func (p *Poller) saveNotes() {
+	if p.KV == nil {
+		return
+	}
+	now := p.now()
+	m := map[string]savedNoteCache{}
+	for k, c := range p.notes {
+		if c.at.IsZero() || now.Sub(c.at) < NotesKeep {
+			m[k] = savedNoteCache{SHA: c.sha, Failed: c.failed, Notes: c.notes, At: c.at}
+		}
+	}
+	if len(m) == 0 {
+		p.KV.SetKV(notesKey, "")
+		return
+	}
+	if b, err := json.Marshal(m); err == nil {
+		p.KV.SetKV(notesKey, string(b))
+	}
 }
 
 // annotations are the PR's, read again only when its head or its number of
 // failed checks changed.
 func (p *Poller) annotations(ctx context.Context, url string, pr core.PR, failed int) []core.Annotation {
-	if c, ok := p.notes[url]; ok && c.sha == pr.Head && c.failed == failed {
+	now := p.now()
+	if c, ok := p.notes[url]; ok && c.sha == pr.Head && c.failed == failed && (c.at.IsZero() || now.Sub(c.at) < NotesKeep) {
 		return c.notes
 	}
 	notes, err := FetchAnnotations(ctx, p.Gh, pr.Repo, pr.Head)
@@ -57,7 +143,8 @@ func (p *Poller) annotations(ctx context.Context, url string, pr core.PR, failed
 	if p.notes == nil {
 		p.notes = map[string]noteCache{}
 	}
-	p.notes[url] = noteCache{sha: pr.Head, failed: failed, notes: notes}
+	p.notes[url] = noteCache{sha: pr.Head, failed: failed, notes: notes, at: now}
+	p.saveNotes()
 	return notes
 }
 
@@ -75,6 +162,7 @@ func DeployEvery(age time.Duration) time.Duration {
 }
 
 func (p *Poller) pollDeploy(ctx context.Context, src DeploySource, d DeployThread) {
+	p.loadState()
 	now := p.now()
 	key := d.Repo + "@" + d.SHA
 	if last, ok := p.deployAt[key]; ok && !d.Since.IsZero() && now.Sub(last) < DeployEvery(now.Sub(d.Since)) {
@@ -84,11 +172,13 @@ func (p *Poller) pollDeploy(ctx context.Context, src DeploySource, d DeployThrea
 		p.deployAt = map[string]time.Time{}
 	}
 	p.deployAt[key] = now
+	p.saveDeployAt()
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	obs, err := FetchDeployments(c, p.Gh, d.Repo, d.SHA, d.First)
 	if errors.Is(err, ErrBudget) {
 		delete(p.deployAt, key) // not read: due again at the next poll
+		p.saveDeployAt()
 		return
 	}
 	if err != nil {
@@ -178,7 +268,7 @@ func RepoHasDeploys(repo string) (has, known bool) {
 		return false, false
 	}
 	f := v.(deploysFact)
-	if !f.has && time.Since(f.at) >= RepoDeploysRecheck {
+	if !f.valid(nowCache()) {
 		return false, false
 	}
 	return f.has, true
@@ -186,7 +276,14 @@ func RepoHasDeploys(repo string) (has, known bool) {
 
 func markDeploys(repo string, has bool) {
 	if k := core.RepoKey(repo); k != "" {
-		repoDeploys.Store(k, deploysFact{has: has, at: time.Now()})
+		now := nowCache()
+		if v, ok := repoDeploys.Load(k); ok {
+			if f := v.(deploysFact); f.has == has && !f.at.IsZero() && now.Sub(f.at) < time.Hour {
+				return
+			}
+		}
+		repoDeploys.Store(k, deploysFact{has: has, at: now})
+		saveRepoDeploys()
 	}
 }
 
@@ -197,7 +294,10 @@ var finalStates = map[string]bool{"success": true, "inactive": true, "failure": 
 // finalStatus caches the final status of a deployment, by repo and id.
 var finalStatus sync.Map
 
-type statusRead struct{ State, EnvURL, LogURL string }
+type statusRead struct {
+	State, EnvURL, LogURL string
+	at                    time.Time
+}
 
 // FetchDeployments reads the deployments of a merge commit: the newest per
 // environment and its newest status. First reads the repo's newest
@@ -246,10 +346,11 @@ func FetchDeployments(ctx context.Context, gh Runner, repo, sha string, first bo
 		x := core.Deployment{Env: d.Env, Production: core.IsProduction(d.Env, d.Production), State: "pending"}
 		key := fmt.Sprintf("%s#%d", core.RepoKey(repo), d.ID)
 		if v, ok := finalStatus.Load(key); ok {
-			st := v.(statusRead)
-			x.State, x.URL, x.LogURL = st.State, st.EnvURL, st.LogURL
-			obs.Deployments = append(obs.Deployments, x)
-			continue
+			if st := v.(statusRead); st.valid(nowCache()) {
+				x.State, x.URL, x.LogURL = st.State, st.EnvURL, st.LogURL
+				obs.Deployments = append(obs.Deployments, x)
+				continue
+			}
 		}
 		out, err := RestGet(ctx, gh, fmt.Sprintf("repos/%s/deployments/%d/statuses?per_page=1", repo, d.ID))
 		if err != nil {
@@ -270,7 +371,8 @@ func FetchDeployments(ctx context.Context, gh Runner, repo, sha string, first bo
 				x.LogURL = st[0].Target
 			}
 			if finalStates[x.State] {
-				finalStatus.Store(key, statusRead{x.State, x.URL, x.LogURL})
+				finalStatus.Store(key, statusRead{State: x.State, EnvURL: x.URL, LogURL: x.LogURL, at: nowCache()})
+				saveFinalStatus()
 			}
 		}
 		obs.Deployments = append(obs.Deployments, x)

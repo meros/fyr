@@ -56,10 +56,9 @@ type Deployer struct {
 	Run  Runner
 	// Survive: the agent processes outlive the switch (the launcher's
 	// runner holds them, V0.90), so a deploy does not drain.
-	Survive   bool
-	Poll      time.Duration // drain poll interval
-	Drain     time.Duration // max drain wait
-	Probation time.Duration // wait before reporting success
+	Survive bool
+	Poll    time.Duration // drain and probation-ok poll interval
+	Drain   time.Duration // max drain wait
 	// OnProgress hears each phase as it happens (SPEC 0.5 V0.39).
 	OnProgress func(Progress)
 	// Live is the build id of this daemon (a commit, maybe with -dirty-…).
@@ -525,9 +524,14 @@ drain:
 }
 
 // ReportPending delivers the result of a deploy that a previous daemon
-// started: a rollback report from the launcher, or success once this build
-// has survived its probation.
-func (d *Deployer) ReportPending() {
+// started: a rollback report from the launcher, or success once the launcher
+// writes probation-ok for this build (#148, #156). If ctx ends first (fyrd
+// restarts during probation), pending_deploy stays so the next start delivers
+// the report.
+func (d *Deployer) ReportPending(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	raw, _ := d.DB.GetKV("pending_deploy")
 	if raw == "" {
 		return
@@ -565,42 +569,53 @@ func (d *Deployer) ReportPending() {
 		return
 	}
 	d.report(&Progress{Build: p.Build, StartedAt: time.Now()}, "done", "", nil)
-	wait := d.Probation
-	if wait == 0 {
-		wait = 65 * time.Second
+	step := d.Poll
+	if step <= 0 {
+		step = time.Second
 	}
 	go func() {
-		// #148: the launcher says when the probation ended (probation-ok);
-		// a launcher from before #148 never does, so after wait plus a
-		// margin the deploy counts as good as before.
-		okPath := filepath.Join(d.Data, ProbationOK)
-		step := min(time.Second, wait/10+time.Millisecond)
-		for end := time.Now().Add(wait + wait/2); time.Now().Before(end); time.Sleep(step) {
-			if b, err := os.ReadFile(okPath); err == nil && filepath.Base(strings.TrimSpace(string(b))) == p.Build {
-				break
+		// #148, #156: driven solely by the launcher's probation-ok file, with
+		// no 65 s fallback timer. Exiting on ctx leaves pending_deploy in KV
+		// for the next daemon start.
+		for !d.probationOK(p.Build) {
+			t := time.NewTimer(step)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return
+			case <-t.C:
 			}
 		}
-		d.DB.SetKV("pending_deploy", "")
-		d.ship(d.runner(), p.Build, p.Commit, p.Remote, p.Dir)
-		msg := "Fyr now runs release " + p.Build + "."
-		if p.Local {
-			// #159: a local build holds auto-update off until a release
-			// contains it or the owner goes back to the release track.
-			d.pause(Paused{Build: p.Build, Commit: p.Commit, Branch: p.Branch, Dir: p.Dir, At: time.Now()})
-			msg = "Fyr now runs local build " + p.Build
-			if p.Branch != "" {
-				msg += " of " + p.Branch
-			}
-			msg += "; auto-update is paused until a release contains it, or until the owner presses Back to release."
-		} else {
-			d.Unpause()
-			d.ClearBad() // V0.host-updates: a release went live here
-		}
-		d.finish(p.Build, UpdateLive, "")
-		d.Prune()
-		d.tell(p.Thread, p.Req, true, msg)
-		d.idle()
+		d.finishPending(p)
 	}()
+}
+
+func (d *Deployer) probationOK(build string) bool {
+	b, err := os.ReadFile(filepath.Join(d.Data, ProbationOK))
+	return err == nil && filepath.Base(strings.TrimSpace(string(b))) == build
+}
+
+func (d *Deployer) finishPending(p pending) {
+	d.DB.SetKV("pending_deploy", "")
+	d.ship(d.runner(), p.Build, p.Commit, p.Remote, p.Dir)
+	msg := "Fyr now runs release " + p.Build + "."
+	if p.Local {
+		// #159: a local build holds auto-update off until a release
+		// contains it or the owner goes back to the release track.
+		d.pause(Paused{Build: p.Build, Commit: p.Commit, Branch: p.Branch, Dir: p.Dir, At: time.Now()})
+		msg = "Fyr now runs local build " + p.Build
+		if p.Branch != "" {
+			msg += " of " + p.Branch
+		}
+		msg += "; auto-update is paused until a release contains it, or until the owner presses Back to release."
+	} else {
+		d.Unpause()
+		d.ClearBad() // V0.host-updates: a release went live here
+	}
+	d.finish(p.Build, UpdateLive, "")
+	d.Prune()
+	d.tell(p.Thread, p.Req, true, msg)
+	d.idle()
 }
 
 // tell reports a deploy's result to the thread that asked; an update Fyr

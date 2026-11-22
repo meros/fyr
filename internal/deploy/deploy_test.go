@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -82,7 +83,7 @@ func newDeployer(t *testing.T, failStep string) (*Deployer, *host, *[]string) {
 	steps := &[]string{}
 	h := &host{}
 	d := &Deployer{Data: t.TempDir(), DB: &kv{m: map[string]string{}}, Host: h, Quit: func() {},
-		Poll: 10 * time.Millisecond, Probation: time.Millisecond,
+		Poll: 10 * time.Millisecond,
 		Run: func(_ context.Context, dir string, args ...string) ([]byte, error) {
 			*steps = append(*steps, strings.Join(args, " "))
 			if strings.Contains(strings.Join(args, " "), failStep) && failStep != "" {
@@ -150,19 +151,36 @@ func TestDeploySwitches(t *testing.T) {
 	}
 }
 
+// markProbationOK writes the launcher's probation-ok file for build (#148).
+func markProbationOK(t *testing.T, d *Deployer, build string) {
+	t.Helper()
+	if build == "" {
+		raw, _ := d.DB.GetKV("pending_deploy")
+		var p pending
+		if err := json.Unmarshal([]byte(raw), &p); err != nil || p.Build == "" {
+			t.Fatalf("pending_deploy %q: %v", raw, err)
+		}
+		build = p.Build
+	}
+	if err := os.WriteFile(filepath.Join(d.Data, ProbationOK), []byte(filepath.Join("builds", build)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // SPEC 0.5 V0.13: the new daemon reports success; after a rollback the old
 // one reports the failure.
 func TestReportPending(t *testing.T) {
 	d, h, _ := newDeployer(t, "")
 	d.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy","args":{"dir":"/src/fyr"}}}`)
-	d.ReportPending()
+	markProbationOK(t, d, "b2")
+	d.ReportPending(t.Context())
 	if r := h.reportsAfter(1); len(r) != 1 || !strings.HasPrefix(r[0], "t1 ok") {
 		t.Fatalf("%v", r)
 	}
 	d2, h2, _ := newDeployer(t, "")
 	d2.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy"}}`)
 	os.WriteFile(filepath.Join(d2.Data, "deploy-failed.json"), []byte(`{"build":"b2","reason":"exited with code 1 after 0s","log":"panic: x"}`), 0o600)
-	d2.ReportPending()
+	d2.ReportPending(t.Context())
 	if r := h2.reportsAfter(1); len(r) != 1 || !strings.HasPrefix(r[0], "t1 fail") || !strings.Contains(r[0], "rolled back") {
 		t.Fatalf("%v", r)
 	}
@@ -336,7 +354,8 @@ func TestReportPendingProgress(t *testing.T) {
 	var got []Progress
 	d.OnProgress = func(p Progress) { got = append(got, p) }
 	d.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy"}}`)
-	d.ReportPending()
+	markProbationOK(t, d, "b2")
+	d.ReportPending(t.Context())
 	if len(got) == 0 || got[0].Phase != "done" || got[0].Build != "b2" {
 		t.Fatalf("done not reported: %+v", got)
 	}
@@ -345,7 +364,7 @@ func TestReportPendingProgress(t *testing.T) {
 	f.OnProgress = func(p Progress) { got = append(got, p) }
 	f.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b3","req":{"action":"fyr.deploy"}}`)
 	os.WriteFile(filepath.Join(f.Data, "deploy-failed.json"), []byte(`{"build":"b3","reason":"exited with code 1 after 0s","log":"panic: x"}`), 0o600)
-	f.ReportPending()
+	f.ReportPending(t.Context())
 	if len(got) == 0 || got[0].Phase != "failed" || !strings.Contains(got[0].Detail, "rolled back") {
 		t.Fatalf("rollback not reported: %+v", got)
 	}

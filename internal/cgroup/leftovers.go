@@ -360,7 +360,17 @@ type Leftovers struct {
 	all   atomic.Pointer[[]Leftover]
 }
 
-const keepsKey = "leftover-keeps"
+const (
+	keepsKey  = "leftover-keeps"
+	timersKey = "leftover-timers"
+	// leftoverTimerTTL drops persisted seen/idleSince stamps older than a day.
+	leftoverTimerTTL = 24 * time.Hour
+)
+
+type savedLeftoverTimers struct {
+	Seen      map[string]time.Time `json:"seen,omitempty"`
+	IdleSince map[string]time.Time `json:"idleSince,omitempty"`
+}
 
 func (l *Leftovers) now() time.Time {
 	if l.Now != nil {
@@ -386,6 +396,28 @@ func (l *Leftovers) loadLocked() {
 	if raw, _ := l.KV.GetKV(keepsKey); raw != "" {
 		json.Unmarshal([]byte(raw), &l.keeps)
 	}
+	if raw, _ := l.KV.GetKV(timersKey); raw != "" {
+		var t savedLeftoverTimers
+		if json.Unmarshal([]byte(raw), &t) == nil {
+			cut := l.now().Add(-leftoverTimerTTL)
+			if l.seen == nil {
+				l.seen = map[string]time.Time{}
+			}
+			for id, at := range t.Seen {
+				if at.After(cut) {
+					l.seen[id] = at
+				}
+			}
+			if l.idleSince == nil {
+				l.idleSince = map[string]time.Time{}
+			}
+			for th, at := range t.IdleSince {
+				if at.After(cut) {
+					l.idleSince[th] = at
+				}
+			}
+		}
+	}
 }
 
 func (l *Leftovers) saveLocked() {
@@ -394,6 +426,19 @@ func (l *Leftovers) saveLocked() {
 	}
 	b, _ := json.Marshal(l.keeps)
 	l.KV.SetKV(keepsKey, string(b))
+}
+
+func (l *Leftovers) saveTimersLocked() {
+	if l.KV == nil {
+		return
+	}
+	if len(l.seen) == 0 && len(l.idleSince) == 0 {
+		l.KV.SetKV(timersKey, "")
+		return
+	}
+	if b, err := json.Marshal(savedLeftoverTimers{Seen: l.seen, IdleSince: l.idleSince}); err == nil {
+		l.KV.SetKV(timersKey, string(b))
+	}
 }
 
 // View is the leftovers past the grace, the oldest first.
@@ -521,29 +566,48 @@ func (l *Leftovers) Tick() {
 	l.loadLocked()
 	l.pruneLocked(now)
 	if l.seen == nil {
-		l.seen, l.idleSince = map[string]time.Time{}, map[string]time.Time{}
+		l.seen = map[string]time.Time{}
 	}
+	if l.idleSince == nil {
+		l.idleSince = map[string]time.Time{}
+	}
+	timersDirty := false
 	ids := map[string]bool{}
 	for i := range found {
 		x := &found[i]
 		ids[x.ID] = true
 		if _, ok := l.seen[x.ID]; !ok {
 			l.seen[x.ID] = now
+			timersDirty = true
 		}
 		x.Seen = l.seen[x.ID]
 	}
 	for id := range l.seen {
 		if !ids[id] {
 			delete(l.seen, id)
+			timersDirty = true
 		}
 	}
 	for th, st := range states {
 		switch {
 		case st.Running:
-			delete(l.idleSince, th)
+			if _, had := l.idleSince[th]; had {
+				delete(l.idleSince, th)
+				timersDirty = true
+			}
 		case l.idleSince[th].IsZero():
 			l.idleSince[th] = now
+			timersDirty = true
 		}
+	}
+	for th := range l.idleSince {
+		if _, ok := states[th]; !ok {
+			delete(l.idleSince, th)
+			timersDirty = true
+		}
+	}
+	if timersDirty {
+		l.saveTimersLocked()
 	}
 	end := map[string][]Leftover{}
 	why := map[string]string{}

@@ -205,7 +205,8 @@ func TestLocalBuildSmokesAndPauses(t *testing.T) {
 	if strings.Contains(all, " test") && strings.Contains(all, "make -C /src/fyr test") || !strings.Contains(all, "selftest") {
 		t.Fatalf("steps %v", *steps)
 	}
-	d.ReportPending()
+	markProbationOK(t, d, "")
+	d.ReportPending(t.Context())
 	for i := 0; i < 200 && d.PausedBy() == nil; i++ {
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -370,7 +371,8 @@ func TestUpdateRecordFromStartToLive(t *testing.T) {
 	if strings.Join(names, ",") != "download,smoke,switch" {
 		t.Fatalf("phases %v", names)
 	}
-	d.ReportPending()
+	markProbationOK(t, d, "")
+	d.ReportPending(t.Context())
 	for i := 0; i < 200 && d.Updates()[0].Result == UpdateRunning; i++ {
 		time.Sleep(5 * time.Millisecond)
 	}

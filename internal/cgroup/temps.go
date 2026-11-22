@@ -71,12 +71,13 @@ type Temps struct {
 		SetKV(string, string) error
 	}
 
-	mu      sync.Mutex // the scratch and profile sweep
-	wmu     sync.Mutex // the worktree sweep (fetched, sizes, pub)
-	rmu     sync.Mutex // a removal or a restore, and the removed records
-	pub     atomic.Pointer[[]Temp]
-	fetched map[string]time.Time
-	sizes   map[string]sized
+	mu            sync.Mutex // the scratch and profile sweep
+	wmu           sync.Mutex // the worktree sweep (fetched, sizes, pub)
+	rmu           sync.Mutex // a removal or a restore, and the removed records
+	pub           atomic.Pointer[[]Temp]
+	fetchedLoaded bool
+	fetched       map[string]time.Time
+	sizes         map[string]sized
 }
 
 // ProfileAge: a layout profile younger than this stays (its Chrome may be starting).

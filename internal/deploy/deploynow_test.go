@@ -86,7 +86,8 @@ func TestDrainedDeployCutsNothing(t *testing.T) {
 func TestReportPendingContinuesCutThreads(t *testing.T) {
 	d, h, _ := newDeployer(t, "")
 	d.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy"},"cut":["t1","busy"]}`)
-	d.ReportPending()
+	markProbationOK(t, d, "b2")
+	d.ReportPending(t.Context())
 	h.mu.Lock()
 	got := strings.Join(h.continued, ",")
 	h.mu.Unlock()
@@ -97,7 +98,7 @@ func TestReportPendingContinuesCutThreads(t *testing.T) {
 	f, fh, _ := newDeployer(t, "")
 	f.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b3","req":{"action":"fyr.deploy"},"cut":["busy"]}`)
 	os.WriteFile(filepath.Join(f.Data, "deploy-failed.json"), []byte(`{"build":"b3","reason":"exited with code 1 after 0s"}`), 0o600)
-	f.ReportPending()
+	f.ReportPending(t.Context())
 	fh.mu.Lock()
 	rolled := strings.Join(fh.continued, ",")
 	fh.mu.Unlock()
@@ -107,7 +108,8 @@ func TestReportPendingContinuesCutThreads(t *testing.T) {
 
 	n, nh, _ := newDeployer(t, "")
 	n.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b4","req":{"action":"fyr.deploy"}}`)
-	n.ReportPending()
+	markProbationOK(t, n, "b4")
+	n.ReportPending(t.Context())
 	nh.mu.Lock()
 	defer nh.mu.Unlock()
 	if len(nh.continued) != 0 {

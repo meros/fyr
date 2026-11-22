@@ -8,6 +8,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -59,12 +60,84 @@ type Budget struct {
 	Reserve        int
 	PollsPerMinute int
 	Now            func() time.Time
+	// KV keeps rate-limit waits and low-budget pauses across restarts
+	// (V0.persist-runtime-state); nil keeps them in memory only.
+	KV KV
 
 	mu     sync.Mutex
+	loaded bool
+	saved  time.Time // last saveLocked: remaining/reset alone are written at most once a minute
 	res    map[string]*limitState
 	tokens float64
 	filled time.Time
 	pause  *Pause
+}
+
+type savedBudget struct {
+	Res   map[string]savedLimit `json:"res,omitempty"`
+	Pause *Pause                `json:"pause,omitempty"`
+}
+
+type savedLimit struct {
+	Remaining int       `json:"remaining"`
+	Reset     time.Time `json:"reset,omitzero"`
+	Limited   time.Time `json:"limited,omitzero"`
+}
+
+func (b *Budget) loadLocked() {
+	if b.loaded {
+		return
+	}
+	b.loaded = true
+	if b.KV == nil {
+		return
+	}
+	raw, _ := b.KV.GetKV(budgetKey)
+	if raw == "" {
+		return
+	}
+	var sb savedBudget
+	if json.Unmarshal([]byte(raw), &sb) != nil {
+		return
+	}
+	now := b.now()
+	for r, s := range sb.Res {
+		if s.Reset.After(now) || s.Limited.After(now) {
+			if b.res == nil {
+				b.res = map[string]*limitState{}
+			}
+			b.res[r] = &limitState{remaining: s.Remaining, reset: s.Reset, limited: s.Limited}
+		}
+	}
+	if sb.Pause != nil && sb.Pause.Until.After(now) {
+		p := *sb.Pause
+		b.pause = &p
+	}
+}
+
+func (b *Budget) saveLocked() {
+	if b.KV == nil {
+		return
+	}
+	now := b.now()
+	b.saved = now
+	sb := savedBudget{Res: map[string]savedLimit{}}
+	for r, s := range b.res {
+		if s.reset.After(now) || s.limited.After(now) {
+			sb.Res[r] = savedLimit{Remaining: s.remaining, Reset: s.reset, Limited: s.limited}
+		}
+	}
+	if b.pause != nil && b.pause.Until.After(now) {
+		p := *b.pause
+		sb.Pause = &p
+	}
+	if len(sb.Res) == 0 && sb.Pause == nil {
+		b.KV.SetKV(budgetKey, "")
+		return
+	}
+	if raw, err := json.Marshal(sb); err == nil {
+		b.KV.SetKV(budgetKey, string(raw))
+	}
 }
 
 func (b *Budget) now() time.Time {
@@ -114,6 +187,7 @@ func resource(args []string) string {
 func (b *Budget) SetRate(r Rate) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.loadLocked()
 	c := b.state("core")
 	c.remaining, c.reset = r.Remaining, r.Reset
 	if r.Remaining > 0 && c.limited.After(b.now()) && r.Remaining > b.reserve() {
@@ -124,6 +198,7 @@ func (b *Budget) SetRate(r Rate) {
 	if !r.Reset.IsZero() && g.reset.IsZero() {
 		g.reset = r.Reset
 	}
+	b.saveLocked()
 }
 
 // Runner returns gh with the budget at priority p.
@@ -145,6 +220,7 @@ func (b *Budget) Runner(gh Runner, p Priority) Runner {
 func (b *Budget) hold(res string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.loadLocked()
 	now := b.now()
 	s := b.state(res)
 	switch {
@@ -156,6 +232,7 @@ func (b *Budget) hold(res string) error {
 	if b.pause != nil && !b.pause.Until.After(now) {
 		log.Printf("github: polls run again (%d were held back)", b.pause.Deferred)
 		b.pause = nil
+		b.saveLocked()
 	}
 	if res != "core" {
 		return nil
@@ -180,6 +257,7 @@ func (b *Budget) deferLocked(res string, until time.Time, remaining int, why str
 	if b.pause == nil || b.pause.Resource != res || !b.pause.Until.Equal(until) {
 		log.Printf("github: polls wait until %s: %s", until.Local().Format("15:04"), why)
 		b.pause = &Pause{Resource: res, Until: until, Remaining: remaining, Why: why}
+		b.saveLocked()
 	}
 	b.pause.Deferred++
 	return ErrBudget
@@ -190,34 +268,45 @@ func (b *Budget) deferLocked(res string, until time.Time, remaining int, why str
 func (b *Budget) observe(res string, out []byte, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.loadLocked()
 	now := b.now()
+	changed, limited := false, false
 	if _, head, _ := splitHTTP(out); head != "" {
 		if r := header(head, "x-ratelimit-resource"); r != "" {
 			res = r
 		}
 		s := b.state(res)
-		if n, e := strconv.Atoi(header(head, "x-ratelimit-remaining")); e == nil {
+		if n, e := strconv.Atoi(header(head, "x-ratelimit-remaining")); e == nil && s.remaining != n {
 			s.remaining = n
+			changed = true
 		}
 		if n, e := strconv.ParseInt(header(head, "x-ratelimit-reset"), 10, 64); e == nil {
-			s.reset = time.Unix(n, 0)
+			t := time.Unix(n, 0)
+			if !s.reset.Equal(t) {
+				s.reset = t
+				changed = true
+			}
 		}
 	}
-	if err == nil {
-		return
+	if err != nil {
+		msg := err.Error() + string(out)
+		if strings.Contains(msg, "rate limit") {
+			s := b.state(res)
+			until := now.Add(limitedFor)
+			if !strings.Contains(msg, "secondary rate limit") && s.reset.After(now) {
+				until = s.reset
+				s.remaining = 0
+			}
+			if until.After(s.limited) {
+				s.limited = until
+				limited = true
+			}
+		}
 	}
-	msg := err.Error() + string(out)
-	if !strings.Contains(msg, "rate limit") {
-		return
-	}
-	s := b.state(res)
-	until := now.Add(limitedFor)
-	if !strings.Contains(msg, "secondary rate limit") && s.reset.After(now) {
-		until = s.reset
-		s.remaining = 0
-	}
-	if until.After(s.limited) {
-		s.limited = until
+	// Every call moves remaining; a write per call would be a write per gh
+	// call, so a count alone is written at most once a minute.
+	if limited || changed && now.Sub(b.saved) >= time.Minute {
+		b.saveLocked()
 	}
 }
 
@@ -225,6 +314,7 @@ func (b *Budget) observe(res string, out []byte, err error) {
 func (b *Budget) Paused() *Pause {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.loadLocked()
 	if b.pause == nil || !b.pause.Until.After(b.now()) {
 		return nil
 	}
