@@ -140,11 +140,9 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
       done.add(r.link!);
       const members = [...ms].sort((a, b) => down(a) - down(b) || place(a) - place(b));
       const lastUsed = members.map((m) => m.lastUsed ?? "").sort().at(-1);
-      // The shared values are the newest member's, whichever host is shown; the image is not copied between hosts.
+      // The shared values are the newest member's, whichever host is shown.
       const newest = members.reduce((a, b) => (Date.parse(b.sharedAt ?? "") > Date.parse(a.sharedAt ?? "") || (!a.sharedAt && b.sharedAt) ? b : a));
-      // V0.project-icons-on-demand: the newest image of the online members, of equals the first in host order.
-      const withImage = members.filter((m) => m.image && m.id && m.hostId);
-      const pic = withImage.reduce<Project | undefined>((a, b) => (!a || down(b) < down(a) || (down(b) === down(a) && Date.parse(b.imageAt ?? "") > (Date.parse(a.imageAt ?? "") || 0)) ? b : a), undefined);
+      const pic = linkedImage(members, down);
       out.push({
         ...members[0],
         name: newest.name,
@@ -163,6 +161,16 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
     }
   }
   return out;
+}
+
+/** V0.linked-values-sync: the member whose image a linked project shows: of the online members, the one whose image was
+ *  set last (imageAt), a removal too; of equals one with an image, then the first in host order (`members` is in it). The
+ *  front copies that image to the other members, so this is mostly the shown member's own. */
+function linkedImage(members: readonly Project[], down: (p: Project) => number): Project | undefined {
+  const on = members.filter((m) => !down(m));
+  const at = (m: Project) => Date.parse(m.imageAt ?? "") || 0;
+  const best = (on.length ? on : members).reduce<Project | undefined>((a, b) => (!a || at(b) > at(a) || (at(b) === at(a) && !!b.image && !a.image) ? b : a), undefined);
+  return best?.image && best.id && best.hostId ? best : undefined;
 }
 
 /** The records behind the list: every member of every project. */

@@ -11,7 +11,7 @@ Date: 2026-11-18 · Status: **accepted** (the owner answered the four questions 
 | Direction | Linked records (#295 option 1). Rejected: a plain tag alone, groups kept on a front or in one replicated document, one record with a folder per host, automatic grouping by git remote |
 | Per member | folder, default provider and model, setup run, threads |
 | Shared | name, colour, glyph icon, quiet hours (slice 2). Each host reads quiet hours in its own time zone |
-| Image | not copied: the first online member in the owner's host order that has one is shown |
+| Image | not copied: the first online member in the owner's host order that has one is shown. *Amended by V0.linked-values-sync: the image set last (`imageAt`) is copied to every member, a removal too.* |
 | Members per host | at most one |
 | New thread | stays host first (V0.139) |
 | Who writes a link | the front, because a link spans hosts: `front.projectLink {refs}` and `front.projectUnlink {ref}`. Each host stores its own record's link with the host kind `project.link` |

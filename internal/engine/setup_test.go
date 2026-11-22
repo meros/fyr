@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
@@ -391,5 +392,122 @@ func TestProjectSetupOwnerAskedLinked(t *testing.T) {
 	q := projectByID(h, pid)
 	if q.Image == "" || q.ImageAt.IsZero() || q.Name != "Other" || q.SharedAt.IsZero() || !strings.Contains(out, "linked") {
 		t.Fatalf("%s\n%+v", out, q)
+	}
+}
+
+// V0.linked-values-sync: a run the owner asked for (a new project, Set up
+// automatically) sets every field, the owner's too, and they stay the owner's;
+// the pass for projects from before keeps them; another thread cannot ride on it.
+func TestProjectSetupRunSetsAll(t *testing.T) {
+	h := setupHarness(t)
+	dir := filepath.Join(h.dir, "fyr")
+	os.MkdirAll(dir, 0o755)
+	pid := newProject(t, h, core.Args{"folder": dir, "name": "Mine"})
+	if r := h.cmd("project.update", "", core.Args{"id": pid, "color": "blue"}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	if r := h.e.UploadProjectImage(pid, logoPNG(t, color.NRGBA{40, 100, 190, 255})); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	before := projectByID(h, pid)
+	logo := filepath.Join(dir, "logo.png")
+	os.WriteFile(logo, logoPNG(t, color.NRGBA{30, 120, 115, 255}), 0o644)
+	call := map[string]any{"icon": logo, "name": "Fyr"}
+
+	other := h.cmd("thread.create", "", core.Args{"cwd": dir, "text": "x"}).ThreadID
+	r := h.cmd("project.setupRun", "", core.Args{"id": pid})
+	if !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	run, _ := r.Result.(map[string]any)["thread"].(string)
+	if s := projectByID(h, pid).Setup; s == nil || !s.All {
+		t.Fatalf("the owner's run is not marked: %+v", s)
+	}
+	if out, _ := callAs(t, h.e, other, "project_setup", call); !strings.Contains(out, "owner") {
+		t.Fatalf("another thread set the owner's values: %q", out)
+	}
+	if q := projectByID(h, pid); q.Name != "Mine" || q.Image != before.Image {
+		t.Fatalf("%+v", q)
+	}
+	out, isErr := callAs(t, h.e, run, "project_setup", call)
+	if isErr {
+		t.Fatal(out)
+	}
+	q := projectByID(h, pid)
+	if q.Name != "Fyr" || q.Color != "teal" || q.Image == before.Image || q.SetBy("name") != core.ByOwner || q.SetBy("color") != core.ByOwner || q.SetBy("image") != core.ByOwner {
+		t.Fatalf("%s\n%+v", out, q)
+	}
+	if strings.Contains(out, "Kept") {
+		t.Fatalf("the run kept a value: %q", out)
+	}
+	var brief strings.Builder
+	eventually(t, "the brief", func() bool {
+		brief.Reset()
+		for _, ev := range h.events(run) {
+			brief.Write(ev.Data)
+		}
+		return strings.Contains(brief.String(), "project_setup")
+	})
+	if !strings.Contains(brief.String(), "sets every field") {
+		t.Fatalf("the brief does not say it sets every field: %s", brief.String())
+	}
+}
+
+// V0.linked-values-sync: a new project with a folder gets a run that sets all.
+func TestAutoSetupOnCreateSetsAll(t *testing.T) {
+	h := setupHarness(t)
+	h.e.AutoSetup = true
+	dir := filepath.Join(h.dir, "fyr")
+	os.MkdirAll(dir, 0o755)
+	pid := newProject(t, h, core.Args{"folder": dir, "name": "Typed"})
+	if s := projectByID(h, pid).Setup; s == nil || s.Thread == "" || !s.All {
+		t.Fatalf("%+v", s)
+	}
+	old := filepath.Join(h.dir, "old")
+	os.MkdirAll(old, 0o755)
+	h.e.AutoSetup = false
+	po := newProject(t, h, core.Args{"folder": old})
+	h.e.SetupExisting(0)
+	if s := projectByID(h, po).Setup; s == nil || s.All {
+		t.Fatalf("the pass for projects from before sets all: %+v", s)
+	}
+}
+
+// V0.linked-values-sync: project.sharedImage stores the picture it carries with
+// the source's imageAt; an older stamp stores nothing, "" removes the files.
+func TestProjectSharedImage(t *testing.T) {
+	h := setupHarness(t)
+	pid := newProject(t, h, core.Args{"name": "Fyr"})
+	const link = "l_0123456789abcdef"
+	if r := h.cmd(core.KindProjectLink, "", core.Args{"id": pid, "link": link}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	png := base64.StdEncoding.EncodeToString(logoPNG(t, color.NRGBA{200, 30, 60, 255}))
+	at := time.Now().Add(time.Hour).UTC()
+	share := func(at time.Time, args core.Args) {
+		t.Helper()
+		args["id"], args["link"], args["at"] = pid, link, at.Format(time.RFC3339Nano)
+		if r := h.cmd(core.KindProjectSharedImage, "", args); !r.OK {
+			t.Fatalf("%+v", r)
+		}
+	}
+	share(at, core.Args{"png": png, "image": "from-a", "by": "owner"})
+	p := projectByID(h, pid)
+	if p.Image == "" || !p.ImageAt.Equal(at) || p.SetBy("image") != core.ByOwner {
+		t.Fatalf("%+v", p)
+	}
+	if _, err := os.Stat(h.e.ProjectIconPath(pid, 128)); err != nil {
+		t.Fatal(err)
+	}
+	share(at.Add(-time.Minute), core.Args{"image": ""})
+	if q := projectByID(h, pid); q.Image != p.Image {
+		t.Fatalf("an older removal took: %+v", q)
+	}
+	share(at.Add(time.Minute), core.Args{"image": ""})
+	if q := projectByID(h, pid); q.Image != "" {
+		t.Fatalf("%+v", q)
+	}
+	if _, err := os.Stat(h.e.ProjectIconPath(pid, 128)); !os.IsNotExist(err) {
+		t.Fatalf("the removal left the files: %v", err)
 	}
 }

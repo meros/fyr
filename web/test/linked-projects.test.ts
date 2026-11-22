@@ -114,6 +114,11 @@ test("the shared values are the newest member's; the image is the first online m
   assert.match(projectIconUrl(linkProjects([older, newer], [A, B])[0], 16)!, /\/h\/B\/.*v=v2/, "the newest image of the online members");
   assert.match(projectIconUrl(linkProjects([older, newer], [A, { ...B, online: false }])[0], 16)!, /\/h\/A\/.*v=v1/, "an offline host's image cannot be read");
   assert.match(projectIconUrl(linkProjects([{ ...a }, { ...b, image: "v2" }], [A, B])[0], 16)!, /\/h\/A\//, "without stamps, the first in host order");
+
+  // V0.linked-values-sync: a removal set last wins over an older image on another host.
+  const removed = { ...a, image: undefined, imageAt: "2026-11-19T10:00:00Z" };
+  assert.equal(projectIconUrl(linkProjects([removed, { ...b, image: "v2", imageAt: "2026-11-18T11:00:00Z" }], [A, B])[0], 16), null, "the newest is no image");
+  assert.match(projectIconUrl(linkProjects([removed, { ...b, image: "v2", imageAt: "2026-11-20T10:00:00Z" }], [A, B])[0], 16)!, /\/h\/B\//, "an image set after the removal shows");
 });
 
 test("an edit splits into what the link shares and what stays this host's", () => {

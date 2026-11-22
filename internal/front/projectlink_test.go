@@ -1,11 +1,17 @@
 package front
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/png"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/projicon"
 )
 
 var probes atomic.Int64
@@ -386,4 +392,57 @@ func TestProjectSharedPriority(t *testing.T) {
 	if code, _ := shared("ags-ask", `"agentSettle":null`); code != 200 || ags(a, onA) != "" || ags(b, onB) != "" {
 		t.Fatalf("ask: a=%q b=%q", ags(a, onA), ags(b, onB))
 	}
+}
+
+func projectRecord(h *settingsHost, ref string) (image string, at time.Time) {
+	for _, p := range h.eng.Projects() {
+		if strings.HasSuffix(ref, "/"+p.ID) {
+			return p.Image, p.ImageAt
+		}
+	}
+	return "?", time.Time{}
+}
+
+// V0.linked-values-sync: the image set last reaches every member, a removal
+// too, and a member that was offline catches up when it is back.
+func TestProjectSharedImageReachesEveryHost(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	a.eng.Icons = &projicon.Store{Dir: t.TempDir()}
+	b.eng.Icons = &projicon.Store{Dir: t.TempDir()}
+	f := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, f.URL, 2)
+	onA, onB := projectOn(t, f.URL, a, "TEST-A", "Fyr"), projectOn(t, f.URL, b, "TEST-B", "fyr-mac")
+	if code, rep := linkCmd(t, f.URL, "l", onA, onB); code != 200 {
+		t.Fatalf("link: %d %v", code, rep)
+	}
+	_, idA, _ := strings.Cut(onA, "/")
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for i := range img.Pix {
+		img.Pix[i] = 0xc0
+	}
+	var pic bytes.Buffer
+	png.Encode(&pic, img)
+	if r := a.eng.UploadProjectImage(idA, pic.Bytes()); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	_, atA := projectRecord(a, onA)
+	eventually(t, "b has a's image", func() bool { im, at := projectRecord(b, onB); return im != "" && at.Equal(atA) })
+	_, idB, _ := strings.Cut(onB, "/")
+	if p := b.eng.ProjectIconPath(idB, 128); p == "" {
+		t.Fatal("no path")
+	} else if _, err := os.Stat(p); err != nil {
+		t.Fatalf("b has no picture: %v", err)
+	}
+
+	// B is away while A removes it; B follows when it is back.
+	b.setDown(true)
+	eventually(t, "b offline", func() bool { return getState(t, f.URL).Hosts[1]["online"] == false })
+	if code, rep := post(t, f.URL+"/api/h/TEST-A/command", fmt.Sprintf(`{"commandId":"rm","action":"project.update","args":{"id":%q,"image":""}}`, idA)); code != 200 {
+		t.Fatalf("remove: %d %v", code, rep)
+	}
+	if im, _ := projectRecord(b, onB); im == "" {
+		t.Fatal("an offline host changed")
+	}
+	b.setDown(false)
+	eventually(t, "b drops the image", func() bool { im, _ := projectRecord(b, onB); return im == "" })
 }
