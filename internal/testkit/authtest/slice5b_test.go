@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/testkit/authtest"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peerlink"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func waitLink(t *testing.T, n *authtest.MeshNode, cookie, host string, cond func(authtest.LinkOf) bool) authtest.LinkOf {

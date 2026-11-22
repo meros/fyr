@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
-	"github.com/meros/fyr/internal/testkit/authtest"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/tailnet"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 // The fixture loads: the install key is the one fyrd reports, the two

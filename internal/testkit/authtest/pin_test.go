@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
-	"github.com/meros/fyr/internal/testkit/authtest"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/tailnet"
+	"github.com/meros/fyr/internal/testkit/authtest"
 )
 
 func live(t *testing.T) *authtest.Live {
