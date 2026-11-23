@@ -6393,6 +6393,75 @@ section("V0.184 phone", async ({ evaluate, openScreen }) => {
   }
 });
 
+// V0.filmstrip-fold (#61): the filmstrip is one "N previews" line on both fronts (28 px on the desktop, 44 on the
+// phone) until a press opens it; its × hides it for the thread on this device, through a reload; the "N previews"
+// chip in the header row, beside the folder chip, brings it back open. Nothing runs past the right edge.
+for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.filmstrip-fold ${front}`, async ({ send, evaluate, waitFor, settle, navigate, openScreen, shot }) => {
+  const ctx = `V0.filmstrip-fold ${front}`;
+  const phone = front === "phone";
+  const url = "?mock=1&open=t_w3";
+  const ready = phone ? "!!document.querySelector('.m-app .fs')" : "!!document.querySelector('.th .fs')";
+  const chipSel = phone ? ".m-chips .m-pvbtn" : ".thh .chips .chip.pvc";
+  const open = async (r = ready) => {
+    if (phone) await openScreen({ url, ready: r }, w, hh);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, r);
+    }
+  };
+  // A real press: a tap on the phone, a mouse click on the desktop, at the element's centre once it is in view.
+  const press = async (sel, until) => {
+    const c = await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return null; el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+    if (!c) throw new Error(`no element ${sel}`);
+    if (phone) {
+      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: c[0], y: c[1] }] });
+      await sleep(40);
+      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    } else {
+      for (const type of ["mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: c[0], y: c[1], button: "left", clickCount: 1 });
+    }
+    await waitFor(until, { what: `${until} after a press on ${sel}` });
+    await settle();
+  };
+  const STATE = `(() => { const fs = document.querySelector('.fs'); const sum = fs?.querySelector('.fs-sum')?.getBoundingClientRect(); const x = fs?.querySelector('.fs-x')?.getBoundingClientRect(); const chip = document.querySelector(${JSON.stringify(chipSel)}); const cr = chip?.getBoundingClientRect(); const key = Object.keys(localStorage).find((k) => k.startsWith('fyr.filmstrip.')) ?? ''; return { fs: !!fs, open: !!fs?.classList.contains('open'), row: fs?.querySelectorAll('.fs-row .fs-item').length ?? 0, label: fs?.querySelector('.fs-sum')?.textContent ?? '', expanded: fs?.querySelector('.fs-sum')?.getAttribute('aria-expanded') ?? '', sumH: Math.round(sum?.height ?? 0), xW: Math.round(x?.width ?? 0), xH: Math.round(x?.height ?? 0), chip: !!chip, chipText: chip?.textContent ?? '', chipH: Math.round(cr?.height ?? 0), besideFolder: !!chip?.previousElementSibling?.matches(${JSON.stringify(phone ? ".m-fldbtn" : ".fldc")}), key, value: key ? localStorage.getItem(key) : null, cards: document.querySelectorAll('.pv').length, wide: document.documentElement.scrollWidth - innerWidth, fsRight: Math.round(fs?.getBoundingClientRect().right ?? 0) - innerWidth }; })()`;
+  const size = phone ? 44 : 28;
+try {
+  await open();
+  // 1. Folded by default: one line, its count, and the ×.
+  const folded = await evaluate(STATE);
+  check(folded.fs && !folded.open && folded.row === 0 && folded.expanded === "false" && /^\d+ previews?/.test(folded.label) && folded.sumH === size && folded.xW === size && folded.xH === size && !folded.chip, `${ctx}: the filmstrip is not one folded ${size} px line with its × (${JSON.stringify(folded)})`);
+  check(folded.wide <= 0 && folded.fsRight <= 0, `${ctx}: the folded filmstrip runs past the right edge (${JSON.stringify(folded)})`);
+  const n = Number(folded.label.match(/\d+/)?.[0] ?? 0);
+  // for the shots only: the strip and the chip in view (the conversation opens at its end, the phone's chip row scrolls)
+  await evaluate(`document.querySelector('.fs')?.scrollIntoView({ block: 'nearest' })`);
+  await waitFor(`(() => { const r = document.querySelector('.fs')?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; })()`, { soft: true, timeout: 2000 });
+  await shot(`filmstrip-folded-${front}.png`);
+  // 2. A press opens it: a thumbnail per preview.
+  await press(".fs .fs-sum", "!!document.querySelector('.fs.open .fs-row')");
+  const opened = await evaluate(STATE);
+  check(opened.open && opened.row === n && n > 0 && opened.expanded === "true" && opened.wide <= 0 && opened.fsRight <= 0, `${ctx}: a press did not open the strip with its ${n} previews (${JSON.stringify(opened)})`);
+  await shot(`filmstrip-open-${front}.png`);
+  // 3. The × hides it for this thread, kept under the thread's ref; the header chip shows the count.
+  await press(".fs .fs-x", `!document.querySelector('.fs') && !!document.querySelector(${JSON.stringify(chipSel)})`);
+  const hidden = await evaluate(STATE);
+  check(!hidden.fs && hidden.chip && hidden.chipText.includes(folded.label.replace(/[▸▾]/g, "").trim()) && hidden.besideFolder && /^fyr\.filmstrip\.(.+\/)?t_w3$/.test(hidden.key) && hidden.value === "hidden" && hidden.cards > 0 && hidden.wide <= 0, `${ctx}: × did not hide the strip behind a "${n} previews" chip beside the folder chip (${JSON.stringify(hidden)})`);
+  if (phone) check(hidden.chipH >= 44, `${ctx}: the previews chip is not a 44 px tap target (${JSON.stringify(hidden)})`);
+  await evaluate(`document.querySelector(${JSON.stringify(chipSel)})?.scrollIntoView({ block: 'nearest', inline: 'nearest' })`);
+  await waitFor(`(() => { const r = document.querySelector(${JSON.stringify(chipSel)})?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; })()`, { soft: true, timeout: 2000 });
+  await shot(`filmstrip-hidden-${front}.png`);
+  // 4. Kept on this device: a reload still hides it.
+  await open(`!!document.querySelector(${JSON.stringify(chipSel)}) && !!document.querySelector('.pv')`);
+  const reloaded = await evaluate(STATE);
+  check(!reloaded.fs && reloaded.chip, `${ctx}: the hide did not last a reload (${JSON.stringify(reloaded)})`);
+  // 5. The chip brings it back, open, and forgets the hide.
+  await press(chipSel, `!!document.querySelector('.fs.open') && !document.querySelector(${JSON.stringify(chipSel)})`);
+  const back = await evaluate(STATE);
+  check(back.fs && back.open && back.row === n && !back.chip && back.key === "" && back.wide <= 0 && back.fsRight <= 0, `${ctx}: the chip did not bring the strip back open (${JSON.stringify(back)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });

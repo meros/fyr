@@ -23,7 +23,7 @@ import { useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
-import { Filmstrip } from "./preview-ui.tsx";
+import { Filmstrip, PreviewsChip } from "./preview-ui.tsx";
 import { LiveViewPanel } from "./view-ui.tsx";
 import { rememberTab } from "./desk-history.ts";
 import { tabLabel, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
@@ -190,6 +190,8 @@ export function ThreadPane(p: ThreadPaneProps) {
           {/* V0.folder-chip: the folder and its branch in one chip (it replaced the branch chip); a click shows the full
               path, the branch, the host and Copy path */}
           <FolderChip t={t} />
+          {/* V0.filmstrip-fold: a hidden filmstrip comes back from here, beside the folder chip */}
+          <PreviewsChip threadRef={t.id} host={t.hostId} events={p.events} onShow={() => setTab("conv")} />
           {/* V0.agent-pill: provider, model and effort in one pill; the model and the effort pick in place */}
           <AgentPill size="chip" segs={threadAgent(t, profile, provider, unavailableReason(t, "thread.setModel"), (a) => p.onRun("thread.setModel", a))} />
           {/* V0.quota-in-thread, V0.quota-reset-wake: what is left on the account this thread uses, where the owner works; click to arm a wake when a window resets */}
@@ -305,7 +307,7 @@ export function ThreadTabBody({ t, tab, setTab, prs, activePr, onSelectPr, event
       {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction} />}
       {tab === "conv" && (
         <Conversation
-          strip={<Filmstrip cards={previews} collapsible={phone} />}
+          strip={<Filmstrip cards={previews} threadRef={t.id} phone={phone} />}
           outbox={t.outbox.map((o) => o.id)}
           events={events}
           onAtEnd={onAtEnd}

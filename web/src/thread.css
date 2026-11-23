@@ -22,6 +22,8 @@
 .chip.pj{max-width:36%}
 .chip.fldc{flex:1 1 0;max-width:max-content;border:0;cursor:pointer} /* V0.folder-chip: shrinks first, as the branch chip it replaced, so the row stays one line */
 .chip.fldc:hover,.chip.fldc[aria-expanded="true"]{background:var(--select)}
+.chip.pvc{flex:none;border:0;cursor:pointer} /* V0.filmstrip-fold: brings the hidden filmstrip back */
+.chip.pvc:hover{background:var(--select);color:var(--ink)}
 .fldc .fldn{color:var(--ink);flex:0 1 auto}
 .fldc .fldb{flex:0 1000 auto} /* the branch gives way before the name */
 .fldc .fldb::before{content:"· ";color:var(--ink-faint)}
