@@ -28,6 +28,8 @@ import (
 
 const (
 	servicePeaksKey = "service-peaks"
+	// serviceNoticedKey: when each thread was last told about its containers.
+	serviceNoticedKey = "service-noticed"
 	// serviceHalfLife is how fast a service's learned peak decays (Autopilot's 48 h).
 	serviceHalfLife = 48 * time.Hour
 	// composeGrace is how long a compose project a thread started counts with
@@ -196,14 +198,13 @@ func (s *Services) Notice(thread string, c Capacity) string {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.loadLocked()
 	now := s.now()
 	if now.Sub(s.noticed[thread]) < serviceNoticeEvery {
 		return ""
 	}
-	if s.noticed == nil {
-		s.noticed = map[string]time.Time{}
-	}
 	s.noticed[thread] = now
+	s.saveNoticedLocked(now)
 	return fmt.Sprintf("[Fyr] The containers of compose project %s, which this thread started, hold %s outside this thread's own memory. "+
 		"Fyr counts them as this thread's service: it reserves that memory before admitting heavy jobs and never pauses them. "+
 		"Stop them (`docker compose -p %s down`) when this thread no longer needs them.", big.Project, slots.GB(float64(big.Containers)), big.Project)
@@ -215,11 +216,36 @@ func (s *Services) loadLocked() {
 	}
 	s.loaded = true
 	s.peaks = map[string]servicePeak{}
+	s.noticed = map[string]time.Time{}
 	if s.KV == nil {
 		return
 	}
 	if raw, _ := s.KV.GetKV(servicePeaksKey); raw != "" {
 		json.Unmarshal([]byte(raw), &s.peaks)
+	}
+	if raw, _ := s.KV.GetKV(serviceNoticedKey); raw != "" {
+		json.Unmarshal([]byte(raw), &s.noticed)
+	}
+}
+
+// saveNoticedLocked keeps when each thread was last told about its
+// containers (V0.survive-update), so a restart does not tell it again within
+// serviceNoticeEvery; an entry older than that is dropped. Holds s.mu.
+func (s *Services) saveNoticedLocked(now time.Time) {
+	for th, at := range s.noticed {
+		if now.Sub(at) >= serviceNoticeEvery {
+			delete(s.noticed, th)
+		}
+	}
+	if s.KV == nil {
+		return
+	}
+	if len(s.noticed) == 0 {
+		s.KV.SetKV(serviceNoticedKey, "")
+		return
+	}
+	if b, err := json.Marshal(s.noticed); err == nil {
+		s.KV.SetKV(serviceNoticedKey, string(b))
 	}
 }
 

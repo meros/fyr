@@ -46,3 +46,26 @@ func TestPullFetchTimesSurviveRestart(t *testing.T) {
 		t.Fatal("a fetch older than pullFetchEvery came back")
 	}
 }
+
+// V0.survive-update: a thread told about its compose containers is not told
+// again because fyrd restarted, only after serviceNoticeEvery.
+func TestServiceNoticeSurvivesRestart(t *testing.T) {
+	now := time.Now()
+	db := kv{}
+	c := Capacity{Memory: 10 << 30}
+	open := func() *Services {
+		s := &Services{KV: db, Now: func() time.Time { return now }}
+		s.pub.Store(&map[string][]Service{"t_a": {{Name: "compose acme", Project: "acme", Containers: 4 << 30}}})
+		return s
+	}
+	if open().Notice("t_a", c) == "" {
+		t.Fatal("no notice for 4 GiB of containers")
+	}
+	if got := open().Notice("t_a", c); got != "" {
+		t.Fatalf("told again after a restart: %q", got)
+	}
+	now = now.Add(serviceNoticeEvery)
+	if open().Notice("t_a", c) == "" {
+		t.Fatal("not told again after serviceNoticeEvery")
+	}
+}

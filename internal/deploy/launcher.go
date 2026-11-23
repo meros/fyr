@@ -232,16 +232,21 @@ func (l *Launcher) Run() error {
 			if !exited {
 				watched, watchUntil = build, started.Add(l.Watch)
 				os.Remove(l.path(ProbationOK))
-				// The probation ends while the build runs: say so, so the
-				// daemon reports the deploy's success (#148).
-				go func(build string) {
-					select {
-					case <-time.After(l.Probation):
-						os.WriteFile(l.path(ProbationOK), []byte(build), 0o600)
-					case <-stopped:
-					}
-				}(build)
 			}
+		}
+		// The probation ends while the build runs: say so, so the daemon
+		// reports the deploy's success (#148). A start that is not a switch
+		// says so too (V0.survive-update): a launcher restarted during a
+		// switch's probation starts the new current without promoting it,
+		// and without this line that deploy's report waited forever.
+		if !exited && build != "seed" {
+			go func(build string) {
+				select {
+				case <-time.After(l.Probation):
+					os.WriteFile(l.path(ProbationOK), []byte(build), 0o600)
+				case <-stopped:
+				}
+			}(build)
 		}
 		if !exited {
 			err = <-done

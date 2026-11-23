@@ -20,6 +20,7 @@ import (
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/github"
+	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/setup"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/stream"
@@ -46,6 +47,11 @@ func (w *wiring) wireDeploy() {
 	// V0.90: with the runner the agents outlive the switch: no drain.
 	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy(), Wrap: tree.DeployWrap(), Survive: rn != nil}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
+	// V0.survive-update: a launcher that does not say its pid predates
+	// probation-ok, and so does no launcher at all.
+	if launchenv.Current().LauncherPid == 0 {
+		dep.OldLauncher = deploy.OldLauncherProbation
+	}
 	if !pool.Off() {
 		dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }
 	}

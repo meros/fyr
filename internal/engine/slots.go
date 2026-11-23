@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"maps"
@@ -27,10 +28,16 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.mu.Lock()
 	e.Slots = p
 	e.slotIdle = map[string]time.Time{}
-	e.slotOverTold = map[string]time.Time{}
 	e.undFroze = map[string]undFreeze{}
 	e.guardLast = map[string]guardLine{}
-	e.rerunKills, e.rerunWait = map[string][]time.Time{}, map[string]string{}
+	e.rerunWait = map[string]string{}
+	// V0.survive-update: Load read the rerun kills from the store before
+	// fyrd wires the pool, so they are kept here, not made anew (a new map
+	// wiped them on every start); the holds already told come back too.
+	if e.rerunKills == nil {
+		e.rerunKills = map[string][]time.Time{}
+	}
+	e.loadSlotOverToldLocked()
 	e.mu.Unlock()
 	e.heavyMu.Lock()
 	e.heavyCalls, e.heavyBg, e.heavyClass = map[string]map[string]bool{}, map[string]bool{}, map[string]string{}
@@ -293,6 +300,7 @@ func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
 		}
 		e.mu.Lock()
 		e.slotOverTold[h.Owner] = h.Since
+		e.saveSlotOverToldLocked(s.Held)
 		e.mu.Unlock()
 		// V0.163: SlotOver answers in percent of the host.
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: live, Predicted: pred}}); err != nil {
@@ -315,5 +323,46 @@ func (e *Engine) adaptBudget(s slots.Snapshot) {
 			log.Printf("slots: budget cpu=%.3f->%.3f mem=%.3f->%.3f why=%q waiting=%d held=%d %s", old.CPU, f.CPU, old.Mem, f.Mem, why, len(s.Waiting), len(s.Held), guardSignals(sig))
 		}
 		e.Slots.SetBudget(f, why)
+	}
+}
+
+// slotOverToldKey keeps the holds already told they are heavier than
+// predicted (V0.survive-update), so a restart does not tell one again.
+const slotOverToldKey = "engine.slotOverTold"
+
+func (e *Engine) loadSlotOverToldLocked() {
+	e.slotOverTold = map[string]time.Time{}
+	if e.st == nil {
+		return
+	}
+	if raw, _ := e.st.GetKV(slotOverToldKey); raw != "" {
+		json.Unmarshal([]byte(raw), &e.slotOverTold)
+	}
+}
+
+// saveSlotOverToldLocked writes the told holds that still hold a slot: an
+// entry ends with its hold, so a hold that ended is dropped here.
+func (e *Engine) saveSlotOverToldLocked(held []slots.Holder) {
+	if e.st == nil {
+		return
+	}
+	live := map[string]time.Time{}
+	for _, h := range held {
+		live[h.Owner] = h.Since
+	}
+	out := map[string]time.Time{}
+	for owner, since := range e.slotOverTold {
+		if s, ok := live[owner]; ok && s.Equal(since) {
+			out[owner] = since
+		} else {
+			delete(e.slotOverTold, owner)
+		}
+	}
+	if len(out) == 0 {
+		e.st.SetKV(slotOverToldKey, "")
+		return
+	}
+	if b, err := json.Marshal(out); err == nil {
+		e.st.SetKV(slotOverToldKey, string(b))
 	}
 }

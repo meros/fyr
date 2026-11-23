@@ -3,6 +3,7 @@ package auth
 import (
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -163,5 +164,32 @@ func TestOwnerSocketTakesThisUser(t *testing.T) {
 	}
 	if _, err := ListenUnix(path); err == nil {
 		t.Fatal("a second listener on a live socket")
+	}
+}
+
+// V0.survive-update: a one-time link made before a restart still works after
+// it, once and until it ends; the token itself is never stored.
+func TestOnceLinkSurvivesRestart(t *testing.T) {
+	s, kv, c := newTest(t)
+	tok := s.OnceFor(HowLink, "phone", "dev_a", 10*time.Minute)
+	late := s.Once(HowLocal, "x")
+	if strings.Contains(kv.m[onceKey], tok) {
+		t.Fatal("the link's token is in the store")
+	}
+	c.t = c.t.Add(2 * time.Minute)
+	s2, err := Open(kv, c.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s2.Redeem(late, "", "x"); err == nil {
+		t.Fatal("a 60 s link worked after it ended")
+	}
+	_, d, err := s2.Redeem(tok, "", "Firefox")
+	if err != nil || d.How != HowLink || d.By != "dev_a" {
+		t.Fatalf("after a restart: %+v %v", d, err)
+	}
+	s3, _ := Open(kv, c.now)
+	if _, _, err := s3.Redeem(tok, "", "Firefox"); err == nil {
+		t.Fatal("a used link worked again after a restart")
 	}
 }

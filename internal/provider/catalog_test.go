@@ -243,3 +243,35 @@ func TestCheckSaysWhenTheCLIListsOnlyAliases(t *testing.T) {
 		t.Fatalf("note stays: %q", d.CheckNote)
 	}
 }
+
+// V0.survive-update: the once-a-day model check (V0.120) counts from the last
+// try in the store, so a restart does not check every provider again, and a
+// failed check is not retried each hour either.
+func TestDailyCheckSurvivesRestart(t *testing.T) {
+	f := newFixture(t)
+	r := newReg(t, f)
+	r.Run(cmd("provider.create", map[string]any{"id": "ds", "name": "DS", "kind": "endpoint", "baseURL": "https://e.example", "key": "k-123456789", "models": []any{"m1"}}))
+	calls := 0
+	list := func(context.Context, Provider, string) (claudecli.Listing, error) {
+		calls++
+		return claudecli.Listing{}, errors.New("e.example/v1/models answered 503")
+	}
+	r.ListModels = list
+	t0 := time.Now().UTC()
+	r.CheckDaily(t0)
+	if calls != 1 {
+		t.Fatalf("first daily check: %d calls", calls)
+	}
+	r2 := &Registry{DB: r.DB, Secrets: r.Secrets, Home: r.Home, Getenv: r.Getenv, ListModels: list}
+	if err := r2.Load(); err != nil {
+		t.Fatal(err)
+	}
+	r2.CheckDaily(t0.Add(time.Hour))
+	if calls != 1 {
+		t.Fatalf("checked again an hour after a restart: %d calls", calls)
+	}
+	r2.CheckDaily(t0.Add(CheckEvery))
+	if calls != 2 {
+		t.Fatalf("not checked a day later: %d calls", calls)
+	}
+}
