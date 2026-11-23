@@ -35,6 +35,7 @@ import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence
 import { cache, mergeEventLists } from "./cache.ts";
 import { PHONE_QUERY } from "./motion-ui.tsx";
 import { recordOpen } from "./desk-history.ts";
+import { workCount } from "./markdown.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useNavHistory } from "./app-history.tsx";
 
@@ -71,6 +72,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       scheduled = false;
       const fns = queue;
       queue = [];
+      if (fns.length) workCount("flushes");
       if (fns.length) setStore((s) => fns.reduce((acc, f) => f(acc), s));
     };
     const batch = (fn: (s: Store) => Store) => {
