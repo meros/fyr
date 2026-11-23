@@ -294,7 +294,13 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
   const agents = groupTasks(t.tasks).running;
   // The project is on the first line now, so the second never falls back to it.
   // V0.ci-wait-moves: a row in Moving always says why (Waiting for CI on #846, Starting, Waiting for the machine).
-  const detail = working ? workingLine(t) : st === "snoozed" ? snoozeLine(t, now) : "";
+  // V0.chip-in-moving: a working row shows its PR chip too, so the line does not repeat the number.
+  const own = threadPrs(t).map((p) => `#${p.number}`);
+  const detail = working
+    ? workingLine(t).replace(/ on (#\d+)(?=\W|$)/, (m, n: string) => (own.includes(n) ? "" : m))
+    : st === "snoozed"
+      ? snoozeLine(t, now)
+      : "";
   const firstTask = agents.map((x) => x.startedAt).filter(Boolean).sort()[0];
   const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
   const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing
@@ -307,7 +313,7 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
   // V0.wakeups-via-watch: a thread that waits on the agent's wake-up says so, apart from a finished one. On the row the chip
   // only shows: a tap on a row opens the thread (and the phone's row swipes), where the same chip cancels it.
   const wake = !working && !!t.wakes?.length;
-  const chips = sub || cpu || (!working && hasChange(t)) || wake;
+  const chips = sub || cpu || hasChange(t) || wake;
   return (
     <div {...attrs} class={`one${agents.length ? " has-agents" : ""}${guest ? " guest" : ""}${extra}`}>
       {lead ?? <StateIcon state={st} />}
@@ -328,7 +334,7 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
           <span class="cl">
             {cpu && <ThreadCPU id={t.id} chip />}
             {sub && <span class="sb">{t.subagents ?? 0} sub</span>}
-            {!working && hasChange(t) && <PrBadge t={t} short />}
+            {hasChange(t) && <PrBadge t={t} short />}
             {wake && <WakeChip t={t} now={now} cls="pr" />}
           </span>
         )}
