@@ -293,3 +293,23 @@ func TestHandoverClearedOnRestart(t *testing.T) {
 		t.Fatalf("thread %+v", got)
 	}
 }
+
+// V0.handover-attachments: the conversation file lists the owner's
+// attachments with their stored paths, so the new agent can Read them.
+func TestConversationListsAttachments(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	h.e.Attach = h.att
+	png, _ := h.att.Save("shot.png", "image/png", strings.NewReader("\x89PNG fake"))
+	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "see the screenshot", "attachments": []any{png.ID}})
+	if !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	h.wait(r.ThreadID, "done", state(core.Done))
+	conv, err := h.e.Conversation(r.ThreadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(conv, "Attached: shot.png (image/png) at "+png.Path) {
+		t.Fatalf("attachment path missing from the conversation:\n%s", conv)
+	}
+}
