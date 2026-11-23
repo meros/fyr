@@ -45,7 +45,7 @@ func TestUnresponsiveAgentIsNamedAndRestarted(t *testing.T) {
 	if !strings.Contains(th.Unresponsive.Reason, "Run the proxy") {
 		t.Fatalf("the reason does not name the background task: %q", th.Unresponsive.Reason)
 	}
-	a := core.Compute(&th, nil, time.Now())
+	a := core.ComputeWith(&th, nil, time.Now(), nil)
 	if a.State != core.Blocked || a.Section != core.NeedsYou || !strings.HasPrefix(a.Reason, "Agent not responding since ") {
 		t.Fatalf("attention %+v", a)
 	}

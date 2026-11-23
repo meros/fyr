@@ -65,17 +65,14 @@ const (
 	GroupUnblock Group = "unblock"
 )
 
-// Compute returns the attention of t for the user who owns v at time now.
+// ComputeWith returns the attention of t for the user who owns v at time now.
 //
 // Order: archived, settled, then the snooze (which a new question or failure
 // breaks), then asking, failed, working, blocked, done, seen.
-func Compute(t *Thread, v *View, now time.Time) Attention {
-	return ComputeWith(t, v, now, nil)
-}
-
-// ComputeWith is Compute with the auto-merge setting (V0.205): on says whether
-// a repo merges with no press, so a merge ask Fyr will do by itself does not
-// count as an ask of the owner. nil: no repo does.
+//
+// on is the auto-merge setting (V0.205): it says whether a repo merges with
+// no press, so a merge ask Fyr will do by itself does not count as an ask of
+// the owner. nil: no repo does.
 func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) Attention {
 	if t.ArchivedAt != nil {
 		return Attention{State: Archived, Section: ArchivedSec}

@@ -56,6 +56,7 @@ type Engine struct {
 	st       *store.Store
 	threads  map[string]*core.Thread
 	views    map[string]*core.View
+	stored   map[string]*storedJSON // V0.structure-cost (4): by thread id
 	last     map[string]core.State    // last broadcast state, for time-driven changes
 	revs     map[string]int64         // per-thread rev (SPEC 0.5 V0.2)
 	projects map[string]*core.Project // V0.23
@@ -208,7 +209,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, textAskSlots: make(chan struct{}, textAskCalls), searchSlots: make(chan struct{}, searchCalls), threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{},
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, stored: map[string]*storedJSON{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{},
 		quotaWindows: map[string]time.Time{}, quotaResetSent: map[string]time.Time{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute},
 		newLimit:  window{max: 12, span: time.Hour, st: st, key: "engine.newLimit"},
@@ -250,9 +251,6 @@ func (e *Engine) Load() error {
 	}
 	e.views = vs
 	if err := e.loadRecords(); err != nil {
-		return err
-	}
-	if err := e.migrateDone(); err != nil { // V0.98 (7)
 		return err
 	}
 	ps, err := e.st.Projects()

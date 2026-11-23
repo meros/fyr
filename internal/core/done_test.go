@@ -239,7 +239,7 @@ func TestMigrateDone(t *testing.T) {
 		{ID: "x", Key: "gone", Kind: KindOther, Title: "Gone", Phase: PhaseAbandoned, PhaseBy: ByOwner},
 		{ID: "o", Key: "open", Kind: KindInfra, Title: "Open", Phase: PhaseReview, PhaseBy: ByAgent},
 	}, Rules: []Rule{{ID: deployRuleID("w"), Purpose: PurposeDeploy, About: "w", Status: RuleArmed}}}
-	if !MigrateDone(th, dt0) {
+	if !migrateDone(th, dt0) {
 		t.Fatal("nothing migrated")
 	}
 	if FindChange(th, "pr:o/r#5") == nil || FindChange(th, "pr:o/r#5").ID != "c_agent" || len(th.Changes) != 5 {
@@ -252,11 +252,11 @@ func TestMigrateDone(t *testing.T) {
 			t.Errorf("%s (%s): done %+v, want %q", c.ID, c.Phase, c.Done, r)
 		}
 	}
-	if MigrateDone(th, dt0) {
+	if migrateDone(th, dt0) {
 		t.Fatal("a second pass changed the thread")
 	}
 	rec := &Change{ID: "r", Kind: KindCode, Phase: PhaseLanded, PhaseBy: ByObserved}
-	if !MigrateRecordDone(rec, dt0) || !rec.IsDone() || rec.Done.Reason != DoneBeforeV2 {
+	if !migrateRecordDone(rec, dt0) || !rec.IsDone() || rec.Done.Reason != DoneBeforeV2 {
 		t.Fatalf("a landed record is not done: %+v", rec.Done)
 	}
 }

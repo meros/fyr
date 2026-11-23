@@ -23,7 +23,7 @@ func TestMigrateCodeOnly(t *testing.T) {
 		{ID: "d_apply", Kind: DecisionEffect, Assignee: Owner, Effect: &EffectReq{Action: "change.apply", Args: map[string]any{"change": "c_infra", "title": "Raise replicas"}}, CreatedAt: was},
 		{ID: "d_q", Kind: DecisionAsk, Assignee: Owner, Async: true, CreatedAt: was},
 	}}
-	if !MigrateCodeOnly(th, now) {
+	if !migrateCodeOnly(th, now) {
 		t.Fatal("the pass reported no change")
 	}
 	for _, id := range []string{"c_infra", "c_doc"} {
@@ -54,12 +54,12 @@ func TestMigrateCodeOnly(t *testing.T) {
 	if n.Urgency != Next || !strings.Contains(n.What, "apply") || !strings.Contains(n.What, "Raise replicas") || !strings.Contains(n.What, "run_request") {
 		t.Fatalf("notice: %+v", n)
 	}
-	// MigrateDone after it files them under Done here, as abandoned.
-	MigrateDone(th, now)
+	// migrateDone after it files them under Done here, as abandoned.
+	migrateDone(th, now)
 	if c := FindChange(th, "c_infra"); !c.IsDone() || c.Done.Reason != string(PhaseAbandoned) {
 		t.Fatalf("done: %+v", c.Done)
 	}
-	if MigrateCodeOnly(th, now) || len(th.Feed.Queue) != 1 {
+	if migrateCodeOnly(th, now) || len(th.Feed.Queue) != 1 {
 		t.Fatal("the pass is not idempotent: the agent would hear it twice")
 	}
 }

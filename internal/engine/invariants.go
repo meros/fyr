@@ -134,7 +134,16 @@ type invariants struct {
 	lastSend     map[string]sendRecord
 	failRuns     map[string][]time.Time
 	summaryInRun map[string]bool
+	// V0.structure-cost (4): applies since the last serialization check, and the
+	// tick's copies of the threads, by the record they copy.
+	serialSkips int
+	tickCopies  map[string]tickCopy
 }
+
+// tickCopy is the tick's private copy of a thread record: a record e.threads
+// still points at did not change (each reduce makes a new one), so its copy
+// is kept for the next tick.
+type tickCopy struct{ src, cp *core.Thread }
 
 type sendRecord struct {
 	text  string

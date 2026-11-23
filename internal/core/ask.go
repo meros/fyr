@@ -1,8 +1,11 @@
 package core
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 )
@@ -205,4 +208,134 @@ func textQuestionNotices(r Reduced) []Notice {
 		}
 	}
 	return nil
+}
+
+// canRequest checks an agent's request of a Fyr effect: its args, and the
+// effect's guard, the same one the owner's command and press use (#31).
+// A merge is bound to the head Fyr reads when the agent asks (V0.97); the
+// guard comes first, so a blocked PR says why before a missing head does.
+func canRequest(t *Thread, fx *FyrEffect, args map[string]any) error {
+	if fx.ID == FyrMerge {
+		fixHead(t, args)
+	}
+	if why := fx.Guard(t, args); why != "" {
+		return fmt.Errorf("Fyr cannot %s now: %s", strings.ToLower(fx.Label), why)
+	}
+	return fx.Check(args)
+}
+
+// openRequest opens the owner's Decision for an agent's request; a merge
+// ask goes through the CI gate first (V0.136).
+func openRequest(t *Thread, id string, req EffectReq, now time.Time) (Result, error) {
+	d := Decision{ID: id, Kind: DecisionEffect, Assignee: Owner, Effect: &req, CreatedAt: now}
+	if req.Action == FyrMerge {
+		return openMergeAsk(t, d)
+	}
+	DecisionOpened(t, d)
+	return Result{Events: []Event{{"decision.opened", map[string]any{"decision": d}}}}, nil
+}
+
+// NotFyrRepoText is why a thread that is not on Fyr's own repo cannot ask
+// to deploy Fyr (V0.one-tool-vocabulary).
+const NotFyrRepoText = "Only a thread that works on Fyr's own repository may ask to deploy Fyr. For a deploy the owner must approve, call run_request with the command and the why."
+
+func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
+	a, err := argsOf[ChangeRequest](in)
+	if err != nil {
+		return Result{}, err
+	}
+	if line, gone := goneAsks[a.Ask]; gone { // V0.changes-code-only (3)
+		return Result{}, errors.New(line)
+	}
+	if !slices.Contains(ChangeAsks(), a.Ask) {
+		return Result{}, fmt.Errorf("ask must be one of %s", strings.Join(Names(ChangeAsks()), ", "))
+	}
+	if a.Ask == AskFyrDeploy && !a.FyrRepo {
+		return Result{}, errors.New(NotFyrRepoText)
+	}
+	if a.Args == nil {
+		a.Args = map[string]any{}
+	}
+	var c *Change
+	var linked []Event
+	if a.Change != "" || a.Ask != AskFyrDeploy { // a deploy needs no change
+		if c, linked, err = requestedChange(r.T, a.Change, now); err != nil {
+			return Result{}, err
+		}
+		if c.Phase.Ended() {
+			return Result{}, fmt.Errorf("%q is %s", c.Title, c.Phase)
+		}
+	}
+	action := "change." + string(a.Ask)
+	if fx := FyrEffectFor(a.Ask); fx != nil { // merge, deploy: Fyr runs them
+		action = fx.ID
+		if _, ok := a.Args["pr"].(string); !ok && fx.OnPR && c != nil && c.PRURL() != "" {
+			a.Args["pr"] = c.PRURL()
+		}
+		if pr, _ := a.Args["pr"].(string); fx.OnPR && pr == "" {
+			return Result{}, errors.New(noPRText(c))
+		}
+		if err := canRequest(r.T, fx, a.Args); err != nil {
+			return Result{}, err
+		}
+	}
+	reply := ChangeRequestReply{ID: a.ID}
+	if c != nil {
+		if why, _ := a.Args["sensitive"].(string); why != "" && action == FyrMerge && c.Sensitive != why {
+			c.Sensitive = why // V0.sensitive-pr: the change keeps the mark
+			c.UpdatedAt = now
+		}
+		a.Args["change"] = c.ID
+		if _, ok := a.Args["title"]; !ok {
+			a.Args["title"] = c.Title
+		}
+		cp := *c
+		reply.Change = &cp
+	}
+	req := EffectReq{Action: action, Args: a.Args, Reason: a.Reason}
+	if id := openAskLike(r.T, req); id != "" { // a retry: the ask is open already
+		reply.ID, reply.Again = id, true
+		return Result{Reply: reply}, nil
+	}
+	res, err := openRequest(r.T, a.ID, req, now)
+	if err != nil {
+		return Result{}, err
+	}
+	res.Events = append(linked, res.Events...)
+	res.Reply = reply
+	return res, nil
+}
+
+// requestedChange is the change a change_request names. A PR URL the thread
+// does not track yet becomes its change, so Fyr watches the PR (it was
+// effect_request's pr.merge, V0.136).
+func requestedChange(t *Thread, ref string, now time.Time) (*Change, []Event, error) {
+	if c := FindChange(t, ref); c != nil {
+		return c, nil, nil
+	}
+	if url, ok := CanonicalPR(ref); ok {
+		if repo, n := parsePRURL(url); n != 0 {
+			PRObserved(t, PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}, now)
+			if c := changeByPR(t, url); c != nil {
+				return c, []Event{{"pr.linked", map[string]any{"url": url}}}, nil
+			}
+		}
+	}
+	return nil, nil, NoChange(ref)
+}
+
+// openAskLike is the id of the thread's open or held ask for the same effect
+// with the same args, or "" (V0.one-tool-vocabulary): an agent that retries a
+// call whose reply it lost gets the ask it made.
+func openAskLike(t *Thread, req EffectReq) string {
+	want, _ := json.Marshal(req.Args)
+	for _, d := range slices.Concat(t.Decisions, t.HeldAsks) {
+		if d.Kind != DecisionEffect || d.Effect == nil || d.Effect.Action != req.Action {
+			continue
+		}
+		if got, _ := json.Marshal(d.Effect.Args); string(got) == string(want) {
+			return d.ID
+		}
+	}
+	return ""
 }

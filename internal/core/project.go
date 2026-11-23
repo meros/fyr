@@ -6,7 +6,6 @@ import (
 	"path"
 	"strings"
 	"time"
-	"unicode"
 )
 
 // Project is a name, a colour and one folder on its host (SPEC 0.5 V0.55,
@@ -257,23 +256,6 @@ func DefaultColor(name string) string {
 	h := fnv.New32a()
 	h.Write([]byte(strings.ToLower(name)))
 	return Palette[int(h.Sum32()%uint32(len(Palette)))]
-}
-
-// Monogram is one or two capital letters from the name's words.
-func Monogram(name string) string {
-	words := strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
-	var out []rune
-	for _, w := range words {
-		r := []rune(w)
-		out = append(out, unicode.ToUpper(r[0]))
-		if len(out) == 2 {
-			break
-		}
-	}
-	if len(out) == 0 {
-		return "?"
-	}
-	return string(out)
 }
 
 // The project kinds (#48, SPEC 3.15): the owner's project commands are Input

@@ -147,7 +147,6 @@ const (
 	WhenQuota       = "quota"         // anchored: {provider, window, at}: now ≥ the provider window's reset time (V0.quota-reset-wake)
 	WhenIdleFor     = "idleFor"       // {ms}: nothing happened on the thread for ms
 	WhenIdle        = "idle"          // no run is live and the last one did not fail
-	WhenNoDecisions = "noDecisions"   // no question or approval waits
 	WhenMoved       = "changeMoved"   // anchored: {change}: the change's phase, conditions or evidence moved since the last firing
 	WhenEnded       = "changeEnded"   // {change}: the change ended (abandoned or reverted)
 	WhenWorkOver    = "workOver"      // V0.185: no work goes on, or the thread needs the owner
@@ -227,8 +226,6 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 		return truth(now.Sub(t.ActivityAt) >= time.Duration(w.Ms)*time.Millisecond)
 	case WhenIdle:
 		return truth(!t.Running && t.Starting == nil && t.Failure == nil)
-	case WhenNoDecisions:
-		return truth(len(t.Decisions) == 0)
 	case WhenWorkOver:
 		return truth(WorkOverAt(t, now))
 	case WhenWorkDone:

@@ -151,7 +151,7 @@ func (h *harness) wait(id string, what string, ok func(t core.Thread, a core.Att
 	for time.Now().Before(deadline) {
 		t, _ := h.e.Thread(id)
 		v := h.viewOf(id)
-		if ok(t, core.Compute(&t, &v, time.Now())) {
+		if ok(t, core.ComputeWith(&t, &v, time.Now(), nil)) {
 			return t
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -264,7 +264,7 @@ func TestFailureAndRetry(t *testing.T) {
 	}
 	h.cmd("thread.markSeen", id, nil)
 	v := h.viewOf(id)
-	if a := core.Compute(&th, &v, time.Now()); a.State != core.Failed {
+	if a := core.ComputeWith(&th, &v, time.Now(), nil); a.State != core.Failed {
 		t.Fatal("a visit hid the failure")
 	}
 	if r := h.cmd("thread.retry", id, nil); !r.OK {
@@ -443,7 +443,7 @@ func TestEffectMergeLoop(t *testing.T) {
 	id := h.create("merge https://github.com/acme/app/pull/42")
 	// V0.136: the ask waits for CI on its head; the owner is not asked yet
 	th := h.wait(id, "held and run ended", func(t core.Thread, a core.Attention) bool { return len(t.HeldAsks) == 1 && !t.Running })
-	if a := core.Compute(&th, &core.View{}, time.Now()); a.State == core.Asking || len(th.Decisions) != 0 {
+	if a := core.ComputeWith(&th, &core.View{}, time.Now(), nil); a.State == core.Asking || len(th.Decisions) != 0 {
 		t.Fatalf("asked before CI: %+v", a)
 	}
 	if !strings.Contains(th.Summary, "tool said: Recorded. Fyr shows it to the owner when CI is green on abc1234") {
@@ -727,10 +727,10 @@ func TestAttachmentsReachTheAgent(t *testing.T) {
 // own, not the 10 minutes of other effects (found live: "context deadline
 // exceeded" while the requesting thread was still working).
 func TestEffectDeadlines(t *testing.T) {
-	if d := EffectTimeout("fyr.deploy"); d < 45*time.Minute {
+	if d := core.FyrEffects[core.FyrDeploy].Timeout; d < 45*time.Minute {
 		t.Fatalf("deploy deadline %s is shorter than build, test and a 30 min drain", d)
 	}
-	if d := EffectTimeout("pr.merge"); d > 15*time.Minute || d < time.Minute {
+	if d := core.FyrEffects[core.FyrMerge].Timeout; d > 15*time.Minute || d < time.Minute {
 		t.Fatalf("merge deadline %s", d)
 	}
 }

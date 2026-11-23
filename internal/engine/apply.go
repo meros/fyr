@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"log"
@@ -132,6 +133,41 @@ type staged struct {
 	changed, viewChanged, feedOnly bool
 	fromEffect                     bool
 	doneFx                         string
+	stored                         storedJSON // t and v as persist writes them
+}
+
+// storedJSON is a thread and its view as stored (V0.structure-cost (4)): stage
+// compares a reduce's result with the stored bytes and persist writes the
+// bytes it compared, so an apply marshals the thread once (twice when it
+// moves UpdatedAt). t and v are the records the bytes are of: the bytes
+// hold only while e.threads and e.views still point at them.
+type storedJSON struct {
+	t          *core.Thread
+	v          *core.View
+	thread     []byte
+	sans, view []byte // sans: the thread without its feed, nil until asked
+}
+
+// storedOf is the stored JSON of thread id as e.threads and e.views hold
+// it now. Call it with e.mu held.
+func (e *Engine) storedOf(id string) *storedJSON {
+	t, v := e.threads[id], e.views[id]
+	if c := e.stored[id]; c != nil && c.t == t && c.v == v {
+		return c
+	}
+	c := &storedJSON{t: t, v: v}
+	c.thread, _ = json.Marshal(t)
+	c.view, _ = json.Marshal(v)
+	e.stored[id] = c
+	return c
+}
+
+// sansOf is the stored thread without its feed.
+func (c *storedJSON) sansOf() []byte {
+	if c.sans == nil {
+		c.sans = sansFeed(c.t)
+	}
+	return c.sans
 }
 
 // stage reduces one Input of a thread and works out what to store. Call it
@@ -145,19 +181,34 @@ func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh boo
 	}
 	k := core.Kinds[in.Kind]
 	s := &staged{in: in, cur: cur, t: t, prevView: prevView, v: v, now: now}
-	was, _ := json.Marshal(cur)
+	var was *storedJSON
+	if e.threads[cur.ID] == cur {
+		was = e.storedOf(cur.ID)
+	} else { // a fresh thread, not stored yet
+		was = &storedJSON{t: cur}
+		was.thread, _ = json.Marshal(cur)
+		was.view, _ = json.Marshal(e.views[cur.ID])
+	}
 	is, _ := json.Marshal(t)
-	s.changed = fresh || string(was) != string(is)
+	s.changed = fresh || !bytes.Equal(was.thread, is)
 	// The agent's notice queue is not news for the owner (#47): a change of
 	// it alone is stored, never broadcast, and keeps UpdatedAt.
-	s.feedOnly = s.changed && !fresh && string(sansFeed(cur)) == string(sansFeed(t))
-	vwas, _ := json.Marshal(e.views[cur.ID])
+	var sans []byte
+	if s.changed && !fresh {
+		sans = sansFeed(t)
+		s.feedOnly = bytes.Equal(was.sansOf(), sans)
+	}
 	vis, _ := json.Marshal(v)
-	s.viewChanged = string(vwas) != string(vis)
+	s.viewChanged = !bytes.Equal(was.view, vis)
 	if k.Touch || (s.changed && !s.feedOnly && !k.Untouched) {
-		t.UpdatedAt = now
+		if !t.UpdatedAt.Equal(now) {
+			t.UpdatedAt = now
+			is, sans = nil, nil
+			is, _ = json.Marshal(t)
+		}
 		s.changed, s.feedOnly = true, false
 	}
+	s.stored = storedJSON{t: t, v: v, thread: is, sans: sans, view: vis}
 	s.applied = &applied{res: res, threadID: t.ID, reply: api.Reply{OK: true, ThreadID: t.ID, Status: 200, Result: res.Reply}}
 	for i := range s.res.Effects {
 		ef := &s.res.Effects[i]
@@ -187,12 +238,12 @@ func (s *staged) idle() bool {
 func (s *staged) persist(tx *store.Tx) error {
 	t, from := s.t, len(tx.Events)
 	if s.changed {
-		if err := tx.PutThread(t); err != nil {
+		if err := tx.PutThreadJSON(t.ID, s.stored.thread); err != nil {
 			return err
 		}
 	}
 	if s.viewChanged {
-		if err := tx.PutView(s.v); err != nil {
+		if err := tx.PutViewJSON(s.v.User, s.v.Entity, s.stored.view); err != nil {
 			return err
 		}
 	}
@@ -229,6 +280,7 @@ func (s *staged) persist(tx *store.Tx) error {
 // with e.mu held.
 func (e *Engine) commit(s *staged, show bool) {
 	t := s.t
+	defer e.keepStored(s)
 	if s.feedOnly && !s.viewChanged && !show {
 		e.threads[t.ID] = t
 		return
@@ -244,6 +296,19 @@ func (e *Engine) commit(s *staged, show bool) {
 		d, prev := e.seen(t, s.now)
 		s.dto, s.prev = &d, prev
 	}
+}
+
+// keepStored keeps the bytes stage compared as the stored JSON of what
+// commit left in e.threads and e.views. A view commit did not take is the
+// stored one, whose bytes are the reduce's (it did not change).
+func (e *Engine) keepStored(s *staged) {
+	id := s.t.ID
+	if e.threads[id] != s.t {
+		return
+	}
+	c := s.stored
+	c.v = e.views[id]
+	e.stored[id] = &c
 }
 
 // hasNewPR reports whether t has any non-dismissed PR URL that cur did not

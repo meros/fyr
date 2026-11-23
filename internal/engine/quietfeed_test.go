@@ -1,14 +1,11 @@
 package engine
 
 import (
-	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/store"
 )
 
 // SPEC V0.95 (1), (4): the record loop of 16 Nov, replayed. A squash-merged
@@ -112,66 +109,3 @@ func TestNextNoticeRidesTheOwnersMessage(t *testing.T) {
 	}
 }
 
-// SPEC V0.95 (5): the load pass deletes the ~N records that ended and that no
-// thread change follows, with the threads' references, and the leaked
-// acme/app#88 fixture change; a second load changes nothing.
-func TestLoadDropsLoopRecords(t *testing.T) {
-	db := filepath.Join(t.TempDir(), "fyr.db")
-	st, err := store.Open(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
-	base := core.ObservedKey("github.com/o/r", "perf/x")
-	mk := func(key string, phase core.Phase) *core.Change {
-		return &core.Change{ID: core.ChangeID(key), Key: key, Kind: core.KindCode, Title: "perf/x", Branch: "perf/x", Phase: phase, PhaseBy: core.ByObserved,
-			Targets: []string{"repo:github.com/o/r"}, CreatedAt: now, UpdatedAt: now}
-	}
-	first, loop2, loop3, followed, inFlight := mk(base, core.PhaseLanded), mk(base+"~2", core.PhaseLanded), mk(base+"~3", core.PhaseAbandoned), mk(base+"~4", core.PhaseLanded), mk(base+"~5", core.PhaseWorking)
-	recs := []*core.Change{first, loop2, loop3, followed, inFlight}
-	th := &core.Thread{ID: "t_loop", Title: "loop", Cwd: "/w/r", Owner: core.Owner, CreatedAt: now, UpdatedAt: now}
-	for _, c := range recs {
-		th.Refs = append(th.Refs, core.Ref{ID: c.ID, Repo: "github.com/o/r", Branch: "perf/x", Ended: !c.Phase.InFlight()})
-	}
-	th.Changes = []core.Change{
-		{ID: "c_mine", Key: "perf", Kind: core.KindCode, Title: "Perf", Branch: "perf/x", Observed: followed.ID, Phase: core.PhaseLanded, PhaseBy: core.ByObserved, CreatedAt: now, UpdatedAt: now},
-		{ID: "c_acme", Key: core.PRKey("acme/app", 88), Kind: core.KindCode, Title: "Listing cards v2", Phase: core.PhaseReview, PhaseBy: core.ByObserved, CreatedAt: now, UpdatedAt: now,
-			PR: &core.PR{URL: "https://github.com/acme/app/pull/88", Repo: "acme/app", Number: 88, State: core.PRMissing}},
-	}
-	if _, err := st.Write(func(tx *store.Tx) error {
-		for _, c := range recs {
-			if err := tx.PutChange(c); err != nil {
-				return err
-			}
-		}
-		return tx.PutThread(th)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		e := New(st)
-		if err := e.Load(); err != nil {
-			t.Fatal(err)
-		}
-		rs, _ := st.Changes()
-		var ids []string
-		for _, c := range rs {
-			ids = append(ids, c.ID)
-		}
-		if want := sorted(first.ID, followed.ID, inFlight.ID); !slices.Equal(sorted(ids...), want) {
-			t.Fatalf("records %v, want %v", sorted(ids...), want)
-		}
-		ts, _ := st.Threads()
-		got := ts[0]
-		var refs []string
-		for _, r := range got.Refs {
-			refs = append(refs, r.ID)
-		}
-		if want := sorted(first.ID, followed.ID, inFlight.ID); !slices.Equal(sorted(refs...), want) {
-			t.Fatalf("refs %v, want %v", sorted(refs...), want)
-		}
-		if len(got.Changes) != 1 || got.Changes[0].ID != "c_mine" {
-			t.Fatalf("thread changes: %+v", got.Changes)
-		}
-	}
-}

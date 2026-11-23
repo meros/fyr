@@ -94,9 +94,6 @@ func checkRequest(a RunRequestArgs) error {
 	return nil
 }
 
-// IsRequest: the action is a run request.
-func (a ActionSpec) IsRequest() bool { return a.Request }
-
 func reduceRunRequest(r Rec, in Input, now time.Time) (Result, error) {
 	a, err := argsOf[RunRequestArgs](in)
 	if err != nil {

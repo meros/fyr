@@ -147,13 +147,6 @@ func (qs QuietHours) window(t time.Time) (time.Time, bool) {
 	return end, found
 }
 
-// QuietNow reports whether any window of qs holds at t (in t's location:
-// the host's).
-func QuietNow(qs QuietHours, t time.Time) bool {
-	_, ok := qs.window(t)
-	return ok
-}
-
 // QuietUntil is the end of the quiet stretch that holds t. Windows that
 // overlap it or follow on without a gap join it, whichever row they come
 // from: weeknights 17:00–06:00 (Sun–Fri) and an all-day Saturday and Sunday

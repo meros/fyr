@@ -26,15 +26,6 @@ func TestDefaultColor(t *testing.T) {
 	}
 }
 
-func TestMonogram(t *testing.T) {
-	cases := map[string]string{"acme": "A", "my-app": "MA", "fyr_web": "FW", "åsa": "Å", "": "?"}
-	for in, want := range cases {
-		if got := Monogram(in); got != want {
-			t.Errorf("%q: got %q want %q", in, got, want)
-		}
-	}
-}
-
 // SPEC 0.5 V0.55: a thread lands in the project whose folder is its folder
 // or contains it; the longest folder wins, ties by id; a folder never
 // covers a sibling with the same prefix.
