@@ -30,3 +30,20 @@ func DecodeLoose(w http.ResponseWriter, r *http.Request, v any, limit int64) {
 		log.Printf("httpguard: %s %s body: %v", r.Method, r.URL.Path, err)
 	}
 }
+
+// DecodeJSON reads the request body into v like ReadJSON and answers a failure
+// itself: 413 when the body is over limit, else 400 with badText. It reports
+// whether v was filled.
+func DecodeJSON(w http.ResponseWriter, r *http.Request, v any, limit int64, badText string) bool {
+	err := ReadJSON(w, r, v, limit)
+	if err == nil {
+		return true
+	}
+	var big *http.MaxBytesError
+	if errors.As(err, &big) {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+	} else {
+		http.Error(w, badText, http.StatusBadRequest)
+	}
+	return false
+}

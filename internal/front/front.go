@@ -206,6 +206,9 @@ func New(opt Options, hosts []HostConfig) *Front {
 		opt.MinBackoff = 500 * time.Millisecond
 	}
 	if opt.Client == nil {
+		// No Timeout on purpose: this client also carries each host's long-lived
+		// event stream, which a whole-request timeout would cut; every call that
+		// is not the stream has a context timeout of its own.
 		opt.Client = &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	}
 	if opt.Logf == nil {

@@ -96,8 +96,11 @@ func (f *Front) hostCommand(ctx context.Context, l *link, action, commandID stri
 		Error  string         `json:"error"`
 		Result map[string]any `json:"result"`
 	}
-	json.NewDecoder(resp.Body).Decode(&r)
+	decErr := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&r)
 	if resp.StatusCode == 200 {
+		if decErr != nil {
+			return nil, fmt.Errorf("%s: the answer was not understood: %w", l.name(), decErr)
+		}
 		return r.Result, nil
 	}
 	if strings.HasPrefix(r.Error, "unknown action") {

@@ -2,10 +2,12 @@ package fsutil
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -81,5 +83,32 @@ func TestCopyFile(t *testing.T) {
 	}
 	if err := CopyFile(filepath.Join(dir, "none"), dst, 0o600); err == nil {
 		t.Fatal("no error for a missing source")
+	}
+}
+
+func TestSymlinkAtomicConcurrentLeavesNoTemp(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "current")
+	var wg sync.WaitGroup
+	errs := make(chan error, 32)
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- SymlinkAtomic(fmt.Sprintf("t%d", i), link)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Readlink(link); err != nil {
+		t.Fatal(err)
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 1 {
+		t.Fatalf("temporary links left behind: %v", ents)
 	}
 }

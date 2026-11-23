@@ -115,10 +115,14 @@ func encode(k *Key) []byte {
 // WriteNext keeps a new key beside the current one, 0600; Promote makes it the
 // install's key once the roster says so.
 func WriteNext(dir string, k *Key) error {
-	return os.WriteFile(filepath.Join(dir, NextFile), encode(k), 0o600)
+	return fsutil.WriteAtomic(filepath.Join(dir, NextFile), encode(k), 0o600)
 }
 
-// LoadNext reads the waiting key; nil with no error when there is none.
+// LoadNext reads the waiting key; nil with no error when there is none. A
+// file that is no key (a write cut short by a crash, from before WriteNext was
+// atomic) is removed and counts as none: the roster is told of a new key only
+// after the file is written, so no rotation can rest on it, and failing here
+// would stop fyrd from starting for good.
 func LoadNext(dir string) (*Key, error) {
 	b, err := os.ReadFile(filepath.Join(dir, NextFile))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -129,7 +133,8 @@ func LoadNext(dir string) (*Key, error) {
 	}
 	blk, _ := pem.Decode(b)
 	if blk == nil || blk.Type != pemType || len(blk.Bytes) != ed25519.SeedSize {
-		return nil, fmt.Errorf("%s is not a Fyr install key", NextFile)
+		DropNext(dir)
+		return nil, nil
 	}
 	priv := ed25519.NewKeyFromSeed(blk.Bytes)
 	return &Key{Private: priv, Public: priv.Public().(ed25519.PublicKey)}, nil

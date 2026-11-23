@@ -63,3 +63,27 @@ func TestPromoteReportsAFailedKeep(t *testing.T) {
 		t.Fatal("the key was rotated though the old one was not kept")
 	}
 }
+
+func TestLoadNextDropsACorruptFile(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, NextFile), []byte("-----BEGIN FYR"), 0o600)
+	k, err := LoadNext(dir)
+	if k != nil || err != nil {
+		t.Fatalf("got %v, %v", k, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, NextFile)); !os.IsNotExist(err) {
+		t.Fatal("the corrupt file stays")
+	}
+}
+
+func TestWriteNextRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	k, _ := New()
+	if err := WriteNext(dir, k); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadNext(dir)
+	if err != nil || got == nil || got.ID() != k.ID() {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
