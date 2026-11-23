@@ -52,9 +52,10 @@ export function allowCommit(d: Decision, choice: Choice): Commit {
   return { label: e ? "Pick one" : "Allow or deny", enabled: false, act: "none" };
 }
 
-/** The wording is the same on both branches by design; only `dots` differs (the desktop has no dots, it prints progressText). Step dots up to 5 questions; beyond that, "1 of 9999". */
+/** Step dots up to 5 questions; beyond that only the words, "Question 1 of 9999" (the desktop has no dots, it prints
+ *  progressText). */
 export function stepLabel(index: number, n: number): { dots: boolean; text: string } {
-  return n <= 5 ? { dots: true, text: `Question ${index + 1} of ${n}` } : { dots: false, text: `Question ${index + 1} of ${n}` };
+  return { dots: n <= 5, text: `Question ${index + 1} of ${n}` };
 }
 
 /** Counts in the strip: 4 digits fit; 10000 and more show as 10k+. */

@@ -1,5 +1,13 @@
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead,
 // from a chunk loaded only then (#42: the fixtures stay out of the production bundle).
+//
+// One contract (V0.api-contract): no method of the Api rejects, whatever the host or the network does.
+// - A read whose caller shows why it failed answers `Result<T>`: `{ ok: true, data }` (with `readAt` when an offline
+//   host's last copy answers) or `{ ok: false, error }`, the reason in words a screen can show.
+// - A read whose caller has nothing to show for a failure answers its empty value, as documented on it: `null` for one
+//   record (thread, fullEvent, pushStatus, boardVisit), `[]` for a list over the hosts (profiles, quota, load).
+// - A command, a write and an upload answer `{ ok, error }` (CommandReply, PushReply, UploadResult, the mutations).
+// A caller therefore needs no catch for an Api call; the mock Api (mock-api.ts) keeps the same contract.
 
 import type { PushHidden } from "./hidden.ts";
 import type { PushPrefs } from "./push.ts";
@@ -26,7 +34,7 @@ import type { SetupReport } from "./setup.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
 import { reloadIfSignedOut } from "./signout.ts";
-import { request, replyError, type Reply } from "./http.ts";
+import { request, replyError, upload, type Reply, type RequestOptions } from "./http.ts";
 import { arr, obj, decodeThread } from "./decode.ts";
 import type { SystemAgentsView } from "./system-agents.ts";
 import { decodeChanges, decodeFilePatch, type ChangesDTO, type FilePatchDTO } from "./changes.ts";
@@ -70,15 +78,15 @@ export interface Api {
   command(host: HostId, action: string, threadId?: string, args?: Record<string, unknown>): Promise<CommandReply>;
   /** The front's own commands (front.projectOrder {ids}, front.hostOrder {ids}, front.hostId {host}, front.hostMark). */
   frontCommand(action: string, args?: Record<string, unknown>): Promise<CommandReply>;
-  events(host: HostId, threadId: string, after?: number, limit?: number): Promise<FyrEvent[]>;
+  events(host: HostId, threadId: string, after?: number, limit?: number): Promise<Result<FyrEvent[]>>;
   /** The newest `limit` events older than `before`, to page back. */
-  eventsBefore(host: HostId, threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
+  eventsBefore(host: HostId, threadId: string, before: number, limit?: number): Promise<Result<FyrEvent[]>>;
   /** V0.38: one thread whole, when a patch does not fit the copy we have. Never rejects: null when it cannot be read. */
   thread(host: HostId, threadId: string): Promise<ThreadDTO | null>;
   /** V0.38: one event whole (the stream and the list cut large tool output). Never rejects: null when it cannot be read. */
   fullEvent(host: HostId, threadId: string, seq: number): Promise<FyrEvent | null>;
   /** Web Push (SPEC V0.15): the front's VAPID public key, base64url. */
-  pushKey(): Promise<string>;
+  pushKey(): Promise<Result<string>>;
   pushSubscribe(subscription: PushSubscriptionJSON, device: string): Promise<PushReply>;
   pushUnsubscribe(endpoint: string): Promise<PushReply>;
   /** V0.207: what this device hides, so the front leaves it out of those pushes */
@@ -100,52 +108,52 @@ export interface Api {
   /** An HTML preview (V0.19), for a sandboxed iframe; from the thread's host (V0.54). */
   previewUrl(host: HostId | undefined, id: string): string;
   /** The Changes tab (V0.25): the branch diff of the thread's folder. */
-  changes(host: HostId, threadId: string): Promise<ChangesDTO>;
+  changes(host: HostId, threadId: string): Promise<Result<ChangesDTO>>;
   /** One file's unified diff (V0.25). */
-  filePatch(host: HostId, threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
+  filePatch(host: HostId, threadId: string, path: string, since?: string): Promise<Result<FilePatchDTO>>;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
   prDetail(host: HostId, threadId: string, fresh?: boolean, prUrl?: string): Promise<PrReply>;
-  /** V0.ai-search: the host's threads among `ids` (its own ids) that fit the owner's words, best first. Throws with the reason. */
-  searchThreads(host: HostId, query: string, ids: string[], signal?: AbortSignal): Promise<SearchHit[]>;
+  /** V0.ai-search: the host's threads among `ids` (its own ids) that fit the owner's words, best first. */
+  searchThreads(host: HostId, query: string, ids: string[], signal?: AbortSignal): Promise<Result<SearchHit[]>>;
   /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
-  fsList(host: HostId, path: string): Promise<FsListing>;
-  fsRecent(host: HostId): Promise<FsDir[]>;
-  fsRepos(host: HostId): Promise<FsDir[]>;
-  /** Makes parent/name and returns its path. */
-  fsMkdir(host: HostId, parent: string, name: string): Promise<string>;
+  fsList(host: HostId, path: string): Promise<Result<FsListing>>;
+  fsRecent(host: HostId): Promise<Result<FsDir[]>>;
+  fsRepos(host: HostId): Promise<Result<FsDir[]>>;
+  /** Makes parent/name and answers its path. */
+  fsMkdir(host: HostId, parent: string, name: string): Promise<Result<string>>;
   /** V0.44: each profile's provider quota over the hosts that are online, one read per host; [] when none can say. */
   quota(): Promise<Quota[]>;
   /** V0.80: each host's load and its threads' CPU, one read per host; [] when no host can say. */
   load(): Promise<HostLoad[]>;
   // V0.127: the per-host settings reads. An offline host answers what the front last read from it, with when (readAt).
   /** V0.50: Settings → Providers; never a key, only whether one is set. */
-  providers(host: HostId): Promise<HostRead<ProviderDTO[]>>;
+  providers(host: HostId): Promise<Result<ProviderDTO[]>>;
   /** V0.50: logins, endpoints and keys found on the host. */
-  providersFound(host: HostId): Promise<HostRead<FoundDTO[]>>;
+  providersFound(host: HostId): Promise<Result<FoundDTO[]>>;
   /** V0.102: the repos Fyr knows and whether each merges agents' merge asks with no press. */
-  autoMerge(host: HostId): Promise<HostRead<AutoMergeRepo[]>>;
+  autoMerge(host: HostId): Promise<Result<AutoMergeRepo[]>>;
   /** V0.111: whether Fyr approves agents' deploy asks of merged code with no press. */
-  autoDeploy(host: HostId): Promise<HostRead<AutoDeploySetting>>;
+  autoDeploy(host: HostId): Promise<Result<AutoDeploySetting>>;
   /** V0.126 (#151): the update record and whether a local build pauses auto-update. */
-  updates(host: HostId): Promise<HostRead<UpdatesView>>;
+  updates(host: HostId): Promise<Result<UpdatesView>>;
   /** Decision 0037: the host's setup wizard checks derived from real host state. */
-  setup?(host: HostId): Promise<HostRead<SetupReport>>;
+  setup?(host: HostId): Promise<Result<SetupReport>>;
   /** V0.157: Settings → Devices: the signed-in devices, the ones that wait, the browser way in's mode. */
-  authState(): Promise<AuthState>;
+  authState(): Promise<Result<AuthState>>;
   /** V0.157: approve (code or id), deny, revoke, add (a one-time link and its QR code), mode (browser way in). */
   authAct(action: "approve" | "deny" | "revoke" | "add" | "mode", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.159: Settings → Hosts: the paired installs, the nodes that are not, the open invite. */
-  peerState(): Promise<PeerState>;
+  peerState(): Promise<Result<PeerState>>;
   /** V0.159: invite (open one here: a code, a QR image, a link) or join (an invite from another install). */
   peerAct(action: "invite" | "join" | "remove", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.115: the system agents setting of a host */
-  systemAgents(host: HostId): Promise<HostRead<SystemAgentsView>>;
+  systemAgents(host: HostId): Promise<Result<SystemAgentsView>>;
   /** V0.50: a host's current profiles (after a provider changed). Never rejects: none when they cannot be read. */
   profiles(host: HostId): Promise<Profile[]>;
   /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
-  commands(source: CommandSource): Promise<SlashCommand[]>;
+  commands(source: CommandSource): Promise<Result<SlashCommand[]>>;
   /** V0.45, V0.trans-host-handover: which rung a handover would use and the source checkout's git summary. */
-  handoverPlan?(host: HostId, threadId: string, profile?: string): Promise<HandoverPlan | null>;
+  handoverPlan?(host: HostId, threadId: string, profile?: string): Promise<Result<HandoverPlan>>;
   /** V0.98 (3): opening the Changes board is a visit; each host keeps the owner's boardSeenAt and returns the one
    *  before (slice 2b: the board marks a card against its own host's time; until then the first host's is returned). */
   boardVisit?(): Promise<string | null>;
@@ -154,28 +162,35 @@ export interface Api {
 /** Whose commands: a thread's, or the newest of a provider and folder on a host (V0.79). */
 export type CommandSource = { host: HostId; threadId: string } | { host: HostId; cwd: string; profile: string };
 
-/** V0.127: a per-host settings read; readAt is set when the host is offline and this is what the front last read. */
-interface HostRead<T> {
-  data: T;
-  readAt?: string;
-}
+/** What a read answers (the contract at the top). `readAt` (V0.127) is set when the host is offline and this is what
+ *  the front last read from it. */
+export type Result<T> = { ok: true; data: T; readAt?: string } | { ok: false; error: string };
 
-/** A GET whose answer is decoded by `decode`: it gets whatever the host sent (an empty or unparsable body, a literal
- *  null) and answers the type the screen reads. A refusal throws the host's error. */
-async function read<T>(url: string, decode: (raw: unknown) => T): Promise<{ data: T; reply: Reply }> {
-  const reply = await request(url);
-  if (!reply.ok) throw new Error(replyError(reply));
-  return { data: decode(reply.json), reply };
-}
+/** What a call that could not reach the host answers. */
+export const UNREACHABLE = "Fyr is not reachable";
 
-async function hostGet<T>(host: HostId, path: string, decode: (raw: unknown) => T): Promise<HostRead<T>> {
-  const { data, reply } = await read(hostPath(host, path), decode);
+/** A failed Result, for any T. */
+export const failed = (error: string): { ok: false; error: string } => ({ ok: false, error });
+
+/** A request whose reply `decode` turns into the type the screen reads: it gets whatever the host sent (an empty or
+ *  unparsable body, a literal null). A refusal answers the host's error; a network failure, a timeout or the caller's
+ *  cancel answers UNREACHABLE; a body the decoder refuses (it throws) answers the decoder's message. */
+async function read<T>(url: string, decode: (raw: unknown) => T, o?: RequestOptions): Promise<Result<T>> {
+  let reply: Reply;
+  try {
+    reply = await request(url, o);
+  } catch {
+    return failed(UNREACHABLE);
+  }
+  if (!reply.ok) return failed(replyError(reply));
+  let data: T;
+  try {
+    data = decode(reply.json);
+  } catch (e) {
+    return failed(e instanceof Error ? e.message : String(e));
+  }
   const at = reply.headers.get("X-Fyr-Read-At");
-  return at ? { data, readAt: at } : { data };
-}
-
-async function getJson<T>(path: string, decode: (raw: unknown) => T): Promise<T> {
-  return (await read(path, decode)).data;
+  return at ? { ok: true, data, readAt: at } : { ok: true, data };
 }
 
 /** A settings object as sent: an empty or null body is an empty object, which the page reads with its own defaults. */
@@ -265,7 +280,9 @@ function createHttpApi(): Api {
         const stored = await cache.hostState(id);
         const since = hostSince(stored);
         try {
-          const state = nextHostState(stored, await getJson(hostPath(id, since ? `/state?since=${since}` : "/state"), object<StateDTO & { partial?: boolean }>));
+          const r = await read(hostPath(id, since ? `/state?since=${since}` : "/state"), object<StateDTO & { partial?: boolean }>);
+          if (!r.ok) throw new Error(r.error);
+          const state = nextHostState(stored, r.data);
           void cache.saveHostState(id, state);
           return { host, state };
         } catch {
@@ -386,7 +403,7 @@ function createHttpApi(): Api {
       const j = obj(r.json) as Partial<PushReply>;
       return r.ok ? { ok: j.ok !== false, error: j.error, delivered: j.delivered } : { ok: false, error: replyError(r) };
     } catch {
-      return { ok: false, error: "Fyr is not reachable" };
+      return failed(UNREACHABLE);
     }
   };
 
@@ -407,7 +424,7 @@ function createHttpApi(): Api {
     // One commandId for every try: the host applies it once (I7), so a restart during a deploy is ridden out
     // (SPEC 0.5 V0.13).
     const body = { commandId: newCommandId(), action, threadId, args: args ?? {} };
-    let reply: CommandReply = { ok: false, error: "Fyr is not reachable" };
+    let reply: CommandReply = failed(UNREACHABLE);
     const { gaveUp } = await sendWithRetry(
       async () => {
         try {
@@ -435,12 +452,9 @@ function createHttpApi(): Api {
     }
   };
 
-  /** A page of a thread's events; a refusal throws, and an answer without events is an empty page. */
-  const readEvents = async (host: HostId, threadId: string, query: string): Promise<FyrEvent[]> => {
-    const r = await request(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events?${query}`));
-    if (!r.ok) throw new Error(`events ${r.status}`);
-    return arr<FyrEvent>(obj(r.json).events).filter(isRecord).map((e) => stampEvent(e, host));
-  };
+  /** A page of a thread's events; an answer without events is an empty page. */
+  const readEvents = (host: HostId, threadId: string, query: string): Promise<Result<FyrEvent[]>> =>
+    read(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events?${query}`), (j) => arr<FyrEvent>(obj(j).events).filter(isRecord).map((e) => stampEvent(e, host)));
 
   const mutate = async (path: string, body: unknown): Promise<{ ok: boolean; error?: string } & Record<string, unknown>> => {
     try {
@@ -448,7 +462,7 @@ function createHttpApi(): Api {
       const j = obj(r.json) as { ok?: boolean; error?: string } & Record<string, unknown>;
       return r.ok && j.ok !== false ? { ...j, ok: true } : { ...j, ok: false, error: replyError(r) };
     } catch {
-      return { ok: false, error: "Fyr is not reachable" };
+      return failed(UNREACHABLE);
     }
   };
 
@@ -456,22 +470,23 @@ function createHttpApi(): Api {
     mock: false,
     cache: true,
     pushes: true,
-    async fsList(host, path) {
-      const l = await getJson(hostPath(host, `/fs/list?path=${encodeURIComponent(path)}`), object<Partial<FsListing>>);
-      return { path: l.path ?? path, parent: l.parent ?? "", dirs: arr(l.dirs) };
-    },
-    async fsRecent(host) {
-      return getJson(hostPath(host, "/fs/recent"), (j) => arr<FsDir>(obj(j).dirs));
-    },
-    async fsRepos(host) {
-      return getJson(hostPath(host, "/fs/repos"), (j) => arr<FsDir>(obj(j).dirs));
-    },
-    async fsMkdir(host, parent, name) {
-      const r = await request(hostPath(host, "/fs/mkdir"), { method: "POST", body: { parent, name } });
-      const path = obj(r.json).path;
-      if (!r.ok || typeof path !== "string" || !path) throw new Error(replyError(r));
-      return path;
-    },
+    fsList: (host, path) =>
+      read(hostPath(host, `/fs/list?path=${encodeURIComponent(path)}`), (j) => {
+        const l = object<Partial<FsListing>>(j);
+        return { path: l.path ?? path, parent: l.parent ?? "", dirs: arr<FsDir>(l.dirs) };
+      }),
+    fsRecent: (host) => read(hostPath(host, "/fs/recent"), (j) => arr<FsDir>(obj(j).dirs)),
+    fsRepos: (host) => read(hostPath(host, "/fs/repos"), (j) => arr<FsDir>(obj(j).dirs)),
+    fsMkdir: (host, parent, name) =>
+      read(
+        hostPath(host, "/fs/mkdir"),
+        (j) => {
+          const path = obj(j).path;
+          if (typeof path !== "string" || !path) throw new Error("The host did not say which folder it made");
+          return path;
+        },
+        { method: "POST", body: { parent, name } },
+      ),
     start(h) {
       handlers = h;
       // V0.38: draw the device's copy at once (offline too); the network state replaces it.
@@ -530,13 +545,12 @@ function createHttpApi(): Api {
       }
     },
     eventsBefore: (host, threadId, before, limit = 400) => readEvents(host, threadId, `before=${before}&limit=${limit}`),
-    async pushKey() {
-      const r = await request(frontPath("/push/key"));
-      if (!r.ok) throw new Error(`The host has no push key (HTTP ${r.status})`);
-      const key = obj(r.json).publicKey;
-      if (typeof key !== "string" || !key) throw new Error("The host sent no push key");
-      return key;
-    },
+    pushKey: () =>
+      read(frontPath("/push/key"), (j) => {
+        const key = obj(j).publicKey;
+        if (typeof key !== "string" || !key) throw new Error("The host sent no push key");
+        return key;
+      }),
     pushSubscribe(subscription, device) {
       return postJson(frontPath("/push/subscribe"), { subscription, device });
     },
@@ -552,29 +566,13 @@ function createHttpApi(): Api {
     pushTest(endpoint) {
       return postJson(frontPath("/push/test"), endpoint ? { endpoint } : {});
     },
-    uploadAttachment(host, file, onProgress, signal) {
-      return new Promise<UploadResult>((resolve) => {
-        const x = new XMLHttpRequest();
-        x.open("POST", hostPath(host, "/attachments"));
-        x.setRequestHeader("X-Fyr", "1");
-        x.setRequestHeader("X-Fyr-Filename", encodeURIComponent(file.name || "file"));
-        x.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-        x.upload.onprogress = (e) => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
-        x.onload = () => {
-          let j: Partial<UploadReply> & { error?: string } = {};
-          try {
-            j = JSON.parse(x.responseText);
-          } catch {
-            /* not JSON */
-          }
-          if (x.status >= 200 && x.status < 300 && j.id) resolve({ ok: true, reply: j as UploadReply });
-          else resolve({ ok: false, status: x.status, error: j.error });
-        };
-        x.onerror = () => resolve({ ok: false, status: null });
-        x.onabort = () => resolve({ ok: false, status: 0, error: "cancelled" });
-        signal?.addEventListener("abort", () => x.abort());
-        x.send(file);
-      });
+    async uploadAttachment(host, file, onProgress, signal) {
+      const headers = { "X-Fyr-Filename": encodeURIComponent(file.name || "file"), "Content-Type": file.type || "application/octet-stream" };
+      const a = await upload(hostPath(host, "/attachments"), file, headers, onProgress, signal);
+      const j = obj(a.json) as Partial<UploadReply> & { error?: string };
+      if (a.status !== null && a.status >= 200 && a.status < 300 && j.id) return { ok: true, reply: j as UploadReply };
+      if (a.status === 0) return { ok: false, status: 0, error: "cancelled" };
+      return { ok: false, status: a.status, error: a.stalled ? "the host stopped answering" : typeof j.error === "string" ? j.error : undefined };
     },
     attachmentUrl,
     async uploadProjectIcon(host, projectId, file) {
@@ -582,7 +580,7 @@ function createHttpApi(): Api {
         const r = await request(hostPath(host, `/projects/${encodeURIComponent(bare(host, projectId))}/icon`), { method: "POST", raw: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
         return r.ok && (obj(r.json) as { ok?: boolean }).ok !== false ? { ok: true } : { ok: false, error: replyError(r) };
       } catch {
-        return { ok: false, error: "Fyr is not reachable" };
+        return failed(UNREACHABLE);
       }
     },
     previewUrl,
@@ -591,20 +589,24 @@ function createHttpApi(): Api {
         "threadId" in source
           ? `/threads/${encodeURIComponent(bare(source.host, source.threadId))}/commands`
           : `/commands?cwd=${encodeURIComponent(source.cwd)}&profile=${encodeURIComponent(source.profile)}`;
-      return getJson(hostPath(source.host, path), (j) => arr<SlashCommand>(obj(j).commands));
+      return read(hostPath(source.host, path), (j) => arr<SlashCommand>(obj(j).commands));
     },
-    changes: (host, threadId) => getJson(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes`), decodeChanges),
-    filePatch: (host, threadId, path, since) => getJson(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes?path=${encodeURIComponent(path)}${since ? `&since=${encodeURIComponent(since)}` : ""}`), (j) => decodeFilePatch(j, path)),
-    providers: (host) => hostGet(host, "/providers", arr<ProviderDTO>),
-    providersFound: (host) => hostGet(host, "/providers/found", arr<FoundDTO>),
-    autoMerge: (host) => hostGet(host, "/autoMerge", arr<AutoMergeRepo>),
-    autoDeploy: (host) => hostGet(host, "/autoDeploy", object<AutoDeploySetting>),
-    updates: (host) => hostGet(host, "/updates", object<UpdatesView>),
-    setup: (host) => hostGet(host, "/setup", object<SetupReport>),
-    systemAgents: (host) => hostGet(host, "/systemAgents", object<SystemAgentsView>),
-    authState: () => getJson(frontPath("/auth/state"), object<AuthState>),
+    changes: (host, threadId) => read(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes`), decodeChanges),
+    filePatch: (host, threadId, path, since) => read(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes?path=${encodeURIComponent(path)}${since ? `&since=${encodeURIComponent(since)}` : ""}`), (j) => decodeFilePatch(j, path)),
+    providers: (host) => read(hostPath(host, "/providers"), arr<ProviderDTO>),
+    providersFound: (host) => read(hostPath(host, "/providers/found"), arr<FoundDTO>),
+    autoMerge: (host) => read(hostPath(host, "/autoMerge"), arr<AutoMergeRepo>),
+    autoDeploy: (host) => read(hostPath(host, "/autoDeploy"), object<AutoDeploySetting>),
+    updates: (host) => read(hostPath(host, "/updates"), object<UpdatesView>),
+    setup: (host) => read(hostPath(host, "/setup"), object<SetupReport>),
+    systemAgents: (host) => read(hostPath(host, "/systemAgents"), object<SystemAgentsView>),
+    authState: () => read(frontPath("/auth/state"), object<AuthState>),
     // A front may send null for an empty list (a nil Go slice): the page reads lists.
-    peerState: () => getJson(frontPath("/peer/state"), object<PeerState>).then((s) => ({ ...s, members: s.members ?? [], candidates: s.candidates ?? [] })),
+    peerState: () =>
+      read(frontPath("/peer/state"), (j) => {
+        const s = object<PeerState>(j);
+        return { ...s, members: s.members ?? [], candidates: s.candidates ?? [] };
+      }),
     peerAct: (action, body) => mutate(frontPath(`/peer/${action}`), body),
     authAct: (action, body) => mutate(frontPath(`/auth/${action}`), body),
     profiles: (host) => eachOne<Profile>(host, "/profiles"),
@@ -623,8 +625,11 @@ function createHttpApi(): Api {
     },
     async handoverPlan(host, threadId, profile) {
       const q = profile ? `?profile=${encodeURIComponent(profile)}` : "";
-      const r = await request(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/handover${q}`));
-      return r.ok ? parsePlan(r.json) : null;
+      return read(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/handover${q}`), (j) => {
+        const plan = parsePlan(j);
+        if (!plan) throw new Error("The host sent no handover plan");
+        return plan;
+      });
     },
     async boardVisit() {
       // Each host keeps the owner's boardSeenAt (F13); until the store is per host the first host's is the one returned.
@@ -643,11 +648,7 @@ function createHttpApi(): Api {
       );
       return seen.find((x) => x !== null) ?? null;
     },
-    async searchThreads(host, query, ids, signal) {
-      const r = await request(hostPath(host, "/search"), { method: "POST", body: { query, ids }, signal, timeoutMs: SEARCH_TIMEOUT_MS });
-      if (!r.ok) throw new Error(replyError(r));
-      return arr<SearchHit>(obj(r.json).hits);
-    },
+    searchThreads: (host, query, ids, signal) => read(hostPath(host, "/search"), (j) => arr<SearchHit>(obj(j).hits), { method: "POST", body: { query, ids }, signal, timeoutMs: SEARCH_TIMEOUT_MS }),
     async prDetail(host, threadId, fresh, prUrl) {
       try {
         const q = new URLSearchParams();

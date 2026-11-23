@@ -6,7 +6,7 @@ import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } fro
 import { createContext } from "preact";
 import { reducedMotion } from "./motion-ui.tsx";
 import type { FyrEvent, Thread } from "./types.ts";
-import { buildConversation, pace, type Entry, deliveryLabel, type Item } from "./conversation.ts";
+import { conversationCache, pace, type Entry, deliveryLabel, type Item } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon } from "./icons.tsx";
 import { clockTime, duration } from "./format.ts";
@@ -39,7 +39,9 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   const details = useToolDetails();
   const api = useApi();
   const outKey = outbox ? outbox.join(",") : null;
-  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
+  // V0.event-store: one builder per thread; a live event at the end feeds only itself.
+  const build = useMemo(conversationCache, [threadId]);
+  const all = useMemo(() => build(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [build, events, details, cwd, host, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
   // V0.run-cards-in-conversation: a Run card stands where the agent asked, on desktop and phone.
   const openCards = cards ? requests(cards.t).filter((o) => cardShows(o, cards.t.runs)).map((o) => o.id).join("\n") : "";

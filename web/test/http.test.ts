@@ -71,34 +71,84 @@ test("a settings list whose body is null or not a list reads as empty; an object
   const api = await createApi("");
   for (const text of ["null", "{}", "garbage", ""]) {
     stub(() => body(text));
-    assert.deepEqual((await api.providers(H)).data, [], text);
-    assert.deepEqual((await api.autoMerge(H)).data, [], text);
-    assert.deepEqual((await api.autoDeploy(H)).data, {}, text);
-    assert.deepEqual((await api.systemAgents(H)).data, {}, text);
+    assert.deepEqual(await api.providers(H), { ok: true, data: [] }, text);
+    assert.deepEqual(await api.autoMerge(H), { ok: true, data: [] }, text);
+    assert.deepEqual(await api.autoDeploy(H), { ok: true, data: {} }, text);
+    assert.deepEqual(await api.systemAgents(H), { ok: true, data: {} }, text);
   }
 });
 
-test("a read keeps its host's offline stamp and throws the host's error on a refusal", async () => {
+test("a read keeps its host's offline stamp and answers the host's error on a refusal", async () => {
   const api = await createApi("");
   stub(() => body("[]", 200, { "X-Fyr-Read-At": "2026-01-01T00:00:00Z" }));
-  assert.equal((await api.providers(H)).readAt, "2026-01-01T00:00:00Z");
+  assert.deepEqual(await api.providers(H), { ok: true, data: [], readAt: "2026-01-01T00:00:00Z" });
   stub(() => body('{"error":"offline"}', 503));
-  await assert.rejects(api.providers(H), /offline/);
+  assert.deepEqual(await api.providers(H), { ok: false, error: "offline" });
   stub(() => body("null", 500));
-  await assert.rejects(api.providers(H), /HTTP 500/);
+  assert.deepEqual(await api.providers(H), { ok: false, error: "HTTP 500" });
+});
+
+// V0.api-contract: no method rejects. Every read that answers a Result answers a failed one when the network fails, the
+// host refuses, or the body is not what the read needs.
+test("no read rejects: a network failure, a refusal or a body the read cannot use is a failed Result", async () => {
+  const api = await createApi("");
+  const reads = {
+    events: () => api.events(H, "t1"),
+    eventsBefore: () => api.eventsBefore(H, "t1", 5),
+    pushKey: () => api.pushKey(),
+    changes: () => api.changes(H, "t1"),
+    filePatch: () => api.filePatch(H, "t1", "a.go"),
+    searchThreads: () => api.searchThreads(H, "q", ["t1"]),
+    fsList: () => api.fsList(H, "~"),
+    fsRecent: () => api.fsRecent(H),
+    fsRepos: () => api.fsRepos(H),
+    fsMkdir: () => api.fsMkdir(H, "~", "new"),
+    providers: () => api.providers(H),
+    providersFound: () => api.providersFound(H),
+    autoMerge: () => api.autoMerge(H),
+    autoDeploy: () => api.autoDeploy(H),
+    updates: () => api.updates(H),
+    setup: () => api.setup!(H),
+    systemAgents: () => api.systemAgents(H),
+    authState: () => api.authState(),
+    peerState: () => api.peerState(),
+    commands: () => api.commands({ host: H, threadId: "t1" }),
+    handoverPlan: () => api.handoverPlan!(H, "t1"),
+  };
+  const cases: [string, () => void, RegExp][] = [
+    ["network", () => stub(() => Promise.reject(new TypeError("network"))), /^Fyr is not reachable$/],
+    ["refused", () => stub(() => body('{"error":"no such thread"}', 404)), /^no such thread$/],
+  ];
+  for (const [why, arm, want] of cases) {
+    arm();
+    for (const [name, read] of Object.entries(reads)) {
+      const r = await read();
+      assert.equal(r.ok, false, `${name} ${why}`);
+      if (!r.ok) assert.match(r.error, want, `${name} ${why}`);
+    }
+  }
+  // A body without what the read must have: no key, no folder made, no plan.
+  stub(() => body("{}"));
+  assert.deepEqual(await api.pushKey(), { ok: false, error: "The host sent no push key" });
+  assert.equal((await api.fsMkdir(H, "~", "x")).ok, false);
+  assert.equal((await api.handoverPlan!(H, "t1")).ok, false);
+  stub(() => body('{"publicKey":"k"}'));
+  assert.deepEqual(await api.pushKey(), { ok: true, data: "k" });
+  stub(() => body('{"path":"/home/a/x"}'));
+  assert.deepEqual(await api.fsMkdir(H, "~", "x"), { ok: true, data: "/home/a/x" });
 });
 
 test("events, the commands and the profiles read an answer without the expected list as an empty one", async () => {
   const api = await createApi("");
   stub(() => body("null"));
-  assert.deepEqual(await api.events(H, "t1"), []);
-  assert.deepEqual(await api.eventsBefore(H, "t1", 5), []);
-  assert.deepEqual(await api.commands({ host: H, threadId: "t1" }), []);
+  assert.deepEqual(await api.events(H, "t1"), { ok: true, data: [] });
+  assert.deepEqual(await api.eventsBefore(H, "t1", 5), { ok: true, data: [] });
+  assert.deepEqual(await api.commands({ host: H, threadId: "t1" }), { ok: true, data: [] });
   assert.deepEqual(await api.profiles(H), []);
   assert.equal(await api.thread(H, "t1"), null);
   assert.equal(await api.fullEvent(H, "t1", 3), null);
   stub(() => body("[1,null]"));
-  assert.deepEqual(await api.events(H, "t1"), []);
+  assert.deepEqual(await api.events(H, "t1"), { ok: true, data: [] });
 });
 
 test("a thread read goes through decodeThread: lists are lists", async () => {
@@ -112,8 +162,12 @@ test("a thread read goes through decodeThread: lists are lists", async () => {
 test("changes and file patches decode; a literal null body is an empty reply", async () => {
   const api = await createApi("");
   stub(() => body("null"));
-  assert.deepEqual((await api.changes(H, "t1")).files, []);
-  assert.equal((await api.filePatch(H, "t1", "a.go")).patch, "");
+  const c = await api.changes(H, "t1");
+  assert.ok(c.ok);
+  assert.deepEqual(c.data.files, []);
+  const p = await api.filePatch(H, "t1", "a.go");
+  assert.ok(p.ok);
+  assert.equal(p.data.patch, "");
 });
 
 test("command, mutate, push and presence never reject, and a hung host is given up on", async () => {

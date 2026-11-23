@@ -25,11 +25,11 @@ function load(api: Api, s: CommandSource): Promise<SlashCommand[]> {
   if (!p) {
     p = api
       .commands(s)
-      .then((list) => {
-        cache.set(k, { at: Date.now(), list });
-        return list;
+      .then((r) => {
+        if (!r.ok) return hit?.list ?? [];
+        cache.set(k, { at: Date.now(), list: r.data });
+        return r.data;
       })
-      .catch(() => hit?.list ?? [])
       .finally(() => inFlight.delete(k));
     inFlight.set(k, p);
   }

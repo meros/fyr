@@ -1,0 +1,11 @@
+# V0.event-store: the client keeps only the timelines opened last, appends a live event without a sort, and builds the conversation from the new events only
+
+→ V0.38, V0.33, V0.41. *Amends V0.38 (5): what a live event costs the main thread no longer grows with the timeline.*
+
+Every live event rebuilt its thread's timeline (a map of every event, then a sort of all of them), every thread ever opened kept its timeline in memory and went on taking live events, and the conversation and the Agents strip were built again from the first event each time one arrived. A long session with many threads opened grew without bound and did more work per event the longer it ran.
+
+1. **Append.** `mergeSeq` (`web/src/store.ts`) appends events that are newer than the last one, in order, without a map or a sort; only events out of order or already there (a page of older events, a refetch after a reconnect) are merged by seq, the newer copy of a seq winning. A merge that brings nothing new keeps the array and the store as they were.
+2. **Only the last opened.** `openTimeline` keeps the timelines of the open thread and the ones opened just before it (`EVENTS_KEPT`, 4 in all); opening a fifth drops the oldest with its reconnect point, and a dropped timeline takes no more live events. Opening it again draws the device's copy (V0.38 (4)) and fetches what is newer, as on a first open.
+3. **Built incrementally.** `conversationBuilder` (`web/src/conversation.ts`) is the conversation as a fold over the timeline: `feed` takes the next events and `items` answers the conversation so far without changing what the builder keeps (the outbox, the last read message and the waiting messages are applied to a copy). `conversationCache` keeps one builder across renders and feeds only the new events when the timeline grew at its end (every earlier event the same object, as `mergeSeq` keeps them); a timeline that changed before its end, or other options, builds again. The conversation (desktop and phone) and the Agents strip use it.
+
+Tests: `web/test/event-store.test.ts` (append keeps the earlier events, out-of-order and repeated seqs, the kept timelines and their reconnect points, a conversation built event by event equals the one built whole after every event and for every outbox, a changed timeline builds again). The V0.38 budget in the layout test is unchanged.

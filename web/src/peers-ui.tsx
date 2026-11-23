@@ -14,10 +14,7 @@ export function usePeerState(api: Partial<PeersApi>, live: boolean): { s: PeerSt
   const [err, setErr] = useState<string | null>(null);
   const load = () => {
     if (!api.peerState) return;
-    api.peerState().then(
-      (v) => (setS(v), setErr(null)),
-      (e) => setErr(String((e as Error).message ?? e)),
-    );
+    void api.peerState().then((r) => (r.ok ? (setS(r.data), setErr(null)) : setErr(r.error)));
   };
   useEffect(() => {
     load();

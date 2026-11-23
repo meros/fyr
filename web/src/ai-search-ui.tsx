@@ -47,11 +47,11 @@ export function useAiSearch(rawQuery: string, threads: readonly Thread[]): AiSea
     abort.current = ctl;
     setPhase({ name: "running" });
     const hosts = [...ask.keys()];
-    void Promise.allSettled(hosts.map((h) => api.searchThreads(h, query, ask.get(h)!, ctl.signal))).then((rs) => {
+    void Promise.all(hosts.map((h) => api.searchThreads(h, query, ask.get(h)!, ctl.signal))).then((rs) => {
       if (ctl.signal.aborted) return;
       abort.current = null;
-      const answers = rs.flatMap((r, i) => (r.status === "fulfilled" ? [{ host: hosts[i], hits: r.value }] : []));
-      const errors = rs.flatMap((r) => (r.status === "rejected" ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : []));
+      const answers = rs.flatMap((r, i) => (r.ok ? [{ host: hosts[i], hits: r.data }] : []));
+      const errors = rs.flatMap((r) => (r.ok ? [] : [r.error]));
       if (!answers.length) setPhase({ name: "failed", why: errors[0] ?? "The search failed." });
       else setPhase({ name: "done", hits: mergeHits(answers), missed: errors.length ? `${errors.length} of ${hosts.length} hosts did not answer: ${errors[0]}` : "" });
     });

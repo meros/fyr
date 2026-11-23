@@ -196,7 +196,8 @@ export async function enablePush(api: Api): Promise<PushResult> {
   try {
     const reg = await navigator.serviceWorker.ready;
     const key = await api.pushKey();
-    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(key) }));
+    if (!key.ok) return { status: "off", error: `The host has no push key: ${key.error}` };
+    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(key.data) }));
     const r = await api.pushSubscribe(sub.toJSON(), deviceLabel(navigator.userAgent));
     if (!r.ok) {
       await sub.unsubscribe().catch(() => false);

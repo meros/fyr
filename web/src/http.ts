@@ -48,3 +48,55 @@ export function replyError(r: Pick<Reply, "status" | "json">): string {
   const e = r.json && typeof r.json === "object" ? (r.json as { error?: unknown }).error : undefined;
   return typeof e === "string" && e ? e : `HTTP ${r.status}`;
 }
+
+/** What `upload` answers. `status` is the HTTP status; null when the host could not be reached or the upload stalled
+ *  (`stalled`), 0 when the caller cancelled it. */
+export interface UploadAnswer {
+  status: number | null;
+  json: unknown;
+  stalled?: boolean;
+}
+
+/** One file sent with its progress (XMLHttpRequest: fetch reports no upload progress). It never rejects. A send that
+ *  moves no byte and gets no answer for `stallMs` is given up, as `request` gives up a stalled call; the time is counted
+ *  from the last progress, so a large file on a slow link is not cut. The caller's `signal` cancels it, and its listener
+ *  is removed when the upload ends however it ends. Every upload carries X-Fyr. */
+export function upload(url: string, file: Blob, headers: Record<string, string>, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal, stallMs = REQUEST_TIMEOUT_MS): Promise<UploadAnswer> {
+  return new Promise<UploadAnswer>((resolve) => {
+    const x = new XMLHttpRequest();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stalled = false;
+    const onAbort = () => x.abort();
+    const end = (a: UploadAnswer) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(a);
+    };
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => ((stalled = true), x.abort()), stallMs);
+    };
+    if (signal?.aborted) return resolve({ status: 0, json: null });
+    x.open("POST", url);
+    x.setRequestHeader("X-Fyr", "1");
+    for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
+    x.upload.onprogress = (e) => {
+      arm();
+      onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+    };
+    x.onload = () => {
+      let json: unknown = null;
+      try {
+        json = JSON.parse(x.responseText);
+      } catch {
+        /* not JSON */
+      }
+      end({ status: x.status, json });
+    };
+    x.onerror = () => end({ status: null, json: null });
+    x.onabort = () => end(stalled ? { status: null, json: null, stalled: true } : { status: 0, json: null });
+    signal?.addEventListener("abort", onAbort);
+    arm();
+    x.send(file);
+  });
+}

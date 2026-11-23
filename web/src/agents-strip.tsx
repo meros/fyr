@@ -1,7 +1,7 @@
 // The agents strip under the thread header (SPEC V0.16, V0.subagent-timeline): one fixed-height row per task.
 import { useMemo, useState } from "preact/hooks";
 import type { FyrEvent, TaskDTO } from "./types.ts";
-import { buildConversation, findCall, type ToolCall } from "./conversation.ts";
+import { conversationCache, findCall, type ToolCall } from "./conversation.ts";
 import { StateIcon } from "./icons.tsx";
 import { relTime } from "./format.ts";
 import { agentsIcon, agentsSummary, endedLabel, groupTasks, taskLine, taskStats } from "./tasks.ts";
@@ -51,10 +51,11 @@ export function AgentsStrip({ tasks, now, events, cwd }: { tasks: TaskDTO[]; now
   const g = groupTasks(tasks);
   // V0.subagent-timeline: the Agent calls the rows can open, from the loaded events (an earlier page may not have them).
   const wanted = tasks.map((t) => t.toolUseId ?? "").join(",");
+  const build = useMemo(conversationCache, []); // V0.event-store: a live event feeds only itself
   const calls = useMemo(() => {
     const m = new Map<string, ToolCall>();
     if (!wanted.replace(/,/g, "")) return m;
-    const items = buildConversation(events ?? [], { cwd });
+    const items = build(events ?? [], { cwd });
     for (const id of wanted.split(",")) {
       const c = id ? findCall(items, id) : undefined;
       if (c) m.set(id, c);

@@ -76,7 +76,8 @@ export interface Store {
   hosts: Record<HostId, HostState>;
   /** V0.121: the owner's project order; null until set (by name then) */
   projectOrder: string[] | null;
-  /** timeline events per thread ref, oldest first; only for threads the client has loaded */
+  /** timeline events per thread ref, oldest first; only for the threads opened last (`openTimeline`), in the order
+   *  they were opened */
   events: Record<string, FyrEvent[]>;
   /** The last seq of each loaded timeline when the stream left live: a refetch starts there, not after the
    * events the new stream already appended (review 2026-11-15). Cleared per thread once refetched. */
@@ -285,14 +286,58 @@ export function resumed(s: Store, threadId: string, from: number): Store {
   return { ...s, resumeFrom: rest };
 }
 
-/** Merge events for a thread, deduplicated by seq, oldest first. */
-export function mergeEvents(s: Store, threadId: string, evs: FyrEvent[], replace = false): Store {
-  const cur = replace ? [] : (s.events[threadId] ?? []);
+/** Events into a timeline, deduplicated by seq, oldest first (an event with a seq already there replaces it). The
+ *  usual case, events newer than the last in order (a live event, the next page), appends without a sort; only events
+ *  out of order or already there pay for the merge (V0.event-store). An array with nothing new is returned as it is. */
+export function mergeSeq(cur: FyrEvent[], evs: FyrEvent[]): FyrEvent[] {
+  if (!evs.length) return cur;
+  let last = cur.length ? cur[cur.length - 1].seq : -Infinity;
+  let inOrder = true;
+  for (const e of evs) {
+    if (!(e.seq > last)) {
+      inOrder = false;
+      break;
+    }
+    last = e.seq;
+  }
+  if (inOrder) return cur.concat(evs);
   const bySeq = new Map<number, FyrEvent>();
   for (const e of cur) bySeq.set(e.seq, e);
   for (const e of evs) bySeq.set(e.seq, e);
-  const list = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+}
+
+/** Merge events for a thread (`mergeSeq`); `replace` starts the timeline over from `evs`. */
+export function mergeEvents(s: Store, threadId: string, evs: FyrEvent[], replace = false): Store {
+  const cur = s.events[threadId];
+  const list = replace ? mergeSeq([], evs) : mergeSeq(cur ?? [], evs);
+  if (list === cur) return s;
   return { ...s, events: { ...s.events, [threadId]: list } };
+}
+
+/** V0.event-store: how many timelines stay in memory: the open thread's and the ones opened just before it. Another
+ *  thread opened again draws from the device's copy (cache.ts) and fetches what is newer. */
+export const EVENTS_KEPT = 4;
+
+/** V0.event-store: `id` is opened. Its timeline becomes the newest opened, and the timelines beyond the `keep` newest
+ *  opened are dropped, with their reconnect points: a dropped timeline takes no more live events. The order is the
+ *  insertion order of `events` (its keys are refs, never integer-like, so the order is kept as inserted). */
+export function openTimeline(s: Store, id: string, keep = EVENTS_KEPT): Store {
+  const others = Object.keys(s.events).filter((k) => k !== id);
+  const has = id in s.events;
+  const drop = others.slice(0, Math.max(0, others.length - (keep - 1)));
+  const ids = Object.keys(s.events);
+  if (!drop.length && (!has || ids[ids.length - 1] === id)) return s;
+  const gone = new Set(drop);
+  const events: Record<string, FyrEvent[]> = {};
+  for (const k of others) if (!gone.has(k)) events[k] = s.events[k];
+  if (has) events[id] = s.events[id];
+  let resumeFrom = s.resumeFrom;
+  if (drop.some((k) => k in resumeFrom)) {
+    resumeFrom = { ...resumeFrom };
+    for (const k of drop) delete resumeFrom[k];
+  }
+  return { ...s, events, resumeFrom };
 }
 
 /** A live event: only kept when that thread's timeline is loaded (it is fetched in full on open). */
