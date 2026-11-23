@@ -503,6 +503,11 @@ func (e *Engine) invariantFix(id string) api.Reply {
 		title = "Fix thread invariant " + id
 	}
 	args := core.Args{"cwd": dir, "projectId": project, "title": title, "text": invPrompt(card, e.hostName())}
+	// A thread without a profile gets the literal id "claude", which no host's provider may carry: the fronts then
+	// show a grey, unnamed chip. Name the host's own first usable provider.
+	if p := e.firstProvider(); p != "" {
+		args["profile"] = p
+	}
 	r := e.submit(core.Input{Source: core.FromOwner, Kind: "thread.create", Args: args, CmdID: NewID("inv_")})
 	if !r.OK {
 		return r
@@ -539,4 +544,21 @@ func invPrompt(card slots.InvariantCard, host string) string {
 	}
 	b.WriteString("\nRead docs/decisions/0029-adaptive-slots.md, docs/decisions/0032-bounded-agents.md, docs/decisions/0036-memory-layers.md and the notes in docs/changes/ (docs/changes/load-invariants.md defines each invariant). Reproduce it in a test first, fix it, run scripts/ci-local.sh, and open a PR.\n")
 	return b.String()
+}
+
+// firstProvider is the id of the host's first provider that is usable now (else its first), "" with none.
+func (e *Engine) firstProvider() string {
+	if e.SystemAgentProviders == nil {
+		return ""
+	}
+	first := ""
+	for _, p := range e.SystemAgentProviders() {
+		if first == "" {
+			first = p.ID
+		}
+		if p.Unavailable == "" {
+			return p.ID
+		}
+	}
+	return first
 }
