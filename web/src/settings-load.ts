@@ -127,7 +127,8 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
       clearInterval(t);
       p.onChanged?.(); // a login ended: the profiles' status may have changed
     };
-  }, [logging.join(" ")]);
+    // The key must differ from no login at all: one host's part is named "", and [""].join(" ") is "" too (#30).
+  }, [JSON.stringify(logging)]);
 
   /** One owner command to a host; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
   const command = async (host: string, action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
