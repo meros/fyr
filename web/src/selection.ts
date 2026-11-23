@@ -1,7 +1,7 @@
 // V0.109: the marked row in the thread list is the open thread, whatever path opened it (a row click, a link from
 // another thread, a notification, ?open=, the keyboard, a new thread). The list keeps no cursor of its own.
 // V0.186: a folded section stays folded. V0.192: the current thread's row still shows, alone, in its place (Guest).
-import { asObject, parseJson } from "./decode.ts";
+import { asObject } from "./decode.ts";
 import { AUTO_HIDE_SECTIONS } from "./inbox-autohide.ts";
 import { SECTIONS, isOpen, matchesQuery, sectionOf, unpinned, type SectionKey, type Sections } from "./store.ts";
 import type { Thread } from "./types.ts";
@@ -13,11 +13,7 @@ export const SECTION_OPEN_KEY = "fyr.sectionOpen";
 
 /** V0.186: what the device stored; anything else counts as nothing. An open Snoozed or Settled is left out: it closes
  *  10 s after the owner leaves it (V0.196), and that time does not survive a reload. */
-export function parseSectionOpen(raw: string | null): Open {
-  return parseJson(raw, decodeSectionOpen, {});
-}
-
-function decodeSectionOpen(v: unknown): Open | undefined {
+export function decodeSectionOpen(v: unknown): Open | undefined {
   const o = asObject(v);
   if (!o) return undefined;
   const out: Open = {};

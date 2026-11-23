@@ -1,7 +1,8 @@
 // SPEC V0.207: the hosts and projects this device never shows.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NOTHING_HIDDEN, applyHidden, hiddenCount, hostIsHidden, lastShownHost, parseHidden, pushHiddenOf, setHostShown, setProjectShown, type Hidden } from "../src/hidden.ts";
+import { NOTHING_HIDDEN, applyHidden, hiddenCount, hostIsHidden, lastShownHost, decodeHidden, pushHiddenOf, setHostShown, setProjectShown, type Hidden } from "../src/hidden.ts";
+import { parseJson } from "../src/decode.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import { initialStore, type View } from "../src/store.ts";
 import type { Project, Thread } from "../src/types.ts";
@@ -60,9 +61,9 @@ test("the switches: a host by its id, by its name without one; on again removes 
   assert.deepEqual(setProjectShown(h, "D/p2", true).projects, []);
 });
 
-test("parseHidden: what the device stored, else nothing", () => {
-  assert.deepEqual(parseHidden('{"hosts":["L","L",1],"projects":["D/p2"]}'), { hosts: ["L"], projects: ["D/p2"] });
-  for (const raw of [null, "nope", "null", "[]"]) assert.deepEqual(parseHidden(raw), NOTHING_HIDDEN);
+test("decodeHidden: what the device stored, else nothing", () => {
+  assert.deepEqual(parseJson('{"hosts":["L","L",1],"projects":["D/p2"]}', decodeHidden, NOTHING_HIDDEN), { hosts: ["L"], projects: ["D/p2"] });
+  for (const raw of [null, "nope", "null", "[]"]) assert.deepEqual(parseJson(raw, decodeHidden, NOTHING_HIDDEN), NOTHING_HIDDEN);
 });
 
 test("the front gets host names and each host's own project ids", () => {

@@ -1,7 +1,8 @@
 // The connection to the hosts: their events, the first selection, the device cache, the earlier pages of a timeline
 // and the push settings this device sends. A hook of the App in app.tsx; it takes and returns plain objects.
 
-import { browserStorage, sessionStore, storedGet, storedSet } from "./prefs.ts";
+import { browserStorage, sessionStore, storedGet, storedJson, storedSet } from "./prefs.ts";
+import { strings } from "./decode.ts";
 import { applyTheme, params, PAGE, idle } from "./app-util.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
@@ -27,10 +28,10 @@ import {
 import { moveHostKeys, moveRef, moveRefAll, rotations } from "./host-rotation.ts";
 import { openView } from "./seen.ts";
 import { clearThreadNotification, syncPushHidden, syncPushPrefs, syncPushStatus, registerServiceWorker, watchInstall } from "./pwa.ts";
-import { PUSH_PREFS_KEY, parsePushPrefs, rememberOpen, takeOpen, type PushPrefs } from "./push.ts";
+import { DEFAULT_PUSH_PREFS, PUSH_PREFS_KEY, decodePushPrefs, rememberOpen, takeOpen, type PushPrefs } from "./push.ts";
 import { FILTER_KEY, projectRecords } from "./projects.ts";
 import { pushHiddenOf, type PushHidden } from "./hidden.ts";
-import { HOSTS_OFF_KEY, parseHostsOff } from "./filters.ts";
+import { HOSTS_OFF_KEY } from "./filters.ts";
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 import { cache, mergeEventLists } from "./cache.ts";
 import { PHONE_QUERY } from "./motion-ui.tsx";
@@ -134,7 +135,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
   // The filters read again what a host's rotation moved.
   const rereadFilters = () => {
     setProjectFilterState(storedGet(FILTER_KEY));
-    setHostsOffState(parseHostsOff(storedGet(HOSTS_OFF_KEY)));
+    setHostsOffState(storedJson(HOSTS_OFF_KEY, strings, []));
   };
   // Decision 0031 2.1, 2.5: a host listed with a new id and the one it had (idWas): what the device keeps under the old
   // id moves to the new one (the keys, the stored timelines, the store, the thread on screen).
@@ -289,7 +290,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
 
   // V0.notification-polish: what this device is told about, kept in this browser and sent to the front like the hidden
   // list: again when push turns on and on a reconnect.
-  const [pushPrefs, setPushPrefsState] = useState<PushPrefs>(() => parsePushPrefs(storedGet(PUSH_PREFS_KEY)));
+  const [pushPrefs, setPushPrefsState] = useState<PushPrefs>(() => storedJson(PUSH_PREFS_KEY, decodePushPrefs, DEFAULT_PUSH_PREFS));
   const setPushPrefs = (p: PushPrefs) => {
     setPushPrefsState(p);
     storedSet(PUSH_PREFS_KEY, JSON.stringify(p)); // blocked storage: the choice holds until a reload

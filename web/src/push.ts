@@ -219,16 +219,13 @@ export interface PushPrefs {
 }
 
 export const PUSH_PREFS_KEY = "fyr.push.prefs";
-const DEFAULT_PUSH_PREFS: PushPrefs = { finished: true, quotaReset: false };
+/** Finished on, quota resets off until asked for. */
+export const DEFAULT_PUSH_PREFS: PushPrefs = Object.freeze({ finished: true, quotaReset: false });
 export const FINISHED_DESC = "Also when a thread finishes. Nothing arrives for the thread on screen or in a project's quiet hours.";
 export const QUOTA_RESET_DESC = "When a provider's quota window resets and a waiting thread still has not resumed.";
 
-/** The stored choice; anything unreadable is the default (finished on, quota resets off until asked for). */
-export function parsePushPrefs(raw: string | null | undefined): PushPrefs {
-  return parseJson(raw, decodePushPrefs, { ...DEFAULT_PUSH_PREFS });
-}
-
-function decodePushPrefs(v: unknown): PushPrefs | undefined {
+/** The stored choice (`storedJson(PUSH_PREFS_KEY, decodePushPrefs, DEFAULT_PUSH_PREFS)`); anything unreadable is the default. */
+export function decodePushPrefs(v: unknown): PushPrefs | undefined {
   const j = asObject(v);
   return j && { finished: j.finished !== false, quotaReset: j.quotaReset === true };
 }
