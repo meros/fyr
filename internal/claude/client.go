@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -77,7 +78,15 @@ type Client struct {
 	// OnHook answers a hook_callback (registered in Initialize). It gets
 	// the callback id and the hook input; nil means "no opinion".
 	OnHook func(callbackID string, input Msg) Msg
+
+	// movesBash: the latest init named MovesBash (V0.background-on-message).
+	movesBash atomic.Bool
 }
+
+// MovesBash is the capability a CLI's system init names when its
+// background_tasks control request moves a running foreground Bash call to
+// the background (claude 2.1.327; V0.background-on-message).
+const MovesBash = "background_tasks_moves_bash_v1"
 
 func Start(s Spec) (*Client, error) {
 	base := []string{"--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
@@ -149,6 +158,10 @@ func (c *Client) read() {
 			}
 		case "keep_alive":
 		default:
+			if m["type"] == "system" && m["subtype"] == "init" {
+				caps, _ := m["capabilities"].([]any)
+				c.movesBash.Store(slices.Contains(caps, any(MovesBash)))
+			}
 			if seq > 0 {
 				m[SeqKey] = seq // acked by Handled, after the consumer is done
 			}
@@ -281,6 +294,25 @@ func (c *Client) CancelMessage(ctx context.Context, uuid string) (bool, error) {
 	}
 	inner, _ := r["response"].(Msg)
 	ok, _ := inner["cancelled"].(bool)
+	return ok, nil
+}
+
+// CanBackground says whether the CLI's latest init named MovesBash. A
+// process Fyr reattached to says so from its next turn's init on.
+func (c *Client) CanBackground() bool { return c.movesBash.Load() }
+
+// Background moves the running foreground task started by the tool_use
+// toolUseID to the background without stopping it, as Ctrl-B does:
+// {"subtype":"background_tasks","tool_use_id":<id>}, answered with
+// {"backgrounded":<bool>}. false: the CLI found no such foreground task
+// (it ended already). An older CLI answers an error.
+func (c *Client) Background(ctx context.Context, toolUseID string) (bool, error) {
+	r, err := c.Request(ctx, Msg{"subtype": "background_tasks", "tool_use_id": toolUseID})
+	if err != nil {
+		return false, err
+	}
+	inner, _ := r["response"].(Msg)
+	ok, _ := inner["backgrounded"].(bool)
 	return ok, nil
 }
 

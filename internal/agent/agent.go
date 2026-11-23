@@ -157,6 +157,10 @@ type Config struct {
 	ToolsCurrent func(token string) bool
 	ToolsGrace   time.Duration
 	Build        string
+	// BackgroundAfter: how long a foreground command runs before the
+	// owner's message moves it to the background (default
+	// DefaultBackgroundAfter; V0.background-on-message).
+	BackgroundAfter time.Duration
 }
 
 // Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):
@@ -280,6 +284,9 @@ type session struct {
 	inputClosed bool
 	// tools: tool_use id → tool name, until its result (V0.133).
 	tools map[string]string
+	// calls: the open top-level tool calls of the turn, the main agent's
+	// only (V0.background-on-message).
+	calls map[string]openCall
 	// openTools: count of currently open top-level tool calls in the active turn
 	// (mirrored from digest.openTools under m.mu for Inspect, V0.thread-invariants).
 	openTools int
@@ -346,6 +353,9 @@ func New(host Host, cfg Config) *Manager {
 	}
 	if cfg.ApprovalTimeout == 0 {
 		cfg.ApprovalTimeout = 15 * time.Second
+	}
+	if cfg.BackgroundAfter == 0 {
+		cfg.BackgroundAfter = DefaultBackgroundAfter
 	}
 	if cfg.Setup == nil {
 		cfg.Setup = HostSetup

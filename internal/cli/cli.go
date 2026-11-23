@@ -147,6 +147,15 @@ type Session interface {
 	Kill()
 }
 
+// Backgrounder is a Session whose CLI can move a running foreground tool
+// call to the background without stopping it, so a message reaches the
+// agent at once (V0.background-on-message). CanBackground: the CLI said it
+// can; Background answers false when the CLI found no such call.
+type Backgrounder interface {
+	CanBackground() bool
+	Background(ctx context.Context, toolUseID string) (bool, error)
+}
+
 // Reattacher is an adapter that can speak to a process the runner kept
 // across a restart of fyrd (V0.90).
 type Reattacher interface {

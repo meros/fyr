@@ -157,7 +157,23 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 		}
 		return nil
 	}
-	return m.write(s, e.MessageID, content(e))
+	// V0.background-on-message: the owner's message during a long
+	// foreground command moves it to the background. Only the owner's own
+	// words (not a notice, a view press or another thread), and not a
+	// /command, whose text must start with "/". The line goes only to the
+	// agent: the outbox keeps the owner's text (above) for a resend.
+	var move func()
+	if e.From == "" && !first && !command {
+		var line string
+		if line, move = m.toBackground(s); line != "" {
+			e.Text = line + "\n\n" + e.Text
+		}
+	}
+	if err := m.write(s, e.MessageID, content(e)); err != nil || move == nil {
+		return err
+	}
+	move()
+	return nil
 }
 
 // delivered moves a message to a new state (V0.33) and records it once.
