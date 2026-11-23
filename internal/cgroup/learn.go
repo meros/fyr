@@ -8,9 +8,10 @@ package cgroup
 import (
 	"encoding/json"
 	"log"
-	"slices"
 	"strings"
 	"time"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // costsKey is where the table is kept in the store's KV table.
@@ -31,24 +32,6 @@ const (
 // command) names its class while it waits.
 const seenFor = 30 * time.Minute
 
-// Learned is one class's raw measures.
-type Learned struct {
-	Demand float64   `json:"demand"`
-	Peak   uint64    `json:"peak"`
-	Walls  []float64 `json:"walls"`
-	Runs   int       `json:"runs"`
-}
-
-// WallP90 is the 90th percentile of the last wall times, 0 without any.
-func (l Learned) WallP90() float64 {
-	if len(l.Walls) == 0 {
-		return 0
-	}
-	w := slices.Clone(l.Walls)
-	slices.Sort(w)
-	return w[min(len(w)-1, int(0.9*float64(len(w))))]
-}
-
 // learn adds r to its class; holds j.mu (and j.load ran). It does no I/O
 // (V0.147): the caller stores tableRaw after unlocking. A record that measured
 // nothing teaches nothing: it would make the class cost almost nothing.
@@ -57,7 +40,7 @@ func (j *Jobs) learn(r JobRecord) {
 		return
 	}
 	if j.table == nil {
-		j.table = map[string]Learned{}
+		j.table = map[string]resource.Learned{}
 	}
 	l := j.table[r.Class]
 	if f, ok := j.raise[r.Class]; ok && r.Peak > 0 {
@@ -105,14 +88,14 @@ func (j *Jobs) storeTable(raw []byte) {
 }
 
 func (j *Jobs) loadTable() {
-	j.table = map[string]Learned{}
+	j.table = map[string]resource.Learned{}
 	if j.KV == nil {
 		return
 	}
 	if raw, _ := j.KV.GetKV(costsKey); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &j.table); err != nil {
 			log.Printf("jobs: stored costs unreadable, starting empty: %v", err)
-			j.table = map[string]Learned{}
+			j.table = map[string]resource.Learned{}
 		}
 	}
 	// V0.process-tree-hosts: a Mac learned classes from holds it could not measure.
@@ -124,9 +107,9 @@ func (j *Jobs) loadTable() {
 }
 
 // Learned is class's measures; false before its first run.
-func (j *Jobs) Learned(class string) (Learned, bool) {
+func (j *Jobs) Learned(class string) (resource.Learned, bool) {
 	if j == nil {
-		return Learned{}, false
+		return resource.Learned{}, false
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()

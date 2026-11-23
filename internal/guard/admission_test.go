@@ -1,19 +1,15 @@
 // SPEC 0.5 V0.182: the slot admission policy, moved out of fyrd's main.go,
 // keeps decision 0029's rules (S2 admission, S3 learned costs and EASY
 // backfill, V0.163 two resources, V0.164 undeclared work).
-package admission
+package guard
 
 import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/cgroup"
-	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
-
-const gb = 1 << 30
 
 type fakeHost struct {
 	sig resource.Signals
@@ -29,14 +25,14 @@ type use struct {
 }
 
 type fakeJobs struct {
-	learned map[string]cgroup.Learned // by class
-	live    map[string]use            // by owner
-	active  map[string]time.Time      // by owner
+	learned map[string]resource.Learned // by class
+	live    map[string]use              // by owner
+	active  map[string]time.Time        // by owner
 }
 
-func (j *fakeJobs) Learned(c string) (cgroup.Learned, bool) { l, ok := j.learned[c]; return l, ok }
-func (j *fakeJobs) ClassOf(thread, kind string) string      { return thread + "/" + kind }
-func (j *fakeJobs) Qualify(thread, class string) string     { return thread + "/" + class }
+func (j *fakeJobs) Learned(c string) (resource.Learned, bool) { l, ok := j.learned[c]; return l, ok }
+func (j *fakeJobs) ClassOf(thread, kind string) string        { return thread + "/" + kind }
+func (j *fakeJobs) Qualify(thread, class string) string       { return thread + "/" + class }
 func (j *fakeJobs) LiveUse(t string) (float64, uint64, bool) {
 	u, ok := j.live[t]
 	return u.cores, u.grew, ok
@@ -49,9 +45,9 @@ var now = time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 func setup(n int) (*Admission, *fakeHost, *fakeJobs) {
 	s, head := 1.0, 0.9
 	h := &fakeHost{sig: resource.Signals{Provider: "cgroup", Slowdown: &s, Headroom: &head, Stall: resource.StallOK, CPU: 8, Memory: 16 * gb}}
-	j := &fakeJobs{learned: map[string]cgroup.Learned{}, live: map[string]use{}, active: map[string]time.Time{}}
+	j := &fakeJobs{learned: map[string]resource.Learned{}, live: map[string]use{}, active: map[string]time.Time{}}
 	pool := slots.New(n)
-	a := New(pool, n, h, j, 0, 0)
+	a := NewAdmission(pool, n, h, j, 0, 0)
 	a.Now = func() time.Time { return now }
 	return a, h, j
 }
@@ -61,7 +57,7 @@ func TestV182NewKeepsTheDefaultsUnlessSet(t *testing.T) {
 	if a.Policy != resource.DefaultPolicy {
 		t.Fatalf("%+v", a.Policy)
 	}
-	b := New(slots.New(2), 2, h, j, 2.5, 0.2)
+	b := NewAdmission(slots.New(2), 2, h, j, 2.5, 0.2)
 	if b.Policy.SlowdownMax != 2.5 || b.Policy.MemoryReserve != 0.2 {
 		t.Fatalf("%+v", b.Policy)
 	}
@@ -69,8 +65,9 @@ func TestV182NewKeepsTheDefaultsUnlessSet(t *testing.T) {
 
 func TestV182InstallSetsThePoolsPolicy(t *testing.T) {
 	a, _, _ := setup(2)
-	a.Install()
-	if a.Pool.Host == nil || a.Pool.Cost == nil || a.Pool.Admit == nil || a.Pool.Backfill == nil {
+	p := a.Pool.(*slots.Pool)
+	p.Install(a)
+	if p.Host == nil || p.Cost == nil || p.Admit == nil || p.Backfill == nil {
 		t.Fatal("the pool is not wired")
 	}
 }
@@ -82,7 +79,7 @@ func TestV182PredictIsThePriorUntilLearned(t *testing.T) {
 	if need != (resource.Need{CPU: 4, Mem: 8 * gb}) || wall != 0 {
 		t.Fatalf("prior: %+v %v", need, wall)
 	}
-	j.learned["t1/test"] = cgroup.Learned{Demand: 6, Peak: 12 * gb, Runs: resource.LearnRuns, Walls: []float64{60, 120}}
+	j.learned["t1/test"] = resource.Learned{Demand: 6, Peak: 12 * gb, Runs: resource.LearnRuns, Walls: []float64{60, 120}}
 	need, wall = a.Predict(h)
 	if need != (resource.Need{CPU: 6, Mem: 12 * gb}) || wall != 120 {
 		t.Fatalf("learned: %+v %v", need, wall)
@@ -97,9 +94,9 @@ func TestV182CostOfPriorityIdleAndLiveHolds(t *testing.T) {
 		t.Fatalf("priority: %+v", c)
 	}
 	// An idle hold: a little CPU and the memory it holds now.
-	j.active["idle"] = now.Add(-guard.IdleAfter)
+	j.active["idle"] = now.Add(-IdleAfter)
 	j.live["idle"] = use{cores: 3, grew: 2 * gb}
-	if c := a.Cost(resource.Holder{Owner: "idle", Kind: resource.Test}); c != (resource.Need{CPU: guard.IdleShare * 8, Mem: 2 * gb}) {
+	if c := a.Cost(resource.Holder{Owner: "idle", Kind: resource.Test}); c != (resource.Need{CPU: IdleShare * 8, Mem: 2 * gb}) {
 		t.Fatalf("idle: %+v", c)
 	}
 	// A busy hold: at least what it uses now.
@@ -148,24 +145,24 @@ func TestV182AdmitWaitsOnASlowHost(t *testing.T) {
 func TestV182BackfillPassesAJobThatEndsFirst(t *testing.T) {
 	a, _, j := setup(4)
 	// One job holds three quarters of the host and ends in an hour.
-	j.learned["a/build"] = cgroup.Learned{Demand: 6, Peak: 12 * gb, Runs: resource.LearnRuns, Walls: []float64{3600}}
+	j.learned["a/build"] = resource.Learned{Demand: 6, Peak: 12 * gb, Runs: resource.LearnRuns, Walls: []float64{3600}}
 	held := []resource.Holder{{Owner: "a", Kind: resource.Build, Since: now}}
 	j.live["a"] = use{cores: 6, grew: 12 * gb} // at its peak: nothing more to come (V0.admission-memory)
 	head := resource.Holder{Owner: "head", Kind: resource.Build}
-	j.learned["head/build"] = cgroup.Learned{Demand: 6, Peak: 12 * gb, Runs: resource.LearnRuns, Walls: []float64{3600}}
+	j.learned["head/build"] = resource.Learned{Demand: 6, Peak: 12 * gb, Runs: resource.LearnRuns, Walls: []float64{3600}}
 	// c fits beside a, is not cheap, and ends in ten minutes: it passes.
 	c := resource.Holder{Owner: "c", Kind: resource.Test}
-	j.learned["c/test"] = cgroup.Learned{Demand: 2, Peak: 3 * gb, Runs: resource.LearnRuns, Walls: []float64{600}}
+	j.learned["c/test"] = resource.Learned{Demand: 2, Peak: 3 * gb, Runs: resource.LearnRuns, Walls: []float64{600}}
 	if !a.Backfill(head, c, held) {
 		t.Fatal("a short job that fits did not pass")
 	}
 	// Ending after a's expected end, it waits.
-	j.learned["c/test"] = cgroup.Learned{Demand: 2, Peak: 3 * gb, Runs: resource.LearnRuns, Walls: []float64{7200}}
+	j.learned["c/test"] = resource.Learned{Demand: 2, Peak: 3 * gb, Runs: resource.LearnRuns, Walls: []float64{7200}}
 	if a.Backfill(head, c, held) {
 		t.Fatal("a long job passed the head")
 	}
 	// One that does not fit never passes.
-	j.learned["c/test"] = cgroup.Learned{Demand: 4, Peak: 8 * gb, Runs: resource.LearnRuns, Walls: []float64{10}}
+	j.learned["c/test"] = resource.Learned{Demand: 4, Peak: 8 * gb, Runs: resource.LearnRuns, Walls: []float64{10}}
 	if a.Backfill(head, c, held) {
 		t.Fatal("a job that does not fit passed")
 	}
@@ -176,8 +173,8 @@ func TestV182OverWhenHeavierThanPredictedByAnEighth(t *testing.T) {
 	if _, _, _, over := a.Over("nobody"); over {
 		t.Fatal("over without a hold")
 	}
-	a.Pool.Acquire("t1", resource.Test)
-	j.learned["t1/test"] = cgroup.Learned{Demand: 2, Peak: 2 * gb, Runs: resource.LearnRuns}
+	a.Pool.(*slots.Pool).Acquire("t1", resource.Test)
+	j.learned["t1/test"] = resource.Learned{Demand: 2, Peak: 2 * gb, Runs: resource.LearnRuns}
 	j.live["t1"] = use{cores: 3, grew: 2 * gb} // 37.5 % against 25 %: within an eighth
 	if class, live, pred, over := a.Over("t1"); over || class != "t1/test" || live != 38 || pred != 25 {
 		t.Fatalf("%s %v %v %v", class, live, pred, over)
@@ -216,8 +213,8 @@ func TestServicesAreReservedInAdmission(t *testing.T) {
 func TestAdmissionMemoryRunningJobsGrowthComesOffTheHeadroom(t *testing.T) {
 	a, _, j := setup(2)
 	// 16 GB, 90 % free: 12.8 GB above the reserve. Each job peaks at 7 GB; t1 has grown 0.5 GB of it so far.
-	j.learned["t1/test"] = cgroup.Learned{Demand: 1, Peak: 7 * gb, Runs: resource.LearnRuns}
-	j.learned["t2/test"] = cgroup.Learned{Demand: 1, Peak: 7 * gb, Runs: resource.LearnRuns}
+	j.learned["t1/test"] = resource.Learned{Demand: 1, Peak: 7 * gb, Runs: resource.LearnRuns}
+	j.learned["t2/test"] = resource.Learned{Demand: 1, Peak: 7 * gb, Runs: resource.LearnRuns}
 	j.live["t1"] = use{cores: 1, grew: gb / 2}
 	held := []resource.Holder{{Owner: "t1", Kind: resource.Test, Since: now}}
 	head := resource.Holder{Owner: "t2", Kind: resource.Test}

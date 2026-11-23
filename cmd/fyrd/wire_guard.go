@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/admission"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/guard"
@@ -119,10 +118,10 @@ func (w *wiring) wireGuard() {
 		UndeclaredFaults: groups.MajorFaultBytes,
 	}
 	// Decision 0029 S2–S4, V0.163, V0.164: admission by a budget of costs,
-	// gated by the slowdown and memory; the policy is internal/admission.
-	adm := admission.New(pool, n, sampler, jobs, cfg.SlotSlowdownMax, cfg.SlotMemoryReserve)
+	// gated by the slowdown and memory; the policy is internal/guard.
+	adm := guard.NewAdmission(pool, n, sampler, jobs, cfg.SlotSlowdownMax, cfg.SlotMemoryReserve)
 	adm.Open = eng.HeavyOpen // V0.admission-tidy: a quiet open call is not idle
-	adm.Install()
+	pool.Install(adm)
 	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
 	// being slow and restarts none into the same thrash.
 	mgr.SetPressure(adm.Thrashing)

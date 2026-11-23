@@ -118,6 +118,23 @@ func Open(n int, kv kvstore.Table) *Pool {
 	return p
 }
 
+// Admitter is the policy a pool admits by: *guard.Admission.
+type Admitter interface {
+	Signals() resource.Signals
+	Cost(h resource.Holder) resource.Need
+	Admit(head resource.Holder, held []resource.Holder) (bool, string, string)
+	Backfill(head, c resource.Holder, held []resource.Holder) bool
+}
+
+// Install makes a the pool's policy: its measures, costs, admission and
+// backfill.
+func (p *Pool) Install(a Admitter) {
+	p.Host = a.Signals
+	p.Cost = a.Cost
+	p.Admit = a.Admit
+	p.Backfill = a.Backfill
+}
+
 // Off reports a pool of 0 slots: no limit.
 func (p *Pool) Off() bool { return p.n == 0 }
 

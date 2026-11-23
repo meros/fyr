@@ -1,24 +1,21 @@
-// Package admission is a host's slot admission policy (decision 0029 S2–S4,
+// Admission is a host's slot admission policy (decision 0029 S2–S4,
 // V0.163, V0.164): what a heavy job costs, whether the queue's head may start
 // beside the jobs that hold slots, whether a later waiter may pass it (EASY
 // backfill), and whether a holder is heavier than predicted. The rules
-// themselves are slots' (DecideWith, NeedOf, EASY); this package feeds them
-// the host's measures and the job tracker's learned classes. It was fyrd's
-// main.go until V0.182.
+// themselves are DecideWith and EASY (admit.go) and resource.NeedOf; Admission
+// feeds them the host's measures and the job tracker's learned classes. It was fyrd's
+// main.go until V0.182, and internal/admission until V0.guard-tick.
 //
 // Locks: Cost, Admit and Backfill run under the pool's lock (slots.Pool
 // calls them so); they call Host and Jobs, which take their own locks and
 // never the pool's or the engine's. Nothing here takes a lock of its own.
-package admission
+package guard
 
 import (
 	"slices"
 	"time"
 
-	"github.com/meros/fyr/internal/cgroup"
-	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // Host is the host's measures: *cgroup.Sampler.
@@ -31,12 +28,18 @@ type Host interface {
 
 // Jobs is the job tracker: *cgroup.Jobs.
 type Jobs interface {
-	Learned(class string) (cgroup.Learned, bool)
+	Learned(class string) (resource.Learned, bool)
 	ClassOf(thread, kind string) string
 	// Qualify is class as thread's project names it (V0.admission-tidy).
 	Qualify(thread, class string) string
 	LiveUse(thread string) (cores float64, grew uint64, ok bool)
 	Active(thread string) (time.Time, bool)
+}
+
+// Pool is the queue the policy admits into: *Pool.
+type Pool interface {
+	Budget() resource.Factors
+	Holding(owner string) (resource.Holder, bool)
 }
 
 // Admission is the policy of one pool. N is the host's `slots` setting (the
@@ -46,7 +49,7 @@ type Admission struct {
 	Jobs   Jobs
 	Policy resource.Policy
 	N      int
-	Pool   *slots.Pool
+	Pool   Pool
 	Now    func() time.Time
 	// Open says a thread has a heavy call open (the engine's published view,
 	// V0.admission-tidy); nil is none. Under the pool's lock, so it must take
@@ -54,10 +57,10 @@ type Admission struct {
 	Open func(thread string) bool
 }
 
-// New is the policy for pool, with n the host's `slots` setting as
+// NewAdmission is the policy for pool, with n the host's `slots` setting as
 // configured and the host's thresholds over the defaults (a value of 0 keeps
 // the default).
-func New(pool *slots.Pool, n int, host Host, jobs Jobs, slowdownMax, memoryReserve float64) *Admission {
+func NewAdmission(pool Pool, n int, host Host, jobs Jobs, slowdownMax, memoryReserve float64) *Admission {
 	p := resource.DefaultPolicy
 	if slowdownMax > 0 {
 		p.SlowdownMax = slowdownMax
@@ -68,14 +71,8 @@ func New(pool *slots.Pool, n int, host Host, jobs Jobs, slowdownMax, memoryReser
 	return &Admission{Host: host, Jobs: jobs, Policy: p, N: n, Pool: pool}
 }
 
-// Install makes a the pool's policy: its measures, costs, admission and
-// backfill.
-func (a *Admission) Install() {
-	a.Pool.Host = a.Host.Signals
-	a.Pool.Cost = a.Cost
-	a.Pool.Admit = a.Admit
-	a.Pool.Backfill = a.Backfill
-}
+// Signals are the host's measures, as the pool reads them for its snapshot.
+func (a *Admission) Signals() resource.Signals { return a.Host.Signals() }
 
 func (a *Admission) now() time.Time {
 	if a.Now != nil {
@@ -105,7 +102,7 @@ func (a *Admission) Live(h resource.Holder) (resource.Need, bool) {
 }
 
 // Cost is a holder's need for the budget: the prior for a priority hold (the
-// deploy's tests); for an idle hold (no heavy command for guard.IdleAfter) a
+// deploy's tests); for an idle hold (no heavy command for IdleAfter) a
 // little CPU and the memory it holds; else the prediction, at least what it
 // uses now.
 func (a *Admission) Cost(h resource.Holder) resource.Need {
@@ -123,7 +120,7 @@ func (a *Admission) cost(h resource.Holder) (need resource.Need, grow uint64) {
 	case h.Priority:
 		need = resource.Prior(sig, a.N)
 	case a.idle(h):
-		return resource.Need{CPU: guard.IdleShare * sig.CPU, Mem: l.Mem}, 0
+		return resource.Need{CPU: IdleShare * sig.CPU, Mem: l.Mem}, 0
 	default:
 		need, _ = a.Predict(h)
 		if isLive {
@@ -147,7 +144,7 @@ func (a *Admission) ClassNeed(thread, class string) resource.Need {
 	return resource.NeedOf(l.Demand, l.Peak, l.Runs, sig, a.N)
 }
 
-// idle: no heavy command or busy reading for guard.IdleAfter, and no heavy
+// idle: no heavy command or busy reading for IdleAfter, and no heavy
 // call open. V0.admission-tidy: a quiet call (a test waiting on a server) kept
 // its hold for up to HeavyCallStale but counted as idle after 3 min.
 func (a *Admission) idle(h resource.Holder) bool {
@@ -155,7 +152,7 @@ func (a *Admission) idle(h resource.Holder) bool {
 		return false
 	}
 	at, ok := a.Jobs.Active(h.Owner)
-	return ok && a.now().Sub(at) >= guard.IdleAfter
+	return ok && a.now().Sub(at) >= IdleAfter
 }
 
 // heldNeeds is the holders' needs, and sig with their growth still to come
@@ -200,7 +197,7 @@ func (a *Admission) extras(held []resource.Holder) []resource.Extra {
 func (a *Admission) Admit(head resource.Holder, held []resource.Holder) (bool, string, string) {
 	need, _ := a.Predict(head)
 	needs, sig := a.heldNeeds(held)
-	return guard.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), head.Owner, need)
+	return DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), head.Owner, need)
 }
 
 // Backfill is EASY backfill: c may pass the head when it fits now and is
@@ -209,7 +206,7 @@ func (a *Admission) Admit(head resource.Holder, held []resource.Holder) (bool, s
 func (a *Admission) Backfill(head, c resource.Holder, held []resource.Holder) bool {
 	need, wall := a.Predict(c)
 	needs, sig := a.heldNeeds(held)
-	if ok, _, _ := guard.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), c.Owner, need); !ok {
+	if ok, _, _ := DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), c.Owner, need); !ok {
 		return false
 	}
 	ends := make([]time.Time, len(held))
@@ -218,7 +215,7 @@ func (a *Admission) Backfill(head, c resource.Holder, held []resource.Holder) bo
 			ends[i] = h.Since.Add(time.Duration(w * float64(time.Second)))
 		}
 	}
-	return guard.EASY(a.now(), guard.Cheap(need, sig), wall, ends)
+	return EASY(a.now(), Cheap(need, sig), wall, ends)
 }
 
 // Over says whether owner's job is heavier than predicted, in either
@@ -234,11 +231,11 @@ func (a *Admission) Over(owner string) (class string, live, predicted float64, o
 	l, ok := a.Live(h)
 	pc, pm := p.Shares(sig)
 	lc, lm := l.Shares(sig)
-	over = ok && (lc > pc+guard.CheapShare || lm > pm+guard.CheapShare)
+	over = ok && (lc > pc+CheapShare || lm > pm+CheapShare)
 	return a.Jobs.ClassOf(owner, h.Kind), resource.Pct(max(lc, lm)), resource.Pct(max(pc, pm)), over
 }
 
 // Thrashing: the host thrashes, so agents wait (V0.153).
 func (a *Admission) Thrashing() (bool, string) {
-	return guard.Thrashing(a.Host.Signals(), a.Policy)
+	return Thrashing(a.Host.Signals(), a.Policy)
 }
