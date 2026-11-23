@@ -4,7 +4,7 @@ Status lives in GitHub: https://github.com/meros/fyr/milestones. This file holds
 
 ## Where we are (23 Nov 2026)
 
-All v1.0 code that can be built and checked on the owner's own machines is merged (26 of the milestone's 29 issues closed). Since 21 Nov:
+All v1.0 code that can be built and checked on the owner's own machines is merged (26 of the milestone's 31 issues closed). Since 21 Nov:
 - **Blocking:**
   - owner identity without Tailscale (#197, #572);
   - the README trust model (#203);
@@ -18,12 +18,14 @@ All v1.0 code that can be built and checked on the owner's own machines is merge
   - the runner could not find `claude` in `~/.local/bin`, so no thread could start (#620).
 - **Fresh-machine run for #199:** found four install bugs, all fixed (#591).
 
-**Left, all needing the owner's hardware:**
-- #434: the Mac app, on the Mac runner.
+**Left:**
+- #434: a fresh-account run from `Fyr.dmg` to a merged PR, and `fyr`/`fyrd` signed with the certificate.
 - #236: the heavy-work check on a Mac and on Linux without cgroups.
-- #199: the slice layout on systemd ≥ 257, and the stable channel.
+- #199: the scope layout on systemd ≥ 257, and the stable channel.
+- #623: cut `v1.0.0-rc.1`.
+- #624: an `updateChannel` option in the NixOS module.
 
-The stable channel needs a `v*` tag, so it is checked when `v1.0.0-rc.1` is cut. Then the rc runs a week before `v1.0.0`.
+#434, #236 and #199 need the owner's hardware. The stable channel needs a `v*` tag, so it is checked when `v1.0.0-rc.1` is cut (#623). Then the rc runs a week before `v1.0.0`.
 
 ### Earlier (21 Nov 2026)
 
@@ -111,7 +113,7 @@ After v1.0: the Claude seam (`cli.Session` emitting Fyr events instead of `claud
 
 | Milestone | Scope |
 |---|---|
-| v1.x Polish | Mobile pass with an adversarial review (#59); the bug button (#63); a mini conversation beside a running stack, as an experiment (#52); one query over stored turn usage to measure what a live view costs (#17) |
+| v1.x | Everything after v1.0. **Hardening:** restart survival (#537–#543); tell a file-cache stall from a memory shortage (#625); the engine reaches the host through one `guard.Mechanism` (#626). **Features:** a self-contained desktop install that sets up a remote host (#477); linked providers (#499); one control for model and provider (#501). **Polish:** a mobile pass with an adversarial review (#59); the bug button (#63); a mini conversation beside a running stack, as an experiment (#52); one query over stored turn usage to measure what a live view costs (#17) |
 | Mesh | Hosts dial each other (decision 0021, point 8): facts and idempotent relayed commands, a host reachable through a third, and a thread move designed as a record protocol with one writer at each step. Exit: a host two hops away is reached through a third; no record has two writers; a thread moved between hosts leaves one record and arrives as one |
 
 ## Closed
