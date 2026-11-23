@@ -62,9 +62,23 @@ func printInstallSystemd(t *testing.T, pk, sd, path, home string, args ...string
 	return string(out), home
 }
 
+// currentUser is the name the script reads with id -un.
+func currentUser(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("id", "-un").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // V0.linux-without-nix: --print changes nothing and asks no sudo.
 func TestInstallLinuxPrintWritesNothing(t *testing.T) {
 	out, home := printInstall(t, "124")
+	// V0.fresh-ubuntu-run: the fyr command goes on PATH as a link.
+	if want := "as " + currentUser(t) + ": link " + home + "/.local/bin/fyr to " + home + "/.local/share/fyr/launcher/fyr (the fyr command)"; !strings.Contains(out, want) {
+		t.Errorf("missing %q in\n%s", want, out)
+	}
 	if es, _ := os.ReadDir(home); len(es) != 0 {
 		t.Fatalf("--print wrote into HOME: %v", es)
 	}

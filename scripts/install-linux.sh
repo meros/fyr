@@ -70,6 +70,9 @@ fi
 user="$(id -un)"
 group="$(id -gn)"
 data="$HOME/.local/share/fyr"
+# The fyr command (fyr auth, fyr device add, fyr --version): a link in
+# ~/.local/bin, which Debian's and Ubuntu's ~/.profile put on PATH.
+binlink="$HOME/.local/bin/fyr"
 cfg="$HOME/.config/fyr/config.json"
 repo="${FYR_REPO:-meros/fyr}"
 # The root files. The NixOS module (nix/module.nix) makes the same ones;
@@ -89,6 +92,7 @@ if [ "$mode" = uninstall ]; then
   echo "removing the unit and the root files with sudo:"
   root systemctl disable --now fyr.service || true
   root rm -f "$unit" "$slice" "$rule" "$helper"
+  [ "$(readlink "$binlink" 2>/dev/null)" != "$data/launcher/fyr" ] || rm -f "$binlink"
   root systemctl daemon-reload
   echo "stopped and removed fyr.service; data stays in $data, the config in $cfg"
   exit 0
@@ -317,6 +321,7 @@ if [ "$mode" = print ]; then
   echo "  check SHA256SUMS, link $data/current to it, copy fyrd to $data/seed and fyr to $data/launcher"
   echo "as $user: set \"cgroups\" in $cfg to $cgroups"
   [ -z "$set_channel" ] || echo "as $user: set \"updateChannel\" in $cfg to \"$set_channel\""
+  echo "as $user: link $binlink to $data/launcher/fyr (the fyr command), unless something else is there"
   for f in fyr.service fyr-agents.slice 50-fyr-agents.rules agents-pressure-chown; do
     [ "$layout" = scope ] || [ "$f" = fyr.service ] || continue
     echo
@@ -375,6 +380,12 @@ if [ "$mode" = install ]; then
   install -m 0755 "$build/fyrd" "$data/seed/fyrd"
   install -m 0755 "$build/fyr" "$data/launcher/fyr"
   ln -sfn "builds/$short" "$data/current.tmp" && mv -fT "$data/current.tmp" "$data/current"
+  if [ ! -e "$binlink" ] && [ ! -L "$binlink" ] || [ "$(readlink "$binlink")" = "$data/launcher/fyr" ]; then
+    mkdir -p "$(dirname "$binlink")"
+    ln -sfn "$data/launcher/fyr" "$binlink"
+  else
+    echo "$binlink is there already (not this install's link); the fyr command is $data/launcher/fyr" >&2
+  fi
 
   mkdir -p "$(dirname "$cfg")"
   if [ ! -s "$cfg" ]; then
@@ -421,6 +432,10 @@ root systemctl restart fyr.service
 
 [ "$mode" = print ] && exit 0
 echo "started fyr.service; open http://127.0.0.1:7777 · log: journalctl -u fyr, $data/daemon.log"
+case ":$PATH:" in
+  *":$(dirname "$binlink"):"*) ;;
+  *) echo "the fyr command is $binlink: open a new login shell (~/.profile adds ~/.local/bin to PATH) or add it to PATH" ;;
+esac
 echo "fyrd installs each new release of the $follow channel by itself (Settings → Auto-update)"
 if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
   echo "tailnet (optional): to reach Fyr from your phone over Tailscale, set your Tailscale login once (fyr auth owner <you@example.com>) and publish it: sudo tailscale serve --bg --https=7443 unix:$data/serve.sock"

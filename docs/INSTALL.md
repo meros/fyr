@@ -52,7 +52,7 @@ The recommended macOS install (macOS 13+, Apple Silicon and Intel) is [`Fyr.dmg`
 
 `scripts/install-linux.sh` is the NixOS module's stand-in on Debian, Ubuntu and other systemd Linux (V0.linux-without-nix). Run it as the user Fyr and its agents run as; it refuses root.
 
-**What runs as you:** the download of the release of the install's channel ([below](#channels-and-versions); a new install: the newest stable version, or main's newest build while no version is published) (over HTTPS with `git` and `curl`, no `gh` login; checked against `SHA256SUMS`) into `~/.local/share/fyr/builds/<sha12>`, the `current` link, the seed (`seed/fyrd`) and the launcher (`launcher/fyr`); and the `cgroups` and `updateChannel` keys in `~/.config/fyr/config.json` (other keys are kept; with no `python3` and an existing file, it tells you what to add).
+**What runs as you:** the download of the release of the install's channel ([below](#channels-and-versions); a new install: the newest stable version, or main's newest build while no version is published) (over HTTPS with `git` and `curl`, no `gh` login; checked against `SHA256SUMS`) into `~/.local/share/fyr/builds/<sha12>`, the `current` link, the seed (`seed/fyrd`) and the launcher (`launcher/fyr`), linked as `~/.local/bin/fyr` so the `fyr` command is on your PATH (Debian's and Ubuntu's `~/.profile` add that folder; open a new login shell); and the `cgroups` and `updateChannel` keys in `~/.config/fyr/config.json` (other keys are kept; with no `python3` and an existing file, it tells you what to add).
 
 **What needs root**, run with `sudo`, each command printed first:
 
@@ -67,7 +67,7 @@ Then `systemctl daemon-reload`, `enable` and `restart fyr.service`. These are th
 
 **The layout follows polkit and systemd.** A polkit that reads JavaScript rules (0.106 and later) with systemd 257 or later (Debian 13, Ubuntu 25.04) gets the four files above: fyrd alone in `fyr.service`, each thread in a scope of `fyr-agents.slice` ([HOST-SETUP](HOST-SETUP.md)). An older systemd (Debian 12's 252, Ubuntu 24.04's 255) tells polkit no unit name when it starts a scope, so no rule can grant the agents' scopes; there, and with an older polkit (Ubuntu 22.04's 0.105) or none, the script writes the V0.80 unit instead: `Delegate=cpu memory`, fyrd splits it into `server/` and `agents/<thread>/`, and there is no slice or rule. After an upgrade to polkit 0.106 and systemd 257, run the script again to move to the slice.
 
-**Run it again** whenever you like: it installs the current release of the channel, rewrites the root files and restarts the unit (which ends running agent turns). `--print` shows every file and command and changes nothing: no download, no `sudo`. `--uninstall` stops the unit and removes the root files; `~/.local/share/fyr` and `~/.config/fyr` stay.
+**Run it again** whenever you like: it installs the current release of the channel, rewrites the root files and restarts the unit (which ends running agent turns). `--print` shows every file and command and changes nothing: no download, no `sudo`. `--uninstall` stops the unit and removes the root files and the `fyr` link; `~/.local/share/fyr` and `~/.config/fyr` stay.
 
 **Updates** are the updater's ([below](#updates)). It needs no `gh` login for a public release repo.
 
