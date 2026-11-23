@@ -197,6 +197,12 @@ var (
 // thread for a kind that makes one. It is pure: the records passed in are
 // not changed.
 func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result, error) {
+	return ReduceIn(Env{}, t, v, in, now)
+}
+
+// ReduceIn is Reduce with what the host knows beside the thread (Env): the
+// engine's one call.
+func ReduceIn(env Env, t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result, error) {
 	k, err := kindOf(in, RecThread)
 	if err != nil {
 		return nil, nil, Result{}, err
@@ -219,6 +225,9 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	if err != nil {
 		return nil, nil, Result{}, asRejection(err)
 	}
+	// V0.review-correctness (2): the thread lands in its project before the
+	// rules read it.
+	env.file(t)
 	// 0024 §5: an ask whose change is done or whose PR closed is void.
 	res.Events = append(res.Events, voidAsks(t)...)
 	// V0.84 (3): a change that moved since the owner said Not now is back.

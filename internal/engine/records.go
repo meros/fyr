@@ -9,6 +9,7 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"maps"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
@@ -140,31 +142,58 @@ func (e *Engine) loopRecord(c *core.Change) bool {
 
 // applyRecord is the path of a host record's Input (#35): the record's
 // reduce, then a change.observed Input to every thread that shows it, all
-// stored in one transaction.
-func (e *Engine) applyRecord(in core.Input) ([]*applied, error) {
+// stored in one transaction with the command's receipt (V0.review-correctness (3)):
+// the receipt is checked and written under e.mu, so a command sent twice
+// runs once and a crash leaves neither. reply is the command's reply, the
+// stored one on a replay.
+func (e *Engine) applyRecord(in core.Input) ([]*applied, api.Reply, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	ps, reply, ss, err := e.applyRecordLocked(in)
+	check := e.threadChecks(ss...)
+	e.mu.Unlock()
+	check() // V0.thread-invariants
+	return ps, reply, err
+}
+
+// applyRecordLocked is applyRecord with e.mu held; ss are the committed
+// thread reduces.
+func (e *Engine) applyRecordLocked(in core.Input) (ps []*applied, reply api.Reply, ss []*staged, err error) {
+	if in.CmdID != "" {
+		if r, done := e.replay(in.CmdID); done {
+			if r.Status == 500 {
+				return nil, r, nil, errors.New(r.Error)
+			}
+			return nil, r, nil, nil
+		}
+	}
+	reply = api.Reply{OK: true, Status: 200, ThreadID: in.Thread}
 	now := e.Now()
 	rs := slices.Collect(maps.Values(e.records))
 	sort.Slice(rs, func(i, j int) bool { return rs[i].CreatedAt.Before(rs[j].CreatedAt) })
 	before, after, evs, err := core.ReduceRecord(rs, in, now)
-	if err != nil || after == nil {
-		return nil, err
+	if err != nil {
+		return nil, api.Reply{}, nil, err
 	}
-	moved := before == nil || !sameJSON(before, after)
-	var ss []*staged
-	for _, id := range e.showing(after, in.Thread) {
-		s, err := e.stage(e.threads[id], core.Input{Source: in.Source, Kind: core.KindChangeObserved, Thread: id, Args: core.ChangeObservedArgs{Before: before, After: *after}}, now, false)
-		if err != nil {
-			log.Printf("thread %s: %s: %v", id, core.KindChangeObserved, err)
-			continue
+	moved := after != nil && (before == nil || !sameJSON(before, after))
+	if after != nil {
+		// The threads see the record as observed, whoever moved it.
+		src := in.Source
+		if src.Principal() != core.ByObserved {
+			src = core.Observer(core.ObsHost)
 		}
-		if moved || !s.idle() {
-			ss = append(ss, s)
+		for _, id := range e.showing(after, in.Thread) {
+			s, err := e.stage(e.threads[id], core.Input{Source: src, Kind: core.KindChangeObserved, Thread: id, Args: core.ChangeObservedArgs{Before: before, After: *after}}, now, false)
+			if err != nil {
+				log.Printf("thread %s: %s: %v", id, core.KindChangeObserved, err)
+				continue
+			}
+			if moved || !s.idle() {
+				ss = append(ss, s)
+			}
 		}
 	}
-	if !moved && len(ss) == 0 {
-		return nil, nil
+	if !moved && len(ss) == 0 && in.CmdID == "" {
+		return nil, reply, nil, nil
 	}
 	if _, err := e.st.Write(func(tx *store.Tx) error {
 		if moved {
@@ -184,18 +213,23 @@ func (e *Engine) applyRecord(in core.Input) ([]*applied, error) {
 				}
 			}
 		}
-		return nil
+		if in.CmdID == "" {
+			return nil
+		}
+		return tx.PutReceipt(in.CmdID, reply, now)
 	}); err != nil {
-		log.Printf("change %s: %s: %v", after.ID, in.Kind, err)
-		return nil, err
+		log.Printf("record %s: %v", in.Kind, err)
+		return nil, api.Reply{}, nil, err
 	}
-	e.records[after.ID] = after
-	out := make([]*applied, len(ss))
+	if moved {
+		e.records[after.ID] = after
+	}
+	ps = make([]*applied, len(ss))
 	for i, s := range ss {
 		e.commit(s, moved)
-		out[i] = s.applied
+		ps[i] = s.applied
 	}
-	return out, nil
+	return ps, reply, ss, nil
 }
 
 // showing are the threads that show a record: those that reference it,

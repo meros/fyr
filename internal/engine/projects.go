@@ -142,28 +142,6 @@ func (e *Engine) ProjectFolders() []string {
 	return out
 }
 
-// projectList is the projects for matching. Call with e.mu held.
-func (e *Engine) projectList() []*core.Project {
-	out := make([]*core.Project, 0, len(e.projects))
-	for _, p := range e.projects {
-		out = append(out, p)
-	}
-	return out
-}
-
-// assignProject drops a project that is gone and, for a thread not filed by
-// hand and without a project, finds the project whose folder covers the
-// thread's folder (SPEC 0.5 V0.55). It never makes a project. Call with
-// e.mu held.
-func (e *Engine) assignProject(t *core.Thread) {
-	if t.ProjectID != "" && e.projects[t.ProjectID] == nil {
-		t.ProjectID, t.ProjectManual = "", false
-	}
-	if t.ProjectID == "" && !t.ProjectManual {
-		t.ProjectID = core.MatchFolder(e.projectList(), t.Cwd)
-	}
-}
-
 // projectName is the name of the thread's project, or "" (#33: derived for
 // the DTO, never stored). Call with e.mu held.
 func (e *Engine) projectName(t *core.Thread) string {
@@ -433,12 +411,11 @@ func (e *Engine) applyProject(in core.Input) api.Reply {
 		}
 		followed[f.Thread] = true
 	}
-	list := e.projectList()
 	for tid, t := range e.threads {
 		if err != nil {
 			break
 		}
-		if pid := refiled(t, e.projects, list); pid != t.ProjectID && !followed[tid] {
+		if pid, _ := core.Filed(t, e.projects); pid != t.ProjectID && !followed[tid] {
 			err = stage(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindProjectMatched, Thread: tid, Args: core.ProjectMatch{ID: pid}})
 		}
 	}
@@ -496,7 +473,9 @@ func (e *Engine) applyProject(in core.Input) api.Reply {
 			}
 		}
 	}
+	check := e.threadChecks(ss...)
 	e.mu.Unlock()
+	check()
 	if after == nil {
 		e.Hub.Send(stream.FrameProject, map[string]any{"id": id.ID, "deleted": true}) // SPEC 0.5 V0.58
 	}
@@ -512,24 +491,6 @@ func (e *Engine) applyProject(in core.Input) api.Reply {
 		e.Hub.Send(stream.FrameThread, d)
 	}
 	return reply
-}
-
-// refiled is the project a thread lands in after a change to the projects
-// (V0.55, V0.58): a thread whose project is gone loses it and the
-// filed-by-hand mark; a thread not filed by hand moves to the project whose
-// folder covers it, the longest first, and one that nothing covers keeps
-// its project.
-func refiled(t *core.Thread, ps map[string]*core.Project, list []*core.Project) string {
-	pid, manual := t.ProjectID, t.ProjectManual
-	if pid != "" && ps[pid] == nil {
-		pid, manual = "", false
-	}
-	if !manual {
-		if m := core.MatchFolder(list, t.Cwd); m != "" {
-			pid = m
-		}
-	}
-	return pid
 }
 
 func hostname() string {

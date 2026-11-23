@@ -284,14 +284,14 @@ func (e *Engine) Load() error {
 		return err
 	}
 	// V0.55: threads land in the project whose folder covers theirs; a
-	// thread whose project is gone loses it. Only changed threads are
-	// written.
+	// thread whose project is gone loses it (core.Filed, the rule each
+	// reduce applies). Only changed threads are written.
 	for _, t := range e.threads {
-		pid, manual := t.ProjectID, t.ProjectManual
-		e.assignProject(t)
+		pid, manual := core.Filed(t, e.projects)
 		if t.ProjectID == pid && t.ProjectManual == manual {
 			continue
 		}
+		t.ProjectID, t.ProjectManual = pid, manual
 		if _, err := e.st.Write(func(tx *store.Tx) error { return tx.PutThread(t) }); err != nil {
 			return err
 		}
@@ -346,10 +346,11 @@ func (e *Engine) publishRanksLocked() {
 // bump gives a thread a new rev. Call with e.mu held.
 func (e *Engine) bump(id string) { e.revs[id] = e.nextRev() }
 
-// nextRev is a new rev: wall-clock nanoseconds, strictly increasing, so it
-// also increases across restarts. Call with e.mu held.
+// nextRev is a new rev: the clock's nanoseconds (e.Now: a sim's fake clock
+// drives it), strictly increasing, so on the wall clock it also increases
+// across restarts. Call with e.mu held.
 func (e *Engine) nextRev() int64 {
-	r := time.Now().UnixNano()
+	r := e.Now().UnixNano()
 	if r <= e.lastRev {
 		r = e.lastRev + 1
 	}

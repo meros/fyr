@@ -2,6 +2,8 @@
 package engine
 
 import (
+	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -90,5 +92,99 @@ func TestLoadMarksLandedDone(t *testing.T) {
 		if x.ID == "t_old" && !core.FindChange(x, "c1").IsDone() {
 			t.Fatal("the pass is not stored")
 		}
+	}
+}
+
+// V0.review-correctness (3): the owner's Done on a host record sent twice at once
+// (a retry while the first is in flight) applies once: the record's reduce
+// and the receipt are one transaction under the engine's lock, so every
+// send gets the first one's reply and the record logs one mark.
+func TestOwnerDoneOnRecordDoubleSend(t *testing.T) {
+	e, st, _ := bare(t)
+	e.Git = &fakeGit{facts: map[string]core.GitFacts{}, ends: map[string][2]bool{}}
+	dir := t.TempDir()
+	a := threadIn(t, e, dir)
+	e.observeGit(a, &core.GitFacts{Repo: "github.com/meros/fyr", Path: dir, Branch: "spike", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "s1"})
+	id := shownIn(e, a)[0].ID
+	before, _ := st.EventsFor(id, 0, 1000, false)
+	const n = 8
+	replies := make(chan api.Reply, n)
+	for range n {
+		go func() {
+			replies <- e.Command(api.Cmd{CommandID: "end-1", Action: core.KindChangeEnd, ThreadID: a, Args: core.Args{"change": id, "reason": "dead"}})
+		}()
+	}
+	for range n {
+		if r := <-replies; !r.OK {
+			t.Fatalf("a send of the same command failed: %+v", r)
+		}
+	}
+	after, _ := st.EventsFor(id, 0, 1000, false)
+	if got := len(after) - len(before); got != 1 {
+		t.Fatalf("the record logged %d events for one command: %+v", got, after[len(before):])
+	}
+	if r, _ := st.Receipt("end-1"); r == nil {
+		t.Fatal("no receipt")
+	}
+}
+
+// V0.review-correctness (3): a host that stops after the record's reduce never has
+// the record changed without the receipt: they are one transaction. The
+// receipt's insert fails here (a trigger stands in for the crash): the mark
+// is not stored either, and the same command sent again applies once.
+func TestOwnerDoneOnRecordReceiptWithTheRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fyr.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	e := New(st)
+	if err := e.Load(); err != nil {
+		t.Fatal(err)
+	}
+	e.Git = &fakeGit{facts: map[string]core.GitFacts{}, ends: map[string][2]bool{}}
+	dir := t.TempDir()
+	a := threadIn(t, e, dir)
+	e.observeGit(a, &core.GitFacts{Repo: "github.com/meros/fyr", Path: dir, Branch: "spike", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "s1"})
+	id := shownIn(e, a)[0].ID
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER crash BEFORE INSERT ON receipts BEGIN SELECT RAISE(ABORT, 'crash'); END`); err != nil {
+		t.Fatal(err)
+	}
+	stored := func() bool {
+		rs, _ := st.Changes()
+		for _, c := range rs {
+			if c.ID == id {
+				return c.IsDone()
+			}
+		}
+		t.Fatal("record not stored")
+		return false
+	}
+	e.Command(api.Cmd{CommandID: "done-x", Action: core.KindChangeDone, ThreadID: a, Args: core.Args{"change": id}})
+	if r, _ := st.Receipt("done-x"); r == nil && (stored() || e.records[id].IsDone()) {
+		t.Fatal("the record is done without the command's receipt")
+	}
+	if _, err := db.Exec(`DROP TRIGGER crash`); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := st.EventsFor(id, 0, 1000, false)
+	if r := e.Command(api.Cmd{CommandID: "done-x", Action: core.KindChangeDone, ThreadID: a, Args: core.Args{"change": id}}); !r.OK {
+		t.Fatalf("the resend: %+v", r)
+	}
+	if !stored() || !e.records[id].IsDone() {
+		t.Fatal("the resend did not mark the record done")
+	}
+	if r, _ := st.Receipt("done-x"); r == nil {
+		t.Fatal("no receipt after the resend")
+	}
+	after, _ := st.EventsFor(id, 0, 1000, false)
+	if got := len(after) - len(before); got != 1 {
+		t.Fatalf("the resend logged %d events", got)
 	}
 }

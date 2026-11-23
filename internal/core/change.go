@@ -526,7 +526,10 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		}
 	}()
 	if c.PR != nil && c.PR.Head != "" && p.Head != "" && c.PR.Head != p.Head {
-		dropConditions(c, CondMerge) // V0.136: a refused merge was about the old head
+		// V0.136: a refused merge was about the old head; V0.review-correctness (1):
+		// so were its checks and its review, read again below.
+		dropConditions(c, CondMerge)
+		dropObserved(c, CondChecks, CondReview)
 	}
 	snap := p
 	snap.Annotations = nil
@@ -585,6 +588,10 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		setCondition(c, CondChecks, CondFail, "CI failed", ByObserved, now)
 	case ChecksPending:
 		setCondition(c, CondChecks, CondPending, "", ByObserved, now)
+	default:
+		// V0.review-correctness (1): no checks on this head (none yet, or a repo
+		// without CI); what the last head's checks said no longer holds.
+		dropObserved(c, CondChecks)
 	}
 	switch p.Review {
 	case "APPROVED":
@@ -593,6 +600,9 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		setCondition(c, CondReview, CondFail, "Changes requested", ByObserved, now)
 	case "REVIEW_REQUIRED":
 		setCondition(c, CondReview, CondPending, "", ByObserved, now)
+	default:
+		// V0.review-correctness (1): no decision (dismissed, or none required).
+		dropObserved(c, CondReview)
 	}
 	if p.Conflict {
 		setCondition(c, CondConflict, CondFail, "Merge conflict", ByObserved, now)
@@ -875,6 +885,18 @@ func dropConditions(c *Change, types ...CondType) {
 	out := c.Conditions[:0]
 	for _, k := range c.Conditions {
 		if !slices.Contains(types, k.Type) {
+			out = append(out, k)
+		}
+	}
+	c.Conditions = out
+}
+
+// dropObserved drops the conditions of these types that Fyr read
+// (ByObserved); what the owner or an agent set stays.
+func dropObserved(c *Change, types ...CondType) {
+	out := c.Conditions[:0]
+	for _, k := range c.Conditions {
+		if k.Source != ByObserved || !slices.Contains(types, k.Type) {
 			out = append(out, k)
 		}
 	}

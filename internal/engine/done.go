@@ -44,15 +44,14 @@ func (e *Engine) recordOwner(in core.Input, a core.Args, kind string) (api.Reply
 	if t == nil || rec == nil || mine {
 		return api.Reply{}, false
 	}
-	if r, done := e.replay(in.CmdID); done {
-		return r, true
+	// V0.review-correctness (3): the receipt is checked and written with the
+	// record, under one lock (applyRecord).
+	ps, reply, err := e.applyRecord(core.Input{Source: in.Source, Kind: kind, Thread: in.Thread, CmdID: in.CmdID, Args: core.Args{"change": id, "reason": a.Str("reason")}})
+	for _, p := range ps {
+		e.publish(p)
 	}
-	if _, err := e.Apply(core.Input{Source: in.Source, Kind: kind, Thread: in.Thread, Args: core.Args{"change": id, "reason": a.Str("reason")}}); err != nil {
+	if err != nil {
 		return rejected(err), true
-	}
-	reply := api.Reply{OK: true, Status: 200, ThreadID: in.Thread}
-	if in.CmdID != "" {
-		e.st.Write(func(tx *store.Tx) error { return tx.PutReceipt(in.CmdID, reply, e.Now()) })
 	}
 	return reply, true
 }

@@ -39,13 +39,13 @@ func TestMonogram(t *testing.T) {
 // or contains it; the longest folder wins, ties by id; a folder never
 // covers a sibling with the same prefix.
 func TestMatchFolder(t *testing.T) {
-	ps := []*Project{
-		{ID: "p_home", Folder: "/home/me"},
-		{ID: "p_fyr", Folder: "/home/me/git/fyr"},
-		{ID: "p_b", Folder: "/home/me/git/fyr/web/"},
-		{ID: "p_a", Folder: "/home/me/git/fyr/web"},
-		{ID: "p_label"},
-	}
+	ps := projectMap(
+		&Project{ID: "p_home", Folder: "/home/me"},
+		&Project{ID: "p_fyr", Folder: "/home/me/git/fyr"},
+		&Project{ID: "p_b", Folder: "/home/me/git/fyr/web/"},
+		&Project{ID: "p_a", Folder: "/home/me/git/fyr/web"},
+		&Project{ID: "p_label"},
+	)
 	cases := map[string]string{
 		"/home/me/git/fyr":     "p_fyr",
 		"/home/me/git/fyr/":    "p_fyr",
@@ -63,7 +63,7 @@ func TestMatchFolder(t *testing.T) {
 			t.Errorf("%q: got %q want %q", dir, got, want)
 		}
 	}
-	if got := MatchFolder([]*Project{{ID: "p_root", Folder: "/"}}, "/srv/x"); got != "p_root" {
+	if got := MatchFolder(projectMap(&Project{ID: "p_root", Folder: "/"}), "/srv/x"); got != "p_root" {
 		t.Errorf("root folder: %q", got)
 	}
 }
@@ -212,5 +212,51 @@ func TestProjectShared(t *testing.T) {
 	p, err := send(t0.Add(time.Second), link)
 	if err != nil || p.Name != "new" || p.Folder != "/w" || p.Model != "m" || !p.SharedAt.Equal(t0.Add(time.Second)) {
 		t.Fatalf("newer: %v %+v", err, p)
+	}
+}
+
+func projectMap(ps ...*Project) map[string]*Project {
+	m := map[string]*Project{}
+	for _, p := range ps {
+		m[p.ID] = p
+	}
+	return m
+}
+
+// V0.review-correctness (2): Filed is the one filing rule, and the reduce applies
+// it, so the rules and the invariants of that reduce see where the thread
+// lands.
+func TestFiled(t *testing.T) {
+	ps := projectMap(&Project{ID: "p_home", Folder: "/home/me"}, &Project{ID: "p_web", Folder: "/home/me/web"})
+	cases := []struct {
+		name   string
+		t      Thread
+		id     string
+		manual bool
+	}{
+		{"unfiled, covered", Thread{Cwd: "/home/me/web/src"}, "p_web", false},
+		{"filed, a closer folder", Thread{Cwd: "/home/me/web", ProjectID: "p_home"}, "p_web", false},
+		{"filed by hand stays", Thread{Cwd: "/home/me/web", ProjectID: "p_home", ProjectManual: true}, "p_home", true},
+		{"unfiled by hand stays", Thread{Cwd: "/home/me/web", ProjectManual: true}, "", true},
+		{"gone project, by hand", Thread{Cwd: "/srv", ProjectID: "p_gone", ProjectManual: true}, "", false},
+		{"gone project, covered", Thread{Cwd: "/home/me/x", ProjectID: "p_gone", ProjectManual: true}, "p_home", false},
+		{"nothing covers, keeps", Thread{Cwd: "/srv", ProjectID: "p_web"}, "p_web", false},
+	}
+	for _, c := range cases {
+		if id, manual := Filed(&c.t, ps); id != c.id || manual != c.manual {
+			t.Errorf("%s: got %q %v, want %q %v", c.name, id, manual, c.id, c.manual)
+		}
+	}
+	th := &Thread{ID: "t", Cwd: "/home/me/web", ProjectID: "p_gone"}
+	in := Input{Source: Observer(ObsClock), Kind: KindClock, Thread: "t"}
+	got, _, _, err := ReduceIn(Env{Projects: ps}, th, nil, in, nt0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProjectID != "p_web" || th.ProjectID != "p_gone" {
+		t.Errorf("reduce filed %q (input left %q)", got.ProjectID, th.ProjectID)
+	}
+	if got, _, _, _ := Reduce(th, nil, in, nt0); got.ProjectID != "p_gone" {
+		t.Errorf("a reduce without the host's projects filed %q", got.ProjectID)
 	}
 }
