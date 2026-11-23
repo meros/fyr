@@ -21,3 +21,17 @@ func TestRunningRequestWaits(t *testing.T) {
 		t.Fatalf("ended: %+v", a)
 	}
 }
+
+// V0.invariant-running-command-wait: the placement invariant knows the
+// running-command wait, so a thread that waits for its command is no violation.
+func TestPlacementInvariantRunningCommandWait(t *testing.T) {
+	th := &Thread{ID: "t", Title: "x"}
+	th.Offers = []ActionSpec{{ID: "r1", Request: true, Why: "copy the database"}}
+	th.Runs = []ActionRun{{Action: "r1", On: OnThread, Running: true}}
+	v := &View{SeenAt: at(9)}
+	for _, vi := range CheckThread(th, v, at(10), nil) {
+		if vi.ID == InvThreadAttentionPlacement {
+			t.Fatalf("running command wait flagged: %+v", vi)
+		}
+	}
+}

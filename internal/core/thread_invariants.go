@@ -868,6 +868,10 @@ func checkAttentionPlacement(t *Thread, v *View, now time.Time, on func(repo str
 		if a.State != Blocked || a.Section != NeedsYou {
 			probs = append(probs, fmt.Sprintf("pending Run card placed in %s/%s", a.State, a.Section))
 		}
+	case RunningRequest(t) != nil:
+		if a.State != Waiting || a.Section != WorkingSec {
+			probs = append(probs, fmt.Sprintf("running Run command placed in %s/%s", a.State, a.Section))
+		}
 	case t.SettleAsk != nil:
 		if a.State != Blocked || a.Section != NeedsYou {
 			probs = append(probs, fmt.Sprintf("settleAsk placed in %s/%s", a.State, a.Section))
