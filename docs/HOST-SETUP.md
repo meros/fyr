@@ -27,7 +27,7 @@ swapDevices = [ { device = "/dev/disk/by-label/swap"; } ];  # or a swap file
 
 ### The agents' slice and systemd-oomd
 
-With `services.fyr.cgroups.agentsUnit` (the default, V0.agents-unit, decision 0036 (B)) the module splits Fyr in two. On a Linux without Nix, `scripts/install-linux.sh` writes the same unit, slice, polkit rule and `ExecStartPre` helper when polkit reads JavaScript rules, else the V0.80 unit ([INSTALL](INSTALL.md#linux-without-nix)); what follows holds for both:
+With `services.fyr.cgroups.agentsUnit` (the default, V0.agents-unit, decision 0036 (B)) the module splits Fyr in two. On a Linux without Nix, `scripts/install-linux.sh` writes the same unit, slice, polkit rule and `ExecStartPre` helper when polkit reads JavaScript rules and systemd is 257 or later, else the V0.80 unit ([INSTALL](INSTALL.md#linux-without-nix)); what follows holds for both:
 
 ```
 system.slice/fyr.service          fyrd and its launcher: root's, not delegated,
@@ -39,7 +39,7 @@ fyr.slice/fyr-agents.slice        the agents' budget and oomd's rule
 
 - **oomd's rule sits on `fyr-agents.slice`**, from `agentsOomPressureLimit` (default 80 %) and `agentsOomPressureDuration`. Each thread's scope has `memory.oom.group=1`, so oomd ends a whole thread, never a job alone and never fyrd. Keep the limit above what Fyr's own throttling produces: throttling at `memory.high` counts as stall too, and the guard has to act first. fyrd logs `guard: near oomd's limit` when the slice's stall comes within 10 points of it (V0.oomd-guard).
 - **fyrd's unit is omitted.** It is root-owned, so its `ManagedOOMPreference=omit` holds against every rule (`/`, `system.slice` and the slice's), and its negative `OOMScoreAdjust` keeps the kernel's OOM killer off it. Do not put an oomd rule on `fyr.service`: with agentsUnit it holds only fyrd. Remove any custom oomd pressure rule the machine's configuration still sets on `fyr.service`.
-- **A polkit rule** lets the service user `start` and `set-property` units named `fyr-agent-….scope` and `fyr-deploy-….scope`, nothing else (no other unit, no stop, no kill). The module adds it and turns on `security.polkit`. fyrd starts each thread with `systemd-run --scope --slice=fyr-agents.slice`.
+- **A polkit rule** lets the service user `start` and `set-property` units named `fyr-agent-….scope` and `fyr-deploy-….scope`, nothing else (no other unit, no stop, no kill). The module adds it and turns on `security.polkit`. A second rule lets the user `start`, `stop` and `restart` `fyr.service`, for the Linux app's Pause and Resume (decision 0038): `install-linux.sh` writes it, and the module adds it with `desktop.enable`. fyrd starts each thread with `systemd-run --scope --slice=fyr-agents.slice`.
 - **`ExecStartPre` hands over the slice's `memory.pressure`** (V0.psi-trigger-slice). The file is root's, and fyrd needs to open it to set the guard's PSI trigger. The module's script, run as root before each start of `fyr.service`, chowns that one file to the service user; `fyr.service` wants and starts after the slice so the file exists. Without it the guard reads every 10 s instead of waking on the trigger, and fyrd tries the trigger again each minute.
 - **A QoS script** that rewrites the agents' CPU cap writes `/sys/fs/cgroup/fyr.slice/fyr-agents.slice/cpu.max`.
 
