@@ -659,7 +659,7 @@ func TestThreadInvariantsUnderRandomStateMachine(t *testing.T) {
 					"thread.markSeen", "thread.markUnseen", "thread.rename",
 					"thread.setView", "thread.handover", "thread.setModel",
 					KindChangeEnd, KindChangeDone, KindChangePark, KindChangeUnpark,
-					KindWakeOnQuota, KindCancelWake,
+					KindWakeOnQuota, KindCancelWake, KindCancelWait,
 				}
 				name := cmds[rng.Intn(len(cmds))]
 				args := Args{

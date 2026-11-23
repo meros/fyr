@@ -938,6 +938,7 @@ func checkAvailabilityMismatch(t *Thread, v *View, now time.Time) string {
 		}
 	}
 	wantAvail(KindCancelWake, len(Wakes(t)) > 0, fmt.Sprintf("wakes=%d", len(Wakes(t))))
+	wantAvail(KindCancelWait, len(agentWatches(t)) > 0, fmt.Sprintf("waits=%d", len(agentWatches(t))))
 	wantAvail("thread.restart", t.Unresponsive != nil, fmt.Sprintf("unresponsive=%t", t.Unresponsive != nil))
 	return strings.Join(probs, "; ")
 }

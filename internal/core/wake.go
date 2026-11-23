@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -158,6 +159,66 @@ func cancelledWakes(b, a *Thread) []Notice {
 			what += fmt.Sprintf(" (%q)", w.Note)
 		}
 		out = append(out, Notice{About: "thread", Key: "owner:wake:" + w.Rule, What: what + "; it will not fire. Do not set it again unless the owner asks."})
+	}
+	return out
+}
+
+// V0.waits-strip: every armed watch of the agent's (a time, a quota reset, a
+// change reaching a phase, a check, the run's end, idleness) is a wait the
+// owner sees above the composer and cancels one by one.
+
+// KindCancelWait is the owner's cancel of one of the agent's waits.
+const KindCancelWait = "thread.cancelWait"
+
+// Wait is one armed watch as clients read it: its id and its condition in a few words.
+type Wait struct {
+	Rule string `json:"rule"`
+	Text string `json:"text"`
+	By   string `json:"by,omitempty"`
+}
+
+// Waits are the thread's armed notify watches, soonest wake-up first, the
+// words of WatchWaitText.
+func Waits(t *Thread, now time.Time) []Wait {
+	var out []Wait
+	for _, r := range agentWatches(t) {
+		out = append(out, Wait{Rule: r.ID, Text: watchText(t, r.When, now), By: r.CreatedBy})
+	}
+	return out
+}
+
+func init() {
+	register(&Action{Name: KindCancelWait, Label: "Cancel wait",
+		Available: func(t *Thread, _ *View, _ time.Time) string {
+			if len(agentWatches(t)) == 0 {
+				return "Nothing is waited for"
+			}
+			return ""
+		},
+		// rule: the watch to cancel; "" cancels the first.
+		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
+			id := a.trimmed("rule")
+			ws := agentWatches(t)
+			if id == "" && len(ws) > 0 {
+				id = ws[0].ID
+			}
+			if !slices.ContainsFunc(ws, func(r Rule) bool { return r.ID == id }) {
+				return nil, reject(RejectNotFound, "no wait %q on this thread", id)
+			}
+			DropRules(t, func(y Rule) bool { return y.ID == id })
+			return nil, nil
+		}})
+}
+
+// cancelledWaits are the agent's notices for its watches an owner's cancel
+// dropped: it must not count on them. An owner-armed watch cancels quietly.
+func cancelledWaits(b, a *Thread, now time.Time) []Notice {
+	var out []Notice
+	for _, r := range agentWatches(b) {
+		if r.CreatedBy == ByOwner || FindRule(a, r.ID) != nil {
+			continue
+		}
+		out = append(out, Notice{About: "thread", Key: "owner:wait:" + r.ID, What: fmt.Sprintf("The owner cancelled your watch %s (%s); it will not fire. Do not set it again unless the owner asks.", r.ID, watchText(b, r.When, now))})
 	}
 	return out
 }

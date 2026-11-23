@@ -186,5 +186,34 @@ func TestQuotaSyncMovesASuspendedWake(t *testing.T) {
 	find(got.When)
 	if quotaAt == nil || !quotaAt.Equal(moved) {
 		t.Fatalf("suspended wake kept %v, want %v", quotaAt, moved)
+
+	}
+}
+
+// V0.waits-strip: every armed watch of the agent's is a wait the owner sees and
+// cancels one by one; the agent is told.
+func TestWaitsAreShownAndCancelled(t *testing.T) {
+	th, v := &Thread{ID: "t_1", ActivityAt: ct0}, &View{}
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_idle", When: When{Kind: WhenIdleFor, Ms: 1_800_000}, Then: "notify"}}, ct0)
+	ws := Waits(th, ct0)
+	if len(ws) != 1 || ws[0].Rule != "w_idle" || ws[0].Text != "wakes after 30 min idle" {
+		t.Fatalf("waits %+v", ws)
+	}
+	if r := Registry[KindCancelWait].Available(th, v, ct0); r != "" {
+		t.Fatalf("cancel off: %s", r)
+	}
+	step(t, th, v, Input{Source: FromOwner, Kind: KindCancelWait, Args: Args{"rule": "w_idle"}}, ct0.Add(time.Minute))
+	if len(Waits(th, ct0)) != 0 {
+		t.Fatalf("rules after the cancel: %+v", th.Rules)
+	}
+	told := false
+	for _, n := range th.Feed.Queue {
+		told = told || strings.Contains(n.What, "The owner cancelled your watch w_idle")
+	}
+	if !told {
+		t.Fatalf("the agent is not told: %+v", th.Feed.Queue)
+	}
+	if r := Registry[KindCancelWait].Available(th, v, ct0); r == "" {
+		t.Fatal("cancel on with no wait")
 	}
 }

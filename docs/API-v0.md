@@ -176,6 +176,7 @@ Actions and their args:
 | `thread.settleWhenDone` | V0.203: settles once no run or task is live, nothing waits for the owner and no PR is open |
 | `thread.wakeOnQuota` | V0.quota-reset-wake, V0.quota-auto-continue: `{provider?, window?, note?}` arms an owner-owned wake when that provider's quota window resets and clears a stopped thread's failure; falls back to the thread's own parsed future `failure` reset notice when the provider has no quota polling and no specific window was named |
 | `thread.cancelWake` | V0.wakeups-via-watch: `{rule?}` cancels the agent's wake-up (its watch on a time or quota reset; no rule: the soonest); the agent is told for agent-armed wakes |
+| `thread.cancelWait` | V0.waits-strip: `{rule?}` cancels one of the agent's armed watches of any kind (`thread.waits`; no rule: the first); the agent is told for agent-armed ones |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.snoozeWhenDone` (V0.185): until the thread's work is done, at most 24 h; `view.snoozeUntil` is then that maximum and `view.snoozeWhenDone` is true. Unavailable, with the reason, when no work goes on or the thread needs the owner | none |
 | `thread.rename` | `title` |

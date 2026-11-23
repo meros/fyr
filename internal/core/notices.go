@@ -606,6 +606,9 @@ func ownerNotices(r Reduced) []Notice {
 	if r.In.Kind == KindCancelWake { // V0.wakeups-via-watch; a firing in the same reduce is not a cancel
 		out = append(out, cancelledWakes(b, a)...)
 	}
+	if r.In.Kind == KindCancelWait { // V0.waits-strip
+		out = append(out, cancelledWaits(b, a, time.Now())...)
+	}
 	if (a.ArchivedAt != nil) != (b.ArchivedAt != nil) {
 		s := "unarchived"
 		if a.ArchivedAt != nil {

@@ -32,6 +32,7 @@ import { InvariantCards } from "./invariants-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { changeChip, headerPrs, settleLine, threadPrs } from "./offers.ts";
 import { WakeChip } from "./wake-ui.tsx";
+import { WaitsStrip } from "./waits-ui.tsx";
 import { hasMultipleRepos, pickPr, prChip, shortRepo } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { tabLabel, defaultTab, showsDecision, threadTabs } from "./view.ts";
@@ -771,6 +772,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
       )}
       {/* V0.next-step-dock: a run request waits in the dock above the composer, as on the desktop (DockRun) */}
       {!decision && dock && showsDecision(p.tab) && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={(a, args) => void p.commands.run(a, [t.id], args)} onShow={(id) => showCard(id, p.tab, setTab)} />}
+      {!decision && !nextOffer && <WaitsStrip t={t} onCancel={(rule) => void p.commands.run("thread.cancelWait", [t.id], { rule })} />}
       {!decision && !nextOffer && (
         <PhoneComposer
           key={t.id}

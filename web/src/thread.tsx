@@ -35,6 +35,7 @@ import { dockRun, waitingRuns } from "./runcard.ts";
 import { changeChip, headerPrs, prForEffect, settleLine, threadPrs } from "./offers.ts";
 import { WakeChip } from "./wake-ui.tsx";
 import { FolderChip } from "./folder-ui.tsx";
+import { WaitsStrip } from "./waits-ui.tsx";
 import { hasMultipleRepos, pickPr, prChip, shortRepo } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
@@ -265,6 +266,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {/* V0.next-step-dock: what waits on the owner stands in one dock; a question or approval first, then a Run card */}
       {showsDecision(tab) && !decision && dock && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={p.onRun} onShow={(id) => showCard(id, tab, setTab)} />}
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1 + waitingRuns(t)} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} onCancelAsk={p.onCancelAsk} pr={prForEffect(t, decision)} cwd={t.cwd} host={t.host || undefined} />}
+      <WaitsStrip t={t} onCancel={(rule) => p.onRun("thread.cancelWait", { rule })} />
       <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} onRestart={() => p.onRun("thread.restart")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );
