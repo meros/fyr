@@ -442,11 +442,13 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
   };
   // The page asks the provider once when it opens and the last check is over 10 minutes old (by the host's clock).
   const asked = useRef(false);
+  /* eslint-disable react-hooks/exhaustive-deps -- asks once per provider when the clock is known (asked guards it); now, p and doRefresh are read at that moment */
   useEffect(() => {
     if (asked.current || !clockKnown) return;
     asked.current = true;
     if (needsCheck(p, now) && !env.readOnly) void doRefresh();
   }, [p.id, clockKnown]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const ro = useReorder(ids, (next, _from, to) => apply(next[to], { order: next }));
   const canReorder = !searching && ids.length > 1 && !env.readOnly; // while the search has text, reorder is off
   const [mode, setMode] = useState(false); // the phone's Reorder mode

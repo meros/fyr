@@ -17,12 +17,14 @@ export function usePeerState(api: Partial<PeersApi>, live: boolean): { s: PeerSt
     if (!api.peerState) return;
     void api.peerState().then((r) => (r.ok ? (setS(r.data), setErr(null)) : setErr(r.error)));
   };
+  /* eslint-disable react-hooks/exhaustive-deps -- polls while live and reloads when the peer API appears (a boolean); load is a new function each render */
   useEffect(() => {
     load();
     if (!live) return;
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [live, !!api.peerState]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   return { s, err, reload: load };
 }
 
@@ -40,11 +42,12 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
   const [target, setTarget] = useState<{ id: string; name: string; addr: string } | null>(null);
   const [showIgnored, setShowIgnored] = useState(false);
   const codeRef = useRef<HTMLInputElement>(null);
+  const inviteUntil = invite?.until;
   useEffect(() => {
-    if (!invite) return;
-    const t = setTimeout(() => setInvite(null), Math.max(0, Date.parse(invite.until) - Date.now()));
+    if (!inviteUntil) return;
+    const t = setTimeout(() => setInvite(null), Math.max(0, Date.parse(inviteUntil) - Date.now()));
     return () => clearTimeout(t);
-  }, [invite?.until]);
+  }, [inviteUntil]);
   if (!s) return null;
   const signed = s.signedIn !== false;
   const ro = env.readOnly || busy || !signed;

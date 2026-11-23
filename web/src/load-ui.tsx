@@ -63,7 +63,7 @@ export function useLoad(): HostLoad[] {
         document.removeEventListener("visibilitychange", onVisible);
       }
     };
-  }, []);
+  }, [api]);
   return l;
 }
 

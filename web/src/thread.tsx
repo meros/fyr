@@ -298,7 +298,7 @@ interface ThreadTabBodyProps {
  *  (V0.19), Changes (V0.25, V0.59) and PR (V0.43, V0.multi-pr). */
 export function ThreadTabBody({ t, tab, setTab, prs, activePr, onSelectPr, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
   const api = useApi();
-  const previews = useMemo(() => previewsOf(events ?? [], t.hostId, api), [events, t.hostId]);
+  const previews = useMemo(() => previewsOf(events ?? [], t.hostId, api), [api, events, t.hostId]);
   const viewAction = useViewAction(run, t.cwd);
   const prList = prs ?? threadPrs(t);
   const currentPr = activePr ?? pickPr(prList, undefined, t.pr?.url);

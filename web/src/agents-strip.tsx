@@ -61,7 +61,7 @@ export function AgentsStrip({ tasks, now, events, cwd }: { tasks: TaskDTO[]; now
       if (c) m.set(id, c);
     }
     return m;
-  }, [events, wanted, cwd]);
+  }, [build, events, wanted, cwd]);
   const row = (t: TaskDTO) => {
     const call = t.toolUseId ? calls.get(t.toolUseId) : undefined;
     return <TaskRow t={t} now={now} key={t.id} call={call} open={opened === t.id} onOpen={() => setOpened(opened === t.id ? null : t.id)} />;

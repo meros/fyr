@@ -35,12 +35,12 @@ function variants<T>(list: T[], required: Set<string>): { label: string; list: T
   return out;
 }
 
-function survives<T>(what: string, list: T[], required: string[], use: (l: T[]) => void) {
+function survives<T>(what: string, list: T[], required: string[], read: (l: T[]) => void) {
   const vs = variants(list, new Set(required));
   assert.ok(vs.length > 5, `${what}: the fixture has optional fields to remove`);
   for (const v of vs) {
     try {
-      use(v.list);
+      read(v.list);
     } catch (e) {
       assert.fail(`${what} without ${v.label}: ${(e as Error).message}`);
     }

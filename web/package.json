@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint -c .oxlintrc.json --deny-warnings src test",
     "test": "node --import ./test/text-loader.mjs --test \"test/**/*.test.ts\"",
     "test:layout": "node test/layout.e2e.mjs",
     "test:auth": "node test/auth.e2e.mjs"
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
+    "oxlint": "1.94.0",
     "typescript": "^7.0.2"
   }
 }

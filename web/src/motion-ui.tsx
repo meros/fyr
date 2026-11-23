@@ -88,6 +88,7 @@ function useSheetMotion(root: ElRef, back: ElRef, panel: ElRef, kind: SheetKind,
   close.current = onClose;
   const flung = useRef(0);
 
+  /* eslint-disable react-hooks/exhaustive-deps -- the opening animation runs once, on mount; kind is fixed for the panel's life and root, back and panel are refs */
   useLayoutEffect(() => {
     const r = root.current!;
     const b = back.current!;
@@ -129,6 +130,7 @@ function useSheetMotion(root: ElRef, back: ElRef, panel: ElRef, kind: SheetKind,
       setTimeout(done, 600);
     };
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   useEffect(() => {
     if (kind !== "sheet") return;
@@ -231,7 +233,7 @@ function useSheetMotion(root: ElRef, back: ElRef, panel: ElRef, kind: SheetKind,
       window.removeEventListener("pointermove", pm);
       window.removeEventListener("pointerup", pu);
     };
-  }, [kind]);
+  }, [back, kind, panel]);
 }
 
 /** The phone's bottom sheet: every sheet of the app. `dismiss` is the scrim's tap and the drag; a long press opens a sheet
@@ -287,6 +289,7 @@ const POPS = {
 };
 
 export function useEnterExit(ref: ElRef, kind: keyof typeof POPS) {
+  /* eslint-disable react-hooks/exhaustive-deps -- the enter animation runs once, on mount, and the exit on unmount; kind is fixed for the element's life and ref is a ref */
   useLayoutEffect(() => {
     const el = ref.current!;
     const p = POPS[kind];
@@ -300,6 +303,7 @@ export function useEnterExit(ref: ElRef, kind: keyof typeof POPS) {
       g.animate([p.to, p.from], { duration: p.outMs, easing: "ease-in", fill: "forwards" }).finished.then(done, done);
     };
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 }
 
 /** A div that animates in and out with `kind`. */
@@ -335,6 +339,7 @@ export function SlideMark({ at, under }: { at: string; under?: boolean }) {
     m.style.height = `${under ? 2 : on.offsetHeight}px`;
     m.style.translate = `${on.offsetLeft}px ${on.offsetTop + (under ? on.offsetHeight - 2 : 0)}px`;
   };
+  /* eslint-disable react-hooks/exhaustive-deps -- places the mark when the choice (at) changes, never on an ordinary render; place reads only refs and under, so the first one, kept by the ResizeObserver, acts the same */
   useLayoutEffect(() => {
     if (!ro.current && typeof ResizeObserver === "function") {
       ro.current = new ResizeObserver(place);
@@ -342,12 +347,15 @@ export function SlideMark({ at, under }: { at: string; under?: boolean }) {
     }
     place();
   }, [at]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+  /* eslint-disable react-hooks/exhaustive-deps -- the first placement after the fonts load runs once, on mount; place reads only refs and under */
   useEffect(() => {
     const m = ref.current!;
     const raf = requestAnimationFrame(() => m.classList.add("ready")); // the first placement does not slide in
     void document.fonts?.ready.then(place);
     return () => (cancelAnimationFrame(raf), ro.current?.disconnect());
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   return <i ref={ref} class={`slide${under ? " under" : ""}`} aria-hidden="true" />;
 }
 

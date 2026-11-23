@@ -92,6 +92,7 @@ export function ChangesView({ host, threadId, changes }: { host: HostId; threadI
     });
   };
 
+  /* eslint-disable react-hooks/exhaustive-deps -- the diff reloads only when the thread changes; load and flush are new each render, and gen is a counter, not an element, so the cleanup wants its newest value */
   useEffect(() => {
     setData(null);
     setOpen(new Set());
@@ -105,10 +106,11 @@ export function ChangesView({ host, threadId, changes }: { host: HostId; threadI
       gen.current++;
     };
   }, [threadId]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const since = data?.since;
   const showSince = mode === "since" && !!since && since.files.length > 0;
-  const files = useMemo(() => sortFiles((showSince ? since?.files : data?.files) ?? []), [data, showSince]);
+  const files = useMemo(() => sortFiles((showSince ? since?.files : data?.files) ?? []), [data, since, showSince]);
   const notes = useMemo(() => codeNotes(changes, data?.branch), [changes, data?.branch]);
   const m: Mode = showSince ? "since" : "whole";
 

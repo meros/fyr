@@ -82,7 +82,9 @@ func workGoing(t *Thread, counts func(Rule) bool, now time.Time) bool {
 
 // WorkOverAt is the Condition's value at now: the snooze has nothing left
 // to wait for (V0.quota-wait: a quota wait ends at its reset).
-func WorkOverAt(t *Thread, now time.Time) bool { return t.Asleep() || NeedsOwnerAt(t, now) || !WorkGoingAt(t, now) }
+func WorkOverAt(t *Thread, now time.Time) bool {
+	return t.Asleep() || NeedsOwnerAt(t, now) || !WorkGoingAt(t, now)
+}
 
 // snoozeDoneReason is why the thread cannot take this snooze now, or "".
 func snoozeDoneReason(t *Thread, now time.Time) string {

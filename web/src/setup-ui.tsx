@@ -71,6 +71,7 @@ export function SetupPage({
     setErr(null);
   };
 
+  /* eslint-disable react-hooks/exhaustive-deps -- a new host starts the report from scratch; load is a new function each render */
   useEffect(() => {
     setReport(null);
     setErr(null);
@@ -80,13 +81,16 @@ export function SetupPage({
     setQr(null);
     void load();
   }, [host]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Poll while GitHub device-code login is running.
+  /* eslint-disable react-hooks/exhaustive-deps -- polls while gh auth runs on this host; load is a new function each render */
   useEffect(() => {
     if (!ghAuth?.running) return;
     const t = setInterval(() => void load(), 2500);
     return () => clearInterval(t);
   }, [ghAuth?.running, host]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const runFix = async (action: string, extra?: Record<string, unknown>) => {
     if (!host) return;

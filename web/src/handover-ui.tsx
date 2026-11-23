@@ -74,6 +74,7 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   const [err, setErr] = useState<string | null>(null);
 
   // When target host changes, pick the best default provider/model on that host and suggest its folder.
+  /* eslint-disable react-hooks/exhaustive-deps -- resets the targets only when the target host changes; the thread, the profiles and fromProf are read at that moment */
   useEffect(() => {
     const nextTargets = handoverTargetsForHost(p.t, targetHost, targetHost === p.t.hostId ? p.profiles : profilesOf({ hostId: targetHost }, allProfiles));
     const preferred = targetHost !== p.t.hostId ? nextTargets.find((x) => x.id === p.t.profile && !x.unavailable) : undefined;
@@ -83,8 +84,10 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
     setFolderManual(false);
     setErr(null);
   }, [targetHost]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Fetch the source thread's handover plan (for same-host, passes target profile; for cross-host, reads source session + git facts).
+  /* eslint-disable react-hooks/exhaustive-deps -- fetches the plan again only when the thread, the cross-host choice or (on the same host) the profile changes; api is fixed for the app's life */
   useEffect(() => {
     let live = true;
     setPlan(null);
@@ -96,8 +99,10 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
       live = false;
     };
   }, [p.t.id, crossHost, crossHost ? "" : profile]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Auto-suggest target folder from linked project or matching git remote once plan (with git.repo) loads, unless the owner picked one.
+  /* eslint-disable react-hooks/exhaustive-deps -- the folder suggestion follows these inputs; the thread and the project list are read at that moment */
   useEffect(() => {
     if (!crossHost || folderManual) return;
     const s = suggestTargetFolder(p.t, targetHost, p.projects ?? [], plan?.git?.repo);
@@ -105,6 +110,7 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
     setProjectId(s.projectId);
     setFolderReason(s.reason);
   }, [crossHost, targetHost, plan?.git?.repo, folderManual]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const blocked = p.t.unavailable["thread.handover"];
   const hostDown = crossHost ? hostOfflineNote(targetHost, hosts, now) : null;

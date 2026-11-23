@@ -16,12 +16,14 @@ export function useAuthState(api: Partial<DevicesApi>, live: boolean): { s: Auth
     if (!api.authState) return;
     void api.authState().then((r) => (r.ok ? (setS(r.data), setErr(null)) : setErr(r.error)));
   };
+  /* eslint-disable react-hooks/exhaustive-deps -- polls while live and reloads when the auth API appears (a boolean); load is a new function each render */
   useEffect(() => {
     load();
     if (!live) return;
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [live, !!api.authState]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   return { s, err, reload: load };
 }
 

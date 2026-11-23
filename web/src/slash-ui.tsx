@@ -70,7 +70,7 @@ export function useSlash(source: CommandSource | null, text: string, setText: (t
     return () => {
       live = false;
     };
-  }, [typing, key]);
+  }, [api, typing, key]);
 
   const q = source ? slashQuery(text) : null;
   const items = q === null ? [] : matchCommands(list, q);

@@ -24,7 +24,7 @@ export function useContextMenu(c: Pick<ReturnType<typeof useAppState>, "store" |
     };
     document.addEventListener("contextmenu", on);
     return () => document.removeEventListener("contextmenu", on);
-  }, [phone]);
+  }, [phone, threadsRef]);
   const copyText = (text: string) => {
     void navigator.clipboard?.writeText(text).then(
       () => cmds.notify("Copied"),

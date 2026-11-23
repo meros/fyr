@@ -164,6 +164,7 @@ export function Settings(p: SettingsProps) {
   const pane = useRef<HTMLDivElement>(null);
   const prev = useRef<PageRef | null>(p.at);
   const byKeys = useRef(false);
+  /* eslint-disable react-hooks/exhaustive-deps -- moves the focus only when the page, sub-page or host changes; p.at and the front are read at that moment */
   useEffect(() => {
     const was = prev.current;
     prev.current = p.at;
@@ -178,6 +179,7 @@ export function Settings(p: SettingsProps) {
       if (!p.phone) el.querySelector<HTMLElement>(".stp-h h2")?.focus();
     });
   }, [p.at?.page, p.at?.sub, p.at?.host]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const nav = (
     <SettingsNav

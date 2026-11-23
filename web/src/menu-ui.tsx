@@ -19,6 +19,7 @@ export function ContextMenu({ x, y, items, anchor, onPick, onClose }: { x: numbe
     setPos({ left, top });
     el.querySelector<HTMLElement>("[role=menuitem]:not([aria-disabled=true])")?.focus();
   }, [x, y]);
+  /* eslint-disable react-hooks/exhaustive-deps -- the menu's listeners are set once, for the menu's life; the anchor's place when it opened (top0) is what a scroll is measured against */
   useEffect(() => {
     const away = (e: Event) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -40,6 +41,7 @@ export function ContextMenu({ x, y, items, anchor, onPick, onClose }: { x: numbe
       window.removeEventListener("resize", close);
     };
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation(); // the inbox keys must not act while the menu has focus
     const list = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]:not([aria-disabled=true])") ?? [])];

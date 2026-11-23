@@ -42,6 +42,7 @@ const focusables = (panel: HTMLElement) => [...panel.querySelectorAll<HTMLElemen
 export function useFocusTrap(panel: RefObject<HTMLElement | null>, initial: "first" | "panel" = "first"): void {
   // Read during the first render, before the panel is in the page, so an autofocused child is not taken for it.
   const [before] = useState(() => (typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null)));
+  /* eslint-disable react-hooks/exhaustive-deps -- the trap is set once, for the panel's life: panel is the caller's ref object, initial does not change, and before is the element focused before the panel opened */
   useEffect(() => {
     const el = panel.current;
     if (!el) return;
@@ -84,4 +85,5 @@ export function useFocusTrap(panel: RefObject<HTMLElement | null>, initial: "fir
       if (before?.isConnected && !moved) before.focus({ preventScroll: true });
     };
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 }

@@ -108,4 +108,3 @@ func TestNextNoticeRidesTheOwnersMessage(t *testing.T) {
 		t.Fatalf("the tool call repeated it: %q", th.Summary)
 	}
 }
-

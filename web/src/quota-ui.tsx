@@ -50,7 +50,7 @@ export function useQuotas(): Quota[] {
         document.removeEventListener("visibilitychange", onVisible);
       }
     };
-  }, []);
+  }, [api]);
   return q;
 }
 

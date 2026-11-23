@@ -179,11 +179,13 @@ export function useAppState() {
   // finished, so a run that starts again at once does not blink. The thread view reads store.threads, live.
   const [holdClock, setHoldClock] = useState(0);
   const holdRef = useRef<{ holds: Record<string, FinishHold>; last: Record<string, Thread> | null }>({ holds: {}, last: null });
+  /* eslint-disable react-hooks/exhaustive-deps -- holdClock is the timer that re-evaluates the holds against Date.now(); the memo does not read it */
   const steady = useMemo(() => {
     const r = steadyThreads(holdRef.current.holds, holdRef.current.last, store.threads, Date.now());
     holdRef.current = { holds: r.holds, last: store.threads };
     return r;
   }, [store.threads, holdClock]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (steady.next === null) return;
     const t = setTimeout(() => setHoldClock((n) => n + 1), Math.max(0, steady.next - Date.now()) + 50);
@@ -195,6 +197,7 @@ export function useAppState() {
   // V0.134: host AND project.
   const filtered = useMemo(() => applyFilters(listThreads, filterSel, store.projects), [listThreads, store.projects, filterSel]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- quietClock is the timer that re-evaluates the quiet hours against Date.now(); the memo does not read it
   const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset, unlock.showUntil), [filtered, unlock.showUntil, quietClock, store.clockOffset]);
   // V0.ai-search: what AI search reads, in the list's order.
   const searchList = useMemo(() => {
@@ -207,6 +210,7 @@ export function useAppState() {
     if (!q) return 0;
     return Object.values(filtered).filter((t) => !searchable[t.id] && matchesQuery(t, q)).length;
   }, [filtered, searchable, query]);
+  /* eslint-disable react-hooks/exhaustive-deps -- quietClock is the timer that re-evaluates the quiet hours against Date.now(); the memo does not read it */
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     // V0.46: a quiet project's threads leave the inbox and its counts, unless the filter picks it or a search is typed
@@ -219,14 +223,17 @@ export function useAppState() {
     }
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const queue = useSlotQueue(); // V0.137
   // V0.207: `sec` is the truth, for every count; the list draws `rows`, j/k walks `walkRows` (V0.open-row-glides).
   // V0.stable-groups: when each thread came into its group; a new row goes last and nothing else moves one.
   const arrivalsRef = useRef<Record<string, Arrival>>({});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- arrivals advance only when the listed threads change (trackArrivals keeps its state in arrivalsRef); the clock offset is read at that moment
   const arrivals = useMemo(() => (arrivalsRef.current = trackArrivals(arrivalsRef.current, listThreads, Date.now() + store.clockOffset)), [listThreads]);
   const sec = useMemo(() => sections(shown, queue, arrivals), [shown, queue, arrivals]);
   // V0.134, V0.169: the two rows (only values with threads in view; a selected one stays) and the empty state, on both
   // fronts.
+  /* eslint-disable react-hooks/exhaustive-deps -- quietClock is the timer that re-evaluates the quiet hours against Date.now(); the memo does not read it */
   const filterView = useMemo<FilterView>(() => {
     const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hostList, sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
     const locked = !!filterSel.project && chips.projects.some((c) => c.selected && quietLocked(c.project, Date.now() + store.clockOffset, unlock.showUntil));
@@ -240,6 +247,7 @@ export function useAppState() {
       empty: locked ? null : filterEmpty(hideQuiet(searchable, filterOn, Date.now() + store.clockOffset), filterSel, sectionOpen),
     };
   }, [store.threads, store.projects, store.hostList, filterSel, sectionOpen, unlock.showUntil, searchable, filterOn, quietClock, store.clockOffset]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
     for (const s of SECTIONS) l[s.key] = !isOpen(s.key, sectionOpen) ? 0 : expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];

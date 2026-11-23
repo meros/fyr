@@ -56,6 +56,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
 
   const sendState = () => frame.current?.contentWindow?.postMessage(stateMessage(stateRef.current), "*");
 
+  const hasView = !!v;
   // The pane's height caps the view (60 %).
   useLayoutEffect(() => {
     const host = box.current?.parentElement;
@@ -65,7 +66,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
     ro?.observe(host);
     return () => ro?.disconnect();
-  }, [!!v]);
+  }, [hasView]);
 
   useEffect(() => {
     const on = (e: MessageEvent) => {

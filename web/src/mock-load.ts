@@ -146,11 +146,11 @@ export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Dat
   if (!mode) return list;
   const [h, ...rest] = list;
   const s = h.slots!;
-  const use = (thread: string, mem: number, cpu: number, memPct: number, cpuPct: number, secs: number, command: string, extra: Partial<UndeclaredUse> = {}): UndeclaredUse => ({
+  const usage = (thread: string, mem: number, cpu: number, memPct: number, cpuPct: number, secs: number, command: string, extra: Partial<UndeclaredUse> = {}): UndeclaredUse => ({
     thread, mem, cpu, memPct, cpuPct, since: new Date(now - secs * 1000).toISOString(), command, paused: false, queued: false, overCpu: true, overMem: true, ...extra,
   });
-  const und: UndeclaredUse[] = [use("t_mapperf", 2.8e9, 2.1, 20, 52, 180, "node test/layout.e2e.mjs", { paused: mode === "paused" })];
-  if (mode === "2") und.push(use("t_babysit", 1.6e9, 1.2, 11, 30, 50, "yarn pre-push:check"));
+  const und: UndeclaredUse[] = [usage("t_mapperf", 2.8e9, 2.1, 20, 52, 180, "node test/layout.e2e.mjs", { paused: mode === "paused" })];
+  if (mode === "2") und.push(usage("t_babysit", 1.6e9, 1.2, 11, 30, 50, "yarn pre-push:check"));
   const admitted = { cpu: 13, mem: 16 };
   const uCpu = und.reduce((n, u) => n + u.cpuPct, 0);
   const uMem = und.reduce((n, u) => n + u.memPct, 0);

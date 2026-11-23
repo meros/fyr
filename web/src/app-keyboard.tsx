@@ -246,6 +246,7 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
     return () => window.removeEventListener("keydown", h);
   }, []);
 
+  /* eslint-disable react-hooks/exhaustive-deps -- opens a tapped notification's thread once, when it arrives or its thread loads; navGo and openThread (new each render) act through setters, and phone is read at that moment */
   useEffect(() => {
     // V0.client-refs: a tap names the ref; one from an older build names the id alone (decision 0031 C12).
     const want = pendingOpen && resolveRef(Object.values(store.threads), pendingOpen);
@@ -255,6 +256,7 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
     takeOpen(sessionStore()); // on screen now: done
     setPendingOpen(null);
   }, [pendingOpen, store.threads]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // V0.50: Settings reloads the profiles after a provider changed.
 }

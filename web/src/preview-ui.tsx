@@ -246,6 +246,7 @@ export function PreviewViewer() {
     reset();
     setOpen({ ...open, at: open.at + dir });
   };
+  /* eslint-disable react-hooks/exhaustive-deps -- go reads only open, which is listed; go itself is a new function each render */
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -258,6 +259,7 @@ export function PreviewViewer() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   if (!open) return null;
   const c = open.items[open.at];
@@ -447,7 +449,7 @@ export function Filmstrip({ cards, threadRef, phone }: { cards: PreviewCard[]; t
 export function PreviewsChip({ threadRef, host, events, phone, onShow }: { threadRef: string; host?: HostId; events: FyrEvent[] | undefined; phone?: boolean; onShow(): void }) {
   const api = useApi();
   const { hidden } = useFilmstrip(threadRef);
-  const count = useMemo(() => (hidden ? previewsOf(events ?? [], host, api).length : 0), [hidden, events, host]);
+  const count = useMemo(() => (hidden ? previewsOf(events ?? [], host, api).length : 0), [api, hidden, events, host]);
   if (!showsPreviewsChip(count, hidden)) return null;
   const label = previewsLabel(count);
   const press = () => {
