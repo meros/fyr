@@ -96,6 +96,10 @@ type Config struct {
 	// and its billing: subscription, api-key, endpoint or none.
 	Meter   *usage.Meter
 	Account func(profile string) (account, billing string)
+	// ThreadSource names a thread whose turns are Fyr's own job (a
+	// project's setup run: "job:setup"), "" for an ordinary thread
+	// (V0.usage-jobs); optional.
+	ThreadSource func(thread string) string
 	// OnRateLimit gets a session's rate_limit_info with its profile id (V0.44); optional.
 	OnRateLimit func(profile string, info map[string]any)
 	// OnCommands gets the commands of a session's initialize answer with

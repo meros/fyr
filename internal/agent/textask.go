@@ -23,5 +23,5 @@ func (m *Manager) JudgeText(ctx context.Context, threadID, text string) (string,
 	if _, ok := m.host.Thread(threadID); !ok {
 		return "", fmt.Errorf("no thread %q", threadID)
 	}
-	return m.SystemPrint(ctx, core.JobQuestion, textAskSystem, "The end of the message:\n\n"+text)
+	return m.SystemPrintFor(ctx, core.JobQuestion, threadID, textAskSystem, "The end of the message:\n\n"+text)
 }

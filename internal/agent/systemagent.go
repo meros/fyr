@@ -91,17 +91,24 @@ func (m *Manager) ResolveApprovalJudge(threadProfileID, threadModel string) (Sys
 // the system temp folder, so no project instructions load, with system as
 // the whole system prompt (V0.108). The job's error says why it did not run.
 func (m *Manager) SystemPrint(ctx context.Context, job, system, prompt string) (string, error) {
+	return m.SystemPrintFor(ctx, job, "", system, prompt)
+}
+
+// SystemPrintFor is SystemPrint for a job that serves a thread: the usage
+// ledger files the call under it (V0.usage-jobs).
+func (m *Manager) SystemPrintFor(ctx context.Context, job, thread, system, prompt string) (string, error) {
 	a, err := m.SystemAgent(job)
 	if err != nil {
 		return "", err
 	}
-	return m.printOn(ctx, a, system, prompt)
+	return m.printOn(ctx, job, thread, a, system, prompt)
 }
 
 // printOn runs a one-shot Print call on a resolved SystemAgent, using low
 // reasoning effort when the model advertises effort levels (e.g. Gemini 4
 // Hydrogen defaults to high thinking).
-func (m *Manager) printOn(ctx context.Context, a SystemAgent, system, prompt string) (string, error) {
+// The call's tokens go to the usage ledger as job's, for thread.
+func (m *Manager) printOn(ctx context.Context, job, thread string, a SystemAgent, system, prompt string) (string, error) {
 	p := a.Profile
 	ad, err := m.adapter(p)
 	if err != nil {
@@ -124,6 +131,7 @@ func (m *Manager) printOn(ctx context.Context, a SystemAgent, system, prompt str
 		Model:    a.Model,
 		Effort:   lowEffort(caps, a.Model),
 	}
+	l.Result = m.jobResult(job, thread, a, ad, l.Effort)
 	if p.Key != nil {
 		k, kerr := p.Key()
 		if (kerr != nil || k == "") && (p.KeyRequired || l.Auth.Kind == cli.APIKey) {

@@ -101,3 +101,17 @@ func (e *Engine) Snapshot() []api.Thread {
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
 	return out
 }
+
+// ThreadSource names a thread whose turns are Fyr's own job for the usage
+// ledger (V0.usage-jobs): a project's setup run is "job:setup"; any other
+// thread is "". The agent calls it outside e.mu.
+func (e *Engine) ThreadSource(thread string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, p := range e.projects {
+		if p.Setup != nil && p.Setup.Thread == thread && thread != "" {
+			return "job:" + core.JobSetup
+		}
+	}
+	return ""
+}

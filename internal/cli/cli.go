@@ -124,6 +124,10 @@ type Launch struct {
 	// RunnerKey: the runner keeps one live process per key (the thread id).
 	RunnerKey string
 	Meta      []byte
+	// Result, when set, hears a Print run's result message, in the shape
+	// the adapter's UsageReader reads (V0.usage-jobs); Print calls it before
+	// it returns, also when the result is an error.
+	Result func(Msg)
 }
 
 // Handlers answer the CLI's callbacks; they run on their own goroutines.

@@ -7,6 +7,7 @@ package claudecli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -204,11 +205,14 @@ func printArgs(model, effort, system string) []string {
 		args = append(args, "--effort", effort)
 	}
 	return append(args, "--system-prompt", system, "--tools", "", "--strict-mcp-config", "--no-session-persistence",
-		"--setting-sources", "", "--output-format", "text")
+		"--setting-sources", "", "--output-format", "json")
 }
 
 // Print runs `claude -p` once with the launch's auth and endpoint, in
-// l.Dir, and returns its answer.
+// l.Dir, and returns its answer. The run prints its result message as JSON
+// (V0.usage-jobs: the same message a stream ends a turn with, usage and
+// all); l.Result hears it. Output that is not that message is the answer
+// as it is.
 func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string) (string, error) {
 	env, err := a.Env(l)
 	if err != nil {
@@ -224,17 +228,41 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
+	runErr := cmd.Run()
+	res, isResult := printResult(out.Bytes())
+	if isResult && l.Result != nil {
+		l.Result(res)
+	}
+	if runErr != nil {
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("no answer in time")
 		}
 		msg := strings.TrimSpace(errb.String())
 		if msg == "" {
 			msg = strings.TrimSpace(out.String())
+			if isResult {
+				msg, _ = res["result"].(string)
+			}
 		}
-		return "", fmt.Errorf("claude: %s", cli.ErrText(msg, err.Error()))
+		return "", fmt.Errorf("claude: %s", cli.ErrText(msg, runErr.Error()))
 	}
-	return strings.TrimSpace(out.String()), nil
+	if !isResult {
+		return strings.TrimSpace(out.String()), nil
+	}
+	text, _ := res["result"].(string)
+	if isErr, _ := res["is_error"].(bool); isErr {
+		return "", fmt.Errorf("claude: %s", cli.ErrText(strings.TrimSpace(text), "the run failed"))
+	}
+	return strings.TrimSpace(text), nil
+}
+
+// printResult reads `claude -p --output-format json`: one result message.
+func printResult(b []byte) (cli.Msg, bool) {
+	var m cli.Msg
+	if err := json.Unmarshal(bytes.TrimSpace(b), &m); err != nil || m["type"] != "result" {
+		return nil, false
+	}
+	return m, true
 }
 
 // Reattach speaks to a process the runner kept across a restart (V0.90).

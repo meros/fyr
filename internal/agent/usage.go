@@ -111,10 +111,49 @@ func (m *Manager) meterResult(s *session, msg claude.Msg) {
 	}
 	d := usage.Dims{Source: usage.SourceTurn, Trigger: trig, Thread: t.ID, Project: t.ProjectID, Provider: p.ID,
 		Adapter: ad.ID(), MainModel: model, Effort: effort}
+	if m.cfg.ThreadSource != nil {
+		if src := m.cfg.ThreadSource(t.ID); src != "" {
+			d.Source = src // V0.usage-jobs: a project's setup run is Fyr's job
+		}
+	}
+	m.record(id, d, r)
+}
+
+// record gives a report its account and writes it.
+func (m *Manager) record(id string, d usage.Dims, r cli.UsageReport) {
 	if m.cfg.Account != nil {
-		d.Account, d.Billing = m.cfg.Account(p.ID)
+		d.Account, d.Billing = m.cfg.Account(d.Provider)
 	}
 	if _, err := m.cfg.Meter.Record(id, d, r); err != nil {
-		log.Printf("usage: thread %s: %v", s.thread, err)
+		log.Printf("usage: %s %s: %v", d.Source, d.Thread, err)
+	}
+}
+
+// jobResult is the Launch.Result of a system job's print run
+// (V0.usage-jobs): it records the call as Fyr's own, for the thread it
+// served ("" for none, as a search).
+func (m *Manager) jobResult(job, thread string, a SystemAgent, ad cli.Adapter, effort string) func(cli.Msg) {
+	ur, ok := ad.(cli.UsageReader)
+	if m.cfg.Meter == nil || !ok {
+		return nil
+	}
+	return func(msg cli.Msg) {
+		r, ok := ur.Usage(msg)
+		if !ok {
+			return
+		}
+		// A print run is one session of one turn, never resumed: no
+		// baseline to keep.
+		r.Scope = cli.PerTurn
+		d := usage.Dims{Source: usage.SourceJob(job), Thread: thread, Provider: a.Profile.ID, Adapter: ad.ID(),
+			MainModel: a.Model, Effort: effort}
+		if t, ok := m.host.Thread(thread); ok && thread != "" {
+			d.Project = t.ProjectID
+		}
+		id := r.ID
+		if id == "" {
+			id = newUUID()
+		}
+		m.record("job:"+id, d, r)
 	}
 }
