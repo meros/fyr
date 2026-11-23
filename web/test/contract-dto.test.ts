@@ -87,3 +87,83 @@ test("load: a pool whose lists arrive as null (a Go nil slice) reads as empty", 
   assert.equal(stampSlots({ ...h.slots!, held: null, waiting: null } as never, "h_1" as never).held.length, 0);
   cardLines(loadCard(n));
 });
+
+// ---- the lists the host omits when empty (Go omitempty), through the decoders ----
+
+import { decodeChanges, decodeFilePatch, defaultMode, sinceLabel, sinceLine } from "../src/changes.ts";
+import { changeList, changeChip } from "../src/offers.ts";
+import { decodeThread } from "../src/decode.ts";
+import { findGuard, guardChart, guardLine, guardLog, guardSummary } from "../src/guard.ts";
+import { hostLeftovers, leftoverRows, tempRows } from "../src/leftovers.ts";
+import { withGuard, withLeftovers } from "../src/mock-load.ts";
+import { TH } from "./helpers.ts";
+
+test("changes: a reply with no files, no since.files, null or garbage reads as empty lists", () => {
+  for (const raw of [{ git: true }, { git: true, since: {} }, { git: true, files: null, since: { files: null, mode: "x" } }, null, [], "x", 3]) {
+    const c = decodeChanges(raw);
+    assert.deepEqual(c.files, [], JSON.stringify(raw));
+    if (c.since) assert.deepEqual(c.since.files, []);
+    assert.equal(defaultMode(c), "whole");
+    assert.equal(summaryLine(c).length > 0, true);
+  }
+  const c = decodeChanges({ git: true, since: { head: "abc", at: "2026-01-01T00:00:00Z", commits: 1 } });
+  assert.equal(c.since?.mode, "ancestor");
+  assert.equal(sinceLabel(c.since!), "New since you looked · 0");
+  assert.equal(typeof sinceLine(c.since!, NOW), "string");
+});
+
+test("changes: a file keeps its path and gets counts and a status when the host left them out", () => {
+  const c = decodeChanges({ git: true, files: [{ path: "a.go" }, { nope: 1 }, null, { path: "b.go", additions: 2, status: "added" }] });
+  assert.deepEqual(c.files!.map((f) => [f.path, f.status, f.additions, f.deletions, f.binary]), [["a.go", "modified", 0, 0, false], ["b.go", "added", 2, 0, false]]);
+});
+
+test("changes: with the mock reply's optional fields removed one at a time the decoded reply holds", () => {
+  survives("changes decoded", [mockChanges("t_lasso")], ["git"], ([c]) => {
+    const d = decodeChanges(c);
+    assert.ok(Array.isArray(d.files));
+    for (const f of sortFiles(d.files!)) statusMark(f.status);
+    if (d.since) assert.ok(Array.isArray(d.since.files));
+    summaryLine(d);
+    defaultMode(d);
+  });
+});
+
+test("file patch: an empty or null body is an empty patch of the asked path", () => {
+  for (const raw of [null, {}, []]) assert.deepEqual(decodeFilePatch(raw, "a.go"), { path: "a.go", patch: "", binary: false, truncated: false });
+});
+
+test("thread: changes, offers and runs missing fields or items decode to what the lists read", () => {
+  const t = decodeThread({ id: "t1", changes: [{ id: "c1" }, null, 4, { id: "c2", updatedAt: "2026-01-02T00:00:00Z", offers: [{ id: "o" }, null], runs: [{}] }] }, TH);
+  assert.deepEqual(t.changes.map((c) => [c.id, c.phase, c.updatedAt]), [["c1", "working", ""], ["c2", "working", "2026-01-02T00:00:00Z"]]);
+  assert.deepEqual(t.changes[1].offers!.map((o) => o.label), [""]);
+  assert.equal(t.changes[1].runs![0].ok, false);
+  assert.equal(changeList(t)[0].id, "c2"); // newest first, with no updatedAt to compare on c1
+});
+
+test("thread: the change lists survive any optional field removed from a change", () => {
+  const raw = { id: "t1", changes: [{ id: "c1", key: "k", kind: "code", title: "T", phase: "review", phaseBy: "agent", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z", offers: [{ id: "o", label: "L", run: "fyr", by: "agent", digest: "d" }], runs: [{ action: "a", label: "L", by: "agent", at: "2026-01-02T00:00:00Z", ok: true }] }] };
+  survives("change", [raw], ["id"], ([r]) => {
+    const t = decodeThread(r, TH);
+    changeList(t);
+    changeChip(t);
+  });
+});
+
+test("guard and leftovers: the functions survive any optional field of the mock host removed", () => {
+  const withBoth = () => withLeftovers(withGuard(mockLoad(), "1", NOW), "1", NOW);
+  survives("guard", withBoth(), ["host", "cores", "load", "id", "pid", "name", "n", "kind"], (list) => {
+    const norm = normalizeLoad(list);
+    const f = findGuard(norm);
+    if (f) {
+      guardChart(f.g, NOW, (id) => id);
+      guardSummary(f.g, NOW);
+      guardLine(f.g, "t_mapperf", NOW);
+      guardLog(f.g, (id) => id, (iso) => iso);
+    }
+    for (const h of norm) {
+      hostLeftovers(h);
+      leftoverRows(h, (id) => ({ title: id }), NOW);
+      tempRows(h, (id) => ({ title: id }), NOW);
+    }
+  });
+});

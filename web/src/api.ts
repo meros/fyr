@@ -26,8 +26,10 @@ import type { SetupReport } from "./setup.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
 import { reloadIfSignedOut } from "./signout.ts";
+import { request, replyError, type Reply } from "./http.ts";
+import { arr, obj, decodeThread } from "./decode.ts";
 import type { SystemAgentsView } from "./system-agents.ts";
-import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
+import { decodeChanges, decodeFilePatch, type ChangesDTO, type FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
 import type { SlashCommand } from "./slash.ts";
@@ -62,6 +64,8 @@ export interface Api {
   /** the host takes this device's push settings (hidden list, preferences) */
   readonly pushes: boolean;
   start(h: ApiHandlers): void;
+  /** Close the stream and drop the page listeners `start` added (the App's effect cleanup). */
+  stop(): void;
   /** A host's command (decision 0031: the host is named in the path, never in `args`). `host` is its install id. */
   command(host: HostId, action: string, threadId?: string, args?: Record<string, unknown>): Promise<CommandReply>;
   /** The front's own commands (front.projectOrder {ids}, front.hostOrder {ids}, front.hostId {host}, front.hostMark). */
@@ -69,9 +73,9 @@ export interface Api {
   events(host: HostId, threadId: string, after?: number, limit?: number): Promise<FyrEvent[]>;
   /** The newest `limit` events older than `before`, to page back. */
   eventsBefore(host: HostId, threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
-  /** V0.38: one thread whole, when a patch does not fit the copy we have */
+  /** V0.38: one thread whole, when a patch does not fit the copy we have. Never rejects: null when it cannot be read. */
   thread(host: HostId, threadId: string): Promise<ThreadDTO | null>;
-  /** V0.38: one event whole (the stream and the list cut large tool output) */
+  /** V0.38: one event whole (the stream and the list cut large tool output). Never rejects: null when it cannot be read. */
   fullEvent(host: HostId, threadId: string, seq: number): Promise<FyrEvent | null>;
   /** Web Push (SPEC V0.15): the front's VAPID public key, base64url. */
   pushKey(): Promise<string>;
@@ -136,7 +140,7 @@ export interface Api {
   peerAct(action: "invite" | "join" | "remove", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.115: the system agents setting of a host */
   systemAgents(host: HostId): Promise<HostRead<SystemAgentsView>>;
-  /** V0.50: a host's current profiles (after a provider changed). */
+  /** V0.50: a host's current profiles (after a provider changed). Never rejects: none when they cannot be read. */
   profiles(host: HostId): Promise<Profile[]>;
   /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
   commands(source: CommandSource): Promise<SlashCommand[]>;
@@ -156,20 +160,26 @@ interface HostRead<T> {
   readAt?: string;
 }
 
-async function hostGet<T>(host: HostId, path: string): Promise<HostRead<T>> {
-  const r = await fetch(hostPath(host, path), { headers: { Accept: "application/json" } });
-  const j = (await r.json().catch(() => ({}))) as T & { error?: string };
-  if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-  const at = r.headers.get("X-Fyr-Read-At");
-  return at ? { data: j, readAt: at } : { data: j };
+/** A GET whose answer is decoded by `decode`: it gets whatever the host sent (an empty or unparsable body, a literal
+ *  null) and answers the type the screen reads. A refusal throws the host's error. */
+async function read<T>(url: string, decode: (raw: unknown) => T): Promise<{ data: T; reply: Reply }> {
+  const reply = await request(url);
+  if (!reply.ok) throw new Error(replyError(reply));
+  return { data: decode(reply.json), reply };
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(path, { headers: { Accept: "application/json" } });
-  const j = (await r.json().catch(() => ({}))) as T & { error?: string };
-  if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-  return j;
+async function hostGet<T>(host: HostId, path: string, decode: (raw: unknown) => T): Promise<HostRead<T>> {
+  const { data, reply } = await read(hostPath(host, path), decode);
+  const at = reply.headers.get("X-Fyr-Read-At");
+  return at ? { data, readAt: at } : { data };
 }
+
+async function getJson<T>(path: string, decode: (raw: unknown) => T): Promise<T> {
+  return (await read(path, decode)).data;
+}
+
+/** A settings object as sent: an empty or null body is an empty object, which the page reads with its own defaults. */
+const object = <T,>(raw: unknown): T => obj(raw) as T;
 
 /** V0.ai-search: a thread the model picked (the host's own id) and what in it fits. */
 export interface SearchHit {
@@ -204,6 +214,13 @@ export async function createApi(search: string = location.search): Promise<Api> 
   return scenario ? (await import("./mock-api.ts")).createMockApi(scenario) : createHttpApi();
 }
 
+/** A command may run git or start a worktree before it answers; its tries are bounded by this, each. */
+const COMMAND_TIMEOUT_MS = 60_000;
+/** The AI search reads threads with a model before it answers. */
+const SEARCH_TIMEOUT_MS = 120_000;
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
 function createHttpApi(): Api {
   let watch = initialBuildWatch();
   let fromNetwork = false;
@@ -225,19 +242,19 @@ function createHttpApi(): Api {
 
   /** V0.157: the front's answer to /state, for signout.ts: its status and body. */
   const probeState = async (): Promise<{ status: number; body: unknown }> => {
-    const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
-    return { status: r.status, body: await r.json().catch(() => null) };
+    const r = await request(frontPath("/state"));
+    return { status: r.status, body: r.json };
   };
 
   /** The front's state, then every host's own, in parallel: the snapshot the store reads, one state per host
    *  (hostfeed.snapshotOf). A host whose state cannot be read is listed and has no records. */
   const loadAll = async (): Promise<Snapshot> => {
-    const r = await fetch(frontPath("/state"), { headers: { Accept: "application/json" } });
+    const r = await request(frontPath("/state"));
     if (!r.ok) {
       if (r.status === 401) void reloadIfSignedOut(probeState); // V0.157: a revoked device lands on the signed-out page
       throw new Error(`state ${r.status}`);
     }
-    const f = decodeFront(await r.json());
+    const f = decodeFront(r.json);
     front = f;
     // V0.38: with a stored copy, ask each host only for the threads changed since it. A rev is its host's own clock, so
     // "since" is each host's own newest, from that host's own stored state (V0.host-ids, decision 0031 2.5); its partial
@@ -248,7 +265,7 @@ function createHttpApi(): Api {
         const stored = await cache.hostState(id);
         const since = hostSince(stored);
         try {
-          const state = nextHostState(stored, await getJson<StateDTO & { partial?: boolean }>(hostPath(id, since ? `/state?since=${since}` : "/state")));
+          const state = nextHostState(stored, await getJson(hostPath(id, since ? `/state?since=${since}` : "/state"), object<StateDTO & { partial?: boolean }>));
           void cache.saveHostState(id, state);
           return { host, state };
         } catch {
@@ -365,17 +382,25 @@ function createHttpApi(): Api {
 
   const postJson = async (path: string, body: unknown): Promise<PushReply> => {
     try {
-      const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify(body) });
-      let j: Partial<PushReply> = {};
-      try {
-        j = await r.json();
-      } catch {
-        /* empty body */
-      }
-      return r.ok ? { ok: j.ok !== false, error: j.error, delivered: j.delivered } : { ok: false, error: j.error ?? `HTTP ${r.status}` };
+      const r = await request(path, { method: "POST", body });
+      const j = obj(r.json) as Partial<PushReply>;
+      return r.ok ? { ok: j.ok !== false, error: j.error, delivered: j.delivered } : { ok: false, error: replyError(r) };
     } catch {
       return { ok: false, error: "Fyr is not reachable" };
     }
+  };
+
+  const closeStream = () => {
+    es?.close();
+    es = null;
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  const onPageHide = () => closeStream();
+  const onPageShow = (e: Event) => {
+    if (!(e as PageTransitionEvent).persisted || es || !handlers) return;
+    backoff = 500; // the page was away, not failing: the wait of the failures before it does not apply
+    connect();
   };
 
   const post = async (path: string, action: string, threadId: string | undefined, args: Record<string, unknown> | undefined): Promise<CommandReply> => {
@@ -386,13 +411,9 @@ function createHttpApi(): Api {
     const { gaveUp } = await sendWithRetry(
       async () => {
         try {
-          const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify(body) });
+          const r = await request(path, { method: "POST", body, timeoutMs: COMMAND_TIMEOUT_MS });
           if (isTransient(r.status)) return r.status;
-          try {
-            reply = (await r.json()) as CommandReply;
-          } catch {
-            reply = { ok: false, error: `HTTP ${r.status}` };
-          }
+          reply = r.json && typeof r.json === "object" ? (r.json as CommandReply) : { ok: false, error: `HTTP ${r.status}` };
           if (!r.ok && reply.ok !== false) reply = { ok: false, error: `HTTP ${r.status}` };
           return r.status;
         } catch {
@@ -407,19 +428,25 @@ function createHttpApi(): Api {
 
   const eachOne = async <T,>(host: HostId, path: string): Promise<T[]> => {
     try {
-      const r = await fetch(hostPath(host, path));
-      const j = (await r.json().catch(() => [])) as unknown;
-      return r.ok && Array.isArray(j) ? (j as T[]) : [];
+      const r = await request(hostPath(host, path));
+      return r.ok ? arr<T>(r.json) : [];
     } catch {
       return [];
     }
   };
 
+  /** A page of a thread's events; a refusal throws, and an answer without events is an empty page. */
+  const readEvents = async (host: HostId, threadId: string, query: string): Promise<FyrEvent[]> => {
+    const r = await request(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events?${query}`));
+    if (!r.ok) throw new Error(`events ${r.status}`);
+    return arr<FyrEvent>(obj(r.json).events).filter(isRecord).map((e) => stampEvent(e, host));
+  };
+
   const mutate = async (path: string, body: unknown): Promise<{ ok: boolean; error?: string } & Record<string, unknown>> => {
     try {
-      const r = await fetch(path, { method: "POST", headers: { "X-Fyr": "1", "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Record<string, unknown>;
-      return r.ok && j.ok !== false ? { ...j, ok: true } : { ...j, ok: false, error: j.error ?? `HTTP ${r.status}` };
+      const r = await request(path, { method: "POST", body });
+      const j = obj(r.json) as { ok?: boolean; error?: string } & Record<string, unknown>;
+      return r.ok && j.ok !== false ? { ...j, ok: true } : { ...j, ok: false, error: replyError(r) };
     } catch {
       return { ok: false, error: "Fyr is not reachable" };
     }
@@ -430,20 +457,20 @@ function createHttpApi(): Api {
     cache: true,
     pushes: true,
     async fsList(host, path) {
-      const l = await getJson<FsListing>(hostPath(host, `/fs/list?path=${encodeURIComponent(path)}`));
-      return { path: l.path, parent: l.parent ?? "", dirs: l.dirs ?? [] };
+      const l = await getJson(hostPath(host, `/fs/list?path=${encodeURIComponent(path)}`), object<Partial<FsListing>>);
+      return { path: l.path ?? path, parent: l.parent ?? "", dirs: arr(l.dirs) };
     },
     async fsRecent(host) {
-      return (await getJson<{ dirs?: FsDir[] }>(hostPath(host, "/fs/recent"))).dirs ?? [];
+      return getJson(hostPath(host, "/fs/recent"), (j) => arr<FsDir>(obj(j).dirs));
     },
     async fsRepos(host) {
-      return (await getJson<{ dirs?: FsDir[] }>(hostPath(host, "/fs/repos"))).dirs ?? [];
+      return getJson(hostPath(host, "/fs/repos"), (j) => arr<FsDir>(obj(j).dirs));
     },
     async fsMkdir(host, parent, name) {
-      const r = await fetch(hostPath(host, "/fs/mkdir"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ parent, name }) });
-      const j = (await r.json().catch(() => ({}))) as { path?: string; error?: string };
-      if (!r.ok || !j.path) throw new Error(j.error ?? `HTTP ${r.status}`);
-      return j.path;
+      const r = await request(hostPath(host, "/fs/mkdir"), { method: "POST", body: { parent, name } });
+      const path = obj(r.json).path;
+      if (!r.ok || typeof path !== "string" || !path) throw new Error(replyError(r));
+      return path;
     },
     start(h) {
       handlers = h;
@@ -456,15 +483,17 @@ function createHttpApi(): Api {
       // per origin over HTTP/1.1 (decision 0031 2.4): a few pages left that way and the next one cannot connect. The
       // stream closes when the page is hidden for good and opens again if the page comes back.
       if (typeof window !== "undefined") {
-        window.addEventListener("pagehide", () => {
-          es?.close();
-          es = null;
-          if (timer) clearTimeout(timer);
-          timer = null;
-        });
-        window.addEventListener("pageshow", (e) => {
-          if ((e as PageTransitionEvent).persisted && !es) connect();
-        });
+        window.addEventListener("pagehide", onPageHide);
+        window.addEventListener("pageshow", onPageShow);
+      }
+    },
+    stop() {
+      handlers = null;
+      generation++; // what a stream or a snapshot still in flight brings is stale
+      closeStream();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pagehide", onPageHide);
+        window.removeEventListener("pageshow", onPageShow);
       }
     },
     async command(host, action, threadId, args) {
@@ -479,35 +508,34 @@ function createHttpApi(): Api {
       };
     },
     frontCommand: (action, args) => post(frontPath("/command"), action, undefined, args),
-    async events(host, threadId, after = 0, limit = 400) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events?after=${after}&limit=${limit}`));
-      if (!r.ok) throw new Error(`events ${r.status}`);
-      const j = (await r.json()) as { events?: FyrEvent[] };
-      return (j.events ?? []).map((e) => stampEvent(e, host));
-    },
+    events: (host, threadId, after = 0, limit = 400) => readEvents(host, threadId, `after=${after}&limit=${limit}`),
     async thread(host, threadId) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}`));
-      if (!r.ok) return null;
-      const t = (await r.json()) as ThreadDTO;
-      const info = addressable(hostsNow()).find((x) => x.id === host);
-      return info ? stampThread(t, info) : t;
+      try {
+        const r = await request(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}`));
+        if (!r.ok) return null;
+        const t = decodeThread(r.json, host);
+        if (!t.id) return null; // not a thread
+        const info = addressable(hostsNow()).find((x) => x.id === host);
+        return info ? stampThread(t, info) : t;
+      } catch {
+        return null;
+      }
     },
     async fullEvent(host, threadId, seq) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events/${seq}`));
-      return r.ok ? stampEvent((await r.json()) as FyrEvent, host) : null;
+      try {
+        const r = await request(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events/${seq}`));
+        return r.ok && isRecord(r.json) ? stampEvent(r.json as unknown as FyrEvent, host) : null;
+      } catch {
+        return null;
+      }
     },
-    async eventsBefore(host, threadId, before, limit = 400) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events?before=${before}&limit=${limit}`));
-      if (!r.ok) throw new Error(`events ${r.status}`);
-      const j = (await r.json()) as { events?: FyrEvent[] };
-      return (j.events ?? []).map((e) => stampEvent(e, host));
-    },
+    eventsBefore: (host, threadId, before, limit = 400) => readEvents(host, threadId, `before=${before}&limit=${limit}`),
     async pushKey() {
-      const r = await fetch(frontPath("/push/key"));
+      const r = await request(frontPath("/push/key"));
       if (!r.ok) throw new Error(`The host has no push key (HTTP ${r.status})`);
-      const j = (await r.json()) as { publicKey?: string };
-      if (!j.publicKey) throw new Error("The host sent no push key");
-      return j.publicKey;
+      const key = obj(r.json).publicKey;
+      if (typeof key !== "string" || !key) throw new Error("The host sent no push key");
+      return key;
     },
     pushSubscribe(subscription, device) {
       return postJson(frontPath("/push/subscribe"), { subscription, device });
@@ -551,14 +579,8 @@ function createHttpApi(): Api {
     attachmentUrl,
     async uploadProjectIcon(host, projectId, file) {
       try {
-        const r = await fetch(hostPath(host, `/projects/${encodeURIComponent(bare(host, projectId))}/icon`), { method: "POST", headers: { "X-Fyr": "1", "Content-Type": file.type || "application/octet-stream" }, body: file });
-        let j: { ok?: boolean; error?: string } = {};
-        try {
-          j = await r.json();
-        } catch {
-          /* not JSON */
-        }
-        return r.ok && j.ok !== false ? { ok: true } : { ok: false, error: j.error ?? `HTTP ${r.status}` };
+        const r = await request(hostPath(host, `/projects/${encodeURIComponent(bare(host, projectId))}/icon`), { method: "POST", raw: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+        return r.ok && (obj(r.json) as { ok?: boolean }).ok !== false ? { ok: true } : { ok: false, error: replyError(r) };
       } catch {
         return { ok: false, error: "Fyr is not reachable" };
       }
@@ -569,33 +591,20 @@ function createHttpApi(): Api {
         "threadId" in source
           ? `/threads/${encodeURIComponent(bare(source.host, source.threadId))}/commands`
           : `/commands?cwd=${encodeURIComponent(source.cwd)}&profile=${encodeURIComponent(source.profile)}`;
-      const r = await fetch(hostPath(source.host, path), { headers: { Accept: "application/json" } });
-      const j = (await r.json().catch(() => ({}))) as { commands?: SlashCommand[]; error?: string };
-      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-      return Array.isArray(j.commands) ? j.commands : [];
+      return getJson(hostPath(source.host, path), (j) => arr<SlashCommand>(obj(j).commands));
     },
-    async changes(host, threadId) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes`));
-      const j = (await r.json().catch(() => ({}))) as ChangesDTO & { error?: string };
-      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-      return j;
-    },
-    async filePatch(host, threadId, path, since) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes?path=${encodeURIComponent(path)}${since ? `&since=${encodeURIComponent(since)}` : ""}`));
-      const j = (await r.json().catch(() => ({}))) as FilePatchDTO & { error?: string };
-      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-      return j;
-    },
-    providers: (host) => hostGet<ProviderDTO[]>(host, "/providers"),
-    providersFound: (host) => hostGet<FoundDTO[]>(host, "/providers/found"),
-    autoMerge: (host) => hostGet<AutoMergeRepo[]>(host, "/autoMerge"),
-    autoDeploy: (host) => hostGet<AutoDeploySetting>(host, "/autoDeploy"),
-    updates: (host) => hostGet<UpdatesView>(host, "/updates"),
-    setup: (host) => hostGet<SetupReport>(host, "/setup"),
-    systemAgents: (host) => hostGet<SystemAgentsView>(host, "/systemAgents"),
-    authState: () => getJson<AuthState>(frontPath("/auth/state")),
+    changes: (host, threadId) => getJson(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes`), decodeChanges),
+    filePatch: (host, threadId, path, since) => getJson(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes?path=${encodeURIComponent(path)}${since ? `&since=${encodeURIComponent(since)}` : ""}`), (j) => decodeFilePatch(j, path)),
+    providers: (host) => hostGet(host, "/providers", arr<ProviderDTO>),
+    providersFound: (host) => hostGet(host, "/providers/found", arr<FoundDTO>),
+    autoMerge: (host) => hostGet(host, "/autoMerge", arr<AutoMergeRepo>),
+    autoDeploy: (host) => hostGet(host, "/autoDeploy", object<AutoDeploySetting>),
+    updates: (host) => hostGet(host, "/updates", object<UpdatesView>),
+    setup: (host) => hostGet(host, "/setup", object<SetupReport>),
+    systemAgents: (host) => hostGet(host, "/systemAgents", object<SystemAgentsView>),
+    authState: () => getJson(frontPath("/auth/state"), object<AuthState>),
     // A front may send null for an empty list (a nil Go slice): the page reads lists.
-    peerState: () => getJson<PeerState>(frontPath("/peer/state")).then((s) => ({ ...s, members: s.members ?? [], candidates: s.candidates ?? [] })),
+    peerState: () => getJson(frontPath("/peer/state"), object<PeerState>).then((s) => ({ ...s, members: s.members ?? [], candidates: s.candidates ?? [] })),
     peerAct: (action, body) => mutate(frontPath(`/peer/${action}`), body),
     authAct: (action, body) => mutate(frontPath(`/auth/${action}`), body),
     profiles: (host) => eachOne<Profile>(host, "/profiles"),
@@ -614,9 +623,8 @@ function createHttpApi(): Api {
     },
     async handoverPlan(host, threadId, profile) {
       const q = profile ? `?profile=${encodeURIComponent(profile)}` : "";
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/handover${q}`), { headers: { Accept: "application/json" } });
-      if (!r.ok) return null;
-      return parsePlan(await r.json());
+      const r = await request(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/handover${q}`));
+      return r.ok ? parsePlan(r.json) : null;
     },
     async boardVisit() {
       // Each host keeps the owner's boardSeenAt (F13); until the store is per host the first host's is the one returned.
@@ -625,9 +633,9 @@ function createHttpApi(): Api {
           .filter((h) => h.online)
           .map(async (h) => {
             try {
-              const r = await fetch(hostPath(h.id, "/board/visit"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: "{}" });
-              const j = (await r.json().catch(() => ({}))) as { seenAt?: string | null };
-              return r.ok && typeof j.seenAt === "string" ? j.seenAt : null;
+              const r = await request(hostPath(h.id, "/board/visit"), { method: "POST", body: {} });
+              const seenAt = obj(r.json).seenAt;
+              return r.ok && typeof seenAt === "string" ? seenAt : null;
             } catch {
               return null;
             }
@@ -636,10 +644,9 @@ function createHttpApi(): Api {
       return seen.find((x) => x !== null) ?? null;
     },
     async searchThreads(host, query, ids, signal) {
-      const r = await fetch(hostPath(host, "/search"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ query, ids }), signal });
-      const j = (await r.json().catch(() => ({}))) as { hits?: SearchHit[]; error?: string };
-      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-      return j.hits ?? [];
+      const r = await request(hostPath(host, "/search"), { method: "POST", body: { query, ids }, signal, timeoutMs: SEARCH_TIMEOUT_MS });
+      if (!r.ok) throw new Error(replyError(r));
+      return arr<SearchHit>(obj(r.json).hits);
     },
     async prDetail(host, threadId, fresh, prUrl) {
       try {
@@ -647,8 +654,8 @@ function createHttpApi(): Api {
         if (fresh) q.set("fresh", "1");
         if (prUrl) q.set("pr", prUrl);
         const qs = q.toString();
-        const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/pr${qs ? `?${qs}` : ""}`));
-        const j = (await r.json().catch(() => ({}))) as PrReply;
+        const r = await request(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/pr${qs ? `?${qs}` : ""}`));
+        const j = obj(r.json) as PrReply;
         if (!r.ok && !("error" in j)) return { error: `HTTP ${r.status}` };
         return j;
       } catch {
@@ -658,17 +665,16 @@ function createHttpApi(): Api {
     async presence(open, device) {
       try {
         const body = open ? { host: open.host, threadId: bare(open.host, open.threadId), device } : { host: "", threadId: "", device };
-        await fetch(frontPath("/presence"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify(body), keepalive: true });
+        await request(frontPath("/presence"), { method: "POST", body, keepalive: true });
       } catch {
         /* best effort */
       }
     },
     async pushStatus(endpoint) {
       try {
-        const r = await fetch(frontPath("/push/status"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ endpoint }) });
-        if (!r.ok) return null;
-        const j = (await r.json()) as { known?: boolean };
-        return typeof j.known === "boolean" ? j.known : null;
+        const r = await request(frontPath("/push/status"), { method: "POST", body: { endpoint } });
+        const known = obj(r.json).known;
+        return r.ok && typeof known === "boolean" ? known : null;
       } catch {
         return null;
       }

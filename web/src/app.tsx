@@ -5,7 +5,7 @@ import { render } from "preact";
 import { useAppState } from "./app-state.tsx";
 import { useNavHistory } from "./app-history.tsx";
 import { useConnection } from "./app-connection.tsx";
-import { useDecisionCards } from "./app-cards.tsx";
+import { useAnswers, useDecisionCards } from "./app-cards.tsx";
 import { useThreadActions } from "./app-actions.tsx";
 import { useContextMenu } from "./app-menu.tsx";
 import { useThreadList } from "./app-list.tsx";
@@ -24,7 +24,6 @@ import {
   type View,
 } from "./store.ts";
 import { setAtEnd } from "./seen.ts";
-import { submitOf } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { SetupInboxCard } from "./setup-ui.tsx";
 import { ChangesBoard } from "./board-ui.tsx";
@@ -67,14 +66,15 @@ function App() {
   const N = useNavHistory({ ...A });
   const B = useConnection({ ...A, ...N });
   const C = useDecisionCards({ ...A, ...N, ...B });
+  const C2 = useAnswers({ ...A });
   const D = useThreadActions({ ...A, ...N, ...B, ...C });
-  const E = useContextMenu({ ...A, ...N, ...B, ...C, ...D });
+  const E = useContextMenu({ ...A, ...N, ...B, ...C, ...C2, ...D });
   const F = useThreadList({ ...A, ...N, ...B, ...C, ...D, ...E });
   const G = useProjectActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F });
   useKeyboard({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
   const I = useHostActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
   const J = usePhoneNav({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G, ...I });
-  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, cards, setCards, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, filtered, searchable, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, openThread, closePeek, closeThread, settle, archive, openSnooze, snoozeList, snooze, runDeskAction, ctxMenu, submitAsk, cancelAsk, answerField, allow, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G, ...I, ...J };
+  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, setCards, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, filtered, searchable, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, runDeskAction, ctxMenu, submitAsk, cancelAsk, answerField, allow, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
 
   if (phone) {
     return (
@@ -103,14 +103,9 @@ function App() {
             onAtEnd: (b) => setTracker((tr) => setAtEnd(tr, b)),
             card,
             onCard: (fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c)),
-            submitAsk: async (d) => {
-              const cs = cards[d.id];
-              const send = cs ? submitOf(cs, d) : null;
-              if (!send || !view) return false;
-              return (await cmds.run("thread.answer", [view.id], { decisionId: d.id, answers: send.answers, ...(send.skipped.length ? { skipped: send.skipped } : {}) })) > 0;
-            },
-            cancelAsk: async (d) => (view ? (await cmds.run("thread.cancelAsk", [view.id], { decisionId: d.id })) > 0 : false),
-            allow: async (d, ok) => (view ? (await cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
+            submitAsk: answers.submit,
+            cancelAsk: answers.cancel,
+            allow: answers.allow,
             arrival: arrivedHere,
             setArrival,
           }}
@@ -198,6 +193,7 @@ function App() {
           searchable={searchList}
           onQuery={setQuery}
           onToggle={toggleSection}
+          onSettleMerged={settleMerged}
           autoHideAt={hideShown}
           onSectionActivity={sectionUsed}
           onClick={(id) => openThread(id, "open")}

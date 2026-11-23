@@ -15,7 +15,7 @@ import { needsHeads } from "./rows.ts";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { drawnRows, type Guest, type GuestWhy } from "./selection.ts";
 import { colorVar } from "./projects.ts";
-import { SECTIONS, connLabel, connWords, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, connLabel, connWords, isOpen, mergedToSettle, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
 import { count } from "./format.ts";
 import { snoozedHint } from "./snooze.ts";
@@ -168,6 +168,9 @@ interface InboxProps {
   onQuery(q: string): void;
   onClick(id: string): void;
   onToggle(k: SectionKey): void;
+  /** The Seen header's "Settle merged" (the phone has the same button): these ids, merged and settleable. ⇧E settles the
+   *  whole section instead, which is the keyboard's sweep; the button is the narrower, pointer-first choice. */
+  onSettleMerged?(ids: string[]): void;
   onExpand(k: SectionKey): void;
   onNew(): void;
   onFocusZone(): void;
@@ -257,6 +260,7 @@ export function Inbox(p: InboxProps) {
           const limit = p.expanded[s.key] ? rows.length : SECTION_LIMIT[s.key];
           const shown = drawnRows(rows, open, limit, p.guest);
           const hint = sectionHint(s.key, list, p.now);
+          const settleMerged = s.key === "seen" ? mergedToSettle(p.sec.seen) : { ids: [], any: false };
           const heads = s.key === "needs" ? needsHeads(shown) : {};
           const hideAt = open ? p.autoHideAt?.[s.key] : undefined;
           return (
@@ -265,6 +269,18 @@ export function Inbox(p: InboxProps) {
                 <SectionTitle label={s.label} icon={<StateIcon state={s.state} size={14} />} n={list.length} shown={count(list.length)} open={open} attention={s.key === "needs"} />
                 {hideAt !== undefined && <HideClock at={hideAt} />}
                 {hint && <span class="h ell">{hint}</span>}
+                {s.key === "seen" && settleMerged.any && p.onSettleMerged && (
+                  <button
+                    class="sbtn"
+                    title="Settle the threads whose PR has merged"
+                    onClick={(e) => {
+                      e.stopPropagation(); // the header toggles its section
+                      p.onSettleMerged?.(settleMerged.ids);
+                    }}
+                  >
+                    Settle merged
+                  </button>
+                )}
               </div>
               {s.key === "needs" && <InvariantCards phone={false} now={p.now} onOpen={p.onClick} />}
               {shown.map((t) =>

@@ -7,7 +7,7 @@ import { useEffect, useRef } from "preact/hooks";
 import type { Decision } from "./types.ts";
 import { currentDecision } from "./decode.ts";
 import { markSent, setWindowFocus, shouldMarkSeen } from "./seen.ts";
-import { initCard } from "./question.ts";
+import { allowArgs, answerArgs, initCard, submitOf } from "./question.ts";
 import type { useAppState } from "./app-state.tsx";
 
 export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" | "threadsRef" | "tracker" | "setTracker" | "cards" | "setCards" | "setInText" | "sec" | "gatedRef" | "viewThread">) {
@@ -64,4 +64,22 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
 
 
   return { decision, card };
+}
+
+/** The three ways a card or an approval answers its thread, for the desktop's keys and buttons and the phone's alike:
+ *  each says whether the host took it. What follows an answer is the front's own (the desktop walks on to the next
+ *  thread that needs the owner and shows an arrival bar; the phone stays on the thread it answered, which its own
+ *  screen leaves). */
+export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "view" | "cards">) {
+  const { cmds, view, cards } = c;
+  const submit = async (d: Decision): Promise<boolean> => {
+    const cs = cards[d.id];
+    const send = cs ? submitOf(cs, d) : null;
+    if (!send || !view) return false;
+    return (await cmds.run("thread.answer", [view.id], answerArgs(d, send))) > 0;
+  };
+  /** V0.ask-cancel: close the card without answering; the agent hears why it has no answer. */
+  const cancel = async (d: Decision): Promise<boolean> => (view ? (await cmds.run("thread.cancelAsk", [view.id], { decisionId: d.id })) > 0 : false);
+  const allow = async (d: Decision, ok: boolean): Promise<boolean> => (view ? (await cmds.run("thread.answer", [view.id], allowArgs(d, ok))) > 0 : false);
+  return { answers: { submit, cancel, allow } };
 }

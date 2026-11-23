@@ -104,3 +104,36 @@ export function navFromHistory(state: unknown, search: string): Nav {
   if (state && typeof state === "object" && "screen" in state) return state as Nav;
   return parseUrl(search);
 }
+
+/** The browser's history as far as the phone's navigation uses it. */
+interface HistoryLike {
+  replaceState(state: unknown, title: string, url: string): void;
+  pushState(state: unknown, title: string, url: string): void;
+}
+
+/** Build the history once: the entries of a deep link (a push) get the inbox under them, so Back never leaves the
+ *  app. Returns the entry the page is on. */
+export function seedHistory(h: HistoryLike, search: string): Nav {
+  const entries = initialEntries(search);
+  h.replaceState(entries[0], "", urlFor(entries[0], search));
+  for (const e of entries.slice(1)) h.pushState(e, "", urlFor(e, search));
+  return entries[entries.length - 1];
+}
+
+/** Back and Forward on the phone: the entry the browser went to is the screen. `slide` plays the back slide when the
+ *  screen changes, unless the system's own swipe back already did (V0.native-feel: a second slide would replay it).
+ *  Returns the listener's remover: the listener is added on every call, so a front that left the phone layout and came
+ *  back has one again. */
+export function listenPopState(
+  target: Pick<Window, "addEventListener" | "removeEventListener">,
+  io: { search(): string; current(): Nav; set(n: Nav): void; slide(apply: () => void): void },
+): () => void {
+  const onPop = (e: Event) => {
+    const ev = e as PopStateEvent & { hasUAVisualTransition?: boolean };
+    const n = navFromHistory(ev.state, io.search());
+    if (!ev.hasUAVisualTransition && JSON.stringify(n.screen) !== JSON.stringify(io.current().screen)) io.slide(() => io.set(n));
+    else io.set(n);
+  };
+  target.addEventListener("popstate", onPop);
+  return () => target.removeEventListener("popstate", onPop);
+}

@@ -2,8 +2,8 @@
 
 // The app shell: state, commands and the keyboard.
 
-import { storedGet, storedSet } from "./prefs.ts";
-import { applyTheme, sessionStore, params, PAGE, idle } from "./app-util.tsx";
+import { browserStorage, sessionStore, storedGet, storedSet } from "./prefs.ts";
+import { applyTheme, params, PAGE, idle } from "./app-util.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   applySnapshot,
@@ -24,7 +24,7 @@ import {
   moveHostInStore,
   resolveRef,
 } from "./store.ts";
-import { moveHostKeys, moveRef, rotations } from "./host-rotation.ts";
+import { moveHostKeys, moveRef, moveRefAll, rotations } from "./host-rotation.ts";
 import { openView } from "./seen.ts";
 import { clearThreadNotification, syncPushHidden, syncPushPrefs, syncPushStatus, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { PUSH_PREFS_KEY, parsePushPrefs, rememberOpen, takeOpen, type PushPrefs } from "./push.ts";
@@ -59,9 +59,10 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
     watchInstall((can) => setCanInstall(can));
     // Reconcile with the host at start and whenever the app comes back to the foreground.
     void syncPushStatus(api).then(setPushSt);
-    document.addEventListener("visibilitychange", () => {
+    const onVisible = () => {
       if (document.visibilityState === "visible") void syncPushStatus(api).then(setPushSt);
-    });
+    };
+    document.addEventListener("visibilitychange", onVisible);
     // V0.38: stream messages are applied together, once per frame (a short timer while the page is
     // hidden), so a burst of updates is one render, not one per message.
     let queue: ((s: Store) => Store)[] = [];
@@ -108,7 +109,11 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       conn: (c) => batch((s) => setConn(s, c)),
     });
     const iv = setInterval(() => setTick(Date.now()), 15_000);
-    return () => clearInterval(iv);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+      api.stop();
+    };
   }, []);
 
   // A link names a record by the host's own id; once the records are here it names the ref (decision 0031 C12).
@@ -134,20 +139,19 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
   const rotationKey = rotations(fullStore.hostList).map((r) => `${r.was}>${r.now}`).join(",");
   useEffect(() => {
     if (!rotationKey) return;
-    for (const { was, now } of rotations(fullStore.hostList)) {
-      let kv: Storage | null = null;
-      try {
-        kv = localStorage;
-      } catch {
-        /* storage blocked */
-      }
-      if (moveHostKeys(kv, was, now)) rereadFilters();
+    const moves = rotations(fullStore.hostList);
+    for (const { was, now } of moves) {
+      if (moveHostKeys(browserStorage(), was, now)) rereadFilters();
       void cache.moveHost(was, now);
       setStore((s) => moveHostInStore(s, was, now));
       setView((v) => (v && moveRef(v.id, was, now) !== v.id ? { ...v, id: moveRef(v.id, was, now) } : v));
       setLastOpen((id) => (id ? moveRef(id, was, now) : id));
-      const sc = nav.screen;
-      if ((sc.name === "thread" || sc.name === "project") && moveRef(sc.id, was, now) !== sc.id) navReplace({ ...nav, screen: { ...sc, id: moveRef(sc.id, was, now) } });
+    }
+    // One replace for all the rotations: each one against the same stale `nav` would overwrite the one before.
+    const sc = nav.screen;
+    if (sc.name === "thread" || sc.name === "project") {
+      const id = moveRefAll(sc.id, moves);
+      if (id !== sc.id) navReplace({ ...nav, screen: { ...sc, id } });
     }
   }, [rotationKey]);
 
@@ -182,10 +186,14 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
     const first = store.events[id]?.[0]?.seq;
     const host = hostOfId(id);
     if (!first || !host) return;
-    void api.eventsBefore(host, id, first, PAGE).then((evs) => {
-      setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
-      setStore((s) => mergeEvents(s, id, evs));
-    });
+    // A page that cannot be read leaves the timeline as it is; the button is there to press again.
+    void api
+      .eventsBefore(host, id, first, PAGE)
+      .then((evs) => {
+        setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
+        setStore((s) => mergeEvents(s, id, evs));
+      })
+      .catch(() => {});
   };
 
   // Load the open thread's events; after a reconnect fetch what was missed.

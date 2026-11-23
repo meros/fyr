@@ -321,6 +321,9 @@ export function createMockApi(scenario: string): Api {
     mock: true,
     cache: false,
     pushes: false,
+    stop() {
+      /* fixtures keep no stream or page listener */
+    },
     start(h) {
       h.conn("connecting");
       watch = observeBuildId(watch, server.buildId).watch;

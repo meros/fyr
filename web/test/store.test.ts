@@ -306,3 +306,15 @@ test("a bulk settle leaves pinned threads out and counts them", () => {
   assert.equal(bulkSettleText(2, 0, 0, 1), "Settled 2 threads; 1 still running");
 });
 
+
+test("mergedToSettle: the one rule of both fronts' Settle merged button", async () => {
+  const { mergedToSettle } = await import("../src/store.ts");
+  const { thread } = await import("./helpers.ts");
+  const pr = (state: string) => ({ url: "u", number: 1, state }) as never;
+  const merged = thread("m", "seen", "seen", { pr: pr("MERGED") });
+  const open = thread("o", "seen", "seen", { pr: pr("OPEN") });
+  const pinned = thread("p", "seen", "seen", { pr: pr("MERGED"), pinnedAt: "2026-01-01T00:00:00Z" });
+  assert.deepEqual(mergedToSettle([open, merged, pinned]), { ids: ["m", "p"], any: true });
+  assert.deepEqual(mergedToSettle([open, pinned]), { ids: ["p"], any: false }); // a pinned one alone offers no button
+  assert.deepEqual(mergedToSettle([open]), { ids: [], any: false });
+});

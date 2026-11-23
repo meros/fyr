@@ -3,6 +3,8 @@
 // that is why: an /api/state answer of 401 with signedOut reloads the page, which the front then answers with the
 // sign-in page. Reloading is rate limited so a page that cannot be signed in does not reload in a loop.
 
+import { sessionStore } from "./prefs.ts";
+
 /** Whether a 401 body is the front's "this device is not signed in". */
 export function isSignedOut(status: number, body: unknown): boolean {
   return status === 401 && typeof body === "object" && body !== null && (body as { signedOut?: unknown }).signedOut === true;
@@ -23,13 +25,12 @@ export async function reloadIfSignedOut(probe: StateProbe): Promise<boolean> {
   try {
     const r = await probe();
     if (!isSignedOut(r.status, r.body)) return false;
-    let last: number | null = null;
+    const kv = sessionStore();
     try {
-      last = Number(sessionStorage.getItem(KEY)) || null;
-      if (!mayReload(last, Date.now())) return false;
-      sessionStorage.setItem(KEY, String(Date.now()));
+      if (!mayReload(Number(kv?.getItem(KEY)) || null, Date.now())) return false;
+      kv?.setItem(KEY, String(Date.now()));
     } catch {
-      /* no storage: reload anyway, once per call */
+      /* storage full: reload anyway, once per call */
     }
     location.reload();
     return true;
