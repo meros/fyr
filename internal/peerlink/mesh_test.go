@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -504,5 +505,53 @@ func TestAReplacedLinkToAnOlderPeer(t *testing.T) {
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Errorf("closed after %v", d)
+	}
+}
+
+// V0.peerlink-drain-flush: a handler stops counting as served before the
+// server ends its response stream. A drain that closes the link in that gap
+// cut the response off ("client connection force closed"), seen in CI under
+// load. The gap is held open here; the response must still arrive whole.
+func TestAReplacedLinkClosesAfterTheResponseIsSent(t *testing.T) {
+	afterServed = func() { time.Sleep(300 * time.Millisecond) } // longer than the drain's 50 ms poll
+	t.Cleanup(func() { afterServed = nil })
+	self, peer := key(t), key(t)
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/held" {
+			entered <- struct{}{}
+			<-release
+		}
+		w.Write([]byte("ok"))
+	})
+	m := New(Config{Key: self, Members: func() []Peer { return []Peer{{ID: peer.ID(), Key: peer.Public}} }})
+	old, theirs := linkBetween(t, self, peer, h, h)
+	old.setPeerDrains(false)
+	m.register(old)
+	held := make(chan error, 1)
+	go func() {
+		resp, err := theirs.RoundTrip(mustReq("/held"))
+		if err == nil {
+			var b []byte
+			b, err = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err == nil && string(b) != "ok" {
+				err = fmt.Errorf("body %q", b)
+			}
+		}
+		held <- err
+	}()
+	<-entered
+	newer, _ := linkBetween(t, self, peer, h, h)
+	newer.setPeerDrains(false)
+	m.register(newer)
+	close(release)
+	if err := <-held; err != nil {
+		t.Fatalf("the held request: %v", err)
+	}
+	select {
+	case <-old.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("the replaced link stayed open with nothing on it")
 	}
 }
