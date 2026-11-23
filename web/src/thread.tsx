@@ -13,6 +13,7 @@ import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
 import { AgentPill, threadAgent } from "./agent-ui.tsx";
+import { UsageChip } from "./usage-ui.tsx";
 import { HandoverLinkBar } from "./handover-ui.tsx";
 import { type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -194,6 +195,8 @@ export function ThreadPane(p: ThreadPaneProps) {
           <PreviewsChip threadRef={t.id} host={t.hostId} events={p.events} onShow={() => setTab("conv")} />
           {/* V0.agent-pill: provider, model and effort in one pill; the model and the effort pick in place */}
           <AgentPill size="chip" segs={threadAgent(t, profile, provider, unavailableReason(t, "thread.setModel"), (a) => p.onRun("thread.setModel", a))} />
+          {/* V0.usage-ledger: the thread's tokens so far; the phone header shows the same chip */}
+          <UsageChip u={t.usage} />
           {/* V0.quota-in-thread, V0.quota-reset-wake: what is left on the account this thread uses, where the owner works; click to arm a wake when a window resets */}
           <ThreadQuotaChip
             profile={t.profile}

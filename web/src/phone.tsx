@@ -25,6 +25,7 @@ import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
 import { snoozedHint, type SnoozeCmd } from "./snooze.ts";
 import { AgentPill, showOnly, threadAgent } from "./agent-ui.tsx";
+import { UsageChip } from "./usage-ui.tsx";
 import { ThreadTabBody } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { LeftoverStrip } from "./leftovers-ui.tsx";
@@ -673,6 +674,8 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             const pf = profilesOf(t, p.profiles).find((x) => x.id === t.profile);
             return <AgentPill size="chip" phone segs={threadAgent(t, pf, pv, "", () => {}).map(showOnly)} />;
           })()}
+          {/* V0.usage-ledger: the desktop header's token chip */}
+          <UsageChip u={t.usage} phone />
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? <span class={`m-chip prc ${c.cls}`} title={c.title}>{c.text}</span> : null;

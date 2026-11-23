@@ -42,7 +42,7 @@ func (m *Manager) feed(threadID string) error {
 	if len(ns) == 0 {
 		return nil
 	}
-	return m.send(threadID, core.Effect{Kind: core.EffectSend, Text: core.NoticeText(ns)}, nil)
+	return m.sendAs(threadID, core.Effect{Kind: core.EffectSend, Text: core.NoticeText(ns)}, nil, noticeTrigger(ns))
 }
 
 // hook answers a hook callback of s's process by its callback id. The

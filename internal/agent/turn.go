@@ -7,6 +7,7 @@ import (
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/usage"
 )
 
 // A turn: the process's stream, read into observations on the host (runs,
@@ -133,6 +134,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		case "queued":
 			m.delivered(s, id, "queued")
 		case "started":
+			m.mu.Lock()
+			queuedStarted(s, id) // V0.usage-ledger
+			m.mu.Unlock()
 			// V0.agy-reattach-queue: a queued message that begins a new turn
 			// after a previous result starts the run before the agent emits
 			// its first tool call or text, so the thread never looks idle
@@ -197,6 +201,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		if msg["subtype"] == "init" {
 			sid, _ := msg["session_id"].(string)
 			model, _ := msg["model"].(string)
+			m.mu.Lock()
+			s.model = model // V0.usage-ledger
+			m.mu.Unlock()
 			m.observe(s.thread, core.KindSession, core.SessionArgs{SessionID: sid, Model: model})
 		}
 		return
@@ -239,11 +246,13 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.observe(s.thread, core.KindDigest, d)
 		m.noteRefusals(s, msg) // V0.133: after the message it explains
 	case "result":
+		m.meterResult(s, msg) // V0.usage-ledger: before anything else, a stray result too
 		m.mu.Lock()
 		ended := s.live
 		interrupted := s.interrupt
 		lastText := s.lastText
 		s.live, s.interrupt, s.lastText, s.openTools = false, false, "", 0
+		s.trigger = ""
 		s.calls = nil
 		m.mu.Unlock()
 		s.digest.resetOpen()
@@ -441,6 +450,9 @@ func (m *Manager) turnStarted(s *session) {
 	}
 	s.live = true
 	s.lastText = ""
+	if s.trigger == "" {
+		s.trigger = usage.TriggerBackground // V0.usage-ledger: the CLI went on by itself
+	}
 	if s.idle != nil {
 		s.idle.Stop()
 	}

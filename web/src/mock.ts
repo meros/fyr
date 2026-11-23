@@ -53,6 +53,8 @@ function base(id: string, title: string, now: number, ageMin: number, extra: Par
     profile: "claude",
     model: "claude-opus-5-5",
     sessionId: `sess-${id}`,
+    // V0.usage-ledger: every mock thread has counted tokens, so the layout test sees the header chip at its widest
+    usage: { input: 120, output: 48_000, thinking: 9_000, cacheRead: 3_400_000, cacheWrite1h: 210_000, total: 3_658_120 },
     createdAt: iso(now - (ageMin + 30) * 60_000),
     updatedAt: at,
     running: false,

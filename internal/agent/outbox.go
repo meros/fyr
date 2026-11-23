@@ -72,6 +72,12 @@ func content(e core.Effect) []claude.Msg {
 // send writes a user message; a non-nil result gets the result of the turn
 // that reads it.
 func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) error {
+	return m.sendAs(threadID, e, result, triggerOf(e))
+}
+
+// sendAs is send with what the message starts when it starts a turn
+// (V0.usage-ledger).
+func (m *Manager) sendAs(threadID string, e core.Effect, result chan claude.Msg, trig string) error {
 	if e.MessageID == "" {
 		e.MessageID = newUUID()
 	}
@@ -103,6 +109,7 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 	m.mu.Lock()
 	first := !s.live
 	s.live = true
+	noteTrigger(s, e.MessageID, trig, first)
 	if s.idle != nil {
 		s.idle.Stop()
 	}

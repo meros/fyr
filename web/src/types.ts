@@ -1,5 +1,6 @@
 // DTOs of the v0 HTTP API (docs/API-v0.md). The client renders these; it never computes status.
 
+import type { Usage } from "./usage.ts";
 import type { HostId } from "./hostid.ts";
 export type AttentionState =
   | "asking"
@@ -137,6 +138,8 @@ export interface ThreadDTO {
   hostOffline?: string;
   /** V0.149 (4): why a root run request cannot ask for the password on the thread's host; absent when it can */
   rootPrompt?: string;
+  /** V0.usage-ledger: the thread's tokens so far, from the host's usage ledger; absent before its first counted result */
+  usage?: Usage;
   id: string;
   title: string;
   cwd: string;

@@ -169,6 +169,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	w := &wiring{cfg: cfg, h: h, webFS: webFS, hostName: hostName, data: data, tree: tree, rn: rn, eng: eng, reg: reg, ln: ln, att: att}
 	w.wireQuota()
+	w.wireUsage()
 	w.wireAgents()
 	w.wireProjects()
 	w.wireHeavy()

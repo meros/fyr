@@ -27,6 +27,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/runner"
+	"github.com/meros/fyr/internal/usage"
 )
 
 // authOf is the profile's auth; a legacy profile is a cli-login in its
@@ -90,6 +91,11 @@ type Config struct {
 	Setup func(dir string) Setup
 	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
 	Attachments func(id string) (attach.Meta, error)
+	// Meter records each result's token usage (V0.usage-ledger); nil keeps
+	// none. Account names a provider's account (the quota identity, hashed)
+	// and its billing: subscription, api-key, endpoint or none.
+	Meter   *usage.Meter
+	Account func(profile string) (account, billing string)
 	// OnRateLimit gets a session's rate_limit_info with its profile id (V0.44); optional.
 	OnRateLimit func(profile string, info map[string]any)
 	// OnCommands gets the commands of a session's initialize answer with
@@ -208,6 +214,12 @@ type session struct {
 	token  string
 	c      cli.Session
 	effort string // the --effort it started with (V0.50)
+	// V0.usage-ledger: model is the main agent's model as the CLI's init
+	// names it; trigger is what started the current turn, and trigs what
+	// each queued message starts when the CLI starts it.
+	model   string
+	trigger string
+	trigs   map[string]string
 	// sendMu keeps the owner's messages in order (V0.fix-flakes): send holds
 	// it from the turn's first-message decision to the write, so a second
 	// message sent while the first is between its record and its write

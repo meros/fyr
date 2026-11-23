@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/meros/fyr/internal/usage"
 	"io/fs"
 	"net"
 	"sync/atomic"
@@ -34,6 +35,8 @@ import (
 type wiring struct {
 	cfg          config
 	h            *host
+	meter        *usage.Meter // V0.usage-ledger
+	quotaList    func() []quota.Profile
 	webFS        fs.FS
 	hostName     string
 	data         string
