@@ -48,21 +48,21 @@ const (
 	KindResponsive   = "agent.responsive"
 	KindRestarted    = "agent.restarted"
 	// V0.153: Fyr waits for a thrashing host ("" Why: it no longer waits).
-	KindMachineWait    = "agent.machineWait"
-	KindTask           = "task"
-	KindTaskQuiet      = "task.quiet" // V0.195: a background command waits while the thread uses no CPU
-	KindSession        = "session"
-	KindDigest         = "digest"
-	KindDecisionOpened = "decision.opened"
-	KindDecisionGone   = "decision.withdrawn"
+	KindMachineWait      = "agent.machineWait"
+	KindTask             = "task"
+	KindTaskQuiet        = "task.quiet" // V0.195: a background command waits while the thread uses no CPU
+	KindSession          = "session"
+	KindDigest           = "digest"
+	KindDecisionOpened   = "decision.opened"
+	KindDecisionGone     = "decision.withdrawn"
 	KindHandoverFailed   = "handover.failed"
 	KindHandoverDone     = "handover.done"
 	KindThreadHandedOver = "thread.handedOver" // decision 0039, V0.trans-host-handover
 	KindSlotGranted      = "slot.granted"      // V0.86: a queued slot is the thread's now
-	KindSlotQueued     = "slot.queued"  // V0.185: the thread joined or left the slot queue
-	KindSlotMemory     = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
-	KindSlotOver       = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
-	KindSlotPause      = "slot.pause"   // decision 0029 S5: the memory guard froze or thawed this job
+	KindSlotQueued       = "slot.queued"       // V0.185: the thread joined or left the slot queue
+	KindSlotMemory       = "slot.memory"       // decision 0029 S2: memory is short; this job grew most
+	KindSlotOver         = "slot.over"         // decision 0029 S3: a running job is heavier than predicted
+	KindSlotPause        = "slot.pause"        // decision 0029 S5: the memory guard froze or thawed this job
 )
 
 // The typed args of the kinds that are not a map.
@@ -184,6 +184,9 @@ type (
 		PR                *PR
 		PRs               []PR
 		Log               []Event
+		// OpenBash is how many Bash calls run now, any agent's; nil: the
+		// message says nothing of it (V0.no-progress).
+		OpenBash *int
 	}
 	HandoverDoneArgs struct {
 		Profile, Model, SessionID string

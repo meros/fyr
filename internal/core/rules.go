@@ -574,6 +574,11 @@ func NextCheck(t *Thread, v *View, now time.Time) *time.Time {
 	if at := quotaCheck(t, now); at != nil && (out == nil || at.Before(*out)) {
 		out = at
 	}
+	// V0.no-progress: the clock re-reduces a live run when its silence
+	// reaches NoProgressAfter.
+	if at := noProgressCheck(t, now); at != nil && (out == nil || at.Before(*out)) {
+		out = at
+	}
 	return out
 }
 

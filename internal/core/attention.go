@@ -122,6 +122,10 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 		// V0.143: a live process that takes nothing Fyr writes needs the
 		// owner: Restart, or wait for the automatic one.
 		return Attention{State: Blocked, Section: NeedsYou, Reason: UnresponsiveText(t.Unresponsive), Group: GroupUnblock}
+	case t.Running && t.NoProgress != nil:
+		// V0.no-progress: a live run silent past NoProgressAfter.
+		w, s := NoProgressWord(), NoProgressSubject(t.NoProgress)
+		return blocked(GroupUnblock, w, s, w+": "+s)
 	case t.Running:
 		return Attention{State: Working, Section: WorkingSec}
 	}

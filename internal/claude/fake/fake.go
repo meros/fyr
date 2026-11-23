@@ -49,6 +49,7 @@
 //	         that tool boundary and replies "took in: <texts>" (V0.33)
 //	hold     runs a tool until a message "release" is queued, then takes
 //	         in every queued message and replies "took in: <texts>"
+//	stall    hold with a WebFetch call instead of Bash: a tool that hangs
 //	view H   publishes a live view with headline H over MCP during the turn
 //	launch   replies "launch: base=… token=set-<last 2>|unset effort=… model=…"
 //	recall   replies "recall: <first user message of the session transcript>"
@@ -687,10 +688,15 @@ func turn(text string) (took []queued) {
 		}
 		assistant(msg{"type": "text", "text": "took in: " + strings.Join(texts, ", ")})
 		result(false, "success", "done")
-	case "hold":
+	case "hold", "stall":
 		// Like slow, but the tool runs until a message "release" waits in
-		// the queue, so a test orders its steps without timing.
-		assistant(msg{"type": "tool_use", "id": "tu_h", "name": "Bash", "input": msg{"command": "sleep 1"}})
+		// the queue, so a test orders its steps without timing. stall's
+		// tool is no command: a WebFetch that hangs (V0.no-progress).
+		if word == "stall" {
+			assistant(msg{"type": "tool_use", "id": "tu_h", "name": "WebFetch", "input": msg{"url": "https://example.com/"}})
+		} else {
+			assistant(msg{"type": "tool_use", "id": "tu_h", "name": "Bash", "input": msg{"command": "sleep 1"}})
+		}
 		for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
 			qmu.Lock()
 			release := false

@@ -147,6 +147,12 @@ type Conversation struct {
 	// SlotQueued: the thread has a place in the host's queue for heavy jobs
 	// (V0.185). The pool owns the queue; this copy is what Conditions read.
 	SlotQueued bool `json:"slotQueued,omitempty"`
+	// ProgressAt is the live run's last progress, NoProgress its silence
+	// past NoProgressAfter, OpenBash its Bash calls still running
+	// (V0.no-progress).
+	ProgressAt *time.Time  `json:"progressAt,omitempty"`
+	NoProgress *NoProgress `json:"noProgress,omitempty"`
+	OpenBash   int         `json:"openBash,omitempty"`
 }
 
 // ViewOn reports that the agent keeps a live view (V0.37).

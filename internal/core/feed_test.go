@@ -358,6 +358,16 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("told twice: %+v", th.Feed.Queue)
 			}
 		},
+		// V0.no-progress: a live run silent for NoProgressAfter: one line at
+		// its next tool call, the stuck one's end.
+		"noprogress": func(t *testing.T) {
+			th := feedThread()
+			th, _ = fstep(t, th, Input{Source: Observer(ObsProcess), Kind: KindRunStarted}, ct0)
+			th, res := fstep(t, th, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0.Add(NoProgressAfter))
+			if n := queued(t, th, "no-progress"); n.Urgency != Next || !strings.Contains(n.What, "no progress for 20 min") || wakes(res) {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+		},
 	}
 	for _, r := range NoticeRules {
 		f := rows[r.Name]

@@ -840,6 +840,10 @@ func checkAttentionPlacement(t *Thread, v *View, now time.Time, on func(repo str
 		if a.State != Blocked || a.Section != NeedsYou {
 			probs = append(probs, fmt.Sprintf("unresponsive agent placed in %s/%s", a.State, a.Section))
 		}
+	case t.Running && t.NoProgress != nil:
+		if a.State != Blocked || a.Section != NeedsYou || a.Group != GroupUnblock {
+			probs = append(probs, fmt.Sprintf("silent run placed in %s/%s", a.State, a.Section))
+		}
 	case t.Running:
 		if a.State != Working || a.Section != WorkingSec {
 			probs = append(probs, fmt.Sprintf("running thread placed in %s/%s", a.State, a.Section))
