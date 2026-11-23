@@ -15,9 +15,6 @@ import (
 )
 
 const (
-	// holdMargin is how far above its learned peak a job may go unthrottled
-	// (V0.job-limits).
-	holdMargin = 1.25
 	// shadowPercent is the share of the agents' budget the log measures against.
 	shadowPercent = 12
 	// budgetLogEvery is how often a thread over the share is logged, and the summary.

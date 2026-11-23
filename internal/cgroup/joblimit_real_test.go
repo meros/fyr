@@ -18,6 +18,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/guard"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func TestRealJobLimits(t *testing.T) {
@@ -70,8 +73,8 @@ func TestRealJobLimits(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cli, "cgroup.procs"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	g := &JobGroups{Tree: tr, Size: func(string, bool) JobSize {
-		return JobSize{Class: "real", Peak: 100 << 20, Demand: 1.5, Known: true}
+	g := &JobGroups{Tree: tr, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize {
+		return resource.JobSize{Class: "real", Peak: 100 << 20, Demand: 1.5, Known: true}
 	}}
 	g.Sync("t_real", "sleep 30")
 	job := filepath.Join(td, jobDir)

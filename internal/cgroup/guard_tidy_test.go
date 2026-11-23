@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/guard"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // Decision 0036 "Not chosen": a reclaim raises pgscan, so oomd would pick the
@@ -79,8 +82,9 @@ func TestGuardTidyARestartedCLIIsNoRoot(t *testing.T) {
 func TestGuardTidyTurnsLiftUndeclaredsLimit(t *testing.T) {
 	g, td := turboTree(t)
 	g.Cores = 8
-	g.Size = func(string, bool) JobSize {
-		return JobSize{Class: "lint", Peak: 1 << 30, Demand: 1, Known: true, Runs: 5}
+	g.Limit = guard.JobLimit
+	g.Size = func(string, bool) resource.JobSize {
+		return resource.JobSize{Class: "lint", Peak: 1 << 30, Demand: 1, Known: true, Runs: 5}
 	}
 	ud := filepath.Join(td, undeclaredDir)
 	write(t, filepath.Join(ud, "memory.high"), "max")

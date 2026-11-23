@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/kvstore"
 )
 
@@ -68,8 +69,12 @@ type JobGroups struct {
 	// undeclared work) and what the class learned; Raise raises a class's
 	// learned peak after its job hit its limit. Both optional: without Size
 	// a job gets no limit. sized: the limits written, per job cgroup.
-	Size  func(thread string, undeclared bool) JobSize
+	Size  func(thread string, undeclared bool) resource.JobSize
 	Raise func(class string)
+	// Limit is the guard's policy for a job's limits (guard.JobLimit,
+	// V0.guard-finish): it decides them from what sizeJob reads, and the job
+	// groups write them. Without it a job gets no limit.
+	Limit func(resource.LimitAsk) resource.LimitAnswer
 	Cores int // the host's CPUs for the agents' capacity; default runtime.NumCPU()
 	// N is the host's `slots` setting: a class under resource.LearnRuns runs is
 	// sized no smaller than the prior, 1/N of the agents (V0.admission-memory).

@@ -8,6 +8,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/slots"
@@ -51,6 +52,7 @@ func (w *wiring) wireHeavy() {
 	// V0.209: the gate hook admits a heavy command by itself.
 	groups := &cgroup.JobGroups{Tree: tree, N: n}                                     // decision 0029 S5: each holder's job in a cgroup of its own; V0.admission-memory: N sizes a class under three runs
 	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun                        // V0.job-limits: a job sizes itself
+	groups.Limit = guard.JobLimit                                                     // V0.guard-finish: the guard's policy decides its limits
 	groups.Limited = func(thread, class, why, high string, budget uint64, runs int) { // V0.load-invariants: limit-under-prior
 		if h, err := strconv.ParseUint(high, 10, 64); err == nil && n > 0 {
 			eng.JobLimitSet(thread, class, why, h, resource.Prior(resource.Signals{Memory: budget}, n).Mem, cgroup.LimitSettled(why, runs))

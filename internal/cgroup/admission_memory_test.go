@@ -9,28 +9,10 @@ import (
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
-func TestAdmissionMemoryAClassUnderThreeRunsSizesWithThePrior(t *testing.T) {
+func TestAdmissionMemorySizeOfSaysTheRuns(t *testing.T) {
 	const gb = 1 << 30
-	g := &JobGroups{N: 2}
-	// 12 GB and 8 cores for the agents: the prior is half of each.
-	one := JobSize{Class: "fyr: make test-go", Peak: gb, Demand: 0.5, Known: true, Runs: 1}
-	if z := g.sizeFor(one, 12*gb, 8); z.Peak != 6*gb || z.Demand != 4 {
-		t.Fatalf("one run sizes with its learned peak, not the prior: %+v", z)
-	}
-	big := one
-	big.Peak, big.Demand = 8*gb, 6
-	if z := g.sizeFor(big, 12*gb, 8); z.Peak != 8*gb || z.Demand != 6 {
-		t.Fatalf("a learned peak above the prior was lowered: %+v", z)
-	}
-	three := one
-	three.Runs = resource.LearnRuns
-	if z := g.sizeFor(three, 12*gb, 8); z != three {
-		t.Fatalf("three runs size with the learned peak: %+v", z)
-	}
-	if z := g.sizeFor(JobSize{}, 12*gb, 8); z != (JobSize{}) {
-		t.Fatalf("an unknown class stays unknown: %+v", z)
-	}
-
+	// guard.SizeFor sizes a class under three runs with the prior
+	// (guard/joblimit_test.go); the job tracker says the runs.
 	j := &Jobs{}
 	j.mu.Lock()
 	j.load()
