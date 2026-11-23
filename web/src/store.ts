@@ -452,12 +452,17 @@ export function sectionOf(t: Thread): SectionKey | null {
  *  Working and Unread are oldest first by that time, so a new row goes last and later activity does not move a row. */
 export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = [], arrivals: Readonly<Record<string, Arrival>> = {}): Sections {
   const out: Sections = { needs: [], working: [], slots: [], unread: [], seen: [], snoozed: [], settled: [], pinned: [] };
-  queue = queue.filter((e) => !e.grow); // V0.admission-tidy: a thread waiting to grow its slot runs; it stays in its group
+  // V0.admission-tidy: a thread waiting to grow its slot runs; it stays in its group. V0.grow-waits-moving: but an agent
+  // that ended its turn on that wait (Fyr holds its command until memory suffices) is not finished: it moves without
+  // the owner, so it is in Moving without you, not in Finished.
+  const growing = new Set(queue.filter((e) => e.grow).map((e) => e.owner));
+  queue = queue.filter((e) => !e.grow);
   const queued = new Set(queue.map((e) => e.owner));
   for (const t of Object.values(threads)) {
     const k = sectionOf(t);
     if (k && k !== "needs" && queued.has(t.id)) continue;
-    if (k) out[k].push(t);
+    if ((k === "unread" || k === "seen") && growing.has(t.id)) out.working.push(t);
+    else if (k) out[k].push(t);
   }
   for (const e of queue) {
     const t = threads[e.owner];
