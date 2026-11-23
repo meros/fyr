@@ -2,6 +2,7 @@
 // nothing stops on the host. Unlike the inbox filters (V0.169), which narrow the list for a moment, a hidden record
 // leaves the whole front: inbox, filters, Changes, pickers and this device's notifications. Settings keeps listing it,
 // because that is where it comes back. Pure.
+import { asObject, parseJson, strings } from "./decode.ts";
 import type { HostInfo } from "./hosts.ts";
 import { linkProjects, projectOf, projectRecords } from "./projects.ts";
 import type { View } from "./store.ts";
@@ -20,17 +21,14 @@ export const NOTHING_HIDDEN: Hidden = { hosts: [], projects: [] };
 
 type HostRef = Pick<HostInfo, "name" | "id">;
 
-const names = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && !!x))] : []);
-
 /** What the device stored; anything else hides nothing. */
 export function parseHidden(raw: string | null): Hidden {
-  if (!raw) return NOTHING_HIDDEN;
-  try {
-    const v = JSON.parse(raw) as Partial<Hidden> | null;
-    return { hosts: names(v?.hosts), projects: names(v?.projects) };
-  } catch {
-    return NOTHING_HIDDEN;
-  }
+  return parseJson(raw, decodeHidden, NOTHING_HIDDEN);
+}
+
+function decodeHidden(v: unknown): Hidden | undefined {
+  const o = asObject(v);
+  return o && { hosts: strings(o.hosts), projects: strings(o.projects) };
 }
 
 export function hiddenCount(h: Hidden): number {

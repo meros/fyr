@@ -7,6 +7,7 @@
 // A row shows only with more than one value to choose from, or while one of its values is selected (a project
 // picked, a host off); a selected value stays until the owner changes it. V0.114: a quiet project's threads count
 // only while the unlock runs.
+import { parseJson, strings } from "./decode.ts";
 import { shortID, type HostInfo } from "./hosts.ts";
 import { shortHostNames } from "./host-load.ts";
 import { findProject, projectOf } from "./projects.ts";
@@ -49,13 +50,7 @@ export interface ProjectChip {
 
 /** V0.169: what the device stored, as a list of host keys; anything else is none off. */
 export function parseHostsOff(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const v = JSON.parse(raw) as unknown;
-    return Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && !!x))] : [];
-  } catch {
-    return [];
-  }
+  return parseJson(raw, strings, []);
 }
 
 /** V0.169: a host's toggle: off when it is on, on when it is off. */

@@ -1,13 +1,19 @@
 // V0.automation-folds: the settings folds a device remembers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldOpen, parseFolds } from "../src/settings-fold.ts";
+import { foldOpen, readFold, writeFold } from "../src/settings-fold.ts";
+import { memoryStorage, withStorage } from "./helpers.ts";
 
-test("parseFolds keeps booleans and drops the rest", () => {
-  assert.deepEqual(parseFolds(null), {});
-  assert.deepEqual(parseFolds("not json"), {});
-  assert.deepEqual(parseFolds("[true]"), {});
-  assert.deepEqual(parseFolds('{"h:jobs":true,"h:guard":false,"x":1}'), { "h:jobs": true, "h:guard": false });
+const KEY = "fyr.settingsFold";
+
+test("readFold keeps the stored booleans and reads anything else as the default", () => {
+  for (const raw of ["not json", "[true]", "null", '{"h:jobs":1}']) withStorage(memoryStorage({ [KEY]: raw }), () => assert.equal(readFold("h:jobs", true), true, raw));
+  withStorage(memoryStorage({ [KEY]: '{"h:jobs":false,"x":1}' }), () => {
+    assert.equal(readFold("h:jobs", true), false);
+    writeFold("h:guard", true);
+    assert.equal(readFold("h:guard", false), true);
+    assert.equal(readFold("h:jobs", true), false, "a write keeps the other folds");
+  });
 });
 
 test("foldOpen uses the device's choice, else the default", () => {

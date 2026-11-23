@@ -1,7 +1,7 @@
 // The PR tab's data and pure logic (SPEC 0.5 V0.43): merge status words shared with the PR chip, check grouping,
 // and the text of the "Ask the agent" messages.
 
-import { duration } from "./format.ts";
+import { duration, oneLine } from "./format.ts";
 import type { PullRequest } from "./types.ts";
 
 export interface PrCheck {
@@ -239,11 +239,6 @@ export function fixCheckMessage(c: PrCheck): string {
 
 const COMMENT_MAX = 300;
 
-function oneLine(s: string, max = COMMENT_MAX): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
-}
-
 function threadPlace(t: PrThread): string {
   return `${t.path}${t.line ? `:${t.line}` : ""}`;
 }
@@ -252,7 +247,7 @@ function threadPlace(t: PrThread): string {
 export function reviewMessage(threads: PrThread[]): string {
   const lines = threads.map((t, i) => {
     const c = t.comments[0];
-    return `${i + 1}. ${threadPlace(t)}${t.outdated ? ", outdated" : ""}${c ? ` (${c.author}): ${oneLine(c.body)}` : ""}`;
+    return `${i + 1}. ${threadPlace(t)}${t.outdated ? ", outdated" : ""}${c ? ` (${c.author}): ${oneLine(c.body, COMMENT_MAX)}` : ""}`;
   });
   return [`Address these ${plural(threads.length, "unresolved review comment")}:`, "", ...lines, "", "Fix what they ask for, or tell me why not."].join("\n");
 }

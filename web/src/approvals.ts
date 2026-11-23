@@ -3,7 +3,9 @@
 // the raw tool name and full JSON input stay behind Details.
 
 import { formatApproval } from "./approval.ts";
-import { friendlyName, middleTruncate, relPath } from "./conversation.ts";
+import { friendlyName, relPath } from "./conversation.ts";
+import { firstLine, middleTruncate, oneLine } from "./format.ts";
+import { tildePath } from "./paths.ts";
 import type { Decision } from "./types.ts";
 
 export interface ApprovalField {
@@ -47,18 +49,9 @@ function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-function firstLine(s: string, max = 96): string {
-  const line = (s.split("\n").find((x) => x.trim()) ?? "").replace(/\s+/g, " ").trim();
-  return line.length > max ? middleTruncate(line, max) : line;
-}
-
-function clip(s: string, max = 56): string {
-  const flat = s.replace(/\s+/g, " ").trim();
-  return flat.length > max ? flat.slice(0, max - 1).trimEnd() + "…" : flat;
-}
-
-function shortHome(p: string): string {
-  return p.replace(/^\/home\/[^/]+(?=\/|$)/, "~").replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
+/** A subject line: the first line that is not blank, cut in the middle so both ends of a command or URL show. */
+function subjectLine(s: string, max: number): string {
+  return middleTruncate(firstLine(s), max);
 }
 
 function urlHost(url: string): string {
@@ -82,7 +75,7 @@ function formatValue(key: string, v: unknown, cwd: string): ApprovalField | null
     const trimmed = v.trim();
     if (!trimmed) return null;
     const isPath = /(?:^|_)(?:file_path|notebook_path|path|dir|cwd)$/i.test(key) && (trimmed.startsWith("/") || trimmed.startsWith("~"));
-    const value = isPath ? (cwd ? relPath(trimmed, cwd, 80) : shortHome(trimmed)) : trimmed;
+    const value = isPath ? (cwd ? relPath(trimmed, cwd, 80) : tildePath(trimmed)) : trimmed;
     const mono = MONO_KEY.test(key) || /^https?:\/\//i.test(trimmed);
     return { label: humanKey(key), value, ...(mono ? { mono: true } : {}) };
   }
@@ -145,7 +138,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
   const tool = (d.tool ?? "").trim();
   const input = (d.input && typeof d.input === "object" ? d.input : {}) as Record<string, unknown>;
   const rawCwd = str(input.cwd) || threadCwd;
-  const where = rawCwd ? shortHome(rawCwd) : "";
+  const where = rawCwd ? tildePath(rawCwd) : "";
   const details = { tool, input, cwd: rawCwd };
   // V0.tool-approval-judge: the sandbox bypass and the judge's note are the card's, not the tool formatter's.
   const fa = formatApproval({ input, judgeNote: d.judgeNote });
@@ -180,7 +173,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
       if (typeof input.timeout === "number" && input.timeout > 0) fields.push({ label: "Timeout", value: `${Math.round(input.timeout / 1000)} s` });
       return base({
         label: "Run command",
-        subject: firstLine(command || desc, 80),
+        subject: subjectLine(command || desc, 80),
         title: "Run a command?",
         summary: desc,
         command,
@@ -248,7 +241,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
       return base({
         label: "Search code",
         subject: pattern,
-        title: pattern ? `Search for “${clip(pattern, 48)}”?` : "Search the codebase?",
+        title: pattern ? `Search for “${oneLine(pattern, 48)}”?` : "Search the codebase?",
         fields,
       });
     }
@@ -261,7 +254,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
       return base({
         label: "List files",
         subject: pattern || shortPath,
-        title: pattern ? `Find files matching ${clip(pattern, 48)}?` : shortPath ? `List ${shortPath}?` : "List files?",
+        title: pattern ? `Find files matching ${oneLine(pattern, 48)}?` : shortPath ? `List ${shortPath}?` : "List files?",
         fields,
       });
     }
@@ -271,7 +264,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
       return base({
         label: "Search web",
         subject: query,
-        title: query ? `Search the web for “${clip(query, 48)}”?` : "Search the web?",
+        title: query ? `Search the web for “${oneLine(query, 48)}”?` : "Search the web?",
       });
     }
 
@@ -283,7 +276,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
       if (str(input.prompt)) fields.push({ label: "Prompt", value: str(input.prompt) });
       return base({
         label: "Fetch page",
-        subject: host || firstLine(url, 60),
+        subject: host || subjectLine(url, 60),
         title: host ? `Fetch ${host}?` : "Fetch a web page?",
         fields,
       });
@@ -299,8 +292,8 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
       if (prompt) fields.push({ label: "Prompt", value: prompt });
       return base({
         label: "Start subagent",
-        subject: desc || firstLine(prompt, 72),
-        title: desc ? `Start subagent: ${clip(desc, 48)}?` : "Start a subagent?",
+        subject: desc || subjectLine(prompt, 72),
+        title: desc ? `Start subagent: ${oneLine(desc, 48)}?` : "Start a subagent?",
         fields,
       });
     }
@@ -312,7 +305,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
       return base({
         label: "Run skill",
         subject: skill,
-        title: skill ? `Run skill “${clip(skill, 48)}”?` : "Run a skill?",
+        title: skill ? `Run skill “${oneLine(skill, 48)}”?` : "Run a skill?",
         fields,
       });
     }
@@ -328,7 +321,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
           return base({
             label: "Remove action",
             subject: id,
-            title: id ? `Remove action “${clip(id, 48)}”?` : "Remove an action?",
+            title: id ? `Remove action “${oneLine(id, 48)}”?` : "Remove an action?",
             summary: `Removes the ${on === "view" ? "live view" : "thread"} action button.`,
           });
         }
@@ -344,11 +337,11 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         if (Array.isArray(input.argv) && input.argv.length > 0) {
           fields.push({ label: "Command", value: input.argv.map(String).join(" "), mono: true });
         }
-        if (str(input.cwd)) fields.push({ label: "Folder", value: shortHome(str(input.cwd)), mono: true });
+        if (str(input.cwd)) fields.push({ label: "Folder", value: tildePath(str(input.cwd)), mono: true });
         return base({
           label: "Offer action",
           subject: btnLabel || id,
-          title: btnLabel ? `Offer action “${clip(btnLabel, 48)}”?` : "Offer an action?",
+          title: btnLabel ? `Offer action “${oneLine(btnLabel, 48)}”?` : "Offer an action?",
           summary,
           fields,
         });
@@ -359,7 +352,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         const why = str(input.why);
         return base({
           label: "Request command",
-          subject: why || firstLine(command, 72),
+          subject: why || subjectLine(command, 72),
           title: input.root === true ? "Ask to run a command as root?" : "Ask to run a command?",
           summary: why,
           command,
@@ -410,7 +403,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         if (note) fields.push({ label: "Note", value: note });
         return base({
           label: then === "settle" ? "Watch to settle" : "Set watch",
-          subject: note || firstLine(when, 72),
+          subject: note || subjectLine(when, 72),
           title: then === "settle" ? "Settle when a condition is met?" : "Watch for an event?",
           fields,
         });
@@ -425,7 +418,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         return base({
           label: "Open change",
           subject: t || str(input.branch) || str(input.pr),
-          title: t ? `Open change “${clip(t, 48)}”?` : "Open a code change?",
+          title: t ? `Open change “${oneLine(t, 48)}”?` : "Open a code change?",
           fields,
         });
       }
@@ -438,7 +431,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         return base({
           label: "Update change",
           subject: ch || str(input.label) || str(input.phase),
-          title: ch ? `Update change ${clip(ch, 40)}?` : "Update a change?",
+          title: ch ? `Update change ${oneLine(ch, 40)}?` : "Update a change?",
           fields,
         });
       }
@@ -453,7 +446,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         return base({
           label: "Open pull request",
           subject: t || str(input.head) || str(input.change),
-          title: t ? `Open pull request “${clip(t, 48)}”?` : "Open a pull request?",
+          title: t ? `Open pull request “${oneLine(t, 48)}”?` : "Open a pull request?",
           fields,
         });
       }
@@ -481,7 +474,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         return base({
           label: "Show preview",
           subject: t || str(input.path) || str(input.url),
-          title: t ? `Show “${clip(t, 48)}”?` : "Show a preview?",
+          title: t ? `Show “${oneLine(t, 48)}”?` : "Show a preview?",
           summary: str(input.caption),
           fields,
         });
@@ -506,12 +499,12 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         const t = str(input.title);
         const text = str(input.text);
         const fields: ApprovalField[] = [];
-        if (str(input.cwd)) fields.push({ label: "Folder", value: shortHome(str(input.cwd)), mono: true });
+        if (str(input.cwd)) fields.push({ label: "Folder", value: tildePath(str(input.cwd)), mono: true });
         if (text) fields.push({ label: "Message", value: text });
         return base({
           label: "Start thread",
-          subject: t || firstLine(text, 72),
-          title: t ? `Start thread “${clip(t, 48)}”?` : "Start a new thread?",
+          subject: t || subjectLine(text, 72),
+          title: t ? `Start thread “${oneLine(t, 48)}”?` : "Start a new thread?",
           fields,
         });
       }
@@ -523,7 +516,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         if (text) fields.push({ label: "Message", value: text });
         return base({
           label: "Message thread",
-          subject: firstLine(text, 72),
+          subject: subjectLine(text, 72),
           title: "Send a message to another thread?",
           fields,
         });
@@ -534,7 +527,7 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
         return base({
           label: "Rename thread",
           subject: t,
-          title: t ? `Rename thread to “${clip(t, 48)}”?` : "Regenerate thread title?",
+          title: t ? `Rename thread to “${oneLine(t, 48)}”?` : "Regenerate thread title?",
         });
       }
 
@@ -581,10 +574,10 @@ export function describeApproval(d: Pick<Decision, "tool" | "input"> & Pick<Part
     str(input.url) ||
     shortPath ||
     str(input.name) ||
-    firstLine(command || str(input.prompt) || str(input.message) || str(input.text), 72);
+    subjectLine(command || str(input.prompt) || str(input.message) || str(input.text), 72);
   return base({
     label: `Allow ${friendly}`,
-    subject: firstLine(subject, 72),
+    subject: subjectLine(subject, 72),
     title: `Allow ${friendly}?`,
     command,
     fields: g.fields,

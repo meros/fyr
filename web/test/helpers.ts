@@ -64,3 +64,21 @@ export function filterByProject(threads: Record<string, Thread>, projectId: stri
   for (const t of Object.values(threads)) if (projectOf(t, projects)?.id === want) out[t.id] = t;
   return out;
 }
+
+/** Runs `f` with `ls` as the global localStorage (an object, a throwing stand-in, or undefined), then puts it back. */
+export function withStorage(ls: unknown, f: () => void): void {
+  const was = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { value: ls, configurable: true, writable: true });
+  try {
+    f();
+  } finally {
+    if (was) Object.defineProperty(globalThis, "localStorage", was);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+}
+
+/** A localStorage kept in a map. */
+export function memoryStorage(init: Record<string, string> = {}): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+  const m = new Map(Object.entries(init));
+  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k) };
+}

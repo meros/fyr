@@ -3,6 +3,7 @@
 
 import { describeApproval } from "./approvals.ts";
 import { currentDecision } from "./decode.ts";
+import { clip } from "./format.ts";
 import { describeEffect } from "./effects.ts";
 import { headerPrs, prForEffect, threadPrs } from "./offers.ts";
 import type { AttentionState, Project, Thread } from "./types.ts";
@@ -21,17 +22,16 @@ const LABEL: Record<AttentionState, string> = {
   archived: "Archived",
 };
 
+/** V0.row-calm: the most of a project name a row shows. */
+const PROJECT_NAME_MAX = 14;
+
 /** V0.135: a row shows its project as the icon before the title. The name goes on the second line, muted, only when
  *  the icon is not an image (a monogram or a glyph alone may not say which project it is) and no project filter is
  *  on (then every row is that project). */
 export function rowProjectName(p: Pick<Project, "name" | "image"> | undefined, name: string, filter: string | null): string | null {
   if (filter || p?.image) return null;
-  return clipName((p?.name ?? name) || "") || null;
-}
-
-/** V0.row-calm: a long project name is cut in the text, not by the box, so no gap is left before the "·" after it. */
-export function clipName(n: string, max = 14): string {
-  return n.length > max ? n.slice(0, max - 1).trimEnd() + "…" : n;
+  // V0.row-calm: a long project name is cut in the text, not by the box, so no gap is left before the "·" after it.
+  return clip((p?.name ?? name) || "", PROJECT_NAME_MAX) || null;
 }
 
 export function stateLabel(s: AttentionState): string {

@@ -84,7 +84,7 @@ export function cardShows(o: Offer, runs: OfferRun[] | undefined): boolean {
 }
 
 /** The first line of a command, with … when there are more. */
-export function firstLine(cmd: string): string {
+export function firstCommandLine(cmd: string): string {
   const lines = cmd.replace(/\n+$/, "").split("\n");
   return lines.length > 1 ? `${lines[0]} …` : lines[0];
 }

@@ -1,8 +1,10 @@
 // How a path is shown: the home folder as ~, a scratch folder or a long path shortened. Pure.
 
-const HOME_RE = /^\/home\/[^/]+(?=\/|$)/;
+// A home folder: /home/<user> (Linux), /Users/<user> (macOS) or /root (V0.web-helpers).
+const HOME_RE = /^(?:\/(?:home|Users)\/[^/]+|\/root)(?=\/|$)/;
 
-/** A path as the owner reads it: the home folder as ~. */
+/** A path as the owner reads it: the home folder as ~ (`home` when known, else the usual places). The one way a
+ *  path is shortened to ~. */
 export function tildePath(p: string, home = ""): string {
   if (home && (p === home || p.startsWith(home + "/"))) return "~" + p.slice(home.length);
   return p.replace(HOME_RE, "~");

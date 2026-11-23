@@ -5,6 +5,7 @@
 
 import type { PickOptions } from "./folder-picker.tsx";
 import { multiHost, pickerStart, type HostInfo, type HostProfiles } from "./hosts.ts";
+import { asObject, parseJson } from "./decode.ts";
 import type { HostId } from "./hostid.ts";
 import { findProject, localProject, memberOn, newThreadFolder, projectDefaults, projectRecords, recordOf, startProject } from "./projects.ts";
 import type { Profile, Project } from "./types.ts";
@@ -51,12 +52,7 @@ type KeyValue = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
 function parse(raw: string | null): Record<string, unknown> {
-  try {
-    const j = JSON.parse(raw ?? "");
-    return j && typeof j === "object" && !Array.isArray(j) ? j : {};
-  } catch {
-    return {};
-  }
+  return parseJson(raw, asObject, {});
 }
 
 function clean(r: Remembered): Remembered {
