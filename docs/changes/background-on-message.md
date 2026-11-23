@@ -1,0 +1,23 @@
+# V0.background-on-message: the owner's message during a long foreground command moves it to the background, so the agent reads the message now and the command keeps running
+
+→ V0.33 and decision 0009 (message delivery), V0.195 (background tasks). Closes #19.
+
+**Why.** The CLI takes a message written during a turn in only at the next tool boundary (0009). While the agent waits on a foreground command, such as a ten-minute build or test run, the owner's message waited as long. In the terminal, Ctrl-B moves the command to the background and the turn goes on; Fyr read the CLI's background task reports but never asked for the move.
+
+**What the CLI offers (claude 2.1.327, read from the CLI's bundled control schema and its handler).**
+
+- Request: `{"type":"control_request","request_id":…,"request":{"subtype":"background_tasks","tool_use_id":"toolu_…"}}`. With `tool_use_id`, only the foreground task that tool_use started moves; without it, every foreground task (Bash commands and subagents) moves, "the control-request equivalent of pressing Ctrl+B".
+- Answer: `{"type":"control_response","response":{"subtype":"success","request_id":…,"response":{"backgrounded":true|false}}}`. `backgrounded` is present only when the request named a `tool_use_id`: false means no such foreground task was found (it ended already). An empty object when every task moved. Errors: a non-string `tool_use_id`, a session with background tasks disabled, and "not supported in this context"; an older CLI answers an unknown-subtype error.
+- The system `init` names the capability `background_tasks_moves_bash_v1` in its `capabilities` list when the request moves a running Bash command (the CLI's own remote client checks the same name).
+- The moved Bash call returns at once. Its tool result to the model reads "Command was manually backgrounded by user with ID: <task>. Output is being written to: <file>" and the CLI's usual background note; the command keeps running and ends with a `task_notification`. Nothing is killed.
+- The CLI has its own move "to deliver a message", but only for a subagent's report and behind a server-side flag; it does not do it for a user message in stream-json mode, so Fyr asks.
+
+**What Fyr does.**
+
+1. The adapter (`internal/claude`, `cli/claudecli`, decision 0035) keeps the protocol: `Client.CanBackground` (the latest init named the capability) and `Client.Background(ctx, toolUseID)`, exposed as the optional `cli.Backgrounder`. Another adapter does not implement it and keeps today's delivery.
+2. The agent manager keeps the main agent's open top-level tool calls with when each started. A subagent's calls are left out (the main agent still waits on its Agent call, so moving one would not deliver the message), and so is a Bash call with `run_in_background`.
+3. When the owner's own message (not a notice, a view press, another thread's message or a `/command`) is sent during a live turn, and every open top-level call is a foreground Bash call and one has run `BackgroundAfter` (default 5 s, `agent.DefaultBackgroundAfter`) or longer, Fyr writes the message with one line in front of it and then sends `background_tasks` for each such call. The CLI reads its input in order, so the message is in its queue when the moved call returns, and that boundary takes it in. The line names the command and says that it is not stopped and that its tool result says where its output goes; it does not repeat the CLI's task id or file. The line goes only to the agent: the thread and the outbox keep the owner's text.
+4. Fallback, with one log line and no change to the message: the CLI did not name the capability (older than 2.1.327: the message carries no line and waits as before), the request failed or timed out (5 s), or the CLI answered `backgrounded:false` (the command ended by itself, so the message is read at once anyway).
+5. Composer modes (U15): Fyr has one send path, which writes at once; ⌘Enter only sends the text of an open question's answer field as a message. So every owner message during a live turn is a steer, and each may move the command.
+
+**Tests.** The fake CLI names the capability in its init, answers `background_tasks` as 2.1.327 does, and has a script `long N` (a foreground Bash call of N ms that the request moves, whose command still ends at N ms with a task notification); `FYR_FAKE_OLD_CLI=1` plays an older CLI. `TestMessageMovesLongCommandToBackground` proves the order: the message is read, with the line, before the command's end, which still arrives. `TestMessageWaitsWhenCLICannotBackground` proves the fallback: with an older CLI the message is read after the command, without a line.

@@ -247,6 +247,10 @@ func (Adapter) Reattach(p runner.Pipe, log io.Writer, h cli.Handlers) (cli.Sessi
 
 type session struct{ *claude.Client }
 
+// V0.background-on-message: the client moves a foreground call to the
+// background (background_tasks).
+var _ cli.Backgrounder = session{}
+
 func (s session) Out() <-chan cli.Msg { return s.Client.Out }
 
 // SessionsDir: the auth's config folder, else the daemon's

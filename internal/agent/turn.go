@@ -195,6 +195,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			}
 			return
 		}
+		m.noteCalls(s, msg) // V0.background-on-message
 		if typ == "assistant" {
 			m.noteForced(s, msg)
 		} else {
@@ -223,6 +224,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		interrupted := s.interrupt
 		lastText := s.lastText
 		s.live, s.interrupt, s.lastText, s.openTools = false, false, "", 0
+		s.calls = nil
 		m.mu.Unlock()
 		s.digest.resetOpen()
 		m.mu.Lock()

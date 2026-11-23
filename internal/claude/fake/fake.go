@@ -45,6 +45,12 @@
 //	         ends the Agent tool; it asks the PostToolUse hook after each, as
 //	         the CLI does (the subagent's input names agent_id and
 //	         agent_type), and replies "sub: <context> top: <context>"
+//	long N   runs a foreground Bash call ("sleep") for N ms; a control
+//	         request background_tasks for its tool_use_id moves it to the
+//	         background as claude 2.1.327 does: the call returns at once
+//	         with the CLI's text, the queued messages are taken in, and the
+//	         command ends N ms after it started with a task_notification
+//	         (V0.background-on-message)
 //	slow N   runs a tool for N ms, then takes in every queued message at
 //	         that tool boundary and replies "took in: <texts>" (V0.33)
 //	hold     runs a tool until a message "release" is queued, then takes
@@ -67,6 +73,9 @@
 // plus a <session>/tool-results/ folder, and --resume of a session without a
 // transcript there exits at once with "No conversation found" (V0.45).
 // FYR_FAKE_NORESUME=1 makes every --resume fail that way.
+//
+// FYR_FAKE_OLD_CLI=1 plays a CLI before 2.1.327: its init names no
+// capabilities and it answers background_tasks with an error.
 //
 // FYR_FAKE_INIT_DELAY_FILE names a file whose number is how many ms the
 // fake waits before it answers initialize (V0.153).
@@ -125,6 +134,23 @@ var (
 )
 
 type queued struct{ uuid, text string }
+
+// fg is the running foreground call of long, which background_tasks
+// moves (V0.background-on-message).
+var (
+	fgmu   sync.Mutex
+	fgID   string
+	fgMove chan struct{}
+)
+
+// capabilities is what the init names: the move of a foreground Bash
+// call, unless the fake plays an older CLI.
+func capabilities() []any {
+	if os.Getenv("FYR_FAKE_OLD_CLI") == "1" {
+		return nil
+	}
+	return []any{"background_tasks_moves_bash_v1"}
+}
 
 func lifecycle(uuid, state string) {
 	if uuid != "" {
@@ -365,6 +391,28 @@ func Main() {
 				}
 			}
 			resp := msg{}
+			if req["subtype"] == "background_tasks" {
+				// As claude 2.1.327: the answer first, then the tool call
+				// sees the move and returns.
+				if os.Getenv("FYR_FAKE_OLD_CLI") == "1" {
+					write(msg{"type": "control_response", "response": msg{"subtype": "error", "request_id": id,
+						"error": "Unsupported control request subtype: background_tasks"}})
+					continue
+				}
+				use, _ := req["tool_use_id"].(string)
+				fgmu.Lock()
+				moved := use != "" && use == fgID
+				move := fgMove
+				if moved {
+					fgID = ""
+				}
+				fgmu.Unlock()
+				write(msg{"type": "control_response", "response": msg{"subtype": "success", "request_id": id, "response": msg{"backgrounded": moved}}})
+				if moved {
+					close(move)
+				}
+				continue
+			}
 			if req["subtype"] == "cancel_async_message" {
 				uuid, _ := req["message_uuid"].(string)
 				resp = msg{"cancelled": cancelQueued(uuid)}
@@ -448,7 +496,7 @@ func turn(text string) (took []queued) {
 	case <-interrupt:
 	default:
 	}
-	write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model, "cwd": mustWd()})
+	write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model, "capabilities": capabilities(), "cwd": mustWd()})
 	record("user", text)
 	word := strings.Fields(text + " x")[0]
 	switch word {
@@ -566,7 +614,7 @@ func turn(text string) (took []queued) {
 		result(false, "success", "turn 1")
 		go func() {
 			time.Sleep(150 * time.Millisecond)
-			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model})
+			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model, "capabilities": capabilities()})
 			assistant(msg{"type": "text", "text": "background task done"})
 			time.Sleep(150 * time.Millisecond)
 			result(false, "success", "turn 2")
@@ -589,7 +637,7 @@ func turn(text string) (took []queued) {
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 			write(msg{"type": "system", "subtype": "task_notification", "task_id": "bw1", "status": "completed", "summary": "Background command \"Wait for the build\" completed"})
 			write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{}})
-			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model})
+			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model, "capabilities": capabilities()})
 			assistant(msg{"type": "tool_use", "id": "tu_bw", "name": "Bash", "input": msg{"command": "cat build.output"}})
 			if closed.Load() {
 				refuse("tu_bw")
@@ -636,7 +684,7 @@ func turn(text string) (took []queued) {
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 			write(msg{"type": "system", "subtype": "task_notification", "task_id": "bd1", "status": "stopped", "summary": "Background command \"Run the proxy\" was stopped"})
 			write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{}})
-			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model})
+			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model, "capabilities": capabilities()})
 			assistant(msg{"type": "text", "text": "the proxy stopped"})
 			write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "the proxy stopped", "session_id": session})
 			os.Exit(0)
@@ -681,6 +729,45 @@ func turn(text string) (took []queued) {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
 			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_s", "content": "slept"}}}})
+		took = takeAll()
+		var texts []string
+		for _, q := range took {
+			texts = append(texts, q.text)
+		}
+		assistant(msg{"type": "text", "text": "took in: " + strings.Join(texts, ", ")})
+		result(false, "success", "done")
+	case "long":
+		ms := 2000
+		if f := strings.Fields(text); len(f) > 1 {
+			fmt.Sscan(f[1], &ms)
+		}
+		end := time.Now().Add(time.Duration(ms) * time.Millisecond)
+		move := make(chan struct{})
+		fgmu.Lock()
+		fgID, fgMove = "tu_long", move
+		fgmu.Unlock()
+		assistant(msg{"type": "tool_use", "id": "tu_long", "name": "Bash", "input": msg{"command": fmt.Sprintf("sleep %d", ms/1000)}})
+		out := "slept"
+		select {
+		case <-time.After(time.Until(end)):
+			fgmu.Lock()
+			fgID = ""
+			fgmu.Unlock()
+		case <-move:
+			out = "Command was manually backgrounded by user with ID: bl1. Output is being written to: /tmp/bl1.output"
+			write(msg{"type": "system", "subtype": "task_started", "task_id": "bl1", "tool_use_id": "tu_long", "description": "sleep", "task_type": "local_bash", "is_backgrounded": false})
+			write(msg{"type": "system", "subtype": "task_updated", "task_id": "bl1", "patch": msg{"is_backgrounded": true}})
+			write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{msg{"task_id": "bl1", "task_type": "local_bash", "description": "sleep"}}})
+			bgwg.Add(1)
+			go func() {
+				defer bgwg.Done()
+				time.Sleep(time.Until(end))
+				write(msg{"type": "system", "subtype": "task_notification", "task_id": "bl1", "tool_use_id": "tu_long", "status": "completed", "summary": "Background command \"sleep\" completed"})
+				write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{}})
+			}()
+		}
+		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_long", "content": out}}}})
 		took = takeAll()
 		var texts []string
 		for _, q := range took {
