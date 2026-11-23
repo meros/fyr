@@ -288,3 +288,28 @@ func JobEnv(c Capacity) []string {
 	}
 	return env
 }
+
+// JobHints are the shares of the agents' capacity that the tools of a job
+// read (V0.job-limits): the environment of an agent CLI (JobEnv), and the
+// hint the gate hook gives a heavy command (its runner's workers, and the
+// thread's services). Worker names a runner's workers flag for a command
+// (heavy.WorkerHint); cgroup does not import the patterns' package.
+type JobHints struct {
+	Sampler  *Sampler
+	Services *Services
+	Worker   func(command string, workers int) string
+}
+
+// capacity is the agents' capacity as the sampler reads it now.
+func (h JobHints) capacity() Capacity {
+	sig := h.Sampler.Signals()
+	return Capacity{CPU: sig.CPU, Memory: sig.Memory}
+}
+
+// Env is JobEnv of the agents' capacity now.
+func (h JobHints) Env() []string { return JobEnv(h.capacity()) }
+
+// Hint is the hint for thread's heavy command.
+func (h JobHints) Hint(thread, command string) string {
+	return strings.TrimSpace(h.Worker(command, Workers(h.capacity())) + "\n" + h.Services.Notice(thread, h.capacity()))
+}

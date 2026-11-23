@@ -143,6 +143,10 @@ type Sampler struct {
 	Jobs  *Jobs
 	// Groups keeps the holders' jobs in their own cgroups (S5); optional.
 	Groups *JobGroups
+	// Control is the job control the sampler ticks and asks what is paused:
+	// Groups with the cgroup tree, ProcStops without (V0.guard-finish); nil
+	// is Groups.
+	Control Control
 	// V0.164: the detector of undeclared heavy work, its settings (nil is the
 	// defaults) and, on a host without the cgroup tree, the reader of the
 	// process tree under each thread's CLI (CLIs says each thread's pid; each
@@ -240,7 +244,7 @@ func (s *Sampler) Get() Load {
 		th := make([]ThreadLoad, len(l.Threads))
 		for i, t := range l.Threads {
 			t.Job = v.Live[t.ID]
-			t.Paused = s.Groups.Frozen(t.ID)
+			t.Paused = s.paused(t.ID)
 			th[i] = t
 		}
 		l.Threads = th
@@ -292,14 +296,14 @@ func (s *Sampler) Tick() {
 	// lock, asked here outside every lock.
 	snap := s.Slots.Snapshot()
 	// Decision 0029 S5: the holders' jobs in their own cgroups.
-	if s.Groups != nil {
+	if c := s.control(); c != nil {
 		held := make([]string, 0, len(snap.Held))
 		for _, h := range snap.Held {
 			if !h.Priority {
 				held = append(held, h.Owner)
 			}
 		}
-		s.Groups.Tick(held)
+		c.Tick(held)
 	}
 	owners := make([]string, 0, len(snap.Held)+len(snap.Waiting))
 	for _, h := range append(snap.Held, snap.Waiting...) {
@@ -559,4 +563,26 @@ func (s *Sampler) get() Load {
 	pub := l
 	s.pub.Store(&pub)
 	return l
+}
+
+// Control is a host's job control as the sampler and the guard's wiring ask
+// it: whether a thread's work is paused, whether its frozen job or undeclared
+// work has no process left, and the tick that follows the holders.
+// *JobGroups (the cgroup tree) and *ProcStops (the process table) are one each.
+type Control interface {
+	Frozen(thread string) bool
+	JobEmpty(thread string) bool
+	UndeclaredEmpty(thread string) bool
+	Tick(held []string)
+}
+
+// control is Control, else Groups; nil when neither is set.
+func (s *Sampler) control() Control {
+	if s.Control != nil {
+		return s.Control
+	}
+	if s.Groups != nil {
+		return s.Groups
+	}
+	return nil
 }
