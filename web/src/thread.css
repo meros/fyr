@@ -31,8 +31,8 @@
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.spin{animation:none}}
 .tabs{position:relative;display:flex;gap:4px;margin-top:12px} /* #64: the header's blocks sit 12 px apart: title, chips, tabs (V0.header-one-block: nothing else) */
-.tabs span{padding:6px 10px 8px;font:500 13px/18px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
-.tabs span.on{color:var(--ink)}
+.tabs button{padding:6px 10px 8px;font:500 13px/18px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
+.tabs button.on{color:var(--ink)}
 .tabs em{font:400 11px/16px var(--mono);font-style:normal;margin-left:6px}
 .pane-note{flex:1;min-height:0;overflow:auto;padding:16px 24px;font:400 14px/21px var(--ui);color:var(--ink-muted)}
 .pane-note p{margin:0 0 8px}
@@ -268,6 +268,8 @@
 /* folded, its lines run together (a blank line would take one of the three); no vertical padding, where a fourth line would show */
 .sub .subprompt{margin:4px 12px 6px 38px;padding:0 8px;border-left:2px solid var(--line);font:400 12px/17px var(--ui);color:var(--ink-muted);cursor:pointer;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
 .sub .subprompt.open{display:block;-webkit-line-clamp:unset;line-clamp:unset;white-space:pre-wrap}
+/* V0.composer-focus-reach (3): the Agent row and the prompt are buttons; a button sizes to its content, so they take the row's width */
+button.al,button.subprompt{width:-webkit-fill-available;width:stretch;text-align:left}
 .subpl{font-weight:600;margin-right:6px}
 .sys{display:flex;align-items:center;gap:8px;font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;max-width:680px}
 .sys .ic{flex:none}
@@ -278,7 +280,7 @@
 .ask{flex:none;margin:0 24px;border:1px solid var(--line-strong);border-radius:14px;background:var(--raised);max-height:58%;display:flex;flex-direction:column;min-height:0;overflow:hidden;--knock:var(--raised)}
 .ah{display:flex;gap:8px;align-items:center;padding:8px 14px;background:var(--beam-wash);font:400 12px/16px var(--ui);color:var(--ink-muted);flex:none;min-width:0;--knock:var(--beam-wash)}
 .ah b{color:var(--beam-ink);flex:none}
-.ah .qn{cursor:pointer}
+.ah .qn{color:var(--beam-ink);font-weight:700;flex:none}
 .ah .ml{margin-left:auto;flex:none}
 .ab{padding:10px 14px 12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .q{font:500 16px/23px var(--ui);overflow-wrap:anywhere;margin-bottom:10px;overflow:auto;min-height:0;flex:0 1 auto}
@@ -297,7 +299,7 @@
 /* composer */
 .cmpw{flex:none;margin:10px 24px 16px;min-width:0}
 .cmp{border:1px solid var(--line-strong);border-radius:14px;background:var(--raised);display:flex;align-items:center;gap:10px;min-height:46px;padding:7px 8px 7px 16px}
-.cmp .in{flex:1;min-width:0;resize:none;border:0;outline:0;background:transparent;color:var(--ink);font:400 14px/20px var(--ui);padding:0;margin:0;max-height:200px;display:block}
+.cmp .in{flex:1;min-width:0;resize:none;border:0;outline:0;background:transparent;color:var(--ink);font:400 14px/20px var(--ui);padding:0;margin:0;max-height:200px;display:block} /* V0.composer-focus-reach (1): grows to 10 lines; the desktop has the height */
 .cmp .in::placeholder{color:var(--ink-muted);opacity:1}
 .cmp .hint{font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
 .cmp.off{background:var(--sunken)}

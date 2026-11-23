@@ -230,7 +230,7 @@
 .m-cmp{display:flex;align-items:flex-end;gap:2px;min-height:54px;padding:4px;border:1px solid var(--line-strong);border-radius:27px;background:var(--raised)}
 .m-cmp.off{background:var(--sunken)}
 .m-cmp .att{border-radius:22px}
-.m-cmp .in{flex:1;min-width:0;padding:11px 4px;border:0;outline:0;resize:none;background:transparent;color:var(--ink);font:400 16px/22px var(--ui);max-height:132px}
+.m-cmp .in{flex:1;min-width:0;padding:11px 4px;border:0;outline:0;resize:none;background:transparent;color:var(--ink);font:400 16px/22px var(--ui);max-height:132px} /* V0.composer-focus-reach (1): grows to 5 lines; the keyboard takes half the screen, the thread keeps the rest */
 .m-cmp .in::placeholder{color:var(--ink-muted);opacity:1}
 .m-send{width:44px;height:44px;border-radius:22px;background:var(--night);color:var(--on-night);display:grid;place-items:center;flex:none}
 .m-send:disabled{opacity:.45}

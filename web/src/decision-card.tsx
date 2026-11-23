@@ -157,9 +157,15 @@ function AskCard(p: CardProps & { card: CardState }) {
     <div class="ask">
       <div class="ah">
         <StateIcon state="asking" size={14} />
-        <b class="qn" onClick={() => qs.length > 1 && p.onCard((cs) => goTo(cs, d, (cs.index + 1) % qs.length))} title={qs.length > 1 ? "Next question (Tab)" : undefined}>
-          Question {card.index + 1} of {qs.length}
-        </b>
+        {qs.length > 1 ? (
+          <button class="qn" onClick={() => p.onCard((cs) => goTo(cs, d, (cs.index + 1) % qs.length))} title="Next question (Tab)">
+            Question {card.index + 1} of {qs.length}
+          </button>
+        ) : (
+          <b class="qn">
+            Question {card.index + 1} of {qs.length}
+          </b>
+        )}
         <span class="ell">{asker(d)}</span>
         <span class="ml">
           {p.more > 0 && `+${p.more} more · `}
@@ -171,15 +177,16 @@ function AskCard(p: CardProps & { card: CardState }) {
       </div>
       <div class="ab">
         <div class="q">{q.question}</div>
-        <div class="grid4">
+        {/* V0.composer-focus-reach (3): the options are a radio group (checkboxes for multi-select), as the phone's are */}
+        <div class="grid4" role={q.multiSelect ? "group" : "radiogroup"} aria-label={q.question}>
           {q.options.map((o, i) => (
-            <button class={`op${picks.includes(o.label) ? " on" : ""}`} title={`${o.label}${o.description ? `\n${o.description}` : ""}`} onClick={() => p.onCard((cs) => pick(cs, d, i))}>
+            <button class={`op${picks.includes(o.label) ? " on" : ""}`} role={q.multiSelect ? "checkbox" : "radio"} aria-checked={picks.includes(o.label)} title={`${o.label}${o.description ? `\n${o.description}` : ""}`} onClick={() => p.onCard((cs) => pick(cs, d, i))}>
               <span class="a ell">{o.label}</span>
               <kbd>{i + 1}</kbd>
               <span class="d">{o.description ?? ""}</span>
             </button>
           ))}
-          <button class={`op${other ? " on" : ""}`} onClick={() => document.getElementById("composer")?.focus()} title="Answer in your own words in the field below (0)">
+          <button class={`op${other ? " on" : ""}`} role={q.multiSelect ? "checkbox" : "radio"} aria-checked={!!other} onClick={() => document.getElementById("composer")?.focus()} title="Answer in your own words in the field below (0)">
             <span class="a ell">Other…</span>
             <kbd>0</kbd>
             <span class="d">{other ?? ""}</span>

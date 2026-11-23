@@ -7,6 +7,7 @@
 
 import type { ComponentChildren, RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
+import { useFocusTrap } from "./focus-trap.ts";
 import { addSample, DRAG_START_PX, EXIT_SPRING, frameMs, pathUntil, releaseVelocity, rubberBand, type Sample, SHEET_SPRING, sheetCloses, SNAP_SPRING, type Spring, springPath } from "./motion.ts";
 
 type ElRef<T extends HTMLElement = HTMLElement> = RefObject<T | null>;
@@ -242,6 +243,9 @@ export function BottomSheet({ onClose, label, cls, scrimCls, role = "dialog", pa
   const panel = panelRef ?? own;
   const opened = useRef(Date.now());
   useSheetMotion(root, back, panel, "sheet", onClose);
+  // V0.composer-focus-reach (2): the sheet itself takes the focus, not its first control: a field focused on open would raise the
+  // phone's keyboard over the sheet before the owner touched it.
+  useFocusTrap(panel, "panel");
   return (
     <div class={`m-scrim${scrimCls ? ` ${scrimCls}` : ""}`} ref={root}>
       <div class="sheet-back" ref={back} onClick={() => Date.now() - opened.current > 500 && onClose()} />
@@ -262,6 +266,9 @@ export function DialogScrim({ onClose, onBack, label, cls, scrimCls, role = "dia
   const panel = panelRef ?? own;
   const asSheet = useRef(matches(PHONE_QUERY)).current;
   useSheetMotion(root, back, panel, asSheet ? "sheet" : "dialog", onClose);
+  // V0.composer-focus-reach (2): focus in, Tab kept inside, focus back on close. As a sheet the panel takes the focus, as
+  // BottomSheet's does (no keyboard raised on open); on the desktop its first control does.
+  useFocusTrap(panel, asSheet ? "panel" : "first");
   return (
     <div class={`scrim${scrimCls ? ` ${scrimCls}` : ""}`} ref={root}>
       <div class="sheet-back" ref={back} onMouseDown={onBack} />

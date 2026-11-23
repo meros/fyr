@@ -53,14 +53,8 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
         if (el?.tagName === "BUTTON" && el !== ok.current && box.current?.contains(el)) return; // a focused Cancel or Copy takes Enter itself
         e.preventDefault();
         doneRef.current(true);
-      } else if (k === "Tab") {
-        // Focus stays inside.
-        const list = [...(box.current?.querySelectorAll<HTMLElement>("button, input") ?? [])];
-        if (!list.length) return;
-        e.preventDefault();
-        const i = list.indexOf(document.activeElement as HTMLElement);
-        list[(i + (e.shiftKey ? -1 : 1) + list.length) % list.length].focus();
       }
+      // Tab stays inside through the panel's focus trap (V0.composer-focus-reach (2), focus-trap.ts), as in every dialog.
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);

@@ -219,9 +219,9 @@ export function ThreadPane(p: ThreadPaneProps) {
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? (
-              <span class={`chip prc ${c.cls}`} title={c.title} onClick={() => setTab("changes")}>
+              <button class={`chip prc ${c.cls}`} title={c.title} onClick={() => setTab("changes")}>
                 <span>{c.text}</span>
-              </span>
+              </button>
             ) : null;
           })()}
           {(() => {
@@ -238,9 +238,9 @@ export function ThreadPane(p: ThreadPaneProps) {
         <div class="tabs" role="tablist">
           <SlideMark under at={tab} />
           {threadTabs(t).map((k) => (
-            <span class={tab === k ? "on" : ""} role="tab" onClick={() => setTab(k)}>
+            <button key={k} class={tab === k ? "on" : ""} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
               {tabLabel(t, k)}
-            </span>
+            </button>
           ))}
         </div>
       </div>
