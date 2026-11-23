@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
@@ -184,14 +183,6 @@ func (e *Engine) runFyr(threadID string, req core.EffectReq, id string) (ok bool
 		return false, err.Error(), false
 	}
 	return true, out, false
-}
-
-// EffectTimeout is the deadline of one Fyr effect (core.FyrEffects).
-func EffectTimeout(action string) time.Duration {
-	if fx := core.FyrEffects[action]; fx != nil {
-		return fx.Timeout
-	}
-	return 10 * time.Minute
 }
 
 // Report lands the result of a Fyr effect that reports later (a deploy,

@@ -38,12 +38,10 @@ func SettleWhenDone(t *Thread, by string, now time.Time) {
 	ArmRule(t, settleRule(settleDoneRule, "", When{Kind: WhenWorkDone}, by), now)
 }
 
-// WorkDone reports that nothing is left on the thread (V0.203): no work goes
-// on, nothing waits for the owner, and no PR is open. The thread's own settle
-// Rules do not count as work: they are what waits for this.
-func WorkDone(t *Thread) bool { return WorkDoneAt(t, time.Now()) }
-
-// WorkDoneAt is WorkDone at now (V0.quota-wait: a quota wait ends at its reset).
+// WorkDoneAt reports that nothing is left on the thread at now (V0.203): no
+// work goes on, nothing waits for the owner, and no PR is open. The thread's
+// own settle Rules do not count as work: they are what waits for this
+// (V0.quota-wait: a quota wait ends at its reset).
 func WorkDoneAt(t *Thread, now time.Time) bool {
 	if NeedsOwnerNowAt(t, now) || workGoing(t, func(r Rule) bool { return r.Purpose != PurposeSettle }, now) {
 		return false

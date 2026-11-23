@@ -14,7 +14,6 @@ import (
 	"maps"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/meros/fyr/internal/agent"
@@ -36,10 +35,11 @@ func (e *Engine) git() GitReader {
 	return agent.Git{}
 }
 
-// loadRecords reads the host records, moves the observed changes threads
-// stored before #35 into them, and drops records that ended over 30 days
-// ago with the threads' references to them. Call it with e.mu held, after
-// the threads are loaded.
+// loadRecords reads the host records, runs the load passes on every thread
+// and record once (core.Migrate, core.MigrateRecord: V0.structure-cost (2)), and
+// drops records that ended over 30 days ago with the threads' references to
+// them. It stores what changed. Call it with e.mu held, after the threads
+// are loaded.
 func (e *Engine) loadRecords() error {
 	rs, err := e.st.Changes()
 	if err != nil {
@@ -52,18 +52,19 @@ func (e *Engine) loadRecords() error {
 	now := e.Now()
 	var dirty []*core.Thread
 	for _, t := range e.threads {
-		if core.MigrateObserved(t, e.records) {
+		if core.Migrate(t, e.records, now) {
 			dirty = append(dirty, t)
 		}
 	}
-	for _, t := range e.threads {
-		if dropFixture(t) && !slices.Contains(dirty, t) {
-			dirty = append(dirty, t)
+	migrated := map[string]bool{}
+	for id, c := range e.records {
+		if core.MigrateRecord(c, now) {
+			migrated[id] = true
 		}
 	}
 	var gone []string
 	for id, c := range e.records {
-		if core.RecordExpired(c, now) || e.loopRecord(c) {
+		if core.RecordExpired(c, now) {
 			gone = append(gone, id)
 			delete(e.records, id)
 		}
@@ -75,12 +76,12 @@ func (e *Engine) loadRecords() error {
 			dirty = append(dirty, t)
 		}
 	}
-	if len(dirty) == 0 && len(gone) == 0 && len(before) == len(e.records) {
+	if len(dirty) == 0 && len(gone) == 0 && len(migrated) == 0 && len(before) == len(e.records) {
 		return nil
 	}
 	_, err = e.st.Write(func(tx *store.Tx) error {
 		for id, c := range e.records {
-			if before[id] != c {
+			if before[id] != c || migrated[id] {
 				if err := tx.PutChange(c); err != nil {
 					return err
 				}
@@ -99,45 +100,6 @@ func (e *Engine) loadRecords() error {
 		return nil
 	})
 	return err
-}
-
-// leakedFixture is the PR of a test fixture that reached live threads
-// (V0.95 (5)).
-const leakedFixture = "https://github.com/acme/app/pull/88"
-
-// dropFixture removes the change of the leaked fixture PR from t, by that
-// exact URL (V0.95 (5)). It reports whether t changed.
-func dropFixture(t *core.Thread) bool {
-	n := len(t.Changes)
-	t.Changes = slices.DeleteFunc(t.Changes, func(c core.Change) bool {
-		return (c.PR != nil && c.PR.URL == leakedFixture) || slices.ContainsFunc(c.Evidence, func(ev core.Evidence) bool { return ev.URL == leakedFixture })
-	})
-	if len(t.Changes) == n {
-		return false
-	}
-	if t.MainChange != "" && core.FindChange(t, t.MainChange) == nil {
-		t.MainChange = ""
-	}
-	return true
-}
-
-// loopRecord reports a record the loop of 16 Nov left (V0.95 (5)): a key
-// git:<repo>#<branch>~N, not in flight, and no thread change follows it.
-// Call it with e.mu held.
-func (e *Engine) loopRecord(c *core.Change) bool {
-	i := strings.LastIndex(c.Key, "~")
-	if !strings.HasPrefix(c.Key, "git:") || i < 0 || c.Phase.InFlight() {
-		return false
-	}
-	if _, err := strconv.Atoi(c.Key[i+1:]); err != nil {
-		return false
-	}
-	for _, t := range e.threads {
-		if slices.ContainsFunc(t.Changes, func(x core.Change) bool { return x.Observed == c.ID }) {
-			return false
-		}
-	}
-	return true
 }
 
 // applyRecord is the path of a host record's Input (#35): the record's

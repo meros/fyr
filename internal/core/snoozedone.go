@@ -19,13 +19,11 @@ const (
 	SnoozeDoneNeeded = "It needs you now"
 )
 
-// NeedsOwner reports a thread that waits on the owner: a question, an
-// approval or a merge ask, a failure, an agent that does not respond, a
-// change that is ready or stopped on a failure, a Run card.
-func NeedsOwner(t *Thread) bool { return NeedsOwnerAt(t, time.Now()) }
-
-// NeedsOwnerAt is NeedsOwner at now: a quota stop is the owner's only from
-// its reset (V0.quota-wait), so the answer moves with the clock.
+// NeedsOwnerAt reports a thread that waits on the owner at now: a question,
+// an approval or a merge ask, a failure, an agent that does not respond, a
+// change that is ready or stopped on a failure, a Run card. A quota stop is
+// the owner's only from its reset (V0.quota-wait), so the answer moves
+// with the clock.
 func NeedsOwnerAt(t *Thread, now time.Time) bool {
 	if NeedsOwnerNowAt(t, now) {
 		return true
@@ -43,7 +41,7 @@ func NeedsOwnerNowAt(t *Thread, now time.Time) bool {
 	return len(t.Decisions) > 0 || (t.Failure != nil && QuotaWaitText(t, now) == "") || t.Unresponsive != nil || PendingRequest(t) != nil
 }
 
-// WorkGoing reports that the thread's work goes on by itself: a run or a
+// WorkGoingAt reports that the thread's work goes on by itself: a run or a
 // background task is live, the agent is about to get a turn (an unread
 // message, a notice that wakes it, a handover, a wait for the machine), or it
 // waits on something it set up: a watch or settle condition of its own, a
@@ -53,16 +51,11 @@ func NeedsOwnerNowAt(t *Thread, now time.Time) bool {
 //
 // V0.quota-wait: a thread Waiting for quota reads as work going on until the
 // reset its notice names; the time is read at now, as the attention is.
-func WorkGoing(t *Thread) bool {
-	return WorkGoingAt(t, time.Now())
-}
-
-// WorkGoingAt is WorkGoing at now.
 func WorkGoingAt(t *Thread, now time.Time) bool {
 	return workGoing(t, func(Rule) bool { return true }, now)
 }
 
-// workGoing is WorkGoing, counting the agent's armed Rules that counts takes.
+// workGoing is WorkGoingAt, counting the agent's armed Rules that counts takes.
 func workGoing(t *Thread, counts func(Rule) bool, now time.Time) bool {
 	if t.Running || t.Starting != nil || t.RunningTasks() > 0 || t.MachineWait != nil || t.Handover != nil || len(t.Outbox) > 0 {
 		return true
@@ -87,10 +80,8 @@ func workGoing(t *Thread, counts func(Rule) bool, now time.Time) bool {
 	return slices.ContainsFunc(t.Changes, func(c Change) bool { return c.PRWaitsOnCI() })
 }
 
-// WorkOver is the Condition's value: the snooze has nothing left to wait for.
-func WorkOver(t *Thread) bool { return WorkOverAt(t, time.Now()) }
-
-// WorkOverAt is WorkOver at now (V0.quota-wait: a quota wait ends at its reset).
+// WorkOverAt is the Condition's value at now: the snooze has nothing left
+// to wait for (V0.quota-wait: a quota wait ends at its reset).
 func WorkOverAt(t *Thread, now time.Time) bool { return t.Asleep() || NeedsOwnerAt(t, now) || !WorkGoingAt(t, now) }
 
 // snoozeDoneReason is why the thread cannot take this snooze now, or "".

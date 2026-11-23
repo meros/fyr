@@ -55,7 +55,7 @@ func (r *quietRig) told() int {
 func (r *quietRig) reason() string {
 	th, _ := r.h.e.Thread(r.id)
 	v := r.h.viewOf(r.id)
-	return core.Compute(&th, &v, time.Now()).Reason
+	return core.ComputeWith(&th, &v, time.Now(), nil).Reason
 }
 
 func (r *quietRig) task() core.Task {

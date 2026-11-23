@@ -22,37 +22,8 @@ const (
 // phaseOrder are the phases that progress, in order.
 var phaseOrder = []Phase{PhaseWorking, PhaseReview, PhaseLanded, PhaseLive}
 
-// phaseHelp explains a phase where its name alone does not.
-var phaseHelp = map[Phase]string{
-	PhaseReview: "waits for a review or an approval",
-	PhaseLanded: "the source of truth has it: merged, applied, ran, published",
-	PhaseLive:   "it runs where it should and is healthy",
-}
-
 // Phases are all phases: the four in order, then the two ends.
 func Phases() []Phase { return append(append([]Phase{}, phaseOrder...), PhaseAbandoned, PhaseReverted) }
-
-// PhasesAfter are the phases in order after p, ends excluded.
-func PhasesAfter(p Phase) []Phase {
-	r, ok := p.rank()
-	if !ok {
-		return nil
-	}
-	return append([]Phase{}, phaseOrder[r+1:]...)
-}
-
-// PhaseGuide lists every phase with what it means, for a tool description.
-func PhaseGuide() string {
-	var parts []string
-	for _, p := range Phases() {
-		s := string(p)
-		if h := phaseHelp[p]; h != "" {
-			s += " (" + h + ")"
-		}
-		parts = append(parts, s)
-	}
-	return strings.Join(parts, ", ")
-}
 
 func (p Phase) rank() (int, bool) {
 	for i, x := range phaseOrder {

@@ -1432,7 +1432,6 @@ A Condition is one kind with its params, or `any`, `all` or `not` of others. It 
 | `idleFor {ms}` | no | `now − activityAt ≥ ms` |
 | `idle` | no | no run is live and the last run did not fail |
 | `workOver` | no | no work goes on, the thread needs the owner, or it is settled or archived (V0.185); only in the snooze Rule, evaluated last in `Reduce` |
-| `noDecisions` | no | no question or approval waits |
 
 - **Anchored kinds** are made true by an event after the Rule was armed, or by a time. Arming takes their snapshot; a firing of a kept Rule takes it again. A state kind reads the current state.
 - **Next check.** `at` and `idleFor` give the earliest time the Condition may change with time alone. The engine's clock sends the Input `clock` then.
@@ -1478,7 +1477,7 @@ When the last reason goes, the Rule resumes:
 
 | Rule | Purpose | When | Then | After |
 |---|---|---|---|---|
-| `settle:done` | settle | `all(runEnded, noDecisions, idle)` | `rule.settle` | disarm |
+| `settle:done` | settle | `all(workDone, idle)` | `rule.settle` | disarm |
 | `settle:<change>` | settle | `all(changeReached(change, phase), idle)`; "settle when merged" is the main change reaching landed | `rule.settle` | disarm |
 | `deployWatch:<change>` | deployWatch | the change is live, its `deploy` condition failed, the change ended (`changeEnded`), or the time limit passed: 24 h after the merge without a deployment of the commit, 7 days with one | `rule.end` | disarm |
 | `builtins:<change>` | builtins | `changeMoved(change)` | `change.builtins`: set the built-in actions from what Fyr observed (5.13) | keep |

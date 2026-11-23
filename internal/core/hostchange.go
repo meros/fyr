@@ -441,47 +441,6 @@ func ShownChanges(t *Thread, rec func(id string) (*Change, []string)) []Change {
 	return out
 }
 
-// MigrateObserved moves the observed git changes a thread stored before #35
-// into host records rs (by id; the newest copy wins) and gives the thread a
-// reference to each. One that the agent or a PR added to (an alias, a PR,
-// actions, evidence, a label, a Rule) stays in the thread and follows its
-// record.
-// It reports whether the thread changed.
-func MigrateObserved(t *Thread, rs map[string]*Change) bool {
-	changed := false
-	rules, _ := json.Marshal(t.Rules)
-	keep := t.Changes[:0:0]
-	for _, c := range t.Changes {
-		if c.Kind != KindCode || !strings.HasPrefix(c.Key, "git:") || c.Observed != "" {
-			keep = append(keep, c)
-			continue
-		}
-		changed = true
-		rec := cloneChange(&c)
-		rec.Aliases, rec.PR, rec.Actions, rec.Evidence, rec.Label, rec.Group, rec.After, rec.Dismissed, rec.Annotations = nil, nil, Actions{}, nil, "", "", nil, false, nil
-		repo := RecordRepo(rec)
-		if rec.Workspace == nil {
-			rec.Workspace = &Workspace{Repo: repo, Path: t.Cwd, Branch: rec.Branch}
-		}
-		if old := rs[rec.ID]; old == nil || rec.UpdatedAt.After(old.UpdatedAt) {
-			rs[rec.ID] = rec
-		}
-		if !slices.ContainsFunc(t.Refs, func(x Ref) bool { return x.ID == rec.ID }) {
-			t.Refs = append(t.Refs, Ref{ID: rec.ID, Repo: repo, Branch: rec.Branch, Ended: !rec.Phase.InFlight()})
-		}
-		pure := c.PR == nil && len(c.Aliases) == 0 && len(c.Offers) == 0 && len(c.Runs) == 0 && len(c.Evidence) == 0 &&
-			c.Label == "" && c.Group == "" && len(c.After) == 0 && t.MainChange != c.ID && !strings.Contains(string(rules), c.ID)
-		if !pure {
-			c.Observed = rec.ID
-			keep = append(keep, c)
-		}
-	}
-	if changed {
-		t.Changes = keep
-	}
-	return changed
-}
-
 // RecordExpired reports a record that landed or ended more than 30 days
 // ago: the host drops it, and the threads their references.
 func RecordExpired(c *Change, now time.Time) bool {

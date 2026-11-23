@@ -89,7 +89,12 @@ func (s *Store) Write(fn func(*Tx) error) ([]Event, error) {
 
 func (tx *Tx) PutThread(t *core.Thread) error {
 	b, _ := json.Marshal(t)
-	_, err := tx.tx.Exec(`INSERT INTO threads(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, t.ID, string(b))
+	return tx.PutThreadJSON(t.ID, b)
+}
+
+// PutThreadJSON stores a thread the caller already marshalled.
+func (tx *Tx) PutThreadJSON(id string, b []byte) error {
+	_, err := tx.tx.Exec(`INSERT INTO threads(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, id, string(b))
 	return err
 }
 
@@ -142,7 +147,12 @@ func (s *Store) Changes() ([]*core.Change, error) {
 
 func (tx *Tx) PutView(v *core.View) error {
 	b, _ := json.Marshal(v)
-	_, err := tx.tx.Exec(`INSERT INTO views(user,entity,data) VALUES(?,?,?) ON CONFLICT(user,entity) DO UPDATE SET data=excluded.data`, v.User, v.Entity, string(b))
+	return tx.PutViewJSON(v.User, v.Entity, b)
+}
+
+// PutViewJSON stores a view the caller already marshalled.
+func (tx *Tx) PutViewJSON(user, entity string, b []byte) error {
+	_, err := tx.tx.Exec(`INSERT INTO views(user,entity,data) VALUES(?,?,?) ON CONFLICT(user,entity) DO UPDATE SET data=excluded.data`, user, entity, string(b))
 	return err
 }
 

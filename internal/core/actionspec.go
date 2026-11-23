@@ -16,8 +16,6 @@ package core
 // The agent hears the result of every fyr and script action (V0.60 (4)).
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -520,232 +518,6 @@ func init() {
 	}
 }
 
-// DecodeThread reads a stored thread, also in the shape stored before #31:
-// the thread's runs in offerRuns, the view's actions and runs mixed into the
-// thread's, and a change's actions under "actions"; and before #32: the PR on
-// the thread, dismissedPRs and settleWhenMerged; and before #33: the
-// settle in settledAt, settleWhenDone and settleWhen, and the live view's
-// flag in liveView; and before #46: settle.when and a change's deployWatch,
-// which become Rules.
-func DecodeThread(b []byte) (*Thread, error) {
-	t := &Thread{}
-	if err := json.Unmarshal(b, t); err != nil {
-		return nil, err
-	}
-	if err := migrateComponents(t, b); err != nil {
-		return nil, err
-	}
-	if err := migratePR(t, b); err != nil {
-		return nil, err
-	}
-	if err := migrateRules(t, b); err != nil {
-		return nil, err
-	}
-	for i := range t.Changes { // V0.70: stored before landedAt
-		c := &t.Changes[i]
-		if c.LandedAt == nil && c.Phase.Reached(PhaseLanded) {
-			at := c.UpdatedAt
-			c.LandedAt = &at
-		}
-	}
-	if bytes.Contains(b, []byte(`"offerRuns"`)) || bytes.Contains(b, []byte(`"actions"`)) {
-		var old struct {
-			Runs    []ActionRun `json:"offerRuns"`
-			Changes []struct {
-				Offers []ActionSpec `json:"actions"`
-			} `json:"changes"`
-		}
-		if err := json.Unmarshal(b, &old); err != nil {
-			return nil, err
-		}
-		if len(t.Runs) == 0 {
-			t.Runs = old.Runs
-		}
-		for i := range old.Changes {
-			if i < len(t.Changes) && len(t.Changes[i].Offers) == 0 {
-				t.Changes[i].Offers = old.Changes[i].Offers
-			}
-		}
-	}
-	isView := func(on string) bool { return on == OnView }
-	if slices.ContainsFunc(t.Offers, func(a ActionSpec) bool { return isView(a.On) }) || slices.ContainsFunc(t.Runs, func(r ActionRun) bool { return isView(r.On) }) {
-		if t.Live == nil {
-			t.Live = &LiveView{}
-		}
-		for _, a := range t.Offers {
-			if isView(a.On) {
-				t.Live.Offers = append(t.Live.Offers, a)
-			}
-		}
-		for _, r := range t.Runs {
-			if isView(r.On) {
-				t.Live.Runs = append(t.Live.Runs, r)
-			}
-		}
-		t.Offers = slices.DeleteFunc(t.Offers, func(a ActionSpec) bool { return isView(a.On) })
-		t.Runs = slices.DeleteFunc(t.Runs, func(r ActionRun) bool { return isView(r.On) })
-	}
-	return t, nil
-}
-
-// migrateComponents moves a thread stored before #33 into its Settle and
-// Live components.
-func migrateComponents(t *Thread, b []byte) error {
-	keys := []string{`"settledAt"`, `"settleWhenDone"`, `"settleWhen"`, `"liveView"`}
-	if !slices.ContainsFunc(keys, func(k string) bool { return bytes.Contains(b, []byte(k)) }) {
-		return nil
-	}
-	var old struct {
-		SettledAt      *time.Time `json:"settledAt"`
-		SettleWhenDone bool       `json:"settleWhenDone"`
-		SettleWhen     *struct {
-			Change string `json:"change"`
-			Phase  Phase  `json:"phase"`
-		} `json:"settleWhen"`
-		LiveView bool `json:"liveView"`
-	}
-	if err := json.Unmarshal(b, &old); err != nil {
-		return err
-	}
-	if t.Settle.At == nil && !Settling(t) {
-		t.Settle.At = old.SettledAt
-		if old.SettleWhenDone {
-			SettleWhenDone(t, ByOwner, t.UpdatedAt)
-		}
-		if w := old.SettleWhen; w != nil && w.Change != "" {
-			SettleWhenReached(t, w.Change, w.Phase, ByOwner, t.UpdatedAt)
-		}
-	}
-	if old.LiveView {
-		if t.Live == nil {
-			t.Live = &LiveView{}
-		}
-		t.Live.Enabled = true
-	}
-	return nil
-}
-
-// migrateRules moves what watched before #46 into Rules: settle.when (#33)
-// into settle Rules, a change's deployWatch that had not ended into its
-// deploy Rule, and a change with a PR gets the Rule of its built-in actions.
-// A deploy Rule stored before #48 also ends when its change ends.
-func migrateRules(t *Thread, b []byte) error {
-	now := t.UpdatedAt
-	if bytes.Contains(b, []byte(`"when"`)) || bytes.Contains(b, []byte(`"deployWatch"`)) {
-		var old struct {
-			Settle struct {
-				When json.RawMessage `json:"when"`
-			} `json:"settle"`
-			Changes []struct {
-				ID          string `json:"id"`
-				DeployWatch *struct {
-					Repo     string    `json:"repo"`
-					SHA      string    `json:"sha"`
-					MergedAt time.Time `json:"mergedAt"`
-					Checked  bool      `json:"checked"`
-					Seen     bool      `json:"seen"`
-					Done     bool      `json:"done"`
-				} `json:"deployWatch"`
-			} `json:"changes"`
-		}
-		if err := json.Unmarshal(b, &old); err != nil {
-			return err
-		}
-		// settle.when was a list of {kind, change, phase}; settle Rules have
-		// their own "when" objects, which are not stored under settle.
-		var conds []struct {
-			Kind   string `json:"kind"`
-			Change string `json:"change"`
-			Phase  Phase  `json:"phase"`
-		}
-		json.Unmarshal(old.Settle.When, &conds)
-		for _, w := range conds {
-			switch w.Kind {
-			case "done":
-				SettleWhenDone(t, ByOwner, now)
-			case "change":
-				SettleWhenReached(t, w.Change, w.Phase, ByOwner, now)
-			}
-		}
-		for _, oc := range old.Changes {
-			w, c := oc.DeployWatch, FindChange(t, oc.ID)
-			if w == nil || w.Done || c == nil || FindRule(t, deployRuleID(c.ID)) != nil {
-				continue
-			}
-			ArmRule(t, Rule{ID: deployRuleID(c.ID), Purpose: PurposeDeploy, About: c.ID, When: deployWhen(c, w.MergedAt, w.Seen),
-				Then: Then{Kind: KindRuleEnd}, After: AfterDisarm, CreatedBy: BySystem,
-				Observe: &Observe{Observer: ObsDeploy, Repo: w.Repo, SHA: w.SHA, Since: w.MergedAt, Read: w.Checked}}, now)
-		}
-	}
-	for i := range t.Changes {
-		armBuiltins(t, &t.Changes[i], now)
-	}
-	for i := range t.Rules {
-		endsWithChange(&t.Rules[i])
-	}
-	return nil
-}
-
-// migratePR moves a thread stored before #32 onto its changes: a change's
-// "pr" evidence becomes its PR, thread.pr goes to its change (made when none
-// has it) and that change is the main one, a dismissed PR's change is
-// dismissed, and settleWhenMerged waits for the main change to land.
-func migratePR(t *Thread, b []byte) error {
-	for i := range t.Changes {
-		c := &t.Changes[i]
-		for _, ev := range c.Evidence {
-			if ev.Kind == "pr" && c.PR == nil && ev.URL != "" {
-				repo, n := parsePRURL(ev.URL)
-				c.PR = &PR{URL: ev.URL, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}
-				switch {
-				case c.Phase == PhaseAbandoned:
-					c.PR.State = "CLOSED"
-				case !c.Phase.InFlight():
-					c.PR.State = "MERGED"
-				}
-			}
-		}
-	}
-	if !bytes.Contains(b, []byte(`"pr"`)) && !bytes.Contains(b, []byte(`"dismissedPRs"`)) && !bytes.Contains(b, []byte(`"settleWhenMerged"`)) {
-		return nil
-	}
-	var old struct {
-		PR               *PR      `json:"pr"`
-		DismissedPRs     []string `json:"dismissedPRs"`
-		SettleWhenMerged bool     `json:"settleWhenMerged"`
-	}
-	if err := json.Unmarshal(b, &old); err != nil {
-		return err
-	}
-	if p := old.PR; p != nil && p.URL != "" && t.MainChange == "" {
-		at := t.UpdatedAt
-		if p.CheckedAt != nil {
-			at = *p.CheckedAt
-		}
-		activity := t.ActivityAt
-		c := changeByPR(t, p.URL)
-		if c == nil || c.PR == nil || c.PR.CheckedAt == nil {
-			c = ChangePRObserved(t, *p, at)
-		}
-		t.ActivityAt = activity // moving the PR is not news
-		if c != nil {
-			t.MainChange = c.ID
-			if old.SettleWhenMerged && p.State == "OPEN" {
-				SettleWhenReached(t, c.ID, PhaseLanded, ByOwner, t.UpdatedAt)
-			}
-		}
-	}
-	for _, u := range old.DismissedPRs {
-		if c := changeByPR(t, u); c != nil {
-			c.Dismissed = true
-			if t.MainChange == c.ID {
-				t.MainChange = ""
-			}
-		}
-	}
-	return nil
-}
-
 // armBuiltins arms the Rule that keeps the built-in actions of a change with
 // a PR (#46): each time the change moves, change.builtins sets them again.
 func armBuiltins(t *Thread, c *Change, now time.Time) {
@@ -820,4 +592,114 @@ func deployPrompt(c *Change) string {
 		}
 	}
 	return p + " Read the deployment's log, find the cause, and propose a fix with change_update before you change anything."
+}
+
+func reduceOffer(r Rec, in Input, now time.Time) (Result, error) {
+	a, err := argsOf[OfferArgs](in)
+	if err != nil {
+		return Result{}, err
+	}
+	h, err := HolderOf(r.T, a.On)
+	if err != nil {
+		return Result{}, err
+	}
+	where := a.On
+	if h.Change != nil {
+		where = fmt.Sprintf("the change %q", h.Change.Title)
+		h.Change.UpdatedAt = now
+	}
+	if a.Remove {
+		if !h.Remove(a.Spec.ID) {
+			return Result{}, fmt.Errorf("no action %q of yours on %s", a.Spec.ID, where)
+		}
+		return Result{Reply: OfferReply{Where: where, Removed: true}}, nil
+	}
+	if err := h.Declare(a.Spec); err != nil {
+		return Result{}, err
+	}
+	return Result{Reply: OfferReply{Label: h.Find(a.Spec.ID).Label, Where: where}}, nil
+}
+
+// reducePress is the owner's press (command action.run {on, action,
+// digest}, V0.60): the digest must be the one the owner saw, and the
+// action must be available. The press starts the run; its effect does the
+// work and its result ends it.
+func reducePress(r Rec, in Input, now time.Time) (Result, error) {
+	args := mapArgs(in)
+	t := r.T
+	on := args.Str("on")
+	if on == "" {
+		on = args.Str("change") // the first form
+	}
+	h, err := HolderOf(t, on)
+	if err != nil {
+		return Result{}, &Rejection{Code: RejectNotFound, Reason: err.Error()}
+	}
+	act := h.Find(args.Str("action"))
+	if act == nil {
+		return Result{}, reject(RejectNotFound, "no action %s", args.Str("action"))
+	}
+	if d := args.Str("digest"); d == "" || d != act.Digest {
+		return Result{}, reject(RejectUnavailable, "The action changed since you saw it; look at it again.")
+	}
+	if why := h.Available(*act); why != "" {
+		return Result{}, &Rejection{Code: RejectUnavailable, Reason: why}
+	}
+	if last := lastRunOf(h.Runs, act.ID, h.On); last != nil && now.Sub(last.At) < PressTwice {
+		// V0.71: a page or a double tap that sends one press twice
+		return Result{}, &Rejection{Code: RejectUnavailable, Reason: "It was just pressed"}
+	}
+	a, title := *act, "this thread"
+	if h.Change != nil {
+		on, title = h.Change.ID, fmt.Sprintf("the change %q", h.Change.Title)
+	} else if on == OnView {
+		title = "the live view"
+	}
+	req := h.EffectArgs(a)
+	if a.Run == RunFyr && a.Effect == FyrMerge { // V0.97: bound to the head the owner saw
+		req["head"] = args.Str("head")
+		if err := needHead(req); err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrBadArgs, err)
+		}
+		if why := headMoved(t, req); why != "" {
+			return Result{}, &Rejection{Code: RejectUnavailable, Reason: why}
+		}
+	}
+	h.Started(a, now)
+	res := Result{Reply: map[string]any{"on": on, "action": a.ID},
+		Events: []Event{{"action", withActor(pressData(on, title, a, map[string]any{"by": "owner"}), in)}}}
+	press := &Press{On: on, Title: title, Action: a}
+	switch a.Run {
+	case RunFyr:
+		res.Effects = []Effect{{Kind: EffectRun, Allow: true, Press: press, Request: &EffectReq{Action: a.Effect, Args: req}}}
+	case RunAgent:
+		msg := fmt.Sprintf("[Fyr] The owner pressed %q on %s.\n%s", a.Label, title, a.Prompt)
+		// V0.71: every press runs until its result lands, so a second
+		// press is "It is running"; a new thread follows this one.
+		if a.In == "new" {
+			res.Effects = []Effect{{Kind: EffectThread, Press: press, Text: msg, Cwd: t.Cwd, Project: t.ProjectID}}
+		} else {
+			res.Effects = []Effect{{Kind: EffectSend, Press: press, Text: msg}}
+		}
+	case RunScript:
+		dir := a.Cwd
+		if dir == "" {
+			dir = t.Cwd
+		}
+		res.Effects = []Effect{{Kind: EffectScript, Press: press, Script: &Script{Argv: a.Argv, Dir: dir, TimeoutSec: a.TimeoutSec, Root: a.Root}}}
+	}
+	return res, nil
+}
+
+// PressTwice is how close a second press of one action counts as the same
+// press (V0.71).
+const PressTwice = 2 * time.Second
+
+func lastRunOf(runs []ActionRun, action, on string) *ActionRun {
+	for i := len(runs) - 1; i >= 0; i-- {
+		if runs[i].Action == action && runs[i].On == on {
+			return &runs[i]
+		}
+	}
+	return nil
 }

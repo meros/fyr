@@ -12,6 +12,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -212,8 +213,10 @@ func (e *Engine) checkThreadApplied(s *staged, autoMerge map[string]bool, lastAf
 	for _, v := range core.CheckThread(s.t, s.v, s.now, on) {
 		vs = append(vs, violation{id: v.ID, evidence: fmt.Sprintf("after=%s %s", s.in.Kind, v.Evidence), thread: s.t.ID})
 	}
-	for _, v := range core.CheckSerialization(s.t, s.v, s.now, on) {
-		vs = append(vs, violation{id: v.ID, evidence: fmt.Sprintf("after=%s %s", s.in.Kind, v.Evidence), thread: s.t.ID})
+	if e.serialCheckDue() {
+		for _, v := range core.CheckSerialization(s.t, s.v, s.now, on) {
+			vs = append(vs, violation{id: v.ID, evidence: fmt.Sprintf("after=%s %s", s.in.Kind, v.Evidence), thread: s.t.ID})
+		}
 	}
 	if hasLast && lastAfter != afterAtt.State {
 		vs = append(vs, violation{
@@ -441,6 +444,57 @@ func (e *Engine) selfWakeRun(s *staged) *violation {
 	return nil
 }
 
+// serialEvery is how often an apply checks that its thread survives a store
+// and a load (core.CheckSerialization): a marshal and an unmarshal of the
+// thread and the view and two attention computations, too dear for every
+// apply (V0.structure-cost (4)). Load checks every thread, and under go test every
+// apply is checked.
+const serialEvery = 64
+
+// serialAlways checks every apply: under go test (a benchmark of the
+// production path turns it off).
+var serialAlways = testing.Testing()
+
+// serialCheckDue reports whether this apply runs the serialization check.
+func (e *Engine) serialCheckDue() bool {
+	if serialAlways {
+		return true
+	}
+	c := &e.inv
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.serialSkips++
+	if c.serialSkips < serialEvery {
+		return false
+	}
+	c.serialSkips = 0
+	return true
+}
+
+// tickCopies are private copies of the threads for the tick, made only for
+// records that changed since the last tick. Call it with e.mu held.
+func (e *Engine) tickCopies() map[string]*core.Thread {
+	c := &e.inv
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	next := make(map[string]tickCopy, len(e.threads))
+	out := make(map[string]*core.Thread, len(e.threads))
+	for id, t := range e.threads {
+		k, ok := c.tickCopies[id]
+		if !ok || k.src != t {
+			k = tickCopy{src: t, cp: core.CloneThread(t)}
+		}
+		next[id], out[id] = k, k.cp
+	}
+	c.tickCopies = next
+	for id := range e.stored {
+		if e.threads[id] == nil {
+			delete(e.stored, id)
+		}
+	}
+	return out
+}
+
 // checkThreadLoad checks post-restart recovery invariants right after
 // Engine.Load finishes its host.restarted pass. Call it without e.mu held.
 func (e *Engine) checkThreadLoad() {
@@ -561,10 +615,11 @@ func (e *Engine) checkThreadTick(tickNow time.Time) {
 		hasL bool
 	}
 	items := make([]snap, 0, len(e.threads))
-	for id, t := range e.threads {
+	copies := e.tickCopies()
+	for id := range e.threads {
 		l, ok := e.last[id]
 		items = append(items, snap{
-			t:    core.CloneThread(t),
+			t:    copies[id],
 			v:    cloneViewCopy(e.views[id], id),
 			last: l,
 			hasL: ok,

@@ -144,15 +144,6 @@ func TestPhaseVocabulary(t *testing.T) {
 	if got := OrList(Phases()); got != "working, review, landed, live, abandoned or reverted" {
 		t.Fatalf("Phases: %s", got)
 	}
-	if got := Names(PhasesAfter(PhaseWorking)); !slices.Equal(got, []string{"review", "landed", "live"}) {
-		t.Fatalf("PhasesAfter(working): %v", got)
-	}
-	g := PhaseGuide()
-	for _, p := range Phases() {
-		if !strings.Contains(g, string(p)) {
-			t.Fatalf("PhaseGuide misses %s: %s", p, g)
-		}
-	}
 	th := &Thread{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "k"}, ByAgent, time.Time{})
 	err := UpdateChange(th, c, ChangeUpdate{Phase: "shipped"}, ByAgent, time.Time{})

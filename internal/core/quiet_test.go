@@ -54,7 +54,7 @@ func TestQuietNow(t *testing.T) {
 		{"dst gap start", QuietHours{{From: "02:30", To: "04:00"}}, at(2026, 3, 29, 3, 45), true, at(2026, 3, 29, 4, 0)},
 	}
 	for _, c := range cases {
-		if got := QuietNow(c.q, c.t); got != c.want {
+		if got := quietNow(c.q, c.t); got != c.want {
 			t.Errorf("%s: QuietNow got %v want %v", c.name, got, c.want)
 		}
 		u, ok := QuietUntil(c.q, c.t)
@@ -129,7 +129,7 @@ func TestQuietWindows(t *testing.T) {
 		{"all day every day stops a week ahead", QuietHours{{From: "00:00", To: "00:00"}}, at(2026, 11, 13, 13, 0), true, at(2026, 11, 21, 0, 0)},
 	}
 	for _, c := range cases {
-		if got := QuietNow(c.q, c.t); got != c.want {
+		if got := quietNow(c.q, c.t); got != c.want {
 			t.Errorf("%s: QuietNow got %v want %v", c.name, got, c.want)
 		}
 		u, ok := QuietUntil(c.q, c.t)
@@ -206,4 +206,10 @@ func TestQuietHoursValid(t *testing.T) {
 	if many.Validate() == nil {
 		t.Fatal("too many windows accepted")
 	}
+}
+
+// quietNow reports whether any window of qs holds at t.
+func quietNow(qs QuietHours, t time.Time) bool {
+	_, ok := qs.window(t)
+	return ok
 }

@@ -1,8 +1,8 @@
 package engine
 
 // Done changes on the host (SPEC V0.98, decision 0024 slice 4): the owner's
-// Done on a host record, the board's visit time, and the load pass that
-// marks what landed before.
+// Done on a host record and the board's visit time. The load pass that
+// marks what landed before is core.Migrate (V0.structure-cost (2)).
 
 import (
 	"strings"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/store"
 )
 
 // boardSeenKey holds the owner's boardSeenAt (V0.98 (3)).
@@ -56,42 +55,3 @@ func (e *Engine) recordOwner(in core.Input, a core.Args, kind string) (api.Reply
 	return reply, true
 }
 
-// migrateDone is the load pass of V0.98 (7): in each thread a PR change and
-// its open branch change fold into one, and what landed before is done; a
-// host record that landed or ended is done. Before it, V0.changes-code-only
-// (4): a change that is not code ends as abandoned. Call it with e.mu held,
-// after the records are loaded.
-func (e *Engine) migrateDone() error {
-	now := e.Now()
-	var dirty []*core.Thread
-	for _, t := range e.threads {
-		ended := core.MigrateCodeOnly(t, now)
-		if core.MigrateDone(t, now) || ended {
-			dirty = append(dirty, t)
-		}
-	}
-	var recs []*core.Change
-	for _, c := range e.records {
-		ended := core.MigrateRecordCodeOnly(c, now)
-		if core.MigrateRecordDone(c, now) || ended {
-			recs = append(recs, c)
-		}
-	}
-	if len(dirty) == 0 && len(recs) == 0 {
-		return nil
-	}
-	_, err := e.st.Write(func(tx *store.Tx) error {
-		for _, c := range recs {
-			if err := tx.PutChange(c); err != nil {
-				return err
-			}
-		}
-		for _, t := range dirty {
-			if err := tx.PutThread(t); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	return err
-}

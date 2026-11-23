@@ -1,11 +1,9 @@
 package core
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -48,21 +46,21 @@ const (
 	KindResponsive   = "agent.responsive"
 	KindRestarted    = "agent.restarted"
 	// V0.153: Fyr waits for a thrashing host ("" Why: it no longer waits).
-	KindMachineWait    = "agent.machineWait"
-	KindTask           = "task"
-	KindTaskQuiet      = "task.quiet" // V0.195: a background command waits while the thread uses no CPU
-	KindSession        = "session"
-	KindDigest         = "digest"
-	KindDecisionOpened = "decision.opened"
-	KindDecisionGone   = "decision.withdrawn"
+	KindMachineWait      = "agent.machineWait"
+	KindTask             = "task"
+	KindTaskQuiet        = "task.quiet" // V0.195: a background command waits while the thread uses no CPU
+	KindSession          = "session"
+	KindDigest           = "digest"
+	KindDecisionOpened   = "decision.opened"
+	KindDecisionGone     = "decision.withdrawn"
 	KindHandoverFailed   = "handover.failed"
 	KindHandoverDone     = "handover.done"
 	KindThreadHandedOver = "thread.handedOver" // decision 0039, V0.trans-host-handover
 	KindSlotGranted      = "slot.granted"      // V0.86: a queued slot is the thread's now
-	KindSlotQueued     = "slot.queued"  // V0.185: the thread joined or left the slot queue
-	KindSlotMemory     = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
-	KindSlotOver       = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
-	KindSlotPause      = "slot.pause"   // decision 0029 S5: the memory guard froze or thawed this job
+	KindSlotQueued       = "slot.queued"       // V0.185: the thread joined or left the slot queue
+	KindSlotMemory       = "slot.memory"       // decision 0029 S2: memory is short; this job grew most
+	KindSlotOver         = "slot.over"         // decision 0029 S3: a running job is heavier than predicted
+	KindSlotPause        = "slot.pause"        // decision 0029 S5: the memory guard froze or thawed this job
 )
 
 // The typed args of the kinds that are not a map.
@@ -629,351 +627,6 @@ func reduceRename(r Rec, in Input, _ time.Time) (Result, error) {
 	return Result{Events: []Event{{"thread.renamed", map[string]any{"title": title, "by": ByAgent}}}}, nil
 }
 
-// changeKind is a change tool's reducer: fn finds or makes the change, and
-// the reduce records one `change` event (V0.59 (5)).
-func changeKind(op string, fn func(t *Thread, in Input, now time.Time) (*Change, bool, error)) func(Rec, Input, time.Time) (Result, error) {
-	return changeKindNotes(op, func(t *Thread, in Input, now time.Time) (*Change, bool, []string, error) {
-		c, isNew, err := fn(t, in, now)
-		return c, isNew, nil, err
-	})
-}
-
-// changeKindNotes is changeKind for a report whose reply carries notes
-// (V0.101: what Fyr reads instead of an observed value).
-func changeKindNotes(op string, fn func(t *Thread, in Input, now time.Time) (*Change, bool, []string, error)) func(Rec, Input, time.Time) (Result, error) {
-	return func(r Rec, in Input, now time.Time) (Result, error) {
-		c, isNew, notes, err := fn(r.T, in, now)
-		if err != nil {
-			return Result{}, err
-		}
-		ev := Event{"change", map[string]any{"op": op, "change": map[string]any{"id": c.ID, "title": c.Title, "kind": c.Kind, "phase": c.Phase, "phaseBy": c.PhaseBy, "label": c.Label}}}
-		return Result{Events: []Event{ev}, Reply: ChangeReply{Change: *c, New: isNew, Notes: notes}}, nil
-	}
-}
-
-// reportChange is change_update: the report, then a revision and proof
-// when given (V0.101).
-func reportChange(t *Thread, in Input, now time.Time) (*Change, bool, []string, error) {
-	a, ok := in.Args.(ChangeUpdateArgs)
-	if !ok {
-		return nil, false, nil, fmt.Errorf("%w: %s got %T", ErrBadArgs, in.Kind, in.Args)
-	}
-	c, err := findChange(t, a.Change)
-	if err != nil {
-		return nil, false, nil, err
-	}
-	if len(a.Evidence) > 0 {
-		for _, ev := range a.Evidence {
-			if ev.Kind == "" || (ev.URL == "" && ev.Attachment == "") {
-				return nil, false, nil, errors.New("evidence needs a kind and a url or an attachment")
-			}
-		}
-	}
-	notes, err := ReportChange(t, c, a.Update, in.Source.Principal(), now)
-	if err != nil {
-		return nil, false, nil, err
-	}
-	added := false
-	if a.Revision != nil {
-		added = ReviseChange(c, *a.Revision, now)
-	}
-	if len(a.Evidence) > 0 {
-		id, group := c.ID, c.Group
-		AttachEvidence(c, a.Evidence, now)
-		c = joinPRWork(t, c, now) // V0.87 (2)
-		if c == nil {
-			c = FindChange(t, id)
-		}
-		for _, ev := range a.Evidence {
-			if ev.Kind != "pr" || ev.URL == "" {
-				continue
-			}
-			u, ok := CanonicalPR(ev.URL)
-			if !ok {
-				continue
-			}
-			repo, n := parsePRURL(u)
-			if cur := changeByPR(t, u); cur == nil {
-				if pc := ChangePRObserved(t, PR{URL: u, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}, now); pc != nil {
-					if pc.Group == "" && group != "" {
-						pc.Group = group
-					}
-					if t.MainPR() == nil {
-						t.MainChange = pc.ID
-					}
-				}
-			} else {
-				armBuiltins(t, cur, now)
-				if t.MainPR() == nil && !cur.Dismissed {
-					t.MainChange = cur.ID
-				}
-			}
-		}
-		if updated := FindChange(t, id); updated != nil {
-			c = updated
-		}
-	}
-	return c, added, notes, nil
-}
-
-// codeOnly refuses a change_open that is not code (V0.changes-code-only
-// (3)) with the line that names its replacement; no kind is code. A code
-// change names its branch or its PR: Fyr reads the rest itself.
-func codeOnly(a *ChangeOpenArgs) error {
-	if a.Open.Kind == "" {
-		a.Open.Kind = KindCode
-	}
-	if line, gone := goneKinds[a.Open.Kind]; gone {
-		return errors.New(line)
-	}
-	if a.Open.Kind != KindCode {
-		return fmt.Errorf("kind must be %s", strings.Join(Names(OpenKinds()), ", "))
-	}
-	if strings.TrimSpace(a.Open.Branch) == "" && a.PR == "" {
-		return errors.New("a code change needs its branch or its pr; Fyr finds pushes and PRs of gh pr create itself")
-	}
-	return nil
-}
-
-// NoChange is the reason for a change ref the thread does not have.
-func NoChange(ref string) error {
-	return &Rejection{Code: RejectNotFound, Reason: fmt.Sprintf("no change %q in this thread; open it with change_open, or list them with change_list", ref)}
-}
-
-func findChange(t *Thread, ref string) (*Change, error) {
-	if c := FindChange(t, ref); c != nil {
-		return c, nil
-	}
-	return nil, NoChange(ref)
-}
-
-// canRequest checks an agent's request of a Fyr effect: its args, and the
-// effect's guard, the same one the owner's command and press use (#31).
-// A merge is bound to the head Fyr reads when the agent asks (V0.97); the
-// guard comes first, so a blocked PR says why before a missing head does.
-func canRequest(t *Thread, fx *FyrEffect, args map[string]any) error {
-	if fx.ID == FyrMerge {
-		fixHead(t, args)
-	}
-	if why := fx.Guard(t, args); why != "" {
-		return fmt.Errorf("Fyr cannot %s now: %s", strings.ToLower(fx.Label), why)
-	}
-	return fx.Check(args)
-}
-
-// openRequest opens the owner's Decision for an agent's request; a merge
-// ask goes through the CI gate first (V0.136).
-func openRequest(t *Thread, id string, req EffectReq, now time.Time) (Result, error) {
-	d := Decision{ID: id, Kind: DecisionEffect, Assignee: Owner, Effect: &req, CreatedAt: now}
-	if req.Action == FyrMerge {
-		return openMergeAsk(t, d)
-	}
-	DecisionOpened(t, d)
-	return Result{Events: []Event{{"decision.opened", map[string]any{"decision": d}}}}, nil
-}
-
-// NotFyrRepoText is why a thread that is not on Fyr's own repo cannot ask
-// to deploy Fyr (V0.one-tool-vocabulary).
-const NotFyrRepoText = "Only a thread that works on Fyr's own repository may ask to deploy Fyr. For a deploy the owner must approve, call run_request with the command and the why."
-
-func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
-	a, err := argsOf[ChangeRequest](in)
-	if err != nil {
-		return Result{}, err
-	}
-	if line, gone := goneAsks[a.Ask]; gone { // V0.changes-code-only (3)
-		return Result{}, errors.New(line)
-	}
-	if !slices.Contains(ChangeAsks(), a.Ask) {
-		return Result{}, fmt.Errorf("ask must be one of %s", strings.Join(Names(ChangeAsks()), ", "))
-	}
-	if a.Ask == AskFyrDeploy && !a.FyrRepo {
-		return Result{}, errors.New(NotFyrRepoText)
-	}
-	if a.Args == nil {
-		a.Args = map[string]any{}
-	}
-	var c *Change
-	var linked []Event
-	if a.Change != "" || a.Ask != AskFyrDeploy { // a deploy needs no change
-		if c, linked, err = requestedChange(r.T, a.Change, now); err != nil {
-			return Result{}, err
-		}
-		if c.Phase.Ended() {
-			return Result{}, fmt.Errorf("%q is %s", c.Title, c.Phase)
-		}
-	}
-	action := "change." + string(a.Ask)
-	if fx := FyrEffectFor(a.Ask); fx != nil { // merge, deploy: Fyr runs them
-		action = fx.ID
-		if _, ok := a.Args["pr"].(string); !ok && fx.OnPR && c != nil && c.PRURL() != "" {
-			a.Args["pr"] = c.PRURL()
-		}
-		if pr, _ := a.Args["pr"].(string); fx.OnPR && pr == "" {
-			return Result{}, errors.New(noPRText(c))
-		}
-		if err := canRequest(r.T, fx, a.Args); err != nil {
-			return Result{}, err
-		}
-	}
-	reply := ChangeRequestReply{ID: a.ID}
-	if c != nil {
-		if why, _ := a.Args["sensitive"].(string); why != "" && action == FyrMerge && c.Sensitive != why {
-			c.Sensitive = why // V0.sensitive-pr: the change keeps the mark
-			c.UpdatedAt = now
-		}
-		a.Args["change"] = c.ID
-		if _, ok := a.Args["title"]; !ok {
-			a.Args["title"] = c.Title
-		}
-		cp := *c
-		reply.Change = &cp
-	}
-	req := EffectReq{Action: action, Args: a.Args, Reason: a.Reason}
-	if id := openAskLike(r.T, req); id != "" { // a retry: the ask is open already
-		reply.ID, reply.Again = id, true
-		return Result{Reply: reply}, nil
-	}
-	res, err := openRequest(r.T, a.ID, req, now)
-	if err != nil {
-		return Result{}, err
-	}
-	res.Events = append(linked, res.Events...)
-	res.Reply = reply
-	return res, nil
-}
-
-// requestedChange is the change a change_request names. A PR URL the thread
-// does not track yet becomes its change, so Fyr watches the PR (it was
-// effect_request's pr.merge, V0.136).
-func requestedChange(t *Thread, ref string, now time.Time) (*Change, []Event, error) {
-	if c := FindChange(t, ref); c != nil {
-		return c, nil, nil
-	}
-	if url, ok := CanonicalPR(ref); ok {
-		if repo, n := parsePRURL(url); n != 0 {
-			PRObserved(t, PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}, now)
-			if c := changeByPR(t, url); c != nil {
-				return c, []Event{{"pr.linked", map[string]any{"url": url}}}, nil
-			}
-		}
-	}
-	return nil, nil, NoChange(ref)
-}
-
-// openAskLike is the id of the thread's open or held ask for the same effect
-// with the same args, or "" (V0.one-tool-vocabulary): an agent that retries a
-// call whose reply it lost gets the ask it made.
-func openAskLike(t *Thread, req EffectReq) string {
-	want, _ := json.Marshal(req.Args)
-	for _, d := range slices.Concat(t.Decisions, t.HeldAsks) {
-		if d.Kind != DecisionEffect || d.Effect == nil || d.Effect.Action != req.Action {
-			continue
-		}
-		if got, _ := json.Marshal(d.Effect.Args); string(got) == string(want) {
-			return d.ID
-		}
-	}
-	return ""
-}
-
-func reduceOffer(r Rec, in Input, now time.Time) (Result, error) {
-	a, err := argsOf[OfferArgs](in)
-	if err != nil {
-		return Result{}, err
-	}
-	h, err := HolderOf(r.T, a.On)
-	if err != nil {
-		return Result{}, err
-	}
-	where := a.On
-	if h.Change != nil {
-		where = fmt.Sprintf("the change %q", h.Change.Title)
-		h.Change.UpdatedAt = now
-	}
-	if a.Remove {
-		if !h.Remove(a.Spec.ID) {
-			return Result{}, fmt.Errorf("no action %q of yours on %s", a.Spec.ID, where)
-		}
-		return Result{Reply: OfferReply{Where: where, Removed: true}}, nil
-	}
-	if err := h.Declare(a.Spec); err != nil {
-		return Result{}, err
-	}
-	return Result{Reply: OfferReply{Label: h.Find(a.Spec.ID).Label, Where: where}}, nil
-}
-
-// reducePress is the owner's press (command action.run {on, action,
-// digest}, V0.60): the digest must be the one the owner saw, and the
-// action must be available. The press starts the run; its effect does the
-// work and its result ends it.
-func reducePress(r Rec, in Input, now time.Time) (Result, error) {
-	args := mapArgs(in)
-	t := r.T
-	on := args.Str("on")
-	if on == "" {
-		on = args.Str("change") // the first form
-	}
-	h, err := HolderOf(t, on)
-	if err != nil {
-		return Result{}, &Rejection{Code: RejectNotFound, Reason: err.Error()}
-	}
-	act := h.Find(args.Str("action"))
-	if act == nil {
-		return Result{}, reject(RejectNotFound, "no action %s", args.Str("action"))
-	}
-	if d := args.Str("digest"); d == "" || d != act.Digest {
-		return Result{}, reject(RejectUnavailable, "The action changed since you saw it; look at it again.")
-	}
-	if why := h.Available(*act); why != "" {
-		return Result{}, &Rejection{Code: RejectUnavailable, Reason: why}
-	}
-	if last := lastRunOf(h.Runs, act.ID, h.On); last != nil && now.Sub(last.At) < PressTwice {
-		// V0.71: a page or a double tap that sends one press twice
-		return Result{}, &Rejection{Code: RejectUnavailable, Reason: "It was just pressed"}
-	}
-	a, title := *act, "this thread"
-	if h.Change != nil {
-		on, title = h.Change.ID, fmt.Sprintf("the change %q", h.Change.Title)
-	} else if on == OnView {
-		title = "the live view"
-	}
-	req := h.EffectArgs(a)
-	if a.Run == RunFyr && a.Effect == FyrMerge { // V0.97: bound to the head the owner saw
-		req["head"] = args.Str("head")
-		if err := needHead(req); err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrBadArgs, err)
-		}
-		if why := headMoved(t, req); why != "" {
-			return Result{}, &Rejection{Code: RejectUnavailable, Reason: why}
-		}
-	}
-	h.Started(a, now)
-	res := Result{Reply: map[string]any{"on": on, "action": a.ID},
-		Events: []Event{{"action", withActor(pressData(on, title, a, map[string]any{"by": "owner"}), in)}}}
-	press := &Press{On: on, Title: title, Action: a}
-	switch a.Run {
-	case RunFyr:
-		res.Effects = []Effect{{Kind: EffectRun, Allow: true, Press: press, Request: &EffectReq{Action: a.Effect, Args: req}}}
-	case RunAgent:
-		msg := fmt.Sprintf("[Fyr] The owner pressed %q on %s.\n%s", a.Label, title, a.Prompt)
-		// V0.71: every press runs until its result lands, so a second
-		// press is "It is running"; a new thread follows this one.
-		if a.In == "new" {
-			res.Effects = []Effect{{Kind: EffectThread, Press: press, Text: msg, Cwd: t.Cwd, Project: t.ProjectID}}
-		} else {
-			res.Effects = []Effect{{Kind: EffectSend, Press: press, Text: msg}}
-		}
-	case RunScript:
-		dir := a.Cwd
-		if dir == "" {
-			dir = t.Cwd
-		}
-		res.Effects = []Effect{{Kind: EffectScript, Press: press, Script: &Script{Argv: a.Argv, Dir: dir, TimeoutSec: a.TimeoutSec, Root: a.Root}}}
-	}
-	return res, nil
-}
-
 // RestartArgs are the args of host.restarted.
 type RestartArgs struct {
 	// Kept: the launcher's runner still holds the thread's process (V0.90),
@@ -1044,17 +697,4 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 		res.Events = append(res.Events, Event{"run.ended", map[string]any{"failure": t.Failure}})
 	}
 	return res, nil
-}
-
-// PressTwice is how close a second press of one action counts as the same
-// press (V0.71).
-const PressTwice = 2 * time.Second
-
-func lastRunOf(runs []ActionRun, action, on string) *ActionRun {
-	for i := len(runs) - 1; i >= 0; i-- {
-		if runs[i].Action == action && runs[i].On == on {
-			return &runs[i]
-		}
-	}
-	return nil
 }

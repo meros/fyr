@@ -28,10 +28,10 @@ func TestMigrateObserved(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := DecodeThread(old("t2", "2026-11-15T09:00:00Z"))
-	if !MigrateObserved(a, rs) || !MigrateObserved(b, rs) {
+	if !migrateObserved(a, rs) || !migrateObserved(b, rs) {
 		t.Fatal("nothing migrated")
 	}
-	if MigrateObserved(a, rs) {
+	if migrateObserved(a, rs) {
 		t.Fatal("a second migration changed the thread")
 	}
 	if len(rs) != 2 || rs["c_v0"] == nil || rs["c_pr"] == nil {
