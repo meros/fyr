@@ -12,6 +12,7 @@
 <p align="center">
   <a href="#install">Install</a> ·
   <a href="#what-you-get">Features</a> ·
+  <a href="#security-and-trust">Security</a> ·
   <a href="docs/INSTALL.md">Docs</a> ·
   <a href="docs/SPEC.md">Spec</a> ·
   <a href="LICENSE">MIT</a>
@@ -125,6 +126,33 @@ bin/fyr           # starts Fyr on http://127.0.0.1:7777
 2. Press **New** (or `c`), pick a folder, and write what the agent should do. The folder becomes a project.
 3. Go and do something else. When the agent asks, fails or finishes, its thread moves to **Your move**, and your desktop or phone is notified if you allowed it.
 4. Answer, steer, or press the card's button. **Settle** a thread when you are done with it.
+
+## Security and trust
+
+Fyr is built for one owner who runs agents on their own machines. This is who can act, as built today, and what Fyr does not protect.
+
+**The owner is your user account.** `fyrd` runs as you. On each machine, a process running as your user (or root) reaches Fyr's owner socket (`owner.sock`, mode 0600, checked by the caller's UID) and so acts as the owner there: that is how `fyr open`, `fyr pair` and `fyr device …` work. Fyr has no accounts or passwords. A Tailscale login counts only when you name it (`ownerLogin` in the config, or `fyr auth owner <login>`); Fyr never takes it from Tailscale by itself. ([0028](docs/decisions/0028-who-may-act.md), [V0.owner-without-tailnet](docs/changes/owner-without-tailnet.md))
+
+**Every browser and phone is a signed-in device.** A device gets a session cookie only one of these ways:
+
+- `fyr open` on the machine: a one-time link that signs this machine's browser in.
+- `fyr device add`, or **Add a device** on a signed-in device: a QR code or link, single use, 10 minutes.
+- An 8-character approval code that a device without a session shows. You type it on a device that is already signed in, or run `fyr device approve <code>`.
+- With Tailscale Serve and your `ownerLogin`: a device on your tailnet login. A new one waits until you allow it on a device you already use.
+
+A device that is not signed in gets the sign-in page and nothing else. Away from the machine itself Fyr serves no plain HTTP: a phone needs Tailscale Serve or a certificate you configure. **Settings → Devices** lists every device; Revoke ends one on every install, with the devices it added. A new install starts each way in **in observe mode**, so you are not locked out while you sign your devices in: for its first three clean days a browser on the machine itself (or on your Tailscale login through Serve) is still let in without a session, and counted. It then enforces by itself; `fyr auth enforce` does it now, and `fyr auth status` shows where it stands. The LAN HTTPS listener always enforces. ([0030](docs/decisions/0030-every-hop-names-who-acts.md) 3.4, 5)
+
+**Installs trust keys, not networks.** Each install has its own Ed25519 key. Installs talk over mutual TLS pinned to those keys, and accept only the members of a signed roster. An install joins the roster by your invite code (`fyr pair`), by a member that vouches for it, or, as one optional shortcut, by being an untagged node of the same Tailscale login. Being on the same LAN, an mDNS answer or a name never counts. `fyr host remove` takes one out. ([0026](docs/decisions/0026-keys-not-networks.md), [0030](docs/decisions/0030-every-hop-names-who-acts.md) 3.6)
+
+**Agents run as you.** An agent is the `claude` or `agy` CLI running as your user, with your files, your SSH keys, your `gh` login and your other credentials. Fyr asks it to request merges, root commands and Fyr deploys (`change_request`, `run_request`), and these run only when you press on the card; a merge ask reaches you only once CI is green, and a Fyr deploy is taken only from a thread on Fyr's own repository. Fyr also blocks `gh pr merge` and `sudo` in the agent's shell. These gates guard against an agent's mistakes. They are not a sandbox.
+
+**Updates are signed.** The updater installs only releases signed with the release key, the built-in one or the one you set in `updateKey`, and tests each on a copy of the database first. The first download by the install scripts is checked against its sums over HTTPS. ([Updates](docs/INSTALL.md#updates))
+
+**What Fyr does not protect:**
+
+- An agent with a shell can do whatever your user can, including use `owner.sock`, read Fyr's data and push with your `gh`. Fyr's tokens limit only what it does through Fyr's own tools. Run agents only on machines and accounts you would hand them.
+- Anyone with your user account or root on a machine is the owner there.
+- An install that is paired and allowed to drive a host is the owner on that host. Remove a lost or stolen install from any other one.
 
 ## How it is built
 
