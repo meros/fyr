@@ -227,8 +227,8 @@ func TestSnoozeDoneIsStored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := DecodeView(b)
-	if err != nil {
+	got := &View{}
+	if err := json.Unmarshal(b, got); err != nil {
 		t.Fatal(err)
 	}
 	until, _ := SnoozeOf(got)

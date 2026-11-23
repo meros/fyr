@@ -10,7 +10,6 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/store"
 )
 
 // fakeGit is the git observer's reader for tests: facts by path, and how a
@@ -182,41 +181,6 @@ func TestTwoWorktreesInOneThread(t *testing.T) {
 	}
 	if cs := shownIn(e, id); len(cs) != 2 {
 		t.Fatalf("the thread shows %d changes, want its two: %+v", len(cs), cs)
-	}
-}
-
-// #35: a thread stored with its observed git change (before host records)
-// loads with the change moved into a host record and a reference to it.
-func TestLoadMigratesObservedChanges(t *testing.T) {
-	db := filepath.Join(t.TempDir(), "fyr.db")
-	st, err := store.Open(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := []byte(`{"id":"t_old","title":"old","cwd":"/w/fyr","owner":"owner","source":"fyr","createdAt":"2026-11-14T08:00:00Z","updatedAt":"2026-11-14T08:00:00Z",
-		"changes":[{"id":"c_c0d75acbaa03","key":"git:github.com/meros/fyr#v0","kind":"code","title":"v0","branch":"v0","targets":["repo:github.com/meros/fyr"],
-		"phase":"working","phaseBy":"observed","createdAt":"2026-11-14T08:00:00Z","updatedAt":"2026-11-14T08:00:00Z",
-		"conditions":[{"type":"pushed","status":"pending","reason":"7 commits not pushed","source":"observed","at":"2026-11-14T08:00:00Z"}]}]}`)
-	th, err := core.DecodeThread(old)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Write(func(tx *store.Tx) error { return tx.PutThread(th) }); err != nil {
-		t.Fatal(err)
-	}
-	e := New(st)
-	if err := e.Load(); err != nil {
-		t.Fatal(err)
-	}
-	if rs, _ := st.Changes(); len(rs) != 1 || rs[0].ID != "c_c0d75acbaa03" || rs[0].Workspace == nil || rs[0].Workspace.Path != "/w/fyr" {
-		t.Fatalf("stored records: %+v", rs)
-	}
-	ts, _ := st.Threads()
-	if len(ts) != 1 || len(ts[0].Changes) != 0 || len(ts[0].Refs) != 1 || ts[0].Refs[0].ID != "c_c0d75acbaa03" {
-		t.Fatalf("stored thread: %+v", ts[0])
-	}
-	if cs := shownIn(e, "t_old"); len(cs) != 1 || cs[0].ID != "c_c0d75acbaa03" || !slices.Equal(cs[0].Threads, []string{"t_old"}) {
-		t.Fatalf("shown: %+v", cs)
 	}
 }
 

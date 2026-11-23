@@ -16,7 +16,6 @@ type Project struct {
 	// land in the project. "" means threads are only filed by hand.
 	Folder  string `json:"folder,omitempty"`
 	Edited  bool   `json:"edited,omitempty"` // the user changed it
-	Auto    bool   `json:"auto,omitempty"`   // made by matching before V0.28; migration only
 	Name    string `json:"name"`
 	Color   string `json:"color"` // a name from Palette
 	Icon    Icon   `json:"icon"`

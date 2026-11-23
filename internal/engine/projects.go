@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -172,97 +171,6 @@ func (e *Engine) draft(t *core.Thread) *api.NewProject {
 		}
 	}
 	return &api.NewProject{Name: filepath.Base(dir), Folder: dir}
-}
-
-// migrateFolders gives every project stored with sources (before V0.55) one
-// folder: the one marked main on this host, else its first folder on this
-// host, else its first folder on any host. The other sources are dropped and
-// logged (decision 0017).
-func (e *Engine) migrateFolders(old map[string][]store.OldSource) error {
-	var changed []*core.Project
-	for id, srcs := range old {
-		p := e.projects[id]
-		if p == nil {
-			continue
-		}
-		keep := -1
-		for pass := 0; pass < 3 && keep < 0; pass++ {
-			for i, s := range srcs {
-				here := s.Host == "" || s.Host == e.HostID
-				if s.Kind == "folder" && s.Path != "" && ((pass == 0 && here && s.Main) || (pass == 1 && here) || pass == 2) {
-					keep = i
-					break
-				}
-			}
-		}
-		if p.Folder == "" && keep >= 0 {
-			p.Folder = filepath.Clean(srcs[keep].Path)
-		}
-		for i, s := range srcs {
-			switch {
-			case i == keep:
-			case s.Kind == "folder":
-				log.Printf("project %q: dropped folder %s:%s (V0.55: a project has one folder)", p.Name, s.Host, s.Path)
-			case s.Kind == "repo":
-				log.Printf("project %q: dropped repo %s (V0.55: a project has one folder)", p.Name, s.URL)
-			default:
-				log.Printf("project %q: dropped %s source (V0.55)", p.Name, s.Kind)
-			}
-		}
-		changed = append(changed, p)
-	}
-	if len(changed) == 0 {
-		return nil
-	}
-	_, err := e.st.Write(func(tx *store.Tx) error {
-		for _, p := range changed {
-			if err := tx.PutProject(p); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	return err
-}
-
-// migrateAuto ends auto projects (SPEC 0.5 V0.28): one that holds threads
-// becomes a normal project; an empty one that was never edited goes.
-func (e *Engine) migrateAuto() error {
-	used := map[string]bool{}
-	for _, t := range e.threads {
-		used[t.ProjectID] = true
-	}
-	var keep []*core.Project
-	var gone []string
-	for id, p := range e.projects {
-		if !p.Auto {
-			continue
-		}
-		if !used[id] && !p.Edited {
-			gone = append(gone, id)
-			delete(e.projects, id)
-			continue
-		}
-		p.Auto = false
-		keep = append(keep, p)
-	}
-	if len(keep)+len(gone) == 0 {
-		return nil
-	}
-	_, err := e.st.Write(func(tx *store.Tx) error {
-		for _, p := range keep {
-			if err := tx.PutProject(p); err != nil {
-				return err
-			}
-		}
-		for _, id := range gone {
-			if err := tx.DeleteProject(id); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	return err
 }
 
 // Projects lists projects with their thread counts, all stamped with one new

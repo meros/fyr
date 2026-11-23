@@ -2,62 +2,7 @@ package core
 
 import (
 	"testing"
-	"time"
 )
-
-// #35: a thread stored before host records keeps loading: its observed git
-// change moves into a host record with the same id, and the thread gets a
-// reference to it. A git change that a PR joined stays in the thread and
-// follows the record. Two threads with a copy of one branch's change make
-// one record, the newest copy.
-func TestMigrateObserved(t *testing.T) {
-	old := func(id, at string) []byte {
-		return []byte(`{"id":"` + id + `","cwd":"/w/fyr","changes":[
-			{"id":"c_v0","key":"git:github.com/meros/fyr#v0","kind":"code","title":"v0","branch":"v0","targets":["repo:github.com/meros/fyr"],
-			 "phase":"working","phaseBy":"observed","updatedAt":"` + at + `",
-			 "conditions":[{"type":"pushed","status":"pending","reason":"7 commits not pushed","source":"observed","at":"` + at + `"}],
-			 "revisions":[{"id":"h7","by":"observed","at":"` + at + `"}]},
-			{"id":"c_pr","key":"git:github.com/meros/fyr#feat","kind":"code","title":"Feature","branch":"feat","targets":["repo:github.com/meros/fyr"],
-			 "phase":"review","phaseBy":"observed","updatedAt":"` + at + `",
-			 "pr":{"url":"https://github.com/meros/fyr/pull/3","repo":"meros/fyr","number":3,"state":"OPEN","checks":"pending"}},
-			{"id":"c_doc","key":"doc:x","kind":"doc","title":"Doc","phase":"working","phaseBy":"agent"}]}`)
-	}
-	rs := map[string]*Change{}
-	a, err := DecodeThread(old("t1", "2026-11-15T08:00:00Z"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := DecodeThread(old("t2", "2026-11-15T09:00:00Z"))
-	if !migrateObserved(a, rs) || !migrateObserved(b, rs) {
-		t.Fatal("nothing migrated")
-	}
-	if migrateObserved(a, rs) {
-		t.Fatal("a second migration changed the thread")
-	}
-	if len(rs) != 2 || rs["c_v0"] == nil || rs["c_pr"] == nil {
-		t.Fatalf("records: %v", rs)
-	}
-	v0 := rs["c_v0"]
-	if !v0.UpdatedAt.Equal(time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)) || v0.Workspace == nil || v0.Workspace.Path != "/w/fyr" || v0.Workspace.Repo != "github.com/meros/fyr" {
-		t.Fatalf("v0 record: %+v %+v", v0, v0.Workspace)
-	}
-	if rs["c_pr"].PR != nil {
-		t.Fatal("the record carries the thread's PR")
-	}
-	for _, th := range []*Thread{a, b} {
-		if len(th.Changes) != 2 || th.Changes[0].ID != "c_pr" || th.Changes[0].Observed != "c_pr" || th.Changes[1].Key != "doc:x" {
-			t.Fatalf("%s changes: %+v", th.ID, th.Changes)
-		}
-		if len(th.Refs) != 2 || th.Refs[0] != (Ref{ID: "c_v0", Repo: "github.com/meros/fyr", Branch: "v0"}) {
-			t.Fatalf("%s refs: %+v", th.ID, th.Refs)
-		}
-		// Shown once each: the PR change, the doc and the v0 record.
-		shown := ShownChanges(th, func(id string) (*Change, []string) { return rs[id], []string{"t1", "t2"} })
-		if len(shown) != 3 || shown[2].ID != "c_v0" || len(shown[2].Threads) != 2 {
-			t.Fatalf("%s shows %+v", th.ID, shown)
-		}
-	}
-}
 
 // #35: removing an action on a change drops its action:<id> condition; its
 // runs stay as history. The live case: a deploy change kept action:status

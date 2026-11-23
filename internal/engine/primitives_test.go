@@ -34,6 +34,30 @@ func bare(t *testing.T) (*Engine, *store.Store, *time.Time) {
 	return e, st, &now
 }
 
+// unversioned opens a store that put filled as a build before
+// V0.versioned-store left it: no schema version, so Open runs every
+// migration on what put wrote (the load passes).
+func unversioned(t *testing.T, put func(tx *store.Tx) error) *store.Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fyr.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Write(put); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetKV(store.SchemaKey, ""); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	if st, err = store.Open(path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
+}
+
 func bareThread(t *testing.T, e *Engine) string {
 	t.Helper()
 	r := e.Command(api.Cmd{CommandID: NewID("c"), Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})

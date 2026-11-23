@@ -57,22 +57,20 @@ func TestBoardVisit(t *testing.T) {
 	}
 }
 
-// SPEC V0.98 (7): the load pass marks landed changes and landed records done.
+// SPEC V0.98 (7): the load pass marks landed changes and landed records
+// done (once, when store.Open migrates a store: V0.versioned-store).
 func TestLoadMarksLandedDone(t *testing.T) {
-	_, st, _ := bare(t)
 	th := &core.Thread{ID: "t_old", Cwd: "/w", Changes: []core.Change{
 		{ID: "c1", Key: "doc", Kind: core.KindDoc, Title: "Doc", Phase: core.PhaseLanded, PhaseBy: core.ByAgent},
 		{ID: "c2", Key: "wip", Kind: core.KindCode, Title: "Wip", Phase: core.PhaseWorking, PhaseBy: core.ByAgent},
 	}}
 	rec := &core.Change{ID: "r1", Key: "git:github.com/o/r#b", Kind: core.KindCode, Title: "b", Branch: "b", Phase: core.PhaseLanded, PhaseBy: core.ByObserved, UpdatedAt: time.Now()}
-	if _, err := st.Write(func(tx *store.Tx) error {
+	st := unversioned(t, func(tx *store.Tx) error {
 		if err := tx.PutChange(rec); err != nil {
 			return err
 		}
 		return tx.PutThread(th)
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	e := New(st)
 	if err := e.Load(); err != nil {
 		t.Fatal(err)

@@ -35,8 +35,6 @@ func openHost(cfg config, data string, kept map[string]bool) *host {
 	for _, r := range cfg.ScratchRoots {
 		eng.ScratchRoots = append(eng.ScratchRoots, hostfs.ExpandHome(r, home()))
 	}
-	// V0.55: Load gives each project one folder (a migration, logged),
-	// matches threads by folder and ends auto projects.
 	if err := eng.Load(); err != nil {
 		log.Fatal(err)
 	}

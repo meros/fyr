@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"database/sql"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -250,115 +249,6 @@ func TestFolderChecksAndRematch(t *testing.T) {
 	}
 	if p := projectOf(h.e, r.ThreadID); p.Name != "home" {
 		t.Fatalf("matching took the project away: %+v", p)
-	}
-}
-
-// SPEC 0.5 V0.28: at start, auto projects that hold threads become normal
-// projects, empty unedited ones go, and filed threads stay where they are.
-func TestAutoProjectMigration(t *testing.T) {
-	h := newHarness(t, time.Minute)
-	home := filepath.Join(h.dir, "home")
-	t.Setenv("HOME", home)
-	app := filepath.Join(home, "src", "app")
-	os.MkdirAll(app, 0o755)
-	b := h.cmd("thread.create", "", core.Args{"cwd": app, "text": "y"})
-	c := h.cmd("thread.create", "", core.Args{"cwd": home, "text": "z"})
-	// V0.flaky-auto-migration: both runs end before the store is written
-	// behind the engine's back; a run that ends later writes its thread again,
-	// without the project set below.
-	h.wait(b.ThreadID, "done", state(core.Done))
-	h.wait(c.ThreadID, "done", state(core.Done))
-	put := func(p *core.Project) {
-		h.e.st.Write(func(tx *store.Tx) error { return tx.PutProject(p) })
-	}
-	put(&core.Project{ID: "p_app", Name: "app", Auto: true, Folder: app})
-	put(&core.Project{ID: "p_empty", Name: "empty", Auto: true, Folder: filepath.Join(home, "gone")})
-	put(&core.Project{ID: "p_kept", Name: "kept", Auto: true, Edited: true})
-	h.m.StopAll()
-	th, _ := h.e.Thread(b.ThreadID)
-	th.ProjectID = "p_app"
-	h.e.st.Write(func(tx *store.Tx) error { return tx.PutThread(&th) })
-	h.e.st.Close()
-	st, _ := store.Open(h.db)
-	defer st.Close()
-	e2 := New(st)
-	if err := e2.Load(); err != nil {
-		t.Fatal(err)
-	}
-	if p := projectOf(e2, b.ThreadID); p.ID != "p_app" || p.Auto {
-		t.Fatalf("the auto project with a thread: %+v", p)
-	}
-	if p := projectOf(e2, c.ThreadID); p.ID != "" {
-		t.Fatalf("a thread in the home folder got a project: %+v", p)
-	}
-	ids := map[string]bool{}
-	for _, p := range e2.Projects() {
-		ids[p.ID] = true
-		if p.Auto {
-			t.Fatalf("an auto flag stayed: %+v", p)
-		}
-	}
-	if ids["p_empty"] || !ids["p_kept"] || !ids["p_app"] {
-		t.Fatalf("projects after migration: %v", ids)
-	}
-}
-
-// SPEC 0.5 V0.55: a project stored with sources keeps one folder (the main
-// one on this host, else the first here, else the first anywhere); the rest
-// is dropped, and threads keep their projects.
-func TestFolderMigration(t *testing.T) {
-	h := newHarness(t, time.Minute)
-	host := h.e.HostID
-	a, b := filepath.Join(h.dir, "a"), filepath.Join(h.dir, "b")
-	os.MkdirAll(a, 0o755)
-	os.MkdirAll(b, 0o755)
-	th := h.cmd("thread.create", "", core.Args{"cwd": b, "text": "x"})
-	h.m.StopAll()
-	h.e.st.Close()
-	// Close does not wait for a write the engine's goroutines have under way
-	// (the agent the thread started): without a busy timeout the INSERT
-	// below meets its lock and fails at once with SQLITE_BUSY.
-	db, err := sql.Open("sqlite", "file:"+h.db+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows := map[string]string{
-		"p_main":  `{"id":"p_main","name":"Main","color":"teal","icon":{"kind":"monogram"},"sources":[{"kind":"repo","url":"github.com/me/x"},{"kind":"folder","host":"other","path":"/elsewhere","main":true},{"kind":"folder","host":"` + host + `","path":"` + a + `"},{"kind":"folder","host":"` + host + `","path":"` + b + `","main":true}]}`,
-		"p_first": `{"id":"p_first","name":"First","color":"teal","icon":{"kind":"monogram"},"sources":[{"kind":"folder","host":"other","path":"/elsewhere"},{"kind":"folder","host":"` + host + `","path":"` + a + `/"},{"kind":"folder","host":"` + host + `","path":"` + b + `"}]}`,
-		"p_away":  `{"id":"p_away","name":"Away","color":"teal","icon":{"kind":"monogram"},"sources":[{"kind":"repo","url":"github.com/me/y"},{"kind":"folder","host":"other","path":"/srv/y"}]}`,
-		"p_repo":  `{"id":"p_repo","name":"Repo","color":"teal","icon":{"kind":"monogram"},"sources":[{"kind":"repo","url":"github.com/me/z"}]}`,
-	}
-	for id, data := range rows {
-		if _, err := db.Exec(`INSERT INTO projects(id,data) VALUES(?,?)`, id, data); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := db.Exec(`UPDATE threads SET data=json_set(data,'$.projectId','p_first','$.projectManual',json('true'),'$.workspaceId','w_x')`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	st, _ := store.Open(h.db)
-	defer st.Close()
-	e2 := New(st)
-	if err := e2.Load(); err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{"p_main": b, "p_first": a, "p_away": "/srv/y", "p_repo": ""}
-	for _, p := range e2.Projects() {
-		if p.Folder != want[p.ID] {
-			t.Errorf("%s: folder %q, want %q", p.ID, p.Folder, want[p.ID])
-		}
-	}
-	if p := projectOf(e2, th.ThreadID); p.ID != "p_first" {
-		t.Fatalf("the thread lost its project: %+v", p)
-	}
-	old, _ := st.OldProjectSources()
-	if len(old) != 0 {
-		t.Fatalf("sources still stored: %v", old)
-	}
-	ps, _ := st.Projects()
-	if len(ps) != 4 {
-		t.Fatalf("stored projects: %d", len(ps))
 	}
 }
 
