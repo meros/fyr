@@ -224,6 +224,10 @@ type session struct {
 	model   string
 	trigger string
 	trigs   map[string]string
+	// V0.usage-overhead: the tracker of Fyr's overhead in this process's
+	// context, and the CLI tools its launch took away.
+	ov         *overhead
+	disallowed []string
 	// sendMu keeps the owner's messages in order (V0.fix-flakes): send holds
 	// it from the turn's first-message decision to the write, so a second
 	// message sent while the first is between its record and its write
@@ -753,6 +757,12 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
 	}
 	l.SystemPrompt = prompt
+	// V0.usage-overhead: what Fyr adds to each request of this process.
+	s.ov, s.disallowed = newOverhead(), l.DisallowedTools
+	if ad, err := m.adapter(p); err == nil {
+		s.ov.staticKey = staticKey(ad.ID(), prompt, s.toolsHash, l.DisallowedTools)
+	}
+	s.ov.staticPrompt = prompt
 	// The CLI connects its MCP servers while it starts, before initialize,
 	// so the token must be valid before the process exists (SPEC 16.2).
 	if s.token != "" {

@@ -142,7 +142,9 @@ func (m *Manager) toolHook(s *session) claude.Msg {
 	if len(ns) == 0 {
 		return nil
 	}
-	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": core.NoticeText(ns)}}
+	nt := core.NoticeText(ns)
+	m.ovInject(s, len(nt), len(nt)) // V0.usage-overhead
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": nt}}
 }
 
 func orNil(v any) any {

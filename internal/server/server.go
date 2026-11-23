@@ -70,6 +70,9 @@ type Server struct {
 	// Usage answers a usage rollup (V0.usage-page, decision 0041); nil
 	// answers an empty one.
 	Usage func(q usage.Query) (usage.View, error)
+	// UsageOverhead sums Fyr's overhead inside the turns of a query
+	// (V0.usage-overhead); nil answers none.
+	UsageOverhead func(q usage.Query) (store.OverheadSum, error)
 	// Quota lists the profiles' provider quota (V0.44); optional.
 	Quota func(ctx context.Context) []quota.Status
 	// Focus raises or drops the CPU weight of a thread a device shows
@@ -226,6 +229,7 @@ func (s *Server) routes(mcp bool) http.Handler {
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/quota", s.quota)
 	mux.HandleFunc("GET /api/usage", s.usage)
+	mux.HandleFunc("GET /api/usage/overhead", s.usageOverhead)
 	mux.HandleFunc("GET /api/load", s.load)
 	mux.HandleFunc("POST /api/board/visit", s.boardVisit)
 	mux.HandleFunc("POST /api/search", s.search)
@@ -1004,6 +1008,29 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, 200, v)
+}
+
+// usageOverhead answers GET /api/usage/overhead (V0.usage-overhead): Fyr's
+// overhead inside the turns of the range and filters, by part and kind.
+func (s *Server) usageOverhead(w http.ResponseWriter, r *http.Request) {
+	q, err := usage.ParseQuery(r.URL.Query())
+	if err != nil || len(q.Group) > 0 {
+		if err == nil {
+			err = errors.New("the overhead has no groups")
+		}
+		api.WriteJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if s.UsageOverhead == nil {
+		api.WriteJSON(w, 200, store.OverheadSum{Parts: map[string]map[string]int64{}})
+		return
+	}
+	o, err := s.UsageOverhead(q)
+	if err != nil {
+		api.WriteJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	api.WriteJSON(w, 200, o)
 }
 
 // load answers GET /api/load (V0.80): this host's load as a list of one,

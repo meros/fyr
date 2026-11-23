@@ -78,7 +78,7 @@ interface ProjectActions {
 }
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "setup" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct" | "usage">>;
+  api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "setup" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct" | "usage" | "usageOverhead">>;
   /** decision 0031 2.6: the name of the front this browser is connected through, for This device only */
   front: string;
   /** V0.51: the front's hosts with their state, the front's own among them */

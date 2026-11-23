@@ -316,3 +316,10 @@ func EffortFor(models []Model, model, asked string, defaults ...string) string {
 	}
 	return asked
 }
+
+// Prober runs a one-shot request with the launch's appended prompt, MCP
+// config and tool lists, and returns its result message, so Fyr can
+// measure what its prompt and tools add to a request (V0.usage-overhead).
+type Prober interface {
+	Probe(ctx context.Context, l Launch, prompt string) (Msg, error)
+}

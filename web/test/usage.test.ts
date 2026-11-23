@@ -118,3 +118,16 @@ test("today's hours run from local midnight to the hour now, from the hosts' UTC
   assert.equal(hrs.reduce((n, x) => n + x.total, 0), 7); // yesterday's hour is left out
   assert.deepEqual(todayRange(now), { from: "2026-11-22", to: "2026-11-23" });
 });
+
+import { decodeOverhead, mergeOverhead, overheadKinds } from "../src/usage.ts";
+
+test("V0.usage-overhead: the hosts' overhead adds up by part, and says what waits for calibration", () => {
+  const a = decodeOverhead({ parts: { static: { cacheRead: 100, cacheWrite: 10 }, forced: { output: 5 } }, uncalibrated: 3 }, "h1", "desk");
+  const b = decodeOverhead({ parts: { static: { cacheRead: 50 }, resident: { cacheRead: 7 } } }, "h2", "lab");
+  const { lines, uncalibrated } = mergeOverhead([a, b]);
+  assert.deepEqual(lines.map((l) => [l.id, l.total]), [["static", 160], ["resident", 7], ["forced", 5]]);
+  assert.equal(uncalibrated, 3);
+  assert.equal(overheadKinds(lines[0]), "cache read 150 · cache write 10");
+  assert.equal(overheadKinds({ ...lines[0], kinds: {} }), "none");
+  assert.deepEqual(decodeOverhead(null, "h", "x"), { hostId: "h", host: "x", parts: {}, uncalibrated: 0 });
+});
