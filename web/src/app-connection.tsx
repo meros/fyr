@@ -1,6 +1,5 @@
-// The connection to the hosts: events, the first selection, the device cache and the push settings it sends. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The connection to the hosts: their events, the first selection, the device cache, the earlier pages of a timeline
+// and the push settings this device sends. A hook of the App in app.tsx; it takes and returns plain objects.
 
 import { browserStorage, sessionStore, storedGet, storedSet } from "./prefs.ts";
 import { applyTheme, params, PAGE, idle } from "./app-util.tsx";

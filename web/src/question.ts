@@ -272,3 +272,11 @@ export function allowArgs(d: Decision, allow: boolean): Record<string, unknown> 
 export async function answerThenNext(answer: () => Promise<boolean>, next: () => void): Promise<void> {
   if (await answer()) next();
 }
+
+/** V0.app-shell-tidy: the one way both fronts change a card: `fn` gets the card as it is now (not as the last render
+ *  saw it), so two changes in one tick (a pick, then the phone's timed step on) both land. A card that is not there
+ *  (the decision closed meanwhile) stays absent. */
+export function updateCard(cards: Record<string, CardState>, id: string, fn: (cs: CardState) => CardState): Record<string, CardState> {
+  const cs = cards[id];
+  return cs ? { ...cards, [id]: fn(cs) } : cards;
+}

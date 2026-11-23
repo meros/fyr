@@ -56,7 +56,7 @@ interface ThreadPaneProps {
   profiles: HostProfiles;
   card: CardState | null;
   answerField: AnswerField | null;
-  onCard(cs: CardState): void;
+  onCard(fn: (cs: CardState) => CardState): void;
   onAllow(d: Decision, allow: boolean): void;
   onRun(action: string, args?: Record<string, unknown>): void;
   onSnooze(): void;

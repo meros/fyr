@@ -1,6 +1,6 @@
-// Phone navigation and the open thread following the screen. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// History on both fronts (the phone's screens; the desktop's Back and Forward over opened threads), the open thread
+// following the phone's screen, the phone's thread actions, and the way Settings and undeclared work navigate on
+// either front. A hook of the App in app.tsx; it takes and returns plain objects.
 
 import { useEffect, useRef } from "preact/hooks";
 import { type PageRef } from "./settings-nav.ts";
@@ -9,6 +9,7 @@ import { type PhoneActions } from "./phone.tsx";
 import { backTarget, listenPopState, seedHistory, type Nav } from "./nav.ts";
 import { navTransition } from "./native.ts";
 import { settleRun } from "./actions.ts";
+import { leaveAfterHost } from "./leave.ts";
 import { isDeskEntry, popStep } from "./desk-history.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
@@ -60,13 +61,13 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
     } else if (view) closePeek();
   }, [phone, nav.screen.name === "thread" ? nav.screen.id : nav.screen.name]);
 
+  // V0.app-shell-tidy: settle, archive and snooze leave the open thread once the host took them, as on the desktop.
   const phoneActions: PhoneActions = {
     settle: (ids, bulk, unreadKept) =>
-      bulk
-        ? void settleBulk(ids, { unreadKept }).then((done) => done.length && leaveOpenThread(done))
-        : void cmds.run("thread.settle", ids, undefined, ids.length === 1 ? settleRun(store.threads[ids[0]]) : undefined).then((n) => n && leaveOpenThread(ids)),
+      void leaveAfterHost(bulk ? settleBulk(ids, { unreadKept }) : cmds.took("thread.settle", ids, undefined, ids.length === 1 ? settleRun(store.threads[ids[0]]) : undefined), leaveOpenThread),
     settleWhenDone,
-    archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread(ids)),
+    archive: (ids) => void leaveAfterHost(cmds.took("thread.archive", ids), leaveOpenThread),
+    snooze: (c) => void leaveAfterHost(cmds.took(c.action, c.ids, c.args), leaveOpenThread),
     markUnseen: (id) => markUnseen(id),
     create,
   };

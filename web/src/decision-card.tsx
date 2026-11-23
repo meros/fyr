@@ -11,7 +11,8 @@ interface CardProps {
   d: Decision;
   more: number;
   card: CardState | null;
-  onCard(cs: CardState): void;
+  /** V0.app-shell-tidy: an updater on the card as it is now, as the phone's card takes it */
+  onCard(fn: (cs: CardState) => CardState): void;
   onAllow(d: Decision, allow: boolean): void;
   /** U15: send the answers of an ask card */
   onSubmitAsk?(d: Decision): void;
@@ -151,12 +152,12 @@ function AskCard(p: CardProps & { card: CardState }) {
   // U15: always a visible way to finish (Enter still works). V0.ask-cancel: Back (⇧Tab, ←), Skip (⇧S)
   // and Cancel (⇧Esc) sit beside it, and the button sends, moves on, or cancels what the card holds.
   const st = submitState(card, d);
-  const primary = () => (st.act === "submit" ? p.onSubmitAsk?.(d) : st.act === "cancel" ? p.onCancelAsk?.(d) : st.act === "next" && p.onCard(goTo(card, d, nextOpen(card, d))));
+  const primary = () => (st.act === "submit" ? p.onSubmitAsk?.(d) : st.act === "cancel" ? p.onCancelAsk?.(d) : st.act === "next" && p.onCard((cs) => goTo(cs, d, nextOpen(cs, d))));
   return (
     <div class="ask">
       <div class="ah">
         <StateIcon state="asking" size={14} />
-        <b class="qn" onClick={() => qs.length > 1 && p.onCard(goTo(card, d, (card.index + 1) % qs.length))} title={qs.length > 1 ? "Next question (Tab)" : undefined}>
+        <b class="qn" onClick={() => qs.length > 1 && p.onCard((cs) => goTo(cs, d, (cs.index + 1) % qs.length))} title={qs.length > 1 ? "Next question (Tab)" : undefined}>
           Question {card.index + 1} of {qs.length}
         </b>
         <span class="ell">{asker(d)}</span>
@@ -172,7 +173,7 @@ function AskCard(p: CardProps & { card: CardState }) {
         <div class="q">{q.question}</div>
         <div class="grid4">
           {q.options.map((o, i) => (
-            <button class={`op${picks.includes(o.label) ? " on" : ""}`} title={`${o.label}${o.description ? `\n${o.description}` : ""}`} onClick={() => p.onCard(pick(card, d, i))}>
+            <button class={`op${picks.includes(o.label) ? " on" : ""}`} title={`${o.label}${o.description ? `\n${o.description}` : ""}`} onClick={() => p.onCard((cs) => pick(cs, d, i))}>
               <span class="a ell">{o.label}</span>
               <kbd>{i + 1}</kbd>
               <span class="d">{o.description ?? ""}</span>
@@ -187,11 +188,11 @@ function AskCard(p: CardProps & { card: CardState }) {
         <div class="askf">
           <span class="askp">{progressText(st)}</span>
           {card.index > 0 && (
-            <button class="askb" title="Previous question (⇧Tab or ←)" onClick={() => p.onCard(back(card, d))}>
+            <button class="askb" title="Previous question (⇧Tab or ←)" onClick={() => p.onCard((cs) => back(cs, d))}>
               ‹ Back
             </button>
           )}
-          <button class={`askb${passed ? " on" : ""}`} title={passed ? "Take the skip back (⇧S)" : "Leave this question without an answer (⇧S)"} onClick={() => p.onCard(skip(card, d))}>
+          <button class={`askb${passed ? " on" : ""}`} title={passed ? "Take the skip back (⇧S)" : "Leave this question without an answer (⇧S)"} onClick={() => p.onCard((cs) => skip(cs, d))}>
             {passed ? "Unskip" : "Skip"}
           </button>
           <button class={`btn ${st.act === "submit" || st.act === "cancel" ? "p" : ""}`} disabled={st.act === "none"} onClick={primary}>

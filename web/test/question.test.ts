@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allowArgs, answerArgs, answerThenNext, back, cardKey, initCard, pick, setOther, settledOf, skip, submitOf, submitState, type CardState } from "../src/question.ts";
+import { allowArgs, answerArgs, answerThenNext, back, cardKey, goTo, initCard, pick, setOther, settledOf, skip, submitOf, submitState, updateCard, type CardState } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
 const d: Decision = {
@@ -171,3 +171,19 @@ test("no front builds a thread.answer payload of its own: app-cards.tsx's useAns
   const hits = readdirSync(dir).filter((f) => /^(app|phone|thread)[\w-]*\.tsx?$/.test(f) && /"thread\.answer"/.test(readFileSync(new URL(f, dir), "utf8")));
   assert.deepEqual(hits, ["app-cards.tsx"]);
 });
+
+// V0.app-shell-tidy: both fronts change a card through one updater on the card as it is now.
+test("updateCard: each change starts from the newest card; a closed decision's card stays absent", () => {
+  let cards: Record<string, CardState> = { [d.id]: initCard(d) };
+  // Two changes made from one render: a value-style write would lose the first; updaters keep both.
+  const a = (cs: CardState) => pick(cs, d, 1);
+  const b = (cs: CardState) => goTo(cs, d, 1);
+  cards = updateCard(cards, d.id, a);
+  cards = updateCard(cards, d.id, b);
+  assert.equal(cards[d.id].index, 1);
+  assert.deepEqual(cards[d.id].picks[0], ["Tap"], "the pick made before the step is kept");
+  const before = cards;
+  assert.equal(updateCard(cards, "gone", a), before, "no card: the same object, nothing added");
+  assert.equal(Object.keys(updateCard(cards, "gone", a)).length, 1);
+});
+

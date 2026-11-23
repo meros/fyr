@@ -1,6 +1,6 @@
-// The thread list (V0.40): hideable, hidden by default in a narrow window. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The desktop's thread list: shown or hidden (V0.40), its sections opening, closing by themselves and jumped to, the
+// open row kept in view, and sending in the open thread. A hook of the App in app.tsx; it takes and returns plain
+// objects.
 
 import { useEffect, useState } from "preact/hooks";
 import {
@@ -17,8 +17,8 @@ import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
 import { type SendArgs } from "./composer.tsx";
 
-export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "sel" | "setZone" | "sectionOpen" | "setSectionOpen" | "setExpanded" | "phone" | "cmds" | "limits" | "listed" | "rows" | "drawn" | "guest" | "order"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
-  const { store, setLastOpen, view, sel, setZone, sectionOpen, setSectionOpen, setExpanded, phone, cmds, limits, listed, rows, drawn, guest, order, openThread } = c;
+export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "sel" | "setZone" | "sectionOpen" | "setSectionOpen" | "setExpanded" | "phone" | "cmds" | "limits" | "listed" | "rows" | "sec" | "guest" | "order"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
+  const { store, setLastOpen, view, sel, setZone, sectionOpen, setSectionOpen, setExpanded, phone, cmds, limits, listed, rows, sec, guest, order, openThread } = c;
   // ---- the thread list (V0.40): hideable, hidden by default in a narrow window ----
   const [listPrefState, setListPrefState] = useState<boolean | null>(() => listPref());
   const [winW, setWinW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1440));
@@ -76,13 +76,13 @@ export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | 
   const hideShown = hideClocks(hideAt, activeForHide);
 
   const jump = (k: SectionKey) => {
-    if (!drawn[k].length) return; // an empty section is not a place to go
+    if (!sec[k].length) return; // an empty section is not a place to go
     if (!listOn) {
       setListPrefState(true); // jumping to a section shows the list (V0.40)
       setListPref(true);
     }
     nameSection(k);
-    const first = drawn[k][0];
+    const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
     if (first) {
       // V0.109: the row g1–g5 marks is the open thread.

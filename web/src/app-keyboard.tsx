@@ -1,6 +1,5 @@
-// The desktop keyboard. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The desktop keyboard: every key of the list, the thread, the decision card and the dialogs (the phone has touch
+// forms for each). A hook of the App in app.tsx; it takes plain objects.
 
 import { isTextTarget } from "./app-util.tsx";
 import { sessionStore } from "./prefs.ts";
@@ -16,15 +15,14 @@ import { escapeTarget } from "./settings-nav.ts";
 import { snoozeChoiceForKey } from "./snooze.ts";
 import { takeOpen } from "./push.ts";
 import type { useAppState } from "./app-state.tsx";
-import type { useDecisionCards } from "./app-cards.tsx";
+import type { useAnswers, useDecisionCards } from "./app-cards.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
-import type { useContextMenu } from "./app-menu.tsx";
 import type { useThreadList } from "./app-list.tsx";
 import type { useProjectActions } from "./app-projects.tsx";
 import type { useNavHistory } from "./app-history.tsx";
 
-export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "sel" | "zone" | "setZone" | "picked" | "setPicked" | "dialog" | "setDialog" | "setCards" | "query" | "setQuery" | "setHelp" | "searchRef" | "phone" | "phoneRef" | "cmds" | "pendingOpen" | "setPendingOpen" | "settingsAt" | "setSettingsAt" | "openPicker" | "order" | "walkRows" | "viewThread"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread" | "closePeek" | "closeThread" | "target" | "settle" | "settleGroup" | "archive" | "openSnooze" | "snoozeList" | "snooze" | "markUnseen"> & Pick<ReturnType<typeof useContextMenu>, "submitAsk" | "cancelAsk" | "allow" | "nextNeeding"> & Pick<ReturnType<typeof useThreadList>, "toggleList" | "jump"> & Pick<ReturnType<typeof useProjectActions>, "folderPickRef" | "closeFolderPick"> & Pick<ReturnType<typeof useNavHistory>, "navGo">) {
-  const { store, setLastOpen, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, setCards, query, setQuery, setHelp, searchRef, phone, phoneRef, cmds, pendingOpen, setPendingOpen, settingsAt, setSettingsAt, openPicker, order, walkRows, viewThread, decision, card, openThread, closePeek, closeThread, target, settle, settleGroup, archive, openSnooze, snoozeList, snooze, markUnseen, submitAsk, cancelAsk, allow, nextNeeding, toggleList, jump, folderPickRef, closeFolderPick, navGo } = c;
+export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "sel" | "zone" | "setZone" | "picked" | "setPicked" | "dialog" | "setDialog" | "setCards" | "query" | "setQuery" | "setHelp" | "searchRef" | "phone" | "phoneRef" | "cmds" | "pendingOpen" | "setPendingOpen" | "settingsAt" | "setSettingsAt" | "openPicker" | "order" | "walkRows" | "viewThread"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread" | "closePeek" | "closeThread" | "target" | "settle" | "settleGroup" | "archive" | "openSnooze" | "snoozeList" | "snooze" | "markUnseen"> & Pick<ReturnType<typeof useAnswers>, "submitAsk" | "answers" | "nextNeeding"> & Pick<ReturnType<typeof useThreadList>, "toggleList" | "jump"> & Pick<ReturnType<typeof useProjectActions>, "folderPickRef" | "closeFolderPick"> & Pick<ReturnType<typeof useNavHistory>, "navGo">) {
+  const { store, setLastOpen, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, setCards, query, setQuery, setHelp, searchRef, phone, phoneRef, cmds, pendingOpen, setPendingOpen, settingsAt, setSettingsAt, openPicker, order, walkRows, viewThread, decision, card, openThread, closePeek, closeThread, target, settle, settleGroup, archive, openSnooze, snoozeList, snooze, markUnseen, submitAsk, answers, nextNeeding, toggleList, jump, folderPickRef, closeFolderPick, navGo } = c;
   // ---- keyboard ----
   const gPending = useRef(0);
   const lastEsc = useRef(0);
@@ -113,12 +111,12 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
           setCards((c) => ({ ...c, [decision.id]: r.state }));
           if (r.focusOther) document.getElementById("composer")?.focus();
           if (r.submit) submitAsk(decision);
-          if (r.cancel) cancelAsk(decision);
+          if (r.cancel) void answers.cancel(decision);
           return;
         }
       } else if ((decision.kind === "approval" || decision.kind === "effect") && (k === "1" || k === "2")) {
         e.preventDefault();
-        allow(decision, k === "1");
+        void answers.allow(decision, k === "1");
         return;
       }
     }

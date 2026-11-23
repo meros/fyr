@@ -1,6 +1,5 @@
-// State of the shell: the store, the filters, the open thread, the dialogs. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The shell's state: the store, the filters, search and quiet hours, the sections and rows the list draws, the open
+// thread, the dialogs. The first hook of the App in app.tsx; the others take what it returns.
 
 import { storedGet, storedSet } from "./prefs.ts";
 import { type Zone, type Dialog, readTheme, usePhone, useViewportVars, useStaticPage, params } from "./app-util.tsx";
@@ -257,26 +256,24 @@ export function useAppState() {
   // V0.212: not on the phone. The list and the thread are never on screen together there, so the row marks nothing.
   const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
-  const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, arrivals)), [listed, shown, sec, queue, arrivals]);
+  const rows = useMemo(() => (listed === shown ? sec : sections(listed, queue, arrivals)), [listed, shown, sec, queue, arrivals]);
   // V0.open-row-glides: every row, the open one too, is where the live list has it; the open row glides there
   // (`useListAnchor`). What stays is where the owner was: j/k, the next row after a settle and the step past a row that
   // leaves walk the list with the open row back in the place it had when it was opened (`stillRows`), until another
   // thread is current or the owner marks it seen or unseen by hand. V0.phone-row-moves: not on the phone, where the list
   // and the thread are never on screen together.
-  const rows = liveRows;
   const placeRef = useRef<RowPlace | null>(null);
   if (placeRef.current?.id !== sel) placeRef.current = placeOf(rows, sel);
   const place = phone || placeRef.current?.id === freed ? null : placeRef.current;
-  const drawn = sec;
   // V0.phone-no-guest: not on the phone, which marks no row at all (V0.109 (5)): nothing is current there, so a folded
   // section draws no row for it either.
   const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen, phone), [rows, sel, hidden, sectionOpen, phone]);
-  const order = useMemo(() => flatOrder(drawn, limits), [drawn, limits]);
+  const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
   useListAnchor(useMemo(() => flatOrder(rows, limits).join(" "), [rows, limits]), sel);
   const allRows = useMemo(() => flatOrder(rows), [rows]); // V0.186: with the rows not drawn, for the guest's place
   const walkRows = useMemo(() => (place ? flatOrder(stillRows(rows, place)) : allRows), [rows, place, allRows]);
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
 
-  return { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, setHidden, store, threadsRef, byHost, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, tracker, setTracker, cards, setCards, sectionOpen, setSectionOpen, query, setQuery, help, setHelp, searchRef, expanded, setExpanded, theme, setTheme, tick, setTick, inText, setInText, toolDetailsOn, phone, phoneRef, reopenRef, navGoRef, cmds, toast, nav, setNav, selecting, setSelecting, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason, now, projectFilter, setProjectFilterState, setProjectFilter, setHostsOffState, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, filterId, filterOn, unlock, filtered, searchable, searchList, quietHits, queue, sec, filterView, limits, gate, gatedRef, gatedThread, arrival, setArrival, arrivedHere, hidden, listed, rows, drawn, guest, order, walkRows, viewThread };
+  return { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, setHidden, store, threadsRef, byHost, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, tracker, setTracker, cards, setCards, sectionOpen, setSectionOpen, query, setQuery, help, setHelp, searchRef, expanded, setExpanded, theme, setTheme, tick, setTick, inText, setInText, toolDetailsOn, phone, phoneRef, reopenRef, navGoRef, cmds, toast, nav, setNav, selecting, setSelecting, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason, now, projectFilter, setProjectFilterState, setProjectFilter, setHostsOffState, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, filterId, filterOn, unlock, filtered, searchable, searchList, quietHits, queue, sec, filterView, limits, gate, gatedRef, gatedThread, arrival, setArrival, arrivedHere, hidden, listed, rows, guest, order, walkRows, viewThread };
 }

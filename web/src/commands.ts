@@ -26,6 +26,8 @@ export interface ThreadCommands {
   canUndo(): boolean;
   /** Runs `action` on each thread; resolves to how many the host took. An undoable one offers Undo; failures show as an error. */
   run(action: string, ids: string[], args?: Record<string, unknown>, o?: RunOptions): Promise<number>;
+  /** `run`, resolving to the ids the host took: what a screen may let go (V0.app-shell-tidy, `leaveAfterHost`). */
+  took(action: string, ids: string[], args?: Record<string, unknown>, o?: RunOptions): Promise<string[]>;
   /** thread.send; false (and the error shown) when the host did not take it */
   send(id: string, args: SendArgs): Promise<boolean>;
   /** V0.45: thread.handover; resolves to the host's error text, or null */
@@ -82,8 +84,8 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     return host ? api.command(host, action, id, args) : Promise.resolve({ ok: false, error: "This thread's host is not one Fyr follows now" });
   };
 
-  const run = async (action: string, ids: string[], args?: Record<string, unknown>, ro?: RunOptions): Promise<number> => {
-    if (!ids.length) return 0;
+  const took = async (action: string, ids: string[], args?: Record<string, unknown>, ro?: RunOptions): Promise<string[]> => {
+    if (!ids.length) return [];
     opts.current.onRun?.(action, ids);
     const replies = await Promise.all(ids.map((id) => to(id, action, args).then((r) => ({ id, r }))));
     const ok = replies.filter((x) => x.r.ok).map((x) => x.id);
@@ -95,8 +97,9 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
       setToast({ text: u.label, undo: true, at: Date.now() });
     }
     if (bad.length) showError(bad.length === 1 ? (bad[0].r.error ?? "Failed") : `${bad.length} failed: ${bad[0].r.error ?? ""}`);
-    return ok.length;
+    return ok;
   };
+  const run = async (action: string, ids: string[], args?: Record<string, unknown>, ro?: RunOptions): Promise<number> => (await took(action, ids, args, ro)).length;
 
   const send = (id: string, args: SendArgs): Promise<boolean> =>
     dedupeSend(id, args, async () => {
@@ -149,5 +152,5 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     opts.current.onUndone?.(entry, !bad);
   };
 
-  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, send, handover, handoverHost, doUndo, regenerateTitle, notify, showError };
+  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, took, send, handover, handoverHost, doUndo, regenerateTitle, notify, showError };
 }

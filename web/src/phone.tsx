@@ -14,18 +14,18 @@ import { useApi } from "./api-context.ts";
 import { useDraft } from "./drafts.ts";
 import { Fragment, type ComponentChildren } from "preact";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
 import type { HostId } from "./hostid.ts";
 import { LoadStrip, useLoad } from "./load-ui.tsx";
 import { HomeScreen } from "./home-ui.tsx";
 import { stripHosts } from "./host-load.ts";
-import { SECTIONS, connLabel, connWords, isAvailable, mergedToSettle, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
+import { SECTIONS, connLabel, connWords, isAvailable, mergedToSettle, unpinned, matchesQuery, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
-import { snoozedHint } from "./snooze.ts";
+import { snoozedHint, type SnoozeCmd } from "./snooze.ts";
 import { AgentPill, showOnly, threadAgent } from "./agent-ui.tsx";
 import { ThreadTabBody } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
@@ -104,6 +104,16 @@ interface PhoneOpen {
   setArrival(a: AnswerMove | null): void;
 }
 
+/** V0.app-shell-tidy: the app's one search (app-state.tsx), as the desktop's search box reads it. */
+interface PhoneSearch {
+  query: string;
+  setQuery(q: string): void;
+  /** what search may reach, in the list's order: the filters' threads, quiet ones only while the unlock runs (V0.114) */
+  list: Thread[];
+  /** the hits the quiet lock leaves out, so the search says why and offers the hold */
+  quietHits: number;
+}
+
 /** The inbox list's own state: open and expanded sections, selection mode and the picked rows. */
 interface PhoneList {
   sectionOpen: Partial<Record<SectionKey, boolean>>;
@@ -132,14 +142,17 @@ interface PhoneDevice {
   onInstall(): void;
 }
 
-/** What the phone does differently from a plain thread command: U8 leaves the open thread after a settle or
- *  archive, Mark unseen restarts the seen timer, and New starts a thread. Every other command is `commands.run`. */
+/** What the phone does differently from a plain thread command: U8 leaves the open thread after a settle, archive
+ *  or snooze the host took (V0.app-shell-tidy), Mark unseen restarts the seen timer, and New starts a thread. Every
+ *  other command is `commands.run`. */
 export interface PhoneActions {
   /** `unreadKept`: the unread threads a Select all left out, for the toast (V0.189) */
   settle(ids: string[], bulk?: boolean, unreadKept?: number): void;
   /** V0.203: arms "settle when done", or cancels it when armed */
   settleWhenDone(id: string): void;
   archive(ids: string[]): void;
+  /** a snooze choice's command (`snoozeCommand`) */
+  snooze(c: SnoozeCmd): void;
   markUnseen(id: string): void;
   create(a: NewThreadArgs): Promise<string | null>;
 }
@@ -150,10 +163,9 @@ export interface PhoneProps {
   store: View;
   /** slice 2b: each host's profiles by install id; a thread's and a project's are its own host's */
   profiles: HostProfiles;
-  /** the inbox's sections; what search finds: the project filter's threads, quiet ones only while the unlock runs
-   *  (V0.114); all: the same with quiet ones, to count the hits the lock hides; the one unlock of quiet projects;
-   *  V0.192: rows is what the list draws (sec, with the current thread when the filters hide it), guest that row */
-  inbox: { sec: Sections; rows: Sections; guest: Guest | null; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
+  /** the inbox's sections; the search; the one unlock of quiet projects; V0.192: rows is what the list draws (sec,
+   *  with the current thread when the filters hide it), guest that row */
+  inbox: { sec: Sections; rows: Sections; guest: Guest | null; search: PhoneSearch; unlock: QuietUnlock };
   now: number;
   /** #41: the same thread commands, undo and toasts as the desktop */
   commands: ThreadCommands;
@@ -528,17 +540,17 @@ function MInbox(p: PhoneProps) {
 
 
 function MSearch(p: PhoneProps) {
-  const [q, setQ] = useState("");
+  // The query is the app's (the desktop's search box), so the list and quietHits are computed once, in app-state.tsx.
+  // The phone has no box on the inbox: the query lives while this screen does and is cleared when it goes, so the
+  // inbox it goes back to is not filtered.
+  const { query: q, setQuery: setQ, list: all, quietHits } = p.inbox.search;
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => ref.current?.focus(), []);
-  // V0.46: search finds the threads of a project in its quiet hours too; V0.114: only while the unlock runs.
-  const all = useMemo(() => {
-    const sec = sections(p.inbox.searchable);
-    return SECTIONS.flatMap((s) => sec[s.key]);
-  }, [p.inbox.searchable]);
+  useEffect(() => {
+    ref.current?.focus();
+    return () => setQ("");
+  }, []);
   const needle = q.trim().toLowerCase();
   const hits = needle ? all.filter((t) => matchesQuery(t, needle)).slice(0, 200) : [];
-  const quietHits = needle ? Object.values(p.inbox.all).filter((t) => !p.inbox.searchable[t.id] && matchesQuery(t, needle)).length : 0;
   const ai = useAiSearch(q, all);
   return (
     <div class="m-screen">
