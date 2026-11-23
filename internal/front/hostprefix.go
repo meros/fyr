@@ -214,16 +214,26 @@ func (f *Front) cachedState(w http.ResponseWriter, r *http.Request, l *link) {
 	if v := r.URL.Query().Get("since"); v != "" {
 		since, _ = strconv.ParseInt(v, 10, 64)
 	}
+	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	f.mu.Lock()
-	st := map[string]any{"now": time.Now().UTC(), "partial": since > 0}
+	st := map[string]any{"now": time.Now().UTC(), "partial": since > 0 || before > 0}
 	for k, v := range l.env {
 		st[k] = v
 	}
-	threads := []any{}
+	changed := []map[string]any{}
 	for _, d := range l.raw {
 		if since <= 0 || revOf(d) > since {
-			threads = append(threads, d)
+			changed = append(changed, d)
 		}
+	}
+	page, more, cursor := api.PageByRev(changed, revOf, before, limit) // V0.state-paging
+	threads := make([]any, 0, len(page))
+	for _, d := range page {
+		threads = append(threads, d)
+	}
+	if more {
+		st["more"], st["cursor"] = true, strconv.FormatInt(cursor, 10)
 	}
 	projects := []any{}
 	for _, p := range l.projects {

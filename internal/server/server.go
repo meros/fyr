@@ -445,6 +445,10 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	// V0.38: ?since=REV lists only threads changed after REV (revs grow
 	// across restarts), for a client with a stored copy.
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	// V0.state-paging: ?limit=N&before=REV answers the newest N changed threads
+	// below REV, so a client that was away for long shows the live ones first.
+	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if since > 0 {
 		changed := threads[:0:0]
 		for _, d := range threads {
@@ -454,6 +458,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 		}
 		threads = changed
 	}
+	threads, more, cursor := api.PageByRev(threads, func(d api.Thread) int64 { return d.Rev }, before, limit)
 	var acts []api.Action
 	for _, a := range core.Ordered() {
 		acts = append(acts, api.Action{Name: a.Name, Label: a.Label, Key: a.Key, Bulk: a.Bulk})
@@ -465,7 +470,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
 		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(), HostMarks: s.hostMarks(), AgentMark: s.agentMark(), Update: s.updateState(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
-		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
+		Partial: since > 0 || before > 0, More: more, Cursor: cursorStr(cursor), Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
 	})
 }
 
@@ -1115,4 +1120,12 @@ func (s *Server) updateState() any {
 		return nil
 	}
 	return s.UpdateState()
+}
+
+// cursorStr is a page cursor as the string the state carries; "" for none.
+func cursorStr(c int64) string {
+	if c <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(c, 10)
 }
