@@ -17,7 +17,7 @@ const BatchMax = 20
 
 // prFields are gh pr view's fields of the poll, in GraphQL.
 const prFields = `state mergeable reviewDecision title headRefName headRefOid baseRefName isDraft mergeStateStatus mergedAt
-  mergeCommit { oid } autoMergeRequest { enabledAt } reviewThreads(first: 100) { totalCount nodes { isResolved } }
+  mergeCommit { oid } autoMergeRequest { enabledAt } labels(first: 20) { nodes { name } } reviewThreads(first: 100) { totalCount nodes { isResolved } }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
     __typename ... on CheckRun { name status conclusion } ... on StatusContext { context state } } } } } } }`
 
@@ -80,7 +80,12 @@ type batchPR struct {
 	MergedAt         *string         `json:"mergedAt"`
 	MergeCommit      json.RawMessage `json:"mergeCommit"`
 	AutoMergeRequest json.RawMessage `json:"autoMergeRequest"`
-	ReviewThreads    *struct {
+	Labels           *struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	} `json:"labels"`
+	ReviewThreads *struct {
 		TotalCount int `json:"totalCount"`
 		Nodes      []struct {
 			IsResolved bool `json:"isResolved"`
@@ -115,6 +120,14 @@ func (p *batchPR) view() map[string]any {
 		"headRefName": p.HeadRefName, "headRefOid": p.HeadRefOid, "baseRefName": p.BaseRefName, "isDraft": p.IsDraft,
 		"mergeStateStatus": p.MergeStateStatus, "mergeCommit": p.MergeCommit, "autoMergeRequest": p.AutoMergeRequest,
 		"statusCheckRollup": rollup}
+	// V0.sensitive-pr: the labels, as gh pr view prints them.
+	labels := []map[string]any{}
+	if p.Labels != nil {
+		for _, l := range p.Labels.Nodes {
+			labels = append(labels, map[string]any{"name": l.Name})
+		}
+	}
+	v["labels"] = labels
 	// V0.review-threads: the unresolved review threads, which gh pr view
 	// cannot read. Threads past the first 100 count as unresolved.
 	if t := p.ReviewThreads; t != nil {

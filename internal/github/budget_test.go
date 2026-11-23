@@ -144,7 +144,7 @@ func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 // not return is read alone.
 func TestPollerBatchesAReposPRs(t *testing.T) {
 	batch := `{"data":{"repository":{
-	  "p0":{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":null,"title":"one","headRefName":"a","headRefOid":"h1","baseRefName":"main","isDraft":false,"mergeStateStatus":"CLEAN","mergedAt":null,"mergeCommit":null,"autoMergeRequest":null,
+	  "p0":{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":null,"title":"one","headRefName":"a","headRefOid":"h1","baseRefName":"main","isDraft":false,"mergeStateStatus":"CLEAN","mergedAt":null,"mergeCommit":null,"autoMergeRequest":null,"labels":{"nodes":[{"name":"Sensitive"}]},
 	    "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"nodes":[{"__typename":"CheckRun","name":"go","status":"COMPLETED","conclusion":"SUCCESS"}]}}}}]}},
 	  "p1":{"state":"MERGED","mergeable":"UNKNOWN","reviewDecision":"APPROVED","title":"two","headRefName":"b","headRefOid":"h2","baseRefName":"main","isDraft":false,"mergeStateStatus":"UNKNOWN","mergedAt":"2026-11-17T19:00:00Z","mergeCommit":{"oid":"m2"},"autoMergeRequest":null,
 	    "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"nodes":[{"__typename":"StatusContext","context":"ci","state":"PENDING"}]}}}}]}},
@@ -177,10 +177,10 @@ func TestPollerBatchesAReposPRs(t *testing.T) {
 		t.Fatalf("graphql %d, pr view %d: %v", gql, views, c.calls)
 	}
 	one, two := src.got["t1"], src.got["t2"]
-	if one.Title != "one" || one.Checks != core.ChecksPass || one.Head != "h1" || one.State != "OPEN" {
+	if one.Title != "one" || one.Checks != core.ChecksPass || one.Head != "h1" || one.State != "OPEN" || !one.Sensitive { // V0.sensitive-pr
 		t.Fatalf("one %+v", one)
 	}
-	if two.State != "MERGED" || two.MergeSHA != "m2" || two.MergedAt == nil || two.Checks != core.ChecksPending || two.Review != "APPROVED" {
+	if two.Sensitive || two.State != "MERGED" || two.MergeSHA != "m2" || two.MergedAt == nil || two.Checks != core.ChecksPending || two.Review != "APPROVED" {
 		t.Fatalf("two %+v", two)
 	}
 	if _, ok := src.got["t3"]; ok {

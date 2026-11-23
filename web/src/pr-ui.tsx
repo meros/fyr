@@ -11,6 +11,7 @@ import { relTime } from "./format.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { StateIcon } from "./icons.tsx";
 import { Modal } from "./dialogs.tsx";
+import { sensitiveLine } from "./sensitive.ts";
 
 
 interface PrViewProps {
@@ -106,6 +107,8 @@ export function PrView(p: PrViewProps) {
   const sendReason = unavailableReason(t, "thread.send");
   const title = d?.title || pr.title || t.title;
   const number = d?.number ?? pr.number;
+  // V0.sensitive-pr: the change's reason (the agent's, or the GitHub label), shown in red in the Merge dialog.
+  const sensitive = t.changes.find((c) => c.pr?.url === pr.url)?.sensitive ?? "";
 
   return (
     <div class={`prv${p.phone ? " ph" : ""}`}>
@@ -234,8 +237,8 @@ export function PrView(p: PrViewProps) {
           <Description body={d.body ?? ""} />
         </>
       )}
-      {merging && d && <MergeDialog d={d} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { pr: pr.url, method: m, head }, `Merging #${d.number}. The result shows in the conversation.`)} />}
-      {merging && !d && <MergeDialog d={{ url: pr.url, repo: pr.repo ?? "", number: pr.number, title, state: "OPEN", checks: [], threads: [] }} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { pr: pr.url, method: m, head }, `Merging #${pr.number}. The result shows in the conversation.`)} />}
+      {merging && d && <MergeDialog d={d} sha={head} sensitive={sensitive} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { pr: pr.url, method: m, head }, `Merging #${d.number}. The result shows in the conversation.`)} />}
+      {merging && !d && <MergeDialog d={{ url: pr.url, repo: pr.repo ?? "", number: pr.number, title, state: "OPEN", checks: [], threads: [] }} sha={head} sensitive={sensitive} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { pr: pr.url, method: m, head }, `Merging #${pr.number}. The result shows in the conversation.`)} />}
     </div>
   );
 }
@@ -407,7 +410,7 @@ function Description({ body }: { body: string }) {
   );
 }
 
-function MergeDialog({ d, sha, onClose, onMerge }: { d: PrDetail; sha?: string; onClose(): void; onMerge(m: MergeMethod): Promise<boolean> }) {
+function MergeDialog({ d, sha, sensitive, onClose, onMerge }: { d: PrDetail; sha?: string; sensitive?: string; onClose(): void; onMerge(m: MergeMethod): Promise<boolean> }) {
   const [method, setMethod] = useState<MergeMethod>("squash");
   const [sending, setSending] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
@@ -430,6 +433,11 @@ function MergeDialog({ d, sha, onClose, onMerge }: { d: PrDetail; sha?: string; 
   return (
     <Modal title={`Merge #${d.number}`} onClose={onClose}>
       <div class="db prv-dlg" onKeyDown={(e) => e.stopPropagation()}>
+        {sensitive && (
+          <p class="chsens" role="note">
+            {sensitiveLine(sensitive)}
+          </p>
+        )}
         <p class="lede">
           {d.head && d.base ? (
             <>
@@ -461,7 +469,7 @@ function MergeDialog({ d, sha, onClose, onMerge }: { d: PrDetail; sha?: string; 
         <button class="btn" onClick={onClose}>
           Cancel
         </button>
-        <button ref={btn} class="btn p" disabled={sending} onClick={() => void go()}>
+        <button ref={btn} class={`btn p${sensitive ? " danger" : ""}`} disabled={sending} onClick={() => void go()}>
           {sending ? "Merging…" : mergeButton(method, d.number)}
         </button>
       </div>

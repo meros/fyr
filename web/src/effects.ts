@@ -15,6 +15,8 @@ export interface EffectText {
   yes: string;
   no: string;
   details: { action: string; args: Record<string, unknown> };
+  /** V0.sensitive-pr: the agent's reason why the merge is sensitive, shown in red */
+  sensitive?: string;
 }
 
 const METHOD: Record<string, string> = {
@@ -59,6 +61,7 @@ export function describeEffect(d: Decision, pr?: Pick<PullRequest, "url" | "numb
       yes: headLabel("Merge", head),
       no: "Not now",
       details,
+      ...(typeof args.sensitive === "string" && args.sensitive.trim() ? { sensitive: args.sensitive.trim() } : {}),
     };
   }
   return { label: words(action), title: words(action), why, happens: "Fyr runs it after you approve. The agent does not wait for it.", yes: "Approve", no: "Not now", details };

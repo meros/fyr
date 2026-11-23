@@ -279,7 +279,7 @@ function NeedButton({ t, change, need }: { t: Thread; change: Change; need: Chan
         onClick={(e) => {
           if (!canMerge) return; // Answer: the row's own click opens the thread
           e.stopPropagation();
-          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(t.hostId, action, t.id, args), need.head);
+          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(t.hostId, action, t.id, args), need.head, change.sensitive);
         }}
       >
         {look.button}

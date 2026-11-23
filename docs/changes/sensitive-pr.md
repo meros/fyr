@@ -1,0 +1,15 @@
+# V0.sensitive-pr: a sensitive PR (the agent says why, or the PR has the GitHub label "sensitive") is never auto-merged, Merge all green leaves it out, and its card shows the reason in red with a confirm on every Merge
+
+→ V0.97 (Merge all green, the bound merge), V0.102 (auto-merge), V0.136 (the merge ask waits for CI), V0.205 (an ask Fyr merges by itself is not the owner's).
+
+(1) **The cause.** Every PR looked the same to Fyr. In a repo with auto-merge on, a promotion to production merged as soon as its checks were green, like a typo fix. Merge all green took it along with the rest, and its card showed no hint that this merge was the one to stop and think about.
+
+(2) **Two marks, either is enough.** The agent gives `args.sensitive` on its merge ask (`change_request {ask: "merge", args: {sensitive: "promotes to production"}}`), a few words on why. Fyr trims it to one line of at most 200 characters and refuses an empty or non-text value. The change keeps the reason (`Change.sensitive`), so a later ask on the same change without the arg is still sensitive. The poller also reads the PR's labels (`labels(first: 20)` in the batched query, `labels` in `gh pr view`), and a label named `sensitive` (any case) sets `PR.sensitive`. The thread DTO sends one reason per change (`core.SensitiveWhy`): the agent's, else `it has the GitHub label "sensitive"`. A mark only makes a merge stricter. Nothing an agent sends can make a merge looser.
+
+(3) **Never auto-merged.** `mergeableByFyr` refuses a sensitive merge ask ("The PR is sensitive (…): the owner merges it"). So the auto-merge setting does not approve it (`AutoMergeAsks`, `reduceAutoMerge`), the ask stays the owner's (`ownerAsks`), and its push is not quiet (`PushQuiet`). The owner's own press is not blocked: the guard and the gate of `pr.merge` are unchanged.
+
+(4) **The fronts, desktop and phone alike.** The change card shows the reason in red under its title ("Sensitive: promotes to production. Fyr never merges it by itself."). The docked merge-ask card shows the agent's reason the same way. Every path that merges a sensitive PR asks first, with the reason and a red Merge button: the card's Merge and its ask's Merge, the inbox row's Merge, the offer bar, the docked card's yes (button, key `1` and the phone's card, through `useAnswers`), and the PR tab's Merge dialog, which shows the reason and turns its button red. Merge all green leaves a sensitive PR out. The confirmation host moved from `useProjectActions` to `useAppState`, so the answers can ask before they send.
+
+(5) **The agent's words.** The change_request description names `sensitive` and when to give it: a merge that needs the owner's deliberate press, such as a production promotion, a migration or a release.
+
+Tests: `internal/core/sensitive_test.go` (TestSensitiveAskIsNeverAutoApproved, TestSensitiveChangeStaysSensitiveOnALaterAsk, TestSensitiveLabelBlocksAutoMerge, TestSensitiveArgMustSayWhy, TestHasSensitiveLabel), `internal/github/budget_test.go` (TestPollerBatchesAReposPRs reads the label), `internal/github/merge_head_test.go` (TestFetchReadsReadyFields), `web/test/sensitive.test.ts`.

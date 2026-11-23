@@ -70,7 +70,7 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
 	asked := time.Now()
-	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt,isDraft,mergeStateStatus,autoMergeRequest,baseRefName", "--", canon)
+	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt,isDraft,mergeStateStatus,autoMergeRequest,baseRefName,labels", "--", canon)
 	if err != nil {
 		return core.PR{}, 0, err
 	}
@@ -97,6 +97,9 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 		IsDraft    bool            `json:"isDraft"`
 		MergeState string          `json:"mergeStateStatus"`
 		AutoMerge  json.RawMessage `json:"autoMergeRequest"`
+		Labels     []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
 		// V0.review-threads: only the batched read has it; gh pr view
 		// cannot read review threads, so its read leaves -1 (not read).
 		UnresolvedThreads int `json:"unresolvedThreads"`
@@ -140,6 +143,11 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &asked, Head: v.HeadRefOid,
 		Draft: v.IsDraft, MergeState: v.MergeState, AutoMerge: len(v.AutoMerge) > 0 && string(v.AutoMerge) != "null",
 		ChecksDone: done, ChecksTotal: len(states), FailedChecks: failedNames}
+	for _, l := range v.Labels { // V0.sensitive-pr
+		if core.HasSensitiveLabel([]string{l.Name}) {
+			p.Sensitive = true
+		}
+	}
 	if v.MergeCommit != nil {
 		p.MergeSHA = v.MergeCommit.Oid
 	}

@@ -48,6 +48,10 @@ type Change struct {
 	// Need is why it waits on the owner (ChangeNeed), set only in the
 	// thread DTO (V0.101); the client only reads it.
 	Need *Need `json:"need,omitempty"`
+	// Sensitive is why the change's merge is sensitive (V0.sensitive-pr):
+	// stored, the reason an agent gave on a merge ask; in the thread DTO,
+	// SensitiveWhy, which also reads the PR's GitHub label.
+	Sensitive string `json:"sensitive,omitempty"`
 	// PR is the code change's pull request as GitHub last reported it (#32);
 	// its "pr" evidence is the link the Changes board shows.
 	PR *PR `json:"pr,omitempty"`

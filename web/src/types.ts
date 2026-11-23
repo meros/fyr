@@ -433,6 +433,8 @@ export interface Change {
   /** V0.98 (4): when a fact of the change last moved */
   touchedAt?: string;
   /** V0.102: Fyr approved its merge by the repo's auto-merge setting, with no press */
+  /** V0.sensitive-pr: why its merge is sensitive (the agent's reason, or the GitHub label "sensitive"); never auto-merged. */
+  sensitive?: string;
   autoApproved?: { repo?: string; deploy?: boolean; head: string; at: string };
   createdAt: string;
   updatedAt: string;

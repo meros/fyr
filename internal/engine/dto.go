@@ -48,6 +48,8 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 			c.Ready = core.Ready(c.PR, running)
 		}
 		c.Need = core.ChangeNeedWith(t, c, e.autoMergeOn) // V0.101: the client only reads it
+		// V0.sensitive-pr: the agent's reason or the GitHub label.
+		c.Sensitive = core.SensitiveWhy(c)
 	}
 	quiet := core.PushQuiet(t, att.State, e.autoMergeOn)
 	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now), PushQuiet: quiet,

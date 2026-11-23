@@ -40,6 +40,7 @@ import { initialEntries, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { useQuietUnlock } from "./quiet-ui.tsx";
 import { useToolDetails } from "./tool-calls-ui.tsx";
+import { useConfirmHost } from "./confirm-ui.tsx";
 
 
 export function useAppState() {
@@ -94,6 +95,8 @@ export function useAppState() {
   const phoneRef = useRef(phone);
   phoneRef.current = phone;
   useViewportVars(phone);
+  // V0.68: Fyr's own confirmation, a sheet on the phone and a dialog on the desktop; here so every hook can ask.
+  const confirmHost = useConfirmHost(phone);
   useStaticPage();
   // U8: Undo of a settle or archive that left the open thread on a phone reopens it.
   const reopenRef = useRef<string | null>(null);
@@ -275,5 +278,5 @@ export function useAppState() {
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
 
-  return { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, setHidden, store, threadsRef, byHost, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, tracker, setTracker, cards, setCards, sectionOpen, setSectionOpen, query, setQuery, help, setHelp, searchRef, expanded, setExpanded, theme, setTheme, tick, setTick, inText, setInText, toolDetailsOn, phone, phoneRef, reopenRef, navGoRef, cmds, toast, nav, setNav, selecting, setSelecting, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason, now, projectFilter, setProjectFilterState, setProjectFilter, setHostsOffState, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, filterId, filterOn, unlock, filtered, searchable, searchList, quietHits, queue, sec, filterView, limits, gate, gatedRef, gatedThread, arrival, setArrival, arrivedHere, hidden, listed, rows, guest, order, walkRows, viewThread };
+  return { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, setHidden, store, threadsRef, byHost, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, tracker, setTracker, cards, setCards, sectionOpen, setSectionOpen, query, setQuery, help, setHelp, searchRef, expanded, setExpanded, theme, setTheme, tick, setTick, inText, setInText, toolDetailsOn, phone, phoneRef, reopenRef, navGoRef, cmds, toast, nav, setNav, selecting, setSelecting, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason, now, projectFilter, setProjectFilterState, setProjectFilter, setHostsOffState, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, filterId, filterOn, unlock, filtered, searchable, searchList, quietHits, queue, sec, filterView, limits, gate, gatedRef, gatedThread, arrival, setArrival, arrivedHere, hidden, listed, rows, guest, order, walkRows, viewThread, confirmHost };
 }
