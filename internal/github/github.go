@@ -119,6 +119,9 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 	states := make([]string, 0, len(v.Rollup))
 	done, failedNames, passed := 0, []string(nil), map[string]bool{}
 	for _, c := range v.Rollup {
+		if Advisory(c.Name + c.Context) {
+			continue
+		}
 		s := CheckState(c.Typename, c.Status, c.Conclusion, c.State)
 		states = append(states, s)
 		if s != checkRunning && s != checkFail {
