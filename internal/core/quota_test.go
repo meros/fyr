@@ -347,7 +347,7 @@ func TestQuotaAutoContinueLoopProtection(t *testing.T) {
 }
 
 // V0.quota-auto-continue: settled, archived, running, open-decision, handover,
-// and outbox-pending threads never auto-continue.
+// threads never auto-continue; an unread outbox message does not stop one.
 func TestQuotaAutoContinueRespectsLifecycle(t *testing.T) {
 	at := time.Date(2026, 11, 21, 12, 0, 0, 0, time.Local)
 	late := at.Add(3 * time.Hour)
@@ -366,7 +366,6 @@ func TestQuotaAutoContinueRespectsLifecycle(t *testing.T) {
 		{"running", func(th *Thread) { th.Running = true; th.RunStartedAt = &at }},
 		{"open-decision", func(th *Thread) { th.Decisions = []Decision{{ID: "d1", Kind: DecisionAsk, Assignee: Owner}} }},
 		{"handover", func(th *Thread) { th.Handover = &Handover{To: "claude", At: at} }},
-		{"outbox", func(th *Thread) { th.Outbox = []OutMsg{{ID: "m1", State: "sent"}} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -380,6 +379,15 @@ func TestQuotaAutoContinueRespectsLifecycle(t *testing.T) {
 				t.Fatalf("%s: auto-continued unexpectedly: queue=%+v", tc.name, th.Feed.Queue)
 			}
 		})
+	}
+
+	// The message the limit refused is unread: it does not hold the wait back.
+	{
+		th, v := base()
+		th.Outbox = []OutMsg{{ID: "m1", State: "sent"}}
+		if c := NextCheck(th, v, late); c == nil {
+			t.Fatal("an unread outbox message stopped the auto-continue")
+		}
 	}
 
 	// Unarchiving a thread whose quota reset passed long ago does not surprise-launch a run.

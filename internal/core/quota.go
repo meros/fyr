@@ -102,10 +102,12 @@ func QuotaResumeAt(t *Thread) *time.Time {
 
 // QuotaCanAutoContinue reports whether t is eligible to auto-continue at
 // QuotaResumeAt (V0.quota-auto-continue): quota-stopped with a resume time,
-// awake, idle, and not blocked on a decision, handover, or unread message.
+// awake, idle, and not blocked on a decision or handover. An unread message in
+// the outbox does not block it (V0.quota-reset-zone): the message that met the
+// limit is itself unread, and the next process takes it.
 func QuotaCanAutoContinue(t *Thread) bool {
 	return !t.Asleep() && !t.Running && t.Starting == nil && t.Handover == nil &&
-		len(t.Decisions) == 0 && len(t.Outbox) == 0 && QuotaResumeAt(t) != nil
+		len(t.Decisions) == 0 && QuotaResumeAt(t) != nil
 }
 
 // QuotaWaitText is the Waiting reason of a thread whose quota is out, or "":
