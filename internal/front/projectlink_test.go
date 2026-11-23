@@ -324,7 +324,9 @@ func TestProjectAdd(t *testing.T) {
 	if ts := b.eng.Snapshot(); len(ts) != 0 {
 		t.Fatalf("a setup thread started: %d", len(ts))
 	}
-	eventually(t, "the front sees it", func() bool { return frontSees(t, f.URL, ref, link) })
+	// V0.flaky-project-add: the second add reads the link of the project on
+	// a from the front's copy, which a's stream fills a moment after b's.
+	eventually(t, "the front sees both", func() bool { return frontSees(t, f.URL, onA, link) && frontSees(t, f.URL, ref, link) })
 	if code, rep := add(probe(), "TEST-B", b.home); code != 409 {
 		t.Fatalf("a second member: %d %v", code, rep)
 	}
