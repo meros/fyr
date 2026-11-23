@@ -153,56 +153,58 @@ func TestDeployProgressInState(t *testing.T) {
 	}
 }
 
-// V0.state-paging: GET /api/state?limit=N answers the newest N threads with a
-// cursor, and ?before=CURSOR the next older page, so a client that was away for
-// long shows the live threads first and backfills the rest.
-func TestStatePaging(t *testing.T) {
+// V0.state-index: GET /api/state?index=1 lists every thread as id, rev and
+// state and no thread; ?ids=a,b answers those threads only, so a device that
+// diffs the index fetches just the threads it lacks or holds out of date.
+func TestStateIndex(t *testing.T) {
 	hs, _ := newServer(t)
+	var made []string
 	for i := 0; i < 5; i++ {
-		r := do(t, "POST", hs.URL+"/api/command", "", map[string]string{"X-Fyr": "1"}, fmt.Sprintf(`{"commandId":"p%d","action":"thread.create","args":{"cwd":"/tmp","text":"t%d"}}`, i, i))
-		r.Body.Close()
+		r := do(t, "POST", hs.URL+"/api/command", "", map[string]string{"X-Fyr": "1"}, fmt.Sprintf(`{"commandId":"i%d","action":"thread.create","args":{"cwd":"/tmp","text":"t%d"}}`, i, i))
+		var m map[string]any
+		json.NewDecoder(r.Body).Decode(&m)
+		made = append(made, m["threadId"].(string))
 	}
-	type page struct {
+	type answer struct {
 		Threads []struct {
 			ID  string `json:"id"`
 			Rev int64  `json:"rev"`
 		} `json:"threads"`
-		Partial bool   `json:"partial"`
-		More    bool   `json:"more"`
-		Cursor  string `json:"cursor"`
+		Index []struct {
+			ID    string `json:"id"`
+			Rev   int64  `json:"rev"`
+			State string `json:"state"`
+		} `json:"index"`
+		Partial bool `json:"partial"`
 	}
-	get := func(q string) page {
+	get := func(q string) answer {
 		r := do(t, "GET", hs.URL+"/api/state"+q, "", nil, "")
-		var p page
-		json.NewDecoder(r.Body).Decode(&p)
-		return p
+		var a answer
+		json.NewDecoder(r.Body).Decode(&a)
+		return a
 	}
-	seen := map[string]bool{}
-	var last int64 = 1<<63 - 1
-	q := "?limit=2"
-	for i := 0; ; i++ {
-		p := get(q)
-		if i > 5 {
-			t.Fatal("paging does not end")
-		}
-		for _, th := range p.Threads {
-			if seen[th.ID] || th.Rev >= last {
-				t.Fatalf("page %d: %s repeated or out of order", i, th.ID)
-			}
-			seen[th.ID], last = true, th.Rev
-		}
-		if !p.More {
-			if p.Cursor != "" && len(p.Threads) == 0 {
-				t.Fatal("a last empty page has a cursor")
-			}
-			break
-		}
-		if len(p.Threads) != 2 || p.Cursor == "" {
-			t.Fatalf("page %d: %d threads, cursor %q", i, len(p.Threads), p.Cursor)
-		}
-		q = "?limit=2&before=" + p.Cursor
+	idx := get("?index=1")
+	if len(idx.Threads) != 0 || len(idx.Index) != 5 || !idx.Partial {
+		t.Fatalf("index: %d threads, %d entries, partial %v", len(idx.Threads), len(idx.Index), idx.Partial)
 	}
-	if len(seen) != 5 {
-		t.Fatalf("the pages held %d of 5 threads", len(seen))
+	revs := map[string]int64{}
+	for _, e := range idx.Index {
+		if e.State == "" || e.Rev == 0 {
+			t.Fatalf("entry %+v lacks a state or a rev", e)
+		}
+		revs[e.ID] = e.Rev
+	}
+	// The index and the threads agree on every rev: that is what the device diffs.
+	got := get("?ids=" + made[3] + "," + made[1] + ",t_nope")
+	if len(got.Threads) != 2 || got.Threads[0].ID != made[3] || got.Threads[1].ID != made[1] || !got.Partial {
+		t.Fatalf("ids: %+v", got.Threads)
+	}
+	for _, th := range got.Threads {
+		if th.Rev != revs[th.ID] {
+			t.Fatalf("%s: thread rev %d, index rev %d", th.ID, th.Rev, revs[th.ID])
+		}
+	}
+	if all := get(""); len(all.Threads) != 5 || all.Partial || all.Index != nil {
+		t.Fatalf("whole state: %d threads, partial %v", len(all.Threads), all.Partial)
 	}
 }

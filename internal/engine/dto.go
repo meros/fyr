@@ -103,6 +103,35 @@ func (e *Engine) Snapshot() []api.Thread {
 	return out
 }
 
+// Index lists every thread as id, rev and attention state (V0.state-index),
+// without building the thread DTOs: a device diffs it against its stored copy.
+func (e *Engine) Index() []api.IndexEntry {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := e.Now()
+	out := make([]api.IndexEntry, 0, len(e.threads))
+	for _, t := range e.threads {
+		att := core.ComputeWith(t, e.view(t.ID), now, e.autoMergeOn)
+		out = append(out, api.IndexEntry{ID: t.ID, Rev: e.revs[t.ID], State: string(att.State)})
+	}
+	return out
+}
+
+// ThreadsByID builds the named threads only, in the order asked; one the host
+// does not have is left out (V0.state-index).
+func (e *Engine) ThreadsByID(ids []string) []api.Thread {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := e.Now()
+	out := make([]api.Thread, 0, len(ids))
+	for _, id := range ids {
+		if t := e.threads[id]; t != nil {
+			out = append(out, e.build(core.CloneThread(t), now))
+		}
+	}
+	return out
+}
+
 // ThreadSource names a thread whose turns are Fyr's own job for the usage
 // ledger (V0.usage-jobs): a project's setup run is "job:setup"; any other
 // thread is "". The agent calls it outside e.mu.

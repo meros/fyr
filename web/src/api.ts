@@ -15,7 +15,8 @@ import { decodeHostMarks } from "./store.ts";
 import type { OwnerMarks } from "./host-mark.ts";
 import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
-import { cache, hostSince, nextHostState } from "./cache.ts";
+import { cache, mergeStateDelta, nextHostState } from "./cache.ts";
+import { chunks, planSync, type IndexEntry } from "./hostsync.ts";
 import type { Conn, ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
 import { attachmentUrl, type UploadReply } from "./attach.ts";
@@ -181,10 +182,11 @@ export const failed = (error: string): { ok: false; error: string } => ({ ok: fa
 /** A request whose reply `decode` turns into the type the screen reads: it gets whatever the host sent (an empty or
  *  unparsable body, a literal null). A refusal answers the host's error; a network failure, a timeout or the caller's
  *  cancel answers UNREACHABLE; a body the decoder refuses (it throws) answers the decoder's message. */
-/** V0.state-paging: threads in the first answer of a host, in each older page after it, and the pause between pages. */
-const PAGE_FIRST = 60;
-const PAGE_NEXT = 120;
-const PAGE_PAUSE_MS = 250;
+/** V0.state-index: threads in one batch fetch, the pause before the next one (the list stays responsive), and how many
+ *  batches go by between two saves of the stored state (a cut-off sync keeps what it had by then). */
+const BATCH = 40;
+const BATCH_PAUSE_MS = 30;
+const SAVE_EVERY = 3;
 
 async function read<T>(url: string, decode: (raw: unknown) => T, o?: RequestOptions): Promise<Result<T>> {
   let reply: Reply;
@@ -282,62 +284,81 @@ function createHttpApi(): Api {
     }
     const f = decodeFront(r.json);
     front = f;
-    // V0.38: with a stored copy, ask each host only for the threads changed since it. A rev is its host's own clock, so
-    // "since" is each host's own newest, from that host's own stored state (V0.host-ids, decision 0031 2.5); its partial
-    // answer merges into that state, which the store keeps as that host's (slice 2b).
-    // V0.state-paging: a long absence changes nearly every thread. Each host answers the newest PAGE_FIRST at once; the
-    // older pages follow in the background (backfill), and the stored state moves on only when a host's pages are all in.
+    // V0.state-index: each host lists its threads (id, rev, state); the device compares that with its stored copy
+    // (hostsync.planSync), drops what the host no longer has and draws what it holds at once, then fetches the stale and
+    // missing threads in batches, the ones that wait for the owner first (backfill). Every stored thread carries its own
+    // rev, so a sync that is cut off resumes by the next diff.
     const gen = generation;
-    const more: Array<{ i: number; id: HostId; cursor: string }> = [];
+    const todo: Todo[] = [];
     const results = await Promise.all(
       addressable(f.hosts).map(async (host, i): Promise<HostResult> => {
         const id = host.id;
         const stored = await cache.hostState(id);
-        const since = hostSince(stored);
         try {
-          const q = new URLSearchParams({ limit: String(PAGE_FIRST) });
-          if (since) q.set("since", String(since));
-          const r = await read(hostPath(id, `/state?${q}`), object<StateDTO & { partial?: boolean; more?: boolean; cursor?: string }>);
+          const r = await read(hostPath(id, "/state?index=1"), object<StateDTO & { partial?: boolean; index?: IndexEntry[] }>);
           if (!r.ok) throw new Error(r.error);
-          const { more: rest, cursor, ...answer } = r.data;
-          const state = nextHostState(stored, answer);
-          if (rest && cursor) more.push({ i, id, cursor });
-          else void cache.saveHostState(id, state);
+          const { index, ...meta } = r.data;
+          if (!index) {
+            // A host from before the index answered the whole state.
+            const state = nextHostState(stored, meta);
+            void cache.saveHostState(id, state);
+            return { host, state };
+          }
+          const plan = planSync(stored, index);
+          let state = { ...meta, partial: undefined, threads: plan.kept } as StateDTO;
+          let want = plan.want;
+          // Nothing stored to draw: the first batch comes before the list does, so it is not drawn empty.
+          if (!plan.kept.length && want.length) {
+            const first = await fetchBatch(id, want.slice(0, BATCH));
+            if (first) {
+              state = mergeStateDelta(state, first);
+              want = want.slice(BATCH);
+            }
+          }
+          if (want.length) todo.push({ i, id, want });
+          if (!want.length || plan.gone) void cache.saveHostState(id, state);
+          void cache.pruneEvents(id, new Set(index.map((e) => ref(id, e.id)))); // the timelines of threads that are gone
           return { host, state };
         } catch {
           return { host, state: { now: f.now, user: f.user, threads: [], actions: [], profiles: [], projects: [] } };
         }
       }),
     );
-    if (more.length) void backfill(gen, f, results, more);
+    if (todo.length) void backfill(gen, f, results, todo);
     return snapshotOf(f, results);
   };
 
-  type Page = { answer: StateDTO; next: string | undefined };
-  const olderPage = async (host: HostId, before: string): Promise<Page | null> => {
-    const r = await read(hostPath(host, `/state?limit=${PAGE_NEXT}&before=${before}`), object<StateDTO & { more?: boolean; cursor?: string }>);
-    if (!r.ok) return null;
-    const { more: rest, cursor, ...answer } = r.data;
-    return { answer, next: rest ? cursor : undefined };
+  type Todo = { i: number; id: HostId; want: string[] };
+  type Batch = StateDTO & { partial: true };
+
+  /** A batch of threads by id. Null when the read fails, or when the host (older than the index) answered its whole
+   *  state: the caller then has everything it asked for and more, which `ok` says. */
+  const fetchBatch = async (host: HostId, ids: string[]): Promise<Batch | null> => {
+    const r = await read(hostPath(host, `/state?ids=${ids.map(encodeURIComponent).join(",")}`), object<StateDTO & { partial?: boolean }>);
+    return r.ok ? ({ ...r.data, partial: true } as Batch) : null;
   };
 
-  /** V0.state-paging: the older pages of the hosts that had more, each merged in and shown as it arrives. A newer
-   *  connection, or a page that fails, ends it: the stored state has not moved, so the next load asks again. */
-  const backfill = async (gen: number, f: FrontState, results: HostResult[], more: Array<{ i: number; id: HostId; cursor: string }>) => {
+  /** The stale and missing threads of each host, a batch at a time, each merged in and drawn as it arrives, saved every
+   *  few batches and at the end. A newer connection or a failed batch ends it; what is stored stays correct. */
+  const backfill = async (gen: number, f: FrontState, results: HostResult[], todo: Todo[]) => {
     await Promise.all(
-      more.map(async (m) => {
-        let before: string | undefined = m.cursor;
-        while (before) {
-          await new Promise((res) => setTimeout(res, PAGE_PAUSE_MS));
-          if (gen !== generation) return;
-          const page: Page | null = await olderPage(m.id, before);
-          if (!page || gen !== generation) return;
-          const state = nextHostState(results[m.i].state, { ...page.answer, partial: true });
-          results[m.i] = { host: results[m.i].host, state };
+      todo.map(async (m) => {
+        let n = 0;
+        let unsaved = false;
+        for (const ids of chunks(m.want, BATCH)) {
+          await new Promise((res) => setTimeout(res, BATCH_PAUSE_MS));
+          if (gen !== generation) break;
+          const b = await fetchBatch(m.id, ids);
+          if (!b || gen !== generation) break;
+          results[m.i] = { host: results[m.i].host, state: mergeStateDelta(results[m.i].state, b) };
           handlers?.state(snapshotOf(f, results));
-          before = page.next;
-          if (!before) void cache.saveHostState(m.id, state);
+          unsaved = true;
+          if (++n % SAVE_EVERY === 0) {
+            void cache.saveHostState(m.id, results[m.i].state);
+            unsaved = false;
+          }
         }
+        if (unsaved) void cache.saveHostState(m.id, results[m.i].state);
       }),
     );
   };

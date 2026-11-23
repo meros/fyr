@@ -2,7 +2,8 @@
 // device; at start and on open it fetches only the difference.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hostSince, mergeEventLists, mergeStateDelta, nextHostState, sinceRev } from "../src/cache.ts";
+import { mergeEventLists, mergeStateDelta, nextHostState } from "../src/cache.ts";
+import { chunks, planSync } from "../src/hostsync.ts";
 import { thread } from "./helpers.ts";
 import type { StateDTO } from "../src/types.ts";
 
@@ -17,20 +18,39 @@ test("a partial state replaces only the threads it carries", () => {
   assert.deepEqual(mergeStateDelta(stored, full).threads.map((t) => t.id), ["c"], "a full state replaces everything");
 });
 
-test("the since rev asks a minute early, never late", () => {
-  const s = state([thread("a", "seen", "seen", { rev: 1794666946312324400 }), thread("b", "seen", "seen", { rev: 1794666946312320000 })]);
-  assert.ok(sinceRev(s) < 1794666946312320000, "never late");
-  assert.equal(sinceRev(state([])), 0);
+// V0.state-index. Found live (16 Nov, under the old ?since= sync): a settled thread stayed in Needs you on two devices,
+// because a frame overtaken by a newer one was skipped for good. The diff compares every thread's own rev, so no
+// thread can fall between two clocks.
+test("a thread whose last frame was overtaken by a newer one is fetched again", () => {
+  const settledA = 1794833739804779693;
+  const stored = state([thread("a", "asking", "needs", { rev: settledA - 600_000_000_000 }), thread("b", "seen", "seen", { rev: settledA + 80_000_000 })]);
+  const plan = planSync(stored, [{ id: "a", rev: settledA, state: "settled" }, { id: "b", rev: settledA + 80_000_000, state: "seen" }]);
+  assert.deepEqual(plan.want, ["a"]);
 });
 
-// Found live (16 Nov): a settled thread stayed in Needs you on two devices. The stream holds a thread's frame up
-// to 100 ms while other threads' frames go out at once, so a device can hold a newer rev of thread B before the
-// last frame of thread A. When the stream drops in that window, ?since= from B's rev skipped A's update for good.
-test("a thread whose last frame was overtaken by a newer one is asked for again", () => {
-  const settledA = 1794833739804779693; // A settled
-  const laterB = settledA + 80_000_000; // B changed 80 ms later and reached the device first
-  const stored = state([thread("a", "asking", "needs", { rev: settledA - 600_000_000_000 }), thread("b", "seen", "seen", { rev: laterB })]);
-  assert.ok(sinceRev(stored) < settledA, `since ${sinceRev(stored)} skips A's frame at ${settledA}`);
+test("the plan drops what the host lost, keeps what is current and asks the urgent threads first", () => {
+  const stored = state([thread("gone", "seen", "seen", { rev: 1 }), thread("same", "seen", "seen", { rev: 2 }), thread("old", "working", "working", { rev: 3 })]);
+  const plan = planSync(stored, [
+    { id: "same", rev: 2, state: "seen" },
+    { id: "old", rev: 30, state: "done" },
+    { id: "new-settled", rev: 50, state: "settled" },
+    { id: "new-asking", rev: 10, state: "asking" },
+    { id: "new-seen", rev: 40, state: "seen" },
+  ]);
+  assert.deepEqual(plan.kept.map((t) => t.id).sort(), ["old", "same"], "a thread the host dropped is not kept");
+  assert.equal(plan.gone, 1);
+  assert.deepEqual(plan.want, ["new-asking", "old", "new-seen", "new-settled"], "asking, then done, then the rest by rev");
+  assert.deepEqual(planSync(null, [{ id: "x", rev: 1 }]).want, ["x"], "nothing stored: everything is wanted");
+  assert.deepEqual(planSync(stored, [{ id: "same", rev: 2 }, { id: "old", rev: 3 }, { id: "gone", rev: 1 }]).want, [], "nothing changed: nothing to fetch");
+});
+
+test("the host's rev wins also when it is older (a restored database)", () => {
+  assert.deepEqual(planSync(state([thread("a", "seen", "seen", { rev: 900 })]), [{ id: "a", rev: 100, state: "seen" }]).want, ["a"]);
+});
+
+test("a sync in batches", () => {
+  assert.deepEqual(chunks([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+  assert.deepEqual(chunks([], 2), []);
 });
 
 test("stored and new events merge by seq; a gap drops the stored copy", () => {
@@ -41,16 +61,12 @@ test("stored and new events merge by seq; a gap drops the stored copy", () => {
   assert.deepEqual(mergeEventLists([ev(1), ev(2), ev(3), ev(4)], [ev(5)], 3, false).map((e) => e.seq), [3, 4, 5], "keeps the newest");
 });
 
-// V0.host-ids (decision 0031 2.5, C7): each host's since comes from its own stored state, and its partial answer
-// merges into that state, so a host whose clock runs ahead never makes the device skip another host's threads.
-test("each host is asked since its own newest rev and its delta merges into its own state", () => {
-  const ahead = 1_900_000_000_000_000_000, behind = 1_800_000_000_000_000_000;
-  const a = state([thread("t1", "seen", "seen", { rev: ahead })]);
+// V0.host-ids (decision 0031 2.5, C7): a host's answer merges into that host's own state, never another's.
+test("a host's delta merges into its own state", () => {
+  const behind = 1_800_000_000_000_000_000;
   const b = state([thread("t1", "seen", "seen", { rev: behind, title: "B's t1" }), thread("t2", "seen", "seen", { rev: behind - 5 })]);
-  assert.ok(hostSince(b) < behind && hostSince(a) > behind, "B is asked from its own clock, not A's");
-  assert.equal(hostSince(null), 0, "nothing stored: the whole state");
   const nb = nextHostState(b, state([thread("t2", "done", "needs", { rev: behind + 9, title: "new" })], true));
-  assert.deepEqual(nb.threads.map((t) => `${t.id}:${t.title ?? ""}`).sort(), ["t1:B's t1", "t2:new"], "the delta lands in B's own state; A's t1 is not B's");
+  assert.deepEqual(nb.threads.map((t) => `${t.id}:${t.title ?? ""}`).sort(), ["t1:B's t1", "t2:new"]);
   assert.equal((nb as { partial?: boolean }).partial, undefined);
   const first = nextHostState(null, state([thread("t9", "seen", "seen", { rev: 3 })]));
   assert.deepEqual(first.threads.map((t) => t.id), ["t9"]);
