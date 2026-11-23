@@ -1,0 +1,8 @@
+# V0.waits-strip: a thread whose agent waits shows each wait above the composer, and the owner cancels it
+
+→ V0.watch-waits (the Waiting reason), V0.wakeups-via-watch (the wake-up chip and `thread.cancelWake`), #46 (the agent's watches). *Extends V0.wakeups-via-watch (4): the cancel is for every armed watch of the agent's, not only a time.* (owner: "waiting threads should show they are waiting here, with an option to cancel the wait", of the end of the conversation above the composer, where an agent had said "Fyr will show it to you once CI is green".)
+
+1. **Shown.** The thread carries `waits` (`[{rule, text, by?}]`): the agent's armed notify watches (and the owner's quota wake-ups), soonest wake-up first, each as the words of `WatchWaitText`: "wakes 07:00", "waits for #12 to be landed", "waits for checks ok on #12", "waits for the run to end", "wakes after 30 min idle". `web/src/waits-ui.tsx` shows one row per wait, "Waiting: <text>" with **Cancel wait**, in a strip directly above the composer, on the desktop and the phone (one component; the phone's button is 44 px, as the leftover strip's). Settle watches are not waits, as in V0.watch-waits.
+2. **Cancel.** A press is the owner's `thread.cancelWait {rule}` (no rule: the first; off with "Nothing is waited for"). It drops that watch. An agent-armed watch tells the agent once that the owner cancelled it and not to set it again unless the owner asks; an owner-armed one cancels quietly. A watch that fires is gone without that notice. `thread.cancelWake` stays for the header chip.
+
+Tests: `internal/core/wake_test.go` (TestWaitsAreShownAndCancelled); `thread_invariants` (availability of `thread.cancelWait`).

@@ -66,6 +66,8 @@ type Thread struct {
 	// Wakes are the agent's armed wake-ups, soonest first
 	// (V0.wakeups-via-watch): its watches on a time.
 	Wakes []core.WakeUp `json:"wakes,omitempty"`
+	// Waits are all the agent's armed watches (V0.waits-strip), soonest wake-up first.
+	Waits []core.Wait `json:"waits,omitempty"`
 	// Settle shadows thread.settle, which the fields above carry.
 	Settle *struct{} `json:"settle,omitempty"`
 	// Feed shadows thread.feed: the notices are the agent's (#47).

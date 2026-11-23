@@ -693,6 +693,7 @@ function railFixture(now: number): Fixture {
     base("t_triage", "Triage sprint issues", now, 60, {
       project: "acme/ops",
       // V0.wakeups-via-watch: the agent set a wake-up for tomorrow 06:00; the row and the header show it
+      waits: [{ rule: "w_triage", text: "wakes 06:00" }, { rule: "w_ci", text: "waits for checks ok on PR #88" }],
       wakes: [{ rule: "w_triage", at: iso(new Date(new Date(now).setHours(30, 0, 0, 0)).getTime()), note: "Check which of the 6 issues got an owner\nand ping the rest" }],
       // V0.120 (5): its model was turned off since; it shows as "opus 5.4 (off)" until another is picked.
       model: "claude-opus-5-4",
@@ -1461,6 +1462,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         if (args.now && t.pinnedAt) return { ok: false, error: "A pinned thread settles only by its own Settle" }; // V0.162
         if (args.now && t.running) return { ok: false, error: "A running thread settles only by its own Settle" }; // V0.203
         idle("settled", "settled", { settledAt: new Date(clock()).toISOString(), pinnedAt: null, settleWhenDone: false });
+        break;
+      case "thread.cancelWait": // V0.waits-strip
+        put(t, { waits: (t.waits ?? []).filter((w) => w.rule !== args.rule), wakes: (t.wakes ?? []).filter((w) => w.rule !== args.rule) });
         break;
       case "thread.cancelWake": // V0.wakeups-via-watch
         put(t, { wakes: (t.wakes ?? []).filter((w) => w.rule !== args.rule) });

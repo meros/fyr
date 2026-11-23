@@ -118,6 +118,11 @@
 .lftb-b .err{color:var(--signal-ink)}
 .lftb-a{display:flex;gap:6px;flex:none;align-items:center}
 .lftb .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}
+/* V0.waits-strip: what the agent waits for, above the composer (waits-ui.tsx), one row per watch */
+.wtsb{flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 24px;background:var(--sunken);border-top:1px solid var(--line);font:400 12px/17px var(--ui);color:var(--ink-muted)}
+.wtsb-r{display:flex;align-items:center;gap:10px}
+.wtsb-b{flex:1;min-width:0;overflow-wrap:anywhere}
+.wtsb .btn{flex:none;height:26px;padding:0 10px;border-radius:7px;font-size:12px}
 .rail .rlft{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:14px;padding:0 4px;border:0;border-radius:7px;background:var(--line);color:var(--ink-muted);font:600 8.5px/9px var(--mono);cursor:pointer}
 /* the line in the conversation: what Fyr told the agent */
 .ql.und .qlh{color:var(--beam-ink)}
