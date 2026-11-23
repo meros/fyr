@@ -2,7 +2,7 @@
 // ⋯ menu) and the phone's sheets. An action reachable on one front is reachable on the other, unless it says why not.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESK_HEADER_BUTTONS, actionsFor, deskThreadMenu, runAction, settleToast, threadActions, type ActionHandlers, type ActionId, type Front, type ThreadAction, type Where } from "../src/actions.ts";
+import { DESK_HEADER_BUTTONS, actionsFor, deskThreadMenu, runAction, settleRun, settleToast, threadActions, type ActionHandlers, type ActionId, type Front, type ThreadAction, type Where } from "../src/actions.ts";
 import { thread } from "./helpers.ts";
 
 const states = [
@@ -103,4 +103,10 @@ test("the settle toast names a stopped run, from one place", () => {
 
 test("the ⋯ menu opens on Project… (V0.26)", () => {
   for (const t of states) assert.equal(deskThreadMenu(t)[0].id, "project", t.id);
+});
+
+test("settleRun: the one run option both fronts pass to thread.settle", () => {
+  assert.equal(settleRun({ running: true })?.label(), "Settled; run stopped");
+  assert.equal(settleRun({ running: false }), undefined);
+  assert.equal(settleRun(undefined), undefined);
 });

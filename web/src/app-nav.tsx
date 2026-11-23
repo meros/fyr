@@ -6,9 +6,9 @@ import { useEffect, useRef } from "preact/hooks";
 import { type PageRef } from "./settings-nav.ts";
 import { type UndNav } from "./undeclared-ctx.tsx";
 import { type PhoneActions } from "./phone.tsx";
-import { backTarget, initialEntries, navFromHistory, urlFor, type Nav } from "./nav.ts";
+import { backTarget, listenPopState, seedHistory, type Nav } from "./nav.ts";
 import { navTransition } from "./native.ts";
-import { settleToast } from "./actions.ts";
+import { settleRun } from "./actions.ts";
 import { isDeskEntry, popStep } from "./desk-history.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
@@ -17,24 +17,16 @@ import type { useNavHistory } from "./app-history.tsx";
 
 export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "threadsRef" | "view" | "setDialog" | "phone" | "phoneRef" | "cmds" | "nav" | "setNav" | "openSettings"> & Pick<ReturnType<typeof useThreadActions>, "deskAtRef" | "openThread" | "closePeek" | "settleWhenDone" | "settleBulk" | "markUnseen"> & Pick<ReturnType<typeof useProjectActions>, "directory" | "create"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navRef" | "leaveOpenThread" | "navReplace" | "navBack">) {
   const { store, threadsRef, view, setDialog, phone, phoneRef, cmds, nav, setNav, openSettings, deskAtRef, openThread, closePeek, settleWhenDone, settleBulk, markUnseen, directory, create, navGo, navRef, leaveOpenThread, navReplace, navBack } = c;
-  // Build the history once: a deep link (a push) gets the inbox under it, so Back never leaves the app.
+  // Build the history once (navInit); the listener is added whenever the phone layout is on, and removed when it goes
+  // (a window resized to the desktop and back must have it again).
   const navInit = useRef(false);
   useEffect(() => {
-    if (!phone || navInit.current) return;
-    navInit.current = true;
-    const entries = initialEntries(location.search);
-    history.replaceState(entries[0], "", urlFor(entries[0], location.search));
-    for (const e of entries.slice(1)) history.pushState(e, "", urlFor(e, location.search));
-    setNav(entries[entries.length - 1]);
-    const onPop = (e: PopStateEvent) => {
-      const n = navFromHistory(e.state, location.search);
-      // V0.native-feel: after the system's own swipe back the screen has already slid; a second slide would replay it.
-      const slid = (e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition;
-      if (!slid && JSON.stringify(n.screen) !== JSON.stringify(navRef.current.screen)) navTransition("back", () => setNav(n));
-      else setNav(n);
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    if (!phone) return;
+    if (!navInit.current) {
+      navInit.current = true;
+      setNav(seedHistory(history, location.search));
+    }
+    return listenPopState(window, { search: () => location.search, current: () => navRef.current, set: setNav, slide: (apply) => navTransition("back", apply) });
   }, [phone]);
   // V0.145: Back and Forward on the desktop (the mouse's side buttons, Alt+Left and Alt+Right, the browser's arrows)
   // open the thread of the entry, with the tab it had (ThreadPane reads it from the URL). A thread archived or deleted
@@ -72,10 +64,7 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
     settle: (ids, bulk, unreadKept) =>
       bulk
         ? void settleBulk(ids, { unreadKept }).then((done) => done.length && leaveOpenThread(done))
-        : void cmds.run("thread.settle", ids, undefined, (() => {
-              const label = ids.length === 1 ? settleToast(store.threads[ids[0]]) : undefined;
-              return label ? { label: () => label } : undefined;
-            })()).then((n) => n && leaveOpenThread(ids)),
+        : void cmds.run("thread.settle", ids, undefined, ids.length === 1 ? settleRun(store.threads[ids[0]]) : undefined).then((n) => n && leaveOpenThread(ids)),
     settleWhenDone,
     archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread(ids)),
     markUnseen: (id) => markUnseen(id),

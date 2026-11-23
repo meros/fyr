@@ -10,14 +10,6 @@ import { PHONE_QUERY } from "./motion-ui.tsx";
 /** Run when the browser is idle (V0.38: storing never competes with input). */
 export const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
 
-export const sessionStore = () => {
-  try {
-    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
-  } catch {
-    return null;
-  }
-};
-
 
 /** True at phone width (design/mobile, V0.14 breakpoint). */
 export function usePhone(): boolean {

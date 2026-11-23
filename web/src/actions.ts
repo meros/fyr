@@ -84,6 +84,12 @@ export function settleToast(t: Pick<Thread, "running"> | undefined): string | un
   return t?.running ? "Settled; run stopped" : undefined;
 }
 
+/** The options of a `thread.settle` run of one thread, on both fronts: its toast label (undefined keeps the usual undo one). */
+export function settleRun(t: Pick<Thread, "running"> | undefined): { label: () => string } | undefined {
+  const label = settleToast(t);
+  return label ? { label: () => label } : undefined;
+}
+
 /** The link Copy link copies. */
 function threadLink(origin: string, id: string): string {
   return `${origin}/?open=${id}`;

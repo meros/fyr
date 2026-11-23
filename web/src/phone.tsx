@@ -21,7 +21,7 @@ import type { HostId } from "./hostid.ts";
 import { LoadStrip, useLoad } from "./load-ui.tsx";
 import { HomeScreen } from "./home-ui.tsx";
 import { stripHosts } from "./host-load.ts";
-import { SECTIONS, connLabel, connWords, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
+import { SECTIONS, connLabel, connWords, isAvailable, mergedToSettle, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -340,8 +340,7 @@ function MInbox(p: PhoneProps) {
   const unreadLeft = swept ? sweptUnread(all, p.list.picked) : 0;
   const strip = stripHosts(useLoad(), p.store.hostList);
   // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
-  const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
-  const canSettleMerged = merged.some((t) => !isPinned(t));
+  const { ids: mergedIds, any: canSettleMerged } = mergedToSettle(p.inbox.sec.seen);
 
   return (
     <div class="m-screen">
@@ -481,10 +480,7 @@ function MInbox(p: PhoneProps) {
                     class="m-sbtn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      p.actions.settle(
-                        merged.map((t) => t.id),
-                        true,
-                      );
+                      p.actions.settle(mergedIds, true);
                     }}
                   >
                     Settle merged

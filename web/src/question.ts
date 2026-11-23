@@ -257,7 +257,18 @@ export function progressText(st: { answered: number; skipped: number; total: num
   return st.skipped ? `${s} · ${st.skipped} skipped` : s;
 }
 
+/** The `thread.answer` arguments for a submitted card (V0.ask-cancel: a question the owner skipped goes with the card,
+ *  named, so the agent hears it). The one place the payload is built, for both fronts. */
+export function answerArgs(d: Decision, send: Submit): Record<string, unknown> {
+  return { decisionId: d.id, answers: send.answers, ...(send.skipped.length ? { skipped: send.skipped } : {}) };
+}
+
+/** The `thread.answer` arguments for a tool approval. */
+export function allowArgs(d: Decision, allow: boolean): Record<string, unknown> {
+  return { decisionId: d.id, allow };
+}
+
 /** Send the answer, then open the next thread that needs you, only when the host took it (as the phone does). */
-export async function answerThenNext(answer: () => Promise<number>, next: () => void): Promise<void> {
-  if ((await answer()) > 0) next();
+export async function answerThenNext(answer: () => Promise<boolean>, next: () => void): Promise<void> {
+  if (await answer()) next();
 }

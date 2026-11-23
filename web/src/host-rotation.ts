@@ -28,6 +28,11 @@ export function moveRef(id: string, was: string, now: string): string {
   return was && now && id.startsWith(`${was}/`) ? `${now}/${id.slice(was.length + 1)}` : id;
 }
 
+/** A ref through every rotation in turn, so two hosts rotating at once each move what names them. */
+export function moveRefAll(id: string, moves: readonly { was: string; now: string }[]): string {
+  return moves.reduce((acc, m) => moveRef(acc, m.was, m.now), id);
+}
+
 /** Decision 0031 2.1, 2.5: a host's install id rotated from `was` to `now`. Every key and value of Fyr's in this
  *  storage that names `was` names `now` instead: drafts, the filters, New thread's defaults, the hidden hosts. An install
  *  id is 19 characters of its own alphabet (`F7QK-2M9X-AB34-CD56`), so it occurs in nothing else. A key the new id

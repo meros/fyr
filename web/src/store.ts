@@ -376,6 +376,13 @@ export function isPinned(t: Thread): boolean {
   return !!t.pinnedAt;
 }
 
+/** V0.162: the Seen threads whose PR has merged and that can settle (a pinned one is listed so the bulk settle counts
+ *  it, and left out of the settle). `any` says whether the "Settle merged" button shows. One rule for both fronts. */
+export function mergedToSettle(seen: readonly Thread[]): { ids: string[]; any: boolean } {
+  const merged = seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
+  return { ids: merged.map((t) => t.id), any: merged.some((t) => !isPinned(t)) };
+}
+
 /** A section's rows under the pinned block: the section without its pinned threads. */
 export function unpinned(list: Thread[], key?: SectionKey): Thread[] {
   if (key === "slots") return list; // V0.137: the queue keeps its pinned threads, in its order

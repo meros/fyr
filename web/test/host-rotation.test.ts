@@ -78,3 +78,11 @@ test("C12: a push tap with the host opens that host's thread; an old tap with th
   assert.equal(resolveRef(recs, "t_one"), `${A}/t_one`);
   assert.equal(resolveRef(recs, "t_same"), "t_same", "two hosts have it: not resolved, so nothing opens");
 });
+
+test("moveRefAll: two hosts rotating at once each move what names them, one result", async () => {
+  const { moveRefAll } = await import("../src/host-rotation.ts");
+  const moves = [{ was: "A-OLD", now: "A-NEW" }, { was: "B-OLD", now: "B-NEW" }];
+  assert.equal(moveRefAll("B-OLD/t1", moves), "B-NEW/t1");
+  assert.equal(moveRefAll("A-OLD/t1", moves), "A-NEW/t1");
+  assert.equal(moveRefAll("C/t1", moves), "C/t1");
+});

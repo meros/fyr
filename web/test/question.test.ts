@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { answerThenNext, back, cardKey, initCard, pick, setOther, settledOf, skip, submitOf, submitState, type CardState } from "../src/question.ts";
+import { allowArgs, answerArgs, answerThenNext, back, cardKey, initCard, pick, setOther, settledOf, skip, submitOf, submitState, type CardState } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
 const d: Decision = {
@@ -102,9 +102,9 @@ test("the card's submit button follows the answers", () => {
 // review 2026-11-15: a failed answer keeps the thread open; only an accepted one moves to the next that needs you.
 test("answerThenNext moves on only when the host took the answer", async () => {
   let moved = 0;
-  await answerThenNext(async () => 0, () => moved++);
+  await answerThenNext(async () => false, () => moved++);
   assert.equal(moved, 0, "a failed thread.answer stays");
-  await answerThenNext(async () => 1, () => moved++);
+  await answerThenNext(async () => true, () => moved++);
   assert.equal(moved, 1);
 });
 
@@ -156,4 +156,18 @@ test("Back and the arrows step between questions, and Back stops at the first", 
   assert.equal(cardKey(cs, d, "ArrowLeft").state.index, 0);
   const wrapped = keys(initCard(d), "Tab", "Tab", "Tab");
   assert.equal(wrapped.state.index, 2, "Tab stops at the last question");
+});
+
+test("the answer payload has one builder: skips go named, an approval carries allow", () => {
+  const d = { id: "d1", kind: "ask" } as never;
+  assert.deepEqual(answerArgs(d, { answers: [["a"]], skipped: [] } as never), { decisionId: "d1", answers: [["a"]] });
+  assert.deepEqual(answerArgs(d, { answers: [["a"], []], skipped: [1] } as never), { decisionId: "d1", answers: [["a"], []], skipped: [1] });
+  assert.deepEqual(allowArgs(d, false), { decisionId: "d1", allow: false });
+});
+
+test("no front builds a thread.answer payload of its own: app-cards.tsx's useAnswers is the one", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const dir = new URL("../src/", import.meta.url);
+  const hits = readdirSync(dir).filter((f) => /^(app|phone|thread)[\w-]*\.tsx?$/.test(f) && /"thread\.answer"/.test(readFileSync(new URL(f, dir), "utf8")));
+  assert.deepEqual(hits, ["app-cards.tsx"]);
 });

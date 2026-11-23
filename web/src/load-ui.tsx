@@ -8,6 +8,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CardView, HoverCard, useHover } from "./card-ui.tsx";
 import type { Api } from "./api.ts";
+import { createLoadFeed } from "./load-feed.ts";
 import { useApi } from "./api-context.ts";
 import { clockTime } from "./format.ts";
 import { ContextMenu } from "./menu-ui.tsx";
@@ -19,18 +20,16 @@ import { loadCard, normalizeLoad, railBudget, railLabel, railMeter, shortHostNam
 const POLL_MS = 5_000;
 
 let source: Pick<Api, "load"> | null = null;
-let current: HostLoad[] = [];
 let lastAt = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
-const subs = new Set<(l: HostLoad[]) => void>();
+// V0.163: a host's `heavy` (an older one's `slots`) read as one field.
+const feed = createLoadFeed(normalizeLoad);
 
 async function poll(): Promise<void> {
   if (!source || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
   lastAt = Date.now();
-  // V0.163: a host's `heavy` (an older one's `slots`) read as one field.
-  const l = await source.load().then(normalizeLoad).catch(() => current);
-  current = l;
-  for (const s of subs) s(l);
+  const api = source;
+  await feed.poll(() => api.load());
 }
 
 function onVisible(): void {
@@ -40,8 +39,7 @@ function onVisible(): void {
 /** V0.137: the pool of one host as a reorder's receipt or the page's own move gives it, shown at once (the next poll
  *  confirms it); `refresh` reads the load now. */
 export function patchSlots(host: string, slots: Slots | ((s: Slots) => Slots)): void {
-  current = current.map((h) => (h.host === host && h.slots ? { ...h, slots: typeof slots === "function" ? slots(h.slots) : slots } : h));
-  for (const s of subs) s(current);
+  feed.patchSlots(host, slots);
 }
 export function refreshLoad(): void {
   void poll();
@@ -49,18 +47,18 @@ export function refreshLoad(): void {
 
 export function useLoad(): HostLoad[] {
   const api = useApi();
-  const [l, setL] = useState(current);
+  const [l, setL] = useState(feed.current());
   useEffect(() => {
-    subs.add(setL);
-    if (subs.size === 1) {
+    const off = feed.subscribe(setL);
+    if (feed.size() === 1) {
       source = api;
       if (Date.now() - lastAt > POLL_MS / 2) void poll();
       timer = setInterval(() => void poll(), POLL_MS);
       document.addEventListener("visibilitychange", onVisible);
     }
     return () => {
-      subs.delete(setL);
-      if (subs.size === 0) {
+      off();
+      if (feed.size() === 0) {
         clearInterval(timer);
         document.removeEventListener("visibilitychange", onVisible);
       }

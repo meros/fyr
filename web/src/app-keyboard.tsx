@@ -2,7 +2,8 @@
 
 // The app shell: state, commands and the keyboard.
 
-import { isTextTarget, sessionStore } from "./app-util.tsx";
+import { isTextTarget } from "./app-util.tsx";
+import { sessionStore } from "./prefs.ts";
 import { useEffect, useRef } from "preact/hooks";
 import {
   SECTIONS,

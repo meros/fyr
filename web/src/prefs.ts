@@ -9,6 +9,15 @@ export function browserStorage(): Storage | null {
   }
 }
 
+/** The tab's sessionStorage, or null where there is none: the same guard as browserStorage. */
+export function sessionStore(): Storage | null {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
+  } catch {
+    return null;
+  }
+}
+
 /** One stored value, or null when none is kept or storage is blocked. The one way the client reads localStorage. */
 export function storedGet(key: string): string | null {
   try {

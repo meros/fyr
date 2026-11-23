@@ -3,6 +3,7 @@
 // V0.65: the look, Viewed marks, the since line, range-diff rows and the agent's notes.
 
 import { relTime } from "./format.ts";
+import { arr, obj } from "./decode.ts";
 import type { Change } from "./types.ts";
 
 export interface ChangedFile {
@@ -128,6 +129,42 @@ export function splitPath(path: string): { dir: string; name: string } {
 export interface Look {
   head: string;
   files: Record<string, string>;
+}
+
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const STATUSES = ["added", "modified", "deleted", "renamed"] as const;
+
+/** The host omits empty fields (Go omitempty): a file list that is empty arrives with no `files`. A file without a path is none. */
+function decodeFiles(raw: unknown): ChangedFile[] {
+  return arr<Record<string, unknown>>(raw)
+    .filter((f) => f && typeof f === "object" && typeof f.path === "string")
+    .map((f) => ({
+      ...(f as unknown as ChangedFile),
+      status: (STATUSES as readonly unknown[]).includes(f.status) ? (f.status as ChangedFile["status"]) : "modified",
+      additions: num(f.additions),
+      deletions: num(f.deletions),
+      binary: f.binary === true,
+    }));
+}
+
+/** GET /threads/{id}/changes as the tab reads it: `files` and `since.files` are lists, whatever the host left out. */
+export function decodeChanges(raw: unknown): ChangesDTO {
+  const c = obj(raw) as unknown as ChangesDTO;
+  const s = obj(c.since);
+  const mode = s.mode === "rebased" || s.mode === "missing" ? s.mode : "ancestor";
+  return {
+    ...c,
+    git: c.git === true,
+    files: decodeFiles(c.files),
+    ...(c.since && typeof c.since === "object" ? { since: { ...(s as unknown as SinceDTO), head: str(s.head), at: str(s.at), mode, commits: num(s.commits), files: decodeFiles(s.files) } } : { since: undefined }),
+  };
+}
+
+/** GET …/changes?path=: one file's patch. */
+export function decodeFilePatch(raw: unknown, path: string): FilePatchDTO {
+  const p = obj(raw);
+  return { path: str(p.path) || path, patch: str(p.patch), binary: p.binary === true, truncated: p.truncated === true };
 }
 
 /** What the reply says is new since the look. */

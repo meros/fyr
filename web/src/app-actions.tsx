@@ -12,7 +12,7 @@ import {
 import { afterSettle, rowAfter } from "./selection.ts";
 import { closeView, markedUnseen, openView } from "./seen.ts";
 import { snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
-import { settleToast } from "./actions.ts";
+import { settleRun } from "./actions.ts";
 import { SETTLE_DONE_TOAST } from "./menu.ts";
 import { isDeskEntry, leaveDeskThread, recordOpen, type OpenCause } from "./desk-history.ts";
 import type { useAppState } from "./app-state.tsx";
@@ -80,9 +80,8 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
 
   /** V0.203: settles now; on a running thread the host stops the run, and the toast says so. */
   const settle = (id: string) => {
-    const label = settleToast(store.threads[id]);
-    leaveSettled([id]);
-    void cmds.run("thread.settle", [id], undefined, label ? { label: () => label } : undefined);
+    // The next thread opens once the host took the settle, as the phone leaves (U8): a refused settle leaves the thread where it is.
+    void cmds.run("thread.settle", [id], undefined, settleRun(store.threads[id])).then((n) => n && leaveSettled([id]));
   };
 
   /** V0.203: the explicit wait, or its cancel when it is armed. The thread stays where it is. */
@@ -111,11 +110,12 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
       const k = sectionOf(store.threads[sel]);
       if (k) ids = sec[k].map((t) => t.id);
     }
-    const { ids: take } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t), sweep);
-    leaveSettled(take);
     setPicked(new Set());
-    void settleBulk(ids, { sweep });
+    void settleBulk(ids, { sweep }).then((done) => done.length && leaveSettled(done));
   };
+
+  /** The Seen header's "Settle merged" (the phone's button too): only the threads whose PR merged. */
+  const settleMerged = (ids: string[]) => void settleBulk(ids).then((done) => done.length && leaveSettled(done));
 
   const archive = (ids: string[]) => {
     stepPast(ids);
@@ -145,5 +145,5 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
   };
 
 
-  return { deskAtRef, openThread, closePeek, closeThread, target, settle, settleWhenDone, settleBulk, settleGroup, archive, openSnooze, snoozeList, snooze, markUnseen };
+  return { deskAtRef, openThread, closePeek, closeThread, target, settle, settleWhenDone, settleBulk, settleGroup, settleMerged, archive, openSnooze, snoozeList, snooze, markUnseen };
 }

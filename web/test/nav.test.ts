@@ -85,3 +85,52 @@ test("a deep link into settings builds every level under it, so Back goes one le
   assert.deepEqual(backTarget({ screen: { name: "settings", page: "device" }, sheet: null }), { screen: { name: "settings" }, sheet: null });
   assert.deepEqual(backTarget({ screen: { name: "settings" }, sheet: null }), INBOX);
 });
+
+import { listenPopState, seedHistory, type Nav } from "../src/nav.ts";
+
+function fakeWindow() {
+  const ls = new Set<(e: Event) => void>();
+  return {
+    ls,
+    addEventListener: (_: string, f: (e: Event) => void) => void ls.add(f),
+    removeEventListener: (_: string, f: (e: Event) => void) => void ls.delete(f),
+    pop(state: unknown, extra: object = {}) {
+      for (const f of [...ls]) f({ state, ...extra } as unknown as Event);
+    },
+  };
+}
+
+test("seedHistory: a deep link gets the inbox under it, and the entry it lands on is returned", () => {
+  const calls: string[] = [];
+  const h = { replaceState: (s: unknown) => calls.push(`replace ${(s as Nav).screen.name}`), pushState: (s: unknown) => calls.push(`push ${(s as Nav).screen.name}`) };
+  const at = seedHistory(h, "?open=t1");
+  assert.equal(calls[0], "replace inbox");
+  assert.deepEqual(calls, ["replace inbox", "push thread"]);
+  assert.equal(at.screen.name, "thread");
+});
+
+test("listenPopState: after the phone layout leaves and comes back the listener is there again", () => {
+  const w = fakeWindow();
+  const seen: string[] = [];
+  const io = { search: () => "", current: () => ({ screen: { name: "inbox" }, sheet: null }) as Nav, set: (n: Nav) => seen.push(n.screen.name), slide: (f: () => void) => f() };
+  let off = listenPopState(w as never, io);
+  w.pop({ screen: { name: "new" }, sheet: null });
+  off(); // phone -> desktop
+  assert.equal(w.ls.size, 0);
+  w.pop({ screen: { name: "search" }, sheet: null });
+  off = listenPopState(w as never, io); // desktop -> phone
+  w.pop({ screen: { name: "status" }, sheet: null });
+  assert.deepEqual(seen, ["new", "status"]);
+  off();
+});
+
+test("listenPopState: the back slide plays only when the screen changed and the system did not slide already", () => {
+  const w = fakeWindow();
+  const log: string[] = [];
+  const cur = { screen: { name: "thread", id: "a" }, sheet: null } as Nav;
+  listenPopState(w as never, { search: () => "", current: () => cur, set: (n) => log.push(`set ${n.screen.name}`), slide: (f) => (log.push("slide"), f()) });
+  w.pop({ screen: { name: "inbox" }, sheet: null });
+  w.pop({ screen: { name: "inbox" }, sheet: null }, { hasUAVisualTransition: true });
+  w.pop({ screen: { name: "thread", id: "a" }, sheet: { kind: "actions" } });
+  assert.deepEqual(log, ["slide", "set inbox", "set inbox", "set thread"]);
+});
