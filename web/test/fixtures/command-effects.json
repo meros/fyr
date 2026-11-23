@@ -2053,10 +2053,14 @@
         "word": "Run"
       },
       "after": {
-        "state": "done",
-        "section": "seen"
+        "state": "waiting",
+        "section": "working"
       },
       "path": [
+        {
+          "state": "waiting",
+          "section": "working"
+        },
         {
           "state": "done",
           "section": "seen"

@@ -1383,12 +1383,14 @@ export function createMockServer(scenario: string, real0: number): MockServer {
           : null;
         const need: Partial<ThreadDTO> = !o.request || t.attention.word !== "Run" || ch || on === "view" ? {}
           : next ? { attention: { ...t.attention, reason: `Run: ${next.why ?? ""}`, subject: next.why } }
-          : t.decisions?.length ? {} : { attention: { state: readState(t), section: "seen", reason: "" } };
+          : t.decisions?.length ? {} : { attention: { state: "waiting", section: "working", reason: `Waiting for command: ${o.why ?? ""}` } }; // V0.waiting-for-command
         put(t, { ...withRuns(t, (rs) => [...(rs ?? []), run]), ...need });
         setTimeout(() => {
           const cur = threads.get(t.id)!;
           const done = { ...run, running: false, ok: true, output: `$ ${(o.argv ?? [o.effect]).join(" ")}\nok (mock)`, endedAt: new Date(clock()).toISOString() };
-          put(cur, withRuns(cur, (rs) => (rs ?? []).map((r) => (r === run || (r.action === run.action && r.running) ? done : r))));
+          // V0.waiting-for-command: the end of the command ends the wait.
+          const ends: Partial<ThreadDTO> = o.request && cur.attention.state === "waiting" ? { attention: { state: readState(cur), section: "seen", reason: "" } } : {};
+          put(cur, { ...withRuns(cur, (rs) => (rs ?? []).map((r) => (r === run || (r.action === run.action && r.running) ? done : r))), ...ends });
           // V0.mock-contract: the end of a run the agent asked for tells the agent, which takes a turn, as on the host.
           if (o.request && !cur.running) runFor(t.id, "The command ran; going on. (mock)");
         }, 1200);
