@@ -58,3 +58,10 @@ test("V0.admission-tidy: a grower has no row in Waiting to run and stays in its 
   );
   assert.ok(sec.working.some((t) => t.id === "t_a"), "the grower left its group");
 });
+
+test("V0.grow-waits-moving: a finished thread that waits to grow is in Moving without you, not in Finished", () => {
+  const threads = { t_a: thread("t_a", "seen", "seen"), t_b: thread("t_b", "working", "working"), t_c: thread("t_c", "working", "working") };
+  const s = sections(threads, slotQueue([host]));
+  assert.ok(s.working.some((t) => t.id === "t_a"));
+  assert.ok(!s.seen.some((t) => t.id === "t_a"));
+});
