@@ -319,6 +319,7 @@ func (m *Manager) HandoverIn(threadID string, req HandoverInReq) (HandoverInResu
 			Effort:     req.Effort,
 			Data:       data,
 			HostNotice: hostNotice,
+			FirstMessage: first != "",
 		})
 		m.mu.Lock()
 		s := m.sessions[threadID]

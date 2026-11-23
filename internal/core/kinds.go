@@ -194,6 +194,11 @@ type (
 		// so a resumed session learns about a cross-host move on its next
 		// turn (decision 0039, V0.trans-host-handover).
 		HostNotice string
+		// FirstMessage: Fyr sends the new session its first message right
+		// after this (V0.handover-first-message-starting). The thread is
+		// Starting from here, so a settle Rule that waits for the work to be
+		// done does not settle it before that message starts the run.
+		FirstMessage bool
 	}
 )
 
@@ -540,6 +545,9 @@ func init() {
 			t.Failure = nil
 			t.QuotaResumes = 0
 			t.QuotaResumedAt = nil
+			if a.FirstMessage && !t.Running && t.Starting == nil {
+				t.Starting = &now
+			}
 			if a.HostNotice != "" {
 				t.Feed.Enqueue(Notice{About: "thread", Key: "handover.host", Urgency: Next, What: a.HostNotice, At: now})
 			}

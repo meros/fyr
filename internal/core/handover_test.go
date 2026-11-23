@@ -164,3 +164,40 @@ func TestThreadHandedInCreatesTargetWithHistory(t *testing.T) {
 		t.Fatalf("copied history: %+v", res.Events)
 	}
 }
+
+// V0.handover-first-message-starting: a handover that is followed by Fyr's
+// first message to the new session holds the thread "starting", so a settle
+// Rule that waits for the work to be done does not settle it in the same
+// commit and the message does not start a run on a settled thread
+// (thread-settled-run-started).
+func TestHandoverDoneWithFirstMessageDoesNotSettle(t *testing.T) {
+	now := at(1)
+	th := &Thread{ID: "t1", Profile: "a", Conversation: Conversation{Handover: &Handover{}}}
+	SettleWhenDone(th, ByOwner, at(0))
+	in := Input{Source: Observer(ObsProcess), Kind: KindHandoverDone, Thread: "t1",
+		Args: HandoverDoneArgs{Profile: "b", Model: "m", FirstMessage: true}}
+	after, v, _, err := Reduce(th, &View{User: Owner, Entity: "t1"}, in, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Settle.At != nil {
+		t.Fatalf("thread settled while the first message is on its way: %+v", after.Settle)
+	}
+	// The manager's message.sent then starts the run.
+	sent := Input{Source: Observer(ObsProcess), Kind: KindMessageSent, Thread: "t1", Args: MessageSentArgs{ID: "m1"}}
+	run := Input{Source: Observer(ObsProcess), Kind: KindRunStarted, Thread: "t1"}
+	for _, x := range []Input{sent, run} {
+		before := after
+		var res Result
+		after, v, res, err = Reduce(before, v, x, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if vs := CheckTransition(before, v, after, v, x, res, now, nil); len(vs) > 0 {
+			t.Fatalf("%s: %+v", x.Kind, vs)
+		}
+	}
+	if !after.Running || after.Settle.At != nil {
+		t.Fatalf("running=%v settle=%v", after.Running, after.Settle.At)
+	}
+}
