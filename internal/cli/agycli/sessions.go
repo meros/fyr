@@ -2,7 +2,6 @@ package agycli
 
 import (
 	"encoding/json"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +65,7 @@ func CopySession(src, fromDir, toDir, sid string) error {
 			}
 		}
 	}
-	return copyTree(filepath.Join(fromDir, "brain", sid), filepath.Join(toDir, "brain", sid))
+	return fsutil.CopyTree(filepath.Join(fromDir, "brain", sid), filepath.Join(toDir, "brain", sid))
 }
 
 // LoggedIn reports whether Antigravity CLI has a stored login for auth `a`
@@ -103,25 +102,4 @@ func hasOnboardingComplete(path string) bool {
 		return false
 	}
 	return o.OnboardingComplete || o.ConsumerOnboardingComplete || o.EnterpriseOnboardingComplete
-}
-
-
-func copyTree(src, dst string) error {
-	if _, err := os.Stat(src); err != nil {
-		return nil
-	}
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(src, p)
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o700)
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		return fsutil.CopyFile(p, target, 0o600)
-	})
 }

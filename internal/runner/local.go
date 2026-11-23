@@ -1,26 +1,37 @@
-package claude
+package runner
 
 import (
 	"bufio"
 	"fmt"
 	"io"
 	"os/exec"
-	"sync"
 
 	"github.com/meros/fyr/internal/proc"
 )
 
-// child is the pipe to a CLI that runs as fyrd's own child: the way before
-// V0.90, and the way without a runner (tests, a run without the launcher).
-type child struct {
-	cmd    *exec.Cmd
-	in     io.WriteCloser
-	out    io.ReadCloser
-	sc     *bufio.Scanner
-	stderr *tail
+// Start starts s.Binary with s.Args under wrap (a command line that puts it
+// in a scope of its own, V0.agents-unit; nil for none): in the runner rc
+// when it is set, so the process outlives fyrd (V0.90), else as fyrd's own
+// child (tests, a run without the launcher). Every agent CLI starts here.
+func Start(rc *Client, s Spawn, wrap []string) (Pipe, error) {
+	if len(wrap) > 0 {
+		s.Args = append(append(append([]string{}, wrap[1:]...), s.Binary), s.Args...)
+		s.Binary = wrap[0]
+	}
+	if rc != nil {
+		p, err := rc.Spawn(s)
+		if err != nil {
+			return nil, err // not a nil *Conn in a non-nil Pipe
+		}
+		return p, nil
+	}
+	return StartLocal(s.Binary, s.Args, s.Dir, s.Env, s.Cgroup)
 }
 
-func startChild(bin string, args []string, dir string, env []string, cgroup string) (*child, error) {
+// StartLocal starts a CLI as fyrd's own child and returns the pipe to it:
+// the way before V0.90, and the way without a runner. A line carries no
+// sequence number and Ack does nothing.
+func StartLocal(bin string, args []string, dir string, env []string, cgroup string) (Pipe, error) {
 	cmd := exec.Command(bin, args...)
 	cmd.Dir, cmd.Env = dir, env
 	proc.Group(cmd) // Kill stops the CLI and what it started (#39)
@@ -43,6 +54,15 @@ func startChild(bin string, args []string, dir string, env []string, cgroup stri
 	c.sc = bufio.NewScanner(c.out)
 	c.sc.Buffer(make([]byte, 1<<20), 64<<20)
 	return c, nil
+}
+
+// child is the pipe to a CLI that runs as fyrd's own child.
+type child struct {
+	cmd    *exec.Cmd
+	in     io.WriteCloser
+	out    io.ReadCloser
+	sc     *bufio.Scanner
+	stderr *tail
 }
 
 func (c *child) WriteLine(b []byte) error {
@@ -78,26 +98,3 @@ func (c *child) Kill() {
 
 func (c *child) Ack(int64, []int64) {}
 func (c *child) Pid() int           { return c.cmd.Process.Pid }
-
-// tail keeps the last max bytes written to it.
-type tail struct {
-	mu  sync.Mutex
-	buf []byte
-	max int
-}
-
-func (t *tail) Write(p []byte) (int, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.buf = append(t.buf, p...)
-	if len(t.buf) > t.max {
-		t.buf = t.buf[len(t.buf)-t.max:]
-	}
-	return len(p), nil
-}
-
-func (t *tail) String() string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return string(t.buf)
-}

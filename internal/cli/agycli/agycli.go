@@ -15,7 +15,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/meros/fyr/internal/cli"
@@ -138,15 +137,7 @@ func (Adapter) Env(l cli.Launch) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("agy: unknown auth %q", l.Auth.Kind)
 	}
-	keys := make([]string, 0, len(l.Endpoint.ModelEnv))
-	for k := range l.Endpoint.ModelEnv {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		env = append(env, k+"="+l.Endpoint.ModelEnv[k])
-	}
-	return env, nil
+	return append(env, l.Endpoint.Env()...), nil
 }
 
 // Args are the `agy` flags for an ACP session launch.
@@ -361,7 +352,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 					return strings.TrimSpace(lastText), nil
 				}
 				if serr := sess.Err(); serr != nil {
-					return "", fmt.Errorf("agy: %s", trimErr(serr.Error()))
+					return "", fmt.Errorf("agy: %s", cli.ErrText(serr.Error(), "unknown error"))
 				}
 				return "", fmt.Errorf("agy: ended without a response")
 			}
@@ -382,7 +373,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 				isErr, _ := msg["is_error"].(bool)
 				res, _ := msg["result"].(string)
 				if isErr {
-					return "", fmt.Errorf("agy: %s", trimErr(res))
+					return "", fmt.Errorf("agy: %s", cli.ErrText(res, "unknown error"))
 				}
 				if res != "" {
 					return strings.TrimSpace(res), nil
@@ -393,17 +384,6 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 			return "", fmt.Errorf("no answer in time")
 		}
 	}
-}
-
-func trimErr(msg string) string {
-	msg = strings.TrimSpace(msg)
-	if r := []rune(msg); len(r) > 300 {
-		msg = "…" + string(r[len(r)-300:])
-	}
-	if msg == "" {
-		return "unknown error"
-	}
-	return msg
 }
 
 func (Adapter) SessionsDir(a cli.Auth) string { return SessionsDir(a) }

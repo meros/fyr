@@ -12,7 +12,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
+	"maps"
+	"slices"
 
 	"github.com/meros/fyr/internal/runner"
 )
@@ -49,6 +52,16 @@ type Endpoint struct {
 	// ModelEnv: non-secret variables naming models for the CLI's internal
 	// roles, e.g. ANTHROPIC_DEFAULT_HAIKU_MODEL.
 	ModelEnv map[string]string `json:"modelEnv,omitempty"`
+}
+
+// Env is ModelEnv as KEY=VALUE, sorted by name: a launch's environment
+// is the same for the same endpoint.
+func (e Endpoint) Env() []string {
+	out := make([]string, 0, len(e.ModelEnv))
+	for _, k := range slices.Sorted(maps.Keys(e.ModelEnv)) {
+		out = append(out, k+"="+e.ModelEnv[k])
+	}
+	return out
 }
 
 // Model is one model a provider offers, with what it supports.
@@ -246,6 +259,20 @@ type Adapter interface {
 type Printer interface {
 	Print(ctx context.Context, l Launch, system, prompt string) (string, error)
 }
+
+// SessionArchiver is an adapter that can move a session to another host
+// (cross-host handover rung 1, decision 0039): ExportSession packs session
+// sid (its transcript src, under the sessions folder fromDir) into an archive
+// of at most maxBytes; ImportSession unpacks one under toDir so a resume in
+// targetCwd finds it. A session over maxBytes is ErrSessionTooLarge.
+type SessionArchiver interface {
+	ExportSession(src, fromDir, sid string, maxBytes int64) ([]byte, error)
+	ImportSession(archive []byte, toDir, targetCwd, sid string, maxBytes int64) error
+}
+
+// ErrSessionTooLarge: a session archive exceeds the transfer cap; the
+// handover falls back to rung 2 (decision 0039, V0.trans-host-handover).
+var ErrSessionTooLarge = errors.New("session transcript is too large to transfer")
 
 // Accepts reports whether the adapter takes an auth kind.
 func Accepts(a Adapter, k AuthKind) bool {

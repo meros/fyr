@@ -8,12 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/runner"
@@ -57,26 +54,14 @@ func Env(extra ...string) []string {
 
 // SeqKey is the key under which a message from a runner carries its
 // sequence number; Handled acks it.
-const SeqKey = "_fyrSeq"
+const SeqKey = runner.SeqKey
 
 type Client struct {
-	pipe runner.Pipe
-	wmu  sync.Mutex
-	// amu guards the ack state (V0.90). An ack covers every line up to it,
-	// so it stops before the oldest message the consumer has not handled,
-	// and it keeps the CLI's requests that wait for an answer: the runner
-	// knows nothing of the protocol, so the next fyrd gets them only if
-	// this one says so.
-	amu      sync.Mutex
-	unacked  []int64          // seqs on Out, not handled yet, in order
-	open     map[string]int64 // the CLI's control requests not answered → seq
-	seen     int64            // the newest seq read
-	lastAck  int64
-	lastKeep []int64
-	pmu      sync.Mutex
-	pending  map[string]chan Msg
-	seq      atomic.Int64
-	log      io.Writer
+	// Link writes and logs lines and keeps the runner's ack state (V0.90).
+	*runner.Link
+	pmu     sync.Mutex
+	pending map[string]chan Msg
+	seq     atomic.Int64
 
 	// Out carries every message that is not a control message. It closes
 	// when the process stdout closes.
@@ -97,24 +82,12 @@ type Client struct {
 func Start(s Spec) (*Client, error) {
 	base := []string{"--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
 		"--permission-prompt-tool", "stdio"}
-	args := append(base, s.Args...)
 	// #167: an agent process never gets the launcher's variables, which
 	// name the live install (its runner and ready file). V0.agent-env: nor a
 	// credential or endpoint variable from whoever started fyrd; the
 	// adapter's (s.Env) are the only ones it gets.
-	env := Env(s.Env...)
-	if len(s.Wrap) > 0 {
-		args = append(append(append([]string{}, s.Wrap[1:]...), s.Binary), args...)
-		s.Binary = s.Wrap[0]
-	}
-	if s.Runner != nil {
-		p, err := s.Runner.Spawn(runner.Spawn{ID: s.ID, Key: s.Key, Binary: s.Binary, Args: args, Dir: s.Dir, Env: env, Cgroup: s.Cgroup, Meta: s.Meta})
-		if err != nil {
-			return nil, err
-		}
-		return Open(p, s.Log, nil), nil
-	}
-	p, err := startChild(s.Binary, args, s.Dir, env, s.Cgroup)
+	p, err := runner.Start(s.Runner, runner.Spawn{ID: s.ID, Key: s.Key, Binary: s.Binary, Args: append(base, s.Args...),
+		Dir: s.Dir, Env: Env(s.Env...), Cgroup: s.Cgroup, Meta: s.Meta}, s.Wrap)
 	if err != nil {
 		return nil, err
 	}
@@ -126,91 +99,12 @@ func Start(s Spec) (*Client, error) {
 // first line is read: a kept process may have a permission request waiting,
 // and without OnCanUseTool the client would allow it.
 func Open(p runner.Pipe, log io.Writer, setup func(*Client)) *Client {
-	c := &Client{pipe: p, pending: map[string]chan Msg{}, Out: make(chan Msg, 256), log: log, done: make(chan struct{}), open: map[string]int64{}}
+	c := &Client{Link: runner.NewLink(p, log), pending: map[string]chan Msg{}, Out: make(chan Msg, 256), done: make(chan struct{})}
 	if setup != nil {
 		setup(c)
 	}
 	go c.read()
 	return c
-}
-
-func (c *Client) Pid() int { return c.pipe.Pid() }
-
-// Pipe is the link to the process.
-func (c *Client) Pipe() runner.Pipe { return c.pipe }
-
-// Handled says that the consumer of Out is done with m: a later fyrd does
-// not get it again from the runner (V0.90).
-func (c *Client) Handled(m Msg) {
-	seq, ok := m[SeqKey].(int64)
-	if !ok {
-		return
-	}
-	c.amu.Lock()
-	for i, x := range c.unacked {
-		if x == seq {
-			c.unacked = append(c.unacked[:i], c.unacked[i+1:]...)
-			break
-		}
-	}
-	c.amu.Unlock()
-	c.ack()
-}
-
-// read notes a line: queued for the consumer, or dispatched here.
-func (c *Client) note(seq int64, queued bool) {
-	if seq == 0 {
-		return
-	}
-	c.amu.Lock()
-	c.seen = seq
-	if queued {
-		c.unacked = append(c.unacked, seq)
-	}
-	c.amu.Unlock()
-}
-
-// ack acks every line before the oldest unhandled message, and keeps the
-// requests still open.
-func (c *Client) ack() {
-	c.amu.Lock()
-	upTo := c.seen
-	if len(c.unacked) > 0 {
-		upTo = c.unacked[0] - 1
-	}
-	var keep []int64
-	for _, seq := range c.open {
-		if seq <= upTo {
-			keep = append(keep, seq)
-		}
-	}
-	sort.Slice(keep, func(i, j int) bool { return keep[i] < keep[j] })
-	same := upTo == c.lastAck && slices.Equal(keep, c.lastKeep)
-	c.lastAck, c.lastKeep = upTo, keep
-	c.amu.Unlock()
-	if !same {
-		c.pipe.Ack(upTo, keep)
-	}
-}
-
-// opened and answered track the CLI's control requests (V0.90).
-func (c *Client) opened(id string, seq int64) {
-	if seq == 0 || id == "" {
-		return
-	}
-	c.amu.Lock()
-	c.open[id] = seq
-	c.amu.Unlock()
-}
-
-func (c *Client) answered(id string) {
-	c.amu.Lock()
-	_, ok := c.open[id]
-	delete(c.open, id)
-	c.amu.Unlock()
-	if ok {
-		c.ack()
-	}
 }
 
 // Done closes after the process exited and stdout is drained.
@@ -219,34 +113,17 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 // Err is the exit error, valid after Done; it includes the stderr tail.
 func (c *Client) Err() error { return c.err }
 
-func (c *Client) logf(dir string, line []byte) {
-	if c.log != nil {
-		fmt.Fprintf(c.log, "%s %s %s\n", time.Now().Format("15:04:05.000"), dir, line)
-	}
-}
-
-func (c *Client) write(m Msg) error {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
-	c.logf(">>", b)
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.pipe.WriteLine(b)
-}
-
 func (c *Client) read() {
 	for {
-		line, seq, err := c.pipe.ReadLine()
+		line, seq, err := c.Pipe().ReadLine()
 		if err != nil {
 			break
 		}
-		c.logf("<<", line)
+		c.Logf("<<", line)
 		var m Msg
 		if err := json.Unmarshal(line, &m); err != nil {
-			c.note(seq, false)
-			c.ack()
+			c.Note(seq, false)
+			c.Ack()
 			continue
 		}
 		switch m["type"] {
@@ -262,11 +139,11 @@ func (c *Client) read() {
 			}
 		case "control_request":
 			id, _ := m["request_id"].(string)
-			c.opened(id, seq) // kept for the next fyrd until answered
+			c.Opened(id, seq) // kept for the next fyrd until answered
 			go c.handle(m)
 		case "control_cancel_request":
 			id, _ := m["request_id"].(string)
-			c.answered(id)
+			c.Answered(id)
 			if id != "" && c.OnCancel != nil {
 				c.OnCancel(id)
 			}
@@ -275,16 +152,16 @@ func (c *Client) read() {
 			if seq > 0 {
 				m[SeqKey] = seq // acked by Handled, after the consumer is done
 			}
-			c.note(seq, true)
+			c.Note(seq, true)
 			c.Out <- m
 			continue
 		}
 		// A control line is done once dispatched; an open request stays in
 		// the keep list until answered.
-		c.note(seq, false)
-		c.ack()
+		c.Note(seq, false)
+		c.Ack()
 	}
-	c.err = c.pipe.Wait()
+	c.err = c.Pipe().Wait()
 	c.pmu.Lock()
 	for id, ch := range c.pending {
 		close(ch)
@@ -320,13 +197,13 @@ func (c *Client) handle(m Msg) {
 			}
 		}
 	default:
-		c.write(Msg{"type": "control_response", "response": Msg{"subtype": "error", "request_id": id,
+		c.Write(Msg{"type": "control_response", "response": Msg{"subtype": "error", "request_id": id,
 			"error": "unsupported: " + fmt.Sprint(req["subtype"])}})
-		c.answered(id)
+		c.Answered(id)
 		return
 	}
-	if c.write(Msg{"type": "control_response", "response": Msg{"subtype": "success", "request_id": id, "response": payload}}) == nil {
-		c.answered(id)
+	if c.Write(Msg{"type": "control_response", "response": Msg{"subtype": "success", "request_id": id, "response": payload}}) == nil {
+		c.Answered(id)
 	}
 }
 
@@ -345,7 +222,7 @@ func (c *Client) Request(ctx context.Context, req Msg) (Msg, error) {
 		delete(c.pending, id)
 		c.pmu.Unlock()
 	}()
-	if err := c.write(Msg{"type": "control_request", "request_id": id, "request": req}); err != nil {
+	if err := c.Write(Msg{"type": "control_request", "request_id": id, "request": req}); err != nil {
 		return nil, err
 	}
 	select {
@@ -392,7 +269,7 @@ func (c *Client) SendUser(content []Msg, uuid string) error {
 	if uuid != "" {
 		m["uuid"] = uuid
 	}
-	return c.write(m)
+	return c.Write(m)
 }
 
 // CancelMessage withdraws a queued user message (cancel_async_message). It
@@ -408,8 +285,8 @@ func (c *Client) CancelMessage(ctx context.Context, uuid string) (bool, error) {
 }
 
 // Close ends the session by closing stdin; the CLI exits on its own.
-func (c *Client) Close() error { return c.pipe.CloseInput() }
+func (c *Client) Close() error { return c.Pipe().CloseInput() }
 
 // Kill stops the process and everything it started, at once. Done closes
 // even when a child that left the process group still holds stdout (#39).
-func (c *Client) Kill() { c.pipe.Kill() }
+func (c *Client) Kill() { c.Pipe().Kill() }

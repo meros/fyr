@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/runner"
 )
 
 // TestMain lets this test binary double as a real subprocess fake `agy` ACP
@@ -803,7 +803,7 @@ func TestACPReattachFinishesMidTurn(t *testing.T) {
 	if gotAssistant == nil || gotResult == nil {
 		t.Fatalf("expected assistant and result on reattach, got assistant=%v result=%v", gotAssistant, gotResult)
 	}
-	if gotResult["result"] != "part1 part2" || gotResult[claude.SeqKey] != int64(12) {
+	if gotResult["result"] != "part1 part2" || gotResult[runner.SeqKey] != int64(12) {
 		t.Fatalf("unexpected reattached result: %+v", gotResult)
 	}
 	p.mu.Lock()
@@ -1026,7 +1026,7 @@ func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
 		t.Fatalf("expected pre-restart assistant text, got %+v", m)
 	}
 	res1 := readMsg()
-	if res1["type"] != "result" || res1["result"] != "pre-restart done" || res1[claude.SeqKey] != int64(12) {
+	if res1["type"] != "result" || res1["result"] != "pre-restart done" || res1[runner.SeqKey] != int64(12) {
 		t.Fatalf("unexpected pre-restart result: %+v", res1)
 	}
 	handled.Handled(res1)
@@ -1051,7 +1051,7 @@ func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
 		t.Fatalf("expected q2 completed, got %+v", m)
 	}
 	res2 := readMsg()
-	if res2["type"] != "result" || res2[claude.SeqKey] != int64(13) {
+	if res2["type"] != "result" || res2[runner.SeqKey] != int64(13) {
 		t.Fatalf("expected q2 result carrying seq 13, got %+v", res2)
 	}
 	if got := p.acked(); got >= 13 {
@@ -1077,7 +1077,7 @@ func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
 		t.Fatalf("expected q3 completed, got %+v", m)
 	}
 	res3 := readMsg()
-	if res3["type"] != "result" || res3[claude.SeqKey] != int64(14) {
+	if res3["type"] != "result" || res3[runner.SeqKey] != int64(14) {
 		t.Fatalf("expected q3 result carrying seq 14, got %+v", res3)
 	}
 	handled.Handled(res3)
