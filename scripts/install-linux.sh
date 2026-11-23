@@ -18,15 +18,16 @@
 # it (it stays there until you change the channel).
 #
 # Run it as the user Fyr runs as, not as root. Your part (the release in
-# ~/.local/share/fyr, the cgroups keys in ~/.config/fyr/config.json) runs as
-# you. The system part needs root and goes through sudo, each command shown
+# ~/.local/share/fyr, the link ~/.local/bin/fyr to its launcher, the cgroups
+# and updateChannel keys in ~/.config/fyr/config.json) runs as you. The system part needs root and goes through sudo, each command shown
 # before it runs: the unit, the agents' slice fyr-agents.slice, the polkit
 # rule that lets you start the agents' scopes in it (and pause and resume
 # fyr.service from the Linux app, decision 0038), the helper that hands you
 # the slice's memory.pressure, then daemon-reload, enable and restart.
 # --print shows every file and command and changes nothing (no download, no
 # sudo). Run it again to reinstall and restart; --uninstall stops and removes
-# the unit and the root files (the data and the config stay).
+# the unit, the root files and the ~/.local/bin/fyr link (the data and the
+# config stay).
 set -euo pipefail
 
 mode=install
