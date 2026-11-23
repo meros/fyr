@@ -78,7 +78,7 @@
 .rw .hd .pin,.one .hd .pin{position:absolute;left:calc(var(--rh,0px) + var(--ri) + 5px);top:calc((var(--tlh) - 12px) / 2);display:grid;place-items:center;color:var(--harbour)}
 .rpn{color:var(--ink-muted)}
 /* A long project or provider name ends in … and leaves the row's line room for what follows it. */
-.m .rpn{white-space:nowrap} /* V0.row-calm: cut in the text (clipName), so no gap before the "·" */
+.m .rpn{white-space:nowrap} /* V0.row-calm: cut in the text (rowProjectName), so no gap before the "·" */
 .m .rpv{display:inline-block;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
 .rpv .pdot{display:inline-block;width:7px;height:7px;margin-right:4px;vertical-align:1px}
 .from.mark{margin-right:5px;color:var(--ink-faint);font:inherit;text-decoration:none}

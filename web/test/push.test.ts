@@ -109,7 +109,8 @@ test("the open message goes to every window of the origin", () => {
 });
 
 // V0.119: Settings → This device → Notifications: the row's words and whether its switch works.
-import { pushRow, parsePushPrefs, FINISHED_DESC, QUOTA_RESET_DESC } from "../src/push.ts";
+import { pushRow, decodePushPrefs, DEFAULT_PUSH_PREFS, FINISHED_DESC, QUOTA_RESET_DESC } from "../src/push.ts";
+import { parseJson } from "../src/decode.ts";
 const PLAIN = "When a thread needs you: a question, an approval, a failure.";
 
 test("the Notifications row per state", () => {
@@ -123,11 +124,11 @@ test("the Notifications row per state", () => {
 });
 
 test("V0.notification-polish, V0.quota-reset-wake: finished threads are on by default, quota resets opt-in", () => {
-  assert.deepEqual(parsePushPrefs(null), { finished: true, quotaReset: false });
-  assert.deepEqual(parsePushPrefs("not json"), { finished: true, quotaReset: false });
-  assert.deepEqual(parsePushPrefs("{}"), { finished: true, quotaReset: false });
-  assert.deepEqual(parsePushPrefs('{"finished":false}'), { finished: false, quotaReset: false });
-  assert.deepEqual(parsePushPrefs('{"finished":true,"quotaReset":true}'), { finished: true, quotaReset: true });
+  assert.deepEqual(parseJson(null, decodePushPrefs, DEFAULT_PUSH_PREFS), { finished: true, quotaReset: false });
+  assert.deepEqual(parseJson("not json", decodePushPrefs, DEFAULT_PUSH_PREFS), { finished: true, quotaReset: false });
+  assert.deepEqual(parseJson("{}", decodePushPrefs, DEFAULT_PUSH_PREFS), { finished: true, quotaReset: false });
+  assert.deepEqual(parseJson('{"finished":false}', decodePushPrefs, DEFAULT_PUSH_PREFS), { finished: false, quotaReset: false });
+  assert.deepEqual(parseJson('{"finished":true,"quotaReset":true}', decodePushPrefs, DEFAULT_PUSH_PREFS), { finished: true, quotaReset: true });
   assert.match(FINISHED_DESC, /finishes/);
   assert.match(QUOTA_RESET_DESC, /quota window resets/);
 });

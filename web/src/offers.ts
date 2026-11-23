@@ -1,6 +1,6 @@
 // Changes and actions in the client (SPEC 0.5 V0.59, V0.60, decision 0018). Pure: what a change shows, which
 // actions the owner can press now, and the words for the conversation lines.
-import { dayMonth, clockTime, ago } from "./format.ts";
+import { dayMonth, clockTime, ago, clip } from "./format.ts";
 
 import type { Change, ChangeNeed, ChangePhase, Offer, OfferRun, PullRequest, Thread } from "./types.ts";
 import { shortHead } from "./pr.ts";
@@ -220,7 +220,7 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
   const phase = c.phase === "working" ? "change open" : c.phase;
   const word = fail ? `${fail.type} failed` : c.parked ? "not now" : needsOwner(c) ? "needs you" : c.label || phase;
   const more = live.length > 1 ? ` +${live.length - 1}` : "";
-  return { text: short ? `${word}${more}` : `${clip(c.title)} · ${word}${more}`, cls: fail ? "fail" : c.phase === "live" ? "ok" : "", title: `${c.title} · ${c.phase === "working" ? [phase, c.label].filter(Boolean).join(" · ") : phaseText(c)}` };
+  return { text: short ? `${word}${more}` : `${clip(c.title, 24)} · ${word}${more}`, cls: fail ? "fail" : c.phase === "live" ? "ok" : "", title: `${c.title} · ${c.phase === "working" ? [phase, c.label].filter(Boolean).join(" · ") : phaseText(c)}` };
 }
 
 /** Canonical key for deduplicating PR URLs (ignores /files, #fragments, and case). */
@@ -297,8 +297,6 @@ export function prForEffect(t: Pick<Thread, "pr"> & { changes?: Change[] }, d?: 
   }
   return t.pr;
 }
-
-const clip = (s: string) => (s.length > 24 ? `${s.slice(0, 23)}…` : s);
 
 /** A `change` event as one conversation line (V0.59 (5)). */
 export function changeEventLine(d: Record<string, unknown> | undefined): string {

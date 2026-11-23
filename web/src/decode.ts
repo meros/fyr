@@ -5,9 +5,26 @@ import { decodeHosts } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
 import type { Attention, Change, ChangePhase, Decision, NewProjectDraft, Offer, OfferRun, Project, StateDTO, Thread } from "./types.ts";
 
-const str = (v: unknown): string => (typeof v === "string" ? v : "");
+export const str = (v: unknown): string => (typeof v === "string" ? v : "");
 export const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
-export const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+/** A JSON object, or undefined for anything else (an array, null, a scalar): a decoder's way to refuse a shape. */
+export const asObject = (v: unknown): Record<string, unknown> | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
+export const obj = (v: unknown): Record<string, unknown> => asObject(v) ?? {};
+/** The non-empty strings of a list, each once, in order; what is not a list is none. */
+export const strings = (v: unknown): string[] => [...new Set(arr<unknown>(v).filter((x): x is string => typeof x === "string" && !!x))];
+/** The boolean fields of an object; what is not an object has none. */
+export const flags = (v: unknown): Record<string, boolean> => Object.fromEntries(Object.entries(obj(v)).filter((e): e is [string, boolean] => typeof e[1] === "boolean"));
+
+/** V0.web-helpers: JSON text through a decoder. The fallback when there is no text, it does not parse, or the decoder
+ *  refuses its shape (returns undefined): never an exception, never a value of the wrong type. */
+export function parseJson<T>(raw: string | null | undefined, decode: (v: unknown) => T | undefined, fallback: T): T {
+  if (raw === null || raw === undefined || raw === "") return fallback;
+  try {
+    return decode(JSON.parse(raw)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const NO_ATTENTION: Attention = { state: "seen", section: "seen", reason: "" } as Attention;
 
@@ -22,7 +39,7 @@ const PHASES: readonly string[] = ["working", "review", "landed", "live", "aband
 const OWNERS = ["agent", "observed", "owner"] as const;
 
 /** The records of a list: what is not an object is none. */
-const records = (v: unknown): Record<string, unknown>[] => arr<unknown>(v).filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x));
+const records = (v: unknown): Record<string, unknown>[] => arr<unknown>(v).filter((x): x is Record<string, unknown> => !!asObject(x));
 
 /** A change with the fields the screens read without a check (`updatedAt` sorts the list, `phase` picks the chip). */
 export function decodeChange(raw: Record<string, unknown>): Change {

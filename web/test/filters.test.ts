@@ -2,7 +2,8 @@
 // the projects, follows from it. Only active values show; a selected value (a project picked, a host off) stays.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeFilters, applyFilters, clickHost, filterEmpty, inView, parseHostsOff, threadHost, toggleHost, type FilterSel } from "../src/filters.ts";
+import { activeFilters, applyFilters, clickHost, filterEmpty, inView, threadHost, toggleHost, type FilterSel } from "../src/filters.ts";
+import { parseJson, strings } from "../src/decode.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project, Thread } from "../src/types.ts";
 import { thread, hid } from "./helpers.ts";
@@ -125,11 +126,11 @@ test("V0.client-refs: a host is filtered by its install id; two hosts with one n
   assert.deepEqual(Object.keys(applyFilters(threads, S(["AAAA-1111-AAAA-1111"]), projects)).sort(), ["BBBB-2222-BBBB-2222/t_1"]);
 });
 
-test("parseHostsOff: what the device stored, else none off", () => {
-  assert.deepEqual(parseHostsOff(null), []);
-  assert.deepEqual(parseHostsOff('["lab","desk"]'), ["lab", "desk"]);
-  assert.deepEqual(parseHostsOff("not json"), []);
-  assert.deepEqual(parseHostsOff('[1,"lab",null]'), ["lab"]);
+test("hosts off (strings): what the device stored, else none off", () => {
+  assert.deepEqual(parseJson(null, strings, []), []);
+  assert.deepEqual(parseJson('["lab","desk"]', strings, []), ["lab", "desk"]);
+  assert.deepEqual(parseJson("not json", strings, []), []);
+  assert.deepEqual(parseJson('[1,"lab",null]', strings, []), ["lab"]);
 });
 
 test("applyFilters: hosts on AND project; a project that no longer exists filters nothing", () => {

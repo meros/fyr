@@ -2,7 +2,7 @@
 // then the newest run request not yet run.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardDomId, dockRun, firstLine, waitingRuns } from "../src/runcard.ts";
+import { cardDomId, dockRun, firstCommandLine, waitingRuns } from "../src/runcard.ts";
 import type { Decision, Offer, OfferRun } from "../src/types.ts";
 
 const req = (id: string): Offer => ({ id, on: "thread", label: "Run", run: "script", request: true, command: `echo ${id}`, why: id, by: "agent", digest: id });
@@ -27,9 +27,9 @@ test("V0.next-step-dock (3): a question or approval comes first; the requests co
 });
 
 test("V0.next-step-dock (3): the dock shows the command's first line, … when there are more", () => {
-  assert.equal(firstLine("nixos-rebuild switch"), "nixos-rebuild switch");
-  assert.equal(firstLine("cd /etc\nnixos-rebuild switch\n"), "cd /etc …");
-  assert.equal(firstLine("one\n"), "one");
+  assert.equal(firstCommandLine("nixos-rebuild switch"), "nixos-rebuild switch");
+  assert.equal(firstCommandLine("cd /etc\nnixos-rebuild switch\n"), "cd /etc …");
+  assert.equal(firstCommandLine("one\n"), "one");
 });
 
 test("V0.next-step-dock (3): Show in conversation finds the card by a safe element id", () => {

@@ -1,5 +1,6 @@
 // Turns the event timeline into render items. Pure.
-import { span } from "./format.ts";
+import { firstLine, middleTruncate, oneLine, span } from "./format.ts";
+import { tildePath } from "./paths.ts";
 
 import type { HostId } from "./hostid.ts";
 import { actionEventLine, changeEventLine } from "./offers.ts";
@@ -133,11 +134,6 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
-function oneLine(s: string, max = 160): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  return t.length > max ? t.slice(0, max - 1) + "…" : t;
-}
-
 function lines(v: unknown): number {
   return typeof v === "string" && v.length ? v.split("\n").length : 0;
 }
@@ -165,7 +161,7 @@ function diffStat(name: string, input: unknown): string {
 export function summarizeInput(name: string, input: unknown): string {
   const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const stat = diffStat(name, input);
-  if (stat && typeof i.file_path === "string") return `${oneLine(i.file_path)} ${stat}`;
+  if (stat && typeof i.file_path === "string") return `${oneLine(i.file_path, 160)} ${stat}`;
   const pick =
     str(i.command) ||
     str(i.file_path) ||
@@ -175,10 +171,10 @@ export function summarizeInput(name: string, input: unknown): string {
     str(i.url) ||
     str(i.query) ||
     str(i.prompt);
-  if (pick) return oneLine(pick);
+  if (pick) return oneLine(pick, 160);
   if (name && Object.keys(i).length === 0) return "";
   try {
-    return oneLine(JSON.stringify(i));
+    return oneLine(JSON.stringify(i), 160);
   } catch {
     return "";
   }
@@ -276,7 +272,7 @@ export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { 
           const text = str(e.data?.text);
           // Fyr's own messages to the agent are system notes, not the user's words: hidden unless details are on.
           if (/^\[Fyr\]/.test(text)) {
-            if (details) pushItem({ kind: "note", key, text, line: firstLine(text.replace(/^\[Fyr\]\s*/, "")) });
+            if (details) pushItem({ kind: "note", key, text, line: firstLine(text.replace(/^\[Fyr\]\s*/, ""), 100) });
             break;
           }
           const id = str(e.data?.id);
@@ -383,7 +379,7 @@ export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { 
         }
         case "effect.result": {
           const text = str(e.data?.text);
-          pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
+          pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text, 100) || (e.data?.ok ? "Done" : "Failed") });
           break;
         }
         case "tool.refused": {
@@ -444,11 +440,11 @@ export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { 
         case "effect.error": {
           // V0.45: a handover that could not start; other effect errors stay for tool details.
           const err = str(e.data?.error);
-          if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err)}` });
+          if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err, 100)}` });
           // V0.108: a title call that failed; the host's line says the title stays.
-          if (e.data?.kind === "title") pushItem({ kind: "effect", key, action: "title", ok: false, text: err, line: firstLine(err) });
+          if (e.data?.kind === "title") pushItem({ kind: "effect", key, action: "title", ok: false, text: err, line: firstLine(err, 100) });
           // V0.111: a deploy ask that Fyr did not approve by itself, or that waits for another deploy.
-          if (e.data?.kind === "autoDeploy") pushItem({ kind: "effect", key, action: "autoDeploy", ok: false, text: err, line: firstLine(err) });
+          if (e.data?.kind === "autoDeploy") pushItem({ kind: "effect", key, action: "autoDeploy", ok: false, text: err, line: firstLine(err, 100) });
           break;
         }
         case "slot":
@@ -756,22 +752,9 @@ export function fullInput(name: string, input: unknown): string {
 
 // ---- V0.21: human-readable labels ----
 
-function firstLine(text: string, max = 100): string {
-  const l = text.split("\n").find((x) => x.trim()) ?? "";
-  return oneLine(l, max);
-}
-
 function descriptionOf(input: unknown): string {
   const d = (input as { description?: unknown } | undefined)?.description;
   return typeof d === "string" ? oneLine(d, 120) : "";
-}
-
-/** Shorten in the middle, keeping the start and the more telling end: "src/…/FilterSheet.tsx". */
-export function middleTruncate(s: string, max = 40): string {
-  if (s.length <= max) return s;
-  const keep = max - 1;
-  const tail = Math.ceil(keep * 0.6);
-  return s.slice(0, keep - tail) + "…" + s.slice(s.length - tail);
 }
 
 /** A path relative to the thread's folder (or ~ for home), shortened in the middle. */
@@ -779,7 +762,7 @@ export function relPath(path: string, cwd: string, max = 40): string {
   let p = path;
   const base = cwd.replace(/\/+$/, "");
   if (base && (p === base || p.startsWith(base + "/"))) p = p.slice(base.length + 1) || ".";
-  else p = p.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
+  else p = tildePath(p);
   return middleTruncate(p, max);
 }
 

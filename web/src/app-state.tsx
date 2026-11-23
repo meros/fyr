@@ -1,7 +1,8 @@
 // The shell's state: the store, the filters, search and quiet hours, the sections and rows the list draws, the open
 // thread, the dialogs. The first hook of the App in app.tsx; the others take what it returns.
 
-import { storedGet, storedSet } from "./prefs.ts";
+import { storedGet, storedJson, storedSet } from "./prefs.ts";
+import { strings } from "./decode.ts";
 import { type Zone, type Dialog, readTheme, usePhone, useViewportVars, useStaticPage, params } from "./app-util.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Thread } from "./types.ts";
@@ -23,7 +24,7 @@ import {
 } from "./store.ts";
 import { placeOf, steadyThreads, stillRows, trackArrivals, type FinishHold, type RowPlace } from "./still-list.ts";
 import { useListAnchor } from "./still-list-ui.ts";
-import { SECTION_OPEN_KEY, guestOf, hiddenWhy, markedRow, parseSectionOpen } from "./selection.ts";
+import { SECTION_OPEN_KEY, guestOf, hiddenWhy, markedRow, decodeSectionOpen } from "./selection.ts";
 import { initialTracker, type SeenTracker } from "./seen.ts";
 import { type AnswerMove, arrivalOnOpen } from "./arrived.ts";
 import { type CardState } from "./question.ts";
@@ -33,8 +34,8 @@ import { useSlotQueue } from "./slot-queue-ui.tsx";
 import { pushEnv } from "./pwa.ts";
 import { unsupportedReason, type PushStatus } from "./push.ts";
 import { FILTER_KEY, findProject } from "./projects.ts";
-import { HIDDEN_KEY, applyHidden, hiddenCount, parseHidden, type Hidden } from "./hidden.ts";
-import { HOSTS_OFF_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, parseHostsOff, type FilterSel } from "./filters.ts";
+import { HIDDEN_KEY, applyHidden, hiddenCount, decodeHidden, NOTHING_HIDDEN, type Hidden } from "./hidden.ts";
+import { HOSTS_OFF_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { initialEntries, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
@@ -55,7 +56,7 @@ export function useAppState() {
   const hostOfId = (id: string) => hostOfThread(rawRef.current, id);
   // V0.207: what this device hides is gone from `store`, so every list on both fronts follows. Settings and the cache
   // read `fullStore`.
-  const [deviceHidden, setHiddenState] = useState<Hidden>(() => parseHidden(storedGet(HIDDEN_KEY)));
+  const [deviceHidden, setHiddenState] = useState<Hidden>(() => storedJson(HIDDEN_KEY, decodeHidden, NOTHING_HIDDEN));
   const setHidden = (h: Hidden) => {
     setHiddenState(h);
     storedSet(HIDDEN_KEY, hiddenCount(h) ? JSON.stringify(h) : null);
@@ -78,7 +79,7 @@ export function useAppState() {
   const [tracker, setTracker] = useState<SeenTracker>(initialTracker);
   const [cards, setCards] = useState<Record<string, CardState>>({});
   // V0.186: the owner's folds, kept per device; a reload (a new build does one by itself) must not undo them.
-  const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>(() => parseSectionOpen(storedGet(SECTION_OPEN_KEY)));
+  const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>(() => storedJson(SECTION_OPEN_KEY, decodeSectionOpen, {}));
   useEffect(() => {
     storedSet(SECTION_OPEN_KEY, JSON.stringify(sectionOpen)); // blocked storage: the folds last until the reload
   }, [sectionOpen]);
@@ -134,7 +135,7 @@ export function useAppState() {
     storedSet(FILTER_KEY, id || null);
   };
   // V0.169: the hosts turned off, remembered per device beside the project filter.
-  const [hostsOff, setHostsOffState] = useState<string[]>(() => parseHostsOff(storedGet(HOSTS_OFF_KEY)));
+  const [hostsOff, setHostsOffState] = useState<string[]>(() => storedJson(HOSTS_OFF_KEY, strings, []));
   const setHostsOff = (keys: string[]) => {
     setHostsOffState(keys);
     storedSet(HOSTS_OFF_KEY, keys.length ? JSON.stringify(keys) : null);

@@ -1,4 +1,5 @@
 // Web Push: the pure parts (SPEC 0.5 V0.15). The browser calls live in pwa.ts, HTTP in api.ts.
+import { asObject, parseJson } from "./decode.ts";
 import { iconUrl } from "./icon-paths.ts";
 
 /** VAPID public keys come as base64url; pushManager.subscribe wants the raw bytes. */
@@ -104,13 +105,12 @@ function payloadRef(p: Pick<PushPayload, "host" | "threadId">): string | undefin
 }
 
 export function parsePayload(text: string | null | undefined): PushPayload {
-  try {
-    const j = JSON.parse(text ?? "");
-    if (j && typeof j === "object") return { title: String(j.title || "Fyr"), body: j.body ? String(j.body) : undefined, threadId: j.threadId ? String(j.threadId) : undefined, ...(j.host ? { host: String(j.host) } : {}), state: j.state ? String(j.state) : undefined };
-  } catch {
-    /* plain text */
-  }
-  return { title: "Fyr", body: text ?? undefined };
+  return parseJson(text, decodePayload, { title: "Fyr", body: text ?? undefined }); // not a JSON object: plain text
+}
+
+function decodePayload(v: unknown): PushPayload | undefined {
+  const j = asObject(v);
+  return j && { title: String(j.title || "Fyr"), body: j.body ? String(j.body) : undefined, threadId: j.threadId ? String(j.threadId) : undefined, ...(j.host ? { host: String(j.host) } : {}), state: j.state ? String(j.state) : undefined };
 }
 
 /** The options for showNotification (SPEC 0.5 V0.15, design/mobile rule 12). A question stays on screen until handled. */
@@ -219,17 +219,13 @@ export interface PushPrefs {
 }
 
 export const PUSH_PREFS_KEY = "fyr.push.prefs";
-const DEFAULT_PUSH_PREFS: PushPrefs = { finished: true, quotaReset: false };
+/** Finished on, quota resets off until asked for. */
+export const DEFAULT_PUSH_PREFS: PushPrefs = Object.freeze({ finished: true, quotaReset: false });
 export const FINISHED_DESC = "Also when a thread finishes. Nothing arrives for the thread on screen or in a project's quiet hours.";
 export const QUOTA_RESET_DESC = "When a provider's quota window resets and a waiting thread still has not resumed.";
 
-/** The stored choice; anything unreadable is the default (finished on, quota resets off until asked for). */
-export function parsePushPrefs(raw: string | null | undefined): PushPrefs {
-  try {
-    const j = JSON.parse(raw ?? "");
-    if (j && typeof j === "object") return { finished: j.finished !== false, quotaReset: j.quotaReset === true };
-  } catch {
-    /* default */
-  }
-  return { ...DEFAULT_PUSH_PREFS };
+/** The stored choice (`storedJson(PUSH_PREFS_KEY, decodePushPrefs, DEFAULT_PUSH_PREFS)`); anything unreadable is the default. */
+export function decodePushPrefs(v: unknown): PushPrefs | undefined {
+  const j = asObject(v);
+  return j && { finished: j.finished !== false, quotaReset: j.quotaReset === true };
 }

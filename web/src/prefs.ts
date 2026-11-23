@@ -1,4 +1,5 @@
 // Per-device preferences in localStorage, with change listeners. "Show tool details" (V0.21).
+import { parseJson } from "./decode.ts";
 
 /** The browser's storage, or null where there is none (a test, a blocked page): reading the global may itself throw. */
 export function browserStorage(): Storage | null {
@@ -25,6 +26,12 @@ export function storedGet(key: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** V0.web-helpers: a stored JSON value through a decoder (decode.ts). The fallback when none is kept, storage is
+ *  blocked or throws, the text does not parse, or the decoder refuses its shape. The one way the client reads stored JSON. */
+export function storedJson<T>(key: string, decode: (v: unknown) => T | undefined, fallback: T): T {
+  return parseJson(storedGet(key), decode, fallback);
 }
 
 /** Keep a value; null forgets it. Returns false when storage is blocked or full: the choice then lasts this page only,

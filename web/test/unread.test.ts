@@ -7,7 +7,7 @@ import { keyHints } from "../src/keys.ts";
 import { seenToggle, threadMenu } from "../src/menu.ts";
 import { changeChip } from "../src/offers.ts";
 import { filterEmpty, inView } from "../src/filters.ts";
-import { foldedRow, parseSectionOpen } from "../src/selection.ts";
+import { decodeSectionOpen, foldedRow } from "../src/selection.ts";
 import type { Change, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -55,7 +55,7 @@ test("j/k walks Unread before Seen; Unread folds on its own and is open by defau
 });
 
 test("Unread's fold is remembered on its own, and a folded Unread holds the current thread (V0.186)", () => {
-  assert.deepEqual(parseSectionOpen(JSON.stringify({ unread: false, seen: true })), { unread: false, seen: true });
+  assert.deepEqual(decodeSectionOpen({ unread: false, seen: true }), { unread: false, seen: true });
   const sec = sections(byId(unread("u"), seen("s")));
   assert.equal(foldedRow(sec, "u", { unread: false })?.section, "unread");
   assert.equal(foldedRow(sec, "u", { seen: false }), null, "folding Seen says nothing about a thread in Unread");

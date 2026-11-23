@@ -7,17 +7,14 @@ import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDi
 import { FRAME_ALLOW } from "./previews.ts";
 import { FsBar, FsButton, useFrameFullscreen } from "./preview-ui.tsx";
 import { useApi } from "./api-context.ts";
-import { storedGet, storedSet } from "./prefs.ts";
+import { strings } from "./decode.ts";
+import { storedJson, storedSet } from "./prefs.ts";
 import type { Thread, Offer } from "./types.ts";
 
 const COLLAPSED_KEY = "fyr.view.collapsed";
 
 function loadCollapsed(): Set<string> {
-  try {
-    return new Set(JSON.parse(storedGet(COLLAPSED_KEY) ?? "[]") as string[]);
-  } catch {
-    return new Set();
-  }
+  return new Set(storedJson(COLLAPSED_KEY, strings, []));
 }
 
 function saveCollapsed(s: Set<string>) {

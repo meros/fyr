@@ -126,3 +126,42 @@ export function shortModel(m: string): string {
   const r = /^([a-z]+)-(\d+)-(\d+)(.*)$/.exec(x);
   return r ? `${r[1]} ${r[2]}.${r[3]}${r[4].replace(/-/g, " ")}` : x;
 }
+
+// ---- V0.web-helpers: shortening text. One definition each; never a broken emoji (a surrogate pair stays whole). ----
+
+/** The first `n` UTF-16 units of `s`, one fewer when the cut would split a surrogate pair. */
+function head(s: string, n: number): string {
+  const c = s.charCodeAt(n - 1);
+  return s.slice(0, c >= 0xd800 && c <= 0xdbff ? n - 1 : n);
+}
+
+/** The last `n` UTF-16 units of `s`, one fewer when the cut would split a surrogate pair. */
+function tail(s: string, n: number): string {
+  if (n <= 0) return "";
+  const at = s.length - n;
+  const c = s.charCodeAt(at);
+  return s.slice(c >= 0xdc00 && c <= 0xdfff ? at + 1 : at);
+}
+
+/** At most `max` characters, cut at the end with "…" (no space left before it). */
+export function clip(s: string, max: number): string {
+  return s.length > max ? head(s, max - 1).trimEnd() + "…" : s;
+}
+
+/** The text on one line (every run of white space one space, trimmed), clipped to `max`. */
+export function oneLine(s: string, max = Infinity): string {
+  return clip(s.replace(/\s+/g, " ").trim(), max);
+}
+
+/** The first line that is not blank, on one line and clipped to `max`. */
+export function firstLine(s: string, max = Infinity): string {
+  return oneLine(s.split("\n").find((x) => x.trim()) ?? "", max);
+}
+
+/** At most `max` characters, cut in the middle, keeping the start and the more telling end: "src/…/FilterSheet.tsx". */
+export function middleTruncate(s: string, max = 40): string {
+  if (s.length <= max) return s;
+  const keep = max - 1;
+  const end = Math.ceil(keep * 0.6);
+  return head(s, keep - end) + "…" + tail(s, end);
+}

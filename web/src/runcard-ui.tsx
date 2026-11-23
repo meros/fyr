@@ -7,7 +7,7 @@ import { createContext } from "preact";
 import { useContext, useState } from "preact/hooks";
 import type { Offer, Thread } from "./types.ts";
 import { copyToClipboard } from "./copy.ts";
-import { cardDomId, cardLook, cardShows, chips, settleChip, copyText, dismissArgs, dockRun, firstLine, foldOutput, pressRunCard, requests, shortStore, stopArgs } from "./runcard.ts";
+import { cardDomId, cardLook, cardShows, chips, settleChip, copyText, dismissArgs, dockRun, firstCommandLine, foldOutput, pressRunCard, requests, shortStore, stopArgs } from "./runcard.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
@@ -141,7 +141,7 @@ export function DockRun({ o, t, host, more, onRun, onShow, chip }: { o: Offer; t
       <div class="ab">
         <div class="q">{l.why}</div>
         {/* V0.next-step-chips (4): an opened chip shows the whole command, since no card stands in the conversation yet */}
-        {chip ? <Command text={o.command ?? ""} /> : <pre class="runc-cmd">{shortStore(firstLine(o.command ?? ""))}</pre>}
+        {chip ? <Command text={o.command ?? ""} /> : <pre class="runc-cmd">{shortStore(firstCommandLine(o.command ?? ""))}</pre>}
         {l.rootLine && <div class={`runc-root${t.rootPrompt ? " no" : ""}`}>{l.rootLine}</div>}
         <div class="runc-b">
           <button

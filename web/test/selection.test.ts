@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatOrder, sections, type SectionKey } from "../src/store.ts";
-import { afterSettle, cutSection, drawnRows, foldedRow, guestOf, hiddenWhy, parseSectionOpen, rowAfter, markedRow, stepRow } from "../src/selection.ts";
+import { afterSettle, cutSection, drawnRows, foldedRow, guestOf, hiddenWhy, decodeSectionOpen, rowAfter, markedRow, stepRow } from "../src/selection.ts";
+import { parseJson } from "../src/decode.ts";
 import { thread } from "./helpers.ts";
 
 const OPEN: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, unread: 2, seen: 2, snoozed: 0, settled: 0 };
@@ -134,12 +135,12 @@ test("V0.186: settling a thread in a folded section steps to a drawn row near it
 });
 
 test("V0.186: the folds survive a reload; an open Snoozed or Settled does not, its 10 s are gone (V0.196)", () => {
-  assert.deepEqual(parseSectionOpen('{"working":false,"snoozed":true,"settled":true,"seen":false}'), { working: false, seen: false });
-  assert.deepEqual(parseSectionOpen('{"snoozed":false,"settled":false}'), { snoozed: false, settled: false });
-  assert.deepEqual(parseSectionOpen('{"nope":true,"needs":"x"}'), {}, "only known sections, only booleans");
-  assert.deepEqual(parseSectionOpen("not json"), {});
-  assert.deepEqual(parseSectionOpen("[1]"), {});
-  assert.deepEqual(parseSectionOpen(null), {});
+  assert.deepEqual(parseJson('{"working":false,"snoozed":true,"settled":true,"seen":false}', decodeSectionOpen, {}), { working: false, seen: false });
+  assert.deepEqual(parseJson('{"snoozed":false,"settled":false}', decodeSectionOpen, {}), { snoozed: false, settled: false });
+  assert.deepEqual(parseJson('{"nope":true,"needs":"x"}', decodeSectionOpen, {}), {}, "only known sections, only booleans");
+  assert.deepEqual(parseJson("not json", decodeSectionOpen, {}), {});
+  assert.deepEqual(parseJson("[1]", decodeSectionOpen, {}), {});
+  assert.deepEqual(parseJson(null, decodeSectionOpen, {}), {});
 });
 
 test("the row after the ones that leave, else the one before", () => {

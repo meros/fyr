@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { blockedReason, rowMeta, rowProjectName, rowState, stateNamesPr, trimEcho, clipName } from "../src/rows.ts";
+import { blockedReason, rowMeta, rowProjectName, rowState, stateNamesPr, trimEcho } from "../src/rows.ts";
 import type { Decision } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -97,7 +97,7 @@ test("V0.old-routes-end: a Needs you reason without the host's word (a host befo
 });
 
 test("a long project name is cut in the text, short ones stay whole", () => {
-  assert.equal(clipName("acme-platform-infrastructure"), "acme-platform…");
-  assert.equal(clipName("dotfiles"), "dotfiles");
-  assert.equal(clipName("exactly-14-ch!"), "exactly-14-ch!");
+  assert.equal(rowProjectName({ name: "acme-platform-infrastructure" }, "", null), "acme-platform…");
+  assert.equal(rowProjectName({ name: "dotfiles" }, "", null), "dotfiles");
+  assert.equal(rowProjectName({ name: "exactly-14-ch!" }, "", null), "exactly-14-ch!");
 });

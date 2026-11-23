@@ -47,17 +47,6 @@ export interface ProjectChip {
   selected: boolean;
 }
 
-/** V0.169: what the device stored, as a list of host keys; anything else is none off. */
-export function parseHostsOff(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const v = JSON.parse(raw) as unknown;
-    return Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && !!x))] : [];
-  } catch {
-    return [];
-  }
-}
-
 /** V0.169: a host's toggle: off when it is on, on when it is off. */
 export function toggleHost(off: readonly string[], key: string): string[] {
   return off.includes(key) ? off.filter((x) => x !== key) : [...off, key];

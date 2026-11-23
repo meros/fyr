@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, callLabel, fullOutputOf, roles, runLabel, cutOutput, friendlyName, groupStats, groupSummary, groupTone, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
+import { middleTruncate } from "../src/format.ts";
+import { buildConversation, callLabel, fullOutputOf, roles, runLabel, cutOutput, friendlyName, groupStats, groupSummary, groupTone, hiddenCall, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
 
 let seq = 0;
 const T0 = Date.parse("2026-11-14T09:00:00Z");
