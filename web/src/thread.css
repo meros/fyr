@@ -20,7 +20,15 @@
 .chip.st .icw,.chip.st .spin{display:inline-flex;flex:none;overflow:visible}
 .chip.m{font-family:var(--mono);font-weight:400}
 .chip.pj{max-width:36%}
-.chip.brn{flex:1 1 0;max-width:max-content}
+.chip.fldc{flex:1 1 0;max-width:max-content;border:0;cursor:pointer} /* V0.folder-chip: shrinks first, as the branch chip it replaced, so the row stays one line */
+.chip.fldc:hover,.chip.fldc[aria-expanded="true"]{background:var(--select)}
+.fldc .fldn{color:var(--ink);flex:0 1 auto}
+.fldc .fldb{flex:0 1000 auto} /* the branch gives way before the name */
+.fldc .fldb::before{content:"· ";color:var(--ink-faint)}
+.fldpop .lcval{overflow-wrap:anywhere}
+.fldact{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}
+.fldfail{font:400 12px/16px var(--ui);color:var(--signal-ink)}
+.fldpop.phone .fldcopy{height:44px;padding:0 16px;font-size:15px} /* the phone's button is a finger's size */
 .chip.pr{border:0;height:24px;border-radius:12px;padding:0 9px;max-width:100%;flex:0 1 auto;display:inline-flex;cursor:pointer}
 .chip.pr:hover{background:var(--select)}
 .chip.pr.on{box-shadow:inset 0 0 0 1px var(--line-strong)}

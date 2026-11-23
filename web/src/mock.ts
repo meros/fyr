@@ -848,6 +848,21 @@ function railFixture(now: number): Fixture {
   // V0.22: Search index was started by Map perf's agent, which also wrote to Babysit PR #4170.
   for (const t of threads) if (t.id === "t_search") t.parent = "t_mapperf";
   for (const t of threads) if (t.id === "t_dish") t.cwd = "/home/owner/scratch/2026-11-14-dishwasher";
+  // V0.folder-chip: Map perf works in its folder on a branch; Fix flaky map snapshot test works in a worktree Fyr made for its change, so
+  // its folder chip reads the repo and the worktree's branch.
+  for (const t of threads) if (t.id === "t_mapperf") t.branch = "map-perf";
+  for (const t of threads)
+    if (t.id === "t_snap") {
+      const at = new Date(now - 20 * 60_000).toISOString();
+      t.branch = "main";
+      t.changes = [
+        {
+          id: "c_snap", key: "fix-map-snapshot", kind: "code", title: "Fix the map snapshot test", branch: "fix-map-snapshot", phase: "working", phaseBy: "agent",
+          workspace: { repo: "github.com/acme/web", path: "/home/owner/src/acme/web/.claude/worktrees/fix-map-snapshot", branch: "fix-map-snapshot", base: "origin/main", madeByFyr: true },
+          createdAt: at, updatedAt: at,
+        },
+      ];
+    }
   // V0.149: &runs=1 adds a thread whose agent asked the owner to run two commands (a root one with a Nix store path,
   // one that ran and failed) and wrote a third in prose; &rootprompt=no says no polkit agent runs on its host.
   if (MOCK_RUNS) {

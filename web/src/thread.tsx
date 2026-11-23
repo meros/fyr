@@ -34,6 +34,7 @@ import { DockRun, showCard } from "./runcard-ui.tsx";
 import { dockRun, waitingRuns } from "./runcard.ts";
 import { changeChip, headerPrs, prForEffect, settleLine, threadPrs } from "./offers.ts";
 import { WakeChip } from "./wake-ui.tsx";
+import { FolderChip } from "./folder-ui.tsx";
 import { hasMultipleRepos, pickPr, prChip, shortRepo } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
@@ -185,11 +186,9 @@ export function ThreadPane(p: ThreadPaneProps) {
               </span>
             )
           )}
-          {t.branch && (
-            <span class="chip m brn" title={t.branch}>
-              <span>{t.branch}</span>
-            </span>
-          )}
+          {/* V0.folder-chip: the folder and its branch in one chip (it replaced the branch chip); a click shows the full
+              path, the branch, the host and Copy path */}
+          <FolderChip t={t} />
           {/* V0.agent-pill: provider, model and effort in one pill; the model and the effort pick in place */}
           <AgentPill size="chip" segs={threadAgent(t, profile, provider, unavailableReason(t, "thread.setModel"), (a) => p.onRun("thread.setModel", a))} />
           {/* V0.quota-in-thread, V0.quota-reset-wake: what is left on the account this thread uses, where the owner works; click to arm a wake when a window resets */}

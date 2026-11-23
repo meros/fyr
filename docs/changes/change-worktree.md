@@ -16,6 +16,6 @@
 
 (5) **The prompt** says to start a code change with `change_open {workspace: true}` and to work in the worktree it returns.
 
-Not yet: removing a worktree Fyr made when its change lands or ends (V0.worktree-sweep removes it once it is kept elsewhere and idle), and the header line (#26).
+Not yet: removing a worktree Fyr made when its change lands or ends (V0.worktree-sweep removes it once it is kept elsewhere and idle). The header shows the worktree as the thread's folder chip (V0.folder-chip).
 
 *Tests:* `internal/agent`: `TestMakeWorktree`. `internal/engine`: `TestChangeOpenMakesAWorktreePerChange`, `TestChangeOpenMakesAGoneWorktreeAgain`. `internal/core`: `TestFyrWorktreeStaysFyrsWhenItFollowsARecord`, `TestMatchFolder`.

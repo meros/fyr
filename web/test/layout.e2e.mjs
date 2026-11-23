@@ -6432,6 +6432,69 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.phone-chips-scroll p
     failures.push(`${ctx}: ${e.message}`);
   }
 });
+// V0.folder-chip (#26): the folder is a chip in the header's one chip row on both fronts (it replaced the branch chip):
+// a worktree Fyr made reads as the repo and its branch, a scratch folder without git as its name alone. A click (a tap)
+// opens a card under it with the full path, the branch, the worktree, the host and Copy path, inside the window; no
+// horizontal page scroll.
+const FOLDER_CHIP = (sel) => `(() => {
+  const c = document.querySelector(${JSON.stringify(sel)}); if (!c) return null;
+  const b = c.getBoundingClientRect(), hd = document.querySelector('.thh, .m-tth').getBoundingClientRect();
+  return { name: c.querySelector('.fldn')?.textContent ?? '', branch: c.querySelector('.fldb')?.textContent ?? null, h: Math.round(b.height), cut: [...c.querySelectorAll('span')].some((s) => s.scrollWidth > s.clientWidth + 1),
+    inHeader: b.top >= hd.top && b.bottom <= hd.bottom + 0.5 && b.width > 0, brn: !!document.querySelector('.brn'), wide: document.documentElement.scrollWidth > innerWidth };
+})()`;
+const FOLDER_POP = `(() => {
+  const p = document.querySelector('.lcpop .fldpop'); if (!p) return null;
+  const b = p.closest('.lcpop').getBoundingClientRect(), cp = p.querySelector('.fldcopy');
+  return { rows: [...p.querySelectorAll('dt')].map((x) => x.textContent + ': ' + x.nextElementSibling.textContent), copy: cp?.textContent ?? '', copyH: Math.round(cp?.getBoundingClientRect().height ?? 0),
+    inside: b.left >= 0 && b.right <= innerWidth + 0.5 && b.top >= 0 && b.bottom <= innerHeight + 0.5, wide: document.documentElement.scrollWidth > innerWidth,
+    cut: [...p.querySelectorAll('.lcval')].some((v) => v.getBoundingClientRect().right > b.right + 0.5) };
+})()`;
+const FOLDER_WT = "/home/owner/src/acme/web/.claude/worktrees/fix-map-snapshot";
+for (const [w, ht] of [[1280, 800], [1259, 676], [1024, 700]]) section(`V0.folder-chip desktop ${w}`, async ({ send, evaluate, navigate, waitFor, key, shot }) => {
+  const ctx = `V0.folder-chip desktop ${w}x${ht}`;
+  try {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: ht, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&open=t_snap`, "!!document.querySelector('.thh .chips .fldc')");
+    const c = await evaluate(FOLDER_CHIP(".thh .chips .fldc"));
+    check(c.name === "web" && c.branch === "fix-map-snapshot" && c.h === 24 && c.inHeader && !c.brn && !c.wide, `${ctx}: the worktree's chip is not "web · fix-map-snapshot" whole in the header, or a branch chip is left (${JSON.stringify(c)})`);
+    await evaluate(`document.querySelector('.thh .chips .fldc').click()`);
+    await waitFor(`!!document.querySelector('.lcpop .fldpop')`, { what: "the folder card" });
+    const p = await evaluate(FOLDER_POP);
+    check(p.rows[0] === `Path: ${FOLDER_WT}` && p.rows[1] === "Branch: fix-map-snapshot" && p.rows.some((r) => r.startsWith("Worktree: github.com/acme/web")) && p.rows.some((r) => r.startsWith("Thread: /home/owner/src/acme/web")) && p.rows.some((r) => r.startsWith("Host: ")) && p.copy === "Copy path" && p.inside && !p.cut && !p.wide, `${ctx}: the folder card is wrong or outside the window (${JSON.stringify(p)})`);
+    await evaluate(`document.querySelector('.fldpop .fldcopy').click()`);
+    await waitFor(`document.querySelector('.fldpop .fldcopy')?.textContent === 'Copied' || !!document.querySelector('.fldpop .fldfail')`, { what: "Copy path answers" });
+    if (w === 1280) await shot("folder-chip-desktop.png");
+    await key("Escape");
+    await waitFor(`!document.querySelector('.lcpop .fldpop')`, { what: "Escape closes the folder card" });
+    // a scratch folder without git: its name alone
+    await navigate(`${origin}/?mock=rail&open=t_dish`, "!!document.querySelector('.thh .chips .fldc')");
+    const s = await evaluate(FOLDER_CHIP(".thh .chips .fldc"));
+    check(s.name === "2026-11-14-dishwasher" && s.branch === null && s.inHeader && !s.wide, `${ctx}: the scratch folder's chip is not its name alone (${JSON.stringify(s)})`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.folder-chip phone ${w}`, async ({ evaluate, openScreen, tapCenter, shot }) => {
+  const ctx = `V0.folder-chip phone ${w}x${ht}`;
+  try {
+    await openScreen({ url: "?mock=rail&open=t_snap", ready: "!!document.querySelector('.m-chips .m-fldbtn .fldc')" }, w, ht);
+    await evaluate(`document.querySelector('.m-fldbtn').scrollIntoView({ inline: 'center', block: 'nearest' })`);
+    const c = await evaluate(FOLDER_CHIP(".m-chips .m-fldbtn .fldc"));
+    const bh = await evaluate(`Math.round(document.querySelector('.m-fldbtn').getBoundingClientRect().height)`);
+    check(c.name === "web" && c.branch === "fix-map-snapshot" && c.h === 28 && bh >= 44 && !c.cut && c.inHeader && !c.brn && !c.wide, `${ctx}: the worktree's chip is not "web · fix-map-snapshot" whole in the chip row, its tap target is under 44 px, or a branch chip is left (${JSON.stringify({ ...c, bh })})`);
+    await tapCenter(".m-fldbtn", "!!document.querySelector('.lcpop .fldpop')");
+    const p = await evaluate(FOLDER_POP);
+    check(p.rows[0] === `Path: ${FOLDER_WT}` && p.rows[1] === "Branch: fix-map-snapshot" && p.copy === "Copy path" && p.copyH >= 44 && p.inside && !p.cut && !p.wide, `${ctx}: the folder card is wrong, outside the screen or its Copy path under 44 px (${JSON.stringify(p)})`);
+    if (w === 390) await shot("folder-chip-phone.png");
+    // a tap outside closes it
+    await tapCenter(".m-tt", "!document.querySelector('.lcpop .fldpop')");
+    await openScreen({ url: "?mock=rail&open=t_dish", ready: "!!document.querySelector('.m-chips .m-fldbtn .fldc')" }, w, ht);
+    const s = await evaluate(FOLDER_CHIP(".m-chips .m-fldbtn .fldc"));
+    check(s.name === "2026-11-14-dishwasher" && s.branch === null && !s.wide, `${ctx}: the scratch folder's chip is not its name alone (${JSON.stringify(s)})`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
 // V0.quota-wait: a run the provider's quota stopped is a wait, not a failure: the row sits in Working with its reason,
 // the open thread's end of turn says "Waiting for quota", and neither offers Retry. The same on both fronts.
 section("V0.quota-wait desktop", async ({ evaluate, navigate, shot }) => {
