@@ -413,7 +413,7 @@ func (t *Thread) nextPRChange(skipID string) *Change {
 		if c.ID == skipID || c.PR == nil || c.Dismissed {
 			continue
 		}
-		if c.PR.State == "OPEN" && !c.Phase.Ended() && !c.IsDone() {
+		if c.OpenPR() {
 			return c
 		}
 		if fallback == nil {

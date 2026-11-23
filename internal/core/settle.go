@@ -51,27 +51,53 @@ func WorkDoneAt(t *Thread, now time.Time) bool {
 	return !OpenPR(t)
 }
 
-// OpenPR reports a PR of the thread that is still open and still counts:
-// not dismissed, not done, not ended.
+// OpenPR reports a PR of the thread that is open and still counts
+// (Change.OpenPR).
 func OpenPR(t *Thread) bool {
-	return slices.ContainsFunc(t.Changes, func(c Change) bool {
-		return c.PR != nil && c.PR.State == "OPEN" && !c.Dismissed && !c.IsDone() && !c.Phase.Ended()
-	})
+	return slices.ContainsFunc(t.Changes, func(c Change) bool { return c.OpenPR() })
 }
 
-// settleWhenWorkDone fires "settle when done" when it holds. It runs last in
+// OpenPR is the one predicate of a PR that counts as open
+// (V0.one-predicate (1)): GitHub shows it open, and the owner has not
+// dismissed it, marked it done or ended it.
+func (c *Change) OpenPR() bool {
+	return c.PR != nil && c.PR.State == "OPEN" && !c.Dismissed && !c.IsDone() && !c.Phase.Ended()
+}
+
+// PRWaitsOnCI reports an open PR (OpenPR) whose checks Fyr read as running.
+// A PR never read waits on nothing: a repo with no CI, or one Fyr cannot
+// read, must not wait for ever (V0.one-predicate (1)).
+func (c *Change) PRWaitsOnCI() bool {
+	return c.OpenPR() && c.PR.Checks == ChecksPending && c.PR.CheckedAt != nil
+}
+
+// settleWhenWorkDone fires the thread's Rules that read workDone (the
+// owner's "settle when done" among them) when they hold: due skips every
+// such Rule, so this takes each one (V0.one-predicate (2)). It runs last in
 // Reduce, as wakeWhenDone does: what ends the work is read only after the
 // merge asks are gated and the agent's notices are queued. A feed.take is
 // skipped: the notice has left the queue and its turn has not begun.
 func settleWhenWorkDone(r Rec, in Input, now time.Time) Result {
 	var res Result
-	x := FindRule(r.T, settleDoneRule)
-	if in.Kind == KindFeedTake || x == nil || !x.When.doneBound() {
+	if in.Kind == KindFeedTake {
 		return res
 	}
-	suspend(x, r.T, now)
-	if x.Status == RuleArmed && x.When.eval(r.T, x.Armed, now) == yes {
-		fire(r, x.ID, false, now, &res)
+	var ids []string
+	for _, x := range r.T.Rules {
+		if x.When.doneBound() {
+			ids = append(ids, x.ID)
+		}
+	}
+	for _, id := range ids {
+		// A firing may change the Rules (settle drops the settle Rules).
+		x := FindRule(r.T, id)
+		if x == nil {
+			continue
+		}
+		suspend(x, r.T, now)
+		if x.Status == RuleArmed && (x.RetryAt == nil || !now.Before(*x.RetryAt)) && x.When.eval(r.T, x.Armed, now) == yes {
+			fire(r, x.ID, false, now, &res)
+		}
 	}
 	return res
 }

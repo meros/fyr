@@ -195,7 +195,7 @@ func ciWait(t *Thread) string {
 		}
 	}
 	for _, c := range t.Changes {
-		if c.PR != nil && c.PR.State == "OPEN" && c.PR.Checks == ChecksPending && c.PR.CheckedAt != nil && !c.Dismissed && !c.IsDone() && !c.Phase.Ended() {
+		if c.PRWaitsOnCI() {
 			return fmt.Sprintf("Waiting for CI on #%d", c.PR.Number)
 		}
 	}

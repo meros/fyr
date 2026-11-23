@@ -258,6 +258,32 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 	return unknown
 }
 
+// walk calls f on w and then on every Condition it holds (All, Any, Not),
+// depth first, and reports true at the first f that does
+// (V0.one-predicate (2)): the one way to look through a Condition's
+// structure, so no reader skips a branch.
+func (w When) walk(f func(When) bool) bool {
+	if f(w) {
+		return true
+	}
+	for _, x := range w.All {
+		if x.walk(f) {
+			return true
+		}
+	}
+	for _, x := range w.Any {
+		if x.walk(f) {
+			return true
+		}
+	}
+	return w.Not != nil && w.Not.walk(f)
+}
+
+// has reports a Condition of this kind anywhere in w.
+func (w When) has(kinds ...string) bool {
+	return w.walk(func(x When) bool { return slices.Contains(kinds, x.Kind) })
+}
+
 // nextCheck is the earliest time the Condition may change with time alone,
 // or nil.
 func (w When) nextCheck(t *Thread) *time.Time {
@@ -267,49 +293,38 @@ func (w When) nextCheck(t *Thread) *time.Time {
 			out = x
 		}
 	}
-	for _, x := range slices.Concat(w.All, w.Any) {
-		take(x.nextCheck(t))
-	}
-	if w.Not != nil {
-		take(w.Not.nextCheck(t))
-	}
-	switch w.Kind {
-	case WhenAt, WhenQuota:
-		take(w.At)
-	case WhenIdleFor:
-		at := t.ActivityAt.Add(time.Duration(w.Ms) * time.Millisecond)
-		take(&at)
-	}
+	w.walk(func(x When) bool {
+		switch x.Kind {
+		case WhenAt, WhenQuota:
+			take(x.At)
+		case WhenIdleFor:
+			at := t.ActivityAt.Add(time.Duration(x.Ms) * time.Millisecond)
+			take(&at)
+		}
+		return false
+	})
 	return out
 }
 
 // anchored reports a Condition made true by an event after the Rule was
 // armed (7.2), not by the current state.
 func (w When) anchored() bool {
-	for _, x := range slices.Concat(w.All, w.Any) {
-		if x.anchored() {
-			return true
-		}
-	}
-	return w.Kind == WhenRunEnded || w.Kind == WhenAt || w.Kind == WhenQuota || w.Kind == WhenMoved
+	return w.has(WhenRunEnded, WhenAt, WhenQuota, WhenMoved)
 }
 
 // anchor takes the snapshot of the anchored kinds in w.
 func (w When) anchor(t *Thread, armed map[string]string) {
-	for _, x := range slices.Concat(w.All, w.Any) {
-		x.anchor(t, armed)
-	}
-	if w.Not != nil {
-		w.Not.anchor(t, armed)
-	}
-	switch w.Kind {
-	case WhenRunEnded:
-		armed["run"] = strconv.Itoa(t.RunEnds)
-	case WhenMoved:
-		if c := FindChange(t, w.Change); c != nil {
-			armed["change:"+c.ID] = changeDigest(c)
+	w.walk(func(x When) bool {
+		switch x.Kind {
+		case WhenRunEnded:
+			armed["run"] = strconv.Itoa(t.RunEnds)
+		case WhenMoved:
+			if c := FindChange(t, x.Change); c != nil {
+				armed["change:"+c.ID] = changeDigest(c)
+			}
 		}
-	}
+		return false
+	})
 }
 
 // prFact: a condition the PR poller reads from GitHub, about the PR's head.
@@ -327,25 +342,23 @@ func prFact(typ CondType) bool {
 // once.
 func (w When) anchorPR(t *Thread, armed map[string]string, now time.Time) bool {
 	read := false
-	for _, x := range slices.Concat(w.All, w.Any) {
-		read = x.anchorPR(t, armed, now) || read
-	}
-	if w.Not != nil {
-		read = w.Not.anchorPR(t, armed, now) || read
-	}
-	if w.Kind != WhenCondition || !prFact(w.Type) {
-		return read
-	}
-	c := FindChange(t, w.Change)
-	if c == nil || c.PR == nil || c.PR.State != "OPEN" || c.PR.CheckedAt == nil || !slices.Contains(PRURLs(t, now), c.PRURL()) {
-		return read
-	}
-	at := now
-	if c.PR.CheckedAt.After(at) {
-		at = *c.PR.CheckedAt
-	}
-	armed["pr:"+c.ID] = at.UTC().Format(time.RFC3339Nano)
-	return true
+	w.walk(func(x When) bool {
+		if x.Kind != WhenCondition || !prFact(x.Type) {
+			return false
+		}
+		c := FindChange(t, x.Change)
+		if c == nil || c.PR == nil || c.PR.State != "OPEN" || c.PR.CheckedAt == nil || !slices.Contains(PRURLs(t, now), c.PRURL()) {
+			return false
+		}
+		at := now
+		if c.PR.CheckedAt.After(at) {
+			at = *c.PR.CheckedAt
+		}
+		armed["pr:"+c.ID] = at.UTC().Format(time.RFC3339Nano)
+		read = true
+		return false
+	})
+	return read
 }
 
 // readAfter: the PR was read from GitHub after the anchored read at.
@@ -375,15 +388,12 @@ func changeDigest(c *Change) string {
 
 // changeOf is the change a Condition names first, or "".
 func (w When) changeOf() string {
-	if w.Change != "" {
-		return w.Change
-	}
-	for _, x := range slices.Concat(w.All, w.Any) {
-		if c := x.changeOf(); c != "" {
-			return c
-		}
-	}
-	return ""
+	out := ""
+	w.walk(func(x When) bool {
+		out = x.Change
+		return out != ""
+	})
+	return out
 }
 
 // --- the Rule store ---
@@ -446,6 +456,12 @@ func unwatchable(t *Thread, x Rule) bool {
 }
 
 func unwatchableWhen(t *Thread, w When) bool {
+	// This is the Condition's logic, not a walk: All is stuck when one part
+	// is, Any when every part is, and Not(x) of a stuck x is true from now
+	// on, which fires rather than waits, so it is never stuck.
+	if w.Not != nil {
+		return false
+	}
 	if len(w.All) > 0 {
 		return slices.ContainsFunc(w.All, func(x When) bool { return unwatchableWhen(t, x) })
 	}
