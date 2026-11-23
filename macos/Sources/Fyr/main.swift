@@ -48,12 +48,18 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     window.notifier = notifier
     notifier.start()
     // V0.mac-selfupdate: the new build starts with --updated and keeps the
-    // window as the old one had it.
+    // window as the old one had it. It starts once this process has exited,
+    // not after a guessed delay; if this one still runs after 60 s, the quit
+    // failed and no second copy is started.
     updater.relaunch = { [weak self] url in
       let shown = self?.window.isVisible ?? false
       let p = Process()
       p.executableURL = URL(fileURLWithPath: "/bin/sh")
-      p.arguments = ["-c", "sleep 1; /usr/bin/open -n \"$0\" --args --updated \(shown ? "--show" : "")", url.path]
+      p.arguments = [
+        "-c",
+        "i=0; while kill -0 \"$1\" 2>/dev/null; do i=$((i+1)); [ $i -le 600 ] || exit 1; sleep 0.1; done; /usr/bin/open -n \"$0\" --args --updated \(shown ? "--show" : "")",
+        url.path, "\(ProcessInfo.processInfo.processIdentifier)",
+      ]
       try? p.run()
       NSApp.terminate(nil)
     }

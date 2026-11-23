@@ -31,14 +31,28 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
 
   func reload() { web?.reload() }
 
-  // openInBrowser signs the default browser in with its own one-time link.
+  // openInBrowser signs the default browser in with its own one-time link,
+  // else opens the origin it signed in on before. With neither, fyrd's
+  // address is unknown (it may listen anywhere), so it says why instead of
+  // guessing one.
   func openInBrowser() {
     let data = Agent.data
     DispatchQueue.global().async {
-      let u = try? Owner.onceURL(data: data)
-      DispatchQueue.main.async { NSWorkspace.shared.open(u ?? self.origin ?? URL(string: "http://127.0.0.1:7777")!) }
+      var link: URL?
+      var why = ""
+      do { link = try Owner.onceURL(data: data) } catch { why = "\(error)" }
+      DispatchQueue.main.async {
+        if let u = link ?? self.origin { NSWorkspace.shared.open(u); return }
+        let a = NSAlert()
+        a.messageText = "Fyr does not answer"
+        a.informativeText = "\(why)\n\nThe log is in \(Self.logPath)."
+        a.runModal()
+      }
     }
   }
+
+  // The agent's log file, as the owner reads it (~ for the home folder).
+  static var logPath: String { (Agent.log as NSString).abbreviatingWithTildeInPath }
 
   private func make() {
     let cfg = WKWebViewConfiguration()
@@ -132,12 +146,16 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
       }
       DispatchQueue.main.async {
         self.signingIn = false
-        let why = (last.map { "\($0)" } ?? "").replacingOccurrences(of: "<", with: "&lt;")
+        let why = Self.html(last.map { "\($0)" } ?? "")
         self.web.loadHTMLString(
-          self.page("Fyr does not answer", "<p>\(why)</p><p>The log is in ~/Library/Logs/fyr.log.</p><p><a href=\"fyr-shell:retry\">Try again</a></p>"),
+          self.page("Fyr does not answer", "<p>\(why)</p><p>The log is in \(Self.html(Self.logPath)).</p><p><a href=\"fyr-shell:retry\">Try again</a></p>"),
           baseURL: nil)
       }
     }
+  }
+
+  static func html(_ s: String) -> String {
+    s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
   }
 
   private func page(_ title: String, _ body: String) -> String {
@@ -147,10 +165,14 @@ final class Window: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelega
     """
   }
 
-  private func isFyr(_ u: URL) -> Bool {
-    guard let h = u.host else { return false }
-    if let o = origin?.host, h == o { return true }
-    return h == "127.0.0.1" || h == "localhost" || h.hasSuffix(".localhost")
+  // isFyr: the link is on the origin Fyr signed in on (scheme, host and
+  // port), as internal/desktop External decides on Linux. Any other site, a
+  // dev server on localhost too, opens in the default browser.
+  private func isFyr(_ u: URL) -> Bool { Self.sameOrigin(u, origin) }
+
+  static func sameOrigin(_ u: URL, _ o: URL?) -> Bool {
+    guard let o, let h = u.host, let oh = o.host else { return false }
+    return u.scheme?.lowercased() == o.scheme?.lowercased() && h.lowercased() == oh.lowercased() && u.port == o.port
   }
 
   // MARK: WKNavigationDelegate
