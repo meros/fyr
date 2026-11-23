@@ -199,15 +199,16 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
   // Load the open thread's events; after a reconnect fetch what was missed.
   const openId = view && !gate.gated ? view.id : null;
 
-  // Presence (V0.20): tell the host which thread is shown while visible.
-  const beatRef = useRef<BeatState>({ last: "", at: 0 });
+  // Presence (V0.20): tell the host which thread is shown while visible; V0.push-summary-batch: and that the page is.
+  const beatRef = useRef<BeatState>({ last: "", visible: false, at: 0 });
   useEffect(() => {
     const device = deviceId();
     const tick = () => {
       const target = presenceTarget(openId, document.visibilityState);
+      const visible = document.visibilityState === "visible";
       const now = Date.now();
-      if (shouldBeat(beatRef.current, target, now)) {
-        beatRef.current = { last: target, at: now };
+      if (shouldBeat(beatRef.current, target, visible, now)) {
+        beatRef.current = { last: target, visible, at: now };
         const host = target ? hostOfId(target) : undefined;
         void api.presence(host ? { host, threadId: target } : null, device);
       }

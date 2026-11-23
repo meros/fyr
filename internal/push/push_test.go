@@ -291,3 +291,36 @@ func TestQuotaResetIsOptInPerDevice(t *testing.T) {
 		t.Fatalf("delivered %d to %v, want only opted", n, got)
 	}
 }
+
+// V0.push-summary-batch: a payload with For is made per device; false leaves
+// the device out, and what For returns is still filtered by its prefs.
+func TestForMakesThePayloadPerDevice(t *testing.T) {
+	p, out := newPusher(t, nil)
+	p.Subscribe("owner", sub("https://push/phone"), "phone")
+	p.Subscribe("owner", sub("https://push/desk"), "desk")
+	p.Subscribe("owner", sub("https://push/lab"), "lab")
+	p.SetPrefs("https://push/phone", Prefs{Finished: false})
+	p.SetHidden("https://push/lab", Hidden{Hosts: []string{"a"}})
+	n := p.Notify("owner", Payload{For: func(s Subscription) (Payload, bool) {
+		switch {
+		case s.Hidden != nil:
+			return Payload{}, false
+		case s.NoFinished:
+			return Payload{Title: "Acme", Body: "1 asking", State: "summary"}, true
+		}
+		return Payload{Title: "Acme", Body: "1 asking, 2 done", State: "summary"}, true
+	}})
+	if n != 2 || len(*out) != 2 {
+		t.Fatalf("delivered %d: %+v", n, *out)
+	}
+	for _, s := range *out {
+		want := map[string]string{"https://push/phone": "1 asking", "https://push/desk": "1 asking, 2 done"}[s.endpoint]
+		if s.payload.Body != want {
+			t.Errorf("%s got %q want %q", s.endpoint, s.payload.Body, want)
+		}
+	}
+	*out = nil
+	if n := p.Notify("owner", Payload{For: func(Subscription) (Payload, bool) { return Payload{Title: "x", State: "done"}, true }}); n != 2 {
+		t.Fatalf("a done payload from For reached %d devices, want all but the one without finished: %+v", n, *out)
+	}
+}

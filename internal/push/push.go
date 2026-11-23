@@ -102,6 +102,10 @@ type Payload struct {
 	// Origin is the thread's host and project; nil for a push about no
 	// thread, which every device gets. It is not sent.
 	Origin *Origin `json:"-"`
+	// For, when set, is what one device gets instead, made from what it hides
+	// and wants; false sends it nothing (V0.push-summary-batch: a summary
+	// counts only what that device would have been told). It is not sent.
+	For func(Subscription) (Payload, bool) `json:"-"`
 }
 
 // Sender delivers one encrypted message and returns the HTTP status.
@@ -227,6 +231,13 @@ func (p *Pusher) Notify(user string, pl Payload) int {
 		gate = make(chan struct{}, sendParallel)
 	)
 	for _, s := range subs {
+		pl := pl
+		if pl.For != nil {
+			var want bool
+			if pl, want = pl.For(s); !want {
+				continue
+			}
+		}
 		if pl.Origin != nil && s.Hidden.Hides(*pl.Origin) {
 			continue
 		}
