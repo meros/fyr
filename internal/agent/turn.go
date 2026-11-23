@@ -156,7 +156,11 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			for _, k := range ks {
 				m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k})
 			}
-			m.backgroundChanged(s, len(ks))
+			ids := make(map[string]bool, len(ks))
+			for _, k := range ks {
+				ids[k.ID] = true
+			}
+			m.backgroundChanged(s, ids)
 			return
 		}
 		if k, ev, ok := taskFromSystem(msg); ok {
@@ -172,6 +176,22 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 				evs = append(evs, core.Event{Type: "task", Data: map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})
 			}
 			m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k, Log: evs, ByStop: byStop})
+			if ev == "ended" {
+				// V0.bg-count-follows-ended: the CLI may send no
+				// background_tasks_changed after the last one ends.
+				m.mu.Lock()
+				ids := make(map[string]bool, len(s.bgIDs))
+				for id := range s.bgIDs {
+					if id != k.ID {
+						ids[id] = true
+					}
+				}
+				changed := len(ids) != len(s.bgIDs)
+				m.mu.Unlock()
+				if changed {
+					m.backgroundChanged(s, ids)
+				}
+			}
 			return
 		}
 		if msg["subtype"] == "init" {
@@ -529,10 +549,10 @@ var RefreshGrace = 2 * time.Second
 // backgroundChanged takes the CLI's count of running background tasks
 // (V0.133). When the last one ends between turns, the refresh (after
 // RefreshGrace) or the idle stop that waited for it goes ahead.
-func (m *Manager) backgroundChanged(s *session, n int) {
+func (m *Manager) backgroundChanged(s *session, ids map[string]bool) {
 	m.mu.Lock()
-	s.bg = n
-	settle := n == 0 && !s.live && !s.inputClosed
+	s.bgIDs, s.bg = ids, len(ids)
+	settle := len(ids) == 0 && !s.live && !s.inputClosed
 	refresh := settle && s.refresh && len(s.out) == 0 && len(s.asks) == 0
 	m.mu.Unlock()
 	switch {

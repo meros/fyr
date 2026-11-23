@@ -280,6 +280,9 @@ type session struct {
 	// input while bg > 0; the CLI would live on for them and refuse every
 	// tool call of the turn it then starts by itself.
 	bg int
+	// bgIDs: the ids behind bg; a task that ends leaves it before the CLI
+	// says so (V0.bg-count-follows-ended).
+	bgIDs map[string]bool
 	// inputClosed: Fyr closed the process's stdin (closeInput).
 	inputClosed bool
 	// tools: tool_use id → tool name, until its result (V0.133).
