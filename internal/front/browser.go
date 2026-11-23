@@ -3,7 +3,6 @@ package front
 import (
 	"errors"
 	"fmt"
-	"github.com/meros/fyr/internal/httpguard"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -107,8 +106,11 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
-		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil || b.Endpoint == "" {
-			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
+		if !api.DecodeBody(w, r, &b, 64<<10) {
+			return
+		}
+		if b.Endpoint == "" {
+			api.WriteJSON(w, 400, api.Reply{Error: "endpoint is required"})
 			return
 		}
 		p.Unsubscribe(b.Endpoint)
@@ -118,7 +120,9 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
-		httpguard.DecodeLoose(w, r, &b, 64<<10)
+		if !api.DecodeOptional(w, r, &b, 64<<10) {
+			return
+		}
 		api.WriteJSON(w, 200, map[string]bool{"known": b.Endpoint != "" && p.Known(b.Endpoint)})
 	})
 	// V0.207: what this device hides, so its pushes leave those out.
@@ -127,8 +131,11 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 			Endpoint string `json:"endpoint"`
 			push.Hidden
 		}
-		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil || b.Endpoint == "" {
-			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
+		if !api.DecodeBody(w, r, &b, 64<<10) {
+			return
+		}
+		if b.Endpoint == "" {
+			api.WriteJSON(w, 400, api.Reply{Error: "endpoint is required"})
 			return
 		}
 		known, err := p.SetHidden(b.Endpoint, b.Hidden)
@@ -144,8 +151,11 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 			Endpoint string `json:"endpoint"`
 			push.Prefs
 		}{Prefs: push.Prefs{Finished: true}}
-		if err := httpguard.ReadJSON(w, r, &b, 64<<10); err != nil || b.Endpoint == "" {
-			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
+		if !api.DecodeBody(w, r, &b, 64<<10) {
+			return
+		}
+		if b.Endpoint == "" {
+			api.WriteJSON(w, 400, api.Reply{Error: "endpoint is required"})
 			return
 		}
 		known, err := p.SetPrefs(b.Endpoint, b.Prefs)
@@ -161,7 +171,9 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
-		httpguard.DecodeLoose(w, r, &b, 64<<10)
+		if !api.DecodeOptional(w, r, &b, 64<<10) {
+			return
+		}
 		pl := push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"}
 		n := 0
 		if b.Endpoint != "" {

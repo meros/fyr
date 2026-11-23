@@ -10,7 +10,6 @@ package front
 
 import (
 	"encoding/json"
-	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"net/url"
 	"slices"
@@ -21,6 +20,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/httpguard"
 )
 
 const (
@@ -381,8 +381,11 @@ func (f *Front) presenceRoute2(w http.ResponseWriter, r *http.Request) {
 		ThreadID string `json:"threadId"`
 		Device   string `json:"device"`
 	}
-	if err := httpguard.ReadJSON(w, r, &b, httpguard.SmallBody); err != nil || b.Device == "" {
-		http.Error(w, "host, threadId and device are required", 400)
+	if !api.DecodeBody(w, r, &b, httpguard.SmallBody) {
+		return
+	}
+	if b.Device == "" {
+		api.WriteJSON(w, 400, api.Reply{Error: "host, threadId and device are required"})
 		return
 	}
 	var l *link

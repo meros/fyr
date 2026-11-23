@@ -31,3 +31,21 @@ func (failWriter) Write([]byte) (int, error) { return 0, http.ErrHandlerTimeout 
 func TestWriteJSONSurvivesAFailedWrite(t *testing.T) {
 	WriteJSON(&failWriter{*httptest.NewRecorder()}, 200, map[string]int{"a": 1}) // logs, does not panic
 }
+
+func TestDecodeOptional(t *testing.T) {
+	v := struct{ A int }{A: 7}
+	w := httptest.NewRecorder()
+	if !DecodeOptional(w, httptest.NewRequest("POST", "/", strings.NewReader("")), &v, 100) || v.A != 7 || w.Code != 200 {
+		t.Fatal("an empty body must leave v alone")
+	}
+	for _, body := range []string{`{"A":`, `{"A":"x"}`, `[`} {
+		w = httptest.NewRecorder()
+		if DecodeOptional(w, httptest.NewRequest("POST", "/", strings.NewReader(body)), &v, 100) || w.Code != 400 {
+			t.Fatalf("%q: %d", body, w.Code)
+		}
+	}
+	w = httptest.NewRecorder()
+	if DecodeOptional(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"A":`+strings.Repeat("1", 50)+`}`)), &v, 10) || w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("big body: %d", w.Code)
+	}
+}

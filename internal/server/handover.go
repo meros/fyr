@@ -1,7 +1,6 @@
 package server
 
 import (
-	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 
 	"github.com/meros/fyr/internal/agent"
@@ -32,7 +31,9 @@ func (s *Server) handoverExport(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req handoverExportRequest
 	if r.Body != nil {
-		httpguard.DecodeLoose(w, r, &req, 1<<20)
+		if !api.DecodeOptional(w, r, &req, 1<<20) {
+			return
+		}
 	}
 	if s.HandoverExport == nil {
 		api.WriteJSON(w, 501, map[string]any{"ok": false, "error": "this host does not support trans-host handover export"})

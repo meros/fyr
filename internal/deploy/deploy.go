@@ -21,10 +21,18 @@ import (
 // Runner runs a command in dir and returns its combined output.
 type Runner func(ctx context.Context, dir string, args ...string) ([]byte, error)
 
+// execRunner runs args in dir. A git command gets proc.GitEnv (no credential
+// prompt that could hang a deploy, git's messages in C locale for the parsers
+// of its output); every command builds with CGO off.
 func execRunner(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	cmd := proc.Command(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	cmd.Env = []string{"CGO_ENABLED=0"}
+	if args[0] == "git" {
+		cmd.Env = append(proc.GitEnv(proc.GitOpts{}), cmd.Env...)
+	} else {
+		cmd.Env = append(os.Environ(), cmd.Env...)
+	}
 	return cmd.CombinedOutput()
 }
 

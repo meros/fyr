@@ -312,6 +312,16 @@ func TestV183TheOwnerRoutesAnswerWithTheirCodes(t *testing.T) {
 	if w := do("POST", "/host/drive", `{"ID":"`+r.key.ID()+`","On":false}`); w.Code != http.StatusNotFound {
 		t.Fatalf("drive self %d", w.Code)
 	}
+	// A malformed body must not act on the part that decoded: {"On":"true"} once
+	// turned drive off for the member.
+	if !r.env.Drive.MayDrive(b) {
+		t.Fatal("rig: the member may not drive to begin with")
+	}
+	for _, body := range []string{`{"ID":"` + b + `","On":"true"}`, `{"ID":"` + b + `"`, ``} {
+		if w := do("POST", "/host/drive", body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), `"ok":false`) || !r.env.Drive.MayDrive(b) {
+			t.Fatalf("drive %q: %d %s, mayDrive %v", body, w.Code, w.Body, r.env.Drive.MayDrive(b))
+		}
+	}
 	if w := do("POST", "/host/drive", `{"ID":"`+b+`","On":false}`); w.Code != 200 || r.env.Drive.MayDrive(b) {
 		t.Fatalf("drive %d", w.Code)
 	}

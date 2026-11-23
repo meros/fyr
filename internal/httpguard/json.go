@@ -3,8 +3,6 @@ package httpguard
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"log"
 	"net/http"
 	"time"
 )
@@ -23,16 +21,6 @@ const SmallBody = 4 << 10
 // error without answering: the caller picks the status and text.
 func ReadJSON(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
 	return json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(v)
-}
-
-// DecodeLoose is for a call whose fields are all optional: an empty body is
-// fine and leaves v as it was, and the handler's own validation refuses what
-// is missing. Any other failure (bad JSON, over the cap) is logged, and v keeps
-// what was decoded before it.
-func DecodeLoose(w http.ResponseWriter, r *http.Request, v any, limit int64) {
-	if err := ReadJSON(w, r, v, limit); err != nil && !errors.Is(err, io.EOF) {
-		log.Printf("httpguard: %s %s body: %v", r.Method, r.URL.Path, err)
-	}
 }
 
 // DecodeJSON reads the request body into v like ReadJSON and answers a failure

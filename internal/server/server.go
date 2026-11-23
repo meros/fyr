@@ -1010,8 +1010,11 @@ func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
 		Device string `json:"device"`
 		Off    bool   `json:"off"`
 	}
-	if err := httpguard.ReadJSON(w, r, &b, 4<<10); err != nil || b.Device == "" {
-		api.WriteJSON(w, 400, map[string]any{"error": "device is required"})
+	if !api.DecodeBody(w, r, &b, 4<<10) {
+		return
+	}
+	if b.Device == "" {
+		api.WriteJSON(w, 400, api.Reply{Error: "device is required"})
 		return
 	}
 	id := r.PathValue("id")

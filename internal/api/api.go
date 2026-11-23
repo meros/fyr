@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/meros/fyr/internal/httpguard"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -234,8 +235,20 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 // failure it answers {"ok":false,"error":...} (400, or 413 over the cap) and
 // returns false: the one answer of the host and the front to a bad body.
 func DecodeBody(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	return decode(w, r, v, limit, false)
+}
+
+// DecodeOptional is DecodeBody for a call whose fields are all optional: an
+// empty body is fine and leaves v as it was. Any other failure (bad JSON, over
+// the cap) is answered as DecodeBody does, so a malformed body never leaves a
+// partly decoded v behind for the handler to act on.
+func DecodeOptional(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	return decode(w, r, v, limit, true)
+}
+
+func decode(w http.ResponseWriter, r *http.Request, v any, limit int64, emptyOK bool) bool {
 	err := httpguard.ReadJSON(w, r, v, limit)
-	if err == nil {
+	if err == nil || (emptyOK && errors.Is(err, io.EOF)) {
 		return true
 	}
 	var big *http.MaxBytesError
