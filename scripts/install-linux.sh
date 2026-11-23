@@ -293,7 +293,8 @@ had_channel=""
 [ -s "$cfg" ] && had_channel="$(sed -n 's/.*"updateChannel"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | sed -n 1p)"
 set_channel="$channel"
 [ -n "$set_channel" ] || set_channel="$want_version"
-[ -n "$set_channel" ] || [ -s "$cfg" ] || set_channel=stable
+new_stable="" # a new install that follows stable because nothing said otherwise
+[ -n "$set_channel" ] || [ -s "$cfg" ] || { set_channel=stable; new_stable=1; }
 follow="${set_channel:-${had_channel:-main}}"
 # The release to install: --version's, else the channel's.
 pick="${want_version:-$follow}"
@@ -302,6 +303,7 @@ case "$pick" in
   stable) what="the newest stable version (vX.Y.Z, not a prerelease)" ;;
   *) what="version $pick" ;;
 esac
+[ -z "$new_stable" ] || what="$what, or while none is published main's newest build (and follow main)"
 if [ -n "$set_channel" ]; then
   echo "channel: $follow (updateChannel $set_channel in $cfg)"
 else
@@ -333,8 +335,19 @@ if [ "$mode" = install ]; then
       tag="build-${sha:0:12}"
       ;;
     stable)
-      tag="$(newest_stable)"
-      sha="$(tag_sha "$tag")"
+      if tag="$(newest_stable)"; then
+        sha="$(tag_sha "$tag")"
+      elif [ -n "$new_stable" ]; then
+        # V0.fresh-ubuntu-run: before the first version is published, a new
+        # install that named no channel takes main rather than failing.
+        echo "so this new install follows main: run this again with --channel stable once a version is published" >&2
+        follow=main
+        set_channel=main
+        sha="$(tag_sha deployable)"
+        tag="build-${sha:0:12}"
+      else
+        exit 1
+      fi
       ;;
     *)
       tag="$pick"

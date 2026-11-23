@@ -52,7 +52,7 @@ The recommended macOS install (macOS 13+, Apple Silicon and Intel) is [`Fyr.dmg`
 
 `scripts/install-linux.sh` is the NixOS module's stand-in on Debian, Ubuntu and other systemd Linux (V0.linux-without-nix). Run it as the user Fyr and its agents run as; it refuses root.
 
-**What runs as you:** the download of the release of the install's channel ([below](#channels-and-versions); a new install: the newest stable version) (over HTTPS with `git` and `curl`, no `gh` login; checked against `SHA256SUMS`) into `~/.local/share/fyr/builds/<sha12>`, the `current` link, the seed (`seed/fyrd`) and the launcher (`launcher/fyr`); and the `cgroups` and `updateChannel` keys in `~/.config/fyr/config.json` (other keys are kept; with no `python3` and an existing file, it tells you what to add).
+**What runs as you:** the download of the release of the install's channel ([below](#channels-and-versions); a new install: the newest stable version, or main's newest build while no version is published) (over HTTPS with `git` and `curl`, no `gh` login; checked against `SHA256SUMS`) into `~/.local/share/fyr/builds/<sha12>`, the `current` link, the seed (`seed/fyrd`) and the launcher (`launcher/fyr`); and the `cgroups` and `updateChannel` keys in `~/.config/fyr/config.json` (other keys are kept; with no `python3` and an existing file, it tells you what to add).
 
 **What needs root**, run with `sudo`, each command printed first:
 
