@@ -67,6 +67,13 @@ type Deployer struct {
 	Survive bool
 	Poll    time.Duration // drain and probation-ok poll interval
 	Drain   time.Duration // max drain wait
+	// OldLauncher, when not 0: the launcher may be from before probation-ok
+	// (#165), so the success report also comes after this wait, once its
+	// probation has surely ended (V0.survive-update). The launcher is the
+	// installed fyr, which an auto-update does not replace; fyrd knows a new
+	// one by its FYR_LAUNCHER_PID (#172, after #165). 0: wait for
+	// probation-ok only.
+	OldLauncher time.Duration
 	// OnProgress hears each phase as it happens (SPEC 0.5 V0.39).
 	OnProgress func(Progress)
 	// Live is the build id of this daemon (a commit, maybe with -dirty-…).
@@ -581,11 +588,15 @@ func (d *Deployer) ReportPending(ctx context.Context) {
 	if step <= 0 {
 		step = time.Second
 	}
+	start := time.Now()
 	go func() {
-		// #148, #156: driven solely by the launcher's probation-ok file, with
-		// no 65 s fallback timer. Exiting on ctx leaves pending_deploy in KV
-		// for the next daemon start.
+		// #148, #156: driven by the launcher's probation-ok file. Only a
+		// launcher too old to write it gets the fallback. Exiting on ctx
+		// leaves pending_deploy in KV for the next daemon start.
 		for !d.probationOK(p.Build) {
+			if d.OldLauncher > 0 && time.Since(start) >= d.OldLauncher {
+				break
+			}
 			t := time.NewTimer(step)
 			select {
 			case <-ctx.Done():
@@ -597,6 +608,10 @@ func (d *Deployer) ReportPending(ctx context.Context) {
 		d.finishPending(p)
 	}()
 }
+
+// OldLauncherProbation is when a deploy under a launcher from before
+// probation-ok counts as good: its 60 s probation and a margin.
+const OldLauncherProbation = 65 * time.Second
 
 func (d *Deployer) probationOK(build string) bool {
 	b, err := os.ReadFile(filepath.Join(d.Data, ProbationOK))

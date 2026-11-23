@@ -42,6 +42,7 @@ const (
 	reuseFor  = time.Minute
 	unusedTTL = time.Hour
 	kvKey     = "auth.devices"
+	onceKey   = "auth.once"
 )
 
 // Device is one browser that holds a session.
@@ -61,9 +62,14 @@ type Device struct {
 	CodeUntil time.Time `json:"codeUntil,omitempty"`
 }
 
+// once is a one-time link. It is kept in kv under onceKey by the SHA-256 of
+// its token, never the token (V0.survive-update): a link made just before an
+// update still works after it, until it ends.
 type once struct {
-	how, name, by string
-	until         time.Time
+	How   string    `json:"how"`
+	Name  string    `json:"name"`
+	By    string    `json:"by,omitempty"`
+	Until time.Time `json:"until"`
 }
 
 // Store is a front's devices and its one-time links.
@@ -73,7 +79,7 @@ type Store struct {
 
 	mu      sync.Mutex
 	devices map[string]*Device // by hash
-	once    map[string]once    // by the link's token
+	once    map[string]once    // by the SHA-256 of the link's token
 	saved   map[string]time.Time
 
 	// Decision 0030 slice 2: stored modes and what observe counts, the tailnet
@@ -122,6 +128,12 @@ func Open(kv kvstore.Table, now func() time.Time) (*Store, error) {
 			s.saved[d.Hash] = d.LastSeen
 		}
 	}
+	if raw, _ := kv.GetKV(onceKey); raw != "" {
+		json.Unmarshal([]byte(raw), &s.once)
+		if s.once == nil {
+			s.once = map[string]once{}
+		}
+	}
 	if err := s.openState(); err != nil {
 		return nil, err
 	}
@@ -152,13 +164,25 @@ func (s *Store) OnceFor(how, name, by string, ttl time.Duration) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
+	s.once[hash(tok)] = once{How: how, Name: name, By: by, Until: now.Add(ttl)}
+	s.saveOnceLocked(now)
+	return tok
+}
+
+// saveOnceLocked drops the links that ended and writes the rest. Holds s.mu.
+func (s *Store) saveOnceLocked(now time.Time) {
 	for k, o := range s.once {
-		if now.After(o.until) {
+		if now.After(o.Until) {
 			delete(s.once, k)
 		}
 	}
-	s.once[tok] = once{how: how, name: name, by: by, until: now.Add(ttl)}
-	return tok
+	if len(s.once) == 0 {
+		s.kv.SetKV(onceKey, "")
+		return
+	}
+	if b, err := json.Marshal(s.once); err == nil {
+		s.kv.SetKV(onceKey, string(b))
+	}
 }
 
 // ErrLink: the one-time link is unknown, used or too old.
@@ -169,20 +193,23 @@ var ErrLink = errors.New("that link no longer works: run fyr open again")
 // session. agent names the browser (from its User-Agent).
 func (s *Store) Redeem(tok, have, agent string) (cookie string, d *Device, err error) {
 	s.mu.Lock()
-	o, ok := s.once[tok]
-	delete(s.once, tok)
+	o, ok := s.once[hash(tok)]
+	if ok {
+		delete(s.once, hash(tok))
+		s.saveOnceLocked(s.now())
+	}
 	s.mu.Unlock()
-	if !ok || s.now().After(o.until) {
+	if !ok || s.now().After(o.Until) {
 		return "", nil, ErrLink
 	}
 	if d, ok := s.Lookup(have); ok && !d.Pending {
 		return "", d, nil
 	}
-	name := o.name
+	name := o.Name
 	if agent != "" {
-		name = agent + " · " + o.name
+		name = agent + " · " + o.Name
 	}
-	cookie, d = s.MintFor(o.how, name, "", o.by)
+	cookie, d = s.MintFor(o.How, name, "", o.By)
 	return cookie, d, nil
 }
 

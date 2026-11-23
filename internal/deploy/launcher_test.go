@@ -328,6 +328,36 @@ func TestLauncherWritesProbationOK(t *testing.T) {
 	}
 }
 
+// V0.survive-update: a launcher restarted during a switch's probation starts
+// the new current without a switch; it still writes probation-ok for it once
+// it has run its probation, so the deploy's report is not left waiting.
+func TestLauncherRestartedInProbationWritesProbationOK(t *testing.T) {
+	data := t.TempDir()
+	build(t, data, "a", "ok")
+	build(t, data, "b", "healthy")
+	link(t, data, "previous", "a")
+	link(t, data, "current", "b")
+	os.WriteFile(filepath.Join(data, ProbationOK), []byte("builds/a"), 0o600) // the deploy before
+	l := launcher(data)
+	l.maxStarts = 1
+	go func() {
+		for i := 0; i < 1000; i++ {
+			if b, err := os.ReadFile(filepath.Join(data, ProbationOK)); err == nil && filepath.Base(string(b)) == "b" {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		os.WriteFile(filepath.Join(data, "stop"), nil, 0o644)
+	}()
+	if err := l.Run(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(data, ProbationOK))
+	if err != nil || filepath.Base(string(b)) != "b" || target(data, "current") != "b" {
+		t.Fatalf("probation-ok %q (%v), current=%s", b, err, target(data, "current"))
+	}
+}
+
 // SPEC V0.180 (#264): SIGHUP to the launcher is a reload: fyrd gets it, exits 75, and
 // the launcher starts it again (the runner, and with it the agents, stays) instead
 // of stopping as it does on SIGTERM.

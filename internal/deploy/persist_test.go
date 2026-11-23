@@ -81,3 +81,19 @@ func TestReportPendingWaitsForProbationOKAcrossRestart(t *testing.T) {
 		t.Fatalf("after restart: %v", r)
 	}
 }
+
+// V0.survive-update: a launcher from before probation-ok (#165), which says no
+// pid (#172), never writes it, so the report comes after OldLauncher instead
+// of never; auto-update would otherwise wait on pending_deploy for good.
+func TestReportPendingUnderAnOldLauncher(t *testing.T) {
+	d, h, _ := newDeployer(t, "")
+	d.OldLauncher = 50 * time.Millisecond
+	d.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy"}}`)
+	d.ReportPending(t.Context())
+	if r := h.reportsAfter(1); len(r) != 1 || !strings.HasPrefix(r[0], "t1 ok") {
+		t.Fatalf("under an old launcher: %v", r)
+	}
+	if raw, _ := d.DB.GetKV("pending_deploy"); raw != "" {
+		t.Fatalf("pending_deploy kept: %q", raw)
+	}
+}
