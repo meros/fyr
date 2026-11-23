@@ -895,6 +895,38 @@ function railFixture(now: number): Fixture {
       ev(6, now - 5 * 60_000 + 1000, "t_run", "run.ended", { failure: null, interrupted: false, durationMs: 60_000 }),
     ];
   }
+  // V0.conversation-jumps: &jumps=1 adds a long conversation: six messages of the owner, each answered after work that
+  // folds, and a Run card in the middle that waits for him.
+  if (MOCK_JUMPS) {
+    const t = base("t_jumps", "Move the search index to the new cluster", now, 1, {
+      project: "acme/ops",
+      cwd: "/home/owner/src/search",
+      summary: "The reindex needs the old cluster read-only first.",
+      attention: { state: "blocked", section: "needs", reason: "Run: Make the old cluster read-only", group: "approve", word: "Run", subject: "Make the old cluster read-only" },
+      offers: [{ id: "ro-1", on: "thread", label: "Run", run: "script", argv: ["bash", "-euo", "pipefail", "-c", "searchctl freeze --cluster old"], cwd: "/home/owner/src/search", request: true, command: "searchctl freeze --cluster old", why: "Make the old cluster read-only", by: "agent", digest: "d-ro-1" }],
+      unavailable: quiet,
+    });
+    threads.unshift(t);
+    const list: FyrEvent[] = [];
+    let s = 0;
+    const T = now - 50 * 60_000;
+    const e = (type: string, data: unknown) => list.push(ev(++s, T + s * 20_000, "t_jumps", type, data));
+    const asks = ["Move the search index to the new cluster.", "Which mapping does the new cluster use?", "Keep the old analyzers.", "Go ahead with the reindex.", "How long did the reindex take?", "Write it up in the runbook."];
+    const para = (i: number) => Array.from({ length: 4 }, (_, k) => `Step ${i + 1}.${k + 1}: the index has its shards on three nodes, and the copy keeps the old one serving until the alias moves.`).join("\n\n");
+    asks.forEach((text, i) => {
+      e("user", { text, images: 0 });
+      e("run.started", {});
+      for (let k = 0; k < 3; k++) {
+        e("msg", toolUse(`j${i}-${k}`, k === 1 ? "Bash" : "Read", k === 1 ? { command: "searchctl status" } : { file_path: `deploy/search/cluster-${k}.yaml` }));
+        e("msg", toolResult(`j${i}-${k}`));
+        if (k === 0) e("msg", assistantText("Checking the cluster next."));
+      }
+      e("msg", assistantText(para(i)));
+      if (i === 2) e("run.requested", { on: "thread", action: "ro-1" });
+      e("run.ended", { failure: null, interrupted: false, durationMs: 60_000 });
+    });
+    events.t_jumps = list;
+  }
   events.t_babysit = [
     ...events.t_babysit,
     ev(events.t_babysit.length + 1, now - 2 * 60_000, "t_babysit", "user", { text: "The map tests pass on map-perf now. Rebase on it before you merge #4170.", from: "t_mapperf" }),
@@ -1219,6 +1251,8 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     list.push(e);
     setTimeout(() => sub?.event(e), 20);
   };
+  // V0.conversation-jumps: the layout test makes the agent say something while the owner reads further up.
+  if (MOCK_JUMPS && typeof window !== "undefined") (window as unknown as { __fyrMockSay?: (id: string, text: string) => void }).__fyrMockSay = (id, text) => emit(id, "msg", assistantText(text));
   const quiet = { ...NOT_RUNNING };
   // V0.33: messages the mock agent has not read; a running thread reads them after a step.
   const unread = new Map<string, string>(Object.entries(events).flatMap(([tid, list]) => {
@@ -1782,6 +1816,7 @@ function mockDeploy() {
 const MOCK_LONGTITLE = mockParam("longtitle") === "1";
 const MOCK_QUOTAW = mockParam("quotaw") === "1";
 const MOCK_RUNS = mockParam("runs") === "1";
+const MOCK_JUMPS = mockParam("jumps") === "1";
 const MOCK_ROOTPROMPT = mockParam("rootprompt") === "no";
 const MOCK_REMOTE = new Set(["t_lasso", "t_triage"]);
 /** V0.124: "lab" answers with another install id than the one the front first saw, until the owner trusts it. */

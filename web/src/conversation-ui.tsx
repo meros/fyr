@@ -21,7 +21,8 @@ import type { ComponentChildren } from "preact";
 import { PreviewCardView, openMarkdownImage } from "./preview-ui.tsx";
 import type { PreviewCard } from "./previews.ts";
 import { NextSteps, ProseCommand, RunCardAt, RunCards } from "./runcard-ui.tsx";
-import { cardShows, cardsKey, placeCards, requests, splitProse } from "./runcard.ts";
+import { cardShows, cardsKey, placeCards, requests, splitProse, waitingRequests } from "./runcard.ts";
+import { JUMP_EVENT, LAND, leftAt, looseKey, newSince, pickStop, stopsOf, type JumpAsk, type Placed, type StopKind } from "./jumps.ts";
 import { type SendArgs } from "./composer.tsx";
 import { TONE_ICON, HostContext, useToolDetails, RunMark, ToolCard, CopyButton, QuietLine, keyActivate, ThreadIdContext } from "./tool-calls-ui.tsx";
 import { TASK_ICON } from "./agents-strip.tsx";
@@ -57,6 +58,29 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   const stick = useRef(true);
   // V0.scroll-to-bottom: away from the end, an arrow takes you back there (desktop and phone).
   const [away, setAway] = useState(false);
+  // V0.conversation-jumps: the stops (the owner's messages, the Run cards that wait for him), where the owner left the
+  // end (for "3 new" on the arrow), the stop a jump just marked, and which jumps have somewhere to go.
+  const waitKey = cards ? waitingRequests(cards.t).map((o) => o.id).join("\n") : "";
+  const stops = useMemo(() => {
+    const waiting = new Set(waitKey ? waitKey.split("\n") : []);
+    return new Map(stopsOf(entries, pending, looseCards, waiting).map((s) => [s.key, s.kind]));
+  }, [entries, pending, looseCards, waitKey]);
+  const itemsNow = useRef(items);
+  itemsNow.current = items;
+  const [mark, setMark] = useState<string | null>(null);
+  const [hit, setHit] = useState<string | null>(null);
+  const landed = useRef<string | null>(null);
+  const [can, setCan] = useState({ prev: false, next: false, own: false, needs: 0 });
+
+  /** The stops as drawn, in the content's coordinates, and the visible part of it. */
+  const measure = (el: HTMLElement) => {
+    const box = el.getBoundingClientRect();
+    const placed: Placed[] = [...el.querySelectorAll<HTMLElement>("[data-stop]")].map((x) => {
+      const r = x.getBoundingClientRect();
+      return { key: x.dataset.jk ?? "", kind: x.dataset.stop as StopKind, top: r.top - box.top + el.scrollTop, bottom: r.bottom - box.top + el.scrollTop };
+    });
+    return { placed, view: { top: el.scrollTop, bottom: el.scrollTop + el.clientHeight } };
+  };
 
   const check = () => {
     const el = ref.current;
@@ -65,19 +89,66 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
     stick.current = atEnd;
     setAway(!atEnd);
     onAtEnd(atEnd);
+    setMark((m) => (atEnd ? null : m ?? leftAt(itemsNow.current)));
+    if (atEnd) return;
+    const { placed, view } = measure(el);
+    const n = {
+      prev: !!pickStop(placed, "own", -1, view, landed.current),
+      next: !!pickStop(placed, "own", 1, view, landed.current),
+      own: placed.some((s) => s.kind === "own"),
+      needs: placed.filter((s) => s.kind === "needs").length,
+    };
+    // A scroll calls this on every frame: a new object only when something changed, so nothing redraws for nothing.
+    setCan((c) => (c.prev === n.prev && c.next === n.next && c.own === n.own && c.needs === n.needs ? c : n));
   };
+
+  const jump = ({ kind, dir }: JumpAsk) => {
+    const el = ref.current;
+    if (!el) return;
+    const { placed, view } = measure(el);
+    const key = pickStop(placed, kind, dir, view, landed.current, kind === "needs");
+    const s = key && placed.find((x) => x.key === key);
+    if (!s) return;
+    landed.current = s.key;
+    stick.current = false;
+    el.scrollTo({ top: Math.max(0, s.top - LAND), behavior: reducedMotion() ? "auto" : "smooth" });
+    setHit(s.key);
+    check(); // a stop already in view moves nothing, so no scroll event says where the next jump goes
+  };
+  const jumpNow = useRef(jump);
+  jumpNow.current = jump;
+
+  useEffect(() => {
+    // The mark is brief: long enough to find it, gone before it is noise.
+    if (!hit) return;
+    const t = setTimeout(() => setHit(null), 1600);
+    return () => clearTimeout(t);
+  }, [hit]);
+
+  useEffect(() => {
+    // Desktop keys (app-keyboard.tsx); the phone has no keyboard and uses the buttons.
+    const on = (e: Event) => jumpNow.current((e as CustomEvent<JumpAsk>).detail);
+    window.addEventListener(JUMP_EVENT, on);
+    return () => window.removeEventListener(JUMP_EVENT, on);
+  }, []);
+
+  const fresh = mark === null ? 0 : newSince(items, mark);
 
   const toEnd = () => {
     const el = ref.current;
     if (!el) return;
     stick.current = true;
     setAway(false);
+    setMark(null);
     el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
   useLayoutEffect(() => {
     stick.current = true;
     setAway(false);
+    setMark(null);
+    setHit(null);
+    landed.current = null;
   }, [threadId]);
 
   useLayoutEffect(() => {
@@ -139,12 +210,12 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
         <DeliveryCtx.Provider value={delivery ?? null}>
           {entries.map((en) => (
             <Boundary key={en.key} name="This message">
-              <EntryView en={en} previews={previews} />
+              <EntryView en={en} previews={previews} stop={stops.get(en.key)} hit={hit === en.key} />
             </Boundary>
           ))}
           {looseCards.map((id) => (
             <Boundary key={`card-${id}`} name="This command">
-              <div class="cv out">
+              <div class={`cv out${hit === looseKey(id) ? " cv-hit" : ""}`} {...stopAttrs(looseKey(id), stops.get(looseKey(id)))}>
                 <RunCardAt id={id} />
               </div>
             </Boundary>
@@ -161,7 +232,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
           )}
           {pending.map((it) => (
             <Boundary key={it.key} name="This message">
-              <div class="cv out own">
+              <div class={`cv out own${hit === it.key ? " cv-hit" : ""}`} {...stopAttrs(it.key, stops.get(it.key))}>
                 <ItemView it={it} previews={previews} />
               </div>
             </Boundary>
@@ -170,9 +241,29 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
       </div>
       {away && (
         <div class="cv-end">
-          <button type="button" class="cv-endb" aria-label="Scroll to the newest message" title="Scroll to the newest message" onClick={toEnd}>
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></svg>
-          </button>
+          <div class="cv-jb">
+            {/* V0.conversation-jumps: the next card that waits for the owner, the owner's previous and next message, then
+                the end with what arrived since he left it. One bar on desktop and phone; the phone's targets are 44 px (phone.css, touch size). */}
+            {can.needs > 0 && (
+              <button type="button" class="cv-jn" aria-label={`The next card that waits for you (${can.needs})`} title="The next card that waits for you (w)" onClick={() => jump({ kind: "needs", dir: 1 })}>
+                Needs you{can.needs > 1 ? ` · ${can.needs}` : ""}
+              </button>
+            )}
+            {can.own && (
+              <div class="cv-jp" role="group" aria-label="Your messages">
+                <button type="button" class="cv-jo" disabled={!can.prev} aria-label="Your previous message" title="Your previous message ([)" onClick={() => jump({ kind: "own", dir: -1 })}>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+                </button>
+                <button type="button" class="cv-jo" disabled={!can.next} aria-label="Your next message" title="Your next message (])" onClick={() => jump({ kind: "own", dir: 1 })}>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                </button>
+              </div>
+            )}
+            <button type="button" class={`cv-endb${fresh ? " new" : ""}`} aria-label={fresh ? `Scroll to the newest message, ${fresh} new` : "Scroll to the newest message"} title="Scroll to the newest message" onClick={toEnd}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></svg>
+              {fresh > 0 && <span class="cv-new">{fresh} new</span>}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -219,12 +310,17 @@ function DeliveryLine({ it }: { it: Extract<Item, { kind: "user" }> }) {
 }
 
 
+/** V0.conversation-jumps: a stop's wrapper names its kind and key, so a jump finds it where it is drawn. */
+function stopAttrs(key: string, kind: StopKind | undefined) {
+  return kind ? { "data-stop": kind, "data-jk": key } : {};
+}
+
 /** V0.41: one paced entry. The wrapper's class carries the rhythm: more room before an outcome, little between steps. */
-function EntryView({ en, previews }: { en: Entry; previews: PreviewCard[] }) {
+function EntryView({ en, previews, stop, hit }: { en: Entry; previews: PreviewCard[]; stop?: StopKind; hit?: boolean }) {
   if (en.kind === "fold") return <div class="cv proc"><Fold en={en} previews={previews} /></div>;
   const cls = en.role === "outcome" ? (en.item.kind === "user" ? "out own" : "out") : en.role === "end" ? "end" : "proc";
   return (
-    <div class={`cv ${cls}`}>
+    <div class={`cv ${cls}${hit ? " cv-hit" : ""}`} {...stopAttrs(en.key, stop)}>
       <ItemView it={en.item} previews={previews} process={en.role === "process"} />
     </div>
   );

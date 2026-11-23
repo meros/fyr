@@ -14,6 +14,7 @@ import { cardKey, goTo } from "./question.ts";
 import { escapeTarget } from "./settings-nav.ts";
 import { snoozeChoiceForKey } from "./snooze.ts";
 import { takeOpen } from "./push.ts";
+import { JUMP_EVENT, type JumpAsk } from "./jumps.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useAnswers, useDecisionCards } from "./app-cards.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
@@ -203,6 +204,15 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
       case "/":
         e.preventDefault();
         searchRef.current?.focus();
+        return;
+      case "[":
+      case "]":
+      case "w":
+        // V0.conversation-jumps: your previous or next message, the next card that waits for you, in the open
+        // conversation. Desktop only: the phone has no keyboard and uses the bar beside the end arrow.
+        if (!view) return;
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent<JumpAsk>(JUMP_EVENT, { detail: k === "w" ? { kind: "needs", dir: 1 } : { kind: "own", dir: k === "[" ? -1 : 1 } }));
         return;
       case "?":
         e.preventDefault();
