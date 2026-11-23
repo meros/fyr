@@ -50,7 +50,12 @@ func TestQuotaReset(t *testing.T) {
 		{"Individual quota reached. Resets in 1d2h30m.", at.Add(26*time.Hour + 30*time.Minute)},
 		{"Individual quota reached. Resets in 2d.", at.Add(48 * time.Hour)},
 		{"You've hit your weekly limit · resets Nov 23, 4am", time.Date(2026, 11, 23, 4, 0, 0, 0, time.UTC)},
-		{"You've hit your weekly limit · resets 23 Nov, 4am (Europe/Stockholm)", time.Date(2026, 11, 23, 4, 0, 0, 0, time.UTC)},
+		{"You've hit your weekly limit · resets 23 Nov, 4am (Europe/Stockholm)", time.Date(2026, 11, 23, 3, 0, 0, 0, time.UTC)}, // Stockholm is UTC+1 in November
+		{"You've hit your limit · resets Nov 24 at 4am (Europe/Stockholm)", time.Date(2026, 11, 24, 3, 0, 0, 0, time.UTC)},
+		{"You've hit your session limit · resets 3pm (Europe/Stockholm)", time.Date(2026, 11, 21, 14, 0, 0, 0, time.UTC)},
+		{"You've hit your weekly limit · resets 4am (Europe/Stockholm)", time.Date(2026, 11, 22, 3, 0, 0, 0, time.UTC)},
+		{"You've hit your limit · resets 4 am", time.Date(2026, 11, 22, 4, 0, 0, 0, time.UTC)},
+		{"You've hit your limit · resets Nov 24, 4:30am (Not/AZone)", time.Date(2026, 11, 24, 4, 30, 0, 0, time.UTC)},
 		// A day of this month already past is next year's.
 		{"resets Jan 2, 4am", time.Date(2027, 1, 2, 4, 0, 0, 0, time.UTC)},
 		// A time alone is today's, or tomorrow's when it has gone by.

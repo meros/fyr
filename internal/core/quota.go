@@ -250,38 +250,53 @@ func resetsIn(msg string) (time.Duration, bool) {
 	return total, true
 }
 
-// resetsAt reads "resets 23 Nov, 4am" (a zone in parentheses after it is the
-// host's own, so it is dropped) as a time after at.
+// resetsAt reads "resets 23 Nov, 4am", "resets Nov 24 at 4am", "resets 4 am"
+// or "resets 3:30pm" as a time after at. A zone in parentheses ("(Europe/
+// Stockholm)") is the zone the CLI wrote the clock in and is honoured; without
+// one, or with one this host cannot load, the zone of at is used.
 func resetsAt(msg string, at time.Time) (time.Time, bool) {
 	i := strings.Index(strings.ToLower(msg), "resets ")
 	if i < 0 {
 		return time.Time{}, false
 	}
 	s := msg[i+len("resets "):]
+	loc := at.Location()
 	if j := strings.IndexByte(s, '('); j >= 0 {
+		if k := strings.IndexByte(s[j:], ')'); k > 0 {
+			if l, err := time.LoadLocation(strings.TrimSpace(s[j+1 : j+k])); err == nil {
+				loc = l
+			}
+		}
 		s = s[:j]
 	}
 	s = strings.TrimSpace(strings.TrimRight(s, ".,; "))
+	// "Nov 24 at 4am" is "Nov 24, 4am"; "4 am" is "4am".
+	s = strings.ReplaceAll(s, " at ", ", ")
+	s = strings.TrimPrefix(s, "at ")
+	for _, m := range []string{"am", "pm", "AM", "PM"} {
+		s = strings.ReplaceAll(s, " "+m, strings.ToLower(m))
+	}
+	at = at.In(loc)
 	// A time alone is on the day the notice came; a date is this year's, and
 	// next year's when that day is behind us. claude writes "23 Nov, 4am";
 	// the month-first forms are here for other providers.
-	for _, layout := range []string{"2 Jan, 3pm", "2 Jan, 3:04pm", "2 Jan 15:04", "2 Jan 3pm", "Jan 2, 3pm", "Jan 2, 3:04pm", "Jan 2, 15:04", "Jan 2 15:04"} {
-		t, err := time.ParseInLocation(layout, s, at.Location())
+	for _, layout := range []string{"2 Jan, 3pm", "2 Jan, 3:04pm", "2 Jan 15:04", "2 Jan 3pm", "2 Jan 3:04pm", "Jan 2, 3pm", "Jan 2, 3:04pm", "Jan 2, 15:04", "Jan 2 15:04", "Jan 2 3pm", "Jan 2 3:04pm"} {
+		t, err := time.ParseInLocation(layout, s, loc)
 		if err != nil {
 			continue
 		}
-		t = time.Date(at.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, at.Location())
+		t = time.Date(at.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc)
 		if !t.After(at) {
 			t = t.AddDate(1, 0, 0)
 		}
 		return t, true
 	}
 	for _, layout := range []string{"3pm", "3:04pm", "15:04"} {
-		t, err := time.ParseInLocation(layout, s, at.Location())
+		t, err := time.ParseInLocation(layout, s, loc)
 		if err != nil {
 			continue
 		}
-		t = time.Date(at.Year(), at.Month(), at.Day(), t.Hour(), t.Minute(), 0, 0, at.Location())
+		t = time.Date(at.Year(), at.Month(), at.Day(), t.Hour(), t.Minute(), 0, 0, loc)
 		if !t.After(at) {
 			t = t.AddDate(0, 0, 1)
 		}
