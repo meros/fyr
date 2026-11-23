@@ -6,6 +6,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -16,7 +17,7 @@ func TestS3HeavierThanPredictedIsToldOnce(t *testing.T) {
 	e.UseSlots(p)
 	a := bareThread(t, e)
 	running(e, a)
-	p.Acquire(a, slots.Test)
+	p.Acquire(a, resource.Test)
 	e.SlotOver = func(owner string) (string, float64, float64, bool) { return "fyr: make test", 80, 50, owner == a }
 	guardDeps(t, e)
 	e.Tick()

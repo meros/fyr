@@ -13,12 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
 // jobGuard is two running threads holding slots, a the oldest, with memory
 // short and the agents' stall elevated, and what the guard froze.
-func jobGuard(t *testing.T) (*Engine, *time.Time, string, string, *float64, *slots.Stall, map[string]bool) {
+func jobGuard(t *testing.T) (*Engine, *time.Time, string, string, *float64, *resource.Stall, map[string]bool) {
 	e, _, now := bare(t)
 	p := slots.New(2)
 	p.Now = e.Now
@@ -26,13 +27,13 @@ func jobGuard(t *testing.T) (*Engine, *time.Time, string, string, *float64, *slo
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	p.Acquire(a, slots.Test)
+	p.Acquire(a, resource.Test)
 	*now = now.Add(time.Minute)
-	p.Acquire(b, slots.Test)
-	free, agents := 0.02, slots.StallElevated // V0.sim-fixes (3): the headroom alone freezes nothing while memory does not stall
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK, AgentsStall: agents}
+	p.Acquire(b, resource.Test)
+	free, agents := 0.02, resource.StallElevated // V0.sim-fixes (3): the headroom alone freezes nothing while memory does not stall
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: resource.StallOK, AgentsStall: agents}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	frozen := map[string]bool{}
@@ -71,8 +72,8 @@ func TestGuardTidyAnEmptyJobFreezeIsReleased(t *testing.T) {
 func TestGuardTidyWorkThatHoldsLittleIsNotFrozen(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)} // 2.8 GB flagged
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)} // 2.8 GB flagged
 	var roots uint64
 	e.UndeclaredRootsMem = func(string) (uint64, bool) { return roots, true }
 	guardDeps(t, e)
@@ -102,11 +103,11 @@ func TestGuardTidyPastTheLimitTheAgentsStallHoldsUntilTheCeiling(t *testing.T) {
 	t.Run("host", func(t *testing.T) {
 		e, u, now, z, th := fzEngine(t)
 		a, b := th[0], th[1]
-		e.Slots.Acquire(b, slots.Test)
-		u.flags = []slots.Undeclared{flagFor(a, *now)}
+		e.Slots.Acquire(b, resource.Test)
+		u.flags = []resource.Undeclared{flagFor(a, *now)}
 		z.free = 0.04
 		e.Tick()
-		z.stall = slots.StallCritical
+		z.stall = resource.StallCritical
 		*now = now.Add(FreezeMax + time.Second)
 		e.Tick()
 		if z.frozen[a] {
@@ -116,14 +117,14 @@ func TestGuardTidyPastTheLimitTheAgentsStallHoldsUntilTheCeiling(t *testing.T) {
 	t.Run("agents", func(t *testing.T) {
 		e, u, now, z, th := fzEngine(t)
 		a, b := th[0], th[1]
-		e.Slots.Acquire(b, slots.Test)
-		u.flags = []slots.Undeclared{flagFor(a, *now)}
+		e.Slots.Acquire(b, resource.Test)
+		u.flags = []resource.Undeclared{flagFor(a, *now)}
 		z.free = 0.04
 		var out bytes.Buffer
 		log.SetOutput(&out)
 		t.Cleanup(func() { log.SetOutput(os.Stderr) })
 		e.Tick()
-		z.agents = slots.StallCritical
+		z.agents = resource.StallCritical
 		*now = now.Add(FreezeMax + time.Second)
 		e.Tick()
 		if !z.frozen[a] {

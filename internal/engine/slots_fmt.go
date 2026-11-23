@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // hostName is how the heavy-job answers name this host (V0.163).
@@ -17,7 +17,7 @@ func (e *Engine) hostName() string {
 
 // jobShare is a job's share of the host in words (V0.163): CPU and memory
 // apart, or one share on a host that counts jobs.
-func jobShare(s slots.Snapshot, owner string) string {
+func jobShare(s resource.Snapshot, owner string) string {
 	for _, h := range append(s.Held, s.Waiting...) {
 		if h.Owner == owner {
 			if h.Need != nil {
@@ -30,7 +30,7 @@ func jobShare(s slots.Snapshot, owner string) string {
 }
 
 // freeShare is what the heavy-job budget has left, in words.
-func freeShare(s slots.Snapshot) string {
+func freeShare(s resource.Snapshot) string {
 	if s.CPUFreePct != nil && s.MemFreePct != nil {
 		return fmt.Sprintf("%.0f %% CPU and %.0f %% memory", *s.CPUFreePct, *s.MemFreePct)
 	}

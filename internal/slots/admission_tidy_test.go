@@ -7,6 +7,8 @@ package slots
 import (
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // V0.admission-tidy (1): the holder's own hold is not counted beside its
@@ -16,7 +18,7 @@ func TestAdmissionTidyGrowAdmitsTheDifference(t *testing.T) {
 	p := New(2)
 	room := true
 	var asked []string
-	p.Admit = func(head Holder, held []Holder) (bool, string, string) {
+	p.Admit = func(head resource.Holder, held []resource.Holder) (bool, string, string) {
 		for _, h := range held {
 			asked = append(asked, head.Owner+" beside "+h.Owner)
 		}
@@ -25,10 +27,10 @@ func TestAdmissionTidyGrowAdmitsTheDifference(t *testing.T) {
 		}
 		return true, "", ""
 	}
-	p.Acquire("a", Test)
-	p.Acquire("b", Test)
+	p.Acquire("a", resource.Test)
+	p.Acquire("b", resource.Test)
 	asked = nil
-	if held, _ := p.Grow("a", E2E); !held {
+	if held, _ := p.Grow("a", resource.E2E); !held {
 		t.Fatal("a heavier command that fits waits")
 	}
 	for _, s := range asked {
@@ -37,7 +39,7 @@ func TestAdmissionTidyGrowAdmitsTheDifference(t *testing.T) {
 		}
 	}
 	room = false
-	held, ahead := p.Grow("a", E2E)
+	held, ahead := p.Grow("a", resource.E2E)
 	if held || ahead != 0 {
 		t.Fatalf("a heavier command that does not fit runs: %v %d", held, ahead)
 	}
@@ -58,7 +60,7 @@ func TestAdmissionTidyGrowAdmitsTheDifference(t *testing.T) {
 	}
 	// A release ends both the hold and the wait.
 	room = false
-	p.Grow("a", E2E)
+	p.Grow("a", resource.E2E)
 	p.Release("a")
 	if s := p.Snapshot(); len(s.Waiting) != 0 || len(s.Held) != 1 {
 		t.Fatalf("after release %+v", s)
@@ -70,14 +72,16 @@ func TestAdmissionTidyGrowAdmitsTheDifference(t *testing.T) {
 func TestAdmissionTidyAcquireAsksTheHeadFirst(t *testing.T) {
 	p := New(4)
 	fits := map[string]bool{"x": true, "c": true}
-	p.Admit = func(head Holder, _ []Holder) (bool, string, string) { return fits[head.Owner], "", "" }
-	p.Backfill = func(_, _ Holder, _ []Holder) bool { return true }
-	p.Acquire("x", Test)
-	if held, _ := p.Acquire("head", Test); held {
+	p.Admit = func(head resource.Holder, _ []resource.Holder) (bool, string, string) {
+		return fits[head.Owner], "", ""
+	}
+	p.Backfill = func(_, _ resource.Holder, _ []resource.Holder) bool { return true }
+	p.Acquire("x", resource.Test)
+	if held, _ := p.Acquire("head", resource.Test); held {
 		t.Fatal("setup: the head was admitted")
 	}
 	fits["head"] = true // the host freed room; no Fill ran yet
-	p.Acquire("c", Test)
+	p.Acquire("c", resource.Test)
 	if _, ok := p.Holding("head"); !ok {
 		t.Fatalf("the head that fits still waits: %+v", p.Snapshot())
 	}
@@ -90,8 +94,8 @@ func TestAdmissionTidyAcquireAsksTheHeadFirst(t *testing.T) {
 // default: 15 % free is short where the host keeps 20 %.
 func TestAdmissionTidyAIMDReadsTheConfiguredReserve(t *testing.T) {
 	t0 := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
-	a := &AIMD{N: 2, Policy: Policy{SlowdownMax: 1.5, MemoryReserve: 0.2}}
-	s := Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.15), Stall: StallOK}
+	a := &AIMD{N: 2, Policy: resource.Policy{SlowdownMax: 1.5, MemoryReserve: 0.2}}
+	s := resource.Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.15), Stall: resource.StallOK}
 	a.Step(t0, s, false, time.Time{}, "")
 	if b, _ := a.Step(t0.Add(30*time.Second), s, false, time.Time{}, ""); b.Mem >= 1 {
 		t.Fatalf("15 %% free under a 20 %% reserve did not cut: %+v", b)
@@ -103,16 +107,18 @@ func TestAdmissionTidyAIMDReadsTheConfiguredReserve(t *testing.T) {
 // head is decided as with nothing held, and the next waits beside it.
 func TestAdmissionTidyTwoGrowersDoNotBlockEachOther(t *testing.T) {
 	p := New(2)
-	p.Acquire("a", Test) // by the count, before Admit is set
-	p.Acquire("b", Test)
+	p.Acquire("a", resource.Test) // by the count, before Admit is set
+	p.Acquire("b", resource.Test)
 	// A heavier job fits only with nothing else held.
-	p.Admit = func(_ Holder, held []Holder) (bool, string, string) { return len(held) == 0, "needs more", ResMem }
-	if held, _ := p.Grow("a", E2E); held {
+	p.Admit = func(_ resource.Holder, held []resource.Holder) (bool, string, string) {
+		return len(held) == 0, "needs more", ResMem
+	}
+	if held, _ := p.Grow("a", resource.E2E); held {
 		t.Fatal("setup: a grew beside b's ungrown hold")
 	}
 	var told []string
 	p.OnGrant = func(o, _ string) { told = append(told, o) }
-	if held, _ := p.Grow("b", E2E); held {
+	if held, _ := p.Grow("b", resource.E2E); held {
 		t.Fatal("b grew beside a's hold")
 	}
 	s := p.Snapshot()
@@ -121,11 +127,13 @@ func TestAdmissionTidyTwoGrowersDoNotBlockEachOther(t *testing.T) {
 	}
 	// The memory rules still hold: nothing is granted while memory is short.
 	q := New(2)
-	q.Acquire("a", Test)
-	q.Acquire("b", Test)
-	q.Admit = func(Holder, []Holder) (bool, string, string) { return false, "memory short", ResHeadroom }
-	q.Grow("a", E2E)
-	q.Grow("b", E2E)
+	q.Acquire("a", resource.Test)
+	q.Acquire("b", resource.Test)
+	q.Admit = func(resource.Holder, []resource.Holder) (bool, string, string) {
+		return false, "memory short", ResHeadroom
+	}
+	q.Grow("a", resource.E2E)
+	q.Grow("b", resource.E2E)
 	q.Fill()
 	if s := q.Snapshot(); len(s.Waiting) != 2 {
 		t.Fatalf("granted past the memory rule: %+v", s.Waiting)

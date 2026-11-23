@@ -19,9 +19,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/kvstore"
 	"github.com/meros/fyr/internal/lockwatch"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // jobsKey is where the records are kept in the store's KV table.
@@ -333,7 +333,7 @@ type ended struct {
 // the records stored without j.mu, so j.mu is never held across I/O or a
 // call out of the tracker (the engine's tick asks Active under e.mu). Without
 // a tree, trees are the threads' readings from their process trees (V0.process-tree-hosts).
-func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rates map[string]*float64, s *float64, now time.Time) {
+func (j *Jobs) tick(t *Tree, trees map[string]reading, snap resource.Snapshot, rates map[string]*float64, s *float64, now time.Time) {
 	now = now.UTC()
 	dirOf := func(owner string) string {
 		if t == nil {
@@ -464,7 +464,7 @@ func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rate
 
 // markedLocked says thread sh's mark is the baseline of its hold: taken
 // within markFor of the grant. Call it with j.mu held.
-func (j *Jobs) markedLocked(sh slots.Holder) bool {
+func (j *Jobs) markedLocked(sh resource.Holder) bool {
 	m, ok := j.marks[sh.Owner]
 	if !ok {
 		return false

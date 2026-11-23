@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -14,9 +15,9 @@ func TestV163GateSpeaksPercent(t *testing.T) {
 	e, _, _ := bare(t)
 	p := slots.New(2)
 	p.Now = e.Now
-	p.Host = func() slots.Signals { return slots.Signals{Provider: "cgroups", CPU: 6, Memory: 13 << 30} }
-	p.Cost = func(h slots.Holder) slots.Need { return slots.Need{CPU: 2.7, Mem: 2 << 30} }
-	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
+	p.Host = func() resource.Signals { return resource.Signals{Provider: "cgroups", CPU: 6, Memory: 13 << 30} }
+	p.Cost = func(h resource.Holder) resource.Need { return resource.Need{CPU: 2.7, Mem: 2 << 30} }
+	p.Admit = func(head resource.Holder, held []resource.Holder) (bool, string, string) {
 		if len(held) == 0 {
 			return true, "", ""
 		}
@@ -27,8 +28,8 @@ func TestV163GateSpeaksPercent(t *testing.T) {
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	e.Slots.Acquire(a, slots.Test)
-	e.Slots.Acquire(b, slots.Test)
+	e.Slots.Acquire(a, resource.Test)
+	e.Slots.Acquire(b, resource.Test)
 	if r := e.HeavyGate(HeavyCall{Thread: bareThread(t, e), Class: "make test", ToolUse: "tu"}); strings.Contains(r, "slot") || !strings.Contains(r, "no room") {
 		t.Fatalf("gate %q", r)
 	}

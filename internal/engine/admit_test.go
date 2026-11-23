@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -14,13 +15,13 @@ func TestS2QueuedWithAReasonAndGrantedAtTheTick(t *testing.T) {
 	p := slots.New(2)
 	p.Now = e.Now
 	slow := 2.4
-	sig := slots.Signals{Provider: "cgroups", Slowdown: &slow, CPU: 4, Memory: 8 << 30}
-	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
-		c := make([]slots.Need, len(held))
+	sig := resource.Signals{Provider: "cgroups", Slowdown: &slow, CPU: 4, Memory: 8 << 30}
+	p.Admit = func(head resource.Holder, held []resource.Holder) (bool, string, string) {
+		c := make([]resource.Need, len(held))
 		for i := range c {
-			c[i] = slots.Need{CPU: 1, Mem: 1 << 30}
+			c[i] = resource.Need{CPU: 1, Mem: 1 << 30}
 		}
-		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 2, c, slots.Need{CPU: 1, Mem: 1 << 30})
+		return slots.Decide(resource.DefaultPolicy, sig, p.Budget(), 2, c, resource.Need{CPU: 1, Mem: 1 << 30})
 	}
 	e.UseSlots(p)
 	a, b := bareThread(t, e), bareThread(t, e)
@@ -48,11 +49,11 @@ func TestS2MemoryGuardTellsTheBiggestJobOnce(t *testing.T) {
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	p.Acquire(a, slots.Test)
-	p.Acquire(b, slots.E2E)
+	p.Acquire(a, resource.Test)
+	p.Acquire(b, resource.E2E)
 	free := 0.06
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free} }
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals { return resource.Signals{Provider: "cgroups", Headroom: &free} }
 	e.SlotGrowth = func(o string) uint64 { return map[string]uint64{a: 1e9, b: 4.1e9}[o] }
 	guardDeps(t, e)
 	e.Tick()

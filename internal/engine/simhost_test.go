@@ -38,7 +38,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/cgroup"
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 const gb = 1e9
@@ -255,7 +255,7 @@ func (h *simHost) limitFor(class string, undeclared bool) float64 {
 	l, ok := h.learned[class]
 	if ok && l.Peak > 0 {
 		peak := float64(l.Peak)
-		if l.Runs < slots.LearnRuns {
+		if l.Runs < resource.LearnRuns {
 			peak = max(peak, h.p.Budget/2)
 		}
 		if m := 1.25 * peak; m < h.p.Budget {
@@ -327,7 +327,7 @@ func (h *simHost) thaw(us []*simUnit) {
 // within 90 % of the cap, at most once per 30 s a thread, and not near oomd's
 // limit (V0.guard-tidy).
 func (h *simHost) reclaim(th string) {
-	if h.p.OomdLimit > 0 && h.agentsAvg*100 >= h.p.OomdLimit-slots.OomdNearMargin {
+	if h.p.OomdLimit > 0 && h.agentsAvg*100 >= h.p.OomdLimit-resource.OomdNearMargin {
 		return
 	}
 	for _, u := range h.units {
@@ -655,26 +655,26 @@ func (h *simHost) oomd() string {
 }
 
 // signals is what cgroup.Sampler.Signals would read on this host.
-func (h *simHost) signals() slots.Signals {
+func (h *simHost) signals() resource.Signals {
 	hostAvail := h.p.RAM - h.p.HostBase - h.desktop - h.agentsRes
 	ws := h.agentsRes - h.frozenFile
 	hr := min(hostAvail/h.p.Budget, (h.p.Budget-ws)/h.p.Budget)
 	hr = float64(int(min(1, max(0, hr))*1000+0.5)) / 1000
 	s := h.cpuSlow
 	unit := h.agentsAvg * 100
-	return slots.Signals{Provider: "cgroups", Slowdown: &s, Headroom: &hr, Stall: level(h.hostAvg), AgentsStall: level(h.agentsAvg),
+	return resource.Signals{Provider: "cgroups", Slowdown: &s, Headroom: &hr, Stall: level(h.hostAvg), AgentsStall: level(h.agentsAvg),
 		CPU: h.p.Cores, Memory: uint64(h.p.Budget), SwapFull: h.swapUsed >= cgroup.SwapFullShare*h.p.SwapCap,
 		AgentsMem: uint64(h.agentsRes), UnitStall: &unit, OomdLimit: h.p.OomdLimit}
 }
 
-func level(avg float64) slots.Stall {
+func level(avg float64) resource.Stall {
 	switch {
 	case avg*100 >= cgroup.StallCritical:
-		return slots.StallCritical
+		return resource.StallCritical
 	case avg*100 >= cgroup.StallElevated:
-		return slots.StallElevated
+		return resource.StallElevated
 	}
-	return slots.StallOK
+	return resource.StallOK
 }
 
 // psiTrigger is fyrd's trigger: 200 ms of full stall in 2 s, the critical

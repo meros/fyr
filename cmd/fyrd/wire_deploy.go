@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/meros/fyr/internal/lockwatch"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +11,9 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/meros/fyr/internal/guard/resource"
+	"github.com/meros/fyr/internal/lockwatch"
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/auth"
@@ -22,7 +24,6 @@ import (
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/setup"
-	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/stream"
 	"github.com/meros/fyr/internal/tailnet"
 )
@@ -53,7 +54,7 @@ func (w *wiring) wireDeploy() {
 		dep.OldLauncher = deploy.OldLauncherProbation
 	}
 	if !pool.Off() {
-		dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }
+		dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, resource.Test) }
 	}
 	// V0.82: a self-deploy makes the landed changes its build holds live.
 	dep.OnShipped = func(s deploy.Shipped) {

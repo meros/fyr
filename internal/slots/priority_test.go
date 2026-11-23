@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func waiting(p *Pool) []string {
@@ -24,15 +26,15 @@ func TestVProjectPriorityPlacesNewWaiters(t *testing.T) {
 	p.Now = func() time.Time { return now }
 	ranks := map[string]int{"hi1": 1, "hi2": 1, "lo1": -1, "lo2": -1}
 	p.Rank = func(o string) int { return ranks[o] }
-	p.Acquire("holder", Test)
+	p.Acquire("holder", resource.Test)
 	for _, o := range []string{"lo1", "n1", "hi1", "lo2", "n2", "hi2"} {
-		p.Acquire(o, Test)
+		p.Acquire(o, resource.Test)
 	}
 	if got, want := waiting(p), []string{"hi1", "hi2", "n1", "n2", "lo1", "lo2"}; !slices.Equal(got, want) {
 		t.Fatalf("queue %v, want %v", got, want)
 	}
 	// The ahead count names the real place.
-	if _, ahead := p.Acquire("n2", Test); ahead != 3 {
+	if _, ahead := p.Acquire("n2", resource.Test); ahead != 3 {
 		t.Fatalf("n2 ahead %d", ahead)
 	}
 }
@@ -43,21 +45,21 @@ func TestVProjectPriorityKeepsTheOwnersOrderAndPriorityWaits(t *testing.T) {
 	p.Now = func() time.Time { return now }
 	ranks := map[string]int{"hi": 1, "lo": -1}
 	p.Rank = func(o string) int { return ranks[o] }
-	p.Acquire("holder", Test)
-	p.Acquire("lo", Test)
-	p.Acquire("n", Test)
+	p.Acquire("holder", resource.Test)
+	p.Acquire("lo", resource.Test)
+	p.Acquire("n", resource.Test)
 	// The owner puts lo first (V0.137); it keeps its place ahead of n. A
 	// later high one goes ahead of both, behind the deploy's priority wait;
 	// a later normal one goes after n, the last waiter of its rank.
 	p.Reorder([]string{"lo", "n"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go p.Wait(ctx, "self-deploy", Test)
+	go p.Wait(ctx, "self-deploy", resource.Test)
 	for len(waiting(p)) < 3 {
 		time.Sleep(time.Millisecond)
 	}
-	p.Acquire("hi", Test)
-	p.Acquire("n2", Test)
+	p.Acquire("hi", resource.Test)
+	p.Acquire("n2", resource.Test)
 	if got, want := waiting(p), []string{"self-deploy", "hi", "lo", "n", "n2"}; !slices.Equal(got, want) {
 		t.Fatalf("queue %v, want %v", got, want)
 	}
@@ -69,11 +71,11 @@ func TestVProjectPriorityStarvesNoOne(t *testing.T) {
 	p.Now = func() time.Time { return now }
 	ranks := map[string]int{"hi1": 1, "hi2": 1, "lo": -1}
 	p.Rank = func(o string) int { return ranks[o] }
-	p.Acquire("holder", Test)
-	p.Acquire("lo", Test)
-	p.Acquire("hi1", Test)
+	p.Acquire("holder", resource.Test)
+	p.Acquire("lo", resource.Test)
+	p.Acquire("hi1", resource.Test)
 	now = now.Add(RankAfter)
-	p.Acquire("hi2", Test)
+	p.Acquire("hi2", resource.Test)
 	if got, want := waiting(p), []string{"hi1", "lo", "hi2"}; !slices.Equal(got, want) {
 		t.Fatalf("queue %v, want %v", got, want)
 	}
@@ -82,7 +84,7 @@ func TestVProjectPriorityStarvesNoOne(t *testing.T) {
 func TestVProjectPriorityWithoutRankIsFirstComeFirstServed(t *testing.T) {
 	p := New(1)
 	for _, o := range []string{"holder", "a", "b", "c"} {
-		p.Acquire(o, Test)
+		p.Acquire(o, resource.Test)
 	}
 	if got := waiting(p); !slices.Equal(got, []string{"a", "b", "c"}) {
 		t.Fatalf("queue %v", got)

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // growing gives the engine a thread whose work grew over the memory
@@ -34,8 +34,8 @@ func TestFreezeFastTheTriggerWithACriticalStallFreezesAtOnce(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	growing(t, e, u, a, now)
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
-	z.free, z.agents = 0.30, slots.StallCritical
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
+	z.free, z.agents = 0.30, resource.StallCritical
 	*now = now.Add(time.Second)
 	e.GuardNow()
 	if !z.frozen[a] {
@@ -47,9 +47,9 @@ func TestFreezeFastNearOomdsLimitWithTheTrigger(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	growing(t, e, u, a, now)
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
 	unit := 52.0
-	z.free, z.agents, z.unit, z.oomd = 0.30, slots.StallElevated, &unit, 60
+	z.free, z.agents, z.unit, z.oomd = 0.30, resource.StallElevated, &unit, 60
 	e.GuardNow()
 	if !z.frozen[a] {
 		t.Fatalf("near oomd's limit after the trigger: frozen at once, got %v", z.frozen)
@@ -60,7 +60,7 @@ func TestFreezeFastWithoutTheTriggerTheWindowHolds(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	asked := growing(t, e, u, a, now)
-	z.free, z.agents = 0.30, slots.StallCritical
+	z.free, z.agents = 0.30, resource.StallCritical
 	tickFor(e, now, 30*time.Second)
 	if len(z.frozen) != 0 || *asked != 0 {
 		t.Fatalf("no trigger: the guard waits for the detector's flag, got frozen=%v asked=%d", z.frozen, *asked)
@@ -71,7 +71,7 @@ func TestFreezeFastAnElevatedStallWithoutTheTriggerWaits(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	asked := growing(t, e, u, a, now)
-	z.free, z.agents = 0.30, slots.StallElevated
+	z.free, z.agents = 0.30, resource.StallElevated
 	tickFor(e, now, 30*time.Second)
 	if len(z.frozen) != 0 || *asked != 0 {
 		t.Fatalf("no trigger, the agents' stall only elevated: the old wait holds, got frozen=%v asked=%d", z.frozen, *asked)
@@ -81,11 +81,11 @@ func TestFreezeFastAnElevatedStallWithoutTheTriggerWaits(t *testing.T) {
 func TestFreezeFastAnOldTriggerDoesNotCount(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
-	z.free, z.agents = 0.30, slots.StallElevated
+	z.free, z.agents = 0.30, resource.StallElevated
 	e.GuardNow() // nothing grows yet
 	tickFor(e, now, TriggerFresh+10*time.Second)
 	asked := growing(t, e, u, a, now)
-	z.agents = slots.StallCritical // critical by avg10, long after the trigger
+	z.agents = resource.StallCritical // critical by avg10, long after the trigger
 	e.Tick()
 	if len(z.frozen) != 0 || *asked != 0 {
 		t.Fatalf("a trigger %s old: the old wait holds, got frozen=%v asked=%d", TriggerFresh, z.frozen, *asked)
@@ -97,9 +97,9 @@ func TestFreezeFastNeverAService(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	growing(t, e, u, a, now)
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
 	e.GuardService = func(string) bool { return true }
-	z.free, z.agents = 0.30, slots.StallCritical
+	z.free, z.agents = 0.30, resource.StallCritical
 	e.GuardNow()
 	if z.frozen[a] {
 		t.Fatal("froze a service")
@@ -112,7 +112,7 @@ func TestFreezeFastNeverTheOnlyHeavyWork(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	asked := growing(t, e, u, a, now)
-	z.free, z.agents = 0.30, slots.StallCritical
+	z.free, z.agents = 0.30, resource.StallCritical
 	*now = now.Add(time.Second)
 	e.GuardNow()
 	if *asked == 0 {
@@ -131,8 +131,8 @@ func TestFreezeFastTheTwentyNovemberTimeline(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	growing(t, e, u, a, now)
-	e.Slots.Acquire(th[1], slots.Test) // held=1 that morning
-	z.free, z.stall, z.agents = 0.64, slots.StallElevated, slots.StallElevated
+	e.Slots.Acquire(th[1], resource.Test) // held=1 that morning
+	z.free, z.stall, z.agents = 0.64, resource.StallElevated, resource.StallElevated
 	t0 := *now
 	e.GuardNow()
 	if !z.frozen[a] {
@@ -150,7 +150,7 @@ func TestFreezeFastTheTwentyNovemberTimeline(t *testing.T) {
 // the trigger.
 func TestFreezeFastTheTriggerCountsForTriggerFreshOnly(t *testing.T) {
 	e, _, now, z, _ := fzEngine(t)
-	z.free, z.agents = 0.64, slots.StallElevated
+	z.free, z.agents = 0.64, resource.StallElevated
 	e.GuardNow()
 	if !e.GuardView().Short {
 		t.Fatal("not short at the trigger")

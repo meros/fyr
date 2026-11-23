@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -94,7 +95,7 @@ func TestV207AHeldJobIsMeasuredFromTheProcessTree(t *testing.T) {
 	s := &Sampler{Proc: t.TempDir(), Cores: 8, Slots: p, Jobs: j, Trees: &TreeReader{PS: fixedPS(&out)},
 		CLIs: func() map[string]int { return map[string]int{"t_a": 10} }, Now: func() time.Time { return now }}
 	s.Tick()
-	p.Acquire("t_a", slots.Test)
+	p.Acquire("t_a", resource.Test)
 	j.Saw("t_a", "make test")
 	now = now.Add(5 * time.Second)
 	s.Tick()
@@ -139,7 +140,7 @@ func TestV207AHoldThatMeasuredNothingTeachesNothing(t *testing.T) {
 		t.Fatalf("%+v %v", l, ok)
 	}
 	p := slots.New(1)
-	p.Acquire("t_a", slots.Test)
+	p.Acquire("t_a", resource.Test)
 	t0 := time.Now()
 	j.tick(nil, nil, p.Snapshot(), nil, nil, t0)
 	j.tick(nil, nil, p.Snapshot(), nil, nil, t0.Add(time.Minute))

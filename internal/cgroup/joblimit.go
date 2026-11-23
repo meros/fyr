@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // JobSize is what a job's class has learned; Known is false before its first
@@ -32,17 +32,17 @@ type JobSize struct {
 	Runs   int
 }
 
-// sizeFor is z as a job is sized from it: under slots.LearnRuns runs a
+// sizeFor is z as a job is sized from it: under resource.LearnRuns runs a
 // class's peak and demand are never below the prior's (1/N of budget and
-// cores), as admission counts them (slots.NeedOf; decision 0029 section 2).
+// cores), as admission counts them (resource.NeedOf; decision 0029 section 2).
 // V0.admission-memory: a first run its memory.high held back taught a low
 // peak, and the next limit, sized from it, held the next run lower still.
 // Without N (the host's slots setting) z is as learned.
 func (g *JobGroups) sizeFor(z JobSize, budget uint64, cores float64) JobSize {
-	if !z.Known || z.Runs >= slots.LearnRuns || g.N <= 0 {
+	if !z.Known || z.Runs >= resource.LearnRuns || g.N <= 0 {
 		return z
 	}
-	p := slots.Prior(slots.Signals{CPU: cores, Memory: budget}, g.N)
+	p := resource.Prior(resource.Signals{CPU: cores, Memory: budget}, g.N)
 	z.Peak, z.Demand = max(z.Peak, p.Mem), max(z.Demand, p.CPU)
 	return z
 }
@@ -126,7 +126,7 @@ func (g *JobGroups) unknownHigh(high string, budget uint64, cores float64, undec
 	if g.N <= 0 || budget == 0 || high == "max" {
 		return high, "unknown"
 	}
-	p := slots.Prior(slots.Signals{CPU: cores, Memory: budget}, g.N).Mem
+	p := resource.Prior(resource.Signals{CPU: cores, Memory: budget}, g.N).Mem
 	if n, err := strconv.ParseUint(high, 10, 64); err == nil && n >= p {
 		return high, "unknown"
 	}
@@ -249,10 +249,10 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 }
 
 // LimitSettled is whether a `guard: job limit` decision rests on a class
-// learned from slots.LearnRuns runs (V0.limit-raised-settled): its learned
+// learned from resource.LearnRuns runs (V0.limit-raised-settled): its learned
 // limit, and a raise of it, are not sized below the prior.
 func LimitSettled(why string, runs int) bool {
-	return (why == "learned" || why == "raised") && runs >= slots.LearnRuns
+	return (why == "learned" || why == "raised") && runs >= resource.LearnRuns
 }
 
 // OwnStallLift is the job's own memory full stall (avg10, percent) at which

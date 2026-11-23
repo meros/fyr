@@ -16,7 +16,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // invLog captures the log, teed into the engine's ring as fyrd does.
@@ -33,8 +33,8 @@ func invLines(out *bytes.Buffer, id string) int {
 }
 
 // invCards are the open cards of id, as the front reads them.
-func invCards(e *Engine, id string) []slots.InvariantCard {
-	var out []slots.InvariantCard
+func invCards(e *Engine, id string) []resource.InvariantCard {
+	var out []resource.InvariantCard
 	for _, c := range e.invariantView().Cards {
 		if c.ID == id {
 			out = append(out, c)
@@ -56,8 +56,8 @@ func TestInvariantThawIntoCritical(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	out := invLog(t, e)
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	if !z.frozen[a] {
@@ -66,15 +66,15 @@ func TestInvariantThawIntoCritical(t *testing.T) {
 	// V0.sim-fixes (1): an episode that ends while the agents' memory stalls
 	// critically keeps its work frozen, so the guard itself gives no violation.
 	u.flags = nil
-	z.agents = slots.StallCritical
+	z.agents = resource.StallCritical
 	*now = now.Add(10 * time.Second)
 	e.Tick()
 	if !z.frozen[a] || invLines(out, InvThawIntoCritical) != 0 {
 		t.Fatalf("thawed into the critical stall: frozen=%v\n%s", z.frozen, out)
 	}
 	// A thaw into it (a regression of that rule) is the violation.
-	crit := slots.Signals{Provider: "cgroups", AgentsStall: slots.StallCritical}
-	e.guardRecord(slots.GuardEvent{At: *now, Kind: "thaw", Work: "undeclared", Thread: a, Reason: "ended"}, crit)
+	crit := resource.Signals{Provider: "cgroups", AgentsStall: resource.StallCritical}
+	e.guardRecord(resource.GuardEvent{At: *now, Kind: "thaw", Work: "undeclared", Thread: a, Reason: "ended"}, crit)
 	e.Tick() // checkInvariants runs on it and the view is published
 	if n := invLines(out, InvThawIntoCritical); n != 1 {
 		t.Fatalf("%d invariant lines:\n%s", n, out)
@@ -96,9 +96,9 @@ func TestInvariantThawIntoCritical(t *testing.T) {
 func TestInvariantThawIntoCriticalNotForGoneOrCeiling(t *testing.T) {
 	e, _, now, _, _ := fzEngine(t)
 	out := invLog(t, e)
-	crit := slots.Signals{Provider: "cgroups", AgentsStall: slots.StallCritical}
-	e.guardRecord(slots.GuardEvent{At: *now, Kind: "thaw", Thread: "t1", Reason: "gone"}, crit)
-	e.guardRecord(slots.GuardEvent{At: *now, Kind: "thaw", Thread: "t2", Reason: "ceiling"}, crit)
+	crit := resource.Signals{Provider: "cgroups", AgentsStall: resource.StallCritical}
+	e.guardRecord(resource.GuardEvent{At: *now, Kind: "thaw", Thread: "t1", Reason: "gone"}, crit)
+	e.guardRecord(resource.GuardEvent{At: *now, Kind: "thaw", Thread: "t2", Reason: "ceiling"}, crit)
 	e.checkInvariants()
 	if invLines(out, InvThawIntoCritical) != 0 {
 		t.Fatalf("a violation for gone or ceiling:\n%s", out)
@@ -127,9 +127,9 @@ func TestInvariantFreezeHeldLong(t *testing.T) {
 func TestInvariantFreezeCyclingFourThawsInAnHour(t *testing.T) {
 	e, _, now, _, _ := fzEngine(t)
 	out := invLog(t, e)
-	sig := slots.Signals{Provider: "cgroups"}
+	sig := resource.Signals{Provider: "cgroups"}
 	thaw := func(at time.Time) {
-		e.guardRecord(slots.GuardEvent{At: at, Kind: "thaw", Thread: "t1", Reason: "memory"}, sig)
+		e.guardRecord(resource.GuardEvent{At: at, Kind: "thaw", Thread: "t1", Reason: "memory"}, sig)
 		e.checkInvariants()
 	}
 	for i := range 3 {
@@ -145,7 +145,7 @@ func TestInvariantFreezeCyclingFourThawsInAnHour(t *testing.T) {
 	}
 	// Spread out, thaws are no cycle: a thread thawed every 20 min.
 	thaw2 := func(at time.Time) {
-		e.guardRecord(slots.GuardEvent{At: at, Kind: "thaw", Thread: "t2", Reason: "memory"}, sig)
+		e.guardRecord(resource.GuardEvent{At: at, Kind: "thaw", Thread: "t2", Reason: "memory"}, sig)
 	}
 	for i := range 6 {
 		thaw2(now.Add(time.Duration(i) * 20 * time.Minute))
@@ -222,7 +222,7 @@ func TestInvariantShortNothingFrozen(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	out := invLog(t, e)
 	a := th[0]
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	e.UndeclaredRootsMem = func(string) (uint64, bool) { return 1e6, true } // its work holds little: never frozen
 	z.free = 0.04
 	// V0.sim-fixes (3): alone, the only heavy work that runs is never frozen
@@ -235,7 +235,7 @@ func TestInvariantShortNothingFrozen(t *testing.T) {
 	// Beside another thread's job it could be frozen: the clock starts over.
 	z.free = 0.5
 	e.Tick()
-	e.Slots.Acquire(th[1], slots.Test)
+	e.Slots.Acquire(th[1], resource.Test)
 	z.free = 0.04
 	e.Tick()
 	tickFor(e, now, InvShortAfter)
@@ -256,9 +256,9 @@ func TestInvariantShortNothingFrozen(t *testing.T) {
 func TestInvariantShortNothingFrozenNotWithoutAStall(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	out := invLog(t, e)
-	e.Slots.Acquire(th[1], slots.Test)
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
-	z.free, z.stall = 0.04, slots.StallOK
+	e.Slots.Acquire(th[1], resource.Test)
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
+	z.free, z.stall = 0.04, resource.StallOK
 	e.Tick()
 	tickFor(e, now, InvShortAfter+time.Minute)
 	if len(z.frozen) != 0 || invLines(out, InvShortNothingFroze) != 0 {

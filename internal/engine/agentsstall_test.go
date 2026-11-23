@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // Decision 0032's incident: the agents stalled at 53 % while the host read 0.1 %.
 func TestAgentsStallCriticalFreezesWithTheHostFine(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
-	e.Slots.Acquire(th[1], slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	z.free, z.stall, z.agents = 0.30, slots.StallOK, slots.StallCritical
+	e.Slots.Acquire(th[1], resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
+	z.free, z.stall, z.agents = 0.30, resource.StallOK, resource.StallCritical
 	e.Tick()
 	if !z.frozen[a] {
 		t.Fatalf("the agents' stall is critical: the undeclared work is frozen, got %v", z.frozen)
@@ -29,19 +29,19 @@ func TestAgentsStallCriticalFreezesWithTheHostFine(t *testing.T) {
 func TestAgentsStallElevatedIsNotFine(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
-	e.Slots.Acquire(th[1], slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	z.free, z.agents = 0.30, slots.StallCritical
+	e.Slots.Acquire(th[1], resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
+	z.free, z.agents = 0.30, resource.StallCritical
 	e.Tick()
 	if !z.frozen[a] {
 		t.Fatal("setup: not frozen")
 	}
-	z.agents = slots.StallElevated // the host is fine, the agents still stall
+	z.agents = resource.StallElevated // the host is fine, the agents still stall
 	tickFor(e, now, 3*ThawAfterOK)
 	if !z.frozen[a] {
 		t.Fatal("woke while the agents' stall is elevated")
 	}
-	z.agents = slots.StallOK
+	z.agents = resource.StallOK
 	tickFor(e, now, ThawAfterOK+10*time.Second)
 	if z.frozen[a] {
 		t.Fatal("still frozen with both stalls ok")
@@ -52,10 +52,10 @@ func TestNearOomdsLimitTheNextFreezeDoesNotWait(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
 	c := third(t, e)
-	e.Slots.Acquire(c, slots.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
-	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
+	e.Slots.Acquire(c, resource.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
+	u.flags = []resource.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	unit := 30.0
-	z.free, z.agents, z.unit, z.oomd = 0.30, slots.StallCritical, &unit, 60
+	z.free, z.agents, z.unit, z.oomd = 0.30, resource.StallCritical, &unit, 60
 	e.Tick()
 	if !z.frozen[b] || len(z.frozen) != 1 {
 		t.Fatalf("first freeze: %v", z.frozen)

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 const rerunKillsKey = "engine.rerunKills"
@@ -134,7 +134,7 @@ func (e *Engine) shortJob(thread string) (time.Duration, bool) {
 
 // rerunKill kills f's work for entry, says why, and arranges its rerun; false
 // when nothing was killed (the freeze then stays).
-func (e *Engine) rerunKill(f frozenJob, entry, why string, sig slots.Signals, now time.Time) bool {
+func (e *Engine) rerunKill(f frozenJob, entry, why string, sig resource.Signals, now time.Time) bool {
 	n := e.JobKill(f.owner, f.undeclared)
 	if n == 0 {
 		e.guardOnce(now, "kill:"+f.owner, fmt.Sprintf("could not kill thread=%s class=%q: no process left in its cgroup", f.owner, entry))
@@ -161,11 +161,11 @@ func (e *Engine) rerunKill(f frozenJob, entry, why string, sig slots.Signals, no
 		e.undFroze[f.owner] = u
 	}
 	e.mu.Unlock()
-	log.Printf("guard: killed %s thread=%s class=%q why=%q procs=%d mem=%s frozen_for=%s kills_this_hour=%d %s", kind, f.owner, entry, why, n, slots.GB(float64(f.mem)), now.Sub(f.at).Round(time.Second), len(ks), guardSignals(sig))
-	e.guardRecord(slots.GuardEvent{At: now, Kind: "kill", Work: work, Thread: f.owner, Class: entry}, sig)
+	log.Printf("guard: killed %s thread=%s class=%q why=%q procs=%d mem=%s frozen_for=%s kills_this_hour=%d %s", kind, f.owner, entry, why, n, resource.GB(float64(f.mem)), now.Sub(f.at).Round(time.Second), len(ks), guardSignals(sig))
+	e.guardRecord(resource.GuardEvent{At: now, Kind: "kill", Work: work, Thread: f.owner, Class: entry}, sig)
 	if len(ks) == RerunCap {
 		log.Printf("guard: class=%q killed %d times in an hour: frozen instead of killed until %s", entry, RerunCap, ks[0].Add(RerunCapFor).Format("15:04"))
-		e.guardRecord(slots.GuardEvent{At: now, Kind: "capped", Class: entry}, sig)
+		e.guardRecord(resource.GuardEvent{At: now, Kind: "capped", Class: entry}, sig)
 	}
 	if !f.undeclared {
 		if e.RerunRaise != nil {
@@ -188,21 +188,21 @@ func (e *Engine) RerunWaiting(thread string) bool {
 }
 
 // rerunView is the classes killed in the last hour, for the front.
-func (e *Engine) rerunView(now time.Time) []slots.GuardRerun {
-	var out []slots.GuardRerun
+func (e *Engine) rerunView(now time.Time) []resource.GuardRerun {
+	var out []resource.GuardRerun
 	for entry, ks := range e.rerunKills {
 		ks = recent(ks, now)
 		if len(ks) == 0 {
 			continue
 		}
-		r := slots.GuardRerun{Class: entry, Kills: len(ks)}
+		r := resource.GuardRerun{Class: entry, Kills: len(ks)}
 		if len(ks) >= RerunCap {
 			t := ks[len(ks)-RerunCap].Add(RerunCapFor)
 			r.CappedUntil = &t
 		}
 		out = append(out, r)
 	}
-	slices.SortFunc(out, func(a, b slots.GuardRerun) int {
+	slices.SortFunc(out, func(a, b resource.GuardRerun) int {
 		if a.Class < b.Class {
 			return -1
 		}

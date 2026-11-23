@@ -1,8 +1,6 @@
 package cgroup
 
-import (
-	"github.com/meros/fyr/internal/slots"
-)
+import "github.com/meros/fyr/internal/guard/resource"
 
 // detect feeds one tick's readings to the detector (V0.164) and names the
 // command behind each flagged thread. The probe and the self-deploy are never
@@ -115,18 +113,18 @@ func (s *Sampler) Roots(f Flag) []Root {
 
 // Undeclared lists the threads that run heavy work Fyr did not admit, for the
 // pool's snapshot and the engine (V0.164); a published view, nothing is read.
-func (s *Sampler) Undeclared() []slots.Undeclared {
+func (s *Sampler) Undeclared() []resource.Undeclared {
 	if s.Detect == nil {
 		return nil
 	}
-	var out []slots.Undeclared
+	var out []resource.Undeclared
 	sig := s.Signals()
 	for _, f := range s.Detect.Flags() {
-		u := slots.Undeclared{Thread: f.Thread, Name: s.nameOf(f.Thread), CPU: f.CPU, Mem: f.Mem, Since: f.Since, Command: f.Command,
+		u := resource.Undeclared{Thread: f.Thread, Name: s.nameOf(f.Thread), CPU: f.CPU, Mem: f.Mem, Since: f.Since, Command: f.Command,
 			Paused: s.Groups.Frozen(f.Thread), Queued: f.Queued, OverCPU: f.OverCPU, OverMem: f.OverMem, Window: f.Window, MemOver: f.MemOver}
 		u.CPUPct, u.MemPct = func() (float64, float64) {
-			c, m := slots.Need{CPU: f.CPU, Mem: f.Mem}.Shares(sig)
-			return slots.Pct(c), slots.Pct(m)
+			c, m := resource.Need{CPU: f.CPU, Mem: f.Mem}.Shares(sig)
+			return resource.Pct(c), resource.Pct(m)
 		}()
 		out = append(out, u)
 	}
@@ -135,7 +133,7 @@ func (s *Sampler) Undeclared() []slots.Undeclared {
 
 // ServiceExtras are the threads' running services' reservations for admission
 // (V0.services-not-jobs), from the last tick.
-func (s *Sampler) ServiceExtras() []slots.Extra {
+func (s *Sampler) ServiceExtras() []resource.Extra {
 	return s.Services.Extras(s.nameOf)
 }
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // The pure part of the memory guard's tick (freezeGuard): what the signals
@@ -21,22 +21,22 @@ type guardMemory struct {
 }
 
 // memoryState reads sig under policy p (V0.oomd-guard, V0.guard-agents-stall).
-func memoryState(sig slots.Signals, p slots.Policy) guardMemory {
+func memoryState(sig resource.Signals, p resource.Policy) guardMemory {
 	critical, _ := sig.Critical()
 	m := guardMemory{
 		critical:       critical,
-		agentsCritical: sig.AgentsStall == slots.StallCritical,
+		agentsCritical: sig.AgentsStall == resource.StallCritical,
 		nearOomd:       sig.NearOomd(),
 	}
 	m.short = sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(p)) || critical || m.nearOomd)
-	m.calm = !critical && !m.nearOomd && sig.Stall != slots.StallElevated && sig.AgentsStall != slots.StallElevated
+	m.calm = !critical && !m.nearOomd && sig.Stall != resource.StallElevated && sig.AgentsStall != resource.StallElevated
 	return m
 }
 
 // wakeFine says memory is fine enough for the wake clock to run: calm, and
 // with a cap (V0.guard-wake) the stall alone decides; without one also the
 // headroom (reserve + 5 %).
-func wakeFine(m guardMemory, sig slots.Signals, p slots.Policy, capNow uint64) bool {
+func wakeFine(m guardMemory, sig resource.Signals, p resource.Policy, capNow uint64) bool {
 	return m.calm && (capNow > 0 || sig.Headroom == nil || *sig.Headroom >= sig.Reserve(p)+0.05)
 }
 
@@ -133,7 +133,7 @@ func thawWords(t thawing, now time.Time) (reason, why string) {
 // undeclared freeze while its thread is still flagged with the same start
 // (admitted, ended or released, it is not), a job while the slot holder it
 // was frozen under is still held.
-func stillHolding(f frozenJob, flagged []slots.Undeclared, held []slots.Holder) bool {
+func stillHolding(f frozenJob, flagged []resource.Undeclared, held []resource.Holder) bool {
 	if f.undeclared {
 		for _, u := range flagged {
 			if u.Thread == f.owner && u.Since.Equal(f.episode) {

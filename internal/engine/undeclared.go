@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // undFreeze is what the guard froze of one thread's episode of undeclared
@@ -30,7 +30,7 @@ func (e *Engine) frozenUndeclared(thread string) (frozenJob, bool) {
 }
 
 // flags are the threads that run undeclared heavy work now.
-func (e *Engine) flags() []slots.Undeclared {
+func (e *Engine) flags() []resource.Undeclared {
 	if e.Undeclared == nil {
 		return nil
 	}
@@ -47,7 +47,7 @@ func (e *Engine) flags() []slots.Undeclared {
 // a job or a second flag exists; and an episode is frozen again after a thaw,
 // RefreezeAfter later and at most MaxFreezes times, so the freezes work as time
 // slices of the long episode. It reports whether it froze one.
-func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted bool, heavy map[string]time.Time) bool {
+func (e *Engine) freezeUndeclared(sig resource.Signals, now time.Time, admitted bool, heavy map[string]time.Time) bool {
 	if e.UndeclaredFreeze == nil || e.UndeclaredThaw == nil {
 		return false
 	}
@@ -65,7 +65,7 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 		}
 		return n
 	}
-	var pick *slots.Undeclared
+	var pick *resource.Undeclared
 	var picked undFreeze
 	var skips [][2]string    // key, line: logged after the lock
 	svc := map[string]bool{} // decision 0036 (D), E4: asked outside e.mu
@@ -97,7 +97,7 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 			continue
 		}
 		if m := held[f.Thread]; m > 0 && float64(m-1) < WorkMemShare*float64(f.Mem) {
-			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: the work holds little of the thread's memory (its processes %s of %s)", f.Thread, slots.GB(float64(m-1)), slots.GB(float64(f.Mem)))})
+			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: the work holds little of the thread's memory (its processes %s of %s)", f.Thread, resource.GB(float64(m-1)), resource.GB(float64(f.Mem)))})
 			continue
 		}
 		prev := e.undFroze[f.Thread]
@@ -162,15 +162,15 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 	e.undFroze[pick.Thread] = undFreeze{episode: pick.Since, n: n}
 	e.mu.Unlock()
 	if turns {
-		log.Printf("guard: taking turns thread=%s units=%d first=%d cmd=%q mem=%s", pick.Thread, units, first.PID, first.Command, slots.GB(float64(first.RSS)))
+		log.Printf("guard: taking turns thread=%s units=%d first=%d cmd=%q mem=%s", pick.Thread, units, first.PID, first.Command, resource.GB(float64(first.RSS)))
 	}
 	cmd := pick.Command
 	if cmd == "" {
 		cmd = "unknown command"
 	}
 	log.Printf("guard: froze undeclared work thread=%s freeze=%d/%d episode_age=%s cmd=%q mem=%s cores=%.1f %s flagged=%d admitted=%t others_running=%d frozen_now=%d",
-		pick.Thread, n, MaxFreezes, now.Sub(pick.Since).Round(time.Second), cmd, slots.GB(float64(pick.Mem)), pick.CPU, guardSignals(sig), len(fl), admitted, others(pick.Thread), frozenNow)
-	e.guardRecord(slots.GuardEvent{At: now, Kind: "freeze", Work: "undeclared", Thread: pick.Thread, N: n}, sig)
+		pick.Thread, n, MaxFreezes, now.Sub(pick.Since).Round(time.Second), cmd, resource.GB(float64(pick.Mem)), pick.CPU, guardSignals(sig), len(fl), admitted, others(pick.Thread), frozenNow)
+	e.guardRecord(resource.GuardEvent{At: now, Kind: "freeze", Work: "undeclared", Thread: pick.Thread, N: n}, sig)
 	e.slotNotice(pick.Thread, map[string]any{"paused": why, "work": cmd})
 	return true
 }

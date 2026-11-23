@@ -3,7 +3,7 @@ package cgroup
 import (
 	"testing"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // V0.limit-raised-settled: a limit raised on a class learned from LearnRuns
@@ -15,12 +15,12 @@ func TestLimitSettled(t *testing.T) {
 		runs int
 		want bool
 	}{
-		{"learned", slots.LearnRuns, true},
-		{"raised", slots.LearnRuns, true}, // 20 Nov: 921 MB learned, then 1097 MB raised
-		{"raised", slots.LearnRuns + 4, true},
-		{"raised", slots.LearnRuns - 1, false},
-		{"learned", slots.LearnRuns - 1, false},
-		{"unknown", slots.LearnRuns, false},
+		{"learned", resource.LearnRuns, true},
+		{"raised", resource.LearnRuns, true}, // 20 Nov: 921 MB learned, then 1097 MB raised
+		{"raised", resource.LearnRuns + 4, true},
+		{"raised", resource.LearnRuns - 1, false},
+		{"learned", resource.LearnRuns - 1, false},
+		{"unknown", resource.LearnRuns, false},
 	} {
 		if got := LimitSettled(c.why, c.runs); got != c.want {
 			t.Errorf("LimitSettled(%q, %d) = %v, want %v", c.why, c.runs, got, c.want)

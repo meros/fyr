@@ -14,11 +14,12 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
 type und struct {
-	flags []slots.Undeclared
+	flags []resource.Undeclared
 }
 
 func undEngine(t *testing.T) (*Engine, *und, *time.Time, string) {
@@ -29,15 +30,15 @@ func undEngine(t *testing.T) (*Engine, *und, *time.Time, string) {
 	e.UseSlots(p)
 	e.HostName = "desk"
 	u := &und{}
-	e.Undeclared = func() []slots.Undeclared { return u.flags }
+	e.Undeclared = func() []resource.Undeclared { return u.flags }
 	guardDeps(t, e)
 	a := bareThread(t, e)
 	running(e, a)
 	return e, u, now, a
 }
 
-func flagFor(thread string, since time.Time) slots.Undeclared {
-	return slots.Undeclared{Thread: thread, Since: since, CPU: 2.1, Mem: 2.8e9, CPUPct: 52, MemPct: 20, OverCPU: true, OverMem: true, MemOver: true,
+func flagFor(thread string, since time.Time) resource.Undeclared {
+	return resource.Undeclared{Thread: thread, Since: since, CPU: 2.1, Mem: 2.8e9, CPUPct: 52, MemPct: 20, OverCPU: true, OverMem: true, MemOver: true,
 		Command: "node test/layout.e2e.mjs", Kind: "e2e", Window: 45 * time.Second}
 }
 
@@ -60,9 +61,9 @@ func endRun(e *Engine, id string, now time.Time) {
 
 type fz struct {
 	free    float64
-	stall   slots.Stall // "": elevated while the headroom is under 10 %, else ok (V0.sim-fixes: a freeze needs a stall)
-	agents  slots.Stall // the agents' own stall (V0.oomd-guard)
-	mem     uint64      // the agents' memory (V0.guard-wake)
+	stall   resource.Stall // "": elevated while the headroom is under 10 %, else ok (V0.sim-fixes: a freeze needs a stall)
+	agents  resource.Stall // the agents' own stall (V0.oomd-guard)
+	mem     uint64         // the agents' memory (V0.guard-wake)
 	slow    *float64
 	unit    *float64        // the unit's full memory stall, oomd's reading (V0.guard-agents-stall)
 	oomd    float64         // oomd's limit on the unit; 0 for none
@@ -75,16 +76,16 @@ type fz struct {
 func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 	e, u, now, a := undEngine(t)
 	z := &fz{free: 0.30, frozen: map[string]bool{}, slotted: map[string]bool{}, empty: map[string]bool{}}
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
 		st := z.stall
 		if st == "" {
-			st = slots.StallOK
-			if z.free < slots.DefaultPolicy.MemoryReserve {
-				st = slots.StallElevated
+			st = resource.StallOK
+			if z.free < resource.DefaultPolicy.MemoryReserve {
+				st = resource.StallElevated
 			}
 		}
-		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: st, AgentsStall: z.agents, AgentsMem: z.mem, Slowdown: z.slow, UnitStall: z.unit, OomdLimit: z.oomd}
+		return resource.Signals{Provider: "cgroups", Headroom: &z.free, Stall: st, AgentsStall: z.agents, AgentsMem: z.mem, Slowdown: z.slow, UnitStall: z.unit, OomdLimit: z.oomd}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	e.SlotFreeze = func(o string) bool { z.slotted[o] = true; return true }
@@ -101,9 +102,9 @@ func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 func TestF1F2NoFreezeWhileMemoryIsFine(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	z.free, z.stall = 0.30, slots.StallElevated
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
+	z.free, z.stall = 0.30, resource.StallElevated
 	e.Tick()
 	s := 5.0
 	z.slow = &s
@@ -116,8 +117,8 @@ func TestF1F2NoFreezeWhileMemoryIsFine(t *testing.T) {
 func TestF3UnderPressureTheUndeclaredWorkIsFrozenNotTheJobThatAsked(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.06
 	e.Tick()
 	if !z.frozen[a] || len(z.frozen) != 1 || len(z.slotted) != 0 {
@@ -132,7 +133,7 @@ func TestF3UnderPressureTheUndeclaredWorkIsFrozenNotTheJobThatAsked(t *testing.T
 func TestF4TheNewestEpisodeIsFrozenAndOnlyOne(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Minute))}
+	u.flags = []resource.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Minute))}
 	z.free = 0.04
 	e.Tick()
 	e.Tick()
@@ -146,12 +147,12 @@ func TestF5CPUOnlyIsNotFrozenTheJobsRuleApplies(t *testing.T) {
 	a, b := th[0], th[1]
 	c := bareThread(t, e)
 	running(e, c)
-	e.Slots.Acquire(b, slots.Test)
+	e.Slots.Acquire(b, resource.Test)
 	*now = now.Add(time.Minute)
-	e.Slots.Acquire(c, slots.Test)
+	e.Slots.Acquire(c, resource.Test)
 	f := flagFor(a, *now)
 	f.OverMem, f.MemOver = false, false
-	u.flags = []slots.Undeclared{f}
+	u.flags = []resource.Undeclared{f}
 	z.free = 0.04
 	e.Tick()
 	if len(z.frozen) != 0 || !z.slotted[c] {
@@ -166,7 +167,7 @@ func TestF5CPUOnlyIsNotFrozenTheJobsRuleApplies(t *testing.T) {
 func TestF6TheOnlyHeavyWorkIsFrozenOnlyBesideOtherHeavyWork(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	endRun(e, th[1], *now) // nobody else runs
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	if len(z.frozen) != 0 {
@@ -177,7 +178,7 @@ func TestF6TheOnlyHeavyWorkIsFrozenOnlyBesideOtherHeavyWork(t *testing.T) {
 	if len(z.frozen) != 0 {
 		t.Fatal("the only heavy work frozen for an idle agent")
 	}
-	e.Slots.Acquire(th[1], slots.Test) // now with a job
+	e.Slots.Acquire(th[1], resource.Test) // now with a job
 	e.Tick()
 	if !z.frozen[th[0]] || len(z.frozen) != 1 {
 		t.Fatalf("%v", z.frozen)
@@ -187,8 +188,8 @@ func TestF6TheOnlyHeavyWorkIsFrozenOnlyBesideOtherHeavyWork(t *testing.T) {
 func TestF7F8ThawByTheRuleAndNotFrozenAgainInTheEpisode(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	z.free = 0.5
@@ -224,8 +225,8 @@ func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	froze := 0
 	for range MaxFreezes + 2 {
 		z.free = 0.03
@@ -253,8 +254,8 @@ func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 func TestF13AFreezeThatHoldsNothingIsReleased(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	if !z.frozen[a] {
@@ -287,14 +288,14 @@ func TestF15TheGuardLogsWhatItDidAndWhy(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a := th[0]
 	endRun(e, th[1], *now)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	z.free, z.stall = 0.04, slots.StallCritical
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
+	z.free, z.stall = 0.04, resource.StallCritical
 	e.Tick()
 	e.Tick() // the same skip on the next tick is not logged twice
 	running(e, th[1])
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): heavy work beside it
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): heavy work beside it
 	e.Tick()
-	z.free, z.stall = 0.5, slots.StallOK
+	z.free, z.stall = 0.5, resource.StallOK
 	*now = now.Add(time.Second)
 	e.Tick() // recovered: the 30 s start
 	*now = now.Add(31 * time.Second)
@@ -322,8 +323,8 @@ func TestF15TheGuardLogsWhatItDidAndWhy(t *testing.T) {
 func TestF8TenMinutesAtMost(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	*now = now.Add(10*time.Minute + time.Second)
@@ -345,8 +346,8 @@ func TestF8NoTimedThawIntoACriticalStall(t *testing.T) {
 		t.Run(which, func(t *testing.T) {
 			e, u, now, z, th := fzEngine(t)
 			a, b := th[0], th[1]
-			e.Slots.Acquire(b, slots.Test)
-			u.flags = []slots.Undeclared{flagFor(a, *now)}
+			e.Slots.Acquire(b, resource.Test)
+			u.flags = []resource.Undeclared{flagFor(a, *now)}
 			z.free = 0.04
 			var out bytes.Buffer
 			log.SetOutput(&out)
@@ -356,9 +357,9 @@ func TestF8NoTimedThawIntoACriticalStall(t *testing.T) {
 				t.Fatal("not frozen")
 			}
 			if which == "host" {
-				z.stall = slots.StallCritical
+				z.stall = resource.StallCritical
 			} else {
-				z.agents = slots.StallCritical
+				z.agents = resource.StallCritical
 			}
 			*now = now.Add(10*time.Minute + time.Second)
 			e.Tick()
@@ -382,7 +383,7 @@ func TestF8NoTimedThawIntoACriticalStall(t *testing.T) {
 			if !strings.Contains(out.String(), "guard: keeping thread="+a+" frozen past the 10m0s limit: the agents' memory stalls critically") {
 				t.Fatalf("no log line for the kept freeze:\n%s", out.String())
 			}
-			z.stall, z.agents = slots.StallElevated, slots.StallOK
+			z.stall, z.agents = resource.StallElevated, resource.StallOK
 			e.Tick()
 			if z.frozen[a] {
 				t.Fatal("still frozen past the limit with the stall below critical")
@@ -397,8 +398,8 @@ func TestF8NoTimedThawIntoACriticalStall(t *testing.T) {
 func TestF9ThawedWhenTheEpisodeEndsOrTheThreadIsAdmitted(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	u.flags = nil // the episode ended (or the thread was admitted: it is no longer flagged)
@@ -411,10 +412,10 @@ func TestF9ThawedWhenTheEpisodeEndsOrTheThreadIsAdmitted(t *testing.T) {
 func TestF12WhereNothingCanBeFrozenNothingIsToldItWasPaused(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
+	e.Slots.Acquire(b, resource.Test)
 	e.UndeclaredFreeze = func(string) bool { return false } // no cgroups
 	guardDeps(t, e)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	if told(e, a, "paused") || len(z.slotted) != 0 {
@@ -441,7 +442,7 @@ func TestC9TheCommandsAreTheOwnersOnly(t *testing.T) {
 // V0.209: flagged work asks nothing of the agent: no notice, however long it runs.
 func TestV209AFlagTellsTheAgentNothing(t *testing.T) {
 	e, u, now, a := undEngine(t)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	e.Tick()
 	if th, _ := e.Thread(a); len(th.Feed.Queue) != 0 {
 		t.Fatalf("%+v", th.Feed.Queue)
@@ -471,8 +472,8 @@ func TestF16TheGuardViewShowsTheHistoryAndEachThreadsFreezes(t *testing.T) {
 	if e.GuardView() != nil && len(e.GuardView().Events) != 0 {
 		t.Fatal("events before any tick")
 	}
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	g := e.GuardView()
@@ -512,7 +513,7 @@ func TestF16TheGuardViewShowsTheHistoryAndEachThreadsFreezes(t *testing.T) {
 func TestF17TheGuardHistoryIsBounded(t *testing.T) {
 	e, _, now, _, _ := fzEngine(t)
 	for range guardKeep + 25 {
-		e.guardRecord(slots.GuardEvent{At: *now, Kind: "short"}, slots.Signals{})
+		e.guardRecord(resource.GuardEvent{At: *now, Kind: "short"}, resource.Signals{})
 	}
 	e.publishGuard(*now)
 	if n := len(e.GuardView().Events); n != guardKeep {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -161,9 +162,9 @@ func TestGuardWakeTheGateHoldsANewCommandWhileMemoryIsShort(t *testing.T) {
 	e, now, a, b := heavyEngine(t, 2)
 	e.HeavySoft = func(class string) bool { return class == "gradle assemble" }
 	free := 0.5
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK, CPU: 8, Memory: 16 << 30}
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: resource.StallOK, CPU: 8, Memory: 16 << 30}
 	}
 	e.SlotFreeze = func(string) bool { return true }
 	e.SlotThaw = func(string) {}

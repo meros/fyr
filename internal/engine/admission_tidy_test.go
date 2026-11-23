@@ -8,15 +8,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
 func TestAdmissionTidyAHeavierSecondCommandIsAdmitted(t *testing.T) {
 	e, _, a, b := heavyEngine(t, 2)
-	needs := map[string]slots.Need{"go test ./...": {CPU: 1, Mem: 1 << 30}, "yarn e2e": {CPU: 6, Mem: 8 << 30}, "go vet ./...": {CPU: 0.5, Mem: 1 << 29}}
-	e.SlotClassNeed = func(_, class string) slots.Need { return needs[class] }
+	needs := map[string]resource.Need{"go test ./...": {CPU: 1, Mem: 1 << 30}, "yarn e2e": {CPU: 6, Mem: 8 << 30}, "go vet ./...": {CPU: 0.5, Mem: 1 << 29}}
+	e.SlotClassNeed = func(_, class string) resource.Need { return needs[class] }
 	room := true
-	e.Slots.Admit = func(head slots.Holder, _ []slots.Holder) (bool, string, string) {
+	e.Slots.Admit = func(head resource.Holder, _ []resource.Holder) (bool, string, string) {
 		if head.Owner == a && !room {
 			return false, "needs ≈ 8.6 GB memory, 2.0 GB free", slots.ResMem
 		}

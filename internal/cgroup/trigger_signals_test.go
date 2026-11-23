@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func TestTriggerMakesTheAgentsStallCriticalForTriggerFresh(t *testing.T) {
@@ -18,19 +18,19 @@ func TestTriggerMakesTheAgentsStallCriticalForTriggerFresh(t *testing.T) {
 	h := 0.64
 	s := &Sampler{Now: func() time.Time { return now }}
 	s.pub.Store(&Load{Provider: "cgroups", Headroom: &h, MemoryStall: "elevated", AgentsMemoryStall: "elevated"})
-	if sig := s.Signals(); sig.AgentsStall != slots.StallElevated || sig.Triggered {
+	if sig := s.Signals(); sig.AgentsStall != resource.StallElevated || sig.Triggered {
 		t.Fatalf("no trigger yet: %+v", sig)
 	}
 	s.Triggered()
 	sig := s.Signals()
-	if sig.AgentsStall != slots.StallCritical || !sig.Triggered {
+	if sig.AgentsStall != resource.StallCritical || !sig.Triggered {
 		t.Fatalf("a fresh trigger: %+v", sig)
 	}
 	if crit, why := sig.Critical(); !crit || why == "" {
 		t.Fatalf("admission does not hold on a fresh trigger: %v %q", crit, why)
 	}
-	now = now.Add(slots.TriggerFresh)
-	if sig := s.Signals(); sig.AgentsStall != slots.StallElevated || sig.Triggered {
+	now = now.Add(resource.TriggerFresh)
+	if sig := s.Signals(); sig.AgentsStall != resource.StallElevated || sig.Triggered {
 		t.Fatalf("past TriggerFresh: %+v", sig)
 	}
 }

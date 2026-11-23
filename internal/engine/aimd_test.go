@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -16,23 +17,23 @@ func TestS4TheTickRaisesTheBudgetOnACalmHost(t *testing.T) {
 	calm := 1.0
 	free := 0.6
 	// V0.163: a 4-core host; a holder needs 2 cores, b 4: 6 > 4 until the CPU budget grows past 150 %.
-	sig := slots.Signals{Provider: "cgroups", Slowdown: &calm, Headroom: &free, Stall: slots.StallOK, CPU: 4, Memory: 8 << 30}
-	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
-		c := make([]slots.Need, len(held))
+	sig := resource.Signals{Provider: "cgroups", Slowdown: &calm, Headroom: &free, Stall: resource.StallOK, CPU: 4, Memory: 8 << 30}
+	p.Admit = func(head resource.Holder, held []resource.Holder) (bool, string, string) {
+		c := make([]resource.Need, len(held))
 		for i := range c {
-			c[i] = slots.Need{CPU: 2, Mem: 1 << 30}
+			c[i] = resource.Need{CPU: 2, Mem: 1 << 30}
 		}
-		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 1, c, slots.Need{CPU: 4, Mem: 1 << 30})
+		return slots.Decide(resource.DefaultPolicy, sig, p.Budget(), 1, c, resource.Need{CPU: 4, Mem: 1 << 30})
 	}
 	e.UseSlots(p)
-	e.SlotSignals = func() slots.Signals { return sig }
+	e.SlotSignals = func() resource.Signals { return sig }
 	guardDeps(t, e)
 	e.SlotAIMD = &slots.AIMD{N: 1}
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	p.Acquire(a, slots.Test) // 0.5 held; b needs 1.0 more: 1.5 > 1
-	p.Acquire(b, slots.Test)
+	p.Acquire(a, resource.Test) // 0.5 held; b needs 1.0 more: 1.5 > 1
+	p.Acquire(b, resource.Test)
 	e.Tick()
 	for i := 0; i < 8; i++ {
 		*now = now.Add(30 * time.Second)

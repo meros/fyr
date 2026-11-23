@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 type grants struct {
@@ -36,16 +38,16 @@ func TestV086QueueOrder(t *testing.T) {
 		held  bool
 		ahead int
 	}{{"a", true, 0}, {"b", true, 0}, {"c", false, 0}, {"d", false, 1}, {"e", false, 2}} {
-		held, ahead := p.Acquire(x.owner, Test)
+		held, ahead := p.Acquire(x.owner, resource.Test)
 		if held != x.held || ahead != x.ahead {
 			t.Fatalf("%s: held %v ahead %d, want %v %d", x.owner, held, ahead, x.held, x.ahead)
 		}
 	}
 	// Asking again does not queue twice.
-	if held, ahead := p.Acquire("d", Test); held || ahead != 1 {
+	if held, ahead := p.Acquire("d", resource.Test); held || ahead != 1 {
 		t.Fatalf("d again: %v %d", held, ahead)
 	}
-	if held, _ := p.Acquire("a", Build); !held {
+	if held, _ := p.Acquire("a", resource.Build); !held {
 		t.Fatal("a lost its slot by asking again")
 	}
 	// a releases: c (first in the queue) gets it and is told.
@@ -57,7 +59,7 @@ func TestV086QueueOrder(t *testing.T) {
 	}
 	// d leaves the queue; e moves up.
 	p.Release("d")
-	if _, ahead := p.Acquire("e", Test); ahead != 0 {
+	if _, ahead := p.Acquire("e", resource.Test); ahead != 0 {
 		t.Fatalf("e ahead %d", ahead)
 	}
 	s := p.Snapshot()
@@ -83,11 +85,11 @@ func TestV086ZeroIsOff(t *testing.T) {
 		t.Fatal("not off")
 	}
 	for _, o := range []string{"a", "b", "c"} {
-		if held, ahead := p.Acquire(o, Test); !held || ahead != 0 {
+		if held, ahead := p.Acquire(o, resource.Test); !held || ahead != 0 {
 			t.Fatalf("%s: %v %d", o, held, ahead)
 		}
 	}
-	release, err := p.Wait(context.Background(), "self-deploy", Test)
+	release, err := p.Wait(context.Background(), "self-deploy", resource.Test)
 	if err != nil || release == nil {
 		t.Fatalf("wait: %v", err)
 	}
@@ -124,22 +126,22 @@ func (k *memKV) SetKV(key, v string) error {
 func TestV086QueueSurvivesRestart(t *testing.T) {
 	kv := &memKV{m: map[string]string{}}
 	p := Open(1, kv)
-	p.Acquire("a", Test)
-	p.Acquire("b", Build)
-	p.Acquire("c", E2E)
+	p.Acquire("a", resource.Test)
+	p.Acquire("b", resource.Build)
+	p.Acquire("c", resource.E2E)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go p.Wait(ctx, "self-deploy", Test)
+	go p.Wait(ctx, "self-deploy", resource.Test)
 	waitFor(t, func() bool { return len(p.Snapshot().Waiting) == 3 })
 
 	q := Open(1, kv) // the restarted daemon
 	g := &grants{}
 	q.OnGrant = g.on
 	s := q.Snapshot()
-	if len(s.Held) != 1 || s.Held[0].Owner != "a" || len(s.Waiting) != 2 || s.Waiting[0].Owner != "b" || s.Waiting[0].Kind != Build || s.Waiting[1].Owner != "c" {
+	if len(s.Held) != 1 || s.Held[0].Owner != "a" || len(s.Waiting) != 2 || s.Waiting[0].Owner != "b" || s.Waiting[0].Kind != resource.Build || s.Waiting[1].Owner != "c" {
 		t.Fatalf("after a restart: %+v", s)
 	}
-	if _, ahead := q.Acquire("c", E2E); ahead != 1 {
+	if _, ahead := q.Acquire("c", resource.E2E); ahead != 1 {
 		t.Fatalf("c ahead %d", ahead)
 	}
 	q.Release("a")
@@ -157,8 +159,8 @@ func TestV086QueueSurvivesRestart(t *testing.T) {
 func TestV086FillAfterLoad(t *testing.T) {
 	kv := &memKV{m: map[string]string{}}
 	p := Open(1, kv)
-	p.Acquire("a", Test)
-	p.Acquire("b", Test)
+	p.Acquire("a", resource.Test)
+	p.Acquire("b", resource.Test)
 	q := Open(2, kv)
 	g := &grants{}
 	q.OnGrant = g.on
@@ -172,11 +174,11 @@ func TestV086PriorityGoesFirstWithoutTakingAHeldSlot(t *testing.T) {
 	p := New(1)
 	g := &grants{}
 	p.OnGrant = g.on
-	p.Acquire("a", Test)
-	p.Acquire("b", Test) // queued
+	p.Acquire("a", resource.Test)
+	p.Acquire("b", resource.Test) // queued
 	got := make(chan func(), 1)
 	go func() {
-		release, err := p.Wait(context.Background(), "self-deploy", Test)
+		release, err := p.Wait(context.Background(), "self-deploy", resource.Test)
 		if err != nil {
 			t.Error(err)
 		}
@@ -192,7 +194,7 @@ func TestV086PriorityGoesFirstWithoutTakingAHeldSlot(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	// b, behind the deploy, is now 1 ahead.
-	if _, ahead := p.Acquire("b", Test); ahead != 1 {
+	if _, ahead := p.Acquire("b", resource.Test); ahead != 1 {
 		t.Fatalf("b ahead %d", ahead)
 	}
 	p.Release("a")
@@ -213,10 +215,10 @@ func TestV086PriorityGoesFirstWithoutTakingAHeldSlot(t *testing.T) {
 
 func TestV086WaitEndsWithItsContext(t *testing.T) {
 	p := New(1)
-	p.Acquire("a", Test)
+	p.Acquire("a", resource.Test)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, err := p.Wait(ctx, "self-deploy", Test); done <- err }()
+	go func() { _, err := p.Wait(ctx, "self-deploy", resource.Test); done <- err }()
 	waitFor(t, func() bool { return len(p.Snapshot().Waiting) == 1 })
 	cancel()
 	select {
@@ -248,11 +250,11 @@ func waitFor(t *testing.T, ok func() bool) {
 func TestReorder(t *testing.T) {
 	kv := &memKV{m: map[string]string{}}
 	p := Open(1, kv)
-	p.Acquire("h", Test)
+	p.Acquire("h", resource.Test)
 	for _, o := range []string{"a", "b", "c", "d"} {
-		p.Acquire(o, Test)
+		p.Acquire(o, resource.Test)
 	}
-	go p.Wait(context.Background(), "self-deploy", Test)
+	go p.Wait(context.Background(), "self-deploy", resource.Test)
 	for len(p.Snapshot().Waiting) < 5 {
 		time.Sleep(time.Millisecond)
 	}
@@ -264,7 +266,7 @@ func TestReorder(t *testing.T) {
 	if want := []string{"self-deploy", "c", "a", "b", "d"}; !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	if held, ahead := p.Acquire("a", Test); held || ahead != 2 {
+	if held, ahead := p.Acquire("a", resource.Test); held || ahead != 2 {
 		t.Fatalf("a: %v %d", held, ahead)
 	}
 	if s := Open(1, kv).Snapshot(); s.Waiting[0].Owner != "c" {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 )
@@ -42,9 +43,9 @@ func TestVProjectPriorityRank(t *testing.T) {
 	}
 	pool := slots.New(1)
 	h.e.UseSlots(pool)
-	pool.Acquire("t_holder", slots.Test)
-	pool.Acquire("t_none", slots.Test)
-	pool.Acquire(th.ThreadID, slots.Test)
+	pool.Acquire("t_holder", resource.Test)
+	pool.Acquire("t_none", resource.Test)
+	pool.Acquire(th.ThreadID, resource.Test)
 	if w := pool.Snapshot().Waiting; w[0].Owner != th.ThreadID {
 		t.Fatalf("the high thread waits behind: %+v", w)
 	}

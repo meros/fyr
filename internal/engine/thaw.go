@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // wakeable says whether frozen job f may wake now by Buck2's rule (V0.guard-wake,
@@ -19,7 +19,7 @@ import (
 // charged to the agents while they are in RAM, so they come out of the
 // agents' memory before the job's memory at the freeze is added: counted
 // twice, a job still in RAM could never fit.
-func wakeable(f frozenJob, sig slots.Signals, cap, resident uint64) (bool, string) {
+func wakeable(f frozenJob, sig resource.Signals, cap, resident uint64) (bool, string) {
 	if cap == 0 {
 		return true, "memory fine for 30 s"
 	}
@@ -28,7 +28,7 @@ func wakeable(f frozenJob, sig slots.Signals, cap, resident uint64) (bool, strin
 	}
 	others := sig.AgentsMem - min(resident, sig.AgentsMem)
 	need := others + f.mem
-	words := fmt.Sprintf("agents=%s + its %s %s cap=%s", slots.GB(float64(others)), slots.GB(float64(f.mem)), "%s", slots.GB(float64(cap)))
+	words := fmt.Sprintf("agents=%s + its %s %s cap=%s", resource.GB(float64(others)), resource.GB(float64(f.mem)), "%s", resource.GB(float64(cap)))
 	if need < cap {
 		return true, "fits: " + fmt.Sprintf(words, "<") + ", stall below elevated for 30 s"
 	}
@@ -39,9 +39,9 @@ func wakeable(f frozenJob, sig slots.Signals, cap, resident uint64) (bool, strin
 // agents' stall is elevated or worse. A freeze needs short
 // headroom and at least an elevated stall; admission still holds new jobs on
 // the headroom alone.
-func stalls(sig slots.Signals) bool {
-	return sig.Stall == slots.StallElevated || sig.Stall == slots.StallCritical ||
-		sig.AgentsStall == slots.StallElevated || sig.AgentsStall == slots.StallCritical
+func stalls(sig resource.Signals) bool {
+	return sig.Stall == resource.StallElevated || sig.Stall == resource.StallCritical ||
+		sig.AgentsStall == resource.StallElevated || sig.AgentsStall == resource.StallCritical
 }
 
 // frozenParts is, for work taking turns, the frozen parts' memory at their
@@ -68,7 +68,7 @@ func (e *Engine) frozenParts(f frozenJob) (atFreeze, now uint64) {
 // out of RAM now (its memory at the freeze less the thread's memory now) comes
 // back with the thaw (V0.sim-fixes (3)). Without a headroom, a budget or f's
 // memory it fits.
-func (e *Engine) roomToThaw(f frozenJob, sig slots.Signals) (bool, string) {
+func (e *Engine) roomToThaw(f frozenJob, sig resource.Signals) (bool, string) {
 	if sig.Headroom == nil || sig.Memory == 0 || f.mem == 0 {
 		return true, ""
 	}
@@ -81,7 +81,7 @@ func (e *Engine) roomToThaw(f frozenJob, sig slots.Signals) (bool, string) {
 	if back <= room {
 		return true, ""
 	}
-	return false, fmt.Sprintf("its %s out of RAM would come back, %s free above the reserve", slots.GB(back), slots.GB(max(0, room)))
+	return false, fmt.Sprintf("its %s out of RAM would come back, %s free above the reserve", resource.GB(back), resource.GB(max(0, room)))
 }
 
 // service says thread's heavy work is a service the guard never freezes

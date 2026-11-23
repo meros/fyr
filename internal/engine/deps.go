@@ -7,6 +7,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/github"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -121,9 +122,9 @@ type SlotDeps struct {
 	SlotActive func(owner string) (time.Time, bool)
 	// SlotSignals and SlotGrowth feed decision 0029 S2's memory guard:
 	// the host's measures and how much a holder's memory grew.
-	SlotSignals func() slots.Signals
+	SlotSignals func() resource.Signals
 	SlotGrowth  func(owner string) uint64
-	SlotPolicy  slots.Policy
+	SlotPolicy  resource.Policy
 	// Decision 0029 S3: SlotOver says whether a holder's job is heavier than predicted (its
 	// class, live and predicted cost); JobReset forgets a learned class
 	// (the owner's Reset).
@@ -135,7 +136,7 @@ type SlotDeps struct {
 	// of class, as admission predicts it (the gate admits a heavier second
 	// command for the difference); SlotBaseline takes thread's job baseline at
 	// the gate's grant (its memory and CPU so far, and memory.peak reset).
-	SlotClassNeed func(thread, class string) slots.Need
+	SlotClassNeed func(thread, class string) resource.Need
 	SlotBaseline  func(thread string)
 	// Decision 0029 S5: freeze and thaw a holder's job (its own cgroup, not
 	// its CLI).
@@ -161,7 +162,7 @@ type SlotDeps struct {
 // UndeclaredThaw move a thread's undeclared work in and out of its frozen
 // cgroup; the others are the owner's commands. All optional.
 type UndeclaredDeps struct {
-	Undeclared       func() []slots.Undeclared
+	Undeclared       func() []resource.Undeclared
 	UndeclaredFreeze func(thread string) bool
 	UndeclaredThaw   func(thread string)
 	// UndeclaredEmpty says the frozen cgroup of thread holds no process any
@@ -178,8 +179,8 @@ type UndeclaredDeps struct {
 	// Decision 0032 slice 2: UndeclaredUnits lists the parts of a thread's
 	// undeclared work, UndeclaredRotate lets one run and freezes the others,
 	// and UndeclaredFaults is what the thread has read back so far, in bytes.
-	UndeclaredUnits    func(thread string) []slots.WorkUnit
-	UndeclaredRotate   func(thread string, units []slots.WorkUnit, active int) bool
+	UndeclaredUnits    func(thread string) []resource.WorkUnit
+	UndeclaredRotate   func(thread string, units []resource.WorkUnit, active int) bool
 	UndeclaredFaults   func(thread string) uint64
 	UndeclaredSettings func(args map[string]any) error
 	HeavyRemove        func(pattern string) bool

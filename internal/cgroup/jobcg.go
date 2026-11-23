@@ -71,7 +71,7 @@ type JobGroups struct {
 	Size  func(thread string, undeclared bool) JobSize
 	Raise func(class string)
 	Cores int // the host's CPUs for the agents' capacity; default runtime.NumCPU()
-	// N is the host's `slots` setting: a class under slots.LearnRuns runs is
+	// N is the host's `slots` setting: a class under resource.LearnRuns runs is
 	// sized no smaller than the prior, 1/N of the agents (V0.admission-memory).
 	// 0 sizes it as learned.
 	N int

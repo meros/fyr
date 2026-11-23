@@ -8,6 +8,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -52,7 +53,7 @@ func (w *wiring) wireHeavy() {
 	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun                        // V0.job-limits: a job sizes itself
 	groups.Limited = func(thread, class, why, high string, budget uint64, runs int) { // V0.load-invariants: limit-under-prior
 		if h, err := strconv.ParseUint(high, 10, 64); err == nil && n > 0 {
-			eng.JobLimitSet(thread, class, why, h, slots.Prior(slots.Signals{Memory: budget}, n).Mem, cgroup.LimitSettled(why, runs))
+			eng.JobLimitSet(thread, class, why, h, resource.Prior(resource.Signals{Memory: budget}, n).Mem, cgroup.LimitSettled(why, runs))
 		}
 	}
 	// V0.164, V0.209: the learned and added patterns; the detector of
