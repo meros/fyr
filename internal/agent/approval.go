@@ -68,7 +68,7 @@ func (m *Manager) judgeApproval(ctx context.Context, s *session, tool string, in
 	jctx, cancel := context.WithTimeout(ctx, m.cfg.ApprovalTimeout)
 	defer cancel()
 
-	out, err := m.printOn(jctx, sa, core.ApprovalJudgeSystem, prompt)
+	out, err := m.printOn(jctx, core.JobApproval, s.thread, sa, core.ApprovalJudgeSystem, prompt)
 	dur = time.Since(start)
 	if ctx.Err() != nil {
 		return false, "", sa.Model, dur, false

@@ -234,6 +234,20 @@ func (m *Meter) Record(id string, d Dims, r cli.UsageReport) ([]store.UsageRow, 
 	if d.At.IsZero() {
 		d.At = time.Now()
 	}
+	if c, ok := r.Models[""]; ok {
+		// A CLI that names no model (agy): its tokens are the thread's model's.
+		ms := make(map[string]cli.TokenCount, len(r.Models))
+		for k, v := range r.Models {
+			ms[k] = v
+		}
+		delete(ms, "")
+		name := d.MainModel
+		if name == "" {
+			name = "unknown"
+		}
+		ms[name] = ms[name].Add(c)
+		r.Models = ms
+	}
 	if _, ok := r.Models[d.MainModel]; !ok {
 		// The main model by another name (an alias, or a process adopted
 		// after a restart that never saw the CLI's init): the model with

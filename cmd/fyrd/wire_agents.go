@@ -143,6 +143,7 @@ func (w *wiring) wireAgents() {
 		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
 		// V0.tool-approval-judge: project/thread/owner context for auto-judging tool approvals.
 		ApprovalContext: eng.ApprovalContext,
+		ThreadSource:    eng.ThreadSource, // V0.usage-jobs
 		// V0.tool-reload: a process from an older build that has not read
 		// this build's tools ends at its next idle point.
 		Tools: mcpSrv.Hash, ToolsCurrent: mcpSrv.Current, Build: BuildID(),

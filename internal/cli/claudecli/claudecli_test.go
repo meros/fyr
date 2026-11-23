@@ -84,7 +84,7 @@ func TestCaps(t *testing.T) {
 // settings and no saved session; the system prompt replaces Claude Code's.
 func TestPrintArgs(t *testing.T) {
 	got := strings.Join(PrintArgs("claude-haiku-5-5", "SYS"), "|")
-	want := "-p|--model|claude-haiku-5-5|--system-prompt|SYS|--tools||--strict-mcp-config|--no-session-persistence|--setting-sources||--output-format|text"
+	want := "-p|--model|claude-haiku-5-5|--system-prompt|SYS|--tools||--strict-mcp-config|--no-session-persistence|--setting-sources||--output-format|json"
 	if got != want {
 		t.Fatalf("%s\nwant %s", got, want)
 	}
