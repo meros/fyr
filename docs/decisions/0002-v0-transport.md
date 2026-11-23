@@ -1,6 +1,8 @@
 # 0002 v0 uses HTTP + JSON + SSE on localhost
 
-Date: 2026-11-14 · Status: accepted · Spec: 0.5, 11, 16.1
+Date: 2026-11-14 · Status: accepted; the transport stayed HTTP + JSON + SSE (see 0031) · Spec: 0.5, 11, 16.1
+
+Status, 23 Nov: ConnectRPC and tsnet never came. The transport stayed HTTP + JSON + SSE; 0031 put every host call under `/api/h/<hostId>/`.
 
 **Context.** The spec decides Protobuf + ConnectRPC over tsnet with device pairing. v0 has one desktop client on the same machine.
 

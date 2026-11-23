@@ -1,6 +1,6 @@
 # 0035 Fyr runs Claude Code and works with GitHub for now; the architecture keeps room for more
 
-Date: 2026-11-19 · Status: **accepted** (#201, #202) · Builds on 0015 (a provider is a CLI adapter), 0018 and 0024 (changes)
+Date: 2026-11-19 · Status: accepted; amended by V0.agy-adapter: a second CLI adapter exists · Builds on 0015 (a provider is a CLI adapter), 0018 and 0024 (changes)
 
 **Context.** Fyr runs every agent through the Claude Code CLI: the runner speaks its `stream-json` protocol (`internal/claude`), providers are Claude logins or Anthropic-compatible endpoints set through `ANTHROPIC_*`, and hooks, MCP config, permission modes, compaction and rate-limit parsing are Claude Code's. Changes, checks, merges, deploy watches and releases go through GitHub and the `gh` CLI (`internal/github`). Going public (#196) asked whether to put the agent CLI (#201) and the forge (#202) behind interfaces first.
 

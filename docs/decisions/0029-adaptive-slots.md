@@ -1,6 +1,8 @@
 # 0029 Adaptive slots: admit heavy jobs by measured load and a learned cost, not by a fixed count
 
-Date: 2026-11-17 · Status: **proposed; the owner answered Q1–Q4 on 17 Nov** (research, no code; the question was relayed by the coordinator thread t_d8b8040dae603057) · Would amend V0.86 (1) and (6), V0.99 (2), and build on V0.137 (the owner's queue order) and issue #174 (heavy jobs without a slot)
+Date: 2026-11-17 · Status: accepted; built (V0.151, V0.163, V0.209; policy in internal/guard since V0.guard-tick) · Would amend V0.86 (1) and (6), V0.99 (2), and build on V0.137 (the owner's queue order) and issue #174 (heavy jobs without a slot)
+
+Status, 23 Nov: built and accepted; the "proposed" and "would" in the text below are from before it was built.
 
 The question: "can we make slots adaptive somehow? Let's assume a job is normally 1 in cost, then if a specific job reliably is less taxing but long running than expected - lower the 'cost'. So it doesn't measure time, it measures system load (memory and cpu). What we want to avoid is system overload, but also not just wait wait wait."
 

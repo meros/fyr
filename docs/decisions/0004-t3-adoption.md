@@ -1,6 +1,6 @@
 # 0004 Adopt open T3 threads by Claude session id
 
-Date: 2026-11-14 · Status: accepted · Spec: 0.4 (cut-over), 0.5
+Date: 2026-11-14 · Status: superseded (V0.remove-t3, #534) · Spec: 0.4 (cut-over), 0.5
 
 **Context.** The owner has open threads in T3 Code. v0 should take them over so T3 can close.
 
