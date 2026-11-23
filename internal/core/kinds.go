@@ -810,6 +810,10 @@ func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	reply := ChangeRequestReply{ID: a.ID}
 	if c != nil {
+		if why, _ := a.Args["sensitive"].(string); why != "" && action == FyrMerge && c.Sensitive != why {
+			c.Sensitive = why // V0.sensitive-pr: the change keeps the mark
+			c.UpdatedAt = now
+		}
 		a.Args["change"] = c.ID
 		if _, ok := a.Args["title"]; !ok {
 			a.Args["title"] = c.Title

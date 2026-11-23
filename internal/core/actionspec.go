@@ -356,6 +356,9 @@ var FyrEffects = map[string]*FyrEffect{
 			if err := needHead(a); err != nil { // V0.97: a merge is bound to a head
 				return err
 			}
+			if err := checkSensitive(a); err != nil { // V0.sensitive-pr
+				return err
+			}
 			switch m, _ := a["method"].(string); m {
 			case "":
 				a["method"] = "squash"

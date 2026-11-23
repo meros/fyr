@@ -2,6 +2,7 @@
 import { approvalView } from "./approval-view.ts";
 import { type ApprovalField, type ApprovalText } from "./approvals.ts";
 import { type EffectText } from "./effects.ts";
+import { sensitiveLine } from "./sensitive.ts";
 import { useState } from "preact/hooks";
 import type { Decision, PullRequest } from "./types.ts";
 import { StateIcon } from "./icons.tsx";
@@ -34,6 +35,11 @@ function asker(d: Decision): string {
 export function EffectBody({ d, x, cls = "" }: { d: Decision; x: EffectText; cls?: string }) {
   return (
     <div class={`eff ${cls}`}>
+      {x.sensitive && (
+        <p class="chsens" role="note">
+          {sensitiveLine(x.sensitive)}
+        </p>
+      )}
       {x.why && <p class="eff-why">{x.why}</p>}
       <p class="eff-what">{x.happens}</p>
       <details class="eff-det">

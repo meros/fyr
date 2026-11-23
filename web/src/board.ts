@@ -182,14 +182,15 @@ export interface GreenMerge {
 /** The PR of a URL without its tail (/files, #x) and case, so one PR is one merge. */
 const prKey = (url: string) => (/^(.*?\/pull\/\d+)/i.exec(url)?.[1] ?? url).toLowerCase();
 
-/** V0.97: the changes whose PR is ready to merge (the host's Ready is "Merge"), one per PR, in board order. */
+/** V0.97: the changes whose PR is ready to merge (the host's Ready is "Merge"), one per PR, in board order; a sensitive
+ *  PR is left out (V0.sensitive-pr). */
 export function greenMerges(items: BoardItem[]): GreenMerge[] {
   const seen = new Set<string>();
   const out: GreenMerge[] = [];
   for (const { change: c, thread: t } of items) {
     const head = c.pr?.head;
     const offer = c.offers?.find((o) => o.run === "fyr" && o.effect === "pr.merge");
-    if (c.ready !== "Merge" || !c.pr?.url || !head || !offer) continue;
+    if (c.ready !== "Merge" || !c.pr?.url || !head || !offer || c.sensitive) continue; // V0.sensitive-pr: one at a time, confirmed
     const k = prKey(c.pr.url);
     if (seen.has(k)) continue;
     seen.add(k);

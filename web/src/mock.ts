@@ -592,6 +592,17 @@ function fullFixture(now: number): Fixture {
         offers: [{ id: "fyr.merge", label: "Merge", run: "fyr", effect: "pr.merge", primary: true, by: "observed", digest: dg("fyr.merge") }],
         createdAt: iso(60), updatedAt: iso(30),
       },
+      // V0.sensitive-pr: a green promotion the agent marked sensitive: red reason, a confirm on Merge, not in Merge all green.
+      {
+        id: "c_promote", key: "pr:acme/deploy#212", kind: "code", title: "Promote 2026.11.22 to production", targets: ["repo:github.com/acme/deploy"],
+        phase: "review", phaseBy: "observed", ready: "Merge", need: { cause: "ready", text: "Merge", head: "e5f60718293a4b5c6d7e8f9012345678a1b2c3d4" },
+        sensitive: "promotes to production",
+        pr: { url: "https://github.com/acme/deploy/pull/212", repo: "acme/deploy", number: 212, state: "OPEN", checks: "pass", head: "e5f60718293a4b5c6d7e8f9012345678a1b2c3d4", mergeState: "CLEAN" },
+        conditions: [{ type: "checks", status: "ok", source: "observed", at: iso(20) }],
+        evidence: [{ kind: "pr", url: "https://github.com/acme/deploy/pull/212", title: "#212" }],
+        offers: [{ id: "fyr.merge", label: "Merge", run: "fyr", effect: "pr.merge", primary: true, by: "observed", digest: dg("fyr.merge") }],
+        createdAt: iso(50), updatedAt: iso(20),
+      },
     ];
     // V0.68: a script in a scratch folder, as on the owner's phone: its confirmation shortens the paths.
     const scratch = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-acme-claude-long-term-token";

@@ -4,6 +4,7 @@
 import type { Offer, Project } from "./types.ts";
 import { shortArg, shortFolder } from "./paths.ts";
 import { pressArgs, quote } from "./offers.ts";
+import { sensitiveMergeAsk } from "./sensitive.ts";
 
 interface AskCommand {
   /** the command with its paths shortened */
@@ -87,8 +88,10 @@ export async function press(
   run: (action: string, args?: Record<string, unknown>) => void,
   /** V0.97: a Merge is bound to the head the owner saw */
   head?: string,
+  /** V0.sensitive-pr: why the change's merge is sensitive; its Merge asks with the reason */
+  sensitive?: string,
 ): Promise<boolean> {
-  const a = offerAsk(o, cwd);
+  const a = sensitive && o.run === "fyr" && o.effect === "pr.merge" ? sensitiveMergeAsk(sensitive, head) : offerAsk(o, cwd);
   if (a && !(await ask(a))) return false;
   run("action.run", pressArgs(on, o, head));
   return true;

@@ -10,6 +10,7 @@ import { arrive } from "./arrived.ts";
 import { allowArgs, answerArgs, answerThenNext, cardKey, initCard, setOther, submitOf, updateCard, type CardState } from "./question.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
+import { confirmSensitive, decisionSensitive } from "./sensitive.ts";
 
 export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" | "threadsRef" | "tracker" | "setTracker" | "cards" | "setCards" | "setInText" | "sec" | "gatedRef" | "viewThread">) {
   const { api, threadsRef, tracker, setTracker, cards, setCards, setInText, sec, gatedRef, viewThread } = c;
@@ -73,8 +74,8 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
  *  `answers` is what the phone calls: it stays on the thread it answered, which its own screen leaves. `submitAsk`,
  *  `nextNeeding` and `answerField` are the desktop's: it walks on once the host took the answer and says so in an
  *  arrival bar, and its composer is the answer field of an open question (the phone's card has its own field). */
-export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "view" | "cards" | "setCards" | "store" | "sel" | "sec" | "setArrival"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
-  const { cmds, view, cards, setCards, store, sel, sec, setArrival, decision, card, openThread } = c;
+export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "view" | "cards" | "setCards" | "store" | "sel" | "sec" | "setArrival" | "confirmHost" | "threadsRef"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
+  const { cmds, view, cards, setCards, store, sel, sec, setArrival, confirmHost, threadsRef, decision, card, openThread } = c;
   const submit = async (d: Decision): Promise<boolean> => {
     const cs = cards[d.id];
     const send = cs ? submitOf(cs, d) : null;
@@ -83,7 +84,13 @@ export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "vie
   };
   /** V0.ask-cancel: close the card without answering; the agent hears why it has no answer. */
   const cancel = async (d: Decision): Promise<boolean> => (view ? (await cmds.run("thread.cancelAsk", [view.id], { decisionId: d.id })) > 0 : false);
-  const allow = async (d: Decision, ok: boolean): Promise<boolean> => (view ? (await cmds.run("thread.answer", [view.id], allowArgs(d, ok))) > 0 : false);
+  const allow = async (d: Decision, ok: boolean): Promise<boolean> => {
+    if (!view) return false;
+    // V0.sensitive-pr: the yes to a sensitive merge asks first, with its reason.
+    const head = typeof d.effect?.args?.head === "string" ? d.effect.args.head : undefined;
+    if (ok && !(await confirmSensitive(decisionSensitive(threadsRef.current[view.id], d), confirmHost.ask, head))) return false;
+    return (await cmds.run("thread.answer", [view.id], allowArgs(d, ok))) > 0;
+  };
 
   /** The one way both fronts change the open card: an updater on the card as it is now. */
   const onCard = (fn: (cs: CardState) => CardState) => {

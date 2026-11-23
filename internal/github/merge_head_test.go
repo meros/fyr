@@ -47,22 +47,22 @@ func TestFetchReadsReadyFields(t *testing.T) {
 		if args[0] == "pr" { // V0.112: an empty check list also reads the repo's CI
 			asked = strings.Join(args, " ")
 		}
-		return []byte(`{"state":"OPEN","isDraft":true,"mergeStateStatus":"BLOCKED","autoMergeRequest":{"enabledAt":"2026-11-16T10:00:00Z"},"statusCheckRollup":[]}`), nil
+		return []byte(`{"state":"OPEN","isDraft":true,"mergeStateStatus":"BLOCKED","autoMergeRequest":{"enabledAt":"2026-11-16T10:00:00Z"},"labels":[{"name":"sensitive"}],"statusCheckRollup":[]}`), nil
 	}
 	p, err := Fetch(context.Background(), gh, "https://github.com/a/b/pull/1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"isDraft", "mergeStateStatus", "autoMergeRequest"} {
+	for _, f := range []string{"isDraft", "mergeStateStatus", "autoMergeRequest", "labels"} {
 		if !strings.Contains(asked, f) {
 			t.Errorf("gh pr view does not ask for %s: %s", f, asked)
 		}
 	}
-	if !p.Draft || p.MergeState != "BLOCKED" || !p.AutoMerge {
+	if !p.Draft || p.MergeState != "BLOCKED" || !p.AutoMerge || !p.Sensitive { // V0.sensitive-pr
 		t.Fatalf("PR %+v", p)
 	}
 	p, _ = Fetch(context.Background(), fakeGh(`{"state":"OPEN","autoMergeRequest":null}`), "https://github.com/a/b/pull/1")
-	if p.AutoMerge || p.Draft {
+	if p.AutoMerge || p.Draft || p.Sensitive {
 		t.Fatalf("no auto-merge: %+v", p)
 	}
 }

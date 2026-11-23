@@ -9,7 +9,6 @@ import {
 } from "./store.ts";
 import { Modal } from "./dialogs.tsx";
 import type { NewThreadArgs } from "./new-thread.ts";
-import { useConfirmHost } from "./confirm-ui.tsx";
 import { type Directory } from "./project-ui.tsx";
 import { expandOrder, findProject, memberOn, moveToast, recordOf, splitSharedPatch } from "./projects.ts";
 import { FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
@@ -22,8 +21,8 @@ import type { useThreadActions } from "./app-actions.tsx";
 import type { useNavHistory } from "./app-history.tsx";
 import { type ProjectPatch } from "./project-editor.tsx";
 
-export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" | "setStore" | "fullStore" | "hostOfId" | "store" | "threadsRef" | "setDialog" | "setTheme" | "phone" | "phoneRef" | "cmds" | "now" | "openSettings" | "openPicker" | "filterId" | "filterOn"> & Pick<ReturnType<typeof useThreadActions>, "openThread"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navReplace" | "navRef">) {
-  const { api, setStore, fullStore, hostOfId, store, threadsRef, setDialog, setTheme, phone, phoneRef, cmds, now, openSettings, openPicker, filterId, filterOn, openThread, navGo, navRef, navReplace } = c;
+export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" | "setStore" | "fullStore" | "hostOfId" | "store" | "threadsRef" | "setDialog" | "setTheme" | "phone" | "phoneRef" | "cmds" | "now" | "openSettings" | "openPicker" | "filterId" | "filterOn" | "confirmHost"> & Pick<ReturnType<typeof useThreadActions>, "openThread"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navReplace" | "navRef">) {
+  const { api, setStore, fullStore, hostOfId, store, threadsRef, setDialog, setTheme, phone, phoneRef, cmds, now, openSettings, openPicker, filterId, filterOn, confirmHost, openThread, navGo, navRef, navReplace } = c;
   // ---- projects (V0.23) ----
   const projectCommand = async (action: string, args: Record<string, unknown>, threadId?: string): Promise<string | null> => {
     // A project command goes to the project's host, a thread's to the thread's (decision 0031).
@@ -129,8 +128,6 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
         setFolderPick({ ...o, at: Date.now(), resolve });
       }),
   };
-  // V0.68: Fyr's own confirmation, a sheet on the phone and a dialog on the desktop.
-  const confirmHost = useConfirmHost(phone);
   // V0.132: the picker reads the folders of the host it was opened for; an offline host says so, and no other host's
   // folders stand in.
   // Slice 2b: by install id (V0.207: Settings may name a hidden host); a picker opened for no host says so.

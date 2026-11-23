@@ -79,6 +79,9 @@ func mergeableByFyr(t *Thread, d Decision, running bool) (repo, why string) {
 	if why := FyrEffects[FyrMerge].Blocked(t, a); why != "" {
 		return "", why
 	}
+	if why := askSensitive(t, a); why != "" { // V0.sensitive-pr: the owner's press only
+		return "", "The PR is sensitive (" + why + "): the owner merges it"
+	}
 	return c.PR.Repo, ""
 }
 

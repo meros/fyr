@@ -354,6 +354,8 @@ type PR struct {
 	Approvals         int  `json:"approvals,omitempty"`
 	ThreadResolution  bool `json:"threadResolution,omitempty"`
 	UnresolvedThreads int  `json:"unresolvedThreads,omitempty"`
+	// V0.sensitive-pr: the PR has the GitHub label "sensitive".
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 // PRMissing is the state Fyr observes when GitHub answers that the PR or its

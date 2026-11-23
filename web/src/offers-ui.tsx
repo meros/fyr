@@ -9,6 +9,7 @@ import { press } from "./confirm.ts";
 import { headLabel } from "./pr.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { autoMergeLine } from "./automerge.ts";
+import { changeSensitive, confirmSensitive, sensitiveLine } from "./sensitive.ts";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
 
@@ -19,9 +20,12 @@ function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
   const n = c.need!;
   const look = needLook(n);
   const merge = (c.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
+  const ask = useAsk();
+  // V0.sensitive-pr: a sensitive merge asks first, with its reason.
+  const sure = () => confirmSensitive(n.cause === "ready" || n.action === "pr.merge" ? changeSensitive(c) : "", ask, n.head);
   let yes: { label: string; title?: string; run: () => void } | null = null;
-  if (n.cause === "ask") yes = { ...askYes(n), run: () => onRun("thread.answer", allowArgs(n)) };
-  else if (n.cause === "ready" && merge && n.head) yes = { label: look.button, run: () => onRun("action.run", pressArgs(c.id, merge, n.head)) };
+  if (n.cause === "ask") yes = { ...askYes(n), run: () => void sure().then((ok) => ok && onRun("thread.answer", allowArgs(n))) };
+  else if (n.cause === "ready" && merge && n.head) yes = { label: look.button, run: () => void sure().then((ok) => ok && onRun("action.run", pressArgs(c.id, merge, n.head))) };
   return (
     <div class={`chneed ${n.cause}${n.muted ? " muted" : ""}`} role={n.muted ? undefined : "status"}>
       {look.beam && <span class="beamdot" aria-hidden="true" />}
@@ -59,7 +63,7 @@ function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string; offers
   if (!list.length) return null;
   // V0.97: Merge names and sends the head this card shows.
   const headOf = (o: Offer) => (o.run === "fyr" && o.effect === "pr.merge" ? change?.pr?.head : undefined);
-  const onPress = (o: Offer) => press(on, o, cwd, ask, onRun, headOf(o));
+  const onPress = (o: Offer) => press(on, o, cwd, ask, onRun, headOf(o), changeSensitive(change));
   return (
     <div class="offers">
       <div class="offb">
@@ -171,6 +175,11 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
             </li>
           ))}
         </ul>
+      )}
+      {c.sensitive && (
+        <div class="chsens" role="note">
+          {sensitiveLine(c.sensitive)}
+        </div>
       )}
       {c.need && <NeedLine c={c} onRun={onRun} />}
       {autoMergeLine(c) && <div class="chauto setd">{autoMergeLine(c)}</div>}
