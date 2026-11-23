@@ -1,5 +1,5 @@
 # Main's gate and release, on the self-hosted runner on meros-server (V0.ci-self-hosted): every push to main runs the
-# whole gate on its head (secret scan, `make test` with the layout timing budgets, the Nix package) and, when it is
+# whole gate on its head (secret scan, `make test-ci`, the Nix packages) and, when it is
 # green, publishes the release. Self-hosted minutes are free, so there is no hourly batch any more (#405 had one to
 # save paid minutes). Runs queue on the one runner; a newer push replaces a run still waiting, so the newest main is
 # what gets tested and released. A PR's gate is pr.yml on the same runner. Start a run by hand with
@@ -50,15 +50,13 @@ jobs:
       # Go public (#196): no secret enters the history; .gitleaks.toml allows only the test placeholders.
       - name: gitleaks over the full history
         run: nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact --log-opts=--all .
-      # make test's parts, with the layout timing budgets on. FYR_CHROME and FYR_LAYOUT_TIMING go to the web tests
-      # only: a Go test (internal/testkit/authtest, neutrality) fails when the environment carries any FYR_ variable, and
-      # make exports a command-line variable.
-      - name: go vet, go test, typecheck, web unit, layout with timing, auth e2e
-        run: |
-          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j2 --output-sync=target go-vet go-test && FYR_CHROME=google-chrome make -j3 --output-sync=target web-typecheck web-unit web-layout FYR_LAYOUT_TIMING=1 && FYR_CHROME=google-chrome make web-auth'
-      # The package NixOS installs runs the Go tests in the Nix sandbox (found live: a test needed git there).
-      - name: nix build .#fyr
-        run: nix build .#fyr --no-link --print-build-logs
+      # The gate a PR runs too (pr.yml, scripts/ci-local.sh): make test's parts with the layout timing budgets on.
+      - name: make test-ci
+        run: nix develop --command make test-ci
+      # The packages NixOS installs. fyr runs the Go tests in the Nix sandbox (found live: a test needed git there);
+      # fyr-desktop is the only build of the cgo GTK shell (V0.ci-gates).
+      - name: nix build .#fyr .#fyr-desktop
+        run: nix build .#fyr .#fyr-desktop --no-link --print-build-logs
       # #158: a green main publishes signed fyr and fyrd binaries as the release build-<sha12> and moves the tag
       # `deployable` forward to it. Hosts on the main channel auto-update only to that. V0.versioned-releases: a
       # version run publishes the release vX.Y.Z of its commit instead, rebuilt with the version in the binaries.

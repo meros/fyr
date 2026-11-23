@@ -1,0 +1,39 @@
+# A PR that changes Fyr.app's sources (macos/) compiles them on the self-hosted Mac runner (label `macos`) when the Mac
+# is up (V0.ci-gates): a Swift error shows on the PR instead of first in mac.yml's release run on main. It only builds:
+# no signing, no secret, no release, no download. A PR that does not touch macos/ never starts it.
+#
+# It never gates a merge: the job's name ends in "(advisory)", which Fyr leaves out of a PR's CI state
+# (V0.advisory-checks), because a job for a sleeping Mac stays queued and GitHub ends no queued job by itself. The build
+# on main (mac.yml) stays the gate for the app. Keep the suffix when renaming the job.
+#
+# The runner is the owner's Mac, so the same lock as pr.yml holds: a PR runs the workflow from its own head, and no fork
+# PR runs until the owner approves it (the repository's Actions setting "Require approval for all external
+# contributors"), which the owner does not do on these runners (V0.public-repo); the `if` makes an approved fork run
+# skip the job. When the Mac sleeps the check stays queued; the merge does not wait for it.
+name: mac-pr
+
+on:
+  pull_request:
+    paths:
+      - "macos/**"
+      - ".github/workflows/mac.yml"
+      - ".github/workflows/mac-pr.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: swift build (advisory)
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macos]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # The architectures mac.yml's macos/build.sh builds for the release.
+      - name: swift build
+        run: swift build -c release --arch arm64 --arch x86_64 --package-path macos

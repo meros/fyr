@@ -2,9 +2,9 @@
 # that changes the app's own sources builds Fyr.app and Fyr.dmg, signed with "Fyr Local Signing", and publishes them
 # as the release app-<sha12>, GitHub's latest, so https://github.com/<repo>/releases/latest/download/Fyr.dmg is the
 # download link. The fyr and fyrd inside are the seed from the release `deployable` points at; an installed app
-# updates fyrd itself, so a change to fyrd alone builds no new app. Only pushes to main run here, never a PR, so no
-# fork's code reaches this runner. When the Mac sleeps the run waits for it. Start a run by hand with
-# `gh workflow run mac.yml`.
+# updates fyrd itself, so a change to fyrd alone builds no new app. Only pushes to main run this workflow; a PR that
+# changes macos/ runs mac-pr.yml, which only compiles, on the same runner and under pr.yml's lock against forks. When
+# the Mac sleeps the run waits for it. Start a run by hand with `gh workflow run mac.yml`.
 name: mac
 
 on:

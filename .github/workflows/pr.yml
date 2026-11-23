@@ -28,9 +28,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # make test as scripts/ci-local.sh runs it; Chromium is on PATH as google-chrome (the runner's NixOS module),
-      # so no FYR_ variable reaches the Go tests (the neutrality test forbids them).
-      - name: make test
-        run: nix develop --command make test
+      # The gate main runs too (test.yml, scripts/ci-local.sh): make test's parts with the layout timing budgets on.
+      # Chromium is on PATH as google-chrome (the runner's NixOS module), so no FYR_ variable reaches the Go tests (the
+      # neutrality test forbids them).
+      - name: make test-ci
+        run: nix develop --command make test-ci
+      # V0.ci-gates: the packages main builds. fyr runs the Go tests in the Nix sandbox and checks the Go and npm
+      # dependency hashes; fyr-desktop is the only build of the cgo GTK shell (cmd/fyr-desktop is `linux && cgo`, and
+      # make runs with CGO_ENABLED=0, so go vet and go test see only its stub).
+      - name: nix build .#fyr .#fyr-desktop
+        run: nix build .#fyr .#fyr-desktop --no-link --print-build-logs
       - name: gitleaks over the PR's commits
         run: nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact --log-opts="origin/${{ github.base_ref }}..HEAD" .

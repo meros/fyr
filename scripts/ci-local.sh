@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# The PR gate, run on this host instead of GitHub Actions (Actions minutes on a private repo cost money; PRs no
-# longer start a workflow). It runs what the workflow's go, web and secrets jobs ran, in the flake's dev shell, on
-# the pushed head of the current branch, and posts the result as the commit status `local/test` on that SHA. Fyr
-# reads that status as the PR's CI: a merge ask waits for it and a failure is reported like a red check.
+# The PR gate run on this host, the fallback for when the self-hosted runner is down: a PR's gate is
+# .github/workflows/pr.yml on that runner (V0.ci-self-hosted), and this script runs the same steps (`make test-ci`, the
+# Nix packages, gitleaks over the PR's commits) in the flake's dev shell, on the pushed head of the current branch, and
+# posts the result as the commit status `local/test` on that SHA. Fyr reads that status as the PR's CI: a merge ask
+# waits for it and a failure is reported like a red check.
 #
 #   scripts/ci-local.sh          # push first; the head must be on GitHub
 #
-# The nix package build (`nix build .#fyr`) runs on main only, in the workflow.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -31,7 +31,7 @@ status() { # state description
 	gh api -X POST "repos/$repo/statuses/$sha" -f state="$1" -f context="$ctx" -f description="$2" >/dev/null
 }
 
-status pending "make test on $(hostname)"
+status pending "make test-ci on $(hostname)"
 
 # One gate at a time on this host (V0.fix-flakes): two make tests at once load the machine until timing-sensitive
 # tests fail that pass alone. The lock is held until this script exits; a second gate waits for it, with its status
@@ -42,14 +42,15 @@ if ! flock -n 9; then
 	echo "ci-local: another gate runs; waiting" >&2
 	status pending "waiting for another gate on $(hostname)"
 	flock 9
-	status pending "make test on $(hostname)"
+	status pending "make test-ci on $(hostname)"
 fi
 log=$(mktemp -t fyr-ci-local.XXXXXX.log)
 started=$(date +%s)
 set +e
 {
 	git fetch -q origin main &&
-		nix develop --command make test &&
+		nix develop --command make test-ci &&
+		nix build .#fyr .#fyr-desktop --no-link &&
 		nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact \
 			--log-opts="origin/main..$sha" .
 } 9>&- 2>&1 | tee "$log" # 9>&-: nothing the gate starts (a detached Chrome) keeps the lock
@@ -58,7 +59,7 @@ set -e
 took=$(($(date +%s) - started))
 
 if [ "$rc" -eq 0 ]; then
-	status success "make test and gitleaks passed on $(hostname) in ${took}s"
+	status success "make test-ci, nix build and gitleaks passed on $(hostname) in ${took}s"
 	echo "ci-local: passed; status $ctx=success on $sha"
 else
 	status failure "failed on $(hostname) (exit $rc); log: $log"
