@@ -402,7 +402,7 @@ func (d *Deployer) live() string {
 func replaceDir(tmp, out string) error {
 	old := ""
 	if _, err := os.Lstat(out); err == nil {
-		old = fmt.Sprintf("%s.old-%d", out, time.Now().UnixNano())
+		old = filepath.Join(filepath.Dir(out), fmt.Sprintf(".dl-old-%s-%d", filepath.Base(out), time.Now().UnixNano())) // ".dl-": Prune sweeps it if a crash leaves it
 		if err := os.Rename(out, old); err != nil {
 			return err
 		}
