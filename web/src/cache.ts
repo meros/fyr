@@ -28,6 +28,14 @@ export function nextHostState(stored: StateDTO | null, answer: Partial): StateDT
   return stored ? mergeStateDelta(stored, answer) : ({ ...answer, partial: undefined } as StateDTO);
 }
 
+/** V0.state-prune: a partial answer only adds and replaces, so a thread the host has since dropped would stay for ever.
+ *  The host lists every thread it has now (`ids`); the stored ones not on the list go. Without the list, nothing goes. */
+export function pruneGone(s: StateDTO, ids: string[] | undefined): StateDTO {
+  if (!ids) return s;
+  const keep = new Set(ids);
+  return s.threads.every((t) => keep.has(t.id)) ? s : { ...s, threads: s.threads.filter((t) => keep.has(t.id)) };
+}
+
 /** Revs are the host's clock in ns. Frames reach a device out of rev order (the stream holds a thread up to
  *  100 ms, a front relays several hosts), so a frame lost when the stream drops can be older than the newest rev the
  *  device holds. Asking a minute early fetches it again; the cost is the threads that changed in that minute. */

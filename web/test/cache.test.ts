@@ -2,7 +2,7 @@
 // device; at start and on open it fetches only the difference.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hostSince, mergeEventLists, mergeStateDelta, nextHostState, sinceRev } from "../src/cache.ts";
+import { hostSince, mergeEventLists, mergeStateDelta, nextHostState, pruneGone, sinceRev } from "../src/cache.ts";
 import { thread } from "./helpers.ts";
 import type { StateDTO } from "../src/types.ts";
 
@@ -54,4 +54,11 @@ test("each host is asked since its own newest rev and its delta merges into its 
   assert.equal((nb as { partial?: boolean }).partial, undefined);
   const first = nextHostState(null, state([thread("t9", "seen", "seen", { rev: 3 })]));
   assert.deepEqual(first.threads.map((t) => t.id), ["t9"]);
+});
+
+test("V0.state-prune: stored threads the host no longer lists are dropped; without a list none are", () => {
+  const merged = state([thread("a", "seen", "seen", { rev: 1 }), thread("b", "seen", "seen", { rev: 2 }), thread("c", "seen", "seen", { rev: 3 })]);
+  assert.deepEqual(pruneGone(merged, ["a", "c", "d"]).threads.map((t) => t.id), ["a", "c"]);
+  assert.equal(pruneGone(merged, undefined), merged);
+  assert.equal(pruneGone(merged, ["a", "b", "c"]), merged, "nothing gone: the same object");
 });

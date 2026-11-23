@@ -152,8 +152,11 @@ type State[T, P, F any] struct {
 	// More and Cursor: ?limit=N answered the newest N threads (V0.state-paging);
 	// More says older ones remain, and Cursor (a string: a rev is above 2^53) is
 	// the oldest rev in this page, to ask the next page with ?before=CURSOR.
-	More   bool   `json:"more,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
+	More bool `json:"more,omitempty"`
+	// IDs: the first page of a partial or paged answer lists every thread the host
+	// has now (V0.state-prune), so a device drops the stored ones that are gone.
+	IDs    []string `json:"ids,omitempty"`
+	Cursor string   `json:"cursor,omitempty"`
 	// Deploy is the deploy progress to show (V0.39), or nil.
 	Deploy any `json:"deploy"`
 	// Stall is the host's newest stall of the last 24 h (V0.147), or nil.

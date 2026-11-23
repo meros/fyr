@@ -449,6 +449,13 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	// below REV, so a client that was away for long shows the live ones first.
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	var ids []string // V0.state-prune: every thread there is, with the first page of a partial answer
+	if (since > 0 || limit > 0) && before <= 0 {
+		ids = make([]string, 0, len(threads))
+		for _, d := range threads {
+			ids = append(ids, d.ID)
+		}
+	}
 	if since > 0 {
 		changed := threads[:0:0]
 		for _, d := range threads {
@@ -470,7 +477,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
 		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(), HostMarks: s.hostMarks(), AgentMark: s.agentMark(), Update: s.updateState(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
-		Partial: since > 0 || before > 0, More: more, Cursor: cursorStr(cursor), Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
+		Partial: since > 0 || before > 0, More: more, IDs: ids, Cursor: cursorStr(cursor), Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
 	})
 }
 

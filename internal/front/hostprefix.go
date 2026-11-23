@@ -221,6 +221,13 @@ func (f *Front) cachedState(w http.ResponseWriter, r *http.Request, l *link) {
 	for k, v := range l.env {
 		st[k] = v
 	}
+	if (since > 0 || limit > 0) && before <= 0 { // V0.state-prune
+		ids := make([]string, 0, len(l.raw))
+		for id := range l.raw {
+			ids = append(ids, id)
+		}
+		st["ids"] = ids
+	}
 	changed := []map[string]any{}
 	for _, d := range l.raw {
 		if since <= 0 || revOf(d) > since {

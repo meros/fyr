@@ -15,7 +15,7 @@ import { decodeHostMarks } from "./store.ts";
 import type { OwnerMarks } from "./host-mark.ts";
 import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
-import { cache, hostSince, nextHostState } from "./cache.ts";
+import { cache, hostSince, nextHostState, pruneGone } from "./cache.ts";
 import type { Conn, ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
 import { attachmentUrl, type UploadReply } from "./attach.ts";
@@ -297,10 +297,10 @@ function createHttpApi(): Api {
         try {
           const q = new URLSearchParams({ limit: String(PAGE_FIRST) });
           if (since) q.set("since", String(since));
-          const r = await read(hostPath(id, `/state?${q}`), object<StateDTO & { partial?: boolean; more?: boolean; cursor?: string }>);
+          const r = await read(hostPath(id, `/state?${q}`), object<StateDTO & { partial?: boolean; more?: boolean; cursor?: string; ids?: string[] }>);
           if (!r.ok) throw new Error(r.error);
-          const { more: rest, cursor, ...answer } = r.data;
-          const state = nextHostState(stored, answer);
+          const { more: rest, cursor, ids, ...answer } = r.data;
+          const state = pruneGone(nextHostState(stored, answer), ids); // V0.state-prune
           if (rest && cursor) more.push({ i, id, cursor });
           else void cache.saveHostState(id, state);
           return { host, state };

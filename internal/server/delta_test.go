@@ -167,9 +167,10 @@ func TestStatePaging(t *testing.T) {
 			ID  string `json:"id"`
 			Rev int64  `json:"rev"`
 		} `json:"threads"`
-		Partial bool   `json:"partial"`
-		More    bool   `json:"more"`
-		Cursor  string `json:"cursor"`
+		Partial bool     `json:"partial"`
+		More    bool     `json:"more"`
+		Cursor  string   `json:"cursor"`
+		IDs     []string `json:"ids"`
 	}
 	get := func(q string) page {
 		r := do(t, "GET", hs.URL+"/api/state"+q, "", nil, "")
@@ -182,6 +183,10 @@ func TestStatePaging(t *testing.T) {
 	q := "?limit=2"
 	for i := 0; ; i++ {
 		p := get(q)
+		// V0.state-prune: the first page lists every thread there is, the later ones do not.
+		if (i == 0) != (len(p.IDs) == 5) || (i > 0 && p.IDs != nil) {
+			t.Fatalf("page %d: ids %v", i, p.IDs)
+		}
 		if i > 5 {
 			t.Fatal("paging does not end")
 		}
