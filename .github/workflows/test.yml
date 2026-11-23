@@ -1,7 +1,7 @@
-# Main's gate and release, on the self-hosted runner on meros-server (V0.ci-self-hosted): every push to main runs the
+# Main's gate and release, on the self-hosted Linux runner (V0.ci-self-hosted): every push to main runs the
 # whole gate on its head (secret scan, `make test-ci`, the Nix packages) and, when it is
-# green, publishes the release. Self-hosted minutes are free, so there is no hourly batch any more (#405 had one to
-# save paid minutes). Runs queue on the one runner; a newer push replaces a run still waiting, so the newest main is
+# green, publishes the release. The runner has the Nix store and Chrome, and only pushes to main and people with write
+# access start it. Runs queue on the one runner; a newer push replaces a run still waiting, so the newest main is
 # what gets tested and released. A PR's gate is pr.yml on the same runner. Start a run by hand with
 # `gh workflow run test.yml`.
 #

@@ -1,6 +1,5 @@
-# A PR's gate, on the self-hosted runner on meros-server (V0.ci-self-hosted): self-hosted minutes cost nothing on a
-# private repo, so PRs run on GitHub again (#405 had moved them to scripts/ci-local.sh to save paid minutes). The
-# runner takes one job at a time; a newer push to a PR cancels its older run. scripts/ci-local.sh stays the fallback
+# A PR's gate, on the self-hosted Linux runner (V0.ci-self-hosted): it has the Nix store and Chrome the gate needs,
+# and a fork's PR never runs on it (below). The runner takes one job at a time; a newer push to a PR cancels its older run. scripts/ci-local.sh stays the fallback
 # when the runner is down (its status local/test counts the same for Fyr).
 #
 # A self-hosted runner runs whatever a workflow says, and a PR runs the workflow from its own head, so a fork could

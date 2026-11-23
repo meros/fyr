@@ -51,8 +51,8 @@ make test-ci           # CI's gate: make test's parts with the layout timing bud
 scripts/ci-local.sh    # a PR's gate when the runner is down: make test-ci, nix build, gitleaks; posts local/test
 ```
 
-Every push to main runs one job on the self-hosted runner on meros-server (`.github/workflows/test.yml`: gitleaks, the
-tests, the nix build, the release); `gh workflow run test.yml` starts it by hand. A PR runs `.github/workflows/pr.yml` on the self-hosted runner on meros-server (V0.ci-self-hosted), and Fyr's merge waits for
+Every push to main runs one job on the self-hosted Linux runner (`.github/workflows/test.yml`: gitleaks, the
+tests, the nix build, the release); `gh workflow run test.yml` starts it by hand. A PR runs `.github/workflows/pr.yml` on the same runner (V0.ci-self-hosted; a fork's PR never runs there, and it has the Nix store and Chrome), and Fyr's merge waits for
 its check; when the runner is down, `scripts/ci-local.sh` on the host posts the status `local/test`, which counts the same. A PR runs what main runs (V0.ci-gates): `make test-ci` and `nix build .#fyr .#fyr-desktop`, the only build of the cgo GTK shell. A PR that changes `macos/` also compiles Fyr.app on the Mac runner when it is up (`.github/workflows/mac-pr.yml`); that check is advisory (V0.advisory-checks) and never holds a merge.
 
 `CGO_ENABLED=0` everywhere: the SQLite driver is pure Go, and NixOS has no global C compiler.
