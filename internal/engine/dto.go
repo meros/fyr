@@ -6,6 +6,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/usage"
 )
 
 func (e *Engine) dto(t *core.Thread, now time.Time) api.Thread {
@@ -99,5 +100,47 @@ func (e *Engine) Snapshot() []api.Thread {
 		out = append(out, e.build(core.CloneThread(t), now))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
+	return out
+}
+
+// ThreadSource names a thread whose turns are Fyr's own job for the usage
+// ledger (V0.usage-jobs): a project's setup run is "job:setup"; any other
+// thread is "". The agent calls it outside e.mu.
+func (e *Engine) ThreadSource(thread string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, p := range e.projects {
+		if p.Setup != nil && p.Setup.Thread == thread && thread != "" {
+			return "job:" + core.JobSetup
+		}
+	}
+	return ""
+}
+
+// ThreadTitles names threads for the usage page (V0.usage-page); a thread
+// the host no longer has is left out.
+func (e *Engine) ThreadTitles(ids []string) map[string]string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make(map[string]string, len(ids))
+	for _, id := range ids {
+		if t := e.threads[id]; t != nil {
+			out[id] = t.Title
+		}
+	}
+	return out
+}
+
+// ProjectNames names projects for the usage page, with the link that joins
+// a linked project's records on other hosts (decision 0034).
+func (e *Engine) ProjectNames(ids []string) map[string]usage.ProjectName {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make(map[string]usage.ProjectName, len(ids))
+	for _, id := range ids {
+		if p := e.projects[id]; p != nil {
+			out[id] = usage.ProjectName{Name: p.Name, Link: p.Link}
+		}
+	}
 	return out
 }

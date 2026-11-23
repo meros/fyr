@@ -271,7 +271,7 @@ const SCREENS = [
   // SPEC V0.119 (amends V0.50): Settings is the nav and four pages, with a provider, Add provider and a project as
   // sub-pages. On every one: no control under 44 px, nothing past the right edge, the last control above the bottom
   // inset; with the keyboard up a focused field and its button stay in view.
-  { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 7 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
+  { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 8 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
   { name: "settings providers", url: "?mock=rail&settings=providers", ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section[aria-label=\"System agents\"] select').length === 5" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
@@ -285,6 +285,8 @@ const SCREENS = [
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
   { name: "settings signed-in devices (V0.157)", url: "?mock=rail&settings=devices", ready: "document.querySelectorAll('.m-settings .dev').length === 4 && !!document.querySelector('.m-settings input[aria-label=\"Approval code\"]')" },
   { name: "settings hosts (V0.125)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .sr.host').length === 4" },
+  // V0.usage-page: two hosts' tokens by model, the week's day bars and Fyr's own calls
+  { name: "settings usage (V0.usage-page)", url: "?mock=rail&hosts=2&settings=usage", ready: "document.querySelectorAll('.m-settings .ug-day').length === 7 && document.querySelectorAll('.m-settings .ug-r').length >= 4" },
   { name: "settings paired installs (V0.159)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .peers .peerrow').length >= 3 && !!document.querySelector('.m-settings .peers input[aria-label=\"Invite from another install\"]')" },
   { name: "settings found installs (#259)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .peers .peercand.lan').length === 3 && !!document.querySelector('.m-settings .peers .peercand.lan.bad .cwarn')" },
   { name: "settings host changed (V0.125)", url: "?mock=rail&hosts=2&settings=hosts/lab", ready: "!!document.querySelector('.m-settings .note.bad')" },
@@ -611,7 +613,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   }
   if (ctx.startsWith("settings nav")) {
     const n = m.settings?.nav ?? [];
-    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Devices|This device|Setup" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
+    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Usage|Devices|This device|Setup" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
   }
   if (ctx.startsWith("settings providers")) {
     const st = m.settings;
@@ -1866,7 +1868,7 @@ try {
   await settle();
   const RECT = `(() => { const r = document.querySelector('.dlg.settings')?.getBoundingClientRect(); return r ? [Math.round(r.width), Math.round(r.height)].join('x') : ''; })()`;
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', nav: [...document.querySelectorAll('.dlg .stn-i .stn-t')].map(e => e.textContent), on: document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? '', rows: document.querySelectorAll('.dlg .prow').length, size: ${RECT} })`);
-  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|Hosts|Devices|This device|Setup" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|Hosts|Usage|Devices|This device|Setup" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
   // SPEC V0.115: System agents: a provider and a model for all jobs, a choice per job ("Same as default"), and what each job runs on.
   await waitFor(`document.querySelectorAll('.dlg section[aria-label="System agents"] select').length >= 4`, { soft: true });
   const sa = await evaluate(`(() => { const el = document.querySelector('.dlg section[aria-label="System agents"]'); if (!el) return null;
@@ -3060,11 +3062,11 @@ for (const [label, w, ht] of [
   const NAV = `[...document.querySelectorAll('${root} .stn-i')].map(b => ({ t: b.querySelector('.stn-t')?.textContent, s: b.querySelector('.stn-s')?.textContent, badge: b.querySelector('.pst')?.textContent ?? '' }))`;
   // 1. The nav.
   await step("nav", async () => {
-    const ready = phone ? `document.querySelectorAll('.m-settings .stn-i').length === 7` : `document.querySelectorAll('.dlg .stn-i').length === 7`;
+    const ready = phone ? `document.querySelectorAll('.m-settings .stn-i').length === 8` : `document.querySelectorAll('.dlg .stn-i').length === 8`;
     await open(phone ? "" : "projects", ready);
     const n = await evaluate(NAV);
     const hosts = n.find((x) => x.t === "Hosts"), projects = n.find((x) => x.t === "Projects");
-    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Devices|This device|Setup", `${ctx}: the nav ${JSON.stringify(n)}`);
+    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Usage|Devices|This device|Setup", `${ctx}: the nav ${JSON.stringify(n)}`);
     check(hosts?.s === "4 hosts · 1 needs you" && hosts?.badge === "1", `${ctx}: the Hosts nav row ${JSON.stringify(hosts)}`);
     check(/^\d+ projects$/.test(projects?.s ?? ""), `${ctx}: the Projects summary still counts hosts ${JSON.stringify(projects)}`);
     if (!phone) {
@@ -3133,7 +3135,7 @@ for (const [label, w, ht] of [
       const lab = await evaluate(`document.querySelector('.m-settings .sr.host[data-host=lab]')?.classList.contains('bad')`);
       check(lab === false, `${ctx}: lab's row is still red after Trust`);
       await evaluate(`history.back()`);
-      await waitFor(`document.querySelectorAll('.m-settings .stn-i').length === 7`, { soft: true });
+      await waitFor(`document.querySelectorAll('.m-settings .stn-i').length === 8`, { soft: true });
     }
     const n = await evaluate(NAV);
     const hosts = n.find((x) => x.t === "Hosts");

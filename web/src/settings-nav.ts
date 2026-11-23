@@ -3,7 +3,7 @@
 import type { PushStatus } from "./push.ts";
 import type { HostInfo } from "./hosts.ts";
 
-export type PageId = "providers" | "automation" | "projects" | "hosts" | "devices" | "device" | "setup";
+export type PageId = "providers" | "automation" | "projects" | "hosts" | "usage" | "devices" | "device" | "setup";
 export interface PageRef {
   page: PageId;
   /** a sub-page: a provider's id or "new" (providers), a project's id (projects), a host's name (hosts) */
@@ -17,6 +17,7 @@ export const PAGES: { id: PageId; title: string }[] = [
   { id: "automation", title: "Automation" },
   { id: "projects", title: "Projects" },
   { id: "hosts", title: "Hosts" },
+  { id: "usage", title: "Usage" }, // V0.usage-page
   { id: "devices", title: "Devices" },
   { id: "device", title: "This device" },
   { id: "setup", title: "Setup" },
@@ -24,7 +25,7 @@ export const PAGES: { id: PageId; title: string }[] = [
 
 /** The pages with sub-pages. */
 /** Automation's sub is not a page: it names the group to scroll to ("leftovers"). */
-const SUBS: Record<PageId, boolean> = { providers: true, automation: true, projects: true, hosts: true, devices: false, device: false, setup: false };
+const SUBS: Record<PageId, boolean> = { providers: true, automation: true, projects: true, hosts: true, usage: false, devices: false, device: false, setup: false };
 
 function isPage(s: string | null | undefined): s is PageId {
   return !!s && PAGES.some((p) => p.id === s);

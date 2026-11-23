@@ -435,6 +435,7 @@ Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown
 Served per host at `/api/h/<hostId>/…` (the front caches the settings reads when a host is offline):
 
 - `GET /api/setup`: live host readiness checks for the Setup wizard (machine tools, providers, GitHub/`gh`, projects, phone, peers; V0.setup-wizard).
+- `GET /api/usage?group=<keys>&from=<day>&to=<day>&<key>=<value>` (V0.usage-page): the host's usage ledger summed by the keys (`day`, `hour`, `model`, `provider`, `account`, `billing`, `adapter`, `project`, `thread`, `source`, `trigger`, `part`, `effort`, `session`) over an inclusive range of the host's local days, filtered by key = value: `{groups: [{key, reports, input, output, cacheRead, cacheWrite5m, cacheWrite1h, thinking, webSearch, webFetch}], names: {thread, project: {id: {name, link}}, provider, account}}`. `hour` is a row's UTC hour (`2026-11-23T17`). An unknown key or a malformed day is a 400.
 - `GET /api/load`: live CPU, memory headroom, PSI stall, slowdown probe, cgroup layout, oomd limit, active/queued jobs and recent guard events (V0.load-card).
 - `GET /api/autoDeploy`, `GET /api/autoMerge`, `GET /api/systemAgents`: per-host automation and system-agent settings (`Settings → Automation`).
 - `POST /api/search {q}`: searches threads and events on that host (V0.ai-search).

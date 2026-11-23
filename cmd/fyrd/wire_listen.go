@@ -18,6 +18,7 @@ import (
 	"github.com/meros/fyr/internal/pipe"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/tailnet"
+	"github.com/meros/fyr/internal/usage"
 )
 
 // wireListeners makes the servers and the listeners and starts serving.
@@ -37,6 +38,7 @@ func (w *wiring) wireListeners() {
 	hostName := w.hostName
 	ln := w.ln
 	mcpSrv := w.mcpSrv
+	meter, accountOf := w.meter, w.accountOf // V0.usage-page
 	mgr := w.mgr
 	prDetails := w.prDetails
 	quotas := w.quotas
@@ -66,6 +68,17 @@ func (w *wiring) wireListeners() {
 	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: reg, HandoverPlan: mgr.HandoverPlan, HandoverExport: mgr.HandoverExport, HandoverImport: mgr.HandoverIn, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: quotas.Get,
 		Load:  sampler,
+		// V0.usage-page: the host's token sums, named.
+		Usage: func(q usage.Query) (usage.View, error) {
+			return meter.Answer(q, usage.Lookup{Threads: eng.ThreadTitles, Projects: eng.ProjectNames, AccountOf: accountOf,
+				Providers: func() map[string]string {
+					out := map[string]string{}
+					for _, p := range h.profiles() {
+						out[p.ID] = p.Name
+					}
+					return out
+				}})
+		},
 		// V0.126 (#151): the update record, the pause and the bad release.
 		Updates: func() any {
 			bad, why := dep.Bad()

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/meros/fyr/internal/api"
+	"github.com/meros/fyr/internal/core"
 )
 
 // V0.usage-ledger: the meter's total for a thread reaches the thread's DTO,
@@ -31,5 +32,20 @@ func TestThreadUsageInTheDTO(t *testing.T) {
 		if x.ID == a && x.Usage.Total != 33 {
 			t.Fatalf("the built DTO moved: %+v", x.Usage)
 		}
+	}
+}
+
+// V0.usage-jobs: a project's setup thread is Fyr's job in the ledger.
+func TestThreadSourceOfASetupRun(t *testing.T) {
+	e, _, _ := bare(t)
+	a, b := bareThread(t, e), bareThread(t, e)
+	e.mu.Lock()
+	e.projects["p_x"] = &core.Project{ID: "p_x", Setup: &core.ProjectSetup{Thread: a}}
+	e.mu.Unlock()
+	if got := e.ThreadSource(a); got != "job:setup" {
+		t.Errorf("setup thread: %q", got)
+	}
+	if got := e.ThreadSource(b); got != "" {
+		t.Errorf("other thread: %q", got)
 	}
 }

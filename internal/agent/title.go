@@ -26,5 +26,5 @@ func (m *Manager) Title(ctx context.Context, threadID, conversation string) (str
 	if _, ok := m.host.Thread(threadID); !ok {
 		return "", fmt.Errorf("no thread %q", threadID)
 	}
-	return m.SystemPrint(ctx, core.JobTitle, titleSystem, "The conversation of the thread:\n\n"+conversation)
+	return m.SystemPrintFor(ctx, core.JobTitle, threadID, titleSystem, "The conversation of the thread:\n\n"+conversation)
 }

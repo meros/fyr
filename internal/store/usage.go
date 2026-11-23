@@ -114,6 +114,9 @@ var UsageColumns = map[string]string{
 	"day": "day", "source": "source", "trigger": "trigger", "thread": "thread", "project": "project",
 	"provider": "provider", "account": "account", "billing": "billing", "adapter": "adapter",
 	"model": "model", "effort": "effort", "part": "part", "session": "session",
+	// V0.usage-page: the UTC hour of a row ("2026-11-23T17"), for the status home's hourly bars; at is stored in
+	// UTC RFC 3339, so its first 13 characters are that hour, and a client turns it into its own local hour.
+	"hour": "substr(at, 1, 13)",
 }
 
 // UsageFilter narrows a rollup: a day range (inclusive, "" for open) and
