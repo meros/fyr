@@ -9,6 +9,7 @@ package heavy
 import (
 	"encoding/json"
 	"errors"
+	"github.com/meros/fyr/internal/kvstore"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -40,7 +41,7 @@ type ServicePattern struct {
 // Services is the host's service patterns: the built-in ones less those the
 // owner removed, then the config's and the owner's own. Match never waits.
 type Services struct {
-	KV   KV
+	KV   kvstore.Table
 	Base []string // the config's (`servicePatterns`)
 
 	mu      sync.Mutex

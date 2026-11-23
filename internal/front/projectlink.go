@@ -79,7 +79,7 @@ func (f *Front) projectAtLocked(ref string) (linkTarget, int, error) {
 // hostCommand runs one project command on a host.
 func (f *Front) hostCommand(ctx context.Context, l *link, action, commandID string, args map[string]any) (map[string]any, error) {
 	body, _ := json.Marshal(map[string]any{"commandId": commandID, "action": action, "args": args})
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, hostCallTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/command", bytes.NewReader(body))
 	if err != nil {
@@ -402,7 +402,7 @@ func (f *Front) copyImage(ctx context.Context, src, m linkMember, link, image, b
 
 // iconOf reads a member's stored icon, the larger square.
 func (f *Front) iconOf(ctx context.Context, m linkMember) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, hostCallTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", m.l.base.String()+"/api/projects/"+url.PathEscape(m.id)+"/icon?size=128", nil)
 	if err != nil {

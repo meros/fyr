@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 // jobDir is the name of a thread's job cgroup.
@@ -34,7 +34,7 @@ type JobGroups struct {
 
 	Trees *TreeReader
 	CLIs  func() map[string]int
-	KV    slots.KV                                // keeps the stopped pids across a restart
+	KV    kvstore.Table                           // keeps the stopped pids across a restart
 	Kill  func(pid int, sig syscall.Signal) error // default syscall.Kill
 
 	stopMu  sync.Mutex // orders the stops and their KV writes; taken without mu

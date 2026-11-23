@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/kvstore"
 	"log"
 	"net/url"
 	"slices"
@@ -412,7 +413,7 @@ type Poller struct {
 	Interval time.Duration
 	// KV keeps deployAt and failing-check annotations across restarts
 	// (V0.persist-runtime-state); nil keeps them in memory only.
-	KV     KV
+	KV     kvstore.Table
 	loaded bool
 	notes  map[string]noteCache // V0.66 (7): by PR URL
 	// Now is the clock (tests); nil is time.Now.

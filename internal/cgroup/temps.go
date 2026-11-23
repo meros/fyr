@@ -21,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 // Temp is one listed temporary folder.
@@ -66,10 +68,7 @@ type Temps struct {
 	Idle      time.Duration // default WorktreeIdle
 	NoFetch   bool          // tests: no fetch of PR heads
 	OnRemoved func(thread, line string)
-	KV        interface {
-		GetKV(string) (string, error)
-		SetKV(string, string) error
-	}
+	KV        kvstore.Table
 
 	mu            sync.Mutex // the scratch and profile sweep
 	wmu           sync.Mutex // the worktree sweep (fetched, sizes, pub)

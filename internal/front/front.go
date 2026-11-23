@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/meros/fyr/internal/httpguard"
+	"github.com/meros/fyr/internal/kvstore"
 	"io"
 	"io/fs"
 	"log"
@@ -98,7 +99,7 @@ type Options struct {
 	CacheDir string
 	// Store keeps the owner's settings that span the hosts (V0.121: the
 	// project order); nil keeps none.
-	Store KV
+	Store kvstore.Table
 	// WellKnown is this install's /.well-known/fyr answer (V0.123, decision
 	// 0025), which the pairing reads (condition 1); nil serves none.
 	WellKnown func() peer.WellKnown
@@ -422,7 +423,7 @@ func (f *Front) followOne(ctx context.Context, l *link) {
 }
 
 func (f *Front) follow(ctx context.Context, l *link) {
-	backoff := f.opt.MinBackoff
+	backoff := httpguard.Backoff{Min: f.opt.MinBackoff, Max: 15 * time.Second}
 	for {
 		start := time.Now()
 		err := f.session(ctx, l)
@@ -441,16 +442,24 @@ func (f *Front) follow(ctx context.Context, l *link) {
 		}
 		f.setOffline(l, err)
 		if time.Since(start) > 30*time.Second {
-			backoff = f.opt.MinBackoff
+			backoff.Reset()
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(backoff):
+		case <-time.After(backoff.Next()):
 		}
-		backoff = min(backoff*2, 15*time.Second)
 	}
 }
+
+const (
+	// hostCallTimeout bounds one write or small call to a host.
+	hostCallTimeout = 10 * time.Second
+	// hostReadTimeout bounds a read of a host's state or settings.
+	hostReadTimeout = 30 * time.Second
+	// tailnetLookupTimeout bounds the lookup of a node on the tailnet during sign-in.
+	tailnetLookupTimeout = 3 * time.Second
+)
 
 // idle is how long a stream may stay silent (the host pings every 25 s)
 // before the front counts the host as gone.
@@ -519,7 +528,7 @@ func (f *Front) session(ctx context.Context, l *link) error {
 }
 
 func (f *Front) get(ctx context.Context, l *link, path string, v any) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, hostReadTimeout)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", l.base.String()+path, nil)
 	resp, err := l.client.Do(req)

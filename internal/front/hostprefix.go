@@ -381,7 +381,7 @@ func (f *Front) presenceRoute2(w http.ResponseWriter, r *http.Request) {
 		ThreadID string `json:"threadId"`
 		Device   string `json:"device"`
 	}
-	if err := httpguard.ReadJSON(w, r, &b, 4<<10); err != nil || b.Device == "" {
+	if err := httpguard.ReadJSON(w, r, &b, httpguard.SmallBody); err != nil || b.Device == "" {
 		http.Error(w, "host, threadId and device are required", 400)
 		return
 	}

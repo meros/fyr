@@ -10,6 +10,7 @@ package slots
 import (
 	"context"
 	"encoding/json"
+	"github.com/meros/fyr/internal/kvstore"
 	"log"
 	"math"
 	"slices"
@@ -34,12 +35,6 @@ const Default = 2
 
 // key is where the pool is kept in the store's KV table.
 const key = "slots"
-
-// KV is the store's key-value table (*store.Store).
-type KV interface {
-	GetKV(k string) (string, error)
-	SetKV(k, v string) error
-}
 
 // Holder is one owner (a thread id, or the self-deploy) holding or waiting.
 type Holder struct {
@@ -168,7 +163,7 @@ type Pool struct {
 	mu   lockwatch.Mutex
 	pub  atomic.Pointer[Snapshot] // the last snapshot, for View
 	n    int
-	kv   KV
+	kv   kvstore.Table
 	held []Holder
 	wait []Holder
 	why  string
@@ -198,7 +193,7 @@ func New(n int) *Pool {
 // Open is New with the holders and the queue loaded from kv and written
 // back on every change. A priority wait is never kept: it ends with its
 // daemon.
-func Open(n int, kv KV) *Pool {
+func Open(n int, kv kvstore.Table) *Pool {
 	p := New(n)
 	if p.n == 0 || kv == nil {
 		return p

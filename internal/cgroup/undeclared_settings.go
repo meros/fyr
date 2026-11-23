@@ -6,16 +6,15 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 // UndeclaredSettings are the host's thresholds for undeclared heavy work
 // (V0.164 4.3): the config file's, and what the owner saved in Settings (kept
 // in the store's KV, which wins). Readers never wait.
 type UndeclaredSettings struct {
-	KV interface {
-		GetKV(string) (string, error)
-		SetKV(string, string) error
-	}
+	KV   kvstore.Table
 	Base UndeclaredConfig
 
 	mu  sync.Mutex

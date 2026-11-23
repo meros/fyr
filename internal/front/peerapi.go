@@ -72,7 +72,7 @@ func (f *Front) peerAPI(mux muxer) {
 			return
 		}
 		var b struct{ ID string }
-		httpguard.DecodeLoose(w, r, &b, 4096)
+		httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
 		if err := p.Remove(b.ID); err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 			return
@@ -84,7 +84,7 @@ func (f *Front) peerAPI(mux muxer) {
 			return
 		}
 		var b struct{ Code, Addr string }
-		httpguard.DecodeLoose(w, r, &b, 4096)
+		httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
 		res, err := p.Join(r.Context(), b.Code, b.Addr)
 		if err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})

@@ -11,6 +11,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/meros/fyr/internal/kvstore"
 	"log"
 	"regexp"
 	"slices"
@@ -23,12 +24,6 @@ import (
 type bookView struct {
 	sugg  []Suggestion
 	added []Added
-}
-
-// KV is the store's key-value table.
-type KV interface {
-	GetKV(k string) (string, error)
-	SetKV(k, v string) error
 }
 
 const (
@@ -81,7 +76,7 @@ type Added struct {
 // Book keeps the suggestions and the added patterns, and gives the added ones
 // to Matcher.
 type Book struct {
-	KV      KV
+	KV      kvstore.Table
 	Matcher *Matcher
 	// Base are the patterns of the host's config (`heavyAdded`), read with the
 	// owner's added ones.

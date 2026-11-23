@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 // V0.rerun-classes (decision 0036 (F)): the command classes the owner marked
@@ -15,10 +17,7 @@ import (
 
 // RerunClasses keeps the list in the store's KV. Readers never wait.
 type RerunClasses struct {
-	KV interface {
-		GetKV(string) (string, error)
-		SetKV(string, string) error
-	}
+	KV kvstore.Table
 
 	mu  sync.Mutex
 	cur atomic.Pointer[[]string]

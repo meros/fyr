@@ -3,15 +3,14 @@ package cgroup
 import (
 	"encoding/json"
 	"sync"
+
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 // Episodes keeps the record of each ended episode, the newest 100, in the
 // store's KV table (V0.164 4.5).
 type Episodes struct {
-	KV interface {
-		GetKV(string) (string, error)
-		SetKV(string, string) error
-	}
+	KV kvstore.Table
 
 	mu sync.Mutex
 }

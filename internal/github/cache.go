@@ -5,16 +5,11 @@ package github
 
 import (
 	"encoding/json"
+	"github.com/meros/fyr/internal/kvstore"
 	"sort"
 	"sync"
 	"time"
 )
-
-// KV is the store's key-value table (*store.Store).
-type KV interface {
-	GetKV(k string) (string, error)
-	SetKV(k, v string) error
-}
 
 const (
 	// CIKeep is how long Fyr remembers that a repo has CI across restarts.
@@ -44,7 +39,7 @@ const (
 
 var (
 	cacheMu  sync.Mutex
-	cacheKV  KV
+	cacheKV  kvstore.Table
 	cacheNow = time.Now
 )
 
@@ -73,7 +68,7 @@ func setCacheNow(fn func() time.Time) {
 // UseCache backs the package-level GitHub caches with kv and loads their
 // non-expired entries, replacing any in-memory entries (called at fyrd start
 // and in restart tests). Passing nil clears the caches and disables backing.
-func UseCache(kv KV) {
+func UseCache(kv kvstore.Table) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	cacheKV = kv
@@ -108,7 +103,7 @@ func (f ciFact) valid(now time.Time) bool {
 	return !f.at.IsZero() && now.Sub(f.at) < CIRecheck
 }
 
-func loadCIReposLocked(kv KV, now time.Time) {
+func loadCIReposLocked(kv kvstore.Table, now time.Time) {
 	raw, _ := kv.GetKV(ciReposKey)
 	if raw == "" {
 		return
@@ -163,7 +158,7 @@ type savedRuleSet struct {
 	At        time.Time `json:"at"`
 }
 
-func loadBaseRulesLocked(kv KV, now time.Time) {
+func loadBaseRulesLocked(kv kvstore.Table, now time.Time) {
 	raw, _ := kv.GetKV(baseRulesKey)
 	if raw == "" {
 		return
@@ -228,7 +223,7 @@ type savedDefaultBranch struct {
 	At     time.Time `json:"at"`
 }
 
-func loadDefaultBranchesLocked(kv KV, now time.Time) {
+func loadDefaultBranchesLocked(kv kvstore.Table, now time.Time) {
 	raw, _ := kv.GetKV(defaultBranchesKey)
 	if raw == "" {
 		return
@@ -286,7 +281,7 @@ func (f deploysFact) valid(now time.Time) bool {
 	return !f.at.IsZero() && now.Sub(f.at) < RepoDeploysRecheck
 }
 
-func loadRepoDeploysLocked(kv KV, now time.Time) {
+func loadRepoDeploysLocked(kv kvstore.Table, now time.Time) {
 	raw, _ := kv.GetKV(repoDeploysKey)
 	if raw == "" {
 		return
@@ -343,7 +338,7 @@ func (s statusRead) valid(now time.Time) bool {
 	return s.State != "" && (s.at.IsZero() || now.Sub(s.at) < FinalStatusKeep)
 }
 
-func loadFinalStatusLocked(kv KV, now time.Time) {
+func loadFinalStatusLocked(kv kvstore.Table, now time.Time) {
 	raw, _ := kv.GetKV(finalStatusKey)
 	if raw == "" {
 		return

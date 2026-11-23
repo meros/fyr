@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/heavy"
+	"github.com/meros/fyr/internal/kvstore"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -63,7 +64,7 @@ type servicePeak struct {
 type Services struct {
 	Match  func(command string) bool
 	Docker *Docker
-	KV     slots.KV
+	KV     kvstore.Table
 	Cwd    func(thread string) string
 	Now    func() time.Time
 	Proc   string

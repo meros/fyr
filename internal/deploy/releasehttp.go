@@ -40,12 +40,6 @@ func (e errRateLimited) Error() string {
 	return "GitHub's API limit is spent until " + e.until.Local().Format("15:04:05")
 }
 
-// KV is the store's key-value table (*store.Store).
-type KV interface {
-	GetKV(k string) (string, error)
-	SetKV(k, v string) error
-}
-
 const apiHoldKey = "deploy.apiHold"
 
 // apiState is what a Releases keeps between calls: the answers it may ask

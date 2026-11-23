@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"github.com/meros/fyr/internal/kvstore"
 	"sync"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func (k *memKV) SetKV(key, v string) error {
 
 // restartCache backs the package caches with kv at clock *now, as fyrd's
 // start does, and undoes it when the test ends.
-func restartCache(t *testing.T, kv KV, now *time.Time) {
+func restartCache(t *testing.T, kv kvstore.Table, now *time.Time) {
 	t.Helper()
 	setCacheNow(func() time.Time { return *now })
 	UseCache(kv)

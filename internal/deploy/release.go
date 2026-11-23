@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/meros/fyr/internal/fsutil"
+	"github.com/meros/fyr/internal/kvstore"
 	"log"
 	"net/http"
 	"net/url"
@@ -45,7 +46,7 @@ type Releases struct {
 	Token func() string
 	// KV keeps the GitHub API rate-limit hold across restarts
 	// (V0.persist-runtime-state); nil keeps it in memory only.
-	KV    KV
+	KV    kvstore.Table
 	Now   func() time.Time // tests
 	state apiState
 	// Channel is the config's updateChannel (V0.versioned-releases): "" or

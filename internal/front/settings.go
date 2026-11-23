@@ -55,7 +55,7 @@ func (f *Front) settingsFor(w http.ResponseWriter, r *http.Request, l *link, pat
 		}
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), hostReadTimeout)
 	defer cancel()
 	q := r.URL.Query()
 	q.Del("host")
