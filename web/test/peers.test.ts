@@ -70,3 +70,38 @@ test("V0.180: a config that changed under fyrd is said, with how to apply it", (
   assert.match(n.how, /systemctl reload fyr/);
   assert.match(n.how, /agents/);
 });
+
+import { candidateWarn, foundBy, inviteId, pairAsks } from "../src/peers.ts";
+
+// #259: an install found on the LAN: its id, every address and who found it, never the raw kind.
+test("a found install in words", () => {
+  const c = { kind: "lan", online: true, id: "K8VD-3N2Q-7HWX-5RTE", addr: "192.0.2.31:7778", addrs: ["192.0.2.31:7778"], source: "mdns" };
+  assert.equal(candidateWords(c), "K8VD-3N2Q-7HWX-5RTE · 192.0.2.31:7778 · found by mDNS");
+  assert.equal(candidateWords({ ...c, addrs: ["192.0.2.31:7778", "10.0.0.31:7778"], source: "hand" }), "K8VD-3N2Q-7HWX-5RTE · 192.0.2.31:7778, 10.0.0.31:7778 · added by hand");
+  assert.equal(candidateWords({ kind: "lan", online: true, id: "K8VD-3N2Q-7HWX-5RTE", addr: "192.0.2.31:7778" }), "K8VD-3N2Q-7HWX-5RTE · 192.0.2.31:7778 · found by mDNS");
+  assert.doesNotMatch(candidateWords(c), /\blan\b/);
+  assert.equal(foundBy(undefined), "found by mDNS");
+  assert.equal(needsInvite(c), false);
+});
+
+test("a spoof or a duplicate says so, and Pair on a spoof asks first", () => {
+  const plain: { addrs: string[]; spoof?: string; dup?: boolean } = { addrs: ["192.0.2.31:7778"] };
+  assert.equal(candidateWarn(plain), "");
+  assert.equal(pairAsks(plain), false);
+  const at = { ...plain, spoof: "address:lab:AX2C-1111-2222-3333" };
+  assert.equal(candidateWarn(at), "This address is lab's (AX2C). Pair it only if you reinstalled lab. Pair asks for its code either way.");
+  assert.equal(pairAsks(at), true);
+  const named = { ...plain, spoof: "name:lab:AX2C-1111-2222-3333" };
+  assert.equal(candidateWarn(named), "You already have a host named lab with another id (AX2C). Pair asks for its code either way.");
+  assert.equal(pairAsks(named), true);
+  const dup = { ...plain, dup: true, addrs: ["192.0.2.31:7778", "192.0.2.32:7778"] };
+  assert.match(candidateWarn(dup), /^One id at 2 addresses: one install on two networks, or two machines with one id\./);
+  assert.equal(pairAsks(dup), false, "a duplicate is warned of; the code still decides");
+  assert.match(candidateWarn({ ...dup, spoof: "address:lab:AX2C-1111-2222-3333" }), /^This address is lab's/, "a spoof's line wins");
+});
+
+test("the install an invite names", () => {
+  assert.equal(inviteId("fyr1-k8vd-3n2q-7hwx-5rte-abcdefgh23"), "K8VD-3N2Q-7HWX-5RTE");
+  assert.equal(inviteId("FYR1-K8VD"), "");
+  assert.equal(inviteId(""), "");
+});

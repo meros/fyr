@@ -144,8 +144,8 @@ export interface Api {
   authAct(action: "approve" | "deny" | "revoke" | "add" | "mode", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.159: Settings → Hosts: the paired installs, the nodes that are not, the open invite. */
   peerState(): Promise<Result<PeerState>>;
-  /** V0.159: invite (open one here: a code, a QR image, a link) or join (an invite from another install). */
-  peerAct(action: "invite" | "join" | "remove", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
+  /** V0.159: invite (open one here: a code, a QR image, a link) or join (an invite from another install); #259: ignore {id, on} a found install. */
+  peerAct(action: "invite" | "join" | "remove" | "ignore", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.115: the system agents setting of a host */
   systemAgents(host: HostId): Promise<Result<SystemAgentsView>>;
   /** V0.50: a host's current profiles (after a provider changed). Never rejects: none when they cannot be read. */

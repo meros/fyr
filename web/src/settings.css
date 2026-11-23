@@ -90,6 +90,8 @@ label.sr{cursor:pointer}
 .sr-t.ell{overflow-wrap:normal}
 .sr-d{font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;overflow-wrap:anywhere}
 .sr-d.err{color:var(--signal-ink)}
+/* #259: the warning line under a found install that claims a paired one's address or name */
+.sr-d .cwarn{display:block;color:var(--signal-ink);white-space:normal}
 .sr-d2{display:block}
 /* V0.update-changelog: an update's changelog under its row, one commit a line; desktop and phone share it */
 .sr-d .upd-chb{font:inherit;padding:0}

@@ -43,7 +43,7 @@ func (f *Front) peerAPI(mux muxer) {
 			f.signedOut(w, r, false, nil)
 			return
 		}
-		out := map[string]any{"members": p.Members(), "candidates": p.Candidates(r.Context()), "whoisLinkUses": f.WhoisLinkUses()}
+		out := map[string]any{"members": p.Members(), "candidates": p.Candidates(r.Context()), "ignored": p.IgnoredList(r.Context()), "whoisLinkUses": f.WhoisLinkUses()}
 		if f.opt.ConfigNote != nil {
 			if n := f.opt.ConfigNote(); n != "" {
 				out["configChanged"] = n
@@ -76,6 +76,25 @@ func (f *Front) peerAPI(mux muxer) {
 			return
 		}
 		if err := p.Remove(b.ID); err != nil {
+			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		api.WriteJSON(w, 200, map[string]any{"ok": true})
+	})
+	// #259: Ignore hides a found install from Not paired; Show ignored brings it
+	// back (on: false). Local to this install; the owner's signed-in session only.
+	mux.HandleFunc("POST /api/front/peer/ignore", func(w http.ResponseWriter, r *http.Request) {
+		if !need(w, r) {
+			return
+		}
+		var b struct {
+			ID string
+			On *bool
+		}
+		if !api.DecodeBody(w, r, &b, httpguard.SmallBody) {
+			return
+		}
+		if err := p.SetIgnored(b.ID, b.On == nil || *b.On); err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}

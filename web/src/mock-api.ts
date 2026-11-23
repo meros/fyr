@@ -433,6 +433,16 @@ export function createMockApi(scenario: string): Api {
         mockPeers.members = mockPeers.members.filter((m) => m.id !== body.id);
         return { ok: true };
       }
+      if (action === "ignore") {
+        const id = String(body.id);
+        if (body.on === false) mockPeers.ignored = (mockPeers.ignored ?? []).filter((g) => g.id !== id);
+        else {
+          const c = mockPeers.candidates.find((x) => x.id === id);
+          mockPeers.candidates = mockPeers.candidates.filter((x) => x.id !== id);
+          mockPeers.ignored = [...(mockPeers.ignored ?? []), { id, at: new Date().toISOString(), addr: c?.addr }];
+        }
+        return { ok: true };
+      }
       if (action === "join") {
         if (!/^fyr1-/i.test(String(body.code))) return { ok: false, error: "that is not an invite" };
         return { ok: true, name: "box", addr: "box.tail1234.ts.net:7779" };
@@ -722,5 +732,10 @@ const mockPeers: PeerState = {
   candidates: [
     { name: "server.tail1234.ts.net", online: true, kind: "tagged" },
     { name: "guest-phone.tail1234.ts.net", online: false, kind: "other-user" },
+    // #259: installs found on the LAN: a plain one, one at two addresses, one at a paired host's address
+    { name: "fyr-k8vd3n2q", online: true, kind: "lan", id: "K8VD-3N2Q-7HWX-5RTE", addr: "192.168.1.31:7778", addrs: ["192.168.1.31:7778"], source: "mdns" },
+    { name: "fyr-p4lm9c6a", online: true, kind: "lan", id: "P4LM-9C6A-2JBF-8NUQ", addr: "192.168.1.40:7778", addrs: ["192.168.1.40:7778", "10.0.5.40:7778"], dup: true, source: "mdns" },
+    { name: "fyr-b7la4x2c", online: true, kind: "lan", id: "B7LA-4X2C-9MKD-3PRS", addr: "192.168.1.20:7779", addrs: ["192.168.1.20:7779"], source: "hand", spoof: "address:mac:QX2C-7LD4-9PWE-1ABN" },
   ],
+  ignored: [{ id: "W2NF-6TQA-4ZEJ-7HCY", at: new Date(Date.now() - 3 * 86_400_000).toISOString(), addr: "192.168.1.77:7778" }],
 };

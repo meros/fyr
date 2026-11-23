@@ -403,7 +403,7 @@ func (m *MDNS) hearFrom(msg []byte, src net.IP, now time.Time) {
 	}
 	for _, ip := range ips {
 		addr := net.JoinHostPort(ip.String(), strconv.Itoa(a.Port))
-		m.heard[a.ID+"|"+addr] = &heardAt{c: Candidate{ID: a.ID, Addr: addr, Source: "mdns"}, seen: now}
+		m.heard[a.ID+"|"+addr] = &heardAt{c: Candidate{ID: a.ID, Name: a.Instance, Addr: addr, Source: "mdns"}, seen: now}
 	}
 }
 

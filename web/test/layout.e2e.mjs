@@ -286,6 +286,7 @@ const SCREENS = [
   { name: "settings signed-in devices (V0.157)", url: "?mock=rail&settings=devices", ready: "document.querySelectorAll('.m-settings .dev').length === 4 && !!document.querySelector('.m-settings input[aria-label=\"Approval code\"]')" },
   { name: "settings hosts (V0.125)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .sr.host').length === 4" },
   { name: "settings paired installs (V0.159)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .peers .peerrow').length >= 3 && !!document.querySelector('.m-settings .peers input[aria-label=\"Invite from another install\"]')" },
+  { name: "settings found installs (#259)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .peers .peercand.lan').length === 3 && !!document.querySelector('.m-settings .peers .peercand.lan.bad .cwarn')" },
   { name: "settings host changed (V0.125)", url: "?mock=rail&hosts=2&settings=hosts/lab", ready: "!!document.querySelector('.m-settings .note.bad')" },
   { name: "board of changes", url: "?mock=1&changes" },
   // V0.116: a project with an image icon the setup agent set: Set by agent, the image buttons 44 px.

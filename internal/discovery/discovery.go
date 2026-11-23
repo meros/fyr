@@ -15,6 +15,9 @@ type Candidate struct {
 	ID string
 	// Addr is host:port of the peer port.
 	Addr string
+	// Name is the instance name it announced ("fyr-<short id>" from an install
+	// of Fyr), "" when the source gives none. A claim like ID.
+	Name string
 	// Source names where it came from: "tailnet", "mdns", "hand".
 	Source string
 }
