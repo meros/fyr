@@ -231,10 +231,10 @@ function SubPrompt({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
   return (
-    <div class={`subprompt prose${open ? " open" : ""}`} onClick={() => setOpen(!open)} title={open ? "Fold the prompt" : "Show the whole prompt"}>
+    <button class={`subprompt prose${open ? " open" : ""}`} aria-expanded={open} onClick={() => setOpen(!open)} title={open ? "Fold the prompt" : "Show the whole prompt"}>
       <span class="subpl">Prompt</span>
       {text}
-    </div>
+    </button>
   );
 }
 
@@ -259,14 +259,14 @@ function AgentsRow({ calls }: { calls: ToolCall[] }) {
   const n = calls.length;
   return (
     <>
-      <div class="al click" onClick={() => setOpen(!open)} title={calls.map((c) => c.description || c.summary).join("\n")}>
+      <button class="al click" aria-expanded={open} onClick={() => setOpen(!open)} title={calls.map((c) => c.description || c.summary).join("\n")}>
         <StateIcon state={failed ? "failed" : done ? "settled" : "working"} size={14} />
         <span class="nm ell">{calls[0].name}</span>
         <span class="s ell">
           {n} {n === 1 ? "subagent" : "subagents"} · {desc} {open ? "▾" : "▸"}
         </span>
         <span class="d">{ms !== null ? duration(ms) : ""}</span>
-      </div>
+      </button>
       {open && (
         <div class="sub">
           {calls.map((c) => (

@@ -43,7 +43,9 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
   useEffect(() => {
     ok.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      e.stopPropagation(); // the inbox keys must not act under the confirmation
+      // The inbox keys must not act under the confirmation. Tab goes on to the panel, whose focus trap takes it and
+      // stops it there (focus-trap.ts).
+      if (e.key !== "Tab") e.stopPropagation();
       const k = e.key;
       if (k === "Escape") {
         e.preventDefault();
@@ -53,13 +55,6 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
         if (el?.tagName === "BUTTON" && el !== ok.current && box.current?.contains(el)) return; // a focused Cancel or Copy takes Enter itself
         e.preventDefault();
         doneRef.current(true);
-      } else if (k === "Tab") {
-        // Focus stays inside.
-        const list = [...(box.current?.querySelectorAll<HTMLElement>("button, input") ?? [])];
-        if (!list.length) return;
-        e.preventDefault();
-        const i = list.indexOf(document.activeElement as HTMLElement);
-        list[(i + (e.shiftKey ? -1 : 1) + list.length) % list.length].focus();
       }
     };
     window.addEventListener("keydown", onKey, true);

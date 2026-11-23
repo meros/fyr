@@ -200,6 +200,7 @@ img{-webkit-user-drag:none}
 .m-sheet{overscroll-behavior:contain;box-shadow:0 140px 0 var(--raised),var(--edge-light),0 -1px 0 color-mix(in srgb,var(--ink) 6%,transparent),0 -12px 40px rgba(0,0,0,.2);cursor:default}
 .m-grab{width:36px;height:5px;border-radius:3px;background:color-mix(in srgb,var(--ink) 22%,transparent);margin:0 auto 10px}
 .dlg{box-shadow:var(--edge-light),var(--lift-3)}
+.dlg[tabindex="-1"]:focus,.m-sheet[tabindex="-1"]:focus{outline:none} /* V0.composer-focus-reach (2): the panel holds the focus only as a start for Tab */
 @media (max-width:760px){
   .dlg{border:0;overscroll-behavior:contain;box-shadow:0 140px 0 var(--raised),var(--edge-light),0 -12px 40px rgba(0,0,0,.2)}
   .dlg::before{content:"";flex:none;width:36px;height:5px;border-radius:3px;margin:8px auto 2px;background:color-mix(in srgb,var(--ink) 22%,transparent)}
@@ -219,7 +220,7 @@ img{-webkit-user-drag:none}
 .seg>.slide{background:var(--night)}
 .chg-seg>.slide{background:var(--select)}
 :is(.m-strip,.seg,.chg-seg,.tabs,.m-tabs,.htabs)>:not(.slide){position:relative;z-index:1;transition:color .18s ease-out,opacity .18s ease-out,scale .3s var(--spring)}
-.tabs span,.m-tabs button,.htabs .htab{border-bottom-color:transparent}
+.tabs button,.m-tabs button,.htabs .htab{border-bottom-color:transparent}
 
 /* Presses: on at once, off softly. Each kind of control answers as its native kind does. `scale` leaves `transform` to
    the gestures. */

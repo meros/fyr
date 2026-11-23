@@ -5039,6 +5039,60 @@ try {
 }
 });
 
+// V0.composer-focus-reach (2): a dialog keeps the focus: Tab and ⇧Tab walk only its own controls, never into the inbox behind,
+// and closing it gives the focus back to what opened it.
+section('V0.composer-focus-reach dialog focus', async (h) => {
+  const { evaluate, waitFor, navigate, key } = h;
+try {
+  await navigate(`${origin}/?mock=1&open=t_done`, "[...document.querySelectorAll('.th .nstep')].some((b) => b.textContent.includes('Set the Acme token'))");
+  await evaluate(`(() => { const b = [...document.querySelectorAll('.th .nstep')].find((b) => b.textContent.includes('Set the Acme token')); b.focus(); b.click(); })()`);
+  await waitFor(`!!document.querySelector('.dlg.cfm')`);
+  const inside = `!!document.activeElement?.closest('.dlg.cfm')`;
+  const n = await evaluate(`document.querySelectorAll('.dlg.cfm button, .dlg.cfm input').length`);
+  let out = 0;
+  for (let i = 0; i < n + 2; i++) {
+    await key("Tab");
+    if (!(await evaluate(inside))) out++;
+  }
+  for (let i = 0; i < n + 2; i++) {
+    await key("Tab", "Tab", 8);
+    if (!(await evaluate(inside))) out++;
+  }
+  check(out === 0, `V0.composer-focus-reach (2) desktop: Tab left the dialog ${out} times`);
+  await key("Escape");
+  await waitFor(`!document.querySelector('.dlg.cfm')`);
+  const back = await evaluate(`document.activeElement?.textContent ?? ''`);
+  check(back.includes("Set the Acme token"), `V0.composer-focus-reach (2) desktop: closing the dialog left the focus on "${back}", not on the chip that opened it`);
+} catch (e) {
+  failures.push(`V0.composer-focus-reach (2) desktop: ${e.message}`);
+}
+});
+
+// V0.composer-focus-reach (3): on the desktop the thread's tabs are buttons that say which one is chosen, the question's options
+// a radio group, and the change chip a button, as on the phone: each is reached with Tab and pressed with Enter.
+section('V0.composer-focus-reach keyboard reach', async (h) => {
+  const { evaluate, waitFor, navigate, key } = h;
+try {
+  await navigate(`${origin}/?mock=1&open=t_ask`, "!!document.querySelector('.th .tabs [role=tab]') && !!document.querySelector('.ask .grid4')");
+  const r = await evaluate(`(() => {
+    const tabs = [...document.querySelectorAll('.th .tabs [role=tab]')];
+    const opts = [...document.querySelectorAll('.ask .grid4 > button')];
+    return { tabs: tabs.map((t) => t.tagName + ':' + t.getAttribute('aria-selected')), group: document.querySelector('.ask .grid4')?.getAttribute('role'),
+      opts: opts.map((o) => o.getAttribute('role') + ':' + o.getAttribute('aria-checked')) };
+  })()`);
+  check(r.tabs.length > 1 && r.tabs.every((t) => t.startsWith("BUTTON:")) && r.tabs.filter((t) => t.endsWith(":true")).length === 1, `V0.composer-focus-reach (3) desktop: the tabs are not buttons with one selected ${JSON.stringify(r.tabs)}`);
+  check(/^(radiogroup|group)$/.test(r.group ?? "") && r.opts.length > 1 && r.opts.every((o) => /^(radio|checkbox):(true|false)$/.test(o)), `V0.composer-focus-reach (3) desktop: the options are not a radio group ${JSON.stringify(r)}`);
+  // Enter on a focused tab that is not chosen chooses it.
+  const name = await evaluate(`(() => { const t = document.querySelector('.th .tabs [role=tab][aria-selected=false]'); t.focus(); return t.textContent; })()`);
+  await key("Enter");
+  await waitFor(`document.querySelector('.th .tabs [role=tab][aria-selected=true]')?.textContent === ${JSON.stringify(name)}`, { soft: true });
+  const on = await evaluate(`document.querySelector('.th .tabs [role=tab][aria-selected=true]')?.textContent ?? ''`);
+  check(on === name, `V0.composer-focus-reach (3) desktop: Enter on the tab "${name}" chose "${on}"`);
+} catch (e) {
+  failures.push(`V0.composer-focus-reach (3) desktop: ${e.message}`);
+}
+});
+
 // V0.109: the marked row in the thread list is the open thread, whatever path opened it, and the row is in view:
 // a link from another thread, ?open= of a thread in a folded section (Settled, V0.186: its header), and k in the list.
 section('V0.109', async (h) => {

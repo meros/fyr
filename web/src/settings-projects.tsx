@@ -107,7 +107,7 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
                   );
                 const go = () => p.go({ page: "projects", sub: x.id! });
                 const open = (
-                  <button type="button" data-sub={x.id} class={grips ? "plb" : "pli"} style={grips ? undefined : style} onClick={grips ? undefined : go}>
+                  <button type="button" data-sub={x.id} class={grips ? "plb" : "pli"} style={grips ? undefined : style} onClick={go}>
                     {body}
                     <span class="plc" title={`${x.threads ?? 0} threads`}>
                       {x.threads ?? 0}
@@ -116,8 +116,9 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
                 );
                 if (!grips) return <Fragment key={x.id}>{open}</Fragment>;
                 return (
-                  // The whole row opens the project, as without a grip; the grip only moves it.
-                  <div key={x.id} class={`pli g ${r.class}`} ref={r.ref} style={style} onClick={(e) => !(e.target as Element).closest(".grip") && go()}>
+                  // The whole row opens the project, as without a grip; the grip only moves it. The button opens it from the
+                  // keyboard too (V0.composer-focus-reach (3)); the row's own padding around it opens it for the pointer.
+                  <div key={x.id} class={`pli g ${r.class}`} ref={r.ref} style={style} onClick={(e) => e.target === e.currentTarget && go()}>
                     <Grip {...ro.grip(i, x.name)} />
                     {open}
                   </div>

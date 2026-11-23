@@ -8,19 +8,17 @@ import { storedGet, storedSet } from "./prefs.ts";
 import { MNew, MSheets } from "./phone-sheets.tsx";
 import { MAsk, MAllow } from "./phone-cards.tsx";
 import { I } from "./phone-icons.tsx";
-import { haptic } from "./native.ts";
 import { Pop, SlideMark } from "./motion-ui.tsx";
 import { useApi } from "./api-context.ts";
-import { useDraft } from "./drafts.ts";
 import { Fragment, type ComponentChildren } from "preact";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
 import type { HostId } from "./hostid.ts";
 import { LoadStrip, useLoad } from "./load-ui.tsx";
 import { HomeScreen } from "./home-ui.tsx";
 import { stripHosts } from "./host-load.ts";
-import { SECTIONS, connLabel, connWords, isAvailable, mergedToSettle, unpinned, matchesQuery, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
+import { SECTIONS, connLabel, connWords, mergedToSettle, unpinned, matchesQuery, selectAllIds, sweptUnread, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -31,10 +29,6 @@ import { ThreadTabBody } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { LeftoverStrip } from "./leftovers-ui.tsx";
 import { InvariantCards } from "./invariants-ui.tsx";
-import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
-import { sendArgs } from "./attach.ts";
-import { createSubmitGuard } from "./send-guard.ts";
-import { SlashList, useSlash } from "./slash-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { changeChip, headerPrs, settleLine, threadPrs } from "./offers.ts";
 import { WakeChip } from "./wake-ui.tsx";
@@ -53,7 +47,6 @@ import { showsBottomBar, type Nav } from "./nav.ts";
 import { type PageRef } from "./settings-nav.ts";
 import { SetupInboxCard } from "./setup-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
-import { AgentStatus } from "./agent-status.tsx";
 import { FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
 import { HideClock, NeedsGroupHead, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
@@ -71,7 +64,7 @@ import { type ProjectPatch, ProjectEditor } from "./project-editor.tsx";
 import { linkingFor } from "./project-linking.tsx";
 import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
 import { AgentsStrip } from "./agents-strip.tsx";
-import { sendFrom } from "./composer.tsx";
+import { PhoneComposer, sendFrom } from "./composer.tsx";
 import { workingHint, MRow } from "./phone-row.tsx";
 
 
@@ -712,7 +705,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           <div class="m-tabs" role="tablist">
             <SlideMark under at={p.tab} />
             {threadTabs(t).map((k) => (
-              <button class={p.tab === k ? "on" : ""} onClick={() => setTab(k)}>
+              <button key={k} class={p.tab === k ? "on" : ""} role="tab" aria-selected={p.tab === k} onClick={() => setTab(k)}>
                 {tabLabel(t, k)}
               </button>
             ))}
@@ -778,70 +771,16 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
       )}
       {/* V0.next-step-dock: a run request waits in the dock above the composer, as on the desktop (DockRun) */}
       {!decision && dock && showsDecision(p.tab) && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={(a, args) => void p.commands.run(a, [t.id], args)} onShow={(id) => showCard(id, p.tab, setTab)} />}
-      {!decision && !nextOffer && <MComposer key={t.id} t={t} p={p} tab={p.tab} setTab={setTab} />}
-    </div>
-  );
-}
-
-function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: string; setTab(tab: string): void }) {
-  const [text, setText] = useDraft(t.id);
-  const att = useAttachments(t.hostId);
-  const ta = useRef<HTMLTextAreaElement>(null);
-  const [sending, setSending] = useState(false);
-  const guard = useRef(createSubmitGuard(setSending)).current;
-  const reason = unavailableReason(t, "thread.send");
-  const plan = sendArgs(text, att.chips);
-  const empty = !text.trim() && !att.chips.length;
-  const stop = t.running && empty;
-  // V0.79: `/` at the start lists the agent's commands and skills; a tap picks.
-  const slash = useSlash(reason ? null : { host: t.hostId, threadId: t.id }, text, setText, ta);
-  useLayoutEffect(() => {
-    const el = ta.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 22 * 5 + 22) + "px";
-  }, [text]);
-  const send = () => {
-    if (reason || !plan.ok || guard.busy()) return;
-    const args = plan.args;
-    void guard.run(async () => {
-      const ok = await sendFrom(tab, args, (a) => p.commands.send(t.id, a), setTab);
-      if (ok) {
-        haptic();
-        setText("");
-        att.clear();
-      }
-      return ok;
-    });
-  };
-  return (
-    <div class="m-cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
-      <AgentStatus phone t={t} now={p.now} onRestart={() => void p.commands.run("thread.restart", [t.id])} />
-      <ChipStrip chips={att.chips} onRemove={att.remove} />
-      <SlashList s={slash} phone />
-      <div class={`m-cmp${reason ? " off" : ""}`}>
-        <PhonePickers onFiles={att.add} disabled={!!reason} />
-        <textarea
-          ref={ta}
-          class="in"
-          rows={1}
-          value={text}
-          disabled={!!reason}
-          placeholder={reason ?? (t.running ? "Steer the run…" : "Message…")}
-          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
-          onKeyDown={(e) => void slash.onKeyDown(e)}
-          onPaste={att.onPaste}
+      {!decision && !nextOffer && (
+        <PhoneComposer
+          key={t.id}
+          t={t}
+          now={p.now}
+          onSend={(a) => sendFrom(p.tab, a, (x) => p.commands.send(t.id, x), setTab)}
+          onStop={() => void p.commands.run("thread.interrupt", [t.id])}
+          onRestart={() => void p.commands.run("thread.restart", [t.id])}
         />
-        {stop ? (
-          <button class="m-send" aria-label="Stop the run" title={unavailableReason(t, "thread.interrupt") ?? "Stop"} disabled={!isAvailable(t, "thread.interrupt")} onClick={() => void p.commands.run("thread.interrupt", [t.id])}>
-            {I.stop}
-          </button>
-        ) : (
-          <button class="m-send" aria-label="Send" title={sending ? "Sending…" : (plan.ok ? "Send" : plan.reason)} disabled={sending || !!reason || !plan.ok} onClick={send}>
-            {I.send}
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 }
