@@ -32,6 +32,10 @@ func TestFetchParsesChecks(t *testing.T) {
 		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"QUEUED","conclusion":""}]}`, "pending", false, "OPEN"},
 		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SKIPPED"},{"__typename":"StatusContext","state":"SUCCESS"}]}`, "pass", false, "OPEN"},
 		{`{"state":"MERGED","statusCheckRollup":null}`, "none", false, "MERGED"},
+		// V0.advisory-checks: a queued or failed advisory check neither holds nor fails the PR.
+		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"swift build (advisory)","status":"QUEUED","conclusion":""}]}`, "pass", false, "OPEN"},
+		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"swift build (Advisory)","status":"COMPLETED","conclusion":"CANCELLED"}]}`, "pass", false, "OPEN"},
+		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"StatusContext","context":"mac (advisory)","state":"PENDING"}]}`, "fail", false, "OPEN"},
 	}
 	for i, c := range cases {
 		p, err := Fetch(context.Background(), fakeGh(c.json), "https://github.com/a/b/pull/1")

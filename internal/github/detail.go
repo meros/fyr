@@ -114,6 +114,15 @@ const (
 	checkRunning string = "running"
 )
 
+// Advisory reports whether a check only informs (V0.advisory-checks): its
+// name ends in "(advisory)". Fyr leaves it out of a PR's CI state, so it
+// never holds or fails a merge ask: a self-hosted runner that is asleep keeps
+// such a check queued for hours, and GitHub ends no queued job by itself. The
+// PR's detail still lists it with its state.
+func Advisory(name string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), "(advisory)")
+}
+
 // CheckState reads a CheckRun (status, conclusion) or a commit status (state)
 // as fail, running, pass or skipped.
 func CheckState(typename, status, conclusion, state string) string {
@@ -212,9 +221,11 @@ func FetchDetail(ctx context.Context, gh Runner, url string) (Detail, error) {
 	}
 	d.Checked = core.ChecksNone
 	if d.State == "OPEN" || len(d.Checks) > 0 {
-		states := make([]string, len(d.Checks))
-		for i, c := range d.Checks {
-			states[i] = c.State
+		states := make([]string, 0, len(d.Checks))
+		for _, c := range d.Checks {
+			if !Advisory(c.Name) {
+				states = append(states, c.State)
+			}
 		}
 		d.Checked, _ = Summarize(ctx, gh, repo, states)
 	}
