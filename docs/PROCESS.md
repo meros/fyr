@@ -24,7 +24,7 @@ A bug is a place where the code breaks the spec. The fix starts at step 2. If th
 ## Traceability
 
 - Tests name the spec ID they prove in the test name or in a comment on the first line: `// SPEC 6.2: failed is never hidden by a visit`.
-- `scripts/spec-coverage.sh` lists each spec ID referenced by a test, so a section without tests is visible.
+- `git grep -n 'SPEC 6.2'` finds the tests of a section; a section with no hit has no test.
 - Issues carry the spec section in the form field "Spec", and a label `area:*`.
 
 ## Issue types (labels)
@@ -35,7 +35,7 @@ A bug is a place where the code breaks the spec. The fix starts at step 2. If th
 | `type:bug` | the code breaks the spec | Bug |
 | `type:spec` | the spec must change (new behaviour, a gap, a contradiction) | Spec change |
 | `type:decision` | a choice that needs options and a recorded reason | Decision |
-| `type:research` | a question to answer with sources, ends in a note under `docs/` | Research |
+| `type:research` | a question to answer with sources, ends in a note under `docs/` | none: set the label by hand |
 
 Areas: `area:core`, `area:agent`, `area:store`, `area:server`, `area:web`, `area:t3`, `area:github`, `area:nix`, `area:design`, `area:android`.
 
@@ -45,11 +45,14 @@ Milestones and their order are in `docs/PLAN.md`.
 
 ```sh
 nix develop            # Go, Node, gh, sqlite
-make test              # go vet, go test, web typecheck
-make e2e               # daemon + fake claude + API flow
+make test              # go vet, gofmt, go test, web typecheck, hooks lint, unit, layout and sign-in tests
+make web-layout        # the layout browser test alone (against web/dist)
+make web-auth          # the sign-in browser test alone: scratch fyrds and a fake tailscaled
 make test-ci           # CI's gate: make test's parts with the layout timing budgets on
 scripts/ci-local.sh    # a PR's gate when the runner is down: make test-ci, nix build, gitleaks; posts local/test
 ```
+
+The gate fails on gofmt drift (`make go-fmt` names the files) and on any oxlint warning about hooks (V0.lint-gates).
 
 Every push to main runs one job on the self-hosted Linux runner (`.github/workflows/test.yml`: gitleaks, the
 tests, the nix build, the release); `gh workflow run test.yml` starts it by hand. A PR runs `.github/workflows/pr.yml` on the same runner (V0.ci-self-hosted; a fork's PR never runs there, and it has the Nix store and Chrome), and Fyr's merge waits for
