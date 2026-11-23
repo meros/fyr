@@ -42,6 +42,8 @@ export function keyHints(c: HintContext): Hint[] {
   if (c.picked > 0) h.push(["⇧E", `settle ${c.picked}`]);
   else if (c.hasSelection) h.push(["⇧E", "settle group"]);
   if (c.failed) h.push(["r", "retry"]);
+  // V0.conversation-jumps: in the open conversation, your messages and the next card that waits for you.
+  if (c.view) h.push(["[/]", "your messages"], ["w", "card waiting"]);
   h.push(["c", "new"], ["g1–6", "section"]);
   if (c.undo) h.push(["⌘Z", "undo"]);
   if (c.view === "peek") h.push(["Esc", "close peek"]);

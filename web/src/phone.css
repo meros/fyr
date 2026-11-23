@@ -213,7 +213,9 @@
 .m-app .convo{background:var(--surface)}
 .m-app .convo-in{padding:12px 16px}
 /* V0.scroll-to-bottom: a bigger target for a thumb (touch size); otherwise the desktop's arrow. */
-.m-app .cv-endb{width:44px;height:44px}
+.m-app .cv-endb,.m-app .cv-jn,.m-app .cv-jp{height:44px;border-radius:22px}
+.m-app .cv-endb{min-width:44px}
+.m-app .cv-jo{width:44px}
 .m-app .you{max-width:85%;padding:10px 14px;border-radius:18px 18px 4px 18px;font:400 15px/22px var(--ui)}
 .m-app .dl{font:400 13px/18px var(--ui)}
 .m-app .dlb{min-height:36px;padding:0 12px;margin:-6px -8px -6px 0;font:500 13px/18px var(--ui)}

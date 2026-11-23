@@ -1271,6 +1271,82 @@ for (const [name, w, h, mobile, tabs] of [
   }
 });
 
+// V0.conversation-jumps: scrolled up in a long conversation, a bar beside the end arrow jumps to the owner's previous
+// and next message and to the next card that waits for him; a jump lands with the target in view and marked, and the
+// work stays folded. Messages that arrive meanwhile are counted on the arrow ("3 new"). Desktop and phone, nothing
+// wider than the screen; on the desktop [ ] and w do the same.
+for (const [name, w, h, mobile, tabs] of [
+  ["phone", 390, 844, true, ".m-tabs button"],
+  ["desktop", 1280, 800, false, ".th .tabs [role=tab]"],
+]) section(`V0.conversation-jumps ${name}`, async ({ evaluate, waitFor, settle, navigate, openScreen, shot, key }) => {
+  const url = "?mock=rail&jumps=1&open=t_jumps";
+  try {
+    if (mobile) await openScreen({ url }, w, h);
+    else await navigate(`${origin}/${url}`, "!!document.querySelector('.th #composer')");
+    await evaluate(`[...document.querySelectorAll('${tabs}')].find((x) => x.textContent.trim() === 'Conversation')?.click()`);
+    await waitFor("document.querySelectorAll('.convo [data-stop=own]').length === 6 && !!document.querySelector('.convo [data-stop=needs]')", { what: "the long conversation" });
+    await settle();
+    check(!(await evaluate("!!document.querySelector('.cv-jb')")), `V0.conversation-jumps ${name}: the bar shows at the end`);
+    const top = async () => {
+      await evaluate(`(() => { const c = document.querySelector('.convo'); c.scrollTop = 0; c.dispatchEvent(new Event('scroll')); })()`);
+      await waitFor("!!document.querySelector('.cv-jb .cv-jp')", { what: "the jump bar" });
+      await settle();
+    };
+    // The marked stop: which one (its place among the stops of its kind), whether it stands in view, and the folds.
+    const landed = (kind) => `(() => {
+      const c = document.querySelector('.convo'), b = c.getBoundingClientRect(), x = document.querySelector('.convo .cv-hit[data-stop=${kind}]');
+      if (!x) return null;
+      const r = x.getBoundingClientRect();
+      return { at: [...c.querySelectorAll('[data-stop=${kind}]')].indexOf(x), inView: r.top >= b.top - 1 && r.top < b.bottom - 20, folds: c.querySelectorAll('.foldw').length, open: c.querySelectorAll('.foldw.open').length };
+    })()`;
+    const jumpTo = async (press, kind, at, what) => {
+      await press();
+      // The run asks for reduced motion, so the jump is instant.
+      await waitFor(`(() => { const r = ${landed(kind)}; return !!r && r.at === ${at} && r.inView; })()`, { what });
+      const r = await evaluate(landed(kind));
+      check(r.folds > 0 && r.open === 0, `V0.conversation-jumps ${name}: ${what}: a fold opened ${JSON.stringify(r)}`);
+    };
+    await top();
+    const bar = await evaluate(`(() => {
+      const c = document.querySelector('.convo').getBoundingClientRect(), b = document.querySelector('.cv-jb').getBoundingClientRect();
+      // The controls: the card jump, the pair (its two halves), the arrow.
+      const sizes = [...document.querySelectorAll('.cv-jb > *, .cv-jo')].map((x) => { const r = x.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+      return { inside: b.left >= c.left && b.right <= c.right && b.bottom <= c.bottom, sizes, needs: !!document.querySelector('.cv-jn'), wide: document.documentElement.scrollWidth > innerWidth || document.querySelector('.convo').scrollWidth > document.querySelector('.convo').clientWidth };
+    })()`);
+    check(bar.inside && !bar.wide, `V0.conversation-jumps ${name}: the bar is not inside the conversation, or something is wider than the screen ${JSON.stringify(bar)}`);
+    check(bar.needs, `V0.conversation-jumps ${name}: no jump to the card that waits ${JSON.stringify(bar)}`);
+    check(bar.sizes.length === 5 && bar.sizes.every(([bw, bh]) => bw >= (mobile ? 44 : 36) && bh >= (mobile ? 42 : 34)), `V0.conversation-jumps ${name}: a control is too small ${JSON.stringify(bar.sizes)}`);
+    // From the very top the first message is just below the landing line: next goes to it, then to the second.
+    await jumpTo(() => evaluate("document.querySelectorAll('.cv-jo')[1].click()"), "own", 0, "next message");
+    await jumpTo(() => evaluate("document.querySelectorAll('.cv-jo')[1].click()"), "own", 1, "next message again");
+    await jumpTo(() => evaluate("document.querySelectorAll('.cv-jo')[0].click()"), "own", 0, "previous message");
+    await jumpTo(() => evaluate("document.querySelector('.cv-jn').click()"), "needs", 0, "the card that waits");
+    await shot(`conversation-jumps-${name}.png`);
+    // Three messages arrive while the owner reads further up: the view stays, the arrow counts them.
+    const y = await evaluate("document.querySelector('.convo').scrollTop");
+    await evaluate("['One more thing.', 'And another.', 'Done.'].forEach((t) => window.__fyrMockSay('t_jumps', t))");
+    await waitFor("document.querySelector('.cv-endb .cv-new')?.textContent === '3 new'", { what: "3 new on the arrow" });
+    await settle();
+    const after = await evaluate(`(() => { const c = document.querySelector('.convo').getBoundingClientRect(), b = document.querySelector('.cv-endb').getBoundingClientRect(); return { y: document.querySelector('.convo').scrollTop, inside: b.left >= c.left && b.right <= c.right, wide: document.documentElement.scrollWidth > innerWidth, label: document.querySelector('.cv-endb').getAttribute('aria-label') }; })()`);
+    check(Math.abs(after.y - y) < 2, `V0.conversation-jumps ${name}: the view moved from ${y} to ${after.y} when messages arrived`);
+    check(after.inside && !after.wide && /3 new/.test(after.label), `V0.conversation-jumps ${name}: the arrow with its count ${JSON.stringify(after)}`);
+    await shot(`conversation-jumps-new-${name}.png`);
+    await evaluate("document.querySelector('.cv-endb').click()");
+    await waitFor("(() => { const c = document.querySelector('.convo'); return c.scrollHeight - c.scrollTop - c.clientHeight < 24 && !document.querySelector('.cv-endb'); })()", { what: "the end, without the bar" });
+    if (!mobile) {
+      // The keys, from the top: ] the first message, ] the second, [ the first, w the card.
+      await top();
+      await evaluate("document.activeElement?.blur()");
+      await jumpTo(() => key("]", "BracketRight"), "own", 0, "] next message");
+      await jumpTo(() => key("]", "BracketRight"), "own", 1, "] next message again");
+      await jumpTo(() => key("[", "BracketLeft"), "own", 0, "[ previous message");
+      await jumpTo(() => key("w", "KeyW"), "needs", 0, "w the card that waits");
+    }
+  } catch (e) {
+    failures.push(`V0.conversation-jumps ${name}: ${e.message}`);
+  }
+});
+
 // V0.79: on the phone, `/` at the start of the composer lists the commands above it, inside the screen, rows 44 px
 // tall; a tap fills `/name ` and the argument hint shows above the field.
 section('V0.79', async (h) => {

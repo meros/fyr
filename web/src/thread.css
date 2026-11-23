@@ -218,9 +218,22 @@
 /* V0.scroll-to-bottom: away from the end, a round arrow floats over the conversation's bottom right corner.
    A zero-height sticky row at the end of the scroller: it pins to the bottom edge and takes no room. */
 .cv-end{position:sticky;bottom:0;height:0;flex:none;display:flex;justify-content:flex-end;padding:0 16px;pointer-events:none;z-index:2}
-.cv-endb{pointer-events:auto;transform:translateY(calc(-100% - 12px));width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line-strong);background:var(--raised);color:var(--ink);box-shadow:0 2px 8px rgb(0 0 0/.15);cursor:pointer;padding:0}
-.cv-endb:hover{background:var(--select)}
-.cv-endb:focus-visible{outline:2px solid var(--harbour);outline-offset:2px}
+/* V0.conversation-jumps: the bar beside the arrow: the next card that waits, your previous and next message, the end with "3 new". */
+.cv-jb{align-self:flex-start;pointer-events:auto;transform:translateY(calc(-100% - 12px));display:flex;align-items:center;gap:8px;min-width:0;max-width:100%}
+.cv-endb,.cv-jn,.cv-jp{height:36px;border:1px solid var(--line-strong);background:var(--raised);color:var(--ink);box-shadow:0 2px 8px rgb(0 0 0/.15)}
+.cv-endb{min-width:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0 8px;flex:none}
+.cv-endb.new{padding:0 12px 0 9px;color:var(--harbour);border-color:var(--harbour)}
+.cv-new{font:600 12.5px/16px var(--ui);white-space:nowrap}
+.cv-jn{border-radius:18px;padding:0 12px;font:600 12.5px/16px var(--ui);white-space:nowrap;cursor:pointer;color:var(--signal-ink);flex:none}
+.cv-jp{display:flex;border-radius:18px;overflow:hidden;flex:none}
+.cv-jo{width:36px;height:100%;display:grid;place-items:center;border:0;background:none;color:inherit;cursor:pointer;padding:0}
+.cv-jo+.cv-jo{border-left:1px solid var(--line)}
+.cv-jo[disabled]{opacity:.35;cursor:default}
+.cv-endb:hover,.cv-jn:hover,.cv-jo:hover:not([disabled]){background:var(--select)}
+.cv-endb:focus-visible,.cv-jn:focus-visible,.cv-jo:focus-visible{outline:2px solid var(--harbour);outline-offset:2px}
+.cv-hit{border-radius:12px;animation:cvhit 1.6s ease-out}
+@keyframes cvhit{0%,40%{box-shadow:0 0 0 3px var(--harbour-wash),0 0 0 4px var(--harbour)}100%{box-shadow:0 0 0 3px transparent,0 0 0 4px transparent}}
+@media (prefers-reduced-motion: reduce){.cv-hit{animation:none;box-shadow:0 0 0 3px var(--harbour-wash),0 0 0 4px var(--harbour)}}
 .you{align-self:flex-end;max-width:72%;padding:8px 12px;border-radius:14px 14px 4px 14px;background:var(--select);color:var(--ink);font:400 14px/21px var(--ui);white-space:pre-wrap;--knock:var(--select)}
 /* V0.33: delivery. A message and its quiet delivery word; unread ones are dimmed after "Agent is here". */
 .youw{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0}

@@ -37,14 +37,19 @@ export function placeCards(items: Item[], ids: string[]): { items: Item[]; loose
  * many requests wait in all, so the dock can say "+N more".
  */
 export function dockRun(t: Pick<Thread, "runs" | "decisions"> & { offers?: Offer[] }): { o: Offer; waiting: number } | null {
-  const open = requests(t).filter((o) => !o.optional && !lastRun(t.runs, o.id));
+  const open = waitingRequests(t);
   if (!open.length || (t.decisions?.length ?? 0) > 0) return null;
   return { o: open[open.length - 1], waiting: open.length };
 }
 
 /** How many run requests wait behind what the dock shows: counted in a question's or approval's "+N more". */
 export function waitingRuns(t: Pick<Thread, "runs"> & { offers?: Offer[] }): number {
-  return requests(t).filter((o) => !o.optional && !lastRun(t.runs, o.id)).length;
+  return waitingRequests(t).length;
+}
+
+/** The run requests that wait for the owner: asked (not optional) and not run yet. V0.conversation-jumps jumps to their cards. */
+export function waitingRequests(t: Pick<Thread, "runs"> & { offers?: Offer[] }): Offer[] {
+  return requests(t).filter((o) => !o.optional && !lastRun(t.runs, o.id));
 }
 
 /**
