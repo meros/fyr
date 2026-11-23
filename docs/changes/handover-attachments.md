@@ -1,6 +1,4 @@
-# handover-attachments
-
-Cited as `V0.handover-attachments`.
+# V0.handover-attachments: the handover conversation file lists the owner's attachments with their paths
 
 A handover to an agent that reads the old conversation (rung 2) wrote only the
 text of the owner's messages, so images and files the owner attached never
