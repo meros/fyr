@@ -1,6 +1,11 @@
 // Preview cards in the log, the full-screen viewer and the filmstrip (SPEC 0.5 V0.19, V0.47, V0.165).
 
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useApi } from "./api-context.ts";
+import { previewsOf } from "./conversation.ts";
+import { bringBackFilmstrip, filmstripView, previewsLabel, setFilmstripHidden, setFilmstripOpen, showsPreviewsChip, takeReveal, useFilmstrip } from "./filmstrip.ts";
+import type { HostId } from "./hostid.ts";
+import type { FyrEvent } from "./types.ts";
 import { downloadUrl } from "./attach.ts";
 import { FRAME_ALLOW, filmstrip, frameHeight, type PreviewCard } from "./previews.ts";
 import { bridgeMessage } from "./view.ts";
@@ -390,35 +395,68 @@ export function PreviewViewer() {
   );
 }
 
-/** The thread's previews, newest first; a tap scrolls to the card. `collapsible` is the phone's "N previews ▸" line. */
-export function Filmstrip({ cards, collapsible }: { cards: PreviewCard[]; collapsible?: boolean }) {
-  const [open, setOpen] = useState(false);
-  if (!cards.length) return null;
+/**
+ * The thread's previews, newest first; a tap scrolls to the card. V0.filmstrip-fold: on both fronts one "N previews"
+ * line until a press opens it, with a × that hides it for this thread on this device (the header's PreviewsChip
+ * brings it back). `phone` only sizes it for a finger: the line and the × are 44 px there, 28 px on the desktop.
+ */
+export function Filmstrip({ cards, threadRef, phone }: { cards: PreviewCard[]; threadRef: string; phone?: boolean }) {
+  const { hidden, open } = useFilmstrip(threadRef);
+  const root = useRef<HTMLDivElement>(null);
+  const view = filmstripView(cards.length, hidden, open);
+  useEffect(() => {
+    if (view === "open" && takeReveal(threadRef)) root.current?.scrollIntoView({ block: "nearest" });
+  });
+  if (view === "none" || view === "hidden") return null;
   const list = filmstrip(cards);
-  const strip = (
-    <div class="fs-row">
-      {list.map((c) => (
-        <button
-          class={`fs-item ${c.kind}`}
-          title={c.title}
-          onClick={() => document.getElementById(previewDomId(c.seq))?.scrollIntoView({ block: "center", behavior: "smooth" })}
-        >
-          {c.kind === "image" ? <img src={c.src} alt="" loading="lazy" /> : <span class="fs-html">HTML</span>}
-          <span class="fs-t">{c.title || (c.kind === "html" ? "Preview" : "Screenshot")}</span>
+  return (
+    <div ref={root} class={`fs${phone ? " phone" : ""}${open ? " open" : ""}`}>
+      <div class="fs-line">
+        <button class="fs-sum" onClick={() => setFilmstripOpen(threadRef, !open)} aria-expanded={open}>
+          <span class="ell">{previewsLabel(list.length)}</span>
+          <span class="chev">{open ? "▾" : "▸"}</span>
         </button>
-      ))}
+        <button class="fs-x" aria-label="Hide previews" title="Hide previews in this thread (the previews chip in the header brings them back)" onClick={() => setFilmstripHidden(threadRef, true)}>
+          ×
+        </button>
+      </div>
+      {open && (
+        <div class="fs-row">
+          {list.map((c) => (
+            <button
+              key={c.seq}
+              class={`fs-item ${c.kind}`}
+              title={c.title}
+              onClick={() => document.getElementById(previewDomId(c.seq))?.scrollIntoView({ block: "center", behavior: "smooth" })}
+            >
+              {c.kind === "image" ? <img src={c.src} alt="" loading="lazy" /> : <span class="fs-html">HTML</span>}
+              <span class="fs-t">{c.title || (c.kind === "html" ? "Preview" : "Screenshot")}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
-  if (!collapsible) return <div class="fs">{strip}</div>;
+}
+
+/**
+ * V0.filmstrip-fold: the header chip that brings a hidden filmstrip back, with the thread's preview count; absent while
+ * the strip shows. A press shows the strip open in the conversation (`onShow` moves there). The phone's chip sits in a
+ * 44 px button, as the folder chip beside it; the desktop's is the 24 px chip.
+ */
+export function PreviewsChip({ threadRef, host, events, phone, onShow }: { threadRef: string; host?: HostId; events: FyrEvent[] | undefined; phone?: boolean; onShow(): void }) {
+  const api = useApi();
+  const { hidden } = useFilmstrip(threadRef);
+  const count = useMemo(() => (hidden ? previewsOf(events ?? [], host, api).length : 0), [hidden, events, host]);
+  if (!showsPreviewsChip(count, hidden)) return null;
+  const label = previewsLabel(count);
+  const press = () => {
+    bringBackFilmstrip(threadRef);
+    onShow();
+  };
   return (
-    <div class={`fs phone${open ? " open" : ""}`}>
-      <button class="fs-sum" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span class="ell">
-          {list.length} {list.length === 1 ? "preview" : "previews"}
-        </span>
-        <span class="chev">{open ? "▾" : "▸"}</span>
-      </button>
-      {open && strip}
-    </div>
+    <button type="button" class={phone ? "m-pjb m-pvbtn" : "chip pvc"} aria-label={`${label} hidden. Show them`} title={phone ? undefined : "Show the previews again"} onClick={press}>
+      {phone ? <span class="m-chip pvc">{label}</span> : <span>{label}</span>}
+    </button>
   );
 }

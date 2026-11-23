@@ -69,6 +69,7 @@ import { AgentsStrip } from "./agents-strip.tsx";
 import { PhoneComposer, sendFrom } from "./composer.tsx";
 import { workingHint, MRow } from "./phone-row.tsx";
 import { FolderChip } from "./folder-ui.tsx";
+import { PreviewsChip } from "./preview-ui.tsx";
 
 
 // ---- props from the app shell ----
@@ -683,6 +684,8 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
               the Details button, not beside the host as on the desktop: that button takes every tap on the chips inside it,
               and this one's tap opens its own card with the path and Copy path. */}
           <FolderChip t={t} phone />
+          {/* V0.filmstrip-fold: the desktop header's previews chip, beside the folder chip and outside the Details button */}
+          <PreviewsChip phone threadRef={t.id} host={t.hostId} events={p.open.events} onShow={() => setTab("conv")} />
           {/* V0.multi-pr: every open change's PR as a tappable chip outside Details, jumping straight to that PR in the PR tab. */}
           {(() => {
             const multiRepo = hasMultipleRepos(openPrs);
