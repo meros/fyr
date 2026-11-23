@@ -1,6 +1,9 @@
 package agent
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // The prompts Fyr gives an agent (V0.12, V0.37) and the marks of the
 // messages Fyr sends for the owner (V0.37, V0.45).
@@ -18,6 +21,7 @@ type Setup struct {
 	GH     string // why gh cannot reach GitHub on this host ("gh is not signed in"), or ""
 	OS     string // runtime.GOOS
 	Pkexec bool   // pkexec is installed, so a root run request can ask for the password
+	Zone   string // the owner's time zone on this host ("Europe/Stockholm (CET, UTC+01:00)"), or "" to say nothing
 }
 
 // FullSetup is a Linux host with pkexec and a signed-in gh, in a GitHub
@@ -48,6 +52,8 @@ const (
 	promptCleanUp     = `Clean up what you start: stop servers, browsers and port-forwards when you are done with them, and prefer a timeout. Fyr ends what your thread leaves running (anything that is not your CLI or its children) 30 min after your run ends, and all of it when the thread settles; a process under timeout keeps its timeout. For one that must stay (a dev server or a tunnel the owner asked for), call mcp__fyr__keep_process {pid or match, hours, why}.`
 	promptThreads     = `To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).`
 	promptShow        = `To show the user something (a screenshot after UI work, a chart, a mockup, a page, a 3D model or scene), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone. Pages run real HTML in a sandbox: WebGL, WASM, ES modules, three.js or model-viewer from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com or ajax.googleapis.com, and their own files: give path a folder (index.html plus models, textures, scripts) or an HTML file next to its files.`
+
+	promptZone = "The user's time zone is %s. Use local time in everything the user reads (messages, reminders, schedules, times in a watch note) and when you read a time they gave you, unless there is a reason not to: a protocol or an API that wants UTC or an explicit offset (RFC 3339 with its offset is fine), or a log or file that is already in UTC. Say which zone when a time could be read two ways."
 
 	promptRootPkexec   = "(Fyr runs it through pkexec)."
 	promptRootNoPkexec = "(this host has no pkexec, so the card shows the owner the script to run as root themselves)."
@@ -90,6 +96,9 @@ func Prompt(s Setup) string {
 	}
 	for _, l := range []string{promptStartChange, promptSettle, promptFeed, promptWatch, promptWakeUp, promptHeavy, promptNotUser, promptLongBash, promptWait, promptCleanUp, promptThreads, promptShow} {
 		line(l)
+	}
+	if s.Zone != "" {
+		line(fmt.Sprintf(promptZone, s.Zone))
 	}
 	switch s.OS {
 	case "", "linux":

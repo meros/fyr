@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -22,7 +24,36 @@ import (
 func HostSetup(dir string) Setup {
 	s := Setup{OS: runtime.GOOS, Pkexec: proc.PkexecInstalled(), GH: ghProblem()}
 	s.Git, s.GitHub = gitRemotes(dir)
+	s.Zone = ZoneLabel(time.Now())
 	return s
+}
+
+// ZoneLabel names the host's local time zone at t (V0.agent-local-time):
+// "Europe/Stockholm (CET, UTC+01:00)". The IANA name is time.Local's when it
+// has one, else the TZ variable's, else the target of /etc/localtime; with
+// none of them the abbreviation and offset stand alone.
+func ZoneLabel(t time.Time) string {
+	abbr, off := t.In(time.Local).Zone()
+	sign := "+"
+	if off < 0 {
+		sign, off = "-", -off
+	}
+	detail := fmt.Sprintf("%s, UTC%s%02d:%02d", abbr, sign, off/3600, off%3600/60)
+	name := time.Local.String()
+	if name == "Local" || name == "" {
+		name = os.Getenv("TZ")
+		if name == "" {
+			if l, err := os.Readlink("/etc/localtime"); err == nil {
+				if _, after, ok := strings.Cut(l, "zoneinfo/"); ok {
+					name = after
+				}
+			}
+		}
+	}
+	if name == "" || name == "Local" {
+		return detail
+	}
+	return name + " (" + detail + ")"
 }
 
 // gitRemotes reports whether dir is in a git repository, and whether one
