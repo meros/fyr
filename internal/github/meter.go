@@ -207,18 +207,8 @@ func ReadRate(ctx context.Context, gh Runner, now time.Time) (Rate, error) {
 // until ctx ends. gh is the unwrapped runner: rate_limit is not a call to
 // count.
 func (m *Meter) Run(ctx context.Context, gh Runner) {
-	read := func() {
-		c, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		if r, err := ReadRate(c, gh, m.now()); err == nil {
-			m.SetRate(r)
-			if m.OnRate != nil {
-				m.OnRate(r)
-			}
-		} else {
-			log.Printf("github rate: %v", err)
-		}
-	}
+	var failed string
+	read := func() { m.readRate(ctx, gh, &failed) }
 	read()
 	rate := time.NewTicker(RateEvery)
 	hour := time.NewTicker(time.Hour)
@@ -233,6 +223,31 @@ func (m *Meter) Run(ctx context.Context, gh Runner) {
 		case <-hour.C:
 			log.Print(m.Roll())
 		}
+	}
+}
+
+// readRate reads the rate once. A failure is logged once, and again only when
+// it changes or after a read succeeds (V0.fresh-ubuntu-run: a host with no gh
+// login logged the same two lines every RateEvery); failed is the last one
+// logged.
+func (m *Meter) readRate(ctx context.Context, gh Runner, failed *string) {
+	c, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	r, err := ReadRate(c, gh, m.now())
+	if err != nil {
+		if e := strings.TrimSpace(err.Error()); e != *failed {
+			log.Printf("github rate: %s (said again only when it changes)", e)
+			*failed = e
+		}
+		return
+	}
+	if *failed != "" {
+		log.Printf("github rate: read again")
+		*failed = ""
+	}
+	m.SetRate(r)
+	if m.OnRate != nil {
+		m.OnRate(r)
 	}
 }
 
