@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -170,18 +172,9 @@ func TestInstallGHDownloadsIntoToolsDir(t *testing.T) {
 	zw.Close()
 
 	tools := filepath.Join(t.TempDir(), "tools")
-	c := &Checker{
-		OS:       "darwin",
-		Arch:     "arm64",
-		ToolsDir: tools,
-		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if strings.Contains(r.URL.Host, "api.github.com") {
-				body := `{"assets":[{"name":"gh_2.70.0_macOS_arm64.zip","browser_download_url":"https://dl.example/gh.zip"}]}`
-				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
-			}
-			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(zbuf.Bytes())), Header: http.Header{}}, nil
-		})},
-	}
+	sum := sha256.Sum256(zbuf.Bytes())
+	sums := hex.EncodeToString(sum[:]) + "  gh_2.70.0_macOS_arm64.zip\n"
+	c := ghReleaseChecker(tools, zbuf.Bytes(), sums)
 
 	got, err := c.installGH(context.Background())
 	if err != nil {
@@ -193,5 +186,54 @@ func TestInstallGHDownloadsIntoToolsDir(t *testing.T) {
 	b, err := os.ReadFile(got)
 	if err != nil || !strings.Contains(string(b), "fake-gh") {
 		t.Fatalf("read installed gh: %q %v", string(b), err)
+	}
+}
+
+// ghReleaseChecker serves a gh release whose macOS arm64 asset is archive
+// and whose checksums file is sums.
+func ghReleaseChecker(tools string, archive []byte, sums string) *Checker {
+	return &Checker{
+		OS:       "darwin",
+		Arch:     "arm64",
+		ToolsDir: tools,
+		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			body := io.NopCloser(bytes.NewReader(archive))
+			switch {
+			case strings.Contains(r.URL.Host, "api.github.com"):
+				body = io.NopCloser(strings.NewReader(`{"assets":[` +
+					`{"name":"gh_2.70.0_checksums.txt","browser_download_url":"https://dl.example/sums.txt"},` +
+					`{"name":"gh_2.70.0_macOS_arm64.zip","browser_download_url":"https://dl.example/gh.zip"}]}`))
+			case strings.HasSuffix(r.URL.Path, "sums.txt"):
+				body = io.NopCloser(strings.NewReader(sums))
+			}
+			return &http.Response{StatusCode: 200, Body: body, Header: http.Header{}}, nil
+		})},
+	}
+}
+
+// V0.review-hangs (6): a gh download that does not match the release's
+// checksum, or that the release does not list, or that is larger than the
+// cap, is refused and nothing is installed.
+func TestInstallGHRefusesBadDownload(t *testing.T) {
+	archive := []byte("not the archive the checksum names")
+	other := sha256.Sum256([]byte("something else"))
+	good := sha256.Sum256(archive)
+	for name, sums := range map[string]string{
+		"mismatch": hex.EncodeToString(other[:]) + "  gh_2.70.0_macOS_arm64.zip\n",
+		"unlisted": hex.EncodeToString(good[:]) + "  gh_2.70.0_linux_amd64.tar.gz\n",
+	} {
+		tools := filepath.Join(t.TempDir(), "tools")
+		if _, err := ghReleaseChecker(tools, archive, sums).installGH(context.Background()); err == nil {
+			t.Fatalf("%s: installed", name)
+		}
+		if _, err := os.Stat(filepath.Join(tools, "gh")); err == nil {
+			t.Fatalf("%s: a gh binary was written", name)
+		}
+	}
+	if _, err := readCapped(bytes.NewReader(make([]byte, 11)), 10); err == nil {
+		t.Fatal("a body over the cap was cut short, not refused")
+	}
+	if b, err := readCapped(bytes.NewReader(make([]byte, 10)), 10); err != nil || len(b) != 10 {
+		t.Fatalf("a body at the cap: %d %v", len(b), err)
 	}
 }

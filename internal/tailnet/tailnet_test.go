@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -34,11 +36,11 @@ func TestOwnerLoginFromLocalAPI(t *testing.T) {
 		}
 		w.Write([]byte(`{"Self":{"UserID":42,"DNSName":"box.tail.ts.net."},"User":{"42":{"LoginName":"me@example.com"}}}`))
 	}))
-	login, dns, err := Self(sock)
+	login, dns, err := Self(context.Background(), sock)
 	if err != nil || login != "me@example.com" || dns != "box.tail.ts.net" {
 		t.Fatalf("%q %q %v", login, dns, err)
 	}
-	if _, _, err := Self(filepath.Join(t.TempDir(), "none.sock")); err == nil {
+	if _, _, err := Self(context.Background(), filepath.Join(t.TempDir(), "none.sock")); err == nil {
 		t.Fatal("missing socket gave no error")
 	}
 }
@@ -90,7 +92,7 @@ func TestIPv4FromLocalAPI(t *testing.T) {
 	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"TailscaleIPs":["fd7a:115c:a1e0::1","100.101.102.103"]}`))
 	}))
-	if ip, err := IPv4(sock); err != nil || ip != "100.101.102.103" {
+	if ip, err := IPv4(context.Background(), sock); err != nil || ip != "100.101.102.103" {
 		t.Fatalf("%q %v", ip, err)
 	}
 }
@@ -119,7 +121,7 @@ func TestSelfOfATaggedNodeNamesNoOwner(t *testing.T) {
 	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"Self":{"UserID":7,"Tags":["tag:server"],"DNSName":"host-b.tail.ts.net."},"User":{"7":{"LoginName":"host-b"}}}`))
 	}))
-	login, _, err := Self(sock)
+	login, _, err := Self(context.Background(), sock)
 	if err == nil || login != "" {
 		t.Fatalf("tagged node gave owner %q, err %v", login, err)
 	}
@@ -154,12 +156,83 @@ func TestMacLocalAPIPortAndToken(t *testing.T) {
 	if !Available(missing) {
 		t.Fatal("not available")
 	}
-	login, dns, err := Self(missing)
+	login, dns, err := Self(context.Background(), missing)
 	if err != nil || login != "owner@example.com" || dns != "mac.tail.ts.net" {
 		t.Fatalf("%q %q %v", login, dns, err)
 	}
 	MacDir = t.TempDir()
 	if Available(missing) {
 		t.Fatal("available without a port")
+	}
+}
+
+// V0.review-hangs (2): a server asks tailscaled on every request, so every
+// call shares one client per socket and its kept-alive connection; a
+// transport per call left its idle connection and goroutines behind each
+// time.
+func TestLocalAPIReusesOneConnection(t *testing.T) {
+	sock := sockPath(t)
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	var conns atomic.Int32
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Sec-Tailscale") != "localapi" {
+				http.Error(w, "no header", 403)
+				return
+			}
+			w.Write([]byte(`{"Self":{"UserID":1,"DNSName":"box.tail.ts.net."},"User":{"1":{"LoginName":"me@example.com"}},"Node":{"Name":"phone"},"UserProfile":{"LoginName":"me@example.com"}}`))
+		}),
+		ConnState: func(_ net.Conn, s http.ConnState) {
+			if s == http.StateNew {
+				conns.Add(1)
+			}
+		},
+	}
+	go srv.Serve(ln)
+	defer srv.Close()
+	p := Peers{Socket: sock}
+	for range 50 {
+		if _, err := p.Login(context.Background(), "100.64.0.2:4000"); err != nil {
+			t.Fatal(err)
+		}
+		if names := p.Names(context.Background()); len(names) != 2 {
+			t.Fatalf("names %v", names)
+		}
+	}
+	// The calls are sequential and every body is read to EOF and closed, so
+	// they share one kept-alive connection; a client per call dialled 100.
+	if n := conns.Load(); n != 1 {
+		t.Fatalf("100 calls opened %d connections to tailscaled, want 1", n)
+	}
+	if localClient(sock) != localClient(sock) {
+		t.Fatal("a second client for the same socket")
+	}
+}
+
+// A refusal names the call and its status, and an answer that is not JSON
+// is an error, not a zero value.
+func TestLocalAPIErrors(t *testing.T) {
+	sock := sockPath(t)
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/localapi/v0/status" {
+			w.Write([]byte(`not json`))
+			return
+		}
+		http.Error(w, "nope", 403)
+	}))
+	if _, err := (Peers{Socket: sock}).Login(context.Background(), "100.64.0.2:4000"); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("whois refusal: %v", err)
+	}
+	if _, err := IPv4(context.Background(), sock); err == nil {
+		t.Fatal("a status that is not JSON gave no error")
 	}
 }

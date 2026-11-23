@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
-	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/proc"
 )
 
@@ -93,7 +93,7 @@ func (a Adapter) ask(ctx context.Context, l cli.Launch, wait time.Duration) ([]c
 	if cmd.Dir == "" {
 		cmd.Dir = os.TempDir()
 	}
-	cmd.Env = launchenv.ClaudeEnv(env...) // #167, V0.agent-env
+	cmd.Env = claude.Env(env...) // #167, V0.agent-env
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, false, err

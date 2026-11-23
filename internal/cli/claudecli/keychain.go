@@ -2,15 +2,34 @@ package claudecli
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"time"
+
+	"github.com/meros/fyr/internal/proc"
 )
+
+// keychainTimeout bounds one `security` call (V0.review-hangs (4)): a locked
+// Keychain can make it wait for a dialog nobody answers. securityBin is the
+// tool; both are variables for the test.
+var (
+	keychainTimeout = 3 * time.Second
+	securityBin     = "/usr/bin/security"
+)
+
+// security runs /usr/bin/security with args and returns its output, killed
+// after keychainTimeout.
+func security(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), keychainTimeout)
+	defer cancel()
+	return proc.Command(ctx, securityBin, args...).Output()
+}
 
 // On macOS the CLI keeps its login in the login Keychain, not in
 // <config>/.credentials.json: the item "Claude Code-credentials", with "-"
@@ -52,7 +71,7 @@ func Credentials(dir string) ([]byte, error) {
 		return b, err
 	}
 	for _, s := range keychainServices(dir) {
-		out, kerr := exec.Command("/usr/bin/security", "find-generic-password", "-a", keychainAccount(), "-w", "-s", s).Output()
+		out, kerr := security("find-generic-password", "-a", keychainAccount(), "-w", "-s", s)
 		if out = bytes.TrimSpace(out); kerr == nil && len(out) > 0 {
 			return out, nil
 		}
@@ -66,7 +85,7 @@ func hasKeychainLogin(dir string) bool {
 		return false
 	}
 	for _, s := range keychainServices(dir) {
-		if exec.Command("/usr/bin/security", "find-generic-password", "-a", keychainAccount(), "-s", s).Run() == nil {
+		if _, err := security("find-generic-password", "-a", keychainAccount(), "-s", s); err == nil {
 			return true
 		}
 	}

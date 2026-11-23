@@ -116,3 +116,26 @@ func CopyFile(src, dst string, mode os.FileMode) error {
 	defer in.Close()
 	return WriteAtomicFrom(dst, in, mode)
 }
+
+// CopyTree copies the folder src into dst: its folders (0700) and its
+// regular files (0600, each written atomically); anything else, such as a
+// symlink, is left out. A missing src is not an error.
+func CopyTree(src, dst string) error {
+	if _, err := os.Stat(src); err != nil {
+		return nil
+	}
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o700)
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		return CopyFile(p, target, 0o600)
+	})
+}

@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/hostfs"
 )
@@ -38,20 +39,14 @@ func LoginArgs(k LoginKind) (args []string, terminal bool) {
 // CLAUDE_CONFIG_DIR ("" keeps the CLI's default folder), and with no way to
 // open a browser on the host (the link is shown in Fyr's page instead).
 func LoginEnv(base []string, configDir string) []string {
-	drop := map[string]bool{"CLAUDE_CONFIG_DIR": true, "CLAUDE_CODE_OAUTH_TOKEN": true, "ANTHROPIC_API_KEY": true,
-		"ANTHROPIC_AUTH_TOKEN": true, "ANTHROPIC_BASE_URL": true, "DISPLAY": true, "WAYLAND_DISPLAY": true, "BROWSER": true, "TERM": true}
-	out := []string{}
-	for _, kv := range base {
-		k, _, _ := strings.Cut(kv, "=")
-		if !drop[k] {
-			out = append(out, kv)
-		}
+	if configDir == "" {
+		return cli.LoginEnv(base, claude.CredentialVars)
 	}
-	if configDir != "" {
-		out = append(out, "CLAUDE_CONFIG_DIR="+hostfs.ExpandHome(configDir, ""))
-	}
-	return append(out, "BROWSER=true", "TERM=xterm-256color", "NO_COLOR=1")
+	return cli.LoginEnv(base, claude.CredentialVars, "CLAUDE_CONFIG_DIR="+hostfs.ExpandHome(configDir, ""))
 }
+
+// loginErrorWords mark a line of a login worth showing (cli.LastErrorLine).
+var loginErrorWords = []string{"invalid", "error", "fail", "wasn't accepted", "expired"}
 
 // LoginOut is what Fyr reads from a login's output so far.
 type LoginOut struct {
@@ -97,20 +92,6 @@ func ParseLogin(b []byte, done bool) LoginOut {
 		o.Token = text[loc[0]:loc[1]]
 	}
 	o.Retry = strings.Contains(text, "Enter to retry")
-	lines := strings.Split(text, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.Join(strings.Fields(lines[i]), " ")
-		low := strings.ToLower(l)
-		if strings.Contains(l, "https://") || !(strings.Contains(low, "invalid") || strings.Contains(low, "error") ||
-			strings.Contains(low, "fail") || strings.Contains(low, "wasn't accepted") || strings.Contains(low, "expired")) {
-			continue
-		}
-		l = Redact(l)
-		if len(l) > 240 {
-			l = l[:240]
-		}
-		o.Line = l
-		break
-	}
+	o.Line = cli.LastErrorLine(text, loginErrorWords, Redact)
 	return o
 }

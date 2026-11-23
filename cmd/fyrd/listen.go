@@ -155,7 +155,7 @@ func restartWhenTailnet(ctx context.Context, socket string) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if _, err := tailnet.IPv4(socket); err == nil {
+			if _, err := tailnet.IPv4(ctx, socket); err == nil {
 				log.Printf("tailnet is up; restarting to serve other installs on it")
 				syscall.Kill(os.Getpid(), syscall.SIGHUP)
 				return

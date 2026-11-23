@@ -12,10 +12,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/meros/fyr/internal/fsutil"
+	"github.com/meros/fyr/internal/proc"
 	"io"
 	"net/http"
 	"os"
@@ -185,7 +188,13 @@ func (c *Checker) run(ctx context.Context, name string, args ...string) (string,
 	if c.Exec != nil {
 		return c.Exec(ctx, name, args...)
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
+	// V0.review-hangs (7): a timeout kills what the command started too
+	// (gh repo clone's git, tailscale's helpers), and a git call gets the
+	// environment every Fyr git call shares (proc.GitEnv).
+	cmd := proc.Command(ctx, name, args...)
+	if name == "git" {
+		cmd.Env = proc.GitEnv(proc.GitOpts{})
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -193,12 +202,18 @@ func (c *Checker) run(ctx context.Context, name string, args ...string) (string,
 	return out.String(), errb.String(), err
 }
 
+// start starts a command that outlives the call (an installer's dialog) and
+// reaps it when it exits.
 func (c *Checker) start(name string, args ...string) error {
 	if c.Start != nil {
 		return c.Start(name, args...)
 	}
 	cmd := exec.Command(name, args...)
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go cmd.Wait()
+	return nil
 }
 
 func (c *Checker) freeBytes(path string) (uint64, error) {
@@ -458,7 +473,8 @@ func (c *Checker) discoverRepos(ctx context.Context) []Repo {
 	}
 	for i := range repos {
 		if repos[i].Remote == "" {
-			if out, _, err := c.run(ctx, "git", "-C", repos[i].Path, "remote", "get-url", "origin"); err == nil {
+			argv := proc.GitArgv(repos[i].Path, "remote", "get-url", "origin")
+			if out, _, err := c.run(ctx, argv[0], argv[1:]...); err == nil {
 				rem := strings.TrimSpace(out)
 				repos[i].Remote = rem
 				repos[i].GitHub = strings.Contains(strings.ToLower(rem), "github.com")
@@ -697,31 +713,33 @@ func (c *Checker) installGH(ctx context.Context) (string, error) {
 			URL  string `json:"browser_download_url"`
 		} `json:"assets"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel); err != nil {
 		return "", err
 	}
-	var dlURL string
+	var name, dlURL, sumsURL string
 	for _, a := range rel.Assets {
-		if strings.HasSuffix(a.Name, suffix) {
-			dlURL = a.URL
-			break
+		switch {
+		case strings.HasSuffix(a.Name, suffix) && dlURL == "":
+			name, dlURL = a.Name, a.URL
+		case strings.HasSuffix(a.Name, "_checksums.txt"):
+			sumsURL = a.URL
 		}
 	}
 	if dlURL == "" {
 		return "", fmt.Errorf("no gh asset ending in %s", suffix)
 	}
-
-	dlReq, _ := http.NewRequestWithContext(ctx, "GET", dlURL, nil)
-	dlResp, err := c.httpClient().Do(dlReq)
+	if sumsURL == "" {
+		return "", errors.New("the gh release has no checksums file")
+	}
+	sums, err := c.download(ctx, sumsURL, 1<<20)
+	if err != nil {
+		return "", fmt.Errorf("download gh checksums: %w", err)
+	}
+	archive, err := c.download(ctx, dlURL, maxGHArchive)
 	if err != nil {
 		return "", fmt.Errorf("download gh: %w", err)
 	}
-	defer dlResp.Body.Close()
-	if dlResp.StatusCode != 200 {
-		return "", fmt.Errorf("download gh: HTTP %d", dlResp.StatusCode)
-	}
-	archive, err := io.ReadAll(io.LimitReader(dlResp.Body, 64<<20))
-	if err != nil {
+	if err := checkSum(archive, name, sums); err != nil {
 		return "", err
 	}
 
@@ -744,6 +762,57 @@ func (c *Checker) installGH(ctx context.Context) (string, error) {
 	}
 	EnsureToolsOnPath(dir)
 	return dst, nil
+}
+
+// maxGHArchive bounds the gh release archive and the binary in it (V0.review-hangs
+// (6)): one larger is refused, not cut short.
+const maxGHArchive = 64 << 20
+
+// download GETs url and returns its body, at most limit bytes.
+func (c *Checker) download(ctx context.Context, url string, limit int64) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return readCapped(resp.Body, limit)
+}
+
+// readCapped reads r to the end, or fails when it holds more than limit
+// bytes: a silently cut archive or binary must not be installed.
+func readCapped(r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("larger than %d bytes", limit)
+	}
+	return b, nil
+}
+
+// checkSum checks data against name's line in a release's checksums file
+// ("<sha256 hex>  <name>" per line, as gh's releases publish it).
+func checkSum(data []byte, name string, sums []byte) error {
+	for _, line := range strings.Split(string(sums), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 || strings.TrimPrefix(f[1], "*") != name {
+			continue
+		}
+		got := sha256.Sum256(data)
+		if !strings.EqualFold(hex.EncodeToString(got[:]), f[0]) {
+			return fmt.Errorf("gh download %s does not match its release checksum", name)
+		}
+		return nil
+	}
+	return fmt.Errorf("the gh release's checksums do not list %s", name)
 }
 
 // EnsureToolsOnPath appends dir to the process PATH if it is not already there.
@@ -772,7 +841,9 @@ func (c *Checker) startGHLogin() (GHAuthState, error) {
 	c.cancelGHLogin()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	cmd := exec.CommandContext(ctx, ghPath, "auth", "login", "-h", "github.com", "-p", "https", "-w", "-s", "repo,read:org")
+	// proc.Command: the timeout or a cancel kills gh and what it started, and
+	// Wait gives up on the output pipe WaitDelay later (V0.review-hangs (7)).
+	cmd := proc.Command(ctx, ghPath, "auth", "login", "-h", "github.com", "-p", "https", "-w", "-s", "repo,read:org")
 	cmd.Env = append(os.Environ(), "BROWSER=true", "GH_PROMPT_DISABLED=0")
 	// Send a newline so gh passes "Press Enter to open github.com in your browser..."
 	cmd.Stdin = strings.NewReader("\n")
@@ -813,6 +884,9 @@ func (c *Checker) startGHLogin() (GHAuthState, error) {
 			}
 			c.mu.Unlock()
 		}
+		// A line too long for the scanner ends the loop: keep reading, or
+		// gh blocks on a full pipe and never exits.
+		io.Copy(io.Discard, pr)
 	}()
 
 	go func() {
@@ -862,7 +936,7 @@ func extractFromZip(data []byte, suffix string) ([]byte, error) {
 				return nil, err
 			}
 			defer rc.Close()
-			return io.ReadAll(io.LimitReader(rc, 64<<20))
+			return readCapped(rc, maxGHArchive)
 		}
 	}
 	return nil, fmt.Errorf("%s not found in zip", suffix)
@@ -884,7 +958,7 @@ func extractFromTarGz(data []byte, suffix string) ([]byte, error) {
 			return nil, err
 		}
 		if strings.HasSuffix(h.Name, suffix) {
-			return io.ReadAll(io.LimitReader(tr, 64<<20))
+			return readCapped(tr, maxGHArchive)
 		}
 	}
 	return nil, fmt.Errorf("%s not found in tar.gz", suffix)

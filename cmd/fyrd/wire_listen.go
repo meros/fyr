@@ -99,7 +99,7 @@ func (w *wiring) wireListeners() {
 	var fe *runningFront
 	// V0.54: "tailnet:PORT" is this machine's tailnet address.
 	if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
-		ip, err := tailnet.IPv4(cfg.tsSocket())
+		ip, err := tailnet.IPv4(ctx, cfg.tsSocket())
 		switch {
 		case err == nil:
 			cfg.HostListen = net.JoinHostPort(ip, port)

@@ -236,29 +236,9 @@ func (f Fetcher) Fetch(ctx context.Context, u string) ([]byte, error) {
 	if err != nil || (pu.Scheme != "http" && pu.Scheme != "https") || pu.Host == "" {
 		return nil, errors.New("give an http or https URL")
 	}
-	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			return err
-		}
-		a, err := netip.ParseAddr(host)
-		if err != nil || blocked(a, f.AllowLoopback) {
-			return fmt.Errorf("%s is on the local network; only public addresses are fetched", host)
-		}
-		return nil
-	}}
-	client := &http.Client{
-		Timeout:   20 * time.Second,
-		Transport: &http.Transport{DialContext: dialer.DialContext, Proxy: nil, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 10 * time.Second},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 3 {
-				return errors.New("more than 3 redirects")
-			}
-			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-				return errors.New("a redirect left http")
-			}
-			return nil
-		},
+	client := publicClient
+	if f.AllowLoopback {
+		client = loopbackClient
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -278,6 +258,43 @@ func (f Fetcher) Fetch(ctx context.Context, u string) ([]byte, error) {
 		return nil, errTooBig
 	}
 	return readMax(resp.Body)
+}
+
+// publicClient fetches every icon, so its connections are shared, not left
+// idle by a transport per fetch (V0.review-robust (6)); loopbackClient is
+// the test's.
+var (
+	publicClient   = newFetchClient(false)
+	loopbackClient = newFetchClient(true)
+)
+
+// newFetchClient is a client whose every connection (after each redirect
+// too) goes to a public address, with at most 3 redirects, in 20 s.
+func newFetchClient(loopbackOK bool) *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return err
+		}
+		a, err := netip.ParseAddr(host)
+		if err != nil || blocked(a, loopbackOK) {
+			return fmt.Errorf("%s is on the local network; only public addresses are fetched", host)
+		}
+		return nil
+	}}
+	return &http.Client{
+		Timeout:   20 * time.Second,
+		Transport: &http.Transport{DialContext: dialer.DialContext, Proxy: nil, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 10 * time.Second},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 3 {
+				return errors.New("more than 3 redirects")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return errors.New("a redirect left http")
+			}
+			return nil
+		},
+	}
 }
 
 // palette is the light value of each project hue (web/src/app.css --p-*).

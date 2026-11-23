@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/runner"
 )
 
 // TestMain lets this test binary double as a real subprocess fake `agy` ACP
@@ -32,6 +32,9 @@ func TestMain(m *testing.M) {
 func runFakeACP() {
 	if logPath := os.Getenv("FYR_FAKE_AGY_ARGS"); logPath != "" {
 		_ = os.WriteFile(logPath, []byte(strings.Join(os.Args[1:], "\n")), 0o600)
+	}
+	if envPath := os.Getenv("FYR_FAKE_AGY_ENV"); envPath != "" {
+		_ = os.WriteFile(envPath, []byte(strings.Join(os.Environ(), "\n")), 0o600)
 	}
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
@@ -594,6 +597,59 @@ func TestPrintAndListModels(t *testing.T) {
 	}
 }
 
+// V0.review-hangs (1): a credential or endpoint variable in fyrd's own
+// environment never reaches an agy process; only the profile's own (its
+// key, its endpoint, its legacy env) does.
+func TestAgentEnvDropsAmbientCredentials(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "ambient-key")
+	t.Setenv("GOOGLE_API_KEY", "ambient-google")
+	t.Setenv("GOOGLE_GEMINI_BASE_URL", "https://ambient.example.com")
+	t.Setenv("AGY_ADC_AUTH", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	childEnv := func(l cli.Launch) []string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "env")
+		l.Env = append(l.Env, "FYR_FAKE_AGY_ENV="+path)
+		if _, err := (Adapter{}).Print(ctx, l, "S", "hi"); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Split(string(b), "\n")
+	}
+	values := func(env []string, name string) (vs []string) {
+		for _, kv := range env {
+			if k, v, _ := strings.Cut(kv, "="); k == name {
+				vs = append(vs, v)
+			}
+		}
+		return vs
+	}
+	env := childEnv(fakeLaunch(t))
+	for _, n := range CredentialVars {
+		if vs := values(env, n); len(vs) > 0 {
+			t.Errorf("cli-login: %s=%v inherited from fyrd", n, vs)
+		}
+	}
+	l := fakeLaunch(t)
+	l.Auth = cli.Auth{Kind: cli.APIKey}
+	l.Key = "profile-key"
+	l.Endpoint.BaseURL = "https://profile.example.com"
+	l.Env = append(l.Env, "AGY_ADC_AUTH=0")
+	env = childEnv(l)
+	for n, want := range map[string]string{"GEMINI_API_KEY": "profile-key", "GOOGLE_GEMINI_BASE_URL": "https://profile.example.com", "AGY_ADC_AUTH": "0"} {
+		if vs := values(env, n); !slices.Equal(vs, []string{want}) {
+			t.Errorf("api-key: %s=%v, want only the profile's %q", n, vs, want)
+		}
+	}
+	if vs := values(env, "GOOGLE_API_KEY"); len(vs) > 0 {
+		t.Errorf("api-key: GOOGLE_API_KEY=%v inherited from fyrd", vs)
+	}
+}
+
 func TestSessionsLoggedInAndCopy(t *testing.T) {
 	home := t.TempDir()
 	g1 := filepath.Join(home, ".gemini-a")
@@ -747,7 +803,7 @@ func TestACPReattachFinishesMidTurn(t *testing.T) {
 	if gotAssistant == nil || gotResult == nil {
 		t.Fatalf("expected assistant and result on reattach, got assistant=%v result=%v", gotAssistant, gotResult)
 	}
-	if gotResult["result"] != "part1 part2" || gotResult[claude.SeqKey] != int64(12) {
+	if gotResult["result"] != "part1 part2" || gotResult[runner.SeqKey] != int64(12) {
 		t.Fatalf("unexpected reattached result: %+v", gotResult)
 	}
 	p.mu.Lock()
@@ -970,7 +1026,7 @@ func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
 		t.Fatalf("expected pre-restart assistant text, got %+v", m)
 	}
 	res1 := readMsg()
-	if res1["type"] != "result" || res1["result"] != "pre-restart done" || res1[claude.SeqKey] != int64(12) {
+	if res1["type"] != "result" || res1["result"] != "pre-restart done" || res1[runner.SeqKey] != int64(12) {
 		t.Fatalf("unexpected pre-restart result: %+v", res1)
 	}
 	handled.Handled(res1)
@@ -995,7 +1051,7 @@ func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
 		t.Fatalf("expected q2 completed, got %+v", m)
 	}
 	res2 := readMsg()
-	if res2["type"] != "result" || res2[claude.SeqKey] != int64(13) {
+	if res2["type"] != "result" || res2[runner.SeqKey] != int64(13) {
 		t.Fatalf("expected q2 result carrying seq 13, got %+v", res2)
 	}
 	if got := p.acked(); got >= 13 {
@@ -1021,7 +1077,7 @@ func TestACPReattachRestoresQueueAndAllowsCancel(t *testing.T) {
 		t.Fatalf("expected q3 completed, got %+v", m)
 	}
 	res3 := readMsg()
-	if res3["type"] != "result" || res3[claude.SeqKey] != int64(14) {
+	if res3["type"] != "result" || res3[runner.SeqKey] != int64(14) {
 		t.Fatalf("expected q3 result carrying seq 14, got %+v", res3)
 	}
 	handled.Handled(res3)
@@ -1502,5 +1558,49 @@ func TestACPReactiveWakeupInterruptAndFallbackSettle(t *testing.T) {
 	res2 := nextOut(t, sess.Out(), time.Second)
 	if txt["type"] != "assistant" || res2["type"] != "result" || res2["result"] != "Quota reached." {
 		t.Fatalf("expected fallback assistant+result, got %+v and %+v", txt, res2)
+	}
+}
+
+// V0.review-hangs (9): when the agy process exits mid-turn, the worker makes
+// up no result for the running prompt, starts none of the queued ones, and
+// Out and Done close.
+func TestACPProcessExitEndsWithoutMadeUpResults(t *testing.T) {
+	p := newChanPipe()
+	sess, err := Adapter{}.ReattachSession(p, cli.ReattachState{
+		SessionID: "s1",
+		Model:     "gemini-4-neon",
+		Queued: []cli.QueuedMessage{
+			{ID: "q1", Content: []cli.Msg{{"type": "text", "text": "first"}}},
+			{ID: "q2", Content: []cli.Msg{{"type": "text", "text": "second"}}},
+		},
+	}, nil, cli.Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := nextWritten(t, p, 2*time.Second); m["method"] != "session/prompt" {
+		t.Fatalf("first write %+v", m)
+	}
+	p.closeRead() // the process exits before it answers
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case m, ok := <-sess.Out():
+			if !ok {
+				select {
+				case <-sess.Done():
+				case <-timeout:
+					t.Fatal("Done did not close")
+				}
+				return
+			}
+			if m["type"] == "result" {
+				t.Fatalf("a made-up result after the process exited: %+v", m)
+			}
+			if m["type"] == "command_lifecycle" && m["command_uuid"] == "q2" {
+				t.Fatalf("a queued prompt started after the process exited: %+v", m)
+			}
+		case <-timeout:
+			t.Fatal("Out did not close after the process exited")
+		}
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/meros/fyr/internal/cli"
@@ -45,6 +44,12 @@ var Models = []cli.Model{
 	{ID: "claude-sonnet-5-5", Name: "Claude Sonnet 5.5", Efforts: []string{"low", "medium", "high"}},
 	{ID: "gpt-oss-120b-medium", Name: "GPT-OSS 120B (Medium)"},
 }
+
+// CredentialVars are the variables that name who `agy` talks to and as whom
+// (cli.Caps.CredentialVars, V0.review-hangs (1)): Env sets the key and the
+// endpoint of an api-key provider; a cli-login or no-auth provider must not
+// inherit fyrd's.
+var CredentialVars = []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL", "AGY_ADC_AUTH"}
 
 // Adapter runs `agy` via ACP.
 type Adapter struct{}
@@ -102,9 +107,10 @@ func (Adapter) LoginNeed(configDir string, _ bool) string {
 
 func (Adapter) Caps() cli.Caps {
 	return cli.Caps{
-		Auth:    []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth},
-		Efforts: Efforts,
-		Models:  Models,
+		Auth:           []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth},
+		Efforts:        Efforts,
+		Models:         Models,
+		CredentialVars: CredentialVars,
 	}
 }
 
@@ -131,15 +137,7 @@ func (Adapter) Env(l cli.Launch) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("agy: unknown auth %q", l.Auth.Kind)
 	}
-	keys := make([]string, 0, len(l.Endpoint.ModelEnv))
-	for k := range l.Endpoint.ModelEnv {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		env = append(env, k+"="+l.Endpoint.ModelEnv[k])
-	}
-	return env, nil
+	return append(env, l.Endpoint.Env()...), nil
 }
 
 // Args are the `agy` flags for an ACP session launch.
@@ -354,7 +352,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 					return strings.TrimSpace(lastText), nil
 				}
 				if serr := sess.Err(); serr != nil {
-					return "", fmt.Errorf("agy: %s", trimErr(serr.Error()))
+					return "", fmt.Errorf("agy: %s", cli.ErrText(serr.Error(), "unknown error"))
 				}
 				return "", fmt.Errorf("agy: ended without a response")
 			}
@@ -375,7 +373,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 				isErr, _ := msg["is_error"].(bool)
 				res, _ := msg["result"].(string)
 				if isErr {
-					return "", fmt.Errorf("agy: %s", trimErr(res))
+					return "", fmt.Errorf("agy: %s", cli.ErrText(res, "unknown error"))
 				}
 				if res != "" {
 					return strings.TrimSpace(res), nil
@@ -386,17 +384,6 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 			return "", fmt.Errorf("no answer in time")
 		}
 	}
-}
-
-func trimErr(msg string) string {
-	msg = strings.TrimSpace(msg)
-	if r := []rune(msg); len(r) > 300 {
-		msg = "…" + string(r[len(r)-300:])
-	}
-	if msg == "" {
-		return "unknown error"
-	}
-	return msg
 }
 
 func (Adapter) SessionsDir(a cli.Auth) string { return SessionsDir(a) }

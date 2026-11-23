@@ -4,12 +4,15 @@
 package machine
 
 import (
+	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/meros/fyr/internal/proc"
 )
 
 const (
@@ -48,7 +51,9 @@ func battery(goos string) bool {
 	case "linux":
 		return linuxBattery("/sys/class/power_supply")
 	case "darwin":
-		out, err := exec.Command("pmset", "-g", "batt").Output()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		out, err := proc.Command(ctx, "pmset", "-g", "batt").Output()
 		return err == nil && darwinBattery(string(out))
 	}
 	return false

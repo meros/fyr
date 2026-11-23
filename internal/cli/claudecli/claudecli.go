@@ -11,13 +11,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/hostfs"
-	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/runner"
 )
@@ -98,7 +96,8 @@ func (Adapter) LoginNeed(configDir string, token bool) string {
 }
 
 func (Adapter) Caps() cli.Caps {
-	return cli.Caps{Auth: []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth}, Efforts: Efforts, Models: Models}
+	return cli.Caps{Auth: []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth}, Efforts: Efforts, Models: Models,
+		CredentialVars: claude.CredentialVars}
 }
 
 // Env applies auth and endpoint:
@@ -131,15 +130,7 @@ func (Adapter) Env(l cli.Launch) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("claude: unknown auth %q", l.Auth.Kind)
 	}
-	keys := make([]string, 0, len(l.Endpoint.ModelEnv))
-	for k := range l.Endpoint.ModelEnv {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		env = append(env, k+"="+l.Endpoint.ModelEnv[k])
-	}
-	return env, nil
+	return append(env, l.Endpoint.Env()...), nil
 }
 
 // Args are the flags of a launch (after the protocol flags).
@@ -229,7 +220,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 	}
 	cmd := proc.Command(ctx, bin, printArgs(l.Model, l.Effort, system)...)
 	cmd.Dir = l.Dir
-	cmd.Env = launchenv.ClaudeEnv(env...) // #167, V0.agent-env
+	cmd.Env = claude.Env(env...) // #167, V0.agent-env
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -241,13 +232,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 		if msg == "" {
 			msg = strings.TrimSpace(out.String())
 		}
-		if r := []rune(msg); len(r) > 300 {
-			msg = "…" + string(r[len(r)-300:])
-		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return "", fmt.Errorf("claude: %s", msg)
+		return "", fmt.Errorf("claude: %s", cli.ErrText(msg, err.Error()))
 	}
 	return strings.TrimSpace(out.String()), nil
 }
@@ -289,3 +274,13 @@ func (Adapter) SessionFile(dir, cwd, sid string) string { return SessionFile(dir
 func (Adapter) CopySession(src, fromDir, toDir, sid string) error {
 	return CopySession(src, fromDir, toDir, sid)
 }
+
+func (Adapter) ExportSession(src, fromDir, sid string, maxBytes int64) ([]byte, error) {
+	return ExportSession(src, fromDir, sid, maxBytes)
+}
+
+func (Adapter) ImportSession(archive []byte, toDir, targetCwd, sid string, maxBytes int64) error {
+	return ImportSession(archive, toDir, targetCwd, sid, maxBytes)
+}
+
+var _ cli.SessionArchiver = Adapter{}

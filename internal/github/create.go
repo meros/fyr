@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/proc"
 )
 
 // CreatePRReq is what gh pr create takes (V0.pr-create-tool).
@@ -20,21 +19,6 @@ type CreatePRReq struct {
 	Draft     bool
 	Labels    []string
 	Reviewers []string
-}
-
-// GhIn returns a Runner that executes gh with cmd.Dir set to dir (used for
-// commands such as gh pr create that read the checkout's git remotes and
-// current branch).
-func GhIn(dir string) Runner {
-	return func(ctx context.Context, args ...string) ([]byte, error) {
-		cmd := proc.Command(ctx, "gh", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return out, fmt.Errorf("gh %s: %w: %s", strings.Join(args[:min(2, len(args))], " "), err, strings.TrimSpace(string(out)))
-		}
-		return out, nil
-	}
 }
 
 // CreatePR opens a GitHub pull request with gh pr create and returns its

@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/fsutil"
 	"io"
 	"io/fs"
@@ -53,37 +54,14 @@ func CopySession(src, fromDir, toDir, sid string) error {
 	if err := fsutil.CopyFile(src, filepath.Join(dstProj, sid+".jsonl"), 0o600); err != nil {
 		return err
 	}
-	if err := copyTree(strings.TrimSuffix(src, ".jsonl"), filepath.Join(dstProj, sid)); err != nil {
+	if err := fsutil.CopyTree(strings.TrimSuffix(src, ".jsonl"), filepath.Join(dstProj, sid)); err != nil {
 		return err
 	}
-	return copyTree(filepath.Join(fromDir, "file-history", sid), filepath.Join(toDir, "file-history", sid))
+	return fsutil.CopyTree(filepath.Join(fromDir, "file-history", sid), filepath.Join(toDir, "file-history", sid))
 }
 
-
-// copyTree copies a folder if it exists; a missing one is not an error.
-func copyTree(src, dst string) error {
-	if _, err := os.Stat(src); err != nil {
-		return nil
-	}
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(src, p)
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o700)
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		return fsutil.CopyFile(p, target, 0o600)
-	})
-}
-
-// ErrSessionTooLarge reports that a session archive exceeds the transfer cap
-// (decision 0039, V0.trans-host-handover); the handover falls back to rung 2.
-var ErrSessionTooLarge = errors.New("session transcript is too large to transfer")
+// ErrSessionTooLarge is cli.ErrSessionTooLarge.
+var ErrSessionTooLarge = cli.ErrSessionTooLarge
 
 // ExportSession packs the transcript, its session folder and its file history
 // into a gzip-compressed tar archive bounded by maxBytes (both raw and

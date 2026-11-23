@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -41,8 +42,17 @@ CREATE TABLE IF NOT EXISTS changes(id TEXT PRIMARY KEY, data TEXT NOT NULL); -- 
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
+// dsn is the SQLite URI of the database file at path with Fyr's pragmas. The
+// path is escaped (V0.review-robust (7)): a '?' or '#' in it would otherwise
+// end the file name and start the query.
+func dsn(path string) string {
+	u := url.URL{Scheme: "file", Path: path,
+		RawQuery: "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)"}
+	return u.String()
+}
+
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)")
+	db, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +81,10 @@ func (s *Store) Write(fn func(*Tx) error) ([]Event, error) {
 		sqlTx.Rollback()
 		return nil, err
 	}
-	return tx.Events, sqlTx.Commit()
+	if err := sqlTx.Commit(); err != nil {
+		return nil, err // nothing was written: no events to publish
+	}
+	return tx.Events, nil
 }
 
 func (tx *Tx) PutThread(t *core.Thread) error {

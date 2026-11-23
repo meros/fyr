@@ -12,7 +12,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
+	"maps"
+	"slices"
 
 	"github.com/meros/fyr/internal/runner"
 )
@@ -31,16 +34,6 @@ const (
 	// NoAuth: nothing to apply.
 	NoAuth AuthKind = "none"
 )
-
-// CredentialVars are the variables that name who an agent process talks to
-// and as whom. The adapter sets every one the provider needs (V0.50 (2));
-// a process must not inherit a stale one from whatever started fyrd, which
-// would point the agent at that endpoint (or that key) instead (V0.agent-env).
-// A profile's own env still sets them, so a legacy profile keeps working.
-var CredentialVars = []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY",
-	"ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
-	"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
-	"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CONFIG_DIR"}
 
 // Auth is data the adapter applies; it never holds a secret value.
 type Auth struct {
@@ -61,6 +54,16 @@ type Endpoint struct {
 	ModelEnv map[string]string `json:"modelEnv,omitempty"`
 }
 
+// Env is ModelEnv as KEY=VALUE, sorted by name: a launch's environment
+// is the same for the same endpoint.
+func (e Endpoint) Env() []string {
+	out := make([]string, 0, len(e.ModelEnv))
+	for _, k := range slices.Sorted(maps.Keys(e.ModelEnv)) {
+		out = append(out, k+"="+e.ModelEnv[k])
+	}
+	return out
+}
+
 // Model is one model a provider offers, with what it supports.
 type Model struct {
 	ID   string `json:"id"`
@@ -76,6 +79,14 @@ type Caps struct {
 	Efforts []string `json:"efforts,omitempty"`
 	// Models: the CLI's own list for a login (an endpoint lists its own).
 	Models []Model `json:"models,omitempty"`
+	// CredentialVars are the variables that name who the CLI talks to and
+	// as whom. The adapter sets every one the provider needs (V0.50 (2));
+	// a process must not inherit a stale one from whatever started fyrd,
+	// which would point the agent at that endpoint (or that key) instead
+	// (V0.agent-env, V0.review-hangs (1)). Every launch of the CLI (session,
+	// print, model list, login) starts from launchenv.AgentEnv with them. A
+	// profile's own env still sets them, so a legacy profile keeps working.
+	CredentialVars []string `json:"-"`
 }
 
 // Launch is everything one session process starts with. Key is the
@@ -248,6 +259,20 @@ type Adapter interface {
 type Printer interface {
 	Print(ctx context.Context, l Launch, system, prompt string) (string, error)
 }
+
+// SessionArchiver is an adapter that can move a session to another host
+// (cross-host handover rung 1, decision 0039): ExportSession packs session
+// sid (its transcript src, under the sessions folder fromDir) into an archive
+// of at most maxBytes; ImportSession unpacks one under toDir so a resume in
+// targetCwd finds it. A session over maxBytes is ErrSessionTooLarge.
+type SessionArchiver interface {
+	ExportSession(src, fromDir, sid string, maxBytes int64) ([]byte, error)
+	ImportSession(archive []byte, toDir, targetCwd, sid string, maxBytes int64) error
+}
+
+// ErrSessionTooLarge: a session archive exceeds the transfer cap; the
+// handover falls back to rung 2 (decision 0039, V0.trans-host-handover).
+var ErrSessionTooLarge = errors.New("session transcript is too large to transfer")
 
 // Accepts reports whether the adapter takes an auth kind.
 func Accepts(a Adapter, k AuthKind) bool {

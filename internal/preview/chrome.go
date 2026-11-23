@@ -52,6 +52,9 @@ type Chrome struct {
 	dead    chan struct{}
 }
 
+// closeTimeout bounds closing a shot's tab; a variable for the test.
+var closeTimeout = 5 * time.Second
+
 type rpcReply struct {
 	ID        int             `json:"id"`
 	Method    string          `json:"method"`
@@ -70,6 +73,8 @@ func (c *Chrome) start() error {
 	}
 	outR, outW, err := os.Pipe() // Chrome writes fd 4
 	if err != nil {
+		inR.Close()
+		inW.Close()
 		return err
 	}
 	os.MkdirAll(c.Dir, 0o700)
@@ -79,6 +84,9 @@ func (c *Chrome) start() error {
 	cmd.ExtraFiles = []*os.File{inR, outW}
 	proc.Group(cmd) // Close stops the whole tree
 	if err := cmd.Start(); err != nil {
+		for _, f := range []*os.File{inR, inW, outR, outW} {
+			f.Close()
+		}
 		return err
 	}
 	inR.Close()
@@ -127,6 +135,11 @@ func (c *Chrome) call(ctx context.Context, session, method string, params any) (
 	c.pmu.Lock()
 	c.pending[id] = ch
 	c.pmu.Unlock()
+	defer func() { // an answer that never came (a timeout, Chrome gone) leaves no entry
+		c.pmu.Lock()
+		delete(c.pending, id)
+		c.pmu.Unlock()
+	}()
 	msg := map[string]any{"id": id, "method": method, "params": params}
 	if session != "" {
 		msg["sessionId"] = session
@@ -173,7 +186,13 @@ func (c *Chrome) Shoot(ctx context.Context, url string, width, height int, full 
 		return nil, err
 	}
 	json.Unmarshal(r, &t)
-	defer c.call(context.Background(), "", "Target.closeTarget", map[string]any{"targetId": t.TargetID})
+	defer func() {
+		// Bounded: a Chrome that never answers must not hold c.mu, and so
+		// every later shot, forever (V0.review-hangs (8)).
+		cctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
+		defer cancel()
+		c.call(cctx, "", "Target.closeTarget", map[string]any{"targetId": t.TargetID})
+	}()
 	var s struct{ SessionID string }
 	if r, err = c.call(ctx, "", "Target.attachToTarget", map[string]any{"targetId": t.TargetID, "flatten": true}); err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"os"
@@ -118,7 +119,7 @@ func TestOverrideDoesNotFallBackToTailnetSelf(t *testing.T) {
 	t.Cleanup(func() { srv.Close() })
 
 	// Sanity check: the fake tailscaled answers tailnet.Self.
-	if login, _, err := tailnet.Self(sock); err != nil || login != "tailnet@example.com" {
+	if login, _, err := tailnet.Self(context.Background(), sock); err != nil || login != "tailnet@example.com" {
 		t.Fatalf("fake tailscaled: %q %v", login, err)
 	}
 	c := config{TailscaleSocket: sock}

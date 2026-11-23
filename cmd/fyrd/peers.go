@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"strconv"
@@ -75,7 +76,7 @@ func servePublic(cfg config) string {
 	if !tailnet.Available(cfg.tsSocket()) {
 		return ""
 	}
-	_, dns, err := tailnet.Self(cfg.tsSocket())
+	_, dns, err := tailnet.Self(context.Background(), cfg.tsSocket())
 	if (err != nil && !errors.Is(err, tailnet.ErrTagged)) || dns == "" {
 		return ""
 	}

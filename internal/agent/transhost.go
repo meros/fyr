@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/cli"
-	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/provider"
@@ -93,12 +92,12 @@ func (m *Manager) HandoverExport(threadID string, wantBrief bool, targetLabel st
 	}
 	if src, err := m.resumable(t, from); err != nil {
 		out.SessionNote = err.Error()
-	} else if cliID(from.CLI) != "claude" {
-		out.SessionNote = "Session transfer is only supported for Claude sessions"
 	} else if ad, aerr := m.adapter(from); aerr != nil {
 		out.SessionNote = aerr.Error()
-	} else if arc, err := claudecli.ExportSession(src, m.sessionsDir(from, ad), t.SessionID, MaxSessionArchiveBytes); err != nil {
-		if errors.Is(err, claudecli.ErrSessionTooLarge) {
+	} else if sa, ok := ad.(cli.SessionArchiver); !ok {
+		out.SessionNote = "Session transfer is not supported for " + cliID(from.CLI) + " sessions"
+	} else if arc, err := sa.ExportSession(src, m.sessionsDir(from, ad), t.SessionID, MaxSessionArchiveBytes); err != nil {
+		if errors.Is(err, cli.ErrSessionTooLarge) {
 			out.SessionNote = "Session transcript is too large to transfer"
 		} else {
 			out.SessionNote = "Could not export the session: " + err.Error()
@@ -339,10 +338,12 @@ func (m *Manager) HandoverIn(threadID string, req HandoverInReq) (HandoverInResu
 	fromCLI, toCLI := cliID(req.FromCLI), cliID(to.CLI)
 	if fromCLI != toCLI {
 		notes = append(notes, "The target runs another CLI")
-	} else if req.SessionID != "" && len(req.SessionArchive) > 0 && toCLI == "claude" {
+	} else if req.SessionID != "" && len(req.SessionArchive) > 0 {
 		if ad, aerr := m.adapter(to); aerr != nil {
 			notes = append(notes, aerr.Error())
-		} else if err := claudecli.ImportSession(req.SessionArchive, m.sessionsDir(to, ad), t.Cwd, req.SessionID, MaxSessionArchiveBytes); err != nil {
+		} else if sa, ok := ad.(cli.SessionArchiver); !ok {
+			notes = append(notes, "The target cannot import a "+toCLI+" session")
+		} else if err := sa.ImportSession(req.SessionArchive, m.sessionsDir(to, ad), t.Cwd, req.SessionID, MaxSessionArchiveBytes); err != nil {
 			notes = append(notes, "Could not import the session: "+err.Error())
 		} else if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: req.SessionID, resume: true, effort: effort}); err != nil {
 			notes = append(notes, "Resume failed: "+core.TruncHead(firstLine(err.Error()), 300))

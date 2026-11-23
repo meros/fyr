@@ -166,7 +166,7 @@ func (w *wiring) wireDeploy() {
 			if !tailnet.Available(sock) {
 				return setup.TailscaleInfo{}
 			}
-			_, dns, _ := tailnet.Self(sock)
+			_, dns, _ := tailnet.Self(context.Background(), sock)
 			return setup.TailscaleInfo{Available: true, DNSName: dns}
 		},
 		Peers: func(ctx context.Context) setup.PeerInfo {

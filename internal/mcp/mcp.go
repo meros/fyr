@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/meros/fyr/internal/httpguard"
 )
 
 // Instructions is the initialize answer's instructions: the key rules, for
@@ -165,8 +167,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req request
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
-		http.Error(w, "bad JSON-RPC", http.StatusBadRequest)
+	if !httpguard.DecodeJSON(w, r, &req, 4<<20, "bad JSON-RPC") {
 		return
 	}
 	if len(req.ID) == 0 { // a notification
@@ -175,9 +176,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	result, rpcErr := s.dispatch(r.Context(), thread, req)
 	if req.Method == "tools/list" && rpcErr == nil {
-		s.mu.Lock()
-		s.listed[tok] = s.Hash()
-		s.mu.Unlock()
+		s.noteListed(tok)
 	}
 	resp := map[string]any{"jsonrpc": "2.0", "id": req.ID}
 	if rpcErr != nil {
@@ -233,6 +232,40 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, tok string) {
 			}
 		}
 	}
+}
+
+// noteListed records that tok read this build's tools. A token first seen
+// here is a new session, so it is also when the tokens of ended sessions,
+// which auth no longer knows, are dropped: the map would otherwise grow by
+// one entry per session for fyrd's lifetime.
+func (s *Server) noteListed(tok string) {
+	h := s.Hash()
+	s.mu.Lock()
+	_, known := s.listed[tok]
+	s.listed[tok] = h
+	var others []string
+	if !known {
+		for t := range s.listed {
+			if t != tok {
+				others = append(others, t)
+			}
+		}
+	}
+	s.mu.Unlock()
+	var gone []string
+	for _, t := range others { // auth outside s.mu: it may take its own locks
+		if _, ok := s.auth(t); !ok {
+			gone = append(gone, t)
+		}
+	}
+	if len(gone) == 0 {
+		return
+	}
+	s.mu.Lock()
+	for _, t := range gone {
+		delete(s.listed, t)
+	}
+	s.mu.Unlock()
 }
 
 func rpcError(code int, msg string) map[string]any {

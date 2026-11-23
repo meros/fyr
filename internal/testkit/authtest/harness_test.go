@@ -56,11 +56,11 @@ func TestScratchEnvironmentHasNoFYRVariables(t *testing.T) {
 // without Sec-Tailscale as the real one does.
 func TestFakeTailscaledAnswersLikeTheLocalAPI(t *testing.T) {
 	l := live(t)
-	login, dns, err := tailnet.Self(l.TS.Socket)
+	login, dns, err := tailnet.Self(context.Background(), l.TS.Socket)
 	if err != nil || login != l.OwnerLogin || dns != l.Self.Name {
 		t.Fatalf("Self: %q %q %v", login, dns, err)
 	}
-	if ip, err := tailnet.IPv4(l.TS.Socket); err != nil || ip != l.Self.IP {
+	if ip, err := tailnet.IPv4(context.Background(), l.TS.Socket); err != nil || ip != l.Self.IP {
 		t.Errorf("IPv4: %q %v", ip, err)
 	}
 	if r, err := authtest.Unix(l.TS.Socket).Get("http://local-tailscaled.sock/localapi/v0/status"); err != nil || r.StatusCode != 403 {

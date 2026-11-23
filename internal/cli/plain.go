@@ -2,7 +2,11 @@ package cli
 
 import (
 	"regexp"
+	"slices"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/meros/fyr/internal/launchenv"
 )
 
 var (
@@ -33,4 +37,54 @@ func Plain(b []byte) string {
 		}
 		return r
 	}, s)
+}
+
+// Clip is s cut to at most n runes: a byte cut could split a character
+// and leave invalid UTF-8 in a line meant for a person.
+func Clip(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
+}
+
+// ErrText is a CLI's error output as one message: trimmed, its last 300
+// runes (the end says what failed), or fallback when there is none.
+func ErrText(msg, fallback string) string {
+	msg = strings.TrimSpace(msg)
+	if r := []rune(msg); len(r) > 300 {
+		msg = "…" + string(r[len(r)-300:])
+	}
+	if msg == "" {
+		return fallback
+	}
+	return msg
+}
+
+// LastErrorLine is the line of a login's output worth showing a person: the
+// last one that holds one of words (lower case) and no link, one-spaced,
+// redacted and cut to 240 runes; "" without one.
+func LastErrorLine(text string, words []string, redact func(string) string) string {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.Join(strings.Fields(lines[i]), " ")
+		if strings.Contains(l, "https://") {
+			continue
+		}
+		low := strings.ToLower(l)
+		for _, w := range words {
+			if strings.Contains(low, w) {
+				return Clip(redact(l), 240)
+			}
+		}
+	}
+	return ""
+}
+
+// LoginEnv is the environment of an interactive login: base without the
+// adapter's credential variables and without a way to open a browser on
+// the host (the sign-in link is shown in Fyr's page instead), then extra.
+func LoginEnv(base, credentials []string, extra ...string) []string {
+	out := launchenv.Without(base, slices.Concat(credentials, []string{"DISPLAY", "WAYLAND_DISPLAY", "BROWSER", "TERM"}))
+	return append(append(out, extra...), "BROWSER=true", "TERM=xterm-256color", "NO_COLOR=1")
 }

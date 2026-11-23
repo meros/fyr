@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"slices"
@@ -374,7 +375,10 @@ func (e *Env) lanCandidates(ctx context.Context) []Candidate {
 	if e.LAN == nil {
 		return nil
 	}
-	cs, _ := e.LAN.Candidates(ctx)
+	cs, err := e.LAN.Candidates(ctx)
+	if err != nil {
+		log.Printf("peer: LAN candidates: %v", err)
+	}
 	var out []Candidate
 	seen := map[string]bool{}
 	for _, c := range cs {

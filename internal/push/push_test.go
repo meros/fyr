@@ -2,9 +2,12 @@ package push
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/meros/fyr/internal/store"
 )
@@ -21,11 +24,14 @@ func newPusher(t *testing.T, status map[string]int) (*Pusher, *[]sent) {
 	}
 	t.Cleanup(func() { st.Close() })
 	out := &[]sent{}
+	var mu sync.Mutex // Notify sends to several services at once
 	p := &Pusher{DB: st, Subject: "mailto:owner@example.com",
 		Send: func(sub Subscription, body []byte, _ Keys) (int, error) {
 			var pl Payload
 			json.Unmarshal(body, &pl)
+			mu.Lock()
 			*out = append(*out, sent{sub.Endpoint, pl})
+			mu.Unlock()
 			if c, ok := status[sub.Endpoint]; ok {
 				return c, nil
 			}
@@ -35,6 +41,53 @@ func newPusher(t *testing.T, status map[string]int) (*Pusher, *[]sent) {
 		t.Fatal(err)
 	}
 	return p, out
+}
+
+// V0.review-hangs (3): one push service that does not answer holds back
+// none of the user's other devices.
+func TestNotifyHungServiceDoesNotBlockOthers(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	release := make(chan struct{})
+	delivered := make(chan string, 8)
+	p := &Pusher{DB: st, Subject: "mailto:owner@example.com",
+		Send: func(sub Subscription, _ []byte, _ Keys) (int, error) {
+			if sub.Endpoint == "https://push/hung" {
+				<-release
+				return 0, errors.New("timeout")
+			}
+			delivered <- sub.Endpoint
+			return 201, nil
+		}}
+	if err := p.Init(); err != nil {
+		t.Fatal(err)
+	}
+	p.Subscribe("owner", sub("https://push/hung"), "dead")
+	p.Subscribe("owner", sub("https://push/a"), "phone")
+	p.Subscribe("owner", sub("https://push/b"), "laptop")
+	n := make(chan int, 1)
+	go func() { n <- p.Notify("owner", Payload{Title: "x"}) }()
+	for range 2 {
+		select {
+		case <-delivered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("a hung push service held back the other devices")
+		}
+	}
+	close(release)
+	if got := <-n; got != 2 {
+		t.Fatalf("delivered %d, want 2", got)
+	}
+}
+
+// The real sender has a timeout: webpush-go's default client has none.
+func TestPushClientHasTimeout(t *testing.T) {
+	if pushClient.Timeout <= 0 || pushClient.Timeout > time.Minute {
+		t.Fatalf("push client timeout %v", pushClient.Timeout)
+	}
 }
 
 func sub(endpoint string) Subscription {
@@ -215,7 +268,10 @@ func TestQuotaResetIsOptInPerDevice(t *testing.T) {
 	}
 	defer st.Close()
 	var got []string
+	var mu sync.Mutex
 	p := &Pusher{DB: st, Subject: "mailto:x@example.com", Send: func(sub Subscription, _ []byte, _ Keys) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		got = append(got, sub.Endpoint)
 		return 201, nil
 	}}
