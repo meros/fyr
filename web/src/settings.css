@@ -1,0 +1,244 @@
+/* SPEC V0.119 (amends V0.50): Settings. One nav, four pages, and one set of rows and controls for the desktop and the
+   phone (design/settings/mock.css, part 3). Desktop: the dialog's nav column and a pane. Phone: the nav is the
+   Settings screen and a page is the next screen; its sizes come from the one rule set under .set.phone below. */
+.dlg.settings{width:min(820px,100%);height:min(76vh,640px)} /* one size on every page: the pane scrolls, the nav does not */
+.set{min-width:0}
+.stx{display:grid;grid-template-columns:212px minmax(0,1fr);flex:1;min-height:0}
+.stn{display:flex;flex-direction:column;gap:2px;padding:10px 8px;background:var(--surface);border-right:1px solid var(--line);min-width:0;overflow:hidden}
+.stn-c{display:flex;flex-direction:column;gap:2px}
+.stn-i{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:8px;padding:6px 10px;border-radius:8px;min-height:40px;text-align:left;min-width:0}
+.stn-i:hover{background:var(--sunken)}
+.stn-i.on{background:var(--raised);box-shadow:0 0 0 1px var(--line)}
+.stn-i:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.stn-t{font:500 13px/18px var(--ui);color:var(--ink)}
+.stn-s{grid-column:1;font:400 12px/16px var(--ui);color:var(--ink-muted);min-height:16px;overflow-wrap:anywhere} /* empty until its data is there; the row keeps its height */
+.stn-a{grid-row:1/span 2;grid-column:2;display:flex;align-items:center;gap:6px;color:var(--ink-faint)}
+.chev{font:400 18px/1 var(--ui);color:var(--ink-faint)}
+.stx .stp{display:flex;flex-direction:column;gap:16px;padding:16px 20px 20px;min-width:0;min-height:0;overflow-y:auto}
+.stp-h{display:flex;align-items:center;gap:8px;min-height:28px;min-width:0;flex-wrap:wrap}
+.stp-h h2{margin:0;font:600 16px/22px var(--ui);min-width:0;overflow-wrap:anywhere}
+.stp-h h2:focus{outline:none}
+.stp-h h2:focus-visible{outline:2px solid var(--harbour);outline-offset:2px;border-radius:4px}
+.stp-h .crumb{font:500 13px/18px var(--ui);color:var(--harbour);display:inline-flex;align-items:center;gap:4px;flex:none}
+.stp-h .sep{color:var(--ink-faint)}
+.stp-h .end{margin-left:auto;display:flex;gap:8px;align-items:center}
+.stp-lede{margin:-8px 0 0;font:400 13px/19px var(--ui);color:var(--ink-muted);max-width:60ch}
+.stp-sub{margin:8px 0 -6px;font:600 14px/20px var(--ui)}
+/* V0.139: the read-only host of a project (its screen's first row); the same chip on the desktop and the phone */
+.hchip{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.hchip .hdot{flex:none}
+.hchip.off .hdot{background:none;box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
+.hchip-l{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+/* V0.140: the host a change card's thread runs on, and each load ring's host on the rail, with several hosts */
+.bdhost{flex:none;font:400 11px/16px var(--mono);color:var(--ink-muted);border:1px solid var(--line);border-radius:5px;padding:0 5px}
+/* V0.132: the Host field of New project and New thread; an offline host's note in the error colour */
+.hostf .srcl.hbad{color:var(--signal-ink)}
+.fnote{margin:4px 0}
+/* V0.127, V0.host-tabs: a per-host page with several hosts: HostTabs picks one host at a time, its status line sits
+   under the tabs, and only that host's panel renders (the same on the desktop and the phone). */
+.hpart{display:flex;flex-direction:column;gap:16px;min-width:0}
+.hpart-h{margin:-6px 0 -4px;display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;font:600 15px/22px var(--ui);min-width:0;overflow-wrap:anywhere}
+.hpart-s{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.hpart.off .hpart-s{color:var(--ink-faint)}
+/* V0.host-tabs: one shared tabbed host switcher for Settings, linked projects, load sheet, and HostField pickers.
+   flex:none: the strip scrolls sideways (overflow-x:auto), which makes a flex item's automatic minimum height 0, so
+   inside the scrolling .stp column it shrank to its 1px border and the switcher was invisible (V0.host-tabs-visible). */
+.htabs{position:relative;flex:none;display:flex;align-items:center;gap:2px;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid var(--line)}
+.htabs::-webkit-scrollbar{display:none}
+.htab{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:0;background:none;color:var(--ink-muted);font:500 13px/18px var(--ui);white-space:nowrap;cursor:pointer}
+.htab:hover{color:var(--ink)}
+.htab.on{color:var(--ink)}
+.htab.off{color:var(--ink-faint)}
+.htab.off.on{color:var(--ink-muted)}
+.htab:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px;border-radius:6px}
+.htab-n{font-size:12.5px}
+.htab-m{font-size:11px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.htab-m.warm{color:var(--beam-ink)}
+.htab-m.hot{color:var(--signal-ink);font-weight:600}
+.htab-b{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 5px;border-radius:8px;background:var(--beam-wash);color:var(--beam-ink);font:600 11px/16px var(--ui);font-variant-numeric:tabular-nums}
+.stx .stp>.htabs{margin:-4px -20px 0;padding:0 16px}
+.stx .stp .pedit>.htabs{margin:-4px 0 0}
+/* Compact variant inside form fields (HostField): pill track with sliding raised fill */
+.htabs.compact{padding:2px;gap:2px;border:1px solid var(--line-strong);border-radius:9px;background:var(--sunken);border-bottom-color:var(--line-strong)}
+.htabs.compact>.slide{background:var(--raised);border-radius:7px;box-shadow:0 0 0 1px var(--line),var(--lift-1)}
+.htabs.compact .htab{height:30px;padding:0 10px;border-radius:7px}
+.m-ban{padding:8px 16px;background:var(--sunken);border-bottom:1px solid var(--line);font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.m-ban.d{margin:-16px -20px 0;padding:8px 20px}
+/* a group: a label, a card of rows, a foot note */
+.sg{display:flex;flex-direction:column;gap:6px;min-width:0}
+.sg-h{display:flex;align-items:center;gap:8px;font:600 12px/16px var(--ui);color:var(--ink-muted);padding:0 2px;min-height:20px}
+.sg-h .end{margin-left:auto;font-weight:400;display:flex;align-items:center;gap:8px}
+.sg-c{display:flex;flex-direction:column;background:var(--raised);border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
+.sg-f{font:400 12px/17px var(--ui);color:var(--ink-muted);padding:0 2px;max-width:64ch}
+.sg-f.err{color:var(--signal-ink)}
+/* V0.automation-folds: a group whose header folds it. Folded, the header keeps its title and one summary line. */
+.sg-fb{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto;padding:0;margin:0;background:none;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.sg-chev{font-size:12px;line-height:16px;width:10px;flex:none;color:var(--ink-faint)}
+.sg-fb .sg-t{white-space:nowrap;flex:none}
+.sg-fb:hover .sg-t{color:var(--ink)}
+.sg-sum{font-weight:400;color:var(--ink-faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sg.shut{gap:0}
+.danger-z .sg-c{border-color:color-mix(in srgb,var(--signal-ink) 30%,var(--line))}
+/* a row: title and help text, the control at the end */
+.sr{display:flex;align-items:center;gap:12px;min-height:48px;padding:8px 12px;border-bottom:1px solid var(--line);min-width:0;text-align:left;width:100%;background:none}
+.sr:last-child{border-bottom:0}
+button.sr:hover,label.sr:hover{background:var(--sunken)}
+button.sr:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+label.sr{cursor:pointer}
+.sr-b{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.sr-t{font:500 13px/18px var(--ui);color:var(--ink);min-width:0;overflow-wrap:anywhere}
+.sr-t.ell{overflow-wrap:normal}
+.sr-d{font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;overflow-wrap:anywhere}
+.sr-d.err{color:var(--signal-ink)}
+.sr-d2{display:block}
+/* V0.update-changelog: an update's changelog under its row, one commit a line; desktop and phone share it */
+.sr-d .upd-chb{font:inherit;padding:0}
+.upd-ch{display:block;margin:6px 0 2px;padding-left:10px;border-left:2px solid var(--line)}
+.upd-ch>span{display:block;padding:2px 0;color:var(--ink)}
+.upd-ch a{color:inherit;text-decoration:none}
+.upd-ch a:hover{text-decoration:underline}
+.upd-ch .upd-pr,.upd-ch .upd-older{color:var(--ink-muted)}
+.set.phone .sr-d .upd-chb{padding:0;font-size:inherit} /* keeps the phone .lnk's 44px touch height, sits in the line's text */
+.set.phone .upd-ch>span{padding:6px 0} /* touch: each line is a link, so it gets a finger's height on the phone */
+.sr-d .qline.bare{display:block}
+.sr.bad{box-shadow:inset 2px 0 0 var(--signal-ink)}
+.sr-e{display:flex;align-items:center;gap:8px;flex:none;max-width:60%;min-width:0}
+.sr-e.wide{flex:1 1 55%;max-width:55%}
+.sr.col{flex-direction:column;align-items:stretch;gap:8px}
+.sr.col .sr-e{max-width:none}
+.sr.two .sr-e{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;flex:1 1 60%;max-width:60%}
+.sr.two .sr-e select{width:100%}
+.sr select,.inl input,.sr .pq{height:32px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);padding:0 8px;font:400 13px/18px var(--ui);min-width:0;max-width:100%}
+.sr.srch{padding:8px 12px;min-height:0}
+.sg .pq{width:100%}
+.inl{display:flex;gap:8px;min-width:0;flex:1}
+.inl input{flex:1;padding:0 10px;font-size:14px}
+.fieldrow .inl{width:100%}
+.keyf{display:flex;gap:8px;min-width:0;flex-wrap:wrap}
+.keyf .inl{flex:1 1 220px}
+.sbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sbar .end{margin-left:auto}
+.mono{font-family:var(--mono)}
+/* the switch: every on/off in Settings; ink when on, in both themes (not a link and not "passing") */
+.swt{position:relative;flex:none;width:38px;height:22px;border-radius:11px;background:var(--line-strong);transition:background .2s ease-out;border:0;padding:0;cursor:pointer}
+.swt::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--raised);box-shadow:0 1px 2px rgba(0,0,0,.25),0 0 0 .5px rgba(0,0,0,.05);transition:transform var(--spring-ms) var(--spring),width .18s ease-out}
+.swt[aria-checked="true"]{background:var(--ink)}
+.swt[aria-checked="true"]::after{transform:translateX(16px)}
+.swt[disabled]{opacity:.45;cursor:default}
+.swt:focus-visible{outline:2px solid var(--harbour);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.swt,.swt::after{transition:none}}
+/* the one segmented control */
+.seg{position:relative;display:inline-flex;gap:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;align-self:flex-start;max-width:100%}
+.seg button{border:0;background:none;color:var(--ink-muted);padding:0 12px;height:30px;font:500 13px/18px var(--ui);cursor:pointer;white-space:nowrap}
+.seg button.on{color:var(--on-night)}
+.seg button[disabled]{opacity:.5;cursor:default}
+/* Saved, for 2 s after a change landed */
+.savedm{display:inline-flex}
+.saved{display:inline-flex;align-items:center;gap:4px;font:500 12px/16px var(--ui);color:var(--calm)}
+.saved::before{content:"✓"}
+.xb{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;font:400 18px/1 var(--ui);color:var(--ink-muted);flex:none}
+.xb:hover:not([disabled]){background:var(--sunken);color:var(--ink)}
+.xb[disabled]{opacity:.35}
+.lnk{font:500 12px/16px var(--ui);color:var(--harbour);padding:0 2px}
+.more{font:500 13px/18px var(--ui);color:var(--harbour);padding:10px 12px;text-align:left;min-height:44px}
+.empty{padding:18px 12px;text-align:center;font:400 13px/19px var(--ui);color:var(--ink-muted)}
+.empty b{display:block;color:var(--ink);font-weight:500}
+.skelb{gap:8px}
+.skel{display:block;height:12px;border-radius:6px;background:var(--sunken)} /* still: nothing moves on its own */
+.skel.s{height:10px}
+.note-err{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid color-mix(in srgb,var(--signal-ink) 35%,var(--line));border-radius:10px;background:var(--raised);font:400 13px/18px var(--ui);color:var(--signal-ink);overflow-wrap:anywhere}
+.note-err .btn{margin-left:auto;color:var(--ink)}
+/* V0.125 (design/pairing/pairing.css part 1): a host's state mark: never the only sign, the words beside it say the same */
+.hdot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--calm)}
+.hdot.off{background:none;box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
+.hdot.warn{background:var(--signal-ink)}
+/* an install id: four groups, the first (the short form) in ink */
+.idf{display:inline-flex;flex-wrap:wrap;gap:0 .6ch;font:500 13px/18px var(--mono);color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.idf .s{color:var(--ink);font-weight:600}
+.idf.big{font-size:17px;line-height:24px}
+.set.phone .idf{font-size:14px;line-height:20px}
+.set.phone .idf.big{font-size:18px;line-height:26px}
+.sr.host{cursor:pointer}
+.sr.host .sr-t .tag{font-family:var(--ui)}
+/* notes: what Fyr found, above the group it is about */
+.note{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:var(--harbour-wash);font:400 13px/18px var(--ui);color:var(--ink)}
+.note.bad{background:color-mix(in srgb,var(--signal-ink) 9%,var(--raised));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--signal-ink) 35%,var(--line))}
+.note>span{flex:1;min-width:0}
+.note .btn{margin:-4px -4px -4px 0}
+.set.phone .note{flex-wrap:wrap;font-size:14px;line-height:20px}
+.set.phone .note>span{flex:1 1 100%}
+.set.phone .note .btn{margin:0}
+/* V0.reorder-one: the one reorder control (reorder-ui.tsx), the same rules for every list. A grip to drag on the
+   desktop; the phone's Reorder mode has ↑, ↓ and a handle of 44 px (MoveControls). While a row is held it lifts and
+   follows the pointer, the others slide out of its way, and on letting go it glides into its place. */
+.grip{flex:none;width:20px;height:30px;display:grid;place-items:center;color:var(--ink-faint);cursor:grab;border-radius:6px;font:400 14px/1 var(--ui);letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.grip:hover{color:var(--ink);background:var(--sunken)}
+.grip:focus-visible{outline:2px solid var(--harbour);outline-offset:0}
+.ro-lift{position:relative;z-index:3;background:var(--raised);box-shadow:0 8px 24px rgba(0,0,0,.2),0 0 0 1px var(--line);border-radius:8px;border-bottom-color:transparent}
+.ro-lift,.ro-lift *{cursor:grabbing}
+.ro-shift{transition:transform .16s cubic-bezier(.2,0,0,1)}
+.ro-settle{transition:transform .16s cubic-bezier(.2,0,0,1),box-shadow .16s}
+.ro-dragging,.ro-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
+.mv{display:flex;align-items:center;gap:2px;flex:none;margin-left:auto}
+.mv .xb,.mv .mvh{width:44px;height:44px}
+.mv .mvh{font-size:18px;color:var(--ink-muted);border-radius:8px}
+@media (prefers-reduced-motion: reduce){.ro-shift,.ro-settle{transition:none}}
+.star{flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;color:var(--ink-faint);font-size:16px}
+.star[aria-pressed="true"]{color:var(--ink)}
+/* V0.120: the model chooser. On and Off are parts of one card; an off model reads fainter; New, Gone and Added by hand are marks */
+.sg-sub{padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--line);font:500 11px/16px var(--ui);letter-spacing:.03em;text-transform:uppercase;color:var(--ink-faint)}
+.sr.off .sr-t,.sr.off .sr-d{color:var(--ink-faint)}
+.tag{font:500 11px/16px var(--ui);padding:1px 6px;border-radius:6px;background:var(--sunken);color:var(--ink-muted);margin-left:6px;white-space:nowrap;vertical-align:1px}
+.tag.new{background:var(--harbour-wash);color:var(--harbour)}
+.tag.gone{background:none;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.models .mid{display:block;overflow-wrap:anywhere} /* long ids wrap; nothing is cut */
+.models .sr-t{overflow-wrap:anywhere}
+.sg-h .mchk{color:var(--ink-faint);white-space:nowrap}
+.models .sg-h{flex-wrap:wrap;row-gap:0}
+.models .sg-h .end{flex-wrap:wrap;justify-content:flex-end}
+.sg-h .lnk:disabled{color:var(--ink-faint)}
+/* V0.121: the Projects page in the owner's order: a grip before each row on the desktop, ↑ and ↓ in the phone's mode */
+.pli.g{grid-template-columns:20px minmax(0,1fr);gap:4px;padding:0 10px 0 4px}
+.pli.g .plb{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:48px;padding:6px 0;text-align:left;min-width:0}
+.pli.g:hover{background:var(--sunken)}
+.pli.g .plb:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+/* V0.132: a host row with its grip (desktop) or the phone's Reorder mode */
+.hreo{display:flex;align-items:center;gap:4px;padding-left:4px;border-bottom:1px solid var(--line);min-width:0}
+.hreo:last-child{border-bottom:0}
+.hreo .sr{border-bottom:0;flex:1;min-width:0;padding-left:4px}
+.hreo.mvrow{padding-right:8px}
+.pli.mvrow:hover{background:none}
+/* the Providers page */
+.pdot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);flex:none}
+.pst{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:10px;background:var(--sunken);color:var(--ink-muted);white-space:nowrap;flex:none}
+.pst.needs-login,.pst.needs-key{background:var(--beam-wash);color:var(--beam-ink)}
+.usage .sr-t{font-size:15px;line-height:20px}
+.setd{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.seterr{color:var(--signal-ink);font:400 12px/16px var(--ui);overflow-wrap:anywhere}
+.setbar{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;align-items:center}
+.setbar .setd{margin-right:auto;align-self:center}
+.login{display:flex;flex-direction:column;gap:8px;background:var(--sunken);border-radius:8px;padding:10px 12px;min-width:0}
+.login .loginlink{align-self:flex-start;text-decoration:none;justify-content:center}
+.login.done .setd{color:var(--ink)}
+.setkey{display:flex;gap:8px;min-width:0}
+.setkey input{flex:1}
+.btn.danger{color:var(--signal-ink)}
+.set .pls.setpl{max-height:none;background:var(--raised)} /* the page scrolls, not the list (V0.58) */
+/* the project page */
+.qw-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.qw-top .allday{display:inline-flex;align-items:center;gap:8px;font:500 13px/18px var(--ui);margin-left:auto;cursor:pointer}
+.qw-top .allday.first{margin-left:0}
+.qw-top .allday.first+.xb{margin-left:auto}
+.qtime select{height:30px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);padding:0 6px;font:400 13px/18px var(--ui)}
+.qd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;max-width:360px}
+.qd button{height:30px;border:1px solid var(--line);border-radius:8px;font:500 12px/16px var(--ui);color:var(--ink-muted);text-align:center;padding:0 2px}
+.qd button.on{background:var(--night);border-color:var(--night);color:var(--on-night)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.pimg{display:flex;align-items:center;gap:10px;flex-wrap:wrap} /* the Image tab: the thumbnail, Upload or Replace, Remove (not .thumb: that is an attachment) */
+.pemoji .inl input{max-width:120px;font-size:20px;text-align:center}
+.pfolder{min-width:0}
+.pfolder .ell{display:inline;white-space:normal;overflow-wrap:anywhere}
+.rail .rgear{margin-top:auto}
+.rail .railx~.rgear{margin-top:4px}
+.rail .rgear+.foot{margin-top:6px}
+

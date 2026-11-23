@@ -1,6 +1,6 @@
 // The Providers settings page (split from settings-ui.tsx).
 
-import { type AllSettings, type Data, subKey, type Run } from "./settings-ui.tsx";
+import { subKey } from "./settings-ui.tsx";
 import { activeTabId, type HostTabItem } from "./host-tabs.ts";
 import { HostTabs } from "./host-tabs-ui.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -44,6 +44,8 @@ import {
   type ProviderDTO,
   type ProviderForm,
 } from "./providers.ts";
+import { type Run, type Data, type AllSettings } from "./settings-load.ts";
+import { clockTime } from "./format.ts";
 
 // ---- Providers ----
 
@@ -594,7 +596,6 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
   const [err, setErr] = useState<string | null>(null);
   const env = useSet();
   const active = loginActive(l);
-  const ends = new Date(l.expires);
   const send = () => void run("provider.loginCode", { id: p.id, code }).then((e) => (setErr(e), !e && setCode("")));
   return (
     <div class={`login ${l.state}`} aria-live="polite">
@@ -632,7 +633,7 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
       <div class="setbar">
         {active ? (
           <>
-            <span class="setd">The sign-in ends at {isNaN(ends.getTime()) ? "" : ends.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            <span class="setd">The sign-in ends at {clockTime(l.expires)}</span>
             <button type="button" class="btn" disabled={env.readOnly} onClick={() => void run("provider.loginCancel", { id: p.id })}>
               Cancel
             </button>

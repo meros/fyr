@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.50: Settings → Providers helpers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createArgs, EMPTY_FORM, effortsFor, importable, keyLine, loginActive, loginButton, loginLine, modelsSummary, parseModelIds, startEffort, whereText } from "../src/providers.ts";
+import { createArgs, EMPTY_FORM, effortsFor, importable, keyLine, loginActive, loginButton, loginLine, parseModelIds, startEffort, whereText } from "../src/providers.ts";
 import type { LoginDTO } from "../src/providers.ts";
 import type { Profile } from "../src/types.ts";
 
@@ -15,8 +15,6 @@ test("a key shows only as set, its source and last 4", () => {
 
 test("model ids from a text field", () => {
   assert.deepEqual(parseModelIds(" a/b \n\n c, a/b ,d"), ["a/b", "c", "d"]);
-  assert.equal(modelsSummary([{ id: "x", name: "Opus 5.5" }, { id: "y" }, { id: "z" }, { id: "w" }]), "Opus 5.5, y + 2");
-  assert.equal(modelsSummary([]), "No models yet");
 });
 
 test("where a provider is", () => {

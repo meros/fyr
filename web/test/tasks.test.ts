@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentsIcon, agentsSummary, compactCount, endedLabel, groupTasks, liveLine, orderTasks, taskEventText, taskLine, taskStats, visibleTasks, waitLine, workingLine } from "../src/tasks.ts";
+import { agentsIcon, agentsSummary, compactCount, endedLabel, groupTasks, liveLine, orderTasks, taskEventText, taskLine, taskStats, waitLine, workingLine } from "../src/tasks.ts";
 import { clockTime } from "../src/format.ts";
 import type { TaskDTO, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -14,8 +14,6 @@ test("tasks: running first, then newest started", () => {
   const g = groupTasks(ts);
   assert.deepEqual(g.running.map((t) => t.id), ["run-new", "run-old"]);
   assert.equal(g.ended.length, 3);
-  assert.deepEqual(visibleTasks(ts, false).map((t) => t.id), ["run-new", "run-old"], "ended ones collapse");
-  assert.equal(visibleTasks(ts, true).length, 5);
   assert.deepEqual(orderTasks(null), []);
 });
 

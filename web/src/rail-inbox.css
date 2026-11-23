@@ -1,0 +1,119 @@
+/* rail */
+.rail{display:flex;flex-direction:column;align-items:stretch;background:var(--sunken);border-right:1px solid var(--line);padding:10px 6px;gap:4px;min-height:0;--knock:var(--sunken)}
+.rail .brand{display:flex;justify-content:center;margin-bottom:10px}
+.rail .brand img{display:block;width:32px;height:32px}
+.ri{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 6px;border-radius:8px;color:var(--ink-muted);text-align:center}
+.ri:hover:not(.on){background:var(--select);--knock:var(--select)}
+.ri.on{background:var(--raised);color:var(--ink);box-shadow:0 0 0 1px var(--line);--knock:var(--raised)}
+.ri .n{font:500 13px/18px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);max-width:100%;overflow:hidden}
+.ri.att .n{background:var(--beam);color:var(--on-beam);border-radius:9px;padding:0 6px}
+.ri .l{font:500 10px/12px var(--ui);letter-spacing:.02em}
+.ri .k{font:400 10px/12px var(--mono);color:var(--ink-faint)}
+.rail .foot{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:4px;font:400 10px/12px var(--mono);color:var(--ink-muted);max-width:100%;overflow:hidden}
+.rail .foot i{width:8px;height:8px;border-radius:50%;background:var(--calm)}
+.rail .foot.connecting i{background:var(--ink-faint)}
+.rail .foot.offline i{background:var(--signal-ink)}
+
+/* inbox */
+.ib{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--raised);border-right:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;border-bottom:1px solid var(--line);flex:none}
+.search{flex:1;min-width:0;display:flex;align-items:center;height:30px;padding:0 10px;border-radius:8px;background:var(--sunken);color:var(--ink-muted);font:400 13px/18px var(--ui);cursor:text}
+.search input{flex:1;min-width:0;border:0;outline:0;background:transparent;padding:0;font:400 13px/18px var(--ui);color:var(--ink)}
+.search input::placeholder{color:var(--ink-muted);opacity:1}
+.search kbd{margin-left:auto}
+/* V0.ai-search: the AI part of a search, on desktop and phone (phone.css sizes it for touch) */
+.ais{display:flex;flex-direction:column;gap:2px;margin:6px 8px}
+.ais-ask{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;padding:6px 10px;border-radius:8px;background:var(--sunken);color:var(--ink);font:500 13px/18px var(--ui);text-align:left;cursor:pointer}
+.ais-ask svg,.ais-st svg{flex:none;width:16px;height:16px;color:var(--harbour)}
+.ais-ask span{min-width:0;overflow-wrap:anywhere}
+.ais-st{display:flex;align-items:center;gap:8px;min-height:32px;padding:4px 10px}
+.ais-note{flex:1;min-width:0;font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.ais-x{flex:none;padding:0 6px;color:var(--harbour);font:500 12px/16px var(--ui);cursor:pointer}
+.ais-hit{display:block;width:100%;padding:6px 10px;border-radius:8px;text-align:left;cursor:pointer}
+.ais-hit:hover{background:var(--sunken)}
+.ais-t{display:block;font:500 13px/18px var(--ui);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ais-w{display:block;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.ibtn{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;color:var(--ink-muted)}
+.ibtn:hover{background:var(--sunken);color:var(--ink)}
+.list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 6px 8px;scrollbar-width:thin;scrollbar-gutter:stable}
+.sec{display:flex;align-items:center;gap:8px;height:28px;margin-top:10px;padding:0 8px;border-radius:8px;background:var(--sunken);font:500 12px/16px var(--ui);color:var(--ink-muted);min-width:0;margin-bottom:4px}
+.sec.tog{cursor:pointer}
+/* V0.section-heads: the header's title, on both fronts; a section with rows reads in full ink, an empty one steps back */
+.sti{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--ink);font-weight:600}
+.stc{flex:none;display:grid;place-items:center;width:12px;height:12px;color:var(--ink-muted);transition:transform .12s ease}
+.stc.open{transform:rotate(90deg)}
+.sec.tog:hover .stc{color:var(--ink)}
+.sticon{flex:none;display:grid;place-items:center}
+.stl{min-width:0}
+.sti .n{flex:none;min-width:18px;padding:0 5px;border-radius:8px;background:var(--line);color:var(--ink);font-weight:500;text-align:center}
+.sti.att,.sti.att .stc{color:var(--beam-icon)}
+.sti.att .n{background:var(--beam);color:var(--on-beam)}
+.sti.none{color:var(--ink-faint);font-weight:500}
+.sti.none .ic{color:var(--ink-faint)}
+.sti.none .n{min-width:0;padding:0;background:none;color:var(--ink-faint)}
+@media (prefers-reduced-motion: reduce){.stc{transition:none}}
+/* V0.section-bands, V0.empty-section-bands: every section header is a band across the list, with air above it: a band
+   is not a row, so what follows it reads as its rows. An empty section uses the softer --surface fill so it steps back. */
+.sec:has(>.sti.none){background:var(--surface)}
+.sec.tog:hover{background:var(--line)}
+.ngh{padding:6px 8px 2px;font:500 11px/14px var(--ui);color:var(--ink-faint)}
+.sec .n{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums}
+.sec .sbtn{flex:none;margin-left:8px;height:20px;padding:0 8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--raised);color:var(--ink);font:500 11px/16px var(--ui);cursor:pointer}
+.sec .h{margin-left:auto;font-size:11px;min-width:0;max-width:62%}
+/* V0.186: the folded section that holds the current thread, marked as a selected row is; same 30 px in all */
+.more{display:block;width:100%;height:30px;padding:0 8px 0 46px;font:500 12px/30px var(--ui);color:var(--harbour);border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.more:hover{background:var(--sunken)}
+.rw{display:grid;grid-template-columns:28px minmax(0,1fr) max-content;column-gap:10px;grid-auto-rows:auto;min-height:52px;padding:7px 8px;border-radius:10px;align-content:center;cursor:pointer}
+.rw .tile{grid-row:1/span 2;align-self:start}
+/* V0.135: the title wraps to two lines before it is cut, and its box is always two lines high, so a row does not jump
+   while a title streams in; the project is its icon at the title's start, inline, so the second line starts under it. */
+.rw .hd,.one .hd{position:relative;grid-column:2;grid-row:1;min-width:0}
+.rw .hd .t,.one .hd .t{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:var(--ink);text-indent:calc(var(--rh,0px) + var(--ri) + 6px)}
+/* V0.row-calm: a title takes the lines it needs; only a row whose title has not come yet keeps two lines of room */
+.rw .hd.untitled .t,.one .hd.untitled .t{height:2lh}
+.hd.pinned .t{text-indent:calc(var(--rh,0px) + var(--ri) + 22px)}
+.hd .rpi{position:absolute;left:var(--rh,0px);top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
+/* V0.170: the host's mark before the project's icon, with more than one host. */
+.hd .rhm{position:absolute;left:0;top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
+.rw .hd .pin,.one .hd .pin{position:absolute;left:calc(var(--rh,0px) + var(--ri) + 5px);top:calc((var(--tlh) - 12px) / 2);display:grid;place-items:center;color:var(--harbour)}
+.rpn{color:var(--ink-muted)}
+/* A long project or provider name ends in … and leaves the row's line room for what follows it. */
+.m .rpn{white-space:nowrap} /* V0.row-calm: cut in the text (clipName), so no gap before the "·" */
+.m .rpv{display:inline-block;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.rpv .pdot{display:inline-block;width:7px;height:7px;margin-right:4px;vertical-align:1px}
+.from.mark{margin-right:5px;color:var(--ink-faint);font:inherit;text-decoration:none}
+.from.mark.link:hover{color:var(--ink);text-decoration:none}
+.rw .cl{grid-column:2/4;grid-row:3;display:flex;flex-wrap:wrap;gap:4px;min-width:0;margin-top:3px}
+.rw .cl .pr{max-width:100%}
+.rw:hover:not(.sel),.one:hover:not(.sel){background:var(--surface)}
+/* V0.192: the current thread's row where the filters or a fold would hide it: dashed, since it is only visiting */
+.rw.guest,.one.guest{outline:1px dashed var(--line-strong);outline-offset:-1px}
+.gst{display:inline-flex;align-items:center;gap:3px;margin-right:6px;font-weight:500;font-style:normal;color:var(--ink-muted);white-space:nowrap}
+.gst svg{flex:none}
+.rw.sel{background:var(--select);--knock:var(--select)}
+.tile{grid-row:1/3;width:28px;height:28px;border-radius:8px;background:var(--sunken);display:grid;place-items:center;align-self:center;--knock:var(--sunken)}
+.rw.sel .tile{background:var(--raised);--knock:var(--raised)}
+.rw .t{font:500 13px/20px var(--ui)}
+.rw .hd{--tlh:20px}
+.rw.dn .t{font-weight:600}
+.rw .age{grid-column:3;grid-row:1;justify-self:end;align-self:start;min-width:0;font:400 12px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-muted);text-align:right;white-space:nowrap}
+.rw .m{grid-column:2/4;grid-row:2;font:400 12px/18px var(--ui);color:var(--ink-muted)}
+.pr{display:inline-block;height:18px;padding:0 7px;border-radius:9px;border:1px solid var(--line);font:500 11px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:168px;overflow:hidden;text-overflow:ellipsis} /* V0.row-calm, V0.multi-pr: "#9999 conflicts +2" whole */
+.pr.ok{color:var(--calm)}.pr.fail{color:var(--signal-ink);border-color:var(--signal-ink)}.pr.merged{background:var(--sunken)}
+.pr.none{display:none}
+.one{display:grid;grid-template-columns:28px minmax(0,1fr) 64px;column-gap:10px;align-items:start;min-height:30px;padding:4px 8px;border-radius:8px;font:400 12px/16px var(--ui);color:var(--ink-muted);cursor:pointer}
+.one.sel{background:var(--select);--knock:var(--select)}
+.one .ic{justify-self:center;grid-row:1;margin-top:1px}
+.one .t{font:500 13px/18px var(--ui)}
+.one .hd{--tlh:18px}
+.one .m{grid-column:2/4;display:flex;align-items:center;gap:4px 8px;min-width:0}
+.one .m:not(:has(.cl)):has(> i:empty){display:none}
+.one .m i{flex:1 1 0;min-width:0;font:400 12px/16px var(--ui);font-style:normal}
+.one .m i:empty{display:none}
+.one .cl{display:flex;gap:4px;flex:none;margin-left:auto;align-items:center;font:400 12px/16px var(--ui)}
+.one .cl{gap:4px 8px}.one .cl .tcpu{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums}.one .cl .tcpu.hot{font-weight:600} /* V0.row-calm: the CPU reading sits with the chips, mono like the age, muted unless hot */
+.one .m i:empty+.cl{margin-left:0}
+.one .age{grid-column:3;grid-row:1;font:400 12px/18px var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden}
+.sb{font:400 11px/16px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rw.picked,.one.picked{box-shadow:inset 0 0 0 1px var(--harbour)}
+

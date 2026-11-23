@@ -1,7 +1,7 @@
 // V0.119, V0.125: the Settings nav: five pages, one line of state each, the badge, the page ids.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PAGES, escapeTarget, automationSummary, deviceSummary, hostsNeed, hostsSummary, navBadge, pageUrl, parsePage, projectsSummary, providersNeed, providersSummary, settingsNeed } from "../src/settings-nav.ts";
+import { PAGES, escapeTarget, deviceSummary, hostsNeed, hostsSummary, navBadge, pageUrl, parsePage, projectsSummary, providersNeed, providersSummary, settingsNeed } from "../src/settings-nav.ts";
 
 const ready = { status: "ready" as const };
 const login = { status: "needs-login" as const };
@@ -37,14 +37,6 @@ test("Providers: the count, and what needs the owner", () => {
   assert.equal(navBadge([ready, login, key], 1), 3);
   assert.equal(navBadge([ready], 0), 0);
   assert.equal(navBadge(null, 0), 0);
-});
-
-test("Automation: deploys and the repos merged without asking", () => {
-  assert.equal(automationSummary(null, null), "");
-  assert.equal(automationSummary(true, []), "Updates on · merges off");
-  assert.equal(automationSummary(false, [{ repo: "a/b", on: false }]), "Updates off · merges off");
-  assert.equal(automationSummary(true, [{ repo: "a/b", on: true }]), "Updates on · merges in 1 repo");
-  assert.equal(automationSummary(true, ["a/b", "c/d", "e/f"].map((repo) => ({ repo, on: true }))), "Updates on · merges in 3 repos");
 });
 
 test("Projects: the projects only (V0.125: the hosts have their own page)", () => {

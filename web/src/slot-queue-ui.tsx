@@ -5,7 +5,7 @@
 import type { ComponentChildren, VNode } from "preact";
 import { useMemo, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import type { Slots } from "./host-load.ts";
+import { slotsOf } from "./host-load.ts";
 import { patchSlots, refreshLoad, useLoad } from "./load-ui.tsx";
 import { MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
 import { priorityLabel, queueParts, reorderOwners, slotQueue, withQueue, type QueueEntry, type QueuePart } from "./slot-queue.ts";
@@ -100,7 +100,8 @@ function Part({ part, shown, phone, reordering, folded, row }: { part: QueuePart
     // Shown on this device first; the receipt (the host's queue as it is now) or the next poll corrects it.
     patchSlots(part.host, (s) => ({ ...s, waiting: [...pri, ...owners.map((o) => ({ owner: o, kind: kinds.get(o) ?? "" }))] }));
     const r = await api.command(host, "host.slotOrder", undefined, { owners });
-    if (r.ok && r.result && typeof r.result === "object" && "waiting" in (r.result as object)) patchSlots(part.host, r.result as unknown as Slots);
+    const queue = r.ok ? slotsOf(r.result) : null;
+    if (queue) patchSlots(part.host, queue);
     refreshLoad();
     return r.ok ? null : (r.error ?? "The order did not change");
   };

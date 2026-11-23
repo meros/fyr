@@ -214,7 +214,13 @@ export function normalizeLoad(list: HostLoad[]): HostLoad[] {
 }
 
 /** The host encodes an empty list as null (a Go nil slice), so the two lists of a pool may arrive as null: read them as empty. */
-export function withLists(s: Slots): Slots {
+/** The host's queue as a command's receipt carries it (host.slotOrder); null when the reply is not one. */
+export function slotsOf(result: unknown): Slots | null {
+  const s = result as Partial<Slots> | null;
+  return s && typeof s === "object" && Array.isArray(s.waiting) ? (s as Slots) : null;
+}
+
+function withLists(s: Slots): Slots {
   return { ...s, held: s.held ?? [], waiting: s.waiting ?? [] };
 }
 

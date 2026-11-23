@@ -1,0 +1,529 @@
+/* SPEC V0.141 (amends V0.99, V0.118): the rail fits the window at any height. The shell is the window's height and
+   never scrolls; each column scrolls on its own. In the rail only the middle (the load rings and slot pips per host,
+   the quota lines) gives way: it is its own scroll area, so the sections, List, the bell, Changes, Settings and the
+   host line keep their size and stay in view. The rings and the quota lines sit two to a row where they fit. A
+   short rail (under 1010 px, V0.189 for the Unread item; 940 px in V0.167, 860 px before) is compact: the key hints (g1…g6, \) go, as the tooltips name them, and a section's icon and
+   count share one row (V0.137's Slots can make seven sections), so two hosts and four
+   providers fit at 700 px. If even the fixed items do not fit, the rail itself scrolls. */
+.shell{overflow:hidden}
+.app{grid-template-rows:minmax(0,1fr);overflow:hidden}
+.rail{overflow-y:auto;overflow-x:hidden;scrollbar-width:none;container:rail/size}
+.rail>*{flex-shrink:0}
+.rail .railx:empty{display:none}
+.rail .rmid{margin:auto -6px 0;flex:0 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px}
+.rail .rmid:empty{display:none}
+.rail .rmid>.rld{margin-top:0}
+.rail .rmid~*{margin-top:4px}
+.rail .rmid+*{margin-top:8px}
+.rail .rmid~.foot{margin-top:6px}
+/* V0.152 (amends V0.99, V0.140, V0.141, V0.146 (5)): one card per host, centred: the ring (the load as a share of the
+   cores), the host's short name, the slot meter (bar or pips) and a word under it only when it matters. Cards sit two
+   to a row. (V0.quota-in-thread: the quota grid is gone from the rail.) */
+@container rail (max-height: 1010px){
+  .rail .ri .k{display:none}
+  .rail .ri{padding:5px 0 4px}
+  .rail .brand{margin-bottom:4px}
+  .rail .ri[data-sec]{flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:center;column-gap:4px;row-gap:1px}
+  .rail .ri[data-sec] .l{flex-basis:100%}
+}
+/* V0.137: Waiting for a slot. The place in the queue ("#2") stands where the state icon stands; on the desktop it is
+   the grip (drag, or Alt+↑/↓). The deploy's own tests sit pinned on top. On the phone the one Reorder mode adds ↑, ↓
+   and a handle beside each row (touch: no drag handle beside a swipe row, no hover). */
+.sqn{justify-self:center;grid-row:1;min-width:22px;height:18px;padding:0 3px;display:inline-grid;place-items:center;border-radius:5px;background:var(--sunken);color:var(--ink-muted);font:500 11px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sqn.grip{width:auto;cursor:grab;letter-spacing:0;font:500 11px/1 var(--mono)}
+.sqn.grip:hover{background:var(--select);color:var(--ink)}
+.sqn.pin{background:transparent;border:1px solid var(--line)}
+.sqp{display:grid;grid-template-columns:28px minmax(0,1fr) auto;column-gap:10px;align-items:center;min-height:30px;padding:4px 8px;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.sqp.m{min-height:44px;padding:4px 16px}
+.sqp .sqk{font:400 11px/16px var(--mono);color:var(--ink-faint)}
+.sqhn{padding:6px 8px 2px;font:500 11px/16px var(--mono);color:var(--ink-faint)}
+.sqhn.m{padding:8px 16px 2px}
+.sqwhy{padding:2px 8px 4px;font-size:12px;line-height:16px;color:var(--ink-muted)}
+.sqwhy.m{padding:2px 16px 6px;font-size:13px}
+.sqerr{margin:4px 8px;padding:6px 8px;border-radius:6px;background:var(--sunken);color:var(--signal-ink);font:400 12px/16px var(--ui)}
+.sqmv{display:flex;align-items:center;min-width:0}
+.sqmv .sqrow{flex:1;min-width:0}
+.sqmv .mv{padding-right:8px}
+/* V0.143: an agent that does not respond; the line takes the room, the button keeps its own */
+.sys.stuck{color:var(--signal-ink)}
+.sys.stuck .btn,.sys.stuck .m-bt{flex:none;margin-left:auto}
+
+/* V0.149: the Run card, desktop and phone. The command wraps at any character and never scrolls sideways. */
+.runc{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:680px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--raised);border-left:3px solid var(--beam)}
+.runc.ok{border-left-color:var(--calm)}
+.runc.failed{border-left-color:var(--signal-ink)}
+.runc.running{border-left-color:var(--harbour)}
+.runc.prose{border-left-color:var(--line-strong);margin:8px 0;max-width:680px}
+.runc-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;min-width:0}
+.runc-t{font:600 13px/18px var(--ui);color:var(--ink)}
+.runc-why{flex:1 1 14em;min-width:0;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.runc-cmd{margin:0;padding:8px 10px;border-radius:6px;background:var(--sunken);font:400 12.5px/18px var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all;overflow:hidden}
+.runc-cmd.cut{cursor:pointer}
+.runc-cmd.cut:focus-visible{outline:2px solid var(--harbour);outline-offset:1px}
+.runc-dir{font:400 12px/16px var(--mono);color:var(--ink-faint);overflow-wrap:anywhere}
+.runc-root{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.runc-root.no{color:var(--beam-ink);background:var(--beam-wash);padding:6px 8px;border-radius:6px}
+.runc-o{display:flex;flex-direction:column;gap:2px;min-width:0}
+.runc-more{align-self:flex-start;font:400 11px/16px var(--ui);color:var(--harbour)}
+.runc-out{margin:0;overflow-x:hidden;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11.5px/16px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.runc-res{font:500 12px/16px var(--ui)}
+.runc-res.ok{color:var(--calm)}
+.runc-res.failed{color:var(--signal-ink)}
+.runc-b{display:flex;flex-wrap:wrap;gap:6px}
+
+/* V0.164 undeclared heavy work (design/rogue-agents/mock/rogue.css). Tokens of this file only. */
+
+/* The warm mark: beam is "look here, nothing failed"; signal stays for failures and a hot host. */
+.und-ic{flex:none;color:var(--beam-icon,var(--beam-ink))}
+
+/* 1. The row (desktop and phone, web/src/row-ui.tsx): the word and the use start the second line. */
+.tund{color:var(--beam-ink);font-weight:500}
+.tund .und-ic{vertical-align:-2px;margin-right:3px}
+
+/* Decision 0032: the memory guard's chart (Settings → Automation). Short memory is a wash, a freeze is hatched in the beam
+   colour, the lane's line is the work running. Tokens only, so it follows the theme. */
+.gwrap{padding:4px 14px 10px}
+.gchart{margin:0;min-width:0}
+.gchart svg{display:block;width:100%;height:auto;max-width:100%}
+.g-short{fill:color-mix(in srgb,var(--signal-ink) 16%,transparent)}
+.g-run{stroke:var(--harbour);stroke-width:1.5;opacity:.7}
+.g-hatch-bg{fill:color-mix(in srgb,var(--beam) 22%,transparent)}
+.g-hatch{fill:var(--beam)}
+.g-frozen{stroke:var(--beam-mark);stroke-width:.75}
+.g-n{font:700 12px var(--mono);fill:var(--on-beam);paint-order:stroke;stroke:var(--beam);stroke-width:2px}
+.g-tick{font:10px var(--ui);fill:var(--ink-faint)}
+.g-names{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:2px 14px;font-size:12px;color:var(--ink-muted)}
+.g-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--harbour);margin-right:2px}
+.g-dot.live{background:var(--beam)}
+.g-alt{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+/* 2. The rail: the use Fyr did not admit is a hatched part of the host's meter. */
+/* who it is: a button under the meter (desktop only: the phone has no rail, V0.99 (3)) */
+.rail .rund{display:inline-flex;align-items:center;justify-content:center;gap:2px;min-width:30px;height:14px;padding:0 3px;border-radius:7px;background:var(--beam-wash);color:var(--beam-ink);font:600 8.5px/9px var(--mono);cursor:pointer}
+.rail .rund svg{flex:none}
+
+
+/* 3. The thread: a strip under the header, on both fronts; the phone sets its sizes in phone.css */
+.undb{flex:none;display:flex;align-items:flex-start;gap:10px;padding:8px 24px;background:var(--beam-wash);border-bottom:1px solid color-mix(in srgb,var(--beam) 35%,var(--line));font:400 12px/17px var(--ui);color:var(--ink)}
+.undb .und-ic{margin-top:2px}
+.undb-b{flex:1;min-width:0;overflow-wrap:anywhere}
+.undb-b b{color:var(--beam-ink);font-weight:600}
+.undb-b .mono{font-size:11.5px}
+.undb-b .dim{color:var(--ink-muted)}
+.undb.paused{background:var(--harbour-wash);border-bottom-color:color-mix(in srgb,var(--harbour) 35%,var(--line))}
+.undb.paused .undb-b b,.undb.paused .und-ic{color:var(--harbour)}
+/* V0.176: what a thread left running (leftovers-ui.tsx), and its count under a host's meters in the rail */
+.lftb{flex:none;display:flex;align-items:center;gap:10px;padding:6px 24px;background:var(--sunken);border-bottom:1px solid var(--line);font:400 12px/17px var(--ui);color:var(--ink-muted)}
+.lftb-b{flex:1;min-width:0;overflow-wrap:anywhere}
+.lftb-b .err{color:var(--signal-ink)}
+.lftb-a{display:flex;gap:6px;flex:none;align-items:center}
+.lftb .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}
+.rail .rlft{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:14px;padding:0 4px;border:0;border-radius:7px;background:var(--line);color:var(--ink-muted);font:600 8.5px/9px var(--mono);cursor:pointer}
+/* the line in the conversation: what Fyr told the agent */
+.ql.und .qlh{color:var(--beam-ink)}
+
+/* 4. Settings -> Automation -> Heavy jobs. */
+.sr-t .und-ic{vertical-align:-2px;margin-right:5px}
+.sr .cmd{font:400 12px/17px var(--mono);color:var(--ink);overflow-wrap:anywhere}
+.sr.col .inl .btn{flex:none}
+.sr .unit{font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
+.sr .num{width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.set.phone .sr .btn{min-height:44px}
+.set.phone .sr .num{height:44px}
+.set.phone .sr.col .inl{flex-wrap:wrap}
+.set.phone .sr.col .inl input{flex:1 1 100%;height:44px}
+.sr .inl input.mono{font:400 12.5px/18px var(--mono)}
+
+/* the rail's host: the meter and the button under it are one block; the button is outside the ring's role=img */
+.rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
+/* V0.157: Settings → Devices (decision 0030 3.4), desktop and phone from the same rows. */
+.set .qrimg { display: block; margin: 8px auto; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
+.set .linkout { width: 100%; box-sizing: border-box; }
+.set .codein { display: inline-flex; gap: 8px; align-items: center; }
+.set .codein input { width: 9.5em; letter-spacing: .08em; }
+.set .pill.you { margin-left: .4em; opacity: .7; font-size: .85em; }
+.set .addout { align-items: center; }
+
+/* SPEC V0.167 (amends V0.99, V0.141, V0.152, V0.166): each host's load and heavy jobs are two labelled meters
+   (HostMeters, web/src/load-ui.tsx), the same on the desktop rail, the phone's strip and its sheet: "ld" with a bar in
+   the load colour and the load as % of the cores, "job" with a blue bar and the heavy jobs' use (red with "+n" while
+   jobs wait). The rail's middle shows no scrollbar (it scrolls by wheel or touch only when even the compact rail is
+   short); its parts are 10 px apart, with no rule; the quotas wrap two to a row only where two fit, so none is cut. */
+.hm{display:flex;flex-direction:column;gap:2px;width:64px;min-width:0;--lv:var(--calm)}
+.hm.warm{--lv:var(--beam-mark)}
+.hm.hot{--lv:var(--signal-ink)}
+.hmn{display:flex;align-items:center;gap:3px;min-width:0;font:500 9.5px/11px var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hostc .hmark{margin-left:-3px}
+.hmr{display:grid;grid-template-columns:17px minmax(8px,1fr) auto;align-items:center;column-gap:3px;font:400 9px/11px var(--mono);color:var(--ink-faint);cursor:default}
+.hmb{display:flex;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.hmb i{display:block;flex:none;height:100%}
+.hmr.ld .hmb i{background:var(--lv)}
+.hmr.job .hmb i{background:var(--harbour)}
+.hmr.job.hot .hmb i{background:var(--signal-ink)}
+.hmr.job .hmb i.und,.hmr.job.hot .hmb i.und{background:repeating-linear-gradient(135deg,var(--beam) 0 2px,color-mix(in srgb,var(--beam) 30%,transparent) 2px 4px)}
+.hmv{color:var(--ink-muted);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hmr.hot .hmv{color:var(--signal-ink);font-weight:600}
+.hmv em{font-style:normal}
+.hmo{font:400 9px/11px var(--mono);color:var(--ink-faint)}
+.rail .rmid{padding:0 3px;gap:10px}
+.rail .rmid::-webkit-scrollbar{display:none}
+.rail .rmid>.rld{flex-direction:column;align-items:center;gap:8px}
+.rail .rmid .rldw{align-items:center}
+.rail .rmid .rldr{align-items:center;gap:0;min-width:0}
+/* the labels stay quiet when a value is hot (the rail's older ".rld .hot" rule colours whole rows) */
+.hmr .hmk,.rail .rld .hmr.hot .hmk{color:var(--ink-faint);font-weight:400}
+.rail .rld .hmr.hot{font-weight:400}
+
+/* Amendment 1 of decision 0030: a host's link line under its state line. */
+.set .hlink { display: block; opacity: .75; }
+
+/* ---- V0.native-feel: how everything moves and answers. motion-ui.tsx does the gestures; the style stays as it is. ---- */
+:root{
+  --spring:linear(0,.058,.173,.312,.453,.584,.696,.788,.86,.915,.954,.981,.999,1.009,1.014,1.016,1.016,1.014,1.012,1.01,1.008,1.006,1.004,1.003,1.002,1.001,1);--spring-ms:.48s;
+  --spring-pop:linear(0,.08,.242,.436,.627,.793,.923,1.015,1.071,1.098,1.103,1.094,1.076,1.056,1.037,1.02,1.007,.998,.992,.99,.989,.99,.992,.994,.996,.998,.999,1);--spring-pop-ms:.6s;
+  --ease-sheet:cubic-bezier(.32,.72,0,1);
+  --lift-1:0 1px 2px rgba(16,24,32,.06),0 2px 6px rgba(16,24,32,.05);
+  --lift-2:0 2px 6px rgba(16,24,32,.08),0 12px 28px rgba(16,24,32,.14);
+  --lift-3:0 4px 12px rgba(16,24,32,.1),0 24px 64px rgba(16,24,32,.24);
+  --edge-light:inset 0 1px 0 rgba(255,255,255,.08);
+}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;text-rendering:optimizeLegibility}
+::selection{background:color-mix(in srgb,var(--harbour) 28%,transparent)}
+input,textarea{caret-color:var(--harbour)}
+img{-webkit-user-drag:none}
+[data-ghost]{pointer-events:none}
+
+/* Sheets and dialogs. The scrim is its own layer so a drag can fade it on the compositor. The shadow below the sheet is
+   its own colour: a sheet that springs past its rest never shows a gap under it. */
+.sheet-back{position:absolute;inset:0;background:var(--scrim);-webkit-tap-highlight-color:transparent}
+.m-sheet,.dlg{position:relative}
+.m-sheet{overscroll-behavior:contain;box-shadow:0 140px 0 var(--raised),var(--edge-light),0 -1px 0 color-mix(in srgb,var(--ink) 6%,transparent),0 -12px 40px rgba(0,0,0,.2);cursor:default}
+.m-grab{width:36px;height:5px;border-radius:3px;background:color-mix(in srgb,var(--ink) 22%,transparent);margin:0 auto 10px}
+.dlg{box-shadow:var(--edge-light),var(--lift-3)}
+@media (max-width:760px){
+  .dlg{border:0;overscroll-behavior:contain;box-shadow:0 140px 0 var(--raised),var(--edge-light),0 -12px 40px rgba(0,0,0,.2)}
+  .dlg::before{content:"";flex:none;width:36px;height:5px;border-radius:3px;margin:8px auto 2px;background:color-mix(in srgb,var(--ink) 22%,transparent)}
+}
+.toast,.m-toast{box-shadow:var(--edge-light),var(--lift-2)}
+.ctxm{transform-origin:top left;box-shadow:var(--edge-light),var(--lift-2)}
+.tmenu-l{transform-origin:top right;box-shadow:var(--edge-light),var(--lift-2);animation:pop-menu .14s cubic-bezier(.22,1,.36,1)}
+@keyframes pop-menu{from{opacity:0;scale:.96}}
+.m-toast .tb{transition:background-color .18s ease-out,scale .3s var(--spring)}
+.m-toast .tb[data-pressed]{background:rgba(255,255,255,.14)}
+
+/* The sliding mark of tabs and segments: the chosen child's text sits above it. */
+.slide{position:absolute;left:0;top:0;display:block;pointer-events:none;z-index:0}
+.slide.ready{transition:translate var(--spring-ms) var(--spring),width var(--spring-ms) var(--spring),height .2s ease-out,opacity .15s}
+.slide.under{background:var(--ink);border-radius:2px 2px 0 0}
+.m-strip>.slide{background:var(--raised);border-radius:12px;box-shadow:0 0 0 1px var(--line),var(--lift-1)}
+.seg>.slide{background:var(--night)}
+.chg-seg>.slide{background:var(--select)}
+:is(.m-strip,.seg,.chg-seg,.tabs,.m-tabs,.htabs)>:not(.slide){position:relative;z-index:1;transition:color .18s ease-out,opacity .18s ease-out,scale .3s var(--spring)}
+.tabs span,.m-tabs button,.htabs .htab{border-bottom-color:transparent}
+
+/* Presses: on at once, off softly. Each kind of control answers as its native kind does. `scale` leaves `transform` to
+   the gestures. */
+:where(button,[role=tab],[role=button],summary,a.btn){transition:opacity .2s ease-out,background-color .2s ease-out,border-color .2s ease-out,color .2s ease-out,filter .2s ease-out,scale .32s var(--spring)}
+:where(button,[role=tab],summary)[data-pressed]{opacity:.55;transition-duration:.05s}
+/* solid buttons sink */
+:is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.htabs.compact .htab,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
+:is(.btn,.m-bt,.m-sbtn,.m-capb,.m-dchip)[data-pressed]:not(.p){background-color:var(--sunken)}
+:is(.btn.p,.m-bt.p,.m-send,.m-bnew)[data-pressed]{filter:brightness(.86)}
+/* icon buttons get a soft well */
+:is(.b44,.ibtn,.dh .x,.att-b,.att-x,.src-x,.m-load,.m-bi)[data-pressed]{opacity:1;background-color:var(--select);scale:.92;transition-duration:.05s}
+.m-bi{border-radius:14px}
+/* rows and menu items light up in place */
+:is(.m-mi,.mi,.ctxm-i,.m-more,.more,.fpr,.pli,.cand,.slash-i,.tl,.al.click,.rw,.one,.m-mv){transition:background-color .24s ease-out,scale .34s var(--spring)}
+:is(.m-mi,.mi,.ctxm-i,.m-more,.more,.fpr,.pli,.cand,.slash-i,.tl,.al.click,.rw,.one)[data-pressed]{opacity:1;background-color:var(--select);transition-duration:.04s}
+/* a thread row sinks slowly: that is the long press beginning */
+.m-mv[data-pressed]{background-color:var(--select);--knock:var(--select);scale:.982;transition:background-color .04s,scale .4s ease-out}
+.m-op{transition:background-color .18s ease-out,border-color .18s ease-out,box-shadow .18s ease-out,scale .32s var(--spring)}
+.m-op[data-pressed]{opacity:1;scale:.98;transition-duration:.06s}
+.m-tbtn[data-pressed],.m-fchg[data-pressed],.m-tabs button[data-pressed],.m-rd[data-pressed]{opacity:.5}
+.m-swp.moving .m-mv{will-change:transform}
+button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
+
+/* Selection marks draw in rather than swap. */
+.m-ck,.m-op .mk{transition:background-color .16s ease-out,border-color .16s ease-out,box-shadow .24s var(--spring),scale .3s var(--spring-pop)}
+.swt[data-pressed]{opacity:1}
+.swt[data-pressed]::after{width:22px}
+.swt[aria-checked="true"][data-pressed]::after{transform:translateX(12px)}
+.set.phone .swt[data-pressed]::after{width:29px}
+.set.phone .swt[aria-checked="true"][data-pressed]::after{transform:translateX(13px)}
+
+/* A swipe says when letting go will commit. */
+.m-under{transition:background-color .16s ease-out}
+.m-under.set:not(.armed){background:color-mix(in srgb,var(--calm) 55%,var(--sunken))}
+.m-under.snz:not(.armed){background:color-mix(in srgb,var(--night) 62%,var(--sunken))}
+.m-under>*{transition:scale .4s var(--spring-pop)}
+.m-under.armed>:not(.ell){scale:1.28}
+
+/* Fields wake up. */
+.m-cmp,.m-ta,.m-custom input,.m-otherf,.fld :is(input,select,textarea),.cmp{transition:border-color .16s ease-out,box-shadow .16s ease-out}
+.m-cmp:focus-within,.m-ta:focus,.m-custom input:focus,.fld :is(input,select,textarea):focus{border-color:var(--harbour);box-shadow:0 0 0 3px color-mix(in srgb,var(--harbour) 16%,transparent);outline:0}
+.m-send{transition:opacity .2s ease-out,filter .2s ease-out,scale .34s var(--spring-pop)}
+.m-send:disabled{scale:.9}
+.m-bt.p,.btn.p,.m-bnew,.m-send{box-shadow:var(--edge-light)}
+.m-bnew{box-shadow:var(--edge-light),var(--lift-1)}
+.m-abody,.m-nbody,.chtab,.convo,.db,.m-lsheet{overscroll-behavior-y:contain}
+
+/* A desktop app: the arrow on controls (links keep the hand), and its chrome is not text to select. */
+@media (hover:hover) and (pointer:fine){
+  :where(button,summary,[role=button],[role=tab],.rw,.one,.tl,.al.click,.sec.tog,.cand,.m-ah,.ags.pick,.ags.pick select,.chip.pj,.chip.proj){cursor:default!important}
+  :where(button,[role=tab],.rw,.one,.sec,.dh,.tabs,.rail,.top,.kh,.ctxm){user-select:none;-webkit-user-select:none}
+  :where(input,textarea){user-select:text;-webkit-user-select:text}
+  :is(.ibtn,.btn,.mi,.more,.rw,.one,.dh .x):hover{transition-duration:.08s}
+}
+@media (prefers-reduced-motion:reduce){
+  /* Colour still answers a press; nothing changes size or slides. (Never a rule on `*`: every element's default is
+     "transition all", so a duration there makes each layout change a frame late.) */
+  [data-pressed]{scale:none!important}
+  .slide.ready,.m-send,.m-ck,.m-op .mk,.m-under>*{transition:none}
+  .tmenu-l{animation:none}
+}
+
+/* V0.status-home: the status screen, in the thread pane with no thread open (desktop) and as the phone's Status screen.
+   .phone: the phone's sizes (44 px targets, one column of tiles, a step larger type: touch on a 360 px screen). */
+.home{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.st-body{flex:1;min-height:0;overflow-y:auto;padding:28px 36px 16px;width:100%;max-width:880px;margin:0 auto;box-sizing:border-box}
+.st-head{margin-bottom:22px}
+.st-day{margin:0;font:600 20px/26px var(--ui);color:var(--ink)}
+.st-day .tnum{color:var(--ink-muted);font-weight:500}
+.st-sum{margin:2px 0 0;color:var(--ink-muted)}
+.st-sum.att{color:var(--beam-ink)}
+.st-blk{margin-bottom:22px}
+.st-bh{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;font:500 11px/16px var(--ui);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint)}
+.st-more{font:500 12px/16px var(--ui);letter-spacing:0;text-transform:none;color:var(--harbour)}
+.st-more:hover{text-decoration:underline}
+.st-mv{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 12px;margin-bottom:6px;background:var(--raised);border:1px solid var(--line);border-left:3px solid var(--beam);border-radius:8px}
+.st-mvt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.st-tt{display:flex;align-items:center;gap:6px;font-weight:500;color:var(--ink)}
+.st-mvt small{display:block;color:var(--ink-muted);font-size:12px}
+.st-mvt small b{color:var(--ink)}
+.st-err{color:var(--signal-ink)!important}
+.st-act{min-width:76px;justify-content:center}
+.st-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.st-tile{display:flex;flex-direction:column;gap:4px;min-width:0;padding:10px 12px;background:var(--raised);border:1px solid var(--line);border-radius:8px}
+.st-tile:hover,.st-mv:hover{border-color:var(--line-strong)}
+.st-mv:hover{border-left-color:var(--beam)}
+.st-line{display:flex;align-items:center;gap:6px;color:var(--ink-muted);font-size:12px}
+.st-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--harbour);animation:st-pulse 1.4s ease-in-out infinite}
+@keyframes st-pulse{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.st-dot{animation:none}}
+.st-meta{font:400 11px/14px var(--mono);color:var(--ink-faint)}
+.st-calm{padding:16px;margin-bottom:22px;border:1px dashed var(--line);border-radius:8px;color:var(--ink-muted);text-align:center}
+.st-log{list-style:none;margin:0;padding:0}
+.st-ev{display:flex;gap:10px;width:100%;padding:5px 0;border-bottom:1px solid var(--line);color:var(--ink);min-width:0}
+.st-ev:hover{background:var(--sunken)}
+.st-ev time{flex:none;width:44px;font:400 11px/18px var(--mono);color:var(--ink-faint)}
+.st-k{font-weight:500}
+.st-k.merged,.st-k.done,.st-k.settled{color:var(--calm)}
+.st-k.failed{color:var(--signal-ink)}
+.st-lmore{padding:5px 0 0 54px;color:var(--ink-faint);font-size:12px}
+.st-nums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.st-num{display:flex;flex-direction:column;min-width:0;padding:8px 12px;background:var(--raised);border:1px solid var(--line);border-radius:8px}
+.st-num b{font:600 22px/28px var(--ui);color:var(--ink)}
+.st-num span{color:var(--ink-muted);font-size:12px}
+.st-num small{color:var(--ink-faint);font-size:11px}
+.st-chart{position:relative;padding:0;background:var(--raised);border:1px solid var(--line);border-radius:8px;overflow:hidden;touch-action:pan-y}
+.st-chart svg{display:block}
+.st-grid{stroke:var(--line);stroke-width:1}
+.st-ax{font:400 10px var(--mono);fill:var(--ink-faint)}
+.st-area{fill:var(--harbour);opacity:.14}
+.st-ln{fill:none;stroke:var(--harbour);stroke-width:2;stroke-linejoin:round}
+.st-now{fill:var(--harbour);stroke:var(--raised);stroke-width:2}
+.st-mg{fill:var(--calm);stroke:var(--raised);stroke-width:2}
+.st-cross{stroke:var(--line-strong);stroke-width:1;stroke-dasharray:2 2}
+.st-tip{position:absolute;top:6px;transform:translateX(-50%);max-width:240px;padding:4px 8px;background:var(--raised);border:1px solid var(--line-strong);border-radius:6px;font-size:12px;color:var(--ink-muted);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.st-tip b{color:var(--ink)}
+.st-tip .ell{max-width:224px}
+.st-sys{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 36px;border-top:1px solid var(--line);background:var(--surface);color:var(--ink-muted);font-size:12px}
+.st-host .hm{width:120px}
+.st-q{min-width:0}
+.st-ver{min-width:0;font-variant-numeric:tabular-nums}
+.st-keys{display:flex;gap:10px;margin-left:auto;color:var(--ink-faint);font-size:11px}
+.home.phone .st-body{padding:16px;max-width:none}
+.home.phone .st-day{font-size:22px;line-height:28px}
+.home.phone .st-sum,.home.phone .st-tt{font-size:15px}
+.home.phone .st-mvt small,.home.phone .st-line{font-size:13px}
+.home.phone .st-act{height:44px;min-width:88px}
+.home.phone .st-tiles{grid-template-columns:1fr}
+.home.phone .st-nums{grid-template-columns:repeat(2,minmax(0,1fr))}
+.home.phone .st-ev{min-height:44px;align-items:center}
+.home.phone .st-sys{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+.m-status .m-nbody{padding:0;gap:0}
+
+/* ---- V0.load-card: a host's load as a card (LoadCardView, web/src/load-ui.tsx): the rail's hover card on desktop,
+   the same card in the phone's load sheet. A verdict and its sentence, then label · value · quiet note rows. ---- */
+.lcard{display:flex;flex-direction:column;gap:8px;min-width:0;--lv:var(--calm)}
+.lcard.warm{--lv:var(--beam-mark)}
+.lcard.hot{--lv:var(--signal-ink)}
+.lcv{display:flex;align-items:center;gap:8px;min-width:0}
+.lcv b{font:600 13px/18px var(--ui);color:var(--ink);min-width:0}
+.lcv b.mono{font-family:var(--mono)}
+.lcl{display:inline-flex;align-items:center;gap:5px;font:600 12px/16px var(--ui);color:var(--lv);white-space:nowrap}
+.lcl::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--lv)}
+.lcv b+.lcl{margin-left:auto}
+.lcs{margin:0;font:400 13px/18px var(--ui);color:var(--ink)}
+.lcsec{display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--line)}
+.lcsec.first:first-child{padding-top:0;border-top:0}
+/* V0.hover-cards: a list section (the rail's undeclared threads, leftover processes): value and note on one line */
+.lclist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+.lclist li{display:flex;flex-wrap:wrap;column-gap:8px;min-width:0;font:400 12px/17px var(--ui)}
+.lclist li .lcval{min-width:0;overflow-wrap:anywhere}
+.lclist li.hot .lcval,.lcsec dd.hot .lcval{color:var(--signal-ink);font-weight:600}
+.lcsec h4{margin:0;font:600 11px/14px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint)}
+.lcsec dl{margin:0;display:grid;grid-template-columns:fit-content(45%) minmax(0,1fr);column-gap:12px;row-gap:3px}
+/* a label wraps only past 45 % of the card (a provider's long window name); a short one stays on one line */
+.lcsec dt{font:400 12px/17px var(--ui);color:var(--ink-muted);min-width:0;overflow-wrap:anywhere}
+.lcsec dd{margin:0;display:flex;flex-wrap:wrap;column-gap:8px;min-width:0;font:400 12px/17px var(--ui)}
+.lcval{color:var(--ink);font-variant-numeric:tabular-nums}
+.lcn{color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.lcsrc{margin:0;font:400 11px/14px var(--ui);color:var(--ink-faint)}
+.lcpop{position:fixed;z-index:60;width:340px;max-width:calc(100vw - 24px);padding:12px 14px;background:var(--raised);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--lift-2);pointer-events:none}
+.lcpop.pop-click{pointer-events:auto}
+.lcpop .lcf{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);font:400 11px/14px var(--ui);color:var(--ink-faint)}
+.rail .rldr:focus-visible{outline:2px solid var(--harbour);outline-offset:2px;border-radius:4px}
+/* V0.next-step-dock: a Run card in the dock above the composer, short; the full card points to it while it waits */
+.dockrun .ab{gap:8px}
+.dockrun .runc-cmd{max-height:2.5em}
+.dockrun-show{margin-left:auto}
+.runc-dock{font:500 12px/16px var(--ui);color:var(--beam-ink)}
+/* V0.next-step-chips: the optional next steps, chips under the agent's newest message */
+.nsteps{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px;max-width:680px}
+.nsteps-b{display:flex;flex-wrap:wrap;gap:6px}
+.nstep{display:inline-flex;align-items:center;max-width:100%;min-height:30px;padding:4px 12px;border-radius:999px;border:1px solid var(--line-strong);background:var(--raised);font:500 13px/18px var(--ui);color:var(--ink);text-align:left;overflow-wrap:anywhere;cursor:pointer}
+.nstep:hover{border-color:var(--harbour);color:var(--harbour)}
+.nstep.run{font-family:var(--ui)}
+.nstep.settle{border-color:var(--harbour);color:var(--harbour)}
+.nstep.on{border-color:var(--harbour);background:var(--sunken)}
+.dockrun.chiprun{margin:0;max-height:none}
+/* V0.agent-pill: provider · model · effort in one pill (agent-ui.tsx), on both fronts. Hairlines part the segments; a
+   segment that picks lights on hover and holds its select laid over it. */
+.agp{display:inline-flex;align-items:stretch;min-width:0;flex:0 1 auto;overflow:hidden;border-radius:12px;background:var(--sunken);color:var(--ink-muted);white-space:nowrap;--knock:var(--sunken)}
+.agp.chip{height:24px;padding:0;gap:0;font:500 12px/16px var(--ui)}
+.ags{position:relative;display:inline-flex;align-items:center;gap:6px;padding:0 8px;min-width:0;flex:0 1 auto}
+.ags+.ags{box-shadow:inset 1px 0 0 var(--line)}
+.ags.agv{flex-shrink:2}
+.ags.agm{font-family:var(--mono);font-weight:400;color:var(--ink)}
+.ags.age{flex:none;gap:5px}
+.ags .agt{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ags.pick{cursor:pointer}
+.ags.pick:hover{background:var(--select)}
+.ags.pick select{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}
+.agb{display:inline-flex;align-items:flex-end;gap:1.5px;height:10px;flex:none}
+.agb i{width:3px;border-radius:1px;background:var(--line-strong)}
+.agb i.on{background:currentColor}
+.ags.age .agb{color:var(--ink)}
+.agp.field{display:flex;width:100%;height:34px;border-radius:8px;border:1px solid var(--line-strong);background:var(--raised);font:400 14px/20px var(--ui);color:var(--ink);--knock:var(--raised)}
+.agp.field .ags{flex:1 1 0;padding:0 10px}
+.agp.field .ags.age{flex:0 0 auto;min-width:96px}
+.agp.field .ags.pick::after{content:"";margin-left:auto;flex:none;width:5px;height:5px;border:solid var(--ink-faint);border-width:0 1.5px 1.5px 0;transform:translateY(-2px) rotate(45deg)}
+.agp.field .ags.agm{font-size:13px}
+/* The phone: a 28 px chip in the header row, and a 48 px control (a finger's size) in its forms. */
+.agp.ph.chip{height:28px;border-radius:14px;font-size:13px;min-width:36px}
+.agp.ph.chip .ags.agm{font-size:12px}
+.agp.ph.field{height:48px;border-radius:12px;border-color:var(--line);font-size:15px}
+.agp.ph.field .ags{padding:0 12px}
+/* New thread on the phone: provider · model fills the row up to effort, with no fixed effort floor */
+.agp.ph.field .ags.agv{flex:1 1 0;min-width:0}
+.agp.ph.field .ags.agv>.agt:not(.agmn){flex-shrink:2}
+.agp.ph.field .ags.age{flex:0 0 auto;min-width:0}
+/* Details on the phone (read-only provider + model + effort): provider sits on its own top band and the 48 px pickers
+   share the full width underneath, so long provider and model names never squeeze. */
+.agp.ph.field:has(.agm){display:grid;grid-template-columns:minmax(0,1fr) auto;height:auto}
+.agp.ph.field:has(.agm) .ags.agv{grid-column:1 / -1;min-height:36px;padding:6px 12px;background:var(--sunken);color:var(--ink-muted);font-size:13px;font-weight:500;box-shadow:inset 0 -1px 0 var(--line)}
+.agp.ph.field:has(.agm) .ags.agm{min-height:48px;box-shadow:none}
+.agp.ph.field:has(.agm) .ags.agm:last-child{grid-column:1 / -1}
+.agp.ph.field:has(.agm) .ags.age{min-height:48px}
+@media (hover:none){.ags.pick:hover{background:none}}
+.agp.ph select{font-size:16px}
+/* The phone header is narrow: the model keeps its width, the provider is its dot alone while a model shows (its name
+   is in the title and in Details), and the effort is its meter alone (the level's name is in Details). */
+.agp.ph.chip .ags.agm{flex-shrink:0}
+.agp.ph.chip .ags.agv{min-width:24px}
+.agp.ph.chip:has(.ags.agm .agt:not(:empty)) .ags.agv{padding:0 7px}
+.agp.ph.chip:has(.ags.agm .agt:not(:empty)) .ags.agv .agt{display:none}
+.agp.ph.chip .ags.age .agt{display:none}
+/* V0.agent-pill on V0.model-choice: New thread's provider · model is one part over one choice; a hairline inside it
+   keeps the header's look (provider, then the model in mono). */
+.agsep{flex:none;align-self:stretch;width:1px;margin:0 2px;background:var(--line)}
+.ags .agmn{font-family:var(--mono);font-weight:400;font-size:13px}
+.agp.field .ags.agv{flex:1 1 auto}
+/* V0.load-invariants: a broken load invariant, a card at the top of Needs you (invariants-ui.tsx, both fronts) */
+.invc-list{display:flex;flex-direction:column;gap:8px;padding:6px 12px 8px}
+.invc{border:1px solid var(--line);border-left:3px solid var(--signal-ink);border-radius:8px;background:var(--sunken);padding:8px 10px;font:400 12px/17px var(--ui);color:var(--ink-muted);min-width:0}
+.invc-h{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+.invc-t{font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.invc-w{flex:none}
+.invc-s{color:var(--ink);margin-top:2px}
+.invc-e{font-family:var(--mono);font-size:11px;overflow-wrap:anywhere;margin-top:4px}
+.invc-l summary{cursor:pointer;margin-top:4px}
+.invc-l pre{max-height:180px;overflow:auto;font:400 11px/15px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0}
+.invc-n{margin-top:4px}
+.invc-n .err{color:var(--signal-ink)}
+.invc-a{display:flex;gap:6px;margin-top:6px}
+.invc .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}
+/* V0.arrived-from: the bar after an answer moved the owner to this thread. It slides in with a wash that fades, so
+   the switch is seen; the phone's (.m) buttons are 44 px for touch. */
+.arrived{flex:none;display:flex;align-items:center;gap:10px;padding:8px 24px;background:var(--harbour-wash);border-bottom:1px solid var(--line);font-size:13px;animation:arr-in .35s ease-out,arr-wash 2.4s ease-out}
+.arrived .arr-ic{color:var(--harbour);font-weight:700}
+.arrived .arr-tx{flex:1;display:flex;gap:6px;min-width:0;align-items:baseline;color:var(--ink-muted)}
+.arrived .arr-tx b{color:var(--ink);font-weight:600;flex:0 1 auto}
+.arrived .arr-tx span{flex:0 1 auto}
+.arrived button{border:1px solid var(--line-strong);background:var(--raised);color:var(--ink);border-radius:6px;padding:3px 10px;font:inherit;cursor:pointer;flex:none}
+.arrived .arr-x{border-color:transparent;background:none;color:var(--ink-muted);padding:3px 6px}
+.arrived.m{padding:6px 12px}
+.arrived.m .arr-tx{flex-direction:column;gap:0}
+.arrived.m button{min-height:44px;min-width:44px}
+@keyframes arr-in{from{transform:translateY(-100%);opacity:0}to{transform:none;opacity:1}}
+@keyframes arr-wash{from{box-shadow:inset 0 0 0 999px var(--beam-wash)}to{box-shadow:inset 0 0 0 999px transparent}}
+@media (prefers-reduced-motion: reduce){.arrived{animation:none}}
+/* V0.wakeups-via-watch: the agent's wake-up chip (wake-ui.tsx): the header's is a button that cancels it, the row's only shows */
+.wake svg{flex:none}
+button.chip.wake,button.m-chip.wake{border:0;cursor:pointer}
+button.chip.wake:hover{color:var(--ink)}
+.pr.wake{display:inline-flex;align-items:center;gap:4px;max-width:240px;font-family:var(--ui)}
+.pr.wake span{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.one .cl .pr.wake{max-width:168px} /* the row's own line keeps its room; the full text is the title */
+
+/* V0.open-row-glides: a select draws its own chevron, the same in every engine. WebKitGTK (the Linux app) puts its own
+   padding inside a native menulist and cut the text of a 34 px field; with no native look the field's own padding and
+   line height hold. The chevron is two gradients, so it takes the theme's ink without an image. */
+:root select:not([multiple]){appearance:none;-webkit-appearance:none;padding-right:28px;background-image:linear-gradient(45deg,transparent 50%,var(--ink-muted) 50%),linear-gradient(135deg,var(--ink-muted) 50%,transparent 50%);background-position:calc(100% - 15px) 55%,calc(100% - 10px) 55%;background-size:5px 5px;background-repeat:no-repeat;text-overflow:ellipsis}
+
+/* V0.ask-cancel: the question card's quiet controls: Cancel in the header, Back and Skip in the footer */
+.ask .ahx{flex:none;height:22px;padding:0 7px;border-radius:6px;font:500 12px/16px var(--ui);color:var(--ink-muted)}
+.ask .ahx:hover{background:var(--raised);color:var(--ink)}
+.ask .askf .askb{flex:none;height:30px;padding:0 8px;border-radius:8px;font:500 13px/18px var(--ui);color:var(--ink-muted)}
+.ask .askf .askb:hover{background:var(--sunken);color:var(--ink)}
+.ask .askf .askb.on{color:var(--harbour)}
+
+/* V0.setup-wizard: the "Set up · X of 6" inbox card and Settings → Setup wizard (decision 0037) */
+.setup-card{display:flex;flex-direction:column;gap:4px;width:calc(100% - 16px);margin:8px 8px 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer}
+.setup-card:hover{background:var(--raised)}
+.setup-card.phone{width:calc(100% - 24px);margin:8px 12px 4px;min-height:44px}
+.setup-card-h{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 13px/18px var(--ui)}
+.setup-card-go{color:var(--harbour);font-weight:500}
+.setup-card-sub{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.setup-wiz{display:flex;flex-direction:column;gap:10px}
+.setup-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.setup-prog{font:600 13px/18px var(--ui);color:var(--ink-muted)}
+.setup-step{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:6px}
+.setup-step-h{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 14px/20px var(--ui)}
+.setup-step-h strong{flex:1;min-width:0;overflow-wrap:anywhere}
+.setup-pill{flex:none;font:500 11px/16px var(--ui);padding:2px 8px;border-radius:999px;background:var(--sunken);color:var(--ink-muted)}
+.setup-pill.ok{color:var(--ok, #16a34a)}
+.setup-pill.fix{color:var(--harbour)}
+.setup-pill.miss{color:var(--warn, #d97706)}
+.setup-why{margin:0;font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.setup-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+.setup-box{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:8px;background:var(--sunken);font:400 13px/18px var(--ui)}
+.setup-list{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.setup-repo{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--sunken)}
+.setup-repo-info{display:flex;flex-direction:column;min-width:0;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.setup-repo-info strong{font:500 13px/18px var(--ui);color:var(--ink);overflow:hidden;text-overflow:ellipsis}
+.setup-qr{align-items:center;text-align:center}
+.setup-qr-svg svg{width:180px;height:180px;background:#fff;padding:8px;border-radius:8px}
+.setup-qr-url{font-size:11px;word-break:break-all;color:var(--ink-muted)}
+.setup-err{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px}

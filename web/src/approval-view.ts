@@ -5,7 +5,7 @@ import { describeApproval, type ApprovalText } from "./approvals.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import type { Decision, PullRequest } from "./types.ts";
 
-export interface ApprovalView {
+interface ApprovalView {
   /** card header word */
   label: string;
   /** the question the card asks */

@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, moveToast, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, orderProjects, paletteColor, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
+import { PALETTE, moveToast, PALETTE_NAMES, colorName, lineName, matchProjects, monogram, orderProjects, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
-import { thread, TH, snapshot, view } from "./helpers.ts";
+import { filterByProject, thread, TH, snapshot, view } from "./helpers.ts";
 import { applySnapshot, initialStore, upsertProject } from "../src/store.ts";
 
 test("a thread without a project shows No project (a thread in the home folder, V0.23)", () => {
@@ -22,8 +22,6 @@ const hue = (hex: string) => {
 
 test("ten hues, light and dark, never amber", () => {
   assert.equal(PALETTE_NAMES.length, 10);
-  assert.equal(paletteColor("teal", "x", false), "#1d7a74");
-  assert.equal(paletteColor("teal", "x", true), "#4cc1b6");
   assert.ok(!("amber" in PALETTE) && !("orange" in PALETTE) && !("yellow" in PALETTE));
   assert.notEqual(colorName("amber", "fyr"), "amber", "an unknown colour falls back to a palette hue");
   assert.equal(colorName("amber", "fyr"), colorName(undefined, "fyr"), "picked from the name, stable");
@@ -38,8 +36,8 @@ test("ten hues, light and dark, never amber", () => {
   }
 });
 
-test("the palette tokens in app.css match the palette", () => {
-  const css = readFileSync(new URL("../src/app.css", import.meta.url), "utf8");
+test("the palette tokens in base.css match the palette", () => {
+  const css = readFileSync(new URL("../src/base.css", import.meta.url), "utf8");
   for (const [n, c] of Object.entries(PALETTE)) {
     assert.ok(css.includes(`--p-${n}:${c.light};`), `light --p-${n}`);
     assert.ok(css.includes(`--p-${n}:${c.dark};`), `dark --p-${n}`);
@@ -98,16 +96,6 @@ test("picking a project fills its folder and default profile and model", () => {
   const profiles = [{ id: "claude", name: "Claude", color: "#000", models: ["opus", "sonnet"], defaultModel: "opus" }];
   assert.deepEqual(projectDefaults(projects[0], profiles), { cwd: "/home/o/src/web", profile: "claude", model: "sonnet" });
   assert.deepEqual(projectDefaults(projects[2], profiles), { cwd: undefined, profile: undefined, model: undefined });
-});
-
-test("started-by and cross-thread messages", () => {
-  const parent = thread("p", "working", "working", { title: "Map perf", project: "acme/web", projectId: "p_web" });
-  const ts = { p: parent };
-  assert.deepEqual(startedBy({ parent: "p" }, ts), { id: "p", title: "Map perf" });
-  assert.deepEqual(startedBy({ parent: "gone" }, ts), { id: "gone", title: "another thread" });
-  assert.equal(startedBy({ parent: null }, ts), null);
-  assert.equal(messageFrom("p", ts, projects)?.project?.id, "p_web");
-  assert.equal(messageFrom(undefined, ts, projects), null);
 });
 
 test("SPEC 0.5 V0.55: New project from this thread starts from the host's folder, else a name only", async () => {

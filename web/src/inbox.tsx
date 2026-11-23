@@ -8,7 +8,7 @@ import { LoadRail } from "./load-ui.tsx";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { InvariantCards } from "./invariants-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
-import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
+import { ProjectIcon } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { DESKTOP_LOOK, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
@@ -20,6 +20,7 @@ import { BrandMark, StateIcon } from "./icons.tsx";
 import { count } from "./format.ts";
 import { snoozedHint } from "./snooze.ts";
 import { quietLocked, quietNote } from "./quiet.ts";
+import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
 
 export type Theme = "system" | "light" | "dark";
 

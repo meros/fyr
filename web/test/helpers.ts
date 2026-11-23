@@ -2,6 +2,7 @@ import { decodeThread } from "../src/decode.ts";
 import type { HostId } from "../src/hostid.ts";
 import type { Snapshot } from "../src/hostfeed.ts";
 import type { HostInfo } from "../src/hosts.ts";
+import { findProject, projectOf } from "../src/projects.ts";
 import { viewOf, type Store, type View } from "../src/store.ts";
 import type { AttentionState, NeedsCode, Profile, Project, Section, StateDTO, Thread, ThreadDTO } from "../src/types.ts";
 
@@ -54,3 +55,12 @@ export function snapshot(
 
 /** The store as the screens read it. */
 export const view = (s: Store): View => viewOf(s);
+
+/** The inbox filter, as a test oracle for what the screens show (filters.ts has the real one): only this project's threads; null shows all. */
+export function filterByProject(threads: Record<string, Thread>, projectId: string | null, projects: Project[]): Record<string, Thread> {
+  if (!projectId) return threads;
+  const want = findProject(projects, projectId)?.id ?? projectId;
+  const out: Record<string, Thread> = {};
+  for (const t of Object.values(threads)) if (projectOf(t, projects)?.id === want) out[t.id] = t;
+  return out;
+}

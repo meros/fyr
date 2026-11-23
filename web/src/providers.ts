@@ -132,13 +132,6 @@ export function parseModelIds(text: string): string[] {
   return out;
 }
 
-/** "Opus 5.5, Sonnet 5.5 + 2" */
-export function modelsSummary(ms: ProviderModel[], max = 2): string {
-  if (!ms.length) return "No models yet";
-  const names = ms.slice(0, max).map((m) => m.name || m.id);
-  return ms.length > max ? `${names.join(", ")} + ${ms.length - max}` : names.join(", ");
-}
-
 /** The effort levels a profile's model takes; [] when none (effort is then not shown). */
 export function effortsFor(p: Profile | undefined, model: string): string[] {
   return p?.modelCaps?.find((m) => m.id === model)?.efforts ?? [];

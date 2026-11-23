@@ -169,11 +169,6 @@ export function profilesByHost(s: Pick<Store, "hosts">): Record<string, Profile[
   return out;
 }
 
-/** The actions one host offers. */
-export function actionsOn(s: Pick<Store, "hosts">, host: HostId | undefined): ActionInfo[] {
-  return (host && s.hosts[host]?.actions) || [];
-}
-
 /** Decision 0031 2.6 (2): the update banner is the update of the host the front runs in: that host's own deploy. */
 export function bannerDeploy(s: Pick<Store, "hosts" | "front">): DeployProgress | null {
   return s.hosts[s.front.id as HostId]?.deploy ?? null;

@@ -90,12 +90,6 @@ export function others(s: PeerState | null): MemberRow[] {
   return (s?.members ?? []).filter((m) => !m.self);
 }
 
-/** The Hosts nav line's tail: how many installs are paired, "" when none. */
-export function pairedSummary(s: PeerState | null): string {
-  const n = others(s).length;
-  return n ? `${n} paired` : "";
-}
-
 /** An invite as typed: spaces out, upper case. */
 export function typedInvite(s: string): string {
   return s.replace(/\s+/g, "").toUpperCase();

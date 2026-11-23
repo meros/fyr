@@ -1,0 +1,308 @@
+/* SPEC 0.5 V0.24: a part of the screen that failed to render */
+.crash { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--signal-ink); border-radius: 6px; background: var(--raised); color: var(--ink); font-size: 13px; min-width: 0; }
+.crash b { font-weight: 600; }
+.crash-msg { color: var(--ink-muted); overflow-wrap: anywhere; min-width: 0; flex: 1 1 200px; font-family: var(--mono); font-size: 12px; }
+.crash-btns { display: flex; gap: 8px; }
+.crash-btns button { font: inherit; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; }
+
+/* SPEC 0.5 V0.27: an effect card in words; the technical form behind Details */
+.eff{display:flex;flex-direction:column;gap:6px;min-width:0}
+.eff p{margin:0;font:400 14px/20px var(--ui);color:var(--ink);overflow-wrap:anywhere}
+.eff .eff-what{color:var(--ink-muted)}
+.eff-det{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.eff-det summary{cursor:pointer;min-height:28px;display:flex;align-items:center;list-style-position:inside}
+.eff-det .eff-who{margin:4px 0 6px}
+.eff-det pre{margin:0;padding:8px 10px;border-radius:8px;background:var(--sunken);font:400 12px/18px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.m-eff p{font-size:16px;line-height:23px}
+.m-eff .eff-det summary{min-height:44px;font-size:15px}
+.eff-det summary{list-style:none;gap:6px}
+.eff-det summary::-webkit-details-marker{display:none}
+.eff-det summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin:0 4px 0 2px}
+.eff-det[open] summary::before{transform:rotate(45deg)}
+
+/* V0.readable-approvals: human-readable approval card body, shared between desktop and phone (.m-appr) */
+.appr{display:flex;flex-direction:column;gap:8px;min-width:0}
+.appr-sum{margin:0;font:400 14px/20px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.appr pre.appr-cmd{margin:0;padding:9px 11px;border-radius:8px;background:var(--sunken);font:400 13px/19px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);max-height:calc(19px * 10 + 18px);overflow-y:auto}
+.appr-fields{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:var(--sunken);min-width:0}
+.appr-f{display:flex;flex-direction:column;gap:2px;min-width:0}
+.appr-k{font:500 11px/15px var(--ui);color:var(--ink-muted);letter-spacing:.01em}
+.appr-v{margin:0;font:400 14px/20px var(--ui);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.appr pre.appr-v.mono{padding:6px 8px;margin:2px 0 0;border-radius:6px;background:var(--raised);font:400 12px/18px var(--mono);max-height:calc(18px * 8 + 12px);overflow-y:auto}
+.appr-v.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.appr-more{align-self:flex-start;padding:4px 0;font:500 13px/18px var(--ui);color:var(--harbour);cursor:pointer}
+.appr-more:hover{text-decoration:underline}
+.appr-hidden{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.appr-where{font:400 12px/16px var(--mono);color:var(--ink-muted);min-width:0}
+.m-appr{flex:none}
+.m-appr .appr-sum{font-size:15px;line-height:22px}
+.m-appr pre.appr-cmd{border-radius:10px;padding:10px 12px;font-size:13px;line-height:19px}
+.m-appr .appr-fields{padding:11px 13px;gap:10px}
+.m-appr .appr-k{font-size:12px;line-height:16px}
+.m-appr .appr-v{font-size:15px;line-height:22px}
+.m-appr pre.appr-v.mono{font-size:13px;line-height:19px}
+.m-appr .appr-more{min-height:44px;display:inline-flex;align-items:center;font-size:15px;line-height:20px;margin:-6px 0 -8px}
+.m-appr .eff-det summary{min-height:44px;font-size:15px}
+
+/* SPEC 0.5 V0.21: the end of a run in words; the live line while working */
+.runmark .rm{display:inline-flex;align-items:center;gap:6px;padding:2px 0;border:0;background:none;color:var(--ink-faint);font:400 12px/16px var(--ui);cursor:default}
+.runmark .rm[aria-expanded]{cursor:pointer}
+.runmark.fail .rm{color:var(--signal-ink)}
+.runmark .rmx{color:var(--ink-faint)}
+.cmpw .live{display:flex;align-items:center;gap:8px;min-width:0;margin:0 0 6px;color:var(--ink-muted);font:400 13px/18px var(--ui)}
+/* A narrow thread pane: the field keeps room to type; key hints go first, labels never wrap. */
+.cmpw{container-type:inline-size}
+.cmp .in{min-width:7em}
+.cmp .btn{flex:none;white-space:nowrap}
+@container (max-width:560px){.cmp kbd,.cmp .hint{display:none}}
+@container (max-width:380px){.cmp{flex-wrap:wrap}.cmp .in{flex-basis:100%}}
+
+/* SPEC 0.5 V0.31: Fyr's right-click menu */
+.ctxm{position:fixed;z-index:60;min-width:200px;max-width:320px;display:flex;flex-direction:column;padding:5px;background:var(--raised);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.2);font:400 13px/18px var(--ui);color:var(--ink)}
+.ctxm-i{display:flex;align-items:center;gap:12px;min-height:30px;padding:0 10px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;text-align:left;cursor:default;min-width:0}
+.ctxm-i .ell{flex:1;min-width:0}
+.ctxm-i kbd{flex:none;color:var(--ink-faint);font:400 11px/16px var(--mono);background:none;border:0;padding:0}
+.ctxm-i:hover:not([aria-disabled=true]),.ctxm-i:focus-visible{background:var(--select);outline:none}
+.ctxm-i[aria-disabled=true]{color:var(--ink-faint)}
+.ctxm-sep{height:1px;margin:4px 6px;background:var(--line)}
+
+/* The rail: an empty section cannot be selected; the host name stays on one line. */
+.ri:disabled,.ri:disabled:hover:not(.on){opacity:.45;cursor:default;background:none;box-shadow:none}
+.rail .foot .hn{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+
+/* SPEC 0.5 V0.34: Copy on every output */
+.codeb{position:relative;min-width:0}
+.codeb>.cpy{position:absolute;top:6px;right:6px;z-index:1}
+.cpy{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);cursor:pointer;opacity:0;transition:opacity .12s}
+.codeb:hover>.cpy,.msgw:hover>.cpy,.cv:hover>.msgw>.cpy,.cpy:focus-visible{opacity:1}
+.msgw{position:relative;min-width:0}
+.msgw>.msgcp{position:absolute;right:0;bottom:-22px}
+/* V0.187: an entry clips what leaves its box (content-visibility below), so the strip Copy hangs in is the entry's own
+   padding, given back as a negative margin: the space between entries stays. Above the next entry while hovered. */
+.cv:has(>.msgw>.msgcp){padding-bottom:22px;margin-bottom:-22px}
+.cv:has(>.msgw>.msgcp):hover{position:relative;z-index:1}
+.cpy:hover{color:var(--ink);border-color:var(--line-strong)}
+/* No hover on a touch screen: Copy stays visible, in the flow under the message. */
+@media (hover:none){.cpy{opacity:.7}.msgw>.msgcp{position:static;display:block;margin:4px 0 0 auto}.cv:has(>.msgw>.msgcp){padding-bottom:0;margin-bottom:0}}
+.md .codeb pre{padding-right:56px}
+
+/* SPEC 0.5 V0.36: dismiss a merged PR from its chip */
+.prw{display:inline-flex;align-items:center;gap:2px;min-width:0;max-width:100%}
+.chip.prx{padding:0 7px;border:0;background:var(--sunken);color:var(--ink-muted);cursor:pointer;font:inherit}
+.chip.prx:hover{color:var(--ink)}
+
+/* SPEC 0.5 V0.37: the pinned live view above the conversation */
+.lv{flex:none;display:flex;flex-direction:column;background:var(--raised);border-bottom:1px solid var(--line);min-width:0;--knock:var(--raised)}
+.lv-h{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 24px;text-align:left;font:500 12px/16px var(--ui);color:var(--ink-muted);min-width:0}
+.lv-k{flex:none;text-transform:uppercase;letter-spacing:.06em;font-size:11px;color:var(--ink-faint)}
+.lv-hl{flex:1;min-width:0;color:var(--ink);font-weight:500;font-size:13px}
+.lv-s{margin-left:auto;flex:none;font-weight:400;color:var(--ink-faint)}
+.lv-h .chev{flex:none;color:var(--ink-faint)}
+.lv-f{display:block;width:100%;border:0;background:var(--raised);transition:opacity .2s;touch-action:pan-x pan-y}
+.lv.dim .lv-f{opacity:.55}
+.lv.dim .lv-s{color:var(--ink-muted)}
+.lv.shut .lv-h{min-height:40px}
+.you.vmsg .vk{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;background:var(--sunken);color:var(--ink-muted);font:500 11px/18px var(--ui);vertical-align:1px}
+.lvc{margin-left:auto;flex:none;display:flex;align-items:center;gap:6px;height:30px;font:500 13px/18px var(--ui);color:var(--ink);cursor:pointer;white-space:nowrap}
+.lvc input{margin:0}
+.m-lvc{gap:8px}
+.m-lvc input{margin:0;width:18px;height:18px}
+@media (max-width:760px){.lv-h{padding:0 12px;min-height:40px}}
+
+/* SPEC 0.5 V0.37: the View tab fills the pane; the Conversation tab shows one headline bar. */
+.lv.full{flex:1;min-height:0;display:flex;flex-direction:column}
+.lv.full .lv-h{cursor:default}
+.lv.full .lv-f{flex:1;min-height:0;height:auto}
+.lv.full>.fzw{flex:1;min-height:0;display:flex;flex-direction:column}
+.lv-top{display:flex;align-items:center;min-width:0}
+.lv-top .lv-h{flex:1}
+.lv-top .pv-fs{margin-right:16px}
+
+/* SPEC 0.5 V0.165: an HTML preview or the live view full screen, in place. The browser's full screen puts the element
+   in the top layer; without it (iPhone) the class alone covers the screen. The page zooms by steps inside .fzw. */
+.fzw{min-width:0}
+.isfs{position:fixed;inset:0;z-index:45;margin:0;max-width:none;width:100%;height:100%;border:0;border-radius:0;display:flex;flex-direction:column;background:var(--raised);padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overscroll-behavior:contain}
+.isfs>.fzw{position:relative;flex:1;min-height:0;overflow:hidden}
+.isfs>.fzw>iframe{position:absolute;left:0;top:0;border:0;max-width:none}
+.fz-bar{flex:none;display:flex;align-items:center;gap:6px;min-height:52px;padding:0 4px 0 16px;border-bottom:1px solid var(--line);min-width:0;color:var(--ink)}
+.fz-bar .pv-ft{flex:1;min-width:0;font:500 15px/20px var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fz-bar .fz-in,.fz-bar .fz-out{flex:none;width:44px;height:44px;border-radius:22px;font-size:22px;line-height:44px;text-align:center}
+.fz-bar .fz-reset{flex:none;min-width:60px;height:32px;padding:0 8px;border:1px solid var(--line);border-radius:8px;font:500 12px/30px var(--mono);text-align:center;font-variant-numeric:tabular-nums}
+.fz-bar .pv-x{color:var(--ink)}
+.fz-bar button:disabled{opacity:.35}
+
+/* SPEC 0.5 V0.38: messages outside the screen skip layout and paint; the browser keeps
+   each one's real height once it has been drawn, so scrolling stays exact. */
+.convo-in>*{content-visibility:auto;contain-intrinsic-size:auto 64px}
+/* V0.165: content-visibility contains paint, which would trap a full-screen preview's fixed layer inside its entry */
+.convo-in>*:has(.isfs){content-visibility:visible;contain:none}
+
+/* SPEC 0.5 V0.39, V0.118: the update status, a line in the layout (never over a control). The desktop's .shell is a
+   column: the status on top, the app below it takes the rest. On the phone it is the first line of .m-app. */
+.shell{display:flex;flex-direction:column;height:100vh;height:100dvh}
+.shell>.app{flex:1;min-height:0;height:auto}
+.dbn{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px;min-height:30px;padding:0 6px 0 12px;background:var(--sunken);border-bottom:1px solid var(--line);font:500 12.5px/18px var(--ui);color:var(--ink-muted);min-width:0}
+.dbn-x{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;min-height:30px;padding:0;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.dbn-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dbn.open .dbn-t{white-space:normal;overflow-wrap:anywhere;padding:6px 0}
+.dbn.ok{color:var(--ink)}
+.dbn.fail{color:var(--signal-ink);background:color-mix(in srgb,var(--signal-ink) 8%,var(--sunken))}
+.dbn-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--calm)}
+.dbn.fail .dbn-dot{background:var(--signal-ink)}
+.dbn-spin{width:12px;height:12px;flex:none;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--ink-muted);animation:dbn-r .8s linear infinite}
+@keyframes dbn-r{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.dbn-spin{animation:none}}
+.dbn-b{flex:none;border:0;background:none;color:var(--ink-muted);font:inherit;cursor:pointer;padding:0 8px;min-height:28px;border-radius:6px}
+.dbn-b:hover{color:var(--ink);background:var(--raised)}
+.dbn-b.dbn-now{color:var(--signal-ink);font-weight:600;white-space:nowrap}
+.dbn-more{flex-basis:100%;margin:0 0 8px;max-height:30vh;overflow:auto;padding:8px;border-radius:8px;background:var(--raised);color:var(--ink);font:400 12px/17px var(--mono);white-space:pre-wrap}
+/* the phone: 44 px targets (touch), a slightly larger type */
+.dbn.m{padding:0 0 0 16px;font-size:14px;line-height:20px}
+.dbn.m .dbn-x{min-height:44px}
+.dbn.m .dbn-b{min-height:44px;min-width:44px}
+
+/* SPEC 0.5 V0.40: the thread list can be hidden; the open thread then takes its room. */
+.app.nolist{grid-template-columns:76px minmax(0,1fr)}
+.app.nolist>.ib{display:none}
+/* V0.184: the handle on the list's edge. It sits mostly over the conversation's margin, so the list's scrollbar stays
+   reachable. During a drag nothing is selected and no iframe (a live view, a preview) takes the pointer. */
+.lrz{position:absolute;top:0;bottom:0;right:-6px;width:8px;z-index:3;cursor:col-resize;touch-action:none;outline:0}
+.lrz::after{content:"";position:absolute;top:0;bottom:0;left:1px;width:2px}
+.lrz:focus-visible::after,html.list-resizing .lrz::after{background:var(--harbour)}
+@media (hover:hover){.lrz:hover::after{background:var(--harbour)}}
+/* A finger needs a larger target than a mouse; the line it shows stays on the edge. */
+@media (pointer:coarse){.lrz{right:-14px;width:24px}.lrz::after{left:9px}}
+html.list-resizing,html.list-resizing *{cursor:col-resize!important;user-select:none!important;-webkit-user-select:none!important}
+html.list-resizing iframe{pointer-events:none}
+/* The filters at any list width. A mouse has no sideways swipe, so on the desktop the project chips wrap (three lines,
+   then they scroll) and the host segments give way; the phone keeps its one row, which a finger swipes. */
+.ib .pfrow{flex-wrap:wrap;overflow-x:hidden;overflow-y:auto;max-height:102px}
+.ib .pfc{max-width:min(150px,100%)}
+.ib .pfc.on.quiet{max-width:min(260px,100%)}
+.ri.lt{margin-top:6px}
+.ri.lt svg{display:block;margin:0 auto 2px}
+
+/* SPEC 0.5 V0.41: pacing. The outcome (the owner's words, the agent's answer, previews, failures)
+   reads at full weight with room before it; the work on the way (earlier messages, tool steps,
+   system lines) is small, muted, borderless and close together, folded into one line per stretch. */
+.convo-in{gap:0}
+.cv-strip{display:flex;flex-direction:column;gap:8px;padding:0 0 12px;margin-bottom:4px}
+.cv-strip:empty{display:none}
+.cv{min-width:0;display:flex;flex-direction:column;margin-top:4px}
+.convo-in>.cv:first-child,.convo-in>.earlier+.cv{margin-top:0}
+.cv.out{margin-top:22px}
+.cv.out+.cv.out{margin-top:14px}
+.cv.out+.cv.proc{margin-top:12px}
+.cv.end{margin-top:6px}
+.cv.end+.cv{margin-top:30px}
+.cv.own .dl{font-size:11px}
+.youw .you .att-img{border-color:var(--line)}
+.youw .you .att-file,.youw .you .att-dl{background:var(--raised)}
+.msgw.proc .cl{font:400 13.5px/20px var(--ui);color:var(--ink-muted)}
+.msgw.proc .md p,.msgw.proc .md ul,.msgw.proc .md ol{margin-bottom:6px}
+.msgw.proc .md pre{font-size:12px;line-height:17px}
+.act{border:0;border-radius:0;background:transparent;padding:0;--knock:var(--surface)}
+.act .tl{padding:0 4px 0 0;height:24px}
+.act .tl.row{padding-left:22px}
+.act .tl.grp .tlt{color:var(--ink-muted)}
+.act .al{padding:0 4px 0 0;height:24px}
+.act.nested{border-left:1px solid var(--line);padding-left:10px}
+.tl:hover,.al.click:hover{background:none}
+.tl:hover .tlt,.al.click:hover .s{color:var(--ink)}
+.foldw{display:flex;flex-direction:column;max-width:680px;min-width:0}
+.tl.fold{padding:0 4px 0 0;height:24px;font-size:12.5px}
+.act .tl,.tl.fold{grid-template-columns:16px minmax(0,max-content) auto;justify-content:start}
+.tl.fold .d{color:var(--ink-faint);font-size:11px}
+.foldb{display:flex;flex-direction:column;margin:2px 0 4px 6px;padding:2px 0 2px 14px;border-left:1px solid var(--line)}
+.foldb>.cv:first-child{margin-top:0}
+.qlh{color:var(--ink-faint)}
+
+/* SPEC 0.5 V0.42: the host folder picker; V0.55: the project's one folder */
+.fpick{display:flex;flex-direction:column;gap:8px;min-width:0}
+.fps{display:flex;flex-direction:column;gap:10px;max-height:min(60vh,520px);overflow-y:auto;min-width:0}
+.fsec{flex:none;display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.fsec h4{margin:0;padding:6px 10px;font:600 11px/16px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-muted);background:var(--sunken);border-bottom:1px solid var(--line)}
+.fsec.plempty{border:0}
+.fpr{flex:none;display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:40px;padding:4px 10px;border-bottom:1px solid var(--line);text-align:left;min-width:0;width:100%}
+.fpr:last-child{border-bottom:0}
+.fpr:hover,.fpr:focus{background:var(--sunken)}
+.fpr:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.fpi{display:grid;place-items:center;color:var(--ink-muted)}
+.fpi.repo{color:var(--harbour)}
+.fgo{font:400 18px/1 var(--ui);color:var(--ink-muted)}
+.fcrumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;padding:6px 10px;border-bottom:1px solid var(--line);font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
+.fcrumbs b{font-weight:600;min-width:0;max-width:100%}
+.fcrumb{padding:2px 4px;border-radius:4px;color:var(--harbour);font:inherit}
+.fcrumb:hover{background:var(--sunken)}
+.fsep{color:var(--ink-muted)}
+.fbar{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:8px 10px;border-top:1px solid var(--line);min-width:0}
+.fbar .btn.p{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fname{flex:1 1 160px;min-width:0;height:30px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);font:400 13px/18px var(--mono)}
+.fline.scratch .ell{font-family:var(--ui);color:var(--ink-muted)}
+.pfchg{align-self:flex-start}
+/* SPEC 0.5 V0.44: provider quota, calm: colour only from 80 %. */
+.qline{min-width:0;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.qline .qsum{display:flex;align-items:center;gap:6px;max-width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
+.qline .qsum i{width:8px;height:8px;border-radius:50%;flex:none}
+.qline.stale .qsum .ell{opacity:.7}
+.qline .qdet{margin:6px 0 2px;padding:0 0 0 14px}
+.qline .hot,.qchip .hot,.qfig.hot{color:var(--signal-ink);font-weight:600}
+/* V0.quota-in-thread: the quota of the thread's provider, a chip in the desktop thread's header: quiet, tabular
+   figures, red only from 80 % (V0.44). It shrinks after the chips with names do. */
+.qchip{font-variant-numeric:tabular-nums;cursor:default;flex-shrink:1;max-width:100%}
+.qchip.click{cursor:pointer}
+.qchip.click:hover{color:var(--ink)}
+.qchip.stale>span{opacity:.7}
+/* V0.quota-reset-wake: wake-on-reset buttons under a quota card (desktop popover and phone Details) */
+.qwake{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);min-width:0;max-width:100%}
+.qwake .btn{max-width:100%;min-width:0;height:auto;min-height:28px;padding:4px 10px;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:17px}
+/* SPEC 0.5 V0.80: the machine load in the rail, and a working thread's CPU in its row; colour only when hot. */
+.rail .rld{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:8px;font:400 10px/14px var(--mono);color:var(--ink-muted)}
+.rail .rld+.railx,.rail .rld+.foot{margin-top:8px}
+:is(.rail,.m-load,.m-lsheet) .rldr{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default;max-width:100%;--lv:var(--calm)}
+:is(.rail,.m-load,.m-lsheet) .rldr.warm{--lv:var(--beam-mark)}
+:is(.rail,.m-load,.m-lsheet) .rldr.hot{--lv:var(--signal-ink)}
+.rail .rldr small{font:400 9px/11px var(--ui);color:var(--ink-faint)}
+/* V0.99: the load as a ring (share of the cores, coloured by level) with the figure inside. */
+.rail .rldr small.rlds{white-space:nowrap}
+/* Decision 0029 S2: the slot budget in use as a bar under the ring. */
+/* The bar keeps the pips' 11 px (V0.141: the rail's middle fits at 900 px with two hosts). */
+.rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
+.qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
+/* V0.45: the handover dialog and the divider in the conversation */
+.ho-from{font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.ho-from b{color:var(--ink);font-weight:600}
+.ho-rung{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:500 13px/18px var(--ui);color:var(--ink)}
+.ho-rung small{font-weight:400;color:var(--ink-muted)}
+.ho-wait{color:var(--ink-faint);font-weight:400}
+.db.ho-ph{overflow:visible;padding:4px 16px 8px;flex:none} /* the sheet scrolls; the form keeps its height */
+.df.ho-ph{border-top:0;padding:8px 16px 0}
+.df.ho-ph .btn{min-height:44px;flex:1}
+.db.ho-ph .fld select{height:44px;font-size:16px} /* touch size; 16 px keeps iOS from zooming */
+.ho-map{margin:-2px 0 4px;overflow-wrap:anywhere}
+.ho-dir{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:13px;min-width:0}
+.ho-dir .mono{flex:1;min-width:0}
+.ho-wt{display:flex;align-items:flex-start;gap:8px;font:400 13px/18px var(--ui);color:var(--ink);cursor:pointer}
+.ho-wt input{margin-top:3px;flex:none}
+.ho-note{padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2,var(--surface));font:400 12px/17px var(--ui);color:var(--ink-muted)}
+.ho-linkbtn{margin-top:4px;background:none;border:0;padding:2px 6px;color:var(--accent,var(--ink));font:500 12px/16px var(--ui);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.ho-linkbtn:hover{opacity:.8}
+.hobar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 16px;border-bottom:1px solid var(--line);background:var(--surface-2,var(--surface));font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.hobar.m-hobar{padding:8px 14px}
+.hobar .btn{flex:none}
+.db.ho-ph .row2{grid-template-columns:minmax(0,1fr)} /* the phone stacks To and Effort: a provider · model name needs the width */
+.hodiv{display:flex;align-items:center;gap:10px;margin:14px 0 6px;color:var(--ink-muted);font:500 12px/16px var(--ui)}
+.hodiv::before,.hodiv::after{content:"";flex:1;height:1px;background:var(--line)}
+.hodiv .hot{display:flex;flex-direction:column;align-items:center;text-align:center;max-width:80%;min-width:0}
+.hodiv small{font-weight:400;color:var(--ink-faint)}
+
+/* SPEC U15: the question card's footer: progress and one button that says what it does */
+.ask .askf{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px}
+.ask .askf .askp{margin-right:auto;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+
+/* SPEC 0.5 V0.48, V0.196: the clock that runs down to Snoozed or Settled closing by itself, on both fronts */
+.ahc{flex:none;width:12px;height:12px;border-radius:50%;margin-left:6px;background:conic-gradient(var(--ink-faint) var(--p, 100%), transparent 0);animation:ahc var(--ah, 10s) linear forwards;opacity:.8}
+@property --p{syntax:"<percentage>";inherits:false;initial-value:100%}
+@keyframes ahc{from{--p:100%}to{--p:0%}}
+@media (prefers-reduced-motion: reduce){.ahc{animation:none}}
+

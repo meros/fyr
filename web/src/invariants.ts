@@ -3,7 +3,7 @@
 // Settings → Automation lists each invariant with its last violation and count.
 // Pure: invariants-ui.tsx prints them, on the desktop and the phone alike.
 import type { HostId } from "./hostid.ts";
-import type { Guard, InvariantCard, Invariants } from "./guard.ts";
+import type { InvariantCard, Invariants } from "./guard.ts";
 import type { HostLoad } from "./host-load.ts";
 import { relTime, whenLabel } from "./format.ts";
 
@@ -17,7 +17,7 @@ export interface HostCard {
   fixDir: string | null;
 }
 
-const guardOf = (h: HostLoad) => (h.slots as { guard?: Guard } | undefined)?.guard;
+const guardOf = (h: HostLoad) => h.slots?.guard;
 const invOf = (h: HostLoad): Invariants | undefined => guardOf(h)?.invariants ?? h.invariants;
 const kindOf = (x: { kind?: "load" | "thread" }): "load" | "thread" => (x.kind === "thread" ? "thread" : "load");
 

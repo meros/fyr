@@ -16,6 +16,7 @@ import type { ThreadDTO, Project, CommandReply, StateDTO } from "./types.ts";
 import type { HostInfo } from "./hosts.ts";
 import { addressable, bare, ref, stampDeploy, stampEvent, stampLoad, stampProject, stampSlots, stampThread, unrefDeep, type Snapshot } from "./hostfeed.ts";
 import { asHostId, type HostId } from "./hostid.ts";
+import { baseName } from "./paths.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -661,7 +662,7 @@ function smallFs(dirs: string[]) {
   const home = "/home/owner";
   const all = new Set([home, ...dirs.map((d) => `${home}/${d}`)]);
   const repos = new Set(dirs.slice(0, 2).map((d) => `${home}/${d}`));
-  const dirOf = (p: string) => ({ name: p.split("/").pop() ?? p, path: p, ...(repos.has(p) ? { repo: true } : {}) });
+  const dirOf = (p: string) => ({ name: baseName(p), path: p, ...(repos.has(p) ? { repo: true } : {}) });
   const norm = (p: string) => (p.trim() === "" || p.trim() === "~" ? home : p.trim().startsWith("~/") ? home + p.trim().slice(1) : p.trim()).replace(/\/+$/, "");
   return {
     list(path: string) {

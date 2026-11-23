@@ -1,0 +1,127 @@
+/* Projects (SPEC V0.23): icon, tag, lists, filter, project screen; started-by and cross-thread messages (V0.22). */
+.pi{display:inline-grid;place-items:center;flex:none;border-radius:28%;color:var(--pc);background:color-mix(in srgb,var(--pc) 16%,transparent);font-family:var(--ui);font-weight:600;line-height:1;letter-spacing:-.02em;overflow:hidden;vertical-align:-3px}
+/* V0.116: an image icon fills the square; the glyph's tint stays behind a transparent logo. */
+.pi.img{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.pi.img img{width:100%;height:100%;object-fit:cover;display:block}
+.pi.emoji{background:color-mix(in srgb,var(--pc) 12%,transparent);font-weight:400}
+.pi.all{width:28px;height:28px;background:var(--sunken);color:var(--ink-muted);font-size:18px}
+.ptag{display:inline-flex;align-items:center;gap:4px;max-width:100%;min-width:0;color:var(--pc);font-weight:500;vertical-align:bottom}
+button.ptag{padding:0}
+.ptag .ptn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ell .ptag,.m .ptag{display:inline}
+.ell .ptag .pi,.m .ptag .pi{margin-right:4px}
+.from{color:var(--ink-muted);white-space:nowrap}
+.from.link{padding:0;color:var(--harbour);font:inherit;cursor:pointer}
+.from.link:hover{text-decoration:underline}
+.chip.fromc{background:transparent;padding:0 4px;max-width:30%}
+.chip.fromc .from{overflow:hidden;text-overflow:ellipsis}
+.chip.proj{color:var(--pc);background:color-mix(in srgb,var(--pc) 10%,var(--sunken));cursor:pointer}
+.chip.proj span{color:var(--pc)}
+/* V0.28: Make project “<repo>” next to "No project" */
+.fromthread{align-self:flex-start;max-width:72%;min-width:0;border:1px solid var(--line);border-left:3px solid var(--harbour);border-radius:4px 14px 14px 14px;background:var(--raised);padding:8px 12px;display:flex;flex-direction:column;gap:4px}
+.fth{display:flex;align-items:center;gap:6px;min-width:0;padding:0;font:500 12px/16px var(--ui);color:var(--ink-muted);cursor:pointer}
+.fth .ell{color:var(--ink)}
+.ftw{flex:none}
+.ftb{font:400 14px/21px var(--ui);color:var(--ink);white-space:pre-wrap}
+.pfrow{flex:none;display:flex;gap:6px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.pfc{flex:none;display:inline-flex;align-items:center;gap:6px;max-width:150px;height:26px;padding:0 9px 0 5px;border:1px solid var(--line);border-radius:13px;font:500 12px/16px var(--ui);color:var(--ink-muted);min-width:0}
+.pfc.on{border-color:var(--pc);color:var(--pc);background:color-mix(in srgb,var(--pc) 10%,transparent)}
+.pfc.on.quiet{max-width:260px}
+.pfc .pfq{flex:none;font-weight:400;color:var(--ink-muted)}
+.pfc.quiet:not(.on) .ell{opacity:.6}
+.pfx{flex:none;width:26px;height:26px;border-radius:13px;background:var(--sunken);color:var(--ink-muted);font-size:15px;line-height:26px;text-align:center}
+/* V0.170: the host mark: a circle (hosts) with the machine's glyph in the host's colour; squares are projects. */
+.hmark{flex:none;position:relative;display:inline-grid;place-items:center;width:var(--hs,16px);height:var(--hs,16px);border-radius:50%;background:color-mix(in srgb,var(--hc) 16%,transparent);color:var(--hc)}
+.hmark svg{width:calc(var(--hs,16px) * .62);height:calc(var(--hs,16px) * .62)}
+.hmark .hme{font-size:calc(var(--hs,16px) * .66);line-height:1}
+.hmark.off::after{content:"";position:absolute;right:-2px;bottom:-2px;width:6px;height:6px;border-radius:50%;background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
+/* V0.169: the filter rows. Row 1 is a switch with one segment per host (dot, short name, its count); a host turned
+   off is grey, struck through and says "hidden". Row 2 is the project chips. One line under both. */
+.frows{flex:none;border-bottom:1px solid var(--line)}
+.frows .pfrow{border-bottom:0}
+.hfrow{display:flex;flex-wrap:wrap;gap:6px;margin:6px 12px 0}
+.hfrow:last-child{margin-bottom:6px}
+.hft{flex:none;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px 0 5px;border:1px solid var(--line);border-radius:13px;background:var(--raised);font:500 12px/16px var(--ui);font-variant-numeric:tabular-nums;color:var(--ink)}
+.hft .hmark{pointer-events:none} /* the button's tooltip says what a click does; the mark's would cover it */
+.hft.off{background:none;color:var(--ink-faint)}
+.hft.off .hmark{filter:grayscale(1);opacity:.55}
+.hft.off .hn{text-decoration:line-through}
+/* V0.134: the list when the filter leaves nothing in view. */
+.fempty{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.fempty .fe1,.m-fempty .fe1{font:500 13px/18px var(--ui);color:var(--ink)}
+.fempty .fe2,.m-fempty .fe2{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.fempty .fe3{margin-top:6px}
+.plist{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pq{height:34px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);font:400 14px/20px var(--ui);min-width:0}
+.pls{display:flex;flex-direction:column;max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+.pli{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:48px;padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;min-width:0}
+.pli:last-child{border-bottom:0}
+.pli:hover{background:var(--sunken)}
+.pli.on{background:var(--select)}
+.plt{display:flex;flex-direction:column;min-width:0}
+.pln{font:500 14px/19px var(--ui);color:var(--pc,var(--ink))}
+.pln.big{font:600 18px/24px var(--ui)}
+.pls2{font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.plc{font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.plempty{padding:12px;font:400 13px/18px var(--ui);color:var(--ink-muted)}
+/* V0.74: hold 30 s to show quiet projects in New thread. No scroll, selection or callout start on it. */
+.qhold{position:relative;display:flex;align-items:center;gap:10px;min-height:48px;padding:8px 12px;border-top:1px solid var(--line);background:var(--sunken);overflow:hidden;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.qhold.on{cursor:default;justify-content:space-between}
+.qhf{position:absolute;inset:0 auto 0 0;background:var(--harbour-wash);pointer-events:none}
+.qht{position:relative;font:400 13px/18px var(--ui);color:var(--ink-muted);min-width:0}
+.qhold.held .qht{color:var(--ink)}
+/* V0.114: the gate in place of a quiet project's threads (filter, search) or a quiet thread (a link); the same hold. */
+.qgate{display:flex;flex-direction:column;margin:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--raised);overflow:hidden;max-width:440px;align-self:stretch}
+.empty-th .qgate{align-self:center;width:calc(100% - 24px)}
+.qgh{padding:12px 12px 0;font:500 14px/20px var(--ui);color:var(--ink)}
+.qgb{padding:2px 12px 0;font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.qgate .qhold{margin-top:12px}
+/* V0.30: the one picker and the one-step New project */
+.pli.new .pln{color:var(--harbour)}
+.pli.new .pi.all,.pli.more .pi.all{color:var(--harbour);font-weight:500}
+.pli.none .pln{color:var(--ink)}
+.pli:focus{background:var(--sunken)}
+.pli:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.plfoot{align-self:flex-start;margin-top:8px;padding:6px 0;font:500 13px/18px var(--ui);color:var(--harbour);cursor:pointer}
+.plfoot:hover{text-decoration:underline}
+.chip.pj{cursor:pointer}
+.chip.nopj{background:transparent;border:1px solid var(--line-strong);color:var(--ink-muted)}
+.chip.nopj:hover,.chip.proj:hover{filter:brightness(.97);background:var(--sunken)}
+.srcb{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.srct{display:flex;gap:8px;align-items:baseline;min-width:0}
+.srcl{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.srcl.mnote{color:var(--ink)} /* V0.model-choice: the project default that cannot run, said once under Model */
+.fline{display:flex;align-items:center;gap:8px;min-height:34px;padding:0 4px 0 10px;border:1px solid var(--line);border-radius:8px;font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
+.fline .ell{flex:1;min-width:0}
+.ppick{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:48px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:8px;text-align:left;min-width:0}
+.pform{display:flex;flex-direction:column;gap:10px;min-width:0}
+.pformb{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+/* V0.119: the project page is built from the Settings rows (below); these are its own parts */
+.pedit{display:flex;flex-direction:column;gap:16px;min-width:0}
+.setby{margin-left:8px;padding:1px 6px;border-radius:6px;font:500 11px/16px var(--ui);font-style:normal;color:var(--ink-muted);background:var(--sunken)}
+.phead{display:flex;align-items:center;gap:12px;min-width:0}
+.swatches{display:flex;flex-wrap:wrap;gap:8px}
+.sw{width:30px;height:30px;border-radius:15px;background:var(--pc);box-shadow:inset 0 0 0 2px var(--raised)}
+.sw.on{outline:2px solid var(--pc);outline-offset:2px}
+.qtimes{display:inline-flex;align-items:center;gap:6px;color:var(--ink-muted);flex-wrap:wrap}
+.qtime{display:inline-flex;align-items:center;gap:2px;font-variant-numeric:tabular-nums}
+.qpre span{color:var(--ink-muted);font-weight:400}
+.igrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(36px,1fr));gap:4px;max-height:200px;overflow-y:auto}
+.ig{height:36px;display:grid;place-items:center;border-radius:8px;color:var(--ink-muted)}
+.ig:hover{background:var(--sunken)}
+.ig.on{color:var(--pc);background:color-mix(in srgb,var(--pc) 14%,transparent);box-shadow:inset 0 0 0 1px var(--pc)}
+/* V0.171: a host's Mark group: the icon grid marks its pick in ink; Automatic is a word in the grid and an "A" swatch. */
+.hmicon{gap:8px}
+.hmicon .igrid{--pc:var(--ink)}
+.ig.auto{font:500 11px/16px var(--ui)}
+.sw.auto{--pc:var(--ink-faint);background:var(--sunken);color:var(--ink-muted);font:600 11px/30px var(--ui);text-align:center}
+.set.phone .sw.auto{line-height:44px}
+.src{display:flex;gap:8px;align-items:center;min-height:28px;padding:4px 0;font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
+.src b{font:600 12px/16px var(--ui);color:var(--ink-muted);flex:none;width:44px}
+.src .ell{flex:1;min-width:0}
+.src-x{flex:none;width:28px;height:28px;margin-left:auto;border:0;border-radius:6px;background:none;color:var(--ink-muted);font:400 18px/1 var(--ui);cursor:pointer}
+.src-x:hover{background:var(--hover);color:var(--ink)}
+.src.none{font-family:var(--ui);color:var(--ink-muted)}
+.addsrc{display:flex;gap:8px;min-width:0}
+.addsrc input{flex:1;min-width:0;height:32px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);font:400 13px/18px var(--mono)}
+

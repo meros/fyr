@@ -1,6 +1,5 @@
 // SPEC V0.119, V0.125, V0.157: Settings is six pages behind one nav. The pages, their one line of state, the badges and the
 // page ids (`providers/<id>`, `hosts/<name>`). Pure.
-import type { AutoMergeRepo } from "./automerge.ts";
 import type { PushStatus } from "./push.ts";
 import type { HostInfo } from "./hosts.ts";
 
@@ -85,13 +84,6 @@ export function providersSummary(list: Status[] | null, blocked: number): string
   if (!list.length) return "No providers";
   const need = providersNeed(list, blocked);
   return need ? `${list.length} · ${need}` : plural(list.length, "provider", "providers");
-}
-
-/** "Deploys on · merges in 2 repos"; "" until both are read. */
-export function automationSummary(deploy: boolean | null, repos: AutoMergeRepo[] | null): string {
-  if (deploy === null || repos === null) return "";
-  const on = repos.filter((r) => r.on).length;
-  return `Updates ${deploy ? "on" : "off"} · ${on ? `merges in ${plural(on, "repo", "repos")}` : "merges off"}`;
 }
 
 /** "10 projects", "No projects" (V0.125: the hosts have their own page). */

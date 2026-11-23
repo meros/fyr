@@ -1,7 +1,7 @@
 // The host folder picker (SPEC 0.5 V0.42): pure helpers for search, typed paths, completion, breadcrumbs and new
 // folder names. The host resolves and confines every path; these only shape what the owner types and sees.
 
-import { tildePath } from "./paths.ts";
+import { pathSegments, baseName, dirName, tildePath } from "./paths.ts";
 import type { FsDir } from "./types.ts";
 
 
@@ -17,8 +17,7 @@ export function splitPath(q: string): { dir: string; prefix: string } {
   if (t === "~" || t === "/") return { dir: t, prefix: "" };
   const i = t.lastIndexOf("/");
   if (i < 0) return { dir: "~", prefix: t };
-  const dir = t.slice(0, i) || "/";
-  return { dir, prefix: t.slice(i + 1) };
+  return { dir: dirName(t), prefix: baseName(t) };
 }
 
 export function joinPath(dir: string, name: string): string {
@@ -57,7 +56,7 @@ export function breadcrumbs(path: string, home: string): { label: string; path: 
   if (!home || (path !== home && !path.startsWith(home + "/"))) return [{ label: path, path }];
   const out = [{ label: "~", path: home }];
   let at = home;
-  for (const part of path.slice(home.length).split("/").filter(Boolean)) {
+  for (const part of pathSegments(path.slice(home.length))) {
     at = `${at}/${part}`;
     out.push({ label: part, path: at });
   }

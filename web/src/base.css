@@ -1,0 +1,76 @@
+/* Fyr v0 desktop client. Values copied from design/directions/04-rail.html (decision 0006).
+   Long-text rules from design/directions/README.md: fixed row heights, one-line ellipsis,
+   tabular numerals, min-width:0 on flex/grid children, overflow-wrap:anywhere in prose. */
+
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* tokens: .t-light / .t-dark of 04-rail.html */
+:root {
+  --surface:#f6f7f8;--raised:#fff;--sunken:#edeff2;--select:#e6ecf3;--line:#dde1e6;--line-strong:#b4bcc6;
+  --ink:#111820;--ink-muted:#56616d;--ink-faint:#7d8894;--night:#14212d;--on-night:#f6f7f8;
+  --beam:#e8960f;--beam-mark:#b86e00;--beam-ink:#8f5300;--on-beam:#1a1204;--beam-wash:#fdf1dc;--beam-icon:#8f5300;
+  --signal-ink:#b42318;--harbour:#2f6fb0;--harbour-wash:#e7f0fa;--calm:#2e7d5b;--knock:var(--raised);color-scheme:light;
+  /* project palette (V0.23): ten hues, never amber */
+  --p-slate:#56616d;--p-blue:#2f6fb0;--p-sky:#1f7ea8;--p-teal:#1d7a74;--p-green:#2e7d5b;--p-olive:#6b7a1f;--p-violet:#7a4fc0;--p-indigo:#4a55b5;--p-rose:#b8406a;--p-brown:#8a4f3a;
+  --scrim:rgba(17,24,32,.35);
+  --ui:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface:#0f1419;--raised:#161d24;--sunken:#0b0f13;--select:#1c2733;--line:#26303a;--line-strong:#3d4957;
+    --ink:#e8ecf0;--ink-muted:#9aa6b2;--ink-faint:#6f7b87;--night:#2a3a4a;--on-night:#f6f7f8;
+    --beam:#f5a524;--beam-mark:#f5a524;--beam-ink:#f5b54a;--on-beam:#1a1204;--beam-wash:#2a2112;--beam-icon:#f5a524;
+    --signal-ink:#ff8a7d;--harbour:#6fa8e8;--harbour-wash:#15253a;--calm:#5cc49a;color-scheme:dark;
+    --p-slate:#9aa6b2;--p-blue:#6fa8e8;--p-sky:#5cb8e0;--p-teal:#4cc1b6;--p-green:#5cc49a;--p-olive:#b3c25a;--p-violet:#b195ef;--p-indigo:#8f98ee;--p-rose:#f08bae;--p-brown:#d39a86;
+    --scrim:rgba(0,0,0,.55);
+  }
+}
+:root[data-theme="dark"] {
+  --surface:#0f1419;--raised:#161d24;--sunken:#0b0f13;--select:#1c2733;--line:#26303a;--line-strong:#3d4957;
+  --ink:#e8ecf0;--ink-muted:#9aa6b2;--ink-faint:#6f7b87;--night:#2a3a4a;--on-night:#f6f7f8;
+  --beam:#f5a524;--beam-mark:#f5a524;--beam-ink:#f5b54a;--on-beam:#1a1204;--beam-wash:#2a2112;--beam-icon:#f5a524;
+  --signal-ink:#ff8a7d;--harbour:#6fa8e8;--harbour-wash:#15253a;--calm:#5cc49a;color-scheme:dark;
+    --p-slate:#9aa6b2;--p-blue:#6fa8e8;--p-sky:#5cb8e0;--p-teal:#4cc1b6;--p-green:#5cc49a;--p-olive:#b3c25a;--p-violet:#b195ef;--p-indigo:#8f98ee;--p-rose:#f08bae;--p-brown:#d39a86;
+  --scrim:rgba(0,0,0,.55);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--surface)}
+/* SPEC 0.5 V0.165: the app is static: no page zoom by pinch or double tap and no overscroll bounce. Only previews
+   zoom, inside their viewer (.pv-stage) or by the zoom steps of a full-screen page. Ctrl +/- on a desktop still zooms
+   the whole app (the browser's own zoom), and the system's text size still applies where the browser honours it. */
+html,body{touch-action:pan-x pan-y;overscroll-behavior:none}
+/* iOS zooms into a field under 16 px when it gets focus; on a touch screen every field is 16 px or more. */
+@media (pointer:coarse){input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),textarea,select{font-size:16px!important}}
+/* .frame */
+body{color:var(--ink);font-family:var(--ui);-webkit-font-smoothing:antialiased;font-size:13px;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit}
+button:disabled{cursor:default}
+:focus-visible{outline:2px solid var(--harbour);outline-offset:1px}
+input,textarea,select{font:inherit;color:inherit}
+
+.s-ask{color:var(--beam-icon)}.s-fail{color:var(--signal-ink)}.s-block{color:var(--harbour)}.s-done{color:var(--ink)}
+.s-work,.s-wait,.s-seen,.s-snz,.s-arch{color:var(--ink-muted)}.s-set{color:var(--calm)}
+svg.ic{display:block;flex:none}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.prose{overflow-wrap:anywhere;min-width:0}
+.tnum{font-variant-numeric:tabular-nums}
+code{font-family:var(--mono);font-size:.92em}
+b{font-weight:600}
+kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:center;border-radius:5px;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);display:inline-block;flex:none}
+
+.app{display:grid;grid-template-columns:76px var(--list-w,372px) minmax(0,1fr);height:100vh;height:100dvh}
+

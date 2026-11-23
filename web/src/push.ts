@@ -41,27 +41,6 @@ export function pushStatus(env: PushEnv, permission: NotificationPermission, sub
   return permission === "granted" && subscribed ? "on" : "off";
 }
 
-type PushEvent =
-  | { type: "permission"; result: NotificationPermission }
-  | { type: "subscribed" }
-  | { type: "unsubscribed" }
-  | { type: "failed" };
-
-/** Transitions of the bell. Turning on: permission, then subscribed (or failed); turning off: unsubscribed. */
-export function pushNext(s: PushStatus, e: PushEvent): PushStatus {
-  if (s === "unsupported") return s;
-  switch (e.type) {
-    case "permission":
-      return e.result === "denied" ? "denied" : s;
-    case "subscribed":
-      return "on";
-    case "unsubscribed":
-      return s === "denied" ? s : "off";
-    case "failed":
-      return s === "on" ? "on" : s === "denied" ? "denied" : "off";
-  }
-}
-
 export const PUSH_TITLE: Record<PushStatus, string> = {
   unsupported: "Notifications are not available here",
   off: "Notifications are off",

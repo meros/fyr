@@ -8,7 +8,7 @@ import type { HostId } from "./hostid.ts";
 import type { HostInfo } from "./hosts.ts";
 import type { PageRef } from "./settings-nav.ts";
 import { Empty, Group } from "./settings-rows.tsx";
-import { setupCardLabel, setupNeedsCard, stepPill, type GHAuthState, type SetupRepo, type SetupReport, type SetupStep } from "./setup.ts";
+import { setupCardLabel, setupNeedsCard, stepPill, type GHAuthState, type GHRepoItem, ghAuthOf, ghReposOf, type SetupRepo, type SetupReport, type SetupStep } from "./setup.ts";
 
 /** Reads the first online addressable host's setup report (for the inbox card). */
 export function SetupInboxCard({ hosts, projectCount, phone, onOpen }: { hosts: HostInfo[]; projectCount: number; phone?: boolean; onOpen(): void }) {
@@ -41,11 +41,6 @@ export function SetupInboxCard({ hosts, projectCount, phone, onOpen }: { hosts: 
       {next && <span class="setup-card-sub">Next: {next.title} — {next.reason}</span>}
     </button>
   );
-}
-
-interface GHRepoItem {
-  nameWithOwner: string;
-  description?: string;
 }
 
 export function SetupPage({
@@ -109,12 +104,13 @@ export function SetupPage({
         setNote(r.error ?? "That step failed");
         return null;
       }
-      if (action === "gh.login" && r.result && typeof r.result === "object") {
-        setGhAuth(r.result as unknown as GHAuthState);
+      const auth = action === "gh.login" ? ghAuthOf(r.result) : null;
+      if (auth) {
+        setGhAuth(auth);
       } else if (action === "gh.loginCancel") {
         setGhAuth(null);
-      } else if (action === "gh.repos" && r.result && typeof r.result === "object") {
-        setGhRepos(((r.result as { repos?: GHRepoItem[] }).repos ?? []));
+      } else if (action === "gh.repos") {
+        setGhRepos(ghReposOf(r.result));
       }
       await load();
       return r.result;

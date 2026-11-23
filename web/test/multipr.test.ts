@@ -1,7 +1,7 @@
 // V0.multi-pr: tracking multiple PRs per thread in chips, row badges, PR tabs and effect cards.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changeChip, headerPr, headerPrs, prForEffect, threadPrs } from "../src/offers.ts";
+import { changeChip, headerPrs, prForEffect, threadPrs } from "../src/offers.ts";
 import { hasMultipleRepos, pickPr, prUrgency, rowPrChip, shortRepo } from "../src/pr.ts";
 import { rowState, stateNamesPr } from "../src/rows.ts";
 import { defaultTab, tabLabel, threadTabs } from "../src/view.ts";
@@ -56,7 +56,7 @@ test("V0.multi-pr: threadPrs keeps all non-dismissed PRs (open first), headerPrs
     [102, 101],
     "header chips show open PRs only",
   );
-  assert.equal(headerPr(t)?.number, 102);
+  assert.equal(headerPrs(t)[0]?.number, 102);
   assert.equal(changeChip({ pr: p3, changes: [...t.changes, ch("c5", { kind: "other", title: "Other", phase: "working" })] }), null, "open PR in changes hides non-PR change chip even when main PR is merged");
 });
 

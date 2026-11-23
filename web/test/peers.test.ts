@@ -1,7 +1,7 @@
 // V0.159: Settings → Hosts, the installs panel: the words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { candidateWords, inviteFromUrl, needsInvite, others, pairedSummary, typedInvite, viaWords, type PeerState } from "../src/peers.ts";
+import { candidateWords, inviteFromUrl, needsInvite, others, typedInvite, viaWords, type PeerState } from "../src/peers.ts";
 
 const state: PeerState = {
   members: [
@@ -31,9 +31,6 @@ test("why a node is not paired", () => {
 
 test("the others, and the summary", () => {
   assert.deepEqual(others(state).map((m) => m.name), ["mac", "box"]);
-  assert.equal(pairedSummary(state), "2 paired");
-  assert.equal(pairedSummary({ members: [state.members[0]], candidates: [] }), "");
-  assert.equal(pairedSummary(null), "");
 });
 
 test("an invite as typed and from the address", () => {

@@ -31,16 +31,16 @@ import { type CardState } from "./question.ts";
 import { parsePage, type PageRef } from "./settings-nav.ts";
 import { SECTION_LIMIT, isOpen, type FilterView, type Theme } from "./inbox.tsx";
 import { useSlotQueue } from "./slot-queue-ui.tsx";
-import { useToolDetails } from "./thread.tsx";
 import { pushEnv } from "./pwa.ts";
 import { unsupportedReason, type PushStatus } from "./push.ts";
-import { useQuietUnlock } from "./project-ui.tsx";
 import { FILTER_KEY, findProject } from "./projects.ts";
 import { HIDDEN_KEY, applyHidden, hiddenCount, parseHidden, type Hidden } from "./hidden.ts";
 import { HOSTS_OFF_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { initialEntries, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
+import { useQuietUnlock } from "./quiet-ui.tsx";
+import { useToolDetails } from "./tool-calls-ui.tsx";
 
 
 export function useAppState() {

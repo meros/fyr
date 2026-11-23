@@ -22,18 +22,20 @@ import { actionsFor, runAction, type ActionHandlers, type ThreadAction } from ".
 import { prChip, rowPrChip } from "./pr.ts";
 import { needsCount } from "./board.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { NewProjectStep, ProjectIcon, ProjectList, QuietHold, ProjectPicker, ProjectTag } from "./project-ui.tsx";
+import { ProjectIcon, ProjectList, ProjectTag } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { folderHint } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import type { Sheet } from "./nav.ts";
 import { hostsNeed, settingsNeed } from "./settings-nav.ts";
-import { useProvidersNeed } from "./settings-ui.tsx";
 import { HostField } from "./host-pick-ui.tsx";
 import { PIN_ICON } from "./row-ui.tsx";
 import { QuotaList } from "./quota-ui.tsx";
 import { profilesOf, threadProvider, type HostInfo, type HostProfiles } from "./hosts.ts";
+import { ProjectPicker, NewProjectStep } from "./project-picker.tsx";
+import { QuietHold } from "./quiet-ui.tsx";
+import { useProvidersNeed } from "./settings-load.ts";
 
 // ---- new thread ----
 

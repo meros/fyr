@@ -8,6 +8,7 @@ import { multiHost, pickerStart, type HostInfo, type HostProfiles } from "./host
 import type { HostId } from "./hostid.ts";
 import { findProject, localProject, memberOn, newThreadFolder, projectDefaults, projectRecords, recordOf, startProject } from "./projects.ts";
 import type { Profile, Project } from "./types.ts";
+import { baseName } from "./paths.ts";
 
 /** What thread.create gets. */
 export interface NewThreadArgs {
@@ -302,7 +303,7 @@ export function createArgs(f: NewThreadForm, ctx: FormCtx, send: { text: string;
 /** "Change" offers the project's folder first when another one is picked (V0.42, V0.55). */
 export function changeOptions(pr: Project | undefined, current: string, host?: HostId): PickOptions {
   const f = pr?.folder;
-  const dirs = f && f !== current ? [{ name: f.split("/").pop() || f, path: f }] : [];
+  const dirs = f && f !== current ? [{ name: baseName(f) || f, path: f }] : [];
   return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folder`, dirs } : undefined, ...(host ? { host } : {}) }; // V0.132: the thread's host
 }
 

@@ -33,8 +33,8 @@ import {
 import { projectChip, findProject, memberOn } from "./projects.ts";
 import { effortsFor, startEffort } from "./providers.ts";
 import { createProjects, isQuiet } from "./quiet.ts";
-import { useQuietUnlock } from "./project-ui.tsx";
 import type { Project } from "./types.ts";
+import { useQuietUnlock } from "./quiet-ui.tsx";
 
 export interface NewThreadFormOptions extends FormCtx {
   projectFilter: string | null;

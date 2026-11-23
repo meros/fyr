@@ -23,8 +23,6 @@ export interface PreviewCard extends PreviewData {
   src: string;
 }
 
-/** Desktop thumbnails are at most this tall; phones show the full width. */
-const THUMB_MAX_H = 360;
 /** An HTML frame starts at most this tall... */
 const FRAME_START_MAX = 600;
 /** ...and never grows past this. */
@@ -77,13 +75,6 @@ export function frameHeight(height: number, expanded = false, reported = 0, widt
   return Math.max(FRAME_MIN, Math.min(h, expanded ? FRAME_MAX : FRAME_START_MAX));
 }
 
-/** A thumbnail's box: keep the aspect, at most `maxW` wide and `maxH` tall (desktop). */
-export function thumbBox(width: number, height: number, maxW: number, maxH = THUMB_MAX_H): { width: number; height: number } {
-  if (!(width > 0 && height > 0)) return { width: maxW, height: Math.min(maxH, Math.round(maxW * 0.6)) };
-  const s = Math.min(1, maxW / width, maxH / height);
-  return { width: Math.round(width * s), height: Math.round(height * s) };
-}
-
 /**
  * Markdown images: a same-origin `/api/attachments/{id}` renders inline; anything else stays a link.
  * Returns the attachment id, or null.
@@ -105,10 +96,3 @@ export function filmstrip(cards: PreviewCard[]): PreviewCard[] {
   return [...cards].sort((a, b) => b.seq - a.seq);
 }
 
-/** Viewer navigation over the thread's image previews. */
-export function stepImage(cards: PreviewCard[], currentSeq: number, dir: 1 | -1): PreviewCard | null {
-  const imgs = cards.filter((c) => c.kind === "image").sort((a, b) => a.seq - b.seq);
-  const i = imgs.findIndex((c) => c.seq === currentSeq);
-  if (i < 0) return null;
-  return imgs[i + dir] ?? null;
-}

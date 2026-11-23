@@ -9,11 +9,10 @@ import { MNew, MSheets } from "./phone-sheets.tsx";
 import { MAsk, MAllow } from "./phone-cards.tsx";
 import { I } from "./phone-icons.tsx";
 import { haptic } from "./native.ts";
-import { Pop, SlideMark, springAway, springTo, x3d } from "./motion-ui.tsx";
-import { addSample, releaseVelocity, type Sample, SNAP_SPRING } from "./motion.ts";
+import { Pop, SlideMark } from "./motion-ui.tsx";
 import { useApi } from "./api-context.ts";
 import { useDraft } from "./drafts.ts";
-import { Fragment, type ComponentChildren, type VNode } from "preact";
+import { Fragment, type ComponentChildren } from "preact";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
@@ -28,7 +27,7 @@ import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
 import { snoozedHint } from "./snooze.ts";
 import { AgentPill, showOnly, threadAgent } from "./agent-ui.tsx";
-import { AgentsStrip, ThreadTabBody, sendFrom } from "./thread.tsx";
+import { ThreadTabBody } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { LeftoverStrip } from "./leftovers-ui.tsx";
 import { InvariantCards } from "./invariants-ui.tsx";
@@ -45,22 +44,21 @@ import { tabLabel, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import { DockRun, showCard } from "./runcard-ui.tsx";
 import { dockRun } from "./runcard.ts";
 import { HandoverLinkBar } from "./handover-ui.tsx";
-import { ProjectEditor, linkingFor, ProjectIcon, QuietGate, StartedBy, type ProjectPatch, type QuietUnlock } from "./project-ui.tsx";
+import { ProjectIcon, StartedBy } from "./project-ui.tsx";
 import { colorVar, findProject, projectName, projectOf, recordOf } from "./projects.ts";
 import { type NewThreadArgs } from "./new-thread.ts";
 import { type CardState } from "./question.ts";
 import { activeSection, stripCount } from "./mobile.ts";
-import { LONG_PRESS_MS, idle, longPressCancelled, swipeAvail, swipeArmed, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
-import type { Nav } from "./nav.ts";
+import { showsBottomBar, type Nav } from "./nav.ts";
 import { type PageRef } from "./settings-nav.ts";
 import { SetupInboxCard } from "./setup-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { AgentStatus } from "./agent-status.tsx";
 import { FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
-import { HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
+import { HideClock, NeedsGroupHead, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
 import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
-import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
+import { drawnRows, type Guest } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaWakeActions, ThreadQuotaFigure, useThreadQuota, useThreadQuotaCard } from "./quota-ui.tsx";
@@ -69,12 +67,18 @@ import { ArrivedBar } from "./arrived-bar.tsx";
 import { type AnswerMove, arrive } from "./arrived.ts";
 import { HostMark } from "./host-mark-ui.tsx";
 import { hostTag, offlineLine, profilesOf, threadProvider, type HostProfiles } from "./hosts.ts";
+import { type ProjectPatch, ProjectEditor } from "./project-editor.tsx";
+import { linkingFor } from "./project-linking.tsx";
+import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
+import { AgentsStrip } from "./agents-strip.tsx";
+import { sendFrom } from "./composer.tsx";
+import { workingHint, MRow } from "./phone-row.tsx";
 
 
 // ---- props from the app shell ----
 
 /** The phone's place (design/mobile: screens and sheets are history entries) and how to move. */
-export interface PhoneNav {
+interface PhoneNav {
   at: Nav;
   go(n: Nav): void;
   replace(n: Nav): void;
@@ -82,7 +86,7 @@ export interface PhoneNav {
 }
 
 /** The thread on screen: its timeline, the question card's state, and the answers (they need the card). */
-export interface PhoneOpen {
+interface PhoneOpen {
   thread: Thread | undefined;
   /** V0.114: the quiet thread the screen asked for, held behind the gate until the 30 s hold */
   gated?: Thread;
@@ -101,7 +105,7 @@ export interface PhoneOpen {
 }
 
 /** The inbox list's own state: open and expanded sections, selection mode and the picked rows. */
-export interface PhoneList {
+interface PhoneList {
   sectionOpen: Partial<Record<SectionKey, boolean>>;
   /** A header's tap. */
   toggleSection(k: SectionKey): void;
@@ -119,7 +123,7 @@ export interface PhoneList {
 }
 
 /** This device: push and install (V0.119: the theme is in Settings → This device). */
-export interface PhoneDevice {
+interface PhoneDevice {
   push: PushStatus;
   pushReason: string | null;
   ios: boolean;
@@ -193,7 +197,7 @@ const STORAGE_IOS = "fyr.iosRowDismissed";
 export function PhoneApp(p: PhoneProps) {
   const s = p.nav.at.screen;
   const sheetThread = p.nav.at.sheet?.ids?.length === 1 ? p.store.threads[p.nav.at.sheet.ids[0]] : undefined;
-  const bottomBar = !p.list.selecting && (s.name === "inbox" || s.name === "search");
+  const bottomBar = showsBottomBar(p.nav.at, p.list.selecting);
   const api = useApi(); // V0.98 (3): the board visit
   return (
     <div class={`m-app${bottomBar ? " has-bar" : ""}`}>
@@ -522,217 +526,6 @@ function MInbox(p: PhoneProps) {
   );
 }
 
-function workingHint(list: Thread[]): string {
-  const waiting = list.filter((t) => t.attention.state === "waiting").length;
-  return waiting ? `${waiting} waiting` : "";
-}
-
-/** V0.54, V0.170: an offline host says so on a row, in words (it is state). Which host a row is on is its mark at the
- *  title's start (row-ui.tsx), as on the desktop, so the words for an online host are gone. */
-function MHost({ t }: { t: Thread }) {
-  return t.hostOffline ? <><b class="m-off">{t.host || "host"} offline</b> · </> : null;
-}
-
-/** A row with swipes (right settles, left snoozes), long press (actions) and selection. V0.native-feel: the row follows
- *  the finger without a render, a flick commits, and it leaves or returns on a spring that starts at the finger's speed. */
-function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boolean; /** V0.137: the queue's "#2" */ lead?: VNode }) {
-  const avail: SwipeAvail = useMemo(() => swipeAvail(t), [t]);
-  const availRef = useRef(avail);
-  availRef.current = avail;
-  const swRef = useRef<Swipe>(idle);
-  const [under, setUnderState] = useState<{ dir: 1 | -1; armed: boolean } | null>(null);
-  const underRef = useRef(under);
-  const [moving, setMoving] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const samples = useRef<Sample[]>([]);
-  const leaving = useRef<{ gone: Animation; timer: ReturnType<typeof setTimeout> } | null>(null);
-  const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; x: number; y: number; fired: boolean }>({ timer: null, x: 0, y: 0, fired: false });
-  const suppressClick = useRef(false);
-
-  const setUnder = (u: { dir: 1 | -1; armed: boolean } | null) => {
-    const c = underRef.current;
-    if (c?.dir === u?.dir && c?.armed === u?.armed) return;
-    if (u?.armed && !c?.armed) haptic(); // the tick that says "let go now"
-    underRef.current = u;
-    setUnderState(u);
-  };
-  /** The row under the finger: a style write per move, a render only when what is under it changes. */
-  const paint = (s: Swipe) => {
-    swRef.current = s;
-    const el = rowRef.current;
-    if (!el) return;
-    const off = swipeOffset(s, availRef.current);
-    el.style.transform = off ? x3d(off) : "";
-    setUnder(off ? { dir: off > 0 ? 1 : -1, armed: swipeArmed(s, el.offsetWidth, availRef.current) } : null);
-  };
-  const clearLp = () => {
-    if (lp.current.timer) clearTimeout(lp.current.timer);
-    lp.current.timer = null;
-  };
-  useEffect(() => () => clearLp(), []);
-  /** A row that flew off is shown again: its thread changed section while the row stayed mounted (the list's hold,
-   *  an undo), or nothing happened to it at all (a refused command). */
-  const comeBack = () => {
-    const l = leaving.current;
-    if (!l) return;
-    leaving.current = null;
-    clearTimeout(l.timer);
-    l.gone.cancel();
-    if (rowRef.current) rowRef.current.style.transform = "";
-    setUnder(null);
-  };
-  useLayoutEffect(comeBack, [t.attention.section]);
-  useEffect(() => () => clearTimeout(leaving.current?.timer), []);
-
-  const onDown = (e: PointerEvent) => {
-    if (leaving.current || (e.pointerType === "mouse" && e.button !== 0)) return;
-    rowRef.current?.getAnimations().forEach((a) => a.cancel());
-    swRef.current = p.list.selecting ? idle : swipeStart(e.clientX, e.clientY);
-    samples.current = [];
-    lp.current = { timer: null, x: e.clientX, y: e.clientY, fired: false };
-    if (!p.list.selecting) {
-      lp.current.timer = setTimeout(() => {
-        lp.current.fired = true;
-        suppressClick.current = true;
-        paint(idle);
-        haptic();
-        p.nav.go({ ...p.nav.at, sheet: { kind: "actions", ids: [t.id] } });
-      }, LONG_PRESS_MS);
-    }
-  };
-  const onMove = (e: PointerEvent) => {
-    if (lp.current.timer && longPressCancelled(lp.current.x, lp.current.y, e.clientX, e.clientY)) clearLp();
-    const cur = swRef.current;
-    const next = swipeMove(cur, e.clientX, e.clientY);
-    if (next.phase === "swipe" && cur.phase !== "swipe") {
-      clearLp();
-      setMoving(true);
-      try {
-        rowRef.current?.setPointerCapture(e.pointerId);
-      } catch {
-        /* capture unsupported */
-      }
-    }
-    if (next.phase === "swipe") {
-      samples.current = addSample(samples.current, e.timeStamp, e.clientX);
-      paint(next);
-    } else swRef.current = next;
-  };
-  /** Back to rest from where the finger left it; what is under the row stays until the row covers it. */
-  const snapBack = (from: number, v: number) => {
-    const el = rowRef.current;
-    const a = el && from ? springTo(el, from, 0, v, SNAP_SPRING, x3d) : null;
-    if (el && !a) el.style.transform = "";
-    const done = () => setUnder(null);
-    if (a) a.finished.then(done, done);
-    else done();
-  };
-  /** The row flies off in its direction, the gap closes, and only then the thread settles, so nothing jumps. */
-  const flyOff = (from: number, v: number, then: () => void) => {
-    const el = rowRef.current;
-    const box = boxRef.current;
-    const fly = el && springAway(el, from, el.offsetWidth + 24, Math.max(v, 0), x3d);
-    if (!el || !box || !fly) {
-      then();
-      if (el) el.style.transform = "";
-      setUnder(null);
-      return;
-    }
-    const collapse = () => {
-      const h = box.offsetHeight;
-      const cs = getComputedStyle(box);
-      const gone = box.animate([{ height: `${h}px`, marginTop: cs.marginTop, marginBottom: cs.marginBottom, opacity: 1 }, { height: "0px", marginTop: "0px", marginBottom: "0px", opacity: 0 }], { duration: 200, easing: "cubic-bezier(.32,.72,0,1)", fill: "forwards" });
-      leaving.current = { gone, timer: setTimeout(comeBack, 4000) };
-      gone.finished.then(then, () => {});
-    };
-    fly.finished.then(collapse, collapse);
-  };
-  const onUp = (e: PointerEvent) => {
-    clearLp();
-    const cur = swRef.current;
-    swRef.current = idle;
-    if (cur.phase !== "swipe") return;
-    setMoving(false);
-    suppressClick.current = true;
-    const el = rowRef.current;
-    const off = swipeOffset(cur, avail);
-    const v = releaseVelocity(samples.current, e.timeStamp);
-    const r = swipeEnd(cur, el?.offsetWidth ?? 390, avail, v);
-    if (r.kind === "settle") {
-      haptic("firm");
-      flyOff(off, v, () => p.actions.settle([t.id]));
-      return;
-    }
-    snapBack(off, r.kind === "none" && !r.reason ? v : 0);
-    if (r.kind === "snooze") (haptic(), p.nav.go({ ...p.nav.at, sheet: { kind: "snooze", ids: [t.id] } }));
-    else if (r.reason) {
-      setHint(r.reason);
-      setTimeout(() => setHint(null), 1400);
-    }
-  };
-  const onCancel = () => {
-    clearLp();
-    const cur = swRef.current;
-    swRef.current = idle;
-    setMoving(false);
-    snapBack(swipeOffset(cur, avail), 0);
-  };
-  const onClick = () => {
-    if (suppressClick.current) {
-      suppressClick.current = false;
-      return;
-    }
-    if (p.list.selecting) {
-      const n = new Set(p.list.picked);
-      if (n.has(t.id)) n.delete(t.id);
-      else n.add(t.id);
-      p.list.setPicked(n);
-      return;
-    }
-    p.nav.go({ screen: { name: "thread", id: t.id }, sheet: null });
-  };
-
-  const side = under ? (under.dir > 0 ? avail.right : avail.left) : null;
-  const st = t.attention.state;
-  const picked = p.list.picked.has(t.id);
-  const lead = p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : own;
-  const pre = <MHost t={t} />;
-  // V0.109: no row is marked here. The phone shows the inbox or one thread, never both, so there is no open thread
-  // beside the list for a mark to follow; the desktop marks the open thread's row (app.tsx, selection.ts).
-  const guest = p.inbox.guest?.id === t.id ? p.inbox.guest.why : undefined; // V0.192: as on the desktop
-  const body = needs ? <NeedsRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} guest={guest} /> : <OneRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} guest={guest} />;
-  return (
-    <div ref={boxRef} class={`m-swp${picked ? " picked" : ""}${moving ? " moving" : ""}`}>
-      {under && side && (
-        <div class={`m-under ${under.dir > 0 ? "l" : "r"} ${!side.ok ? "no" : under.dir > 0 ? "set" : "snz"}${under.armed ? " armed" : ""}`}>
-          {side.ok && under.dir > 0 && <StateIcon state="settled" size={16} />}
-          <span class="ell">{side.label}</span>
-          {side.ok && under.dir < 0 && <StateIcon state="snoozed" size={16} />}
-        </div>
-      )}
-      {hint && <div class="m-under l no show">{hint}</div>}
-      <div
-        ref={rowRef}
-        data-id={t.id}
-        class="m-mv"
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onCancel}
-        onClick={onClick}
-        onContextMenu={(e) => e.preventDefault()}
-        role="button"
-        aria-label={`${t.title}, ${stateLabel(st)}${guest ? `, ${GUEST_TEXT[guest].tag}` : ""}`}
-      >
-        {body}
-      </div>
-    </div>
-  );
-}
-
-// ---- search ----
 
 function MSearch(p: PhoneProps) {
   const [q, setQ] = useState("");

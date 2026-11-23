@@ -277,19 +277,6 @@ export function SaveField(p: SaveFieldProps) {
   );
 }
 
-/** A row whose control is a SaveField; its error shows on the row. */
-export function SaveRow(p: Omit<SaveFieldProps, "onError"> & { title?: ComponentChildren; desc?: ComponentChildren; stack?: boolean; class?: string }) {
-  const [err, setErr] = useState<string | null>(null);
-  const { title, desc, stack, ...f } = p;
-  if (title === undefined)
-    return (
-      <Row error={err} class={`fieldrow${p.class ? ` ${p.class}` : ""}`}>
-        <SaveField {...f} onError={setErr} />
-      </Row>
-    );
-  return <Row title={title} desc={desc} error={err} stack={stack ?? true} wide class={p.class} end={<SaveField {...f} onError={setErr} />} />;
-}
-
 // ---- states (SPEC V0.119 (6)) ----
 
 /** Loading: still rows, no shimmer (nothing moves on its own). */

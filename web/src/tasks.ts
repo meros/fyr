@@ -29,12 +29,6 @@ export function groupTasks(tasks: TaskDTO[] | null | undefined): TaskGroups {
   return { running: all.filter((t) => t.status === "running"), ended: all.filter((t) => t.status !== "running") };
 }
 
-/** The tasks the strip shows: running ones always, ended ones only when expanded. */
-export function visibleTasks(tasks: TaskDTO[] | null | undefined, expanded: boolean): TaskDTO[] {
-  const g = groupTasks(tasks);
-  return expanded ? [...g.running, ...g.ended] : g.running;
-}
-
 function agentsLabel(n: number): string {
   return n === 1 ? "1 agent" : `${n} agents`;
 }

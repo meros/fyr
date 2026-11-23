@@ -40,7 +40,7 @@ import { snoozeKeyCount } from "./snooze.ts";
 import { isStandalone, promptInstall } from "./pwa.ts";
 import { PhoneApp } from "./phone.tsx";
 import { ConfirmProvider } from "./confirm-ui.tsx";
-import { DirectoryContext, ProjectPicker, QuietGate } from "./project-ui.tsx";
+import { DirectoryContext } from "./project-ui.tsx";
 import { recordOf } from "./projects.ts";
 import { FolderPickContext } from "./folder-picker.tsx";
 import { HostsContext, ProfilesContext } from "./host-pick-ui.tsx";
@@ -50,6 +50,8 @@ import { StallBanner } from "./stall-ui.tsx";
 import { installPress, Pop } from "./motion-ui.tsx";
 import { Boundary } from "./boundary.tsx";
 import { HomeScreen } from "./home-ui.tsx";
+import { ProjectPicker } from "./project-picker.tsx";
+import { QuietGate } from "./quiet-ui.tsx";
 
 /** V0.status-home: the keys the status screen names at its foot. */
 const HOME_KEYS: [string, string][] = [
