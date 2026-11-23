@@ -11,6 +11,8 @@ import { stripHosts } from "./host-load.ts";
 import { ProjectIcon } from "./project-ui.tsx";
 import { projectOf } from "./projects.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
+import { UsageBars } from "./usage-ui.tsx";
+import { todayHours, todayRange, tokens, type HostUsage } from "./usage.ts";
 import { SECTIONS, type Sections } from "./store.ts";
 import { clockTime, minuteOf, relTime } from "./format.ts";
 import { storedGet, storedSet } from "./prefs.ts";
@@ -113,6 +115,7 @@ export function HomeScreen(p: HomeProps) {
         {!moves.length && !running.length && <div class="st-calm">All quiet. Start a thread{p.phone ? " with +" : " with c"}.</div>}
 
         <Today day={today} phone={p.phone} onOpen={p.onOpen} />
+        <TodayTokens now={p.now} phone={p.phone} />
 
         {log.length > 0 && (
           <section class="st-blk" aria-label="Since you looked">
@@ -141,6 +144,47 @@ export function HomeScreen(p: HomeProps) {
 }
 
 const hhmm = (at: number) => clockTime(new Date(at).toISOString());
+
+/** V0.usage-page: today's tokens on every host, one bar per local hour from midnight to now (the hour now drawn
+ *  lighter: it is still filling), read again each minute. One series, one hue, no legend; a bar names its hour and
+ *  count on hover, and Settings → Usage has the table. The same block on both fronts; none on a front that cannot read
+ *  usage, or before a host counted anything today. */
+function TodayTokens({ now, phone }: { now: number; phone?: boolean }) {
+  const api = useApi();
+  const apiRef = useRef(api);
+  apiRef.current = api;
+  const [hosts, setHosts] = useState<HostUsage[] | null>(null);
+  const minute = minuteOf(now);
+  useEffect(() => {
+    const a = apiRef.current;
+    if (!a.usage) return;
+    let live = true;
+    a.usage({ ...todayRange(Date.now()), group: ["hour"] }).then((r) => live && setHosts(r.hosts)).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [minute]);
+  if (!hosts) return null;
+  const hours = todayHours(hosts, now);
+  const total = hours.reduce((n, h) => n + h.total, 0);
+  if (!total) return null;
+  const ticks = (phone ? [0, 12] : [0, 6, 12, 18]).filter((h) => h < hours.length);
+  return (
+    <section class="st-blk st-tokens" aria-label="Today's tokens">
+      <div class="st-bh">
+        <span>Today · tokens</span>
+      </div>
+      <div class="st-nums">
+        <div class="st-num">
+          <b class="tnum">{tokens(total)}</b>
+          <span>tokens so far</span>
+          <small>busiest {hours.reduce((a, b) => (b.total > a.total ? b : a)).at}</small>
+        </div>
+      </div>
+      <UsageBars bars={hours} label={`Tokens per hour today: ${tokens(total)} so far`} ticks={ticks} cls="st-ug" />
+    </section>
+  );
+}
 
 /** V0.day-chart: the day so far: four numbers, then the open changes from midnight to now as a step area, with a dot
  *  on the axis for each merge. Hover (or a touch) shows the time and the open count; a dot near the pointer names the

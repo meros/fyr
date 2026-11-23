@@ -26,6 +26,7 @@ import { addressable, bare, decodeFront, hostOfFrame, reachabilityChanged, ref, 
 import type { HostId } from "./hostid.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
+import { decodeUsage, usageSearch, type HostUsage, type UsageQuery } from "./usage.ts";
 import type { HostLoad } from "./host-load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { AutoDeploySetting, AutoMergeRepo } from "./automerge.ts";
@@ -123,6 +124,9 @@ export interface Api {
   fsMkdir(host: HostId, parent: string, name: string): Promise<Result<string>>;
   /** V0.44: each profile's provider quota over the hosts that are online, one read per host; [] when none can say. */
   quota(): Promise<Quota[]>;
+  /** V0.usage-page: each online host's token sums for the query, stamped with its host; a host that fails is left
+   *  out and named in failed. Optional: a front without it shows no Usage page. */
+  usage?(q: UsageQuery, only?: Record<string, Record<string, string>>): Promise<{ hosts: HostUsage[]; failed: string[] }>;
   /** V0.80: each host's load and its threads' CPU, one read per host; [] when no host can say. */
   load(): Promise<HostLoad[]>;
   // V0.127: the per-host settings reads. An offline host answers what the front last read from it, with when (readAt).
@@ -614,6 +618,12 @@ function createHttpApi(): Api {
     async quota() {
       const lists = await Promise.all(addressable(hostsNow()).filter((h) => h.online).map(async (h) => (await eachOne<Quota>(h.id, "/quota")).map((q) => ({ ...q, host: q.host || h.name, hostId: h.id }))));
       return lists.flat();
+    },
+    async usage(q, only) {
+      // only: each host to ask and its own filter (a project's id is its host's); without it every online host.
+      const on = addressable(hostsNow()).filter((h) => h.online && (!only || h.id in only));
+      const rs = await Promise.all(on.map((h) => read(hostPath(h.id, `/usage${usageSearch(only ? { ...q, where: { ...q.where, ...only[h.id] } } : q)}`), (j) => decodeUsage(j, h.id, h.name))));
+      return { hosts: rs.flatMap((r) => (r.ok ? [r.data] : [])), failed: on.filter((_, i) => !rs[i].ok).map((h) => h.name) };
     },
     async load() {
       const lists = await Promise.all(

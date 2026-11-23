@@ -17,6 +17,7 @@ import type { HostInfo } from "./hosts.ts";
 import { addressable, bare, ref, stampDeploy, stampEvent, stampLoad, stampProject, stampSlots, stampThread, unrefDeep, type Snapshot } from "./hostfeed.ts";
 import { asHostId, type HostId } from "./hostid.ts";
 import { baseName } from "./paths.ts";
+import { mockUsage } from "./mock-usage.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -616,6 +617,14 @@ export function createMockApi(scenario: string): Api {
       return [...mockQuota(Date.now()).map((q) => ({ ...q, host: hs[0].name, hostId: idOfName(hs[0].name) })), { profile: "claude", host: "lab", hostId: lab, kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 12, resetsAt: at(200) }, { name: "7 d", usedPct: 23, resetsAt: at(4 * 1440) }], updatedAt: at(-3) },
         // V0.141: a fourth provider, for the layout tests with two hosts and four quotas (the phone's load sheet lists them)
         { profile: "zai", host: "lab", hostId: lab, kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 83, resetsAt: at(90) }], updatedAt: at(-1) }];
+    },
+    async usage(q, only) {
+      // V0.usage-page: desk's ledger, and lab's with &hosts=2 (one linked project across both).
+      const hs = mockHostList();
+      const now = Date.now();
+      const all = hs.length ? [{ id: idOfName(hs[0].name), name: hs[0].name, lab: false }, { id: idOfName("lab"), name: "lab", lab: true }] : [{ id: deskId, name: "desk", lab: false }];
+      const asked = all.filter((h) => !only || h.id in only);
+      return { hosts: asked.map((h) => mockUsage(only ? { ...q, where: { ...q.where, ...only[h.id] } } : q, now, h.id, h.name, h.lab)), failed: [] };
     },
     async load() {
       // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).

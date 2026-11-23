@@ -38,6 +38,7 @@ import { type ProjectPatch, ProjectEditor, archiveFor } from "./project-editor.t
 import type { ArchiveInfo } from "./archived.ts";
 import { linkingFor } from "./project-linking.tsx";
 import { type AllSettings, useSettingsData } from "./settings-load.ts";
+import { UsagePage } from "./settings-usage.tsx";
 
 
 /** This device: kept in this browser. */
@@ -77,7 +78,7 @@ interface ProjectActions {
 }
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "setup" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct">>;
+  api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "setup" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct" | "usage">>;
   /** decision 0031 2.6: the name of the front this browser is connected through, for This device only */
   front: string;
   /** V0.51: the front's hosts with their state, the front's own among them */
@@ -140,6 +141,7 @@ export function Settings(p: SettingsProps) {
     automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: (!d.host.online && d.repos === null) || !!d.host.noId }))),
     projects: projectsSummary(settingsProjects(p.projects).length),
     hosts: hostsSummary(p.hosts),
+    usage: "Tokens by model, account, project", // V0.usage-page: read only when the page opens
     devices: devicesSummary(auth.s),
     device: deviceSummary(p.device.push, p.device.theme, hiddenCount(p.device.hidden)),
     setup: setupSummary(setupRep),
@@ -463,6 +465,8 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
         ),
       };
     }
+    case "usage":
+      return { title: "Usage", lede: "The tokens every host counted: each agent's turns and Fyr's own calls.", body: <UsagePage api={p.api} now={p.now} onOpenThread={p.onOpenThread} /> };
     case "devices":
       if (!p.api.authState || !p.api.authAct) return { title: "Devices", body: <Empty text="This host cannot list devices." /> };
       return { title: "Devices", lede: "Who is signed in to this install, and how a new device gets in.", body: <DevicesPage api={{ authState: p.api.authState, authAct: p.api.authAct }} now={p.now} st={auth} /> };

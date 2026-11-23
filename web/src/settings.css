@@ -244,3 +244,24 @@ label.sr{cursor:pointer}
 .rail .railx~.rgear{margin-top:4px}
 .rail .rgear+.foot{margin-top:6px}
 
+
+/* V0.usage-page: Settings → Usage, the same on both fronts. The day bars are one series in one hue (--harbour), with a
+   2px gap between bars and rounded data ends; the rows under them are the table view. */
+.ug.busy{opacity:.6;transition:opacity .15s}
+.ug-by{font:inherit;font-size:13px;color:var(--ink);background:var(--raised);border:1px solid var(--line-strong);border-radius:6px;padding:4px 8px;max-width:100%}
+.ug-big{font-size:22px;font-weight:600;color:var(--ink)}
+.ug-days{display:flex;align-items:flex-end;gap:2px;height:72px;padding:8px 14px 12px;box-sizing:border-box}
+.ug-day{flex:1 1 0;min-width:2px;height:100%;display:flex;align-items:flex-end;border-bottom:1px solid var(--line)}
+.ug-day i{display:block;width:100%;background:var(--harbour);border-radius:4px 4px 0 0}
+.ug-day:hover i{opacity:.75}
+.ug-r .sr-d{display:block}
+.ug-bar{display:block;height:3px;margin-top:6px;background:var(--sunken);border-radius:2px;overflow:hidden}
+.ug-bar i{display:block;height:100%;background:var(--harbour);border-radius:2px}
+.ug-n{font-size:13px;color:var(--ink)}
+.ug-host{color:var(--ink-muted)}
+.ug-chart{padding:8px 14px 12px}
+.ug-chart .ug-days{padding:0}
+.ug-day.now i{opacity:.55}
+.ug-ticks{position:relative;height:14px;margin-top:4px;font-size:11px;color:var(--ink-faint)}
+.ug-ticks span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+.ug-ticks span:first-child{transform:none}

@@ -41,6 +41,7 @@ import (
 	"github.com/meros/fyr/internal/setup"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
+	"github.com/meros/fyr/internal/usage"
 )
 
 type Server struct {
@@ -66,6 +67,9 @@ type Server struct {
 	FS *hostfs.FS
 	// PR reads PR details for the PR tab (V0.43); optional.
 	PR PRDetails
+	// Usage answers a usage rollup (V0.usage-page, decision 0041); nil
+	// answers an empty one.
+	Usage func(q usage.Query) (usage.View, error)
 	// Quota lists the profiles' provider quota (V0.44); optional.
 	Quota func(ctx context.Context) []quota.Status
 	// Focus raises or drops the CPU weight of a thread a device shows
@@ -221,6 +225,7 @@ func (s *Server) routes(mcp bool) http.Handler {
 	mux.HandleFunc("GET /api/commands", s.folderCommands)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/quota", s.quota)
+	mux.HandleFunc("GET /api/usage", s.usage)
 	mux.HandleFunc("GET /api/load", s.load)
 	mux.HandleFunc("POST /api/board/visit", s.boardVisit)
 	mux.HandleFunc("POST /api/search", s.search)
@@ -978,6 +983,27 @@ func (s *Server) quota(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	api.WriteJSON(w, 200, s.Quota(ctx))
+}
+
+// usage answers GET /api/usage (V0.usage-page): this host's token sums by
+// the asked keys over a day range, with the names of what they count. The
+// sums add up, so a front joins its hosts' answers by key.
+func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
+	q, err := usage.ParseQuery(r.URL.Query())
+	if err != nil {
+		api.WriteJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if s.Usage == nil {
+		api.WriteJSON(w, 200, usage.View{Groups: []store.UsageGroup{}})
+		return
+	}
+	v, err := s.Usage(q)
+	if err != nil {
+		api.WriteJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	api.WriteJSON(w, 200, v)
 }
 
 // load answers GET /api/load (V0.80): this host's load as a list of one,
