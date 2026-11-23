@@ -235,7 +235,7 @@ try {
     const hostsUrl = (base) => (size.mobile ? `${base}/?settings=hosts` : `${base}/?dialog=settings&page=hosts`);
     await s2.navigate(hostsUrl(stackInfo.loopback));
     await s2.waitFor(`document.querySelectorAll('.peers .peerrow').length >= 1`, `${size.name}: Hosts to list the installs`);
-    await s2.waitFor(`document.querySelectorAll('.peers .cand').length >= 2`, `${size.name}: Hosts to list the nodes that are not paired`);
+    await s2.waitFor(`document.querySelectorAll('.peers .peercand').length >= 2`, `${size.name}: Hosts to list the nodes that are not paired`);
     check(/tagged node: pair it with an invite/.test(await s2.evaluate(`document.querySelector('.peers').innerText`)), `${size.name}: a tagged node says it needs an invite`);
     const pairBtn = `[...document.querySelectorAll('.peers button')].find((b) => b.textContent.trim() === 'Pair' && !b.disabled)`;
     await s2.waitFor(pairBtn, `${size.name}: Pair to be enabled`);
