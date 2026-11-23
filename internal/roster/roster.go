@@ -654,7 +654,7 @@ func (r *Roster) Successor(id string) string {
 
 // Remove ends an install for ever: a statement signed by this install, and the
 // members the removed one alone vouched for signed for again by this one in the
-// same batch, so the owner keeps them. A device the removed install revoked stays
+// same batch, so the owner keeps them, and the owner's login with them. A device the removed install revoked stays
 // revoked (a revoke is protective); a device it added is not kept.
 func (r *Roster) Remove(id string) error {
 	r.mu.Lock()
@@ -670,6 +670,7 @@ func (r *Roster) Remove(id string) error {
 	for k, m := range r.members {
 		before[k] = m
 	}
+	ownerBefore := r.owner
 	var oldRevokes []string
 	for _, s := range r.stmts {
 		if s.Kind == KindDeviceRevoke && (s.By == id || r.successor[id] == s.By) {
@@ -684,6 +685,13 @@ func (r *Roster) Remove(id string) error {
 		}
 	}
 	r.recomputeLocked()
+	// V0.owner-without-tailnet: the owner's login the removed install alone said
+	// is said again by this one, so the owner keeps it (no install takes it from
+	// tailnet.Self any more, so nothing else would say it again).
+	if ownerBefore != "" && r.owner != ownerBefore {
+		r.addLocked(r.sign(Statement{Kind: KindOwnerLogin, Subject: ownerBefore}))
+		r.recomputeLocked()
+	}
 	for _, dev := range oldRevokes {
 		r.addLocked(r.sign(Statement{Kind: KindDeviceRevoke, Subject: dev}))
 	}
