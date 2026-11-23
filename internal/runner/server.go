@@ -385,7 +385,7 @@ func (s *Server) spawn(sp Spawn) (*rproc, error) {
 			}
 		}
 	}
-	cmd := exec.Command(sp.Binary, sp.Args...)
+	cmd := command(sp.Binary, sp.Args, sp.Env) // the agent's PATH, not the launcher's (V0.runner-lookpath)
 	cmd.Dir, cmd.Env = sp.Dir, sp.Env
 	proc.Group(cmd) // kill stops the CLI and what it started (#39)
 	closeCg, err := proc.IntoCgroup(cmd, sp.Cgroup)
