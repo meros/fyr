@@ -32,7 +32,7 @@ func Start(rc *Client, s Spawn, wrap []string) (Pipe, error) {
 // the way before V0.90, and the way without a runner. A line carries no
 // sequence number and Ack does nothing.
 func StartLocal(bin string, args []string, dir string, env []string, cgroup string) (Pipe, error) {
-	cmd := exec.Command(bin, args...)
+	cmd := command(bin, args, env) // the agent's PATH (V0.runner-lookpath)
 	cmd.Dir, cmd.Env = dir, env
 	proc.Group(cmd) // Kill stops the CLI and what it started (#39)
 	closeCg, err := proc.IntoCgroup(cmd, cgroup)
