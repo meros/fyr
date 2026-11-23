@@ -2,7 +2,30 @@
 
 Status lives in GitHub: https://github.com/meros/fyr/milestones. This file holds the milestone definitions, their order and exit criteria only.
 
-## Where we are (21 Nov 2026)
+## Where we are (23 Nov 2026)
+
+All v1.0 code that can be built and checked on the owner's own machines is merged (26 of the milestone's 29 issues closed). Since 21 Nov:
+- **Blocking:**
+  - owner identity without Tailscale (#197, #572);
+  - the README trust model (#203);
+  - LAN installs in Settings → Hosts with a real multicast test (#259);
+  - restart survival (#156);
+  - the spec restated from the code (#455).
+- **Track C:** the no-progress signal (#448), the quiet-hours summary and push batching (#449), background on a new message (#19), the folder chip (#26), archiving a project (#24), the filmstrip fold (#61) and conversation jumps (#55).
+- **Track D:** one versioned store migration (#456), the mock checked against a real host (#457), and `internal/guard` with a pure `Tick` over a `Mechanism` (#458).
+- **#30 (real Claude login through Fyr):** closed. On a fresh Ubuntu 24.04 container the login worked, and the run found two bugs on the way, both fixed:
+  - the one-host Settings never showed the sign-in link (#596);
+  - the runner could not find `claude` in `~/.local/bin`, so no thread could start (#620).
+- **Fresh-machine run for #199:** found four install bugs, all fixed (#591).
+
+**Left, all needing the owner's hardware:**
+- #434: the Mac app, on the Mac runner.
+- #236: the heavy-work check on a Mac and on Linux without cgroups.
+- #199: the slice layout on systemd ≥ 257, and the stable channel.
+
+The stable channel needs a `v*` tag, so it is checked when `v1.0.0-rc.1` is cut. Then the rc runs a week before `v1.0.0`.
+
+### Earlier (21 Nov 2026)
 
 The original goal of v1 was "the owner works only in Fyr". It has been met for weeks, and the repo is public with a README, an INSTALL guide and an MIT licence. On 20–21 Nov most of the blocking v1.0 groundwork shipped: Linux without Nix (#199), share-based resource defaults (#198), plain-HTTPS releases without `gh` (#200), versioned `vX.Y.Z` releases & channels (#447), `Fyr.app` / `Fyr.dmg` + Setup wizard (#434), `fyr-desktop` on Linux (#461), Decision 0031 final route cleanup (#372), all six blocking Solid core 2 items (#450–#455), plus the Antigravity (`agy`) CLI adapter (#492), trans-host handover (#503), multi-PR tracking (#504), per-project approval judge (#507), quota waiting & reset waking (#502, #518, #519), and 35 runtime thread invariants (#520, #526). Remaining v1.0 blockers are non-tailnet owner setup (#197), README trust model (#203), fresh-machine verification (#30, #259, #236), and restart-survival audit (#156).
 
