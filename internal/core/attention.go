@@ -148,6 +148,11 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if a := PendingRequest(t); a != nil {
 		return blocked(GroupApprove, "Run", a.Why, "Run: "+a.Why)
 	}
+	// V0.waiting-for-command: a command the owner pressed Run on is running
+	// and the agent ended its turn on it: the thread moves without the owner.
+	if a := RunningRequest(t); a != nil {
+		return Attention{State: Waiting, Section: WorkingSec, Reason: "Waiting for command: " + a.Why}
+	}
 	// V0.settle-offer-your-move: the agent offers to settle once its run
 	// ended; the owner's move is Settle, or a message that clears it.
 	if t.SettleAsk != nil {
