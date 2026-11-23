@@ -50,7 +50,12 @@ func TestQuotaReset(t *testing.T) {
 		{"Individual quota reached. Resets in 1d2h30m.", at.Add(26*time.Hour + 30*time.Minute)},
 		{"Individual quota reached. Resets in 2d.", at.Add(48 * time.Hour)},
 		{"You've hit your weekly limit · resets Nov 23, 4am", time.Date(2026, 11, 23, 4, 0, 0, 0, time.UTC)},
-		{"You've hit your weekly limit · resets 23 Nov, 4am (Europe/Stockholm)", time.Date(2026, 11, 23, 4, 0, 0, 0, time.UTC)},
+		{"You've hit your weekly limit · resets 23 Nov, 4am (Europe/Stockholm)", time.Date(2026, 11, 23, 3, 0, 0, 0, time.UTC)}, // Stockholm is UTC+1 in November
+		{"You've hit your limit · resets Nov 24 at 4am (Europe/Stockholm)", time.Date(2026, 11, 24, 3, 0, 0, 0, time.UTC)},
+		{"You've hit your session limit · resets 3pm (Europe/Stockholm)", time.Date(2026, 11, 21, 14, 0, 0, 0, time.UTC)},
+		{"You've hit your weekly limit · resets 4am (Europe/Stockholm)", time.Date(2026, 11, 22, 3, 0, 0, 0, time.UTC)},
+		{"You've hit your limit · resets 4 am", time.Date(2026, 11, 22, 4, 0, 0, 0, time.UTC)},
+		{"You've hit your limit · resets Nov 24, 4:30am (Not/AZone)", time.Date(2026, 11, 24, 4, 30, 0, 0, time.UTC)},
 		// A day of this month already past is next year's.
 		{"resets Jan 2, 4am", time.Date(2027, 1, 2, 4, 0, 0, 0, time.UTC)},
 		// A time alone is today's, or tomorrow's when it has gone by.
@@ -342,7 +347,7 @@ func TestQuotaAutoContinueLoopProtection(t *testing.T) {
 }
 
 // V0.quota-auto-continue: settled, archived, running, open-decision, handover,
-// and outbox-pending threads never auto-continue.
+// threads never auto-continue; an unread outbox message does not stop one.
 func TestQuotaAutoContinueRespectsLifecycle(t *testing.T) {
 	at := time.Date(2026, 11, 21, 12, 0, 0, 0, time.Local)
 	late := at.Add(3 * time.Hour)
@@ -361,7 +366,6 @@ func TestQuotaAutoContinueRespectsLifecycle(t *testing.T) {
 		{"running", func(th *Thread) { th.Running = true; th.RunStartedAt = &at }},
 		{"open-decision", func(th *Thread) { th.Decisions = []Decision{{ID: "d1", Kind: DecisionAsk, Assignee: Owner}} }},
 		{"handover", func(th *Thread) { th.Handover = &Handover{To: "claude", At: at} }},
-		{"outbox", func(th *Thread) { th.Outbox = []OutMsg{{ID: "m1", State: "sent"}} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -375,6 +379,15 @@ func TestQuotaAutoContinueRespectsLifecycle(t *testing.T) {
 				t.Fatalf("%s: auto-continued unexpectedly: queue=%+v", tc.name, th.Feed.Queue)
 			}
 		})
+	}
+
+	// The message the limit refused is unread: it does not hold the wait back.
+	{
+		th, v := base()
+		th.Outbox = []OutMsg{{ID: "m1", State: "sent"}}
+		if c := NextCheck(th, v, late); c == nil {
+			t.Fatal("an unread outbox message stopped the auto-continue")
+		}
 	}
 
 	// Unarchiving a thread whose quota reset passed long ago does not surprise-launch a run.

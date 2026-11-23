@@ -288,3 +288,73 @@ func TestQuotaWakeFallsBackToNoticeReset(t *testing.T) {
 type fakeAgents func(id string, ef core.Effect) error
 
 func (f fakeAgents) Do(id string, ef core.Effect) error { return f(id, ef) }
+
+// V0.quota-reset-zone: the owner's case. A first limit on a thread, written as
+// "resets 4am (Europe/Stockholm)", arms a wait for that clock in that zone and
+// continues the thread without the owner. The variants cover a message the
+// provider refused with the limit (it stays unread in the outbox) and the
+// spellings of the reset.
+func TestQuotaFirstLimitArmsWaitAndContinues(t *testing.T) {
+	cases := []struct {
+		name   string
+		msg    string
+		outbox bool
+		reset  time.Time // now is 2026-11-15 10:00 UTC
+	}{
+		{"time only", "You've hit your weekly limit · resets 4am (Europe/Stockholm)", false, time.Date(2026, 11, 16, 3, 0, 0, 0, time.UTC)},
+		{"unread message", "You've hit your weekly limit · resets 4am (Europe/Stockholm)", true, time.Date(2026, 11, 16, 3, 0, 0, 0, time.UTC)},
+		{"session", "You've hit your session limit · resets 3pm (Europe/Stockholm)", false, time.Date(2026, 11, 15, 14, 0, 0, 0, time.UTC)},
+		{"date at", "You've hit your weekly limit · resets Nov 17 at 4am (Europe/Stockholm)", false, time.Date(2026, 11, 17, 3, 0, 0, 0, time.UTC)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e, _, now := bare(t)
+			fed := make(chan string, 8)
+			e.Agents = fakeAgents(func(id string, ef core.Effect) error {
+				if ef.Kind == core.EffectFeed {
+					fed <- id
+				}
+				return nil
+			})
+			id := bareThread(t, e)
+			if c.outbox {
+				coretest.Patch(e, id, func(x *core.Thread, _ time.Time) []core.Event {
+					core.SetOutbox(x, "m1", "sent")
+					return nil
+				})
+			}
+			obs := core.Observer(core.ObsProcess)
+			if _, err := e.Apply(core.Input{Source: obs, Kind: core.KindRunStarted, Thread: id}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.Apply(core.Input{Source: obs, Kind: core.KindRunEnded, Thread: id, Args: core.RunEndedArgs{
+				Failure: &core.Failure{Class: core.ClassQuota, Message: c.msg},
+				Data:    map[string]any{},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			th, _ := e.Thread(id)
+			if got := core.QuotaReset(th.Failure); got == nil || !got.Equal(c.reset) {
+				t.Fatalf("reset %v, want %v", got, c.reset)
+			}
+			if !core.QuotaCanAutoContinue(&th) {
+				t.Fatalf("no auto-continue armed: outbox=%+v", th.Outbox)
+			}
+			*now = c.reset.Add(core.QuotaResumeBuffer - time.Second)
+			e.Tick()
+			if th, _ = e.Thread(id); th.Failure == nil {
+				t.Fatal("continued before the reset and buffer")
+			}
+			*now = c.reset.Add(core.QuotaResumeBuffer + time.Second)
+			e.Tick()
+			select {
+			case <-fed:
+			case <-time.After(2 * time.Second):
+				t.Fatal("not continued at the reset without the owner")
+			}
+			if th, _ = e.Thread(id); th.Failure != nil {
+				t.Fatalf("failure not cleared: %+v", th.Failure)
+			}
+		})
+	}
+}
