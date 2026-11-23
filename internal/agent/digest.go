@@ -19,14 +19,18 @@ type toolInfo struct {
 type digest struct {
 	tools     map[string]toolInfo
 	openTools map[string]bool
+	// openBash are the Bash calls still running, a subagent's too
+	// (V0.no-progress: a long command is progress).
+	openBash map[string]bool
 }
 
 func newDigest() *digest {
-	return &digest{tools: map[string]toolInfo{}, openTools: map[string]bool{}}
+	return &digest{tools: map[string]toolInfo{}, openTools: map[string]bool{}, openBash: map[string]bool{}}
 }
 
 func (d *digest) resetOpen() {
 	d.openTools = map[string]bool{}
+	d.openBash = map[string]bool{}
 }
 
 // digestOut is what one message changes. Empty fields change nothing.
@@ -36,6 +40,9 @@ type digestOut struct {
 	Subagents int // added
 	PRURL     string
 	PRURLs    []string
+	// OpenBash is the count of running Bash calls when this message
+	// changed it, else nil (V0.no-progress).
+	OpenBash *int
 }
 
 func (d *digest) feed(m map[string]any) digestOut {
@@ -53,6 +60,10 @@ func (d *digest) feed(m map[string]any) digestOut {
 			name, _ := b["name"].(string)
 			in, _ := b["input"].(map[string]any)
 			d.tools[id] = toolInfo{name, in}
+			if name == "Bash" && id != "" {
+				d.openBash[id] = true
+				o.OpenBash = d.bashCount()
+			}
 			if !top {
 				continue
 			}
@@ -77,6 +88,10 @@ func (d *digest) feed(m map[string]any) digestOut {
 			}
 		case "tool_result":
 			id, _ := b["tool_use_id"].(string)
+			if d.openBash[id] {
+				delete(d.openBash, id)
+				o.OpenBash = d.bashCount()
+			}
 			if top && id != "" {
 				if d.openTools[id] {
 					delete(d.openTools, id)
@@ -99,6 +114,11 @@ func (d *digest) feed(m map[string]any) digestOut {
 		o.Activity = "Thinking"
 	}
 	return o
+}
+
+func (d *digest) bashCount() *int {
+	n := len(d.openBash)
+	return &n
 }
 
 // createdPRs are the unique PR URLs gh pr create printed on their own lines,

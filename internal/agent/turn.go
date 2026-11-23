@@ -113,6 +113,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 	}
 	switch typ {
 	case "rate_limit_event":
+		m.observe(s.thread, core.KindProgress, nil) // V0.no-progress: the provider holds the run
 		// V0.44: a free quota update between the host's reads.
 		if info, ok := msg["rate_limit_info"].(map[string]any); ok && m.cfg.OnRateLimit != nil {
 			if t, ok := m.host.Thread(s.thread); ok {
@@ -145,6 +146,11 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		return
 	case "system":
+		if msg["subtype"] == "api_retry" {
+			// V0.no-progress: the CLI waits on the provider and says so.
+			m.observe(s.thread, core.KindProgress, nil)
+			return
+		}
 		if msg["subtype"] == "background_tasks_changed" {
 			ks := taskList(msg)
 			for _, k := range ks {
@@ -201,7 +207,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.mu.Lock()
 		s.openTools = len(s.digest.openTools)
 		m.mu.Unlock()
-		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []core.Event{{Type: "msg", Data: trimMsg(msg)}}}
+		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, OpenBash: o.OpenBash, Log: []core.Event{{Type: "msg", Data: trimMsg(msg)}}}
 		for _, u := range o.PRURLs {
 			repo, n, _ := core.ParsePR(u)
 			pr := core.PR{URL: u, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}

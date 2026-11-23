@@ -67,6 +67,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},                     // V0.settle-merge-fixes (1)
 	{Name: "quota.continue", Urgency: Wake, OnReduce: quotaContinueNotices},            // V0.quota-auto-continue
 	{Name: "setup", Urgency: Next, OnReduce: setupNotices},                             // V0.prompt-fits-setup
+	{Name: "noprogress", Urgency: Next, OnReduce: noProgressNotices},                   // V0.no-progress
 }
 
 // EventSlot is the event of a slot for a heavy job that became the

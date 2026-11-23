@@ -40,7 +40,7 @@ func NeedsOwnerAt(t *Thread, now time.Time) bool {
 // reset (V0.quota-wait): the owner can do nothing about it, so the thread
 // waits; past it, the failure is theirs.
 func NeedsOwnerNowAt(t *Thread, now time.Time) bool {
-	return len(t.Decisions) > 0 || (t.Failure != nil && QuotaWaitText(t, now) == "") || t.Unresponsive != nil || PendingRequest(t) != nil
+	return len(t.Decisions) > 0 || (t.Failure != nil && QuotaWaitText(t, now) == "") || t.Unresponsive != nil || t.NoProgress != nil || PendingRequest(t) != nil
 }
 
 // WorkGoing reports that the thread's work goes on by itself: a run or a

@@ -363,7 +363,7 @@ func TestQuotaAutoContinueRespectsLifecycle(t *testing.T) {
 	}{
 		{"settled", func(th *Thread) { s := at.Add(time.Minute); th.Settle.At = &s }},
 		{"archived", func(th *Thread) { a := at.Add(time.Minute); th.ArchivedAt = &a }},
-		{"running", func(th *Thread) { th.Running = true; th.RunStartedAt = &at }},
+		{"running", func(th *Thread) { th.Running = true; th.RunStartedAt = &at; th.OpenBash = 1 }}, // V0.no-progress: in a command, so no silence clock
 		{"open-decision", func(th *Thread) { th.Decisions = []Decision{{ID: "d1", Kind: DecisionAsk, Assignee: Owner}} }},
 		{"handover", func(th *Thread) { th.Handover = &Handover{To: "claude", At: at} }},
 	}

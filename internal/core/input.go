@@ -240,6 +240,8 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	// V0.136: merge asks open on green CI and close on red.
 	res.Events = append(res.Events, gateMergeAsks(t, now)...)
 	t.Stopped = stoppedNow(t, now)
+	// V0.no-progress: a live run's silence, before the notices read it.
+	res.Events = append(res.Events, noProgressAfter(before, t, in, now)...)
 	// The agent feed (#47): the notice rules project this reduce.
 	res.Effects = append(res.Effects, project(Reduced{Before: before, After: t, In: in, Events: res.Events}, now)...)
 	// V0.185: the snooze until work is done reads all of the above.
