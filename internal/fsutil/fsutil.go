@@ -2,6 +2,18 @@
 // temporary file in the same folder, synced, and renamed over the target,
 // so a reader sees the old content or the new and never half of it, and a
 // crash leaves no short file behind.
+//
+// What it does not do, for a caller to weigh:
+//   - The mode is forced: an existing file's mode is replaced by the mode
+//     given, not kept.
+//   - A symlink at path is replaced by a regular file, not written through.
+//   - The temporary file is ".<name>.tmp-<random>" in the same folder. A crash
+//     between create and rename leaves it there. The leading dot is the
+//     contract: Fyr's readers of such folders key on the exact names they
+//     write or on ids, and its tree walks skip hidden entries, so a stray one
+//     is never an entry. A reader that lists every file of such a folder must
+//     skip dot names too.
+//   - The folder must exist and be writable: the rename needs it.
 package fsutil
 
 import (

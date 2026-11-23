@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/fsutil"
 	"github.com/meros/fyr/internal/proc"
 )
 
@@ -78,7 +81,9 @@ func MakeWorktree(ctx context.Context, r WorktreeReq) (core.Workspace, error) {
 	if _, err := os.Stat(path); err == nil {
 		return core.Workspace{}, fmt.Errorf("%s already exists and is not a worktree on %s; pick another branch", path, branch)
 	}
-	exclude(common)
+	if err := exclude(common); err != nil { // only keeps git status clean; not worth failing the worktree
+		log.Printf("agent: %s not excluded from git status: %v", WorktreeDir, err)
+	}
 	if _, err := git(main, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
 		if _, err := git(main, "worktree", "add", path, branch); err != nil {
 			return core.Workspace{}, fmt.Errorf("git worktree add: %v", err)
@@ -143,20 +148,25 @@ func defaultBase(ctx context.Context, main string) string {
 
 // exclude keeps Fyr's worktrees out of the main checkout's git status: it
 // adds the folder to the repo's info/exclude once.
-func exclude(common string) {
+func exclude(common string) error {
 	f := filepath.Join(common, "info", "exclude")
-	b, _ := os.ReadFile(f)
+	b, err := os.ReadFile(f)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	for _, l := range strings.Split(string(b), "\n") {
 		if l = strings.TrimSpace(l); l == "/"+WorktreeDir+"/" || l == "**/"+WorktreeDir+"/" || l == WorktreeDir+"/" {
-			return
+			return nil
 		}
 	}
-	os.MkdirAll(filepath.Dir(f), 0o755)
+	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+		return err
+	}
 	s := string(b)
 	if s != "" && !strings.HasSuffix(s, "\n") {
 		s += "\n"
 	}
-	os.WriteFile(f, []byte(s+"/"+WorktreeDir+"/\n"), 0o644)
+	return fsutil.WriteAtomic(f, []byte(s+"/"+WorktreeDir+"/\n"), 0o644)
 }
 
 // runGit runs git in dir with no prompt and returns its trimmed stdout; an

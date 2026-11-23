@@ -56,12 +56,12 @@ func CopySession(src, fromDir, toDir, sid string) error {
 	if err := os.MkdirAll(dstConv, 0o700); err != nil {
 		return err
 	}
-	if err := copyFile(src, filepath.Join(dstConv, sid+".db")); err != nil {
+	if err := fsutil.CopyFile(src, filepath.Join(dstConv, sid+".db"), 0o600); err != nil {
 		return err
 	}
 	for _, suf := range []string{"-wal", "-shm"} {
 		if _, err := os.Stat(src + suf); err == nil {
-			if err := copyFile(src+suf, filepath.Join(dstConv, sid+".db"+suf)); err != nil {
+			if err := fsutil.CopyFile(src+suf, filepath.Join(dstConv, sid+".db"+suf), 0o600); err != nil {
 				return err
 			}
 		}
@@ -105,7 +105,6 @@ func hasOnboardingComplete(path string) bool {
 	return o.OnboardingComplete || o.ConsumerOnboardingComplete || o.EnterpriseOnboardingComplete
 }
 
-func copyFile(src, dst string) error { return fsutil.CopyFile(src, dst, 0o600) }
 
 func copyTree(src, dst string) error {
 	if _, err := os.Stat(src); err != nil {
@@ -123,6 +122,6 @@ func copyTree(src, dst string) error {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		return copyFile(p, target)
+		return fsutil.CopyFile(p, target, 0o600)
 	})
 }

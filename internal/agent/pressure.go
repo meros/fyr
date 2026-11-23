@@ -117,7 +117,11 @@ func (m *Manager) startOrWait(threadID string, o *as) (*session, error) {
 		waited = true
 		log.Printf("thread %s: the agent did not start under %s (%v); trying again in %s", threadID, why, err, back)
 		m.observe(threadID, core.KindMachineWait, core.MachineWaitArgs{Why: why})
-		time.Sleep(back)
+		select {
+		case <-time.After(back):
+		case <-m.quit: // shutting down: no further tries
+			return s, err
+		}
 		if back *= 2; back > 2*time.Minute {
 			back = 2 * time.Minute
 		}

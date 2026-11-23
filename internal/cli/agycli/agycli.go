@@ -9,14 +9,17 @@ package agycli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/fsutil"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/runner"
 )
@@ -209,13 +212,22 @@ func prepareGeminiDir(l cli.Launch) (dir string, cleanup func(), err error) {
 	}
 	settingsPath := filepath.Join(appDir, "settings.json")
 	cfg := map[string]any{}
-	if b, rerr := os.ReadFile(settingsPath); rerr == nil {
-		_ = json.Unmarshal(b, &cfg)
+	b, rerr := os.ReadFile(settingsPath)
+	switch {
+	case rerr == nil:
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			// The user's own file, which we could not read: leave it as it is.
+			cleanup()
+			return "", func() {}, fmt.Errorf("agy settings %s: %w", settingsPath, err)
+		}
+	case !errors.Is(rerr, fs.ErrNotExist):
+		cleanup()
+		return "", func() {}, fmt.Errorf("agy settings: %w", rerr)
 	}
 	if cfg["modelProvider"] != "gemini" {
 		cfg["modelProvider"] = "gemini"
 		b, _ := json.MarshalIndent(cfg, "", "  ")
-		if err := os.WriteFile(settingsPath, b, 0o600); err != nil {
+		if err := fsutil.WriteAtomic(settingsPath, b, 0o600); err != nil {
 			cleanup()
 			return "", func() {}, fmt.Errorf("agy settings: %w", err)
 		}

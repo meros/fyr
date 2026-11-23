@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"image"
@@ -259,14 +260,30 @@ func TestSetupExisting(t *testing.T) {
 	if r := h.e.UploadProjectImage(pb, logoPNG(t, color.NRGBA{40, 100, 190, 255})); !r.OK {
 		t.Fatal(r)
 	}
-	if n := h.e.SetupExisting(0); n != 1 {
+	if n := h.e.SetupExisting(context.Background(), 0); n != 1 {
 		t.Fatalf("started %d runs", n)
 	}
 	if projectByID(h, pa).Setup == nil || projectByID(h, pb).Setup != nil {
 		t.Fatal("the wrong project was set up")
 	}
-	if n := h.e.SetupExisting(0); n != 0 {
+	if n := h.e.SetupExisting(context.Background(), 0); n != 0 {
 		t.Fatalf("a second pass started %d", n)
+	}
+}
+
+// The wait between two setup runs ends when the host shuts down.
+func TestSetupExistingStopsOnCancel(t *testing.T) {
+	h := setupHarness(t)
+	for _, n := range []string{"a", "b"} {
+		d := filepath.Join(h.dir, n)
+		os.MkdirAll(d, 0o755)
+		newProject(t, h, core.Args{"folder": d})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(50 * time.Millisecond); cancel() }()
+	start := time.Now()
+	if n := h.e.SetupExisting(ctx, time.Hour); n != 1 || time.Since(start) > 10*time.Second {
+		t.Fatalf("started %d runs in %v", n, time.Since(start))
 	}
 }
 
@@ -296,7 +313,7 @@ func TestSetupThatCouldNotStartRunsAgain(t *testing.T) {
 	}
 	guardDeps(t, h.e)
 	pid := newProject(t, h, core.Args{"folder": dir})
-	if n := h.e.SetupExisting(0); n != 0 {
+	if n := h.e.SetupExisting(context.Background(), 0); n != 0 {
 		t.Fatalf("started %d with a failing system agent", n)
 	}
 	if s := projectByID(h, pid).Setup; s == nil || s.Error == "" || s.Thread != "" {
@@ -304,13 +321,13 @@ func TestSetupThatCouldNotStartRunsAgain(t *testing.T) {
 	}
 	h.e.SystemAgentResolve = func(string) (string, string, error) { return "", "claude-haiku-5-5", nil }
 	guardDeps(t, h.e)
-	if n := h.e.SetupExisting(0); n != 1 {
+	if n := h.e.SetupExisting(context.Background(), 0); n != 1 {
 		t.Fatalf("after the fix a pass started %d", n)
 	}
 	if s := projectByID(h, pid).Setup; s == nil || s.Thread == "" || s.Error != "" {
 		t.Fatalf("after the retry: %+v", s)
 	}
-	if n := h.e.SetupExisting(0); n != 0 {
+	if n := h.e.SetupExisting(context.Background(), 0); n != 0 {
 		t.Fatalf("a run that started ran again: %d", n)
 	}
 }
@@ -467,7 +484,7 @@ func TestAutoSetupOnCreateSetsAll(t *testing.T) {
 	os.MkdirAll(old, 0o755)
 	h.e.AutoSetup = false
 	po := newProject(t, h, core.Args{"folder": old})
-	h.e.SetupExisting(0)
+	h.e.SetupExisting(context.Background(), 0)
 	if s := projectByID(h, po).Setup; s == nil || s.All {
 		t.Fatalf("the pass for projects from before sets all: %+v", s)
 	}

@@ -174,6 +174,11 @@ type Manager struct {
 	host Host
 	cfg  Config
 
+	// quit is closed by StopAll: a wait for the machine (startOrWait) ends
+	// then instead of outliving the shutdown.
+	quit     chan struct{}
+	quitOnce sync.Once
+
 	mu       sync.Mutex
 	sessions map[string]*session
 	starting map[string]*starting // thread id → its start in flight (#40)
@@ -353,7 +358,7 @@ func New(host Host, cfg Config) *Manager {
 			os.Remove(f)
 		}
 	}
-	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}, loops: map[string]bool{}, approvalSlots: make(chan struct{}, 4)}
+	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}, loops: map[string]bool{}, approvalSlots: make(chan struct{}, 4), quit: make(chan struct{})}
 }
 
 // writeMCPConfig writes a CLI's MCP config to a new 0600 file in dir.
@@ -814,6 +819,7 @@ func (m *Manager) Stop(threadID string) {
 // StopAll ends every process, for shutdown. With a runner it ends none
 // (V0.90): it lets go of each, and the next fyrd adopts them.
 func (m *Manager) StopAll() {
+	m.quitOnce.Do(func() { close(m.quit) })
 	m.mu.Lock()
 	ids := make([]string, 0, len(m.sessions))
 	var held []*runner.Conn

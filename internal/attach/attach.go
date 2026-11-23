@@ -20,6 +20,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/meros/fyr/internal/fsutil"
 )
 
 var ErrTooLarge = errors.New("the file is larger than the limit")
@@ -100,7 +102,7 @@ func (s *Store) Save(name, mediaType string, r io.Reader) (Meta, error) {
 	}
 	m.Size = n
 	j, _ := json.Marshal(m)
-	if err := os.WriteFile(filepath.Join(dir, "meta.json"), j, 0o600); err != nil {
+	if err := fsutil.WriteAtomic(filepath.Join(dir, "meta.json"), j, 0o600); err != nil {
 		return Meta{}, err
 	}
 	return m, nil
@@ -250,7 +252,7 @@ func (s *Store) SaveTree(name, entry string, files []TreeFile) (Meta, error) {
 	}
 	m.Path = filepath.Join(dir, "tree", filepath.FromSlash(entry))
 	j, _ := json.Marshal(m)
-	if err := os.WriteFile(filepath.Join(dir, "meta.json"), j, 0o600); err != nil {
+	if err := fsutil.WriteAtomic(filepath.Join(dir, "meta.json"), j, 0o600); err != nil {
 		return fail(err)
 	}
 	return m, nil

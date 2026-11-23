@@ -151,7 +151,13 @@ func (l *Launcher) Run() error {
 		ready := l.path("ready")
 		os.Remove(ready)
 		logPath := l.path("daemon.log")
-		logf, _ := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if lerr != nil { // the daemon still starts; its output is lost, and we say so
+			log.Printf("launcher: no daemon log at %s: %v", logPath, lerr)
+			if logf, lerr = os.OpenFile(os.DevNull, os.O_WRONLY, 0); lerr != nil {
+				return lerr
+			}
+		}
 		cmd := exec.Command(exe, l.Args...)
 		// #167: what this launcher says, never what it inherited.
 		cmd.Env = append(append(launchenv.Scrub(os.Environ()), launchenv.Launcher+"=1", launchenv.ReadyFile+"="+ready,

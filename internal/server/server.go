@@ -1025,12 +1025,32 @@ func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// present is v when ok, else nil: the /state fields that are `any` and
+// omitempty drop a nil interface, so an unset value is sent as nothing
+// instead of an empty struct (a typed nil pointer would encode as null).
+func present[T any](v T, ok bool) any {
+	if !ok {
+		return nil
+	}
+	return v
+}
+
 // hostMarks is the host's copy of the owner's host marks (V0.171), or nil.
 func (s *Server) hostMarks() any {
-	if m := s.Engine.HostMarks(); !m.At.IsZero() {
-		return m
-	}
-	return nil
+	m := s.Engine.HostMarks()
+	return present(m, !m.At.IsZero())
+}
+
+// agentMark is what this host's agent set for its mark (V0.208), or nil.
+func (s *Server) agentMark() any {
+	m := s.Engine.AgentMark()
+	return present(m, m != engine.AgentMark{})
+}
+
+// hostOrder is the host's copy of the owner's host order (V0.132), or nil.
+func (s *Server) hostOrder() any {
+	o := s.Engine.HostOrder()
+	return present(o, len(o.Names) > 0)
 }
 
 // updateState is this host's update state (V0.host-updates), or nil.
@@ -1039,20 +1059,4 @@ func (s *Server) updateState() any {
 		return nil
 	}
 	return s.UpdateState()
-}
-
-// agentMark is what this host's agent set for its mark (V0.208), or nil.
-func (s *Server) agentMark() any {
-	if m := s.Engine.AgentMark(); m != (engine.AgentMark{}) {
-		return m
-	}
-	return nil
-}
-
-// hostOrder is the host's copy of the owner's host order (V0.132), or nil.
-func (s *Server) hostOrder() any {
-	if o := s.Engine.HostOrder(); len(o.Names) > 0 {
-		return o
-	}
-	return nil
 }

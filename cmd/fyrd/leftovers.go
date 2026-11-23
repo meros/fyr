@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"os/exec"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -39,13 +38,10 @@ func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sample
 	var cmdlines func() []string
 	if tree == nil && runtime.GOOS == "darwin" {
 		// No cgroups and no /proc: the process table from ps (section 5).
-		lt.PS = func() (string, error) {
-			out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,rss=,etime=,args=").Output()
-			return string(out), err
-		}
+		lt.PS = func() (string, error) { return cgroup.PS(ctx, "-A", "-o", "pid=,ppid=,rss=,etime=,args=") }
 		cmdlines = func() []string {
-			out, _ := exec.Command("ps", "-A", "-o", "args=").Output()
-			return splitLines(string(out))
+			out, _ := cgroup.PS(ctx, "-A", "-o", "args=")
+			return splitLines(out)
 		}
 	} else {
 		cmdlines = func() []string { return cgroup.Cmdlines("") }

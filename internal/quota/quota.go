@@ -12,6 +12,7 @@ import (
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/fsutil"
 	"github.com/meros/fyr/internal/hostfs"
+	"github.com/meros/fyr/internal/httpguard"
 	"io"
 	"math"
 	"net/http"
@@ -644,7 +645,7 @@ func (s *Service) client() *http.Client {
 	if s.Client != nil {
 		return s.Client
 	}
-	return http.DefaultClient
+	return httpguard.NewClient()
 }
 
 // get sends one authorised GET and decodes a 200 JSON body into v. Errors
