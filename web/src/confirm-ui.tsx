@@ -43,7 +43,9 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
   useEffect(() => {
     ok.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      e.stopPropagation(); // the inbox keys must not act under the confirmation
+      // The inbox keys must not act under the confirmation. Tab goes on to the panel, whose focus trap takes it and
+      // stops it there (focus-trap.ts).
+      if (e.key !== "Tab") e.stopPropagation();
       const k = e.key;
       if (k === "Escape") {
         e.preventDefault();
@@ -54,7 +56,6 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
         e.preventDefault();
         doneRef.current(true);
       }
-      // Tab stays inside through the panel's focus trap (V0.composer-focus-reach (2), focus-trap.ts), as in every dialog.
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);

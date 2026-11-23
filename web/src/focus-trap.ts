@@ -55,17 +55,28 @@ export function useFocusTrap(panel: RefObject<HTMLElement | null>, initial: "fir
         el.focus({ preventScroll: true });
       }
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || e.defaultPrevented || !isTopTrap(me)) return;
-      const active = document.activeElement as HTMLElement | null;
-      const list = focusables(el);
-      const next = tabTarget(list, active && el.contains(active) ? active : null, e.shiftKey);
+    const move = (e: KeyboardEvent, from: HTMLElement | null) => {
       e.preventDefault();
-      next?.focus();
+      tabTarget(focusables(el), from && el.contains(from) ? from : null, e.shiftKey)?.focus();
     };
-    window.addEventListener("keydown", onKey, true);
+    // Tab inside the panel: heard on the panel itself, after its controls had the key. A control that uses Tab itself
+    // (the folder picker's completion, the slash menu) prevents the default, and the trap leaves that key alone; a Tab
+    // the trap takes goes no further, so the keys of the screen behind (the ask card's Tab) do not act on it.
+    const inside = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || e.defaultPrevented || !isTopTrap(me)) return;
+      e.stopPropagation();
+      move(e, document.activeElement as HTMLElement | null);
+    };
+    // Tab with the focus outside the panel (on the page behind, or nowhere): into the panel.
+    const outside = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !isTopTrap(me) || el.contains(document.activeElement)) return;
+      move(e, null);
+    };
+    el.addEventListener("keydown", inside);
+    window.addEventListener("keydown", outside, true);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
+      el.removeEventListener("keydown", inside);
+      window.removeEventListener("keydown", outside, true);
       dropTrap(me);
       // Back to the opener, unless the focus already moved on to something else that is outside the panel.
       const now = document.activeElement;
