@@ -205,16 +205,6 @@ func (w *wiring) wireProjects() {
 	// and model are the owner's System agents setting (SystemAgentResolve).
 	eng.Icons = &projicon.Store{Dir: filepath.Join(data, "project-icons")}
 	eng.AutoSetup = true
-	go func() {
-		select {
-		case <-time.After(setupExistingAfter):
-		case <-w.ctx.Done():
-			return
-		}
-		if n := eng.SetupExisting(w.ctx, setupExistingEvery); n > 0 {
-			log.Printf("project setup: started %d runs for projects from before", n)
-		}
-	}()
 	if rn != nil {
 		mgr.Adopt(rn.procs) // V0.90: before anything sends to a thread
 	}
@@ -374,7 +364,8 @@ func (w *wiring) wireGuard() {
 		// process tree under the CLI, and a pause is SIGSTOP.
 		trees := &cgroup.TreeReader{}
 		if runtime.GOOS == "darwin" {
-			trees.PS = func() (string, error) { return cgroup.PS(w.ctx, "-A", "-o", cgroup.TreePS) }
+			// No w.ctx yet at this step: cgroup.PS bounds each run itself.
+			trees.PS = func() (string, error) { return cgroup.PS(context.Background(), "-A", "-o", cgroup.TreePS) }
 		}
 		sampler.Trees, sampler.CLIs = trees, mgr.CLIs
 		groups.Trees, groups.CLIs, groups.KV = trees, mgr.CLIs, h.st
@@ -655,6 +646,17 @@ func (w *wiring) wireDeploy() {
 func (w *wiring) wireBackground() {
 	cfg := w.cfg
 	ctx := w.ctx
+	// V0.116: each project from before gets one setup run, a minute after start and 30 s apart.
+	go func() {
+		select {
+		case <-time.After(setupExistingAfter):
+		case <-ctx.Done():
+			return
+		}
+		if n := w.eng.SetupExisting(ctx, setupExistingEvery); n > 0 {
+			log.Printf("project setup: started %d runs for projects from before", n)
+		}
+	}()
 	data := w.data
 	dep := w.dep
 	eng := w.eng
