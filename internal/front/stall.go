@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/api"
@@ -53,14 +54,18 @@ func (f *Front) suspect(l *link, why string) {
 		return
 	}
 	go func() {
-		defer l.probing.Store(false)
-		f.probeStalled(ctx, l, why)
+		// release is called before the answer brings the host back online, so a
+		// stall that follows at once finds the flag free and is not dropped.
+		var once sync.Once
+		release := func() { once.Do(func() { l.probing.Store(false) }) }
+		defer release()
+		f.probeStalled(ctx, l, why, release)
 	}()
 }
 
 // probeStalled asks l for its state until it answers: the first failed ask
 // marks it offline (stalled), the answer brings it back with that state.
-func (f *Front) probeStalled(ctx context.Context, l *link, why string) {
+func (f *Front) probeStalled(ctx context.Context, l *link, why string, release func()) {
 	marked := false
 	for {
 		var st map[string]any
@@ -72,6 +77,7 @@ func (f *Front) probeStalled(ctx context.Context, l *link, why string) {
 		}
 		if err == nil {
 			if marked {
+				release()
 				f.opt.Logf("front: host %s answers again after its stall", l.name())
 				f.load(l, st)
 			}

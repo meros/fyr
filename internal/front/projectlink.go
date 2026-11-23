@@ -303,6 +303,34 @@ func (f *Front) writeShared(ctx context.Context, l *link, id, link string, vals 
 	return err
 }
 
+// noteShared puts what a host just stored into this front's copy of its
+// project, without waiting for the host's event: an edit that follows at once
+// starts from the newest values, not from the older ones the event has yet to
+// replace (it would write the old ones back). The event, when it comes, is
+// the same record.
+func (f *Front) noteShared(l *link, id string, vals map[string]any, at time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, p := range l.projects {
+		if pid, _ := p["id"].(string); pid != id {
+			continue
+		}
+		if sharedAtOf(p).After(at) {
+			return // a newer record is already here
+		}
+		cp := make(map[string]any, len(p)+1)
+		for k, v := range p {
+			cp[k] = v
+		}
+		for k, v := range vals {
+			cp[k] = v
+		}
+		cp["sharedAt"] = at.UTC().Format(time.RFC3339Nano)
+		l.projects[i] = cp
+		return
+	}
+}
+
 // syncLinksLocked sends a link's newest shared values to each online member
 // that keeps older ones (it was offline, or it just joined). The stamp is in
 // the command id, so fronts doing this at once change nothing twice. The
@@ -506,6 +534,7 @@ func (f *Front) projectSharedCommand(w http.ResponseWriter, commandID string, ar
 				failed, last = append(failed, linkFail{host, err.Error()}), err
 				continue
 			}
+			f.noteShared(m.l, m.id, vals, at)
 			stored = append(stored, host)
 		}
 		if len(stored) == 0 {
