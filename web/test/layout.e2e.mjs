@@ -4190,8 +4190,8 @@ try {
 // it failed under load on plain main. The two guards below count units and do not move with the load:
 //  (1) store flushes: stream messages are applied together once per frame, so the flushes never outnumber the
 //      animation frames drawn in the same window (an unbatched client flushes once per message: 600, over 180 frames);
-//  (2) markdown parses: a message's markdown renders once, so the parses stay within the messages that arrived
-//      (a client that parses again on each render does several times more).
+//  (2) markdown parses: a message's markdown renders once, so the parses stay within 1.25 times the flushes plus 2
+//      (a client that parses again on each render doubles them).
 // The long tasks seen are printed for the log and are not a verdict.
 section('V0.38', async (h) => {
   const { send, evaluate, navigate } = h;
@@ -4227,10 +4227,14 @@ try {
   })`);
   await send("Emulation.setCPUThrottlingRate", { rate: 1 });
   const last = (await evaluate(`[...document.querySelectorAll('.th .md')].map((x) => x.textContent).filter((t) => /Burst message/.test(t)).pop() ?? ''`)) ?? "";
-  console.log(`V0.38: ${burst.flushes} flushes in ${burst.frames} frames, ${burst.parses} markdown parses for 300 messages; ${burst.long.length} long tasks (${burst.long.slice(0, 8).join(", ")} ms), informational`);
+  console.log(`V0.38: ${burst.flushes} flushes in ${burst.frames} frames, ${burst.parses} markdown parses; ${burst.long.length} long tasks (${burst.long.slice(0, 8).join(", ")} ms), informational`);
   check(burst.flushes > 0, `V0.38 work: no store flush was counted (${burst.flushes}); the counter is not wired`);
   check(burst.flushes <= burst.frames + 1, `V0.38 work: ${burst.flushes} store flushes in ${burst.frames} animation frames; messages must be applied together, once per frame`);
-  check(burst.parses <= 330, `V0.38 work: ${burst.parses} markdown parses for 300 messages; a message's markdown must render once`);
+  // Each flush draws the messages it brought and parses each once: with the memo, parses equal flushes in every run
+  // (24 to 77 flushes under load, 0 difference); without it, a render parses again and the count doubles (41 flushes, 82
+  // parses). The bound is the flushes plus a quarter and 2, so it follows the frames drawn, not a message count.
+  const parseMax = Math.ceil(burst.flushes * 1.25) + 2;
+  check(burst.parses <= parseMax, `V0.38 work: ${burst.parses} markdown parses over ${burst.flushes} flushes (at most ${parseMax}); a message's markdown must render once`);
   check(/Burst message 300/.test(last), `V0.38 main thread: the last burst message is not shown ("${last.slice(0, 60)}")`);
 } catch (e) {
   await send("Emulation.setCPUThrottlingRate", { rate: 1 });
