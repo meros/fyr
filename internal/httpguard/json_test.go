@@ -21,3 +21,18 @@ func TestDecodeLooseAndRead(t *testing.T) {
 		t.Fatal("cap not enforced")
 	}
 }
+
+func TestDecodeJSONAnswersTooLargeAndBad(t *testing.T) {
+	for _, c := range []struct {
+		body string
+		want int
+	}{{`{"a":1}`, 0}, {`{"a":`, 400}, {`{"a":"` + strings.Repeat("x", 100) + `"}`, 413}} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", strings.NewReader(c.body))
+		var v map[string]any
+		ok := DecodeJSON(w, r, &v, 32, "bad")
+		if ok != (c.want == 0) || (c.want != 0 && w.Code != c.want) {
+			t.Fatalf("%q: ok=%v code=%d", c.body, ok, w.Code)
+		}
+	}
+}

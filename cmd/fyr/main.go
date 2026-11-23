@@ -121,8 +121,9 @@ func install(data, buildDir string) error {
 	}
 	cur, prev := filepath.Join(data, "current"), filepath.Join(data, "previous")
 	if t, err := os.Readlink(cur); err == nil {
-		os.Remove(prev)
-		os.Symlink(t, prev)
+		if err := fsutil.SymlinkAtomic(t, prev); err != nil {
+			return err
+		}
 	}
 	if err := fsutil.SymlinkAtomic(filepath.Join("builds", id), cur); err != nil {
 		return err

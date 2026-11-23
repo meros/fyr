@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/peerlink"
 )
 
@@ -157,8 +158,7 @@ func (e *Env) joinInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req inviteReq
-	if json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req) != nil {
-		http.Error(w, "the join request is not JSON", http.StatusBadRequest)
+	if !httpguard.DecodeJSON(w, r, &req, 4096, "the join request is not JSON") {
 		return
 	}
 	// V0.180 (#261): port 0 is a joiner with no peer port. Since V0.174 the link is

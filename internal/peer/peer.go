@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/discovery"
+	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peerlink"
 	"github.com/meros/fyr/internal/roster"
@@ -200,8 +201,7 @@ func (e *Env) Handler(members http.Handler) http.Handler {
 	}))
 	mux.HandleFunc("POST /roster", e.member(func(w http.ResponseWriter, r *http.Request, _ roster.Member) {
 		var list []roster.Statement
-		if json.NewDecoder(io.LimitReader(r.Body, 8<<20)).Decode(&list) != nil {
-			http.Error(w, "bad JSON", http.StatusBadRequest)
+		if !httpguard.DecodeJSON(w, r, &list, 8<<20, "bad JSON") {
 			return
 		}
 		e.Roster.Merge(list)
@@ -320,7 +320,10 @@ func (e *Env) pairTailnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req pairReq
-	if json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req) != nil || req.Name == "" || req.Port <= 0 {
+	if !httpguard.DecodeJSON(w, r, &req, 4096, "bad request") {
+		return
+	}
+	if req.Name == "" || req.Port <= 0 {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -536,7 +539,11 @@ func (e *Env) Run(ctx context.Context, every time.Duration) {
 			return
 		case <-t.C:
 		case <-kick:
-			time.Sleep(50 * time.Millisecond) // let a burst of changes settle
+			select { // let a burst of changes settle
+			case <-ctx.Done():
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
 		}
 	}
 }

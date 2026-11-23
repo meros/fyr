@@ -5,9 +5,13 @@
 package fsutil
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // WriteAtomic replaces path with data, created with mode where it is new
@@ -52,21 +56,42 @@ func writeAtomic(path string, mode os.FileMode, fill func(*os.File) error) (err 
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err = os.Rename(tmp, path); err != nil {
+		return err
+	}
+	syncDir(filepath.Dir(path))
+	return nil
+}
+
+// syncDir makes a rename durable. Best effort: a folder that cannot be opened
+// or synced (some filesystems refuse) leaves the file as written.
+func syncDir(dir string) {
+	if d, err := os.Open(dir); err == nil {
+		d.Sync()
+		d.Close()
+	}
 }
 
 // SymlinkAtomic points path at target, replacing a link or file there, so
 // that no reader finds path missing.
 func SymlinkAtomic(target, path string) error {
-	tmp := path + ".tmp"
-	os.Remove(tmp)
-	if err := os.Symlink(target, tmp); err != nil {
-		return err
+	// A unique name, so two callers on one path never share a temporary link.
+	var tmp string
+	for i := 0; ; i++ {
+		tmp = fmt.Sprintf("%s.tmp-%d-%d-%d", path, os.Getpid(), time.Now().UnixNano(), i)
+		err := os.Symlink(target, tmp)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, fs.ErrExist) || i > 100 {
+			return err
+		}
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
 		return err
 	}
+	syncDir(filepath.Dir(path))
 	return nil
 }
 
