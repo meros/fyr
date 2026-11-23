@@ -101,6 +101,10 @@ type Link struct {
 	ready   chan struct{}
 	cancel  context.CancelFunc
 	closers []func()
+	// V0.peerlink-drain-flush: ends the server that answers the peer, once
+	// each response it started has been sent whole.
+	graceful []func(context.Context)
+	tunEnd   chan struct{} // the acceptor ends the tunnel's handler
 
 	// V0.peerlink-replace-drain: starting counts the requests between RoundTrip
 	// and the session taking them; serving the peer's requests this side answers;
@@ -146,6 +150,20 @@ func (l *Link) Close() {
 	l.conn.Close()
 	for _, f := range cl {
 		f()
+	}
+}
+
+// finish ends the servers that answer the peer gracefully (V0.peerlink-drain-flush):
+// a handler stops counting as served before the server ends its response, so
+// closing the connection then cut the response off. Shutdown waits until each
+// stream is ended (ctx bounds it); the acceptor first ends the tunnel, a stream
+// that lasts as long as the link.
+func (l *Link) finish(ctx context.Context) {
+	l.mu.Lock()
+	gs := l.graceful
+	l.mu.Unlock()
+	for _, g := range gs {
+		g(ctx)
 	}
 }
 
@@ -370,6 +388,11 @@ func newLink(conn net.Conn, local, peerID string, peerKey ed25519.PublicKey, dia
 	return l, ctx
 }
 
+// afterServed, set by a test, runs after a request stops counting as served
+// and before its handler returns: the gap in which the server has not yet
+// ended the response stream.
+var afterServed func()
+
 // handler answers the link's own requests (the ping, the peer's announcement that
 // it is done with the link) and counts the peer's others while they are served.
 func (l *Link) handler(next http.Handler) http.Handler {
@@ -384,7 +407,12 @@ func (l *Link) handler(next http.Handler) http.Handler {
 			return
 		}
 		l.serving.Add(1)
-		defer l.serving.Add(-1)
+		defer func() {
+			l.serving.Add(-1)
+			if afterServed != nil {
+				afterServed()
+			}
+		}()
 		next.ServeHTTP(w, r)
 	})
 }
@@ -449,6 +477,9 @@ func NewDialerLink(conn net.Conn, local, peerID string, peerKey ed25519.PublicKe
 	ln := newOnce(tun)
 	go srv.Serve(ln)
 	l.onClose(func() { srv.Close(); ln.Close(); tun.Close() })
+	l.mu.Lock()
+	l.graceful = append(l.graceful, func(ctx context.Context) { srv.Shutdown(ctx) })
+	l.mu.Unlock()
 	l.check(ctx)
 	return l, nil
 }
@@ -459,6 +490,7 @@ func NewDialerLink(conn net.Conn, local, peerID string, peerKey ed25519.PublicKe
 func NewAcceptorLink(conn net.Conn, local, peerID string, peerKey ed25519.PublicKey, h http.Handler) *Link {
 	conn = plain{conn}
 	l, ctx := newLink(conn, local, peerID, peerKey, peerID)
+	l.tunEnd = make(chan struct{})
 	mux := http.NewServeMux()
 	var tunnelOnce sync.Once
 	mux.HandleFunc("POST "+tunnelPath, func(w http.ResponseWriter, r *http.Request) {
@@ -484,6 +516,7 @@ func NewAcceptorLink(conn net.Conn, local, peerID string, peerKey ed25519.Public
 		l.check(ctx)
 		select { // the handler stays until the link ends: its response is the tunnel
 		case <-l.done:
+		case <-l.tunEnd:
 		case <-r.Context().Done():
 			l.Close()
 		}
@@ -495,5 +528,9 @@ func NewAcceptorLink(conn net.Conn, local, peerID string, peerKey ed25519.Public
 	ln := newOnce(conn)
 	go srv.Serve(ln)
 	l.onClose(func() { srv.Close(); ln.Close() })
+	l.graceful = append(l.graceful, func(ctx context.Context) {
+		close(l.tunEnd)
+		srv.Shutdown(ctx)
+	})
 	return l
 }

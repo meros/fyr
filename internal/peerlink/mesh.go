@@ -603,6 +603,9 @@ func drainAndClose(l *Link) {
 		}
 	}
 	until(func() bool { return l.Serving() == 0 })
+	ctx, cancel := context.WithDeadline(context.Background(), end)
+	l.finish(ctx)
+	cancel()
 	l.Close()
 }
 
