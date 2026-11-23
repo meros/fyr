@@ -1,6 +1,8 @@
 # 0021 Dual installs by default, and how a front learns its hosts
 
-Date: 2026-11-15 · Status: accepted · Accepted as the model for the two-machines milestone (`docs/PLAN.md` 2) · Amends 0016 and SPEC V0.54 · The spec rows follow in a later change
+Date: 2026-11-15 · Status: accepted; superseded in part by 0030 and V0.retire-discovery · Accepted as the model for the two-machines milestone (`docs/PLAN.md` 2) · Amends 0016 and SPEC V0.54 · The spec rows follow in a later change
+
+Status, 23 Nov: the tailnet discovery here is gone. Installs link by keys (0030), and a front follows a paired install or one its config names (V0.retire-discovery).
 
 **Context.** 0016 split the program into hosts (run threads) and fronts (serve the client) and left two questions open for a second machine: which front a device installs, and how a front knows which hosts exist. V0.54 answered the first by accident: its text reads as though a front belongs to a device set (the laptop's localhost front, the phone's server front), which means two origins, two installed apps and two push sets.
 

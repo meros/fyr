@@ -1,6 +1,8 @@
 # 0018 Changes are records
 
-Date: 2026-11-15 · Status: accepted  · Amends V0.8, V0.12, V0.25, V0.36 · Keeps D5
+Date: 2026-11-15 · Status: accepted; its tool names superseded by 0024 and V0.one-tool-vocabulary  · Amends V0.8, V0.12, V0.25, V0.36 · Keeps D5
+
+Status, 23 Nov: the six tools below are not the tools agents have now. 0024 and V0.one-tool-vocabulary replaced them (SPEC 5.12).
 
 **Context.** Fyr had one hard-coded "PR of the thread" and one hard-coded "Fyr deploy". A server change with `kubectl`, a NixOS rebuild, a migration, a design or a document left no record; a second PR replaced the first; a local commit without a PR had no state; nothing followed a merge to production.
 

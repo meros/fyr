@@ -10,7 +10,8 @@ The [README](../README.md) has the short install for NixOS, macOS, Linux without
 | `~/.config/fyr/github.env` | Optional `GH_TOKEN=…` (mode 0600). A public release repo needs no token; a private fork does, and a token raises GitHub's API limit. Without it the `gh` login is used when `gh` is installed. |
 | `~/.local/share/fyr/` | Data: the database, the builds (`current`, `previous`), logs and the owner socket. |
 | `~/Library/Logs/fyr.log` | The log on macOS. On Linux: `journalctl -u fyr`. |
-| `/etc/systemd/system/fyr.service`, `fyr-agents.slice`, `/etc/polkit-1/rules.d/50-fyr-agents.rules`, `/usr/local/lib/fyr/agents-pressure-chown` | Linux without Nix: what `scripts/install-linux.sh` writes as root ([below](#linux-without-nix)). |
+| `~/.local/bin/fyr` | Linux without Nix: a link to the launcher, so the `fyr` command is on your PATH. |
+| `/etc/systemd/system/fyr.service`; `fyr-agents.slice`, `/etc/polkit-1/rules.d/50-fyr-agents.rules` and `/usr/local/lib/fyr/agents-pressure-chown` (slice layout: polkit ≥0.106 and systemd ≥257) | Linux without Nix: what `scripts/install-linux.sh` writes as root ([below](#linux-without-nix)). |
 
 On NixOS, `services.fyr` writes the configuration: every option of the module is documented in [`nix/module.nix`](../nix/module.nix).
 
@@ -125,7 +126,7 @@ A version is a release named `vX.Y.Z` (V0.versioned-releases); `vX.Y.Z-rc.N` is 
 
 **Install a version:** `scripts/install-linux.sh --version v1.2.3` (or `install-macos.sh`). Without `--channel`, the install is then pinned to it; `--version v1.2.3 --channel stable` installs it and follows stable from there. Add `--print` to see what it would do. On a host that is already installed you can also set the key and press Update now.
 
-**Switch channels:** set `"updateChannel"` in `~/.config/fyr/config.json` and restart Fyr (`systemctl restart fyr`, or `launchctl kickstart -k gui/$(id -u)/app.fyr.fyrd` on a Mac), or run the install script again with `--channel stable` or `--channel main`. A host that moves from `main` to `stable` goes to the newest version at its next check, even though that is older than the main build it ran (as when `deployable` is moved back); the version's smoke test runs on a copy of your data first, and if it cannot open it the host stays where it is and says so in Settings → Updates. The NixOS module has no option for the key yet: a NixOS host follows `main`.
+**Switch channels:** set `"updateChannel"` in `~/.config/fyr/config.json` and restart Fyr (`systemctl restart fyr`, or on a Mac `launchctl kickstart -k gui/$(id -u)/fyr.agent` for Fyr.app, `gui/$(id -u)/app.fyr.fyrd` for a script install), or run the install script again with `--channel stable` or `--channel main`. A host that moves from `main` to `stable` goes to the newest version at its next check, even though that is older than the main build it ran (as when `deployable` is moved back); the version's smoke test runs on a copy of your data first, and if it cannot open it the host stays where it is and says so in Settings → Updates. The NixOS module has no option for the key yet (#624): a NixOS host follows `main`.
 
 **Cut a version** (the repository's owner): tag a commit of `main` and push the tag, `git tag v1.2.3 <sha> && git push origin v1.2.3`, or run `gh workflow run test.yml -f version=v1.2.3 -f commit=<sha>`. CI runs the gate on that commit, builds it with the version in the binaries, signs it and publishes the release `v1.2.3` with the commits since the previous version as its notes; a `-rc.N` version is published as a prerelease.
 

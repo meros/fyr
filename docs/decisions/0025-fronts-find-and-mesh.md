@@ -1,6 +1,8 @@
 # 0025 Fronts find the hosts on the tailnet and mesh; the client keeps one uplink
 
-Date: 2026-11-16 · Status: accepted · Amends 0016 and 0021 (points 3, 5 and 8) · SPEC V0.123 · Superseded in part by 0030 ((1) proof and (2)), once 0030 is accepted
+Date: 2026-11-16 · Status: accepted; superseded in part by 0030 and V0.retire-discovery · Amends 0016 and 0021 (points 3, 5 and 8) · SPEC V0.123 · 0030 replaces (1) proof and (2)
+
+Status, 23 Nov: the discovery on the tailnet is gone. A front follows a paired install or one its config names (V0.retire-discovery).
 
 The owner answered three questions while the client was still meant to connect to every host. Two of the answers still hold: discovery adds a host automatically, and push stays on the installed front. The third chose tailnet identity for the browser over tokens or pairing. That stays true without changing anything, because the browser still reaches only its own front through Tailscale Serve.
 

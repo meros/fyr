@@ -1,6 +1,6 @@
 # 0019 A worktree per change
 
-Date: 2026-11-15 · Status: accepted  · Issue: #44 · Amends 0015 (Workspace), 0018 · Builds on 0017
+Date: 2026-11-15 · Status: accepted; built (V0.change-worktree, V0.change-worktree-cleanup, V0.worktree-sweep)  · Issue: #44 · Amends 0015 (Workspace), 0018 · Builds on 0017
 
 **Context.** Threads and their subagents often work in the same folder at once, so one thread's branch switch moves another thread's next edit onto the wrong branch. Some worktrees hold many repos, and one thread may run several changes, in parallel or one after another.
 
