@@ -205,3 +205,147 @@ func (s *Store) UsageRollup(group []string, f UsageFilter) ([]UsageGroup, error)
 	}
 	return out, rows.Err()
 }
+
+// V0.usage-overhead (decision 0041, phase 4): Fyr's overhead inside agent
+// turns, kept apart from the measured ledger so a better method can
+// recompute it. usage_overhead holds a turn's estimated tokens by part
+// (resident: Fyr's tool calls, tool results and notices still in the
+// context; forced: the turns the Stop hook forced to keep the view) and
+// kind; usage_static the turn's main-agent requests and how many found
+// the cache cold, by the static key (Fyr's prompt, tools and disallowed
+// tools); usage_calibration the tokens a key adds to each request, measured
+// once per key and model.
+const overheadSchema = `
+CREATE TABLE IF NOT EXISTS usage_overhead(report TEXT NOT NULL, part TEXT NOT NULL, kind TEXT NOT NULL, tokens INTEGER NOT NULL,
+  method TEXT NOT NULL, PRIMARY KEY(report, part, kind));
+CREATE TABLE IF NOT EXISTS usage_static(report TEXT PRIMARY KEY, key TEXT NOT NULL, model TEXT NOT NULL, requests INTEGER NOT NULL, cold INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS usage_calibration(key TEXT NOT NULL, model TEXT NOT NULL, tokens INTEGER NOT NULL, at TEXT NOT NULL, PRIMARY KEY(key, model));
+`
+
+// OverheadRow is one part and kind of a turn's overhead.
+type OverheadRow struct {
+	Part, Kind, Method string
+	Tokens             int64
+}
+
+// StaticFacts are a turn's main-agent requests for the fixed-context
+// overhead: the key's calibrated tokens times the requests.
+type StaticFacts struct {
+	Key, Model     string
+	Requests, Cold int64
+}
+
+// RecordOverhead keeps a turn's overhead beside its report; written again,
+// it changes nothing.
+func (s *Store) RecordOverhead(report string, rows []OverheadRow, st *StaticFacts) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, r := range rows {
+		if r.Tokens == 0 {
+			continue
+		}
+		if _, err := tx.Exec(`INSERT INTO usage_overhead(report,part,kind,tokens,method) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING`,
+			report, r.Part, r.Kind, r.Tokens, r.Method); err != nil {
+			return err
+		}
+	}
+	if st != nil && st.Requests > 0 {
+		if _, err := tx.Exec(`INSERT INTO usage_static(report,key,model,requests,cold) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING`,
+			report, st.Key, st.Model, st.Requests, st.Cold); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// Calibration reads the tokens a static key adds to each request on a
+// model; ok is false before it was measured.
+func (s *Store) Calibration(key, model string) (int64, bool, error) {
+	var n int64
+	err := s.db.QueryRow(`SELECT tokens FROM usage_calibration WHERE key=? AND model=?`, key, model).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	return n, err == nil, err
+}
+
+// PutCalibration keeps a measured key.
+func (s *Store) PutCalibration(key, model string, tokens int64, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO usage_calibration(key,model,tokens,at) VALUES(?,?,?,?) ON CONFLICT(key,model) DO UPDATE SET tokens=excluded.tokens, at=excluded.at`,
+		key, model, tokens, at.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+// OverheadSum is the overhead over a filter: tokens by part and kind, and
+// the requests whose fixed context is not calibrated yet.
+type OverheadSum struct {
+	Parts        map[string]map[string]int64 `json:"parts"`
+	Uncalibrated int64                       `json:"uncalibrated"`
+}
+
+// reports is the subquery that gives each report its dimensions, so the
+// overhead filters like the ledger.
+const reports = `(SELECT report, MIN(day) AS day, MIN(source) AS source, MIN(trigger) AS trigger, MIN(thread) AS thread,
+  MIN(project) AS project, MIN(provider) AS provider, MIN(account) AS account, MIN(billing) AS billing, MIN(adapter) AS adapter,
+  MIN(session) AS session, MIN(effort) AS effort FROM usage GROUP BY report)`
+
+// UsageOverhead sums the overhead of the turns in a filter (day range and
+// key = value; model and part are not keys of a turn and are refused).
+func (s *Store) UsageOverhead(f UsageFilter) (OverheadSum, error) {
+	where, args := []string{"1=1"}, []any{}
+	if f.From != "" {
+		where, args = append(where, "u.day >= ?"), append(args, f.From)
+	}
+	if f.To != "" {
+		where, args = append(where, "u.day <= ?"), append(args, f.To)
+	}
+	for k, v := range f.Where {
+		c, ok := UsageColumns[k]
+		if !ok || k == "model" || k == "part" || k == "hour" {
+			return OverheadSum{}, fmt.Errorf("the overhead cannot be filtered by %q", k)
+		}
+		where, args = append(where, "u."+c+" = ?"), append(args, v)
+	}
+	w := strings.Join(where, " AND ")
+	out := OverheadSum{Parts: map[string]map[string]int64{}}
+	add := func(part, kind string, n int64) {
+		if n == 0 {
+			return
+		}
+		if out.Parts[part] == nil {
+			out.Parts[part] = map[string]int64{}
+		}
+		out.Parts[part][kind] += n
+	}
+	rows, err := s.db.Query(`SELECT o.part, o.kind, SUM(o.tokens) FROM usage_overhead o JOIN `+reports+` u USING(report) WHERE `+w+` GROUP BY o.part, o.kind`, args...)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var p, k string
+		var n int64
+		if err := rows.Scan(&p, &k, &n); err != nil {
+			rows.Close()
+			return out, err
+		}
+		add(p, k, n)
+	}
+	rows.Close()
+	// The fixed context: each request reads the key's tokens from the cache,
+	// or writes them when the cache was cold.
+	var warm, cold, unc sql.NullInt64
+	err = s.db.QueryRow(`SELECT SUM(CASE WHEN c.tokens IS NULL THEN 0 ELSE (st.requests - st.cold) * c.tokens END),
+		SUM(CASE WHEN c.tokens IS NULL THEN 0 ELSE st.cold * c.tokens END),
+		SUM(CASE WHEN c.tokens IS NULL THEN st.requests ELSE 0 END)
+		FROM usage_static st JOIN `+reports+` u USING(report) LEFT JOIN usage_calibration c ON c.key = st.key AND c.model = st.model WHERE `+w, args...).Scan(&warm, &cold, &unc)
+	if err != nil {
+		return out, err
+	}
+	add("static", "cacheRead", warm.Int64)
+	add("static", "cacheWrite", cold.Int64)
+	out.Uncalibrated = unc.Int64
+	return out, nil
+}

@@ -248,12 +248,7 @@ func (m *Meter) Record(id string, d Dims, r cli.UsageReport) ([]store.UsageRow, 
 		ms[name] = ms[name].Add(c)
 		r.Models = ms
 	}
-	if _, ok := r.Models[d.MainModel]; !ok {
-		// The main model by another name (an alias, or a process adopted
-		// after a restart that never saw the CLI's init): the model with
-		// the most tokens in the session is the main agent's.
-		d.MainModel = biggest(r.Models)
-	}
+	d.MainModel = MainModel(r, d.MainModel)
 	var rows []store.UsageRow
 	session := r.Session
 	if r.Scope != cli.Cumulative {
@@ -333,4 +328,36 @@ func (m *Meter) Seed(session, parent string) error {
 // Rollup sums the ledger by the given keys.
 func (m *Meter) Rollup(group []string, f store.UsageFilter) ([]store.UsageGroup, error) {
 	return m.st.UsageRollup(group, f)
+}
+
+// MainModel is the model a report's main agent ran on: hint (the CLI's
+// init names it) when the report has it, else the model with the most
+// tokens in the session (an alias, or a process adopted after a restart
+// that never saw the init).
+func MainModel(r cli.UsageReport, hint string) string {
+	if _, ok := r.Models[hint]; ok {
+		return hint
+	}
+	return biggest(r.Models)
+}
+
+// RecordOverhead keeps a turn's overhead beside its report (V0.usage-overhead).
+func (m *Meter) RecordOverhead(report string, rows []store.OverheadRow, st *store.StaticFacts) error {
+	return m.st.RecordOverhead(report, rows, st)
+}
+
+// Calibration reads what a static key adds to a request on a model.
+func (m *Meter) Calibration(key, model string) (int64, bool, error) {
+	return m.st.Calibration(key, model)
+}
+
+// PutCalibration keeps a measured key.
+func (m *Meter) PutCalibration(key, model string, tokens int64) error {
+	return m.st.PutCalibration(key, model, tokens, time.Now())
+}
+
+// Overhead sums Fyr's overhead inside the turns of a query (its group is
+// not used).
+func (m *Meter) Overhead(q Query) (store.OverheadSum, error) {
+	return m.st.UsageOverhead(store.UsageFilter{From: q.From, To: q.To, Where: q.Where})
 }

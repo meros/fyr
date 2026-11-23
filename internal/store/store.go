@@ -57,7 +57,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // one writer; the engine serialises commands anyway
-	if _, err := db.Exec(schema + usageSchema); err != nil {
+	if _, err := db.Exec(schema + usageSchema + overheadSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("schema: %w", err)
 	}

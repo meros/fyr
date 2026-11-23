@@ -51,3 +51,28 @@ func TestUsageEndpoint(t *testing.T) {
 		}
 	}
 }
+
+// V0.usage-overhead: GET /api/usage/overhead takes the range and filters of
+// /api/usage, and no groups.
+func TestUsageOverheadEndpoint(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{Engine: engine.New(st), UsageOverhead: func(q usage.Query) (store.OverheadSum, error) {
+		return store.OverheadSum{Parts: map[string]map[string]int64{"static": {"cacheRead": 9}}, Uncalibrated: int64(len(q.Where))}, nil
+	}}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	var o store.OverheadSum
+	if err := json.NewDecoder(do(t, "GET", hs.URL+"/api/usage/overhead?from=2026-11-01&project=p_1", "", nil, "").Body).Decode(&o); err != nil {
+		t.Fatal(err)
+	}
+	if o.Parts["static"]["cacheRead"] != 9 || o.Uncalibrated != 1 {
+		t.Fatalf("%+v", o)
+	}
+	if r := do(t, "GET", hs.URL+"/api/usage/overhead?group=model", "", nil, ""); r.StatusCode != 400 {
+		t.Errorf("a group: %d", r.StatusCode)
+	}
+}

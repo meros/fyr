@@ -626,6 +626,17 @@ export function createMockApi(scenario: string): Api {
       const asked = all.filter((h) => !only || h.id in only);
       return { hosts: asked.map((h) => mockUsage(only ? { ...q, where: { ...q.where, ...only[h.id] } } : q, now, h.id, h.name, h.lab)), failed: [] };
     },
+    async usageOverhead(q, only) {
+      // V0.usage-overhead: a fixed share of the mock's turns, so the page shows each part.
+      const u = await api.usage!(q, only);
+      return {
+        hosts: u.hosts.map((h) => {
+          const turns = h.groups.reduce((n, g) => n + (g.cacheRead ?? 0), 0);
+          return { hostId: h.hostId, host: h.host, uncalibrated: 0, parts: { static: { cacheRead: Math.round(turns * 0.04), cacheWrite: Math.round(turns * 0.002) }, resident: { cacheRead: Math.round(turns * 0.06), cacheWrite: Math.round(turns * 0.004) }, forced: { input: 40, cacheRead: Math.round(turns * 0.01), output: 900 } } };
+        }),
+        failed: u.failed,
+      };
+    },
     async load() {
       // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).
       const l = JSON.parse(JSON.stringify(load)) as HostLoad[];

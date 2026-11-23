@@ -10,6 +10,7 @@ import (
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/usage"
 )
 
 // The outbox (SPEC 0.5 V0.33): a message to the agent, its attachments, and
@@ -145,14 +146,23 @@ func (m *Manager) sendAs(threadID string, e core.Effect, result chan claude.Msg,
 	// the owner's /command into plain text. Its notices stay pending: the
 	// run's hooks take them, or the feed after the run.
 	command := e.From == "" && strings.HasPrefix(strings.TrimSpace(e.Text), "/")
+	noticeBytes := 0
 	if first && !command {
 		// V0.95 (1): the turn this message starts carries the pending
 		// notices, before its words; they are taken, so no tool call
 		// repeats them.
 		if ns := m.take(s, threadID, core.AtTurn); len(ns) > 0 {
-			e.Text = strings.TrimSuffix(core.NoticeText(ns)+"\n\n"+e.Text, "\n\n")
+			nt := core.NoticeText(ns)
+			e.Text = strings.TrimSuffix(nt+"\n\n"+e.Text, "\n\n")
+			noticeBytes = len(nt)
 		}
 	}
+	// V0.usage-overhead: Fyr's words in the message (its notices, a notice
+	// turn, a handover's ask) are Fyr's in the context.
+	if trig == usage.TriggerNotice || trig == usage.TriggerWake || trig == usage.TriggerHandover {
+		noticeBytes = len(e.Text)
+	}
+	m.ovInject(s, len(e.Text), noticeBytes)
 	var evs []core.Event
 	if first {
 		evs = append(evs, core.Event{Type: "run.started", Data: map[string]any{}})

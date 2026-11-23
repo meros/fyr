@@ -8,6 +8,7 @@ import (
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/usage"
 )
 
@@ -116,17 +117,26 @@ func (m *Manager) meterResult(s *session, msg claude.Msg) {
 			d.Source = src // V0.usage-jobs: a project's setup run is Fyr's job
 		}
 	}
-	m.record(id, d, r)
+	if rows := m.record(id, d, r); len(rows) > 0 {
+		// V0.usage-overhead: the turn's overhead, beside the report that counted it.
+		m.mu.Lock()
+		dis := s.disallowed
+		m.mu.Unlock()
+		m.ovResult(s, id, usage.MainModel(r, model), cliProfile{p: p, disallowed: dis})
+	}
 }
 
-// record gives a report its account and writes it.
-func (m *Manager) record(id string, d usage.Dims, r cli.UsageReport) {
+// record gives a report its account and writes it; it returns the rows it
+// wrote (none for a report seen before).
+func (m *Manager) record(id string, d usage.Dims, r cli.UsageReport) []store.UsageRow {
 	if m.cfg.Account != nil {
 		d.Account, d.Billing = m.cfg.Account(d.Provider)
 	}
-	if _, err := m.cfg.Meter.Record(id, d, r); err != nil {
+	rows, err := m.cfg.Meter.Record(id, d, r)
+	if err != nil {
 		log.Printf("usage: %s %s: %v", d.Source, d.Thread, err)
 	}
+	return rows
 }
 
 // jobResult is the Launch.Result of a system job's print run

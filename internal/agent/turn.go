@@ -215,6 +215,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			s.inForced = s.stopBlocked
 			forced := s.inForced
 			m.mu.Unlock()
+			m.ovInject(s, len(syntheticText(msg)), len(syntheticText(msg))) // V0.usage-overhead: the Stop hook's reason
 			if forced {
 				// In stream order, so the client can show the forced turn's
 				// text as one quiet line (V0.37).
@@ -231,6 +232,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		if !fromSubagent(msg) {
 			m.noteLastText(s, typ, msg)
 		}
+		m.ovMessage(s, msg) // V0.usage-overhead
 		o := s.digest.feed(msg)
 		m.mu.Lock()
 		s.openTools = len(s.digest.openTools)
@@ -644,4 +646,23 @@ func (m *Manager) noteRefusals(s *session, msg claude.Msg) {
 	if len(evs) > 0 {
 		m.observe(s.thread, core.KindRecord, evs)
 	}
+}
+
+// syntheticText is the text of a synthetic user message (the Stop hook's
+// reason, echoed by the CLI).
+func syntheticText(msg claude.Msg) string {
+	inner, _ := msg["message"].(map[string]any)
+	if t, ok := inner["content"].(string); ok {
+		return t
+	}
+	blocks, _ := inner["content"].([]any)
+	var b strings.Builder
+	for _, x := range blocks {
+		if m, _ := x.(map[string]any); m != nil {
+			if t, _ := m["text"].(string); t != "" {
+				b.WriteString(t)
+			}
+		}
+	}
+	return b.String()
 }

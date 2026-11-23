@@ -17,6 +17,9 @@ import {
   perHostWhere,
   rangeDays,
   tokens,
+  mergeOverhead,
+  overheadKinds,
+  type HostOverhead,
   type HostUsage,
   type UsageBy,
   type UsageFilter,
@@ -28,10 +31,11 @@ interface Loaded {
   by: HostUsage[];
   days: HostUsage[];
   sources: HostUsage[];
+  overhead: HostOverhead[];
   failed: string[];
 }
 
-type UsageApi = Partial<Pick<Api, "usage">>;
+type UsageApi = Partial<Pick<Api, "usage" | "usageOverhead">>;
 
 function useUsage(api: UsageApi, range: UsageRange, by: UsageBy, filter: UsageFilter | null, now: number) {
   const [st, setSt] = useState<{ data: Loaded | null; err: string | null; key: string }>({ data: null, err: null, key: "" });
@@ -55,8 +59,11 @@ function useUsage(api: UsageApi, range: UsageRange, by: UsageBy, filter: UsageFi
     const only = perHostWhere(f);
     let live = true;
     const group = by === "host" ? [] : [by];
-    Promise.all([read({ from, to, group, where }, only), read({ from, to, group: ["day"], where }, only), read({ from, to, group: ["source"], where }, only)])
-      .then(([x, d, s]) => live && setSt({ data: { by: x.hosts, days: d.hosts, sources: s.hosts, failed: [...new Set([...x.failed, ...d.failed, ...s.failed])] }, err: null, key }))
+    const none = Promise.resolve({ hosts: [] as HostOverhead[], failed: [] as string[] });
+    // The overhead is of the turns: a filter on a model or a part (not a turn's) shows none.
+    const ov = a.usageOverhead && !(f && (f.key === "model" || f.key === "part")) ? a.usageOverhead.bind(a)({ from, to, group: [], where }, only) : none;
+    Promise.all([read({ from, to, group, where }, only), read({ from, to, group: ["day"], where }, only), read({ from, to, group: ["source"], where }, only), ov])
+      .then(([x, d, s, o]) => live && setSt({ data: { by: x.hosts, days: d.hosts, sources: s.hosts, overhead: o.hosts, failed: [...new Set([...x.failed, ...d.failed, ...s.failed, ...o.failed])] }, err: null, key }))
       .catch((e: unknown) => live && setSt({ data: null, err: e instanceof Error ? e.message : "The hosts did not answer", key }));
     return () => {
       live = false;
@@ -163,9 +170,29 @@ export function UsagePage({ api, now, onOpenThread }: { api: UsageApi; now: numb
       <Group title={`By ${byLabel(by).toLowerCase()}`}>
         <Rows rows={mergeUsage(d.by, by)} empty="No tokens counted in this range." pick={pick(by)} action={by === "thread" ? "open the thread" : "show only this"} />
       </Group>
+      <OverheadGroup hosts={d.overhead} total={total.total} />
       <Group title="Fyr's own calls" foot={`Titles, search, the question check, the approval judge and project setup: ${total.total ? Math.round((fyrTotal / total.total) * 1000) / 10 : 0} % of the range's tokens.`}>
         <Rows rows={fyr} empty="Fyr made no calls of its own in this range." pick={filter?.key === "source" ? undefined : pick("source")} action="show only this" />
       </Group>
     </div>
+  );
+}
+
+/** V0.usage-overhead: Fyr's overhead inside the agents' turns, by part, with each part's share of the range. These
+ *  tokens are inside the turns' totals above, not added to them. */
+function OverheadGroup({ hosts, total }: { hosts: HostOverhead[]; total: number }) {
+  const { lines, uncalibrated } = mergeOverhead(hosts);
+  const sum = lines.reduce((n, l) => n + l.total, 0);
+  if (!hosts.length) return null;
+  const pct = (n: number) => (total ? `${Math.round((n / total) * 1000) / 10} %` : "0 %");
+  return (
+    <Group
+      title="Fyr's overhead in agent turns"
+      foot={`Inside the turns' tokens above, not on top of them: ${pct(sum)} of the range.${uncalibrated ? ` ${uncalibrated.toLocaleString()} requests wait for their fixed context to be measured.` : ""}`}
+    >
+      {lines.map((l) => (
+        <Row class="ug-r ug-ov" title={l.label} desc={`${l.desc}. ${overheadKinds(l)}`} end={<span class="ug-n mono" title={`${l.total.toLocaleString()} tokens, ${pct(l.total)}`}>{tokens(l.total)}</span>} />
+      ))}
+    </Group>
   );
 }

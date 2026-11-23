@@ -66,8 +66,9 @@ func (w *wiring) wireListeners() {
 		}
 	}()
 	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: reg, HandoverPlan: mgr.HandoverPlan, HandoverExport: mgr.HandoverExport, HandoverImport: mgr.HandoverIn, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
-		Quota: quotas.Get,
-		Load:  sampler,
+		Quota:         quotas.Get,
+		Load:          sampler,
+		UsageOverhead: meter.Overhead, // V0.usage-overhead
 		// V0.usage-page: the host's token sums, named.
 		Usage: func(q usage.Query) (usage.View, error) {
 			return meter.Answer(q, usage.Lookup{Threads: eng.ThreadTitles, Projects: eng.ProjectNames, AccountOf: accountOf,

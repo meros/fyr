@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/meros/fyr/internal/cli"
@@ -82,5 +83,17 @@ func TestPrintReadsTheJSONResult(t *testing.T) {
 	}
 	if text, res, err := run("plain words"); err != nil || text != "plain words" || res != nil {
 		t.Fatalf("plain: %q %v %v", text, res, err)
+	}
+}
+
+// V0.usage-overhead: a calibration run adds only what Fyr adds to a thread.
+func TestProbeArgs(t *testing.T) {
+	got := strings.Join(ProbeArgs(cli.Launch{Model: "m", MCPConfigFile: "/f", AllowedTools: []string{"mcp__fyr"}, DisallowedTools: []string{"CronCreate"}, SystemPrompt: "P"}), "|")
+	want := "-p|--output-format|json|--no-session-persistence|--setting-sources||--strict-mcp-config|--model|m|--mcp-config|/f|--allowedTools|mcp__fyr|--disallowedTools|CronCreate|--append-system-prompt|P"
+	if got != want {
+		t.Fatalf("%s", got)
+	}
+	if got := strings.Join(ProbeArgs(cli.Launch{}), "|"); got != "-p|--output-format|json|--no-session-persistence|--setting-sources||--strict-mcp-config" {
+		t.Fatalf("bare %s", got)
 	}
 }

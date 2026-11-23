@@ -317,3 +317,61 @@ export function todayRange(now: number): { from: string; to: string } {
   y.setDate(d.getDate() - 1);
   return { from: localDay(y), to: localDay(d) };
 }
+
+// ---- V0.usage-overhead: Fyr's overhead inside agent turns ----
+
+/** A host's answer to GET /api/usage/overhead: tokens by part (static, resident, forced) and kind. */
+export interface HostOverhead {
+  hostId: string;
+  host: string;
+  parts: Record<string, Record<string, number>>;
+  uncalibrated: number;
+}
+
+export function decodeOverhead(raw: unknown, hostId: string, host: string): HostOverhead {
+  const j = (raw && typeof raw === "object" ? raw : {}) as { parts?: unknown; uncalibrated?: unknown };
+  const parts = (j.parts && typeof j.parts === "object" ? j.parts : {}) as Record<string, Record<string, number>>;
+  return { hostId, host, parts, uncalibrated: typeof j.uncalibrated === "number" ? j.uncalibrated : 0 };
+}
+
+/** One overhead line of the page. */
+export interface OverheadLine {
+  id: "static" | "resident" | "forced";
+  label: string;
+  desc: string;
+  total: number;
+  kinds: Record<string, number>;
+}
+
+const OVERHEAD: { id: OverheadLine["id"]; label: string; desc: string }[] = [
+  { id: "static", label: "Fixed context", desc: "Fyr's prompt and tools, in every request: measured once per build and model" },
+  { id: "resident", label: "Tool results and notices", desc: "Fyr's tool calls, their results and its notices, read again by each later request: estimated" },
+  { id: "forced", label: "Forced view turns", desc: "Requests the Stop hook forced to keep the live view: input exact, output a lower bound" },
+];
+
+/** The hosts' overhead added by part; uncalibrated is the requests whose fixed context is not measured yet. */
+export function mergeOverhead(hosts: HostOverhead[]): { lines: OverheadLine[]; uncalibrated: number } {
+  const lines = OVERHEAD.map((o) => ({ ...o, total: 0, kinds: {} as Record<string, number> }));
+  let uncalibrated = 0;
+  for (const h of hosts) {
+    uncalibrated += h.uncalibrated;
+    for (const l of lines) {
+      for (const [k, n] of Object.entries(h.parts[l.id] ?? {})) {
+        if (typeof n !== "number") continue;
+        l.kinds[k] = (l.kinds[k] ?? 0) + n;
+        l.total += n;
+      }
+    }
+  }
+  return { lines, uncalibrated };
+}
+
+const KIND_WORDS: Record<string, string> = { input: "input", output: "output", cacheRead: "cache read", cacheWrite: "cache write" };
+
+/** "cache read 1.2M · cache write 30k" */
+export function overheadKinds(l: OverheadLine): string {
+  const parts = Object.entries(l.kinds)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${KIND_WORDS[k] ?? k} ${tokens(n)}`);
+  return parts.join(" · ") || "none";
+}
