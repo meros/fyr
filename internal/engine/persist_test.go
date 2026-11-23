@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/slots"
@@ -103,15 +104,15 @@ func TestRerunKillsSurviveRestart(t *testing.T) {
 	e, st, dir := openEngine(t)
 	now := time.Now()
 	e.mu.Lock()
-	e.rerunKills = map[string][]time.Time{"make test": {now.Add(-time.Minute), now}, "old": {now.Add(-RerunCapFor - time.Minute)}}
-	e.saveRerunKillsLocked(now)
+	e.gs.RerunKills = map[string][]time.Time{"make test": {now.Add(-time.Minute), now}, "old": {now.Add(-guard.RerunCapFor - time.Minute)}}
+	e.keepRerunKills(e.gs.RerunKills)
 	e.mu.Unlock()
 	e2, st2 := restartEngine(t, dir, st)
 	e2.UseSlots(slots.Open(2, st2)) // as fyrd wires it, after Load (V0.survive-update)
-	if got := e2.rerunKills["make test"]; len(got) != 2 {
+	if got := e2.gs.RerunKills["make test"]; len(got) != 2 {
 		t.Fatalf("kills after restart %v", got)
 	}
-	if _, ok := e2.rerunKills["old"]; ok {
+	if _, ok := e2.gs.RerunKills["old"]; ok {
 		t.Fatal("kills older than RerunCapFor came back")
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/lockwatch"
 	"github.com/meros/fyr/internal/projicon"
@@ -170,34 +171,24 @@ type Engine struct {
 	// heavyOpen: the threads with a heavy foreground call open, published for
 	// admission, which reads it under the pool's lock (V0.admission-tidy).
 	heavyOpen atomic.Pointer[map[string]bool]
-	// frozen is what the guard holds frozen now, the newest last (decision
-	// 0029 S5; V0.multi-freeze: more than one), under mu.
-	frozen       []frozenJob
-	guardOK      time.Time             // under mu: since when memory is fine (zero: it is not)
-	frozeHolds   map[string]time.Time  // under mu: holds frozen once already (owner → since)
+	// gs is the memory guard's state between ticks (V0.guard-tick: internal/guard
+	// decides; the engine keeps it and applies the decisions), under mu.
+	gs           guard.State
 	jobThawed    map[string]time.Time  // under mu: owner → when the guard last thawed its job (V0.sim-fixes: its idle clock starts there)
 	queuedAt     map[string]time.Time  // under mu: when each waiting thread joined the queue (V0.load-tuning)
 	slotOverTold map[string]time.Time  // under mu: owner → the hold already told
-	undFroze     map[string]undFreeze  // under mu: thread → what the guard froze of its episode
 	guardLast    map[string]guardLine  // under mu: the guard's log lines, to say a repeat once a minute
-	guardShort   bool                  // under mu: memory was short at the last tick
-	guardSince   time.Time             // under mu: since when it is short
 	guardTrig    time.Time             // under mu: the PSI trigger's last firing (V0.freeze-fast-class-name)
 	guardEvents  []resource.GuardEvent // under mu: the guard's last decisions, for the front
 	guardPub     atomic.Pointer[resource.Guard]
 	ranks        atomic.Pointer[map[string]int] // V0.project-priority: thread id → its project's rank, the non-zero ones
-	memGuard     bool                           // under mu: the guard told a thread in this episode
-	// V0.guard-wake (decision 0036 E1, E3): the agents' memory when the stall
-	// first went critical in this episode (0: not yet), the last wake, and the
-	// threads whose new heavy command the gate held while memory was short.
-	guardCap  uint64
-	guardWake time.Time
-	gateHeld  map[string]bool
-	// V0.rerun-classes: each rerunnable class's kills (the last hour), and
-	// the threads whose killed job waits for its rerun (thread → entry).
-	rerunKills   map[string][]time.Time // under mu
-	rerunWait    map[string]string      // under mu
-	inv          invariants             // V0.load-invariants: under its own lock
+	// V0.guard-wake (decision 0036 E1): the threads whose new heavy command
+	// the gate held while memory was short.
+	gateHeld map[string]bool
+	// V0.rerun-classes: the threads whose killed job waits for its rerun
+	// (thread → entry); the kills are gs.RerunKills.
+	rerunWait    map[string]string // under mu
+	inv          invariants        // V0.load-invariants: under its own lock
 	titleMu      sync.Mutex
 	titling      map[string]bool
 	textAskSlots chan struct{} // V0.210: the question job's calls at once

@@ -1,8 +1,10 @@
 // Package guard is the resource guard's owner (V0.guard-mechanism): the
 // policy that admits, freezes, thaws and kills heavy work, over a Mechanism
-// that does it on one host. This first slice holds the Mechanism; the policy
-// still lives in internal/slots, internal/admission and the engine's
-// freezeGuard, and moves here in the slices V0.guard-mechanism (4) lists.
+// that does it on one host. V0.guard-tick moved the policy here: admission
+// (Admission, DecideWith, EASY), the budget controller (AIMD), and the memory
+// guard's tick (Tick), which makes every decision of a tick from its inputs
+// and an explicit State. internal/slots keeps the queue, and the engine
+// gathers the inputs and applies the decisions.
 //
 // The policy never names a mechanism's package: internal/cgroup implements
 // Mechanism with cgroup v2 where the host has the tree, and with the process

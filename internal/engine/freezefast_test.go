@@ -83,12 +83,12 @@ func TestFreezeFastAnOldTriggerDoesNotCount(t *testing.T) {
 	a := th[0]
 	z.free, z.agents = 0.30, resource.StallElevated
 	e.GuardNow() // nothing grows yet
-	tickFor(e, now, TriggerFresh+10*time.Second)
+	tickFor(e, now, resource.TriggerFresh+10*time.Second)
 	asked := growing(t, e, u, a, now)
 	z.agents = resource.StallCritical // critical by avg10, long after the trigger
 	e.Tick()
 	if len(z.frozen) != 0 || *asked != 0 {
-		t.Fatalf("a trigger %s old: the old wait holds, got frozen=%v asked=%d", TriggerFresh, z.frozen, *asked)
+		t.Fatalf("a trigger %s old: the old wait holds, got frozen=%v asked=%d", resource.TriggerFresh, z.frozen, *asked)
 	}
 }
 
@@ -146,7 +146,7 @@ func TestFreezeFastTheTwentyNovemberTimeline(t *testing.T) {
 	}
 }
 
-// Past TriggerFresh with avg10 still elevated, memory is no longer short by
+// Past resource.TriggerFresh with avg10 still elevated, memory is no longer short by
 // the trigger.
 func TestFreezeFastTheTriggerCountsForTriggerFreshOnly(t *testing.T) {
 	e, _, now, z, _ := fzEngine(t)
@@ -155,8 +155,8 @@ func TestFreezeFastTheTriggerCountsForTriggerFreshOnly(t *testing.T) {
 	if !e.GuardView().Short {
 		t.Fatal("not short at the trigger")
 	}
-	tickFor(e, now, TriggerFresh+10*time.Second)
+	tickFor(e, now, resource.TriggerFresh+10*time.Second)
 	if e.GuardView().Short {
-		t.Fatal("still short past TriggerFresh with avg10 elevated")
+		t.Fatal("still short past resource.TriggerFresh with avg10 elevated")
 	}
 }

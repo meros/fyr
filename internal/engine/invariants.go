@@ -21,6 +21,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -240,7 +241,7 @@ func (e *Engine) invEvent(ev resource.GuardEvent, sig resource.Signals) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if sig.AgentsStall == resource.StallCritical && ev.Reason != "ceiling" && ev.Reason != "gone" {
-		c.pending = append(c.pending, violation{id: InvThawIntoCritical, evidence: fmt.Sprintf("thread=%s work=%s reason=%s %s", ev.Thread, ev.Work, ev.Reason, guardSignals(sig))})
+		c.pending = append(c.pending, violation{id: InvThawIntoCritical, evidence: fmt.Sprintf("thread=%s work=%s reason=%s %s", ev.Thread, ev.Work, ev.Reason, guard.SignalsLine(sig))})
 	}
 	if c.thaws == nil {
 		c.thaws, c.cycled = map[string][]time.Time{}, map[string]time.Time{}
@@ -249,7 +250,7 @@ func (e *Engine) invEvent(ev resource.GuardEvent, sig resource.Signals) {
 	c.thaws[ev.Thread] = ts
 	if last, ok := c.cycled[ev.Thread]; len(ts) > InvCycles && (!ok || ev.At.Sub(last) >= InvCycleWindow) {
 		c.cycled[ev.Thread] = ev.At
-		c.pending = append(c.pending, violation{id: InvFreezeCycling, evidence: fmt.Sprintf("thread=%s thaws=%d in %s %s", ev.Thread, len(ts), InvCycleWindow, guardSignals(sig))})
+		c.pending = append(c.pending, violation{id: InvFreezeCycling, evidence: fmt.Sprintf("thread=%s thaws=%d in %s %s", ev.Thread, len(ts), InvCycleWindow, guard.SignalsLine(sig))})
 	}
 }
 
@@ -262,8 +263,8 @@ func (e *Engine) checkInvariants() {
 	now := e.Now()
 	flags := e.flags()
 	e.mu.Lock()
-	frozen := append([]frozenJob(nil), e.frozen...)
-	short, since, held := e.guardShort, e.guardSince, len(e.gateHeld)
+	frozen := append([]guard.Frozen(nil), e.gs.Frozen...)
+	short, since, held := e.gs.Short, e.gs.ShortSince, len(e.gateHeld)
 	trig := e.guardTrig
 	e.mu.Unlock()
 	sig := e.SlotSignals().Fresh(trig, now) // as freezeGuard reads it
@@ -274,8 +275,8 @@ func (e *Engine) checkInvariants() {
 	mayFreeze := false
 	if short && len(flags) > 0 && len(frozen) == 0 && held == 0 {
 		crit, _ := sig.Critical()
-		if crit || sig.NearOomd() || stalls(sig) {
-			mayFreeze = e.Slots == nil || e.maxFrozen(e.Slots.Snapshot(), flags) >= 1
+		if crit || sig.NearOomd() || guard.Stalls(sig) {
+			mayFreeze = e.Slots == nil || guard.MaxFrozen(e.Slots.Snapshot().Held, flags) >= 1
 			for _, f := range flags {
 				mayFreeze = mayFreeze || (f.MemOver && len(e.workUnits(f.Thread)) >= 2)
 			}
@@ -302,8 +303,8 @@ func (e *Engine) checkInvariants() {
 		return true
 	}
 	for _, f := range frozen {
-		if d := now.Sub(f.at); d > InvHeldLong && first("held:"+f.owner+"@"+f.at.Format(time.RFC3339Nano)) {
-			c.pending = append(c.pending, violation{id: InvFreezeHeldLong, evidence: fmt.Sprintf("thread=%s undeclared=%t frozen=%s class=%q %s", f.owner, f.undeclared, d.Round(time.Second), f.class+f.cmd, guardSignals(sig))})
+		if d := now.Sub(f.At); d > InvHeldLong && first("held:"+f.Owner+"@"+f.At.Format(time.RFC3339Nano)) {
+			c.pending = append(c.pending, violation{id: InvFreezeHeldLong, evidence: fmt.Sprintf("thread=%s undeclared=%t frozen=%s class=%q %s", f.Owner, f.Undeclared, d.Round(time.Second), f.Class+f.Cmd, guard.SignalsLine(sig))})
 		}
 	}
 	if sig.Provider == "cgroups" && sig.Slowdown == nil {
@@ -311,7 +312,7 @@ func (e *Engine) checkInvariants() {
 			c.silent = now
 		}
 		if d := now.Sub(c.silent); d > InvProbeSilentAfter && first("silent@"+c.silent.Format(time.RFC3339Nano)) {
-			c.pending = append(c.pending, violation{id: InvProbeSilent, evidence: fmt.Sprintf("provider=cgroups no slowdown for %s %s", d.Round(time.Second), guardSignals(sig))})
+			c.pending = append(c.pending, violation{id: InvProbeSilent, evidence: fmt.Sprintf("provider=cgroups no slowdown for %s %s", d.Round(time.Second), guard.SignalsLine(sig))})
 		}
 	} else {
 		c.silent = time.Time{}
@@ -324,7 +325,7 @@ func (e *Engine) checkInvariants() {
 		for _, f := range flags {
 			names = append(names, fmt.Sprintf("%s(%s %s)", f.Thread, f.Command, resource.GB(float64(f.Mem))))
 		}
-		c.pending = append(c.pending, violation{id: InvShortNothingFroze, evidence: fmt.Sprintf("short for %s flagged=%s frozen=0 held=0 running=%d %s", now.Sub(since).Round(time.Second), strings.Join(names, ","), len(e.Running()), guardSignals(sig))})
+		c.pending = append(c.pending, violation{id: InvShortNothingFroze, evidence: fmt.Sprintf("short for %s flagged=%s frozen=0 held=0 running=%d %s", now.Sub(since).Round(time.Second), strings.Join(names, ","), len(e.Running()), guard.SignalsLine(sig))})
 	}
 	vs := c.pending
 	c.pending = nil

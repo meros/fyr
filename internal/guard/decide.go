@@ -1,4 +1,4 @@
-package engine
+package guard
 
 import (
 	"fmt"
@@ -102,7 +102,7 @@ func judgeFrozen(m guardMemory, f frozenFacts, room func() (bool, string)) froze
 
 // thawing is a frozen job a tick thaws, and why.
 type thawing struct {
-	f                         frozenJob
+	f                         Frozen
 	holding, emptied, ceiling bool
 	woke                      string // the wake rule's reason, "" for the others
 }
@@ -120,9 +120,9 @@ func thawWords(t thawing, now time.Time) (reason, why string) {
 		reason = t.woke
 	case t.ceiling:
 		reason, why = fmt.Sprintf("%s ceiling, the agents' memory still stalls critically", frozenWords(FreezeCeiling)), "ceiling"
-	case now.Sub(t.f.at) >= FreezeMax:
+	case now.Sub(t.f.At) >= FreezeMax:
 		reason, why = "10 min limit", "limit"
-		if t.f.pastMax {
+		if t.f.PastMax {
 			reason = "10 min limit, stall no longer critical"
 		}
 	}
@@ -133,16 +133,16 @@ func thawWords(t thawing, now time.Time) (reason, why string) {
 // undeclared freeze while its thread is still flagged with the same start
 // (admitted, ended or released, it is not), a job while the slot holder it
 // was frozen under is still held.
-func stillHolding(f frozenJob, flagged []resource.Undeclared, held []resource.Holder) bool {
-	if f.undeclared {
+func stillHolding(f Frozen, flagged []resource.Undeclared, held []resource.Holder) bool {
+	if f.Undeclared {
 		for _, u := range flagged {
-			if u.Thread == f.owner && u.Since.Equal(f.episode) {
+			if u.Thread == f.Owner && u.Since.Equal(f.Episode) {
 				return true
 			}
 		}
 	}
 	for _, h := range held {
-		if h.Owner == f.owner && h.Since.Format(time.RFC3339Nano) == f.since {
+		if h.Owner == f.Owner && h.Since.Format(time.RFC3339Nano) == f.Since {
 			return true
 		}
 	}

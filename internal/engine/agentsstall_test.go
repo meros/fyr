@@ -1,12 +1,13 @@
 // V0.guard-agents-stall: the agents' own memory stall, the figure oomd
 // compares against its limit, makes memory short on its own; and near
-// oomd's limit the next freeze does not wait AddFreezeAfter.
+// oomd's limit the next freeze does not wait guard.AddFreezeAfter.
 package engine
 
 import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -37,12 +38,12 @@ func TestAgentsStallElevatedIsNotFine(t *testing.T) {
 		t.Fatal("setup: not frozen")
 	}
 	z.agents = resource.StallElevated // the host is fine, the agents still stall
-	tickFor(e, now, 3*ThawAfterOK)
+	tickFor(e, now, 3*guard.ThawAfterOK)
 	if !z.frozen[a] {
 		t.Fatal("woke while the agents' stall is elevated")
 	}
 	z.agents = resource.StallOK
-	tickFor(e, now, ThawAfterOK+10*time.Second)
+	tickFor(e, now, guard.ThawAfterOK+10*time.Second)
 	if z.frozen[a] {
 		t.Fatal("still frozen with both stalls ok")
 	}

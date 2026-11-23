@@ -14,6 +14,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -55,15 +56,15 @@ func TestRerunAFrozenRerunnableWorkIsKilledAfterTwoMinutes(t *testing.T) {
 	if !z.frozen[a] {
 		t.Fatal("not frozen first: its wall time is not known")
 	}
-	*now = now.Add(RerunAfter - 10*time.Second)
+	*now = now.Add(guard.RerunAfter - 10*time.Second)
 	e.Tick()
 	if len(r.killed) != 0 {
 		t.Fatal("killed before 2 min")
 	}
 	*now = now.Add(10 * time.Second)
 	e.Tick()
-	if len(r.killed) != 1 || r.killed[0] != a || e.first().owner == a {
-		t.Fatalf("killed %v, still held %q", r.killed, e.first().owner)
+	if len(r.killed) != 1 || r.killed[0] != a || e.first().Owner == a {
+		t.Fatalf("killed %v, still held %q", r.killed, e.first().Owner)
 	}
 	if !told(e, a, "Fyr killed your heavy work (`layout.e2e`) to free memory on this host: the owner marked it rerunnable.") {
 		th, _ := e.Thread(a)
@@ -187,7 +188,7 @@ func TestRerunAClassKilledThreeTimesInAnHourIsFrozenInstead(t *testing.T) {
 	e, now, _, b, frozen, free := slotEngine(t)
 	r := useRerun(t, e, "make test")
 	r.wall = time.Minute
-	for i := range RerunCap {
+	for i := range guard.RerunCap {
 		*free = 0.04
 		e.Tick()
 		if len(r.killed) != i+1 {
@@ -202,11 +203,11 @@ func TestRerunAClassKilledThreeTimesInAnHourIsFrozenInstead(t *testing.T) {
 	}
 	*free = 0.04
 	e.Tick()
-	if len(r.killed) != RerunCap || !frozen[b] {
+	if len(r.killed) != guard.RerunCap || !frozen[b] {
 		t.Fatalf("killed %d times, frozen %v: the fourth time it is frozen", len(r.killed), frozen)
 	}
 	g := e.GuardView()
-	if len(g.Rerun) != 1 || g.Rerun[0].Kills != RerunCap || g.Rerun[0].CappedUntil == nil {
+	if len(g.Rerun) != 1 || g.Rerun[0].Kills != guard.RerunCap || g.Rerun[0].CappedUntil == nil {
 		t.Fatalf("view %+v", g.Rerun)
 	}
 	capped := false
@@ -218,7 +219,7 @@ func TestRerunAClassKilledThreeTimesInAnHourIsFrozenInstead(t *testing.T) {
 	}
 	// An hour after the first kill it may be killed again.
 	*now = now.Add(time.Hour)
-	if _, c := e.rerunCapped("make test", *now); c {
+	if len(guard.Recent(e.gs.RerunKills["make test"], *now)) >= guard.RerunCap {
 		t.Fatal("still capped after the hour")
 	}
 }

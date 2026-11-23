@@ -16,6 +16,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -109,7 +110,7 @@ func TestInvariantFreezeHeldLong(t *testing.T) {
 	e, _, now, _, th := fzEngine(t)
 	out := invLog(t, e)
 	e.mu.Lock()
-	e.frozen = []frozenJob{{owner: th[0], at: now.Add(-InvHeldLong), undeclared: true}}
+	e.gs.Frozen = []guard.Frozen{{Owner: th[0], At: now.Add(-InvHeldLong), Undeclared: true}}
 	e.mu.Unlock()
 	e.checkInvariants()
 	if invLines(out, InvFreezeHeldLong) != 0 {

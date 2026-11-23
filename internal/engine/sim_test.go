@@ -366,7 +366,7 @@ func (r *simRun) checkThaw(th string, kind unitKind) {
 			frozen = max(frozen, r.h.t-u.frozenAt)
 		}
 	}
-	if frozen == 0 || frozen >= FreezeCeiling {
+	if frozen == 0 || frozen >= guard.FreezeCeiling {
 		return
 	}
 	why := "?"

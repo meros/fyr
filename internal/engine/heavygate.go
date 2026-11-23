@@ -158,7 +158,7 @@ func (e *Engine) noteGrant(c HeavyCall) {
 // thread is told when memory has recovered. "" lets the gate go on.
 func (e *Engine) gateHold(c HeavyCall, soft bool) string {
 	e.mu.Lock()
-	short := e.guardShort
+	short := e.gs.Short
 	e.mu.Unlock()
 	if !short {
 		return ""
