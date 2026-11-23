@@ -1,12 +1,15 @@
 package lockwatch
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/meros/fyr/internal/fsutil"
 )
 
 // The limits (SPEC 0.5 V0.147).
@@ -146,7 +149,7 @@ func (w *Watchdog) Dump(why string, hs []Holder, now time.Time) Stall {
 	if w.Dir != "" {
 		if err := os.MkdirAll(w.Dir, 0o700); err == nil {
 			s.File = filepath.Join(w.Dir, now.UTC().Format("20060102T150405.000Z")+".txt")
-			if err := os.WriteFile(s.File, []byte(b.String()), 0o600); err != nil {
+			if err := fsutil.WriteAtomic(s.File, []byte(b.String()), 0o600); err != nil { // Latest never reads half a dump
 				log.Printf("stall: write %s: %v", s.File, err)
 				s.File = ""
 			}
@@ -187,18 +190,32 @@ func Latest(dir string, since time.Time) (Stall, bool) {
 			continue
 		}
 		s := Stall{At: at, File: filepath.Join(dir, e.Name())}
-		if b, err := os.ReadFile(s.File); err == nil {
-			lines := strings.SplitN(string(b), "\n", 5)
-			if len(lines) > 0 {
-				s.Exiting = strings.Contains(lines[0], "fyrd exits")
-			}
-			if len(lines) > 3 {
-				s.What = strings.TrimSpace(lines[3])
-			}
+		lines := headLines(s.File, 4)
+		if len(lines) > 0 {
+			s.Exiting = strings.Contains(lines[0], "fyrd exits")
+		}
+		if len(lines) > 3 {
+			s.What = strings.TrimSpace(lines[3])
 		}
 		return s, true
 	}
 	return Stall{}, false
+}
+
+// headLines is the first n lines of the file at path: a dump holds every
+// goroutine's stack (megabytes), and Latest needs its head only.
+func headLines(path string, n int) []string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	var lines []string
+	for len(lines) < n && sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	return lines
 }
 
 func prune(dir string) {

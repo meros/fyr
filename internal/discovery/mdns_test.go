@@ -53,8 +53,9 @@ func TestAQueryIsRecognised(t *testing.T) {
 	}
 }
 
-// The bus file a test (or a fixed setup) uses as the mDNS: read as it is, a bad file is
-// no candidates and no error loop.
+// The bus file a test (or a fixed setup) uses as the mDNS: read as it is. A
+// missing file is no candidates; a bad one is no candidates and an error
+// (V0.review-robust (4)), not a silently empty LAN.
 func TestFileSourceReadsTheBus(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "bus.json")
 	src := File(p)
@@ -67,8 +68,8 @@ func TestFileSourceReadsTheBus(t *testing.T) {
 		t.Fatalf("%v", c)
 	}
 	os.WriteFile(p, []byte(`not json`), 0o600)
-	if c, _ := src.Candidates(context.Background()); len(c) != 0 {
-		t.Fatalf("a bad file gave %v", c)
+	if c, err := src.Candidates(context.Background()); len(c) != 0 || err == nil {
+		t.Fatalf("a bad file gave %v, %v", c, err)
 	}
 }
 

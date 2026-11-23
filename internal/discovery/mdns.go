@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"strconv"
@@ -430,19 +433,23 @@ func (m *MDNS) Candidates(ctx context.Context) ([]Candidate, error) {
 var _ Source = (*MDNS)(nil)
 
 // File is a Source that reads a JSON list of candidates from a path: the bus a test
-// (or a fixed setup without multicast) writes. A missing or bad file has none.
+// (or a fixed setup without multicast) writes. A missing file has none; one that
+// cannot be read or parsed is an error, not an empty LAN.
 func File(path string) Source { return fileSource(path) }
 
 type fileSource string
 
 func (f fileSource) Candidates(ctx context.Context) ([]Candidate, error) {
 	b, err := os.ReadFile(string(f))
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
 	var out []Candidate
-	if json.Unmarshal(b, &out) != nil {
-		return nil, nil
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, fmt.Errorf("LAN bus %s: %w", string(f), err)
 	}
 	return out, nil
 }

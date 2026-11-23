@@ -92,7 +92,9 @@ func (s *Store) Save(name, mediaType string, r io.Reader) (Meta, error) {
 		return Meta{}, err
 	}
 	n, err := io.Copy(f, io.LimitReader(r, max+1))
-	f.Close()
+	if cerr := f.Close(); err == nil {
+		err = cerr // a full disk can show only here
+	}
 	if err == nil && n > max {
 		err = fmt.Errorf("%w (%d MB)", ErrTooLarge, max>>20)
 	}
@@ -103,6 +105,7 @@ func (s *Store) Save(name, mediaType string, r io.Reader) (Meta, error) {
 	m.Size = n
 	j, _ := json.Marshal(m)
 	if err := fsutil.WriteAtomic(filepath.Join(dir, "meta.json"), j, 0o600); err != nil {
+		os.RemoveAll(dir) // a file without meta.json is no attachment: no stray folder
 		return Meta{}, err
 	}
 	return m, nil

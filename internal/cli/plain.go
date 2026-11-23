@@ -3,6 +3,7 @@ package cli
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var (
@@ -33,4 +34,13 @@ func Plain(b []byte) string {
 		}
 		return r
 	}, s)
+}
+
+// Clip is s cut to at most n runes: a byte cut could split a character
+// and leave invalid UTF-8 in a line meant for a person.
+func Clip(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }

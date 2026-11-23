@@ -75,11 +75,7 @@ func ParseLogin(b []byte) LoginOut {
 			strings.Contains(low, "failed") || strings.Contains(low, "cancelled") || strings.Contains(low, "canceled") || strings.Contains(low, "expired")) {
 			continue
 		}
-		l = Redact(l)
-		if len(l) > 240 {
-			l = l[:240]
-		}
-		o.Line = l
+		o.Line = cli.Clip(Redact(l), 240)
 		break
 	}
 	return o
