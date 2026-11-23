@@ -114,13 +114,27 @@ const (
 	checkRunning string = "running"
 )
 
-// Advisory reports whether a check only informs (V0.advisory-checks): its
-// name ends in "(advisory)". Fyr leaves it out of a PR's CI state, so it
-// never holds or fails a merge ask: a self-hosted runner that is asleep keeps
-// such a check queued for hours, and GitHub ends no queued job by itself. The
-// PR's detail still lists it with its state.
-func Advisory(name string) bool {
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), "(advisory)")
+// Counts reports whether a check gates a merge (V0.advisory-checks): every
+// check does but an advisory one, whose name ends in "(advisory)". A
+// self-hosted runner that is asleep keeps such a check queued for hours, and
+// GitHub ends no queued job by itself. Every place that decides whether CI
+// passed for a merge reads the checks through it: the PR's checks (fromView,
+// for the poll, the merge ask and auto-merge), the detail's summary and the
+// host's last look before it merges (MergeBlock). The detail still lists an
+// advisory check with its state.
+func Counts(name string) bool {
+	return !strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), "(advisory)")
+}
+
+// gating is the detail's checks that gate a merge (Counts).
+func (d Detail) gating() []Check {
+	out := make([]Check, 0, len(d.Checks))
+	for _, c := range d.Checks {
+		if Counts(c.Name) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // CheckState reads a CheckRun (status, conclusion) or a commit status (state)
@@ -221,11 +235,10 @@ func FetchDetail(ctx context.Context, gh Runner, url string) (Detail, error) {
 	}
 	d.Checked = core.ChecksNone
 	if d.State == "OPEN" || len(d.Checks) > 0 {
-		states := make([]string, 0, len(d.Checks))
-		for _, c := range d.Checks {
-			if !Advisory(c.Name) {
-				states = append(states, c.State)
-			}
+		gating := d.gating()
+		states := make([]string, len(gating))
+		for i, c := range gating {
+			states[i] = c.State
 		}
 		d.Checked, _ = Summarize(ctx, gh, repo, states)
 	}
@@ -346,8 +359,9 @@ func MergeBlock(d Detail) string {
 	case d.MergeState == "BEHIND":
 		return "Behind " + base + ": update the branch first"
 	}
+	gating := d.gating()
 	fails := 0
-	for _, c := range d.Checks {
+	for _, c := range gating {
 		if c.State == "fail" {
 			fails++
 		}
@@ -357,12 +371,12 @@ func MergeBlock(d Detail) string {
 		return "Blocked: 1 failing check"
 	case d.MergeState == "BLOCKED" && fails > 1:
 		return fmt.Sprintf("Blocked: %d failing checks", fails)
-	case d.Checked == core.ChecksPending || (d.Checked == "" && len(d.Checks) == 0):
+	case d.Checked == core.ChecksPending || (d.Checked == "" && len(gating) == 0):
 		// V0.112: a merge waits for CI; no check reported is not green
 		// (a detail that was not summed up, with no checks, neither).
 		return waitCI(d)
 	}
-	for _, c := range d.Checks { // a detail that was not summed up
+	for _, c := range gating { // a detail that was not summed up
 		if c.State == checkRunning {
 			return waitCI(d)
 		}
@@ -385,7 +399,7 @@ func waitCI(d Detail) string {
 	if len(d.HeadSha) >= 7 {
 		on = d.HeadSha[:7]
 	}
-	if len(d.Checks) == 0 {
+	if len(d.gating()) == 0 {
 		return "No check has reported on " + on + " yet: Merge waits for CI"
 	}
 	return "CI has not passed on " + on + " yet: Merge waits for the checks"

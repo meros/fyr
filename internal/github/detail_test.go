@@ -192,6 +192,10 @@ func TestMergeBlock(t *testing.T) {
 		{Detail{State: "OPEN", MergeState: "BLOCKED", Checks: []Check{{State: "fail"}}}, "Blocked: 1 failing check"},
 		{Detail{State: "OPEN", MergeState: "BLOCKED", ReviewDecision: "REVIEW_REQUIRED", Checked: core.ChecksPass, Checks: green}, "Review required"},
 		{Detail{State: "OPEN", MergeState: "BLOCKED", Checked: core.ChecksPass, Checks: green}, "Blocked"},
+		// V0.advisory-checks: an advisory check neither holds nor blocks, even in a detail that was not summed up
+		{Detail{State: "OPEN", MergeState: "UNSTABLE", Checks: []Check{{Name: "test", State: "pass"}, {Name: "swift build (advisory)", State: "running"}}}, ""},
+		{Detail{State: "OPEN", MergeState: "BLOCKED", ReviewDecision: "REVIEW_REQUIRED", Checked: core.ChecksPass, Checks: []Check{{Name: "test", State: "pass"}, {Name: "mac (advisory)", State: "fail"}}}, "Review required"},
+		{Detail{State: "OPEN", MergeState: "CLEAN", Checks: []Check{{Name: "mac (advisory)", State: "pass"}}}, "No check has reported"},
 	}
 	for i, c := range cases {
 		got := MergeBlock(c.d)
@@ -252,6 +256,15 @@ func TestMergeCheckedWaitsForCI(t *testing.T) {
 		`"statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"QUEUED","conclusion":""}]`, 1), "pr merge": "merged"}}
 	if _, err := MergeChecked(context.Background(), running.run, url, "squash", "029f9c7"); err == nil || running.count("pr merge") != 0 {
 		t.Errorf("a queued check merged: %v", err)
+	}
+
+	// V0.advisory-checks: the host's last look before it merges reads the checks as the merge ask does.
+	for _, adv := range []string{`"status":"QUEUED","conclusion":""`, `"status":"COMPLETED","conclusion":"FAILURE"`} {
+		withAdv := &scripted{out: map[string]string{"pr view": strings.Replace(view, `"statusCheckRollup":[]`,
+			`"statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"swift build (advisory)",`+adv+`}]`, 1), "pr merge": "merged"}}
+		if _, err := MergeChecked(context.Background(), withAdv.run, url, "squash", "029f9c7"); err != nil || withAdv.count("pr merge") != 1 {
+			t.Errorf("an advisory check (%s) held the merge: %v", adv, err)
+		}
 	}
 
 	ciRepos.Clear()
