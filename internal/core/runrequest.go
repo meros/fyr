@@ -148,6 +148,21 @@ func PendingRequest(t *Thread) *ActionSpec {
 	return nil
 }
 
+// RunningRequest is the thread's run request whose command is running now, or
+// nil (V0.waiting-for-command): the agent waits on it, so the thread is not
+// finished.
+func RunningRequest(t *Thread) *ActionSpec {
+	for i := range t.Offers {
+		a := &t.Offers[i]
+		if a.Request && !a.Optional {
+			if r := lastRunOf(t.Runs, a.ID, OnThread); r != nil && r.Running {
+				return a
+			}
+		}
+	}
+	return nil
+}
+
 func reduceStop(r Rec, in Input, now time.Time) (Result, error) {
 	args := mapArgs(in)
 	h, err := HolderOf(r.T, args.Str("on"))
