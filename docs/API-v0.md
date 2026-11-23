@@ -374,6 +374,7 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 - `GET /api/threads/{id}/events/{seq}` returns that one event whole (`404` when the thread has no such event).
 - Stream: after a connection has a thread whole, changes come as `event: thread.patch` `data: {"id", "rev", "base", "patch"}`; apply `patch` (RFC 7396) only when your copy has `rev === base`, else `GET /api/threads/{id}` (the ThreadDTO). A thread is sent at most every 100 ms per connection; the newest version wins.
 - `GET /api/state?since=REV` lists only threads with `rev > REV` and adds `"partial": true`; the other fields are whole. Revs grow across host restarts.
+- `GET /api/state?limit=N&before=REV` (V0.state-paging) answers the newest N threads (after `since`, when given) with a rev below `before`, newest first. When older ones remain it adds `"more": true` and `"cursor"`, the oldest rev in the page as a string; the next page is `before=<cursor>`. Without `limit` the answer is whole. A page with `before` has `"partial": true`. `/api/h/<id>/state` answers the same way.
 
 **In the app (`internal/front/peerapi.go`).** `POST /api/front/peer/remove {id}` removes a member as `fyr host remove` does; it needs no step-up, so a lost phone goes at once. `POST /api/front/peer/ignore {id, on?}` hides a found install from Not paired (#259); `on: false` shows it again. Ignore is local to this install.
 

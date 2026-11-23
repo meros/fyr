@@ -181,6 +181,11 @@ export const failed = (error: string): { ok: false; error: string } => ({ ok: fa
 /** A request whose reply `decode` turns into the type the screen reads: it gets whatever the host sent (an empty or
  *  unparsable body, a literal null). A refusal answers the host's error; a network failure, a timeout or the caller's
  *  cancel answers UNREACHABLE; a body the decoder refuses (it throws) answers the decoder's message. */
+/** V0.state-paging: threads in the first answer of a host, in each older page after it, and the pause between pages. */
+const PAGE_FIRST = 60;
+const PAGE_NEXT = 120;
+const PAGE_PAUSE_MS = 250;
+
 async function read<T>(url: string, decode: (raw: unknown) => T, o?: RequestOptions): Promise<Result<T>> {
   let reply: Reply;
   try {
@@ -280,23 +285,61 @@ function createHttpApi(): Api {
     // V0.38: with a stored copy, ask each host only for the threads changed since it. A rev is its host's own clock, so
     // "since" is each host's own newest, from that host's own stored state (V0.host-ids, decision 0031 2.5); its partial
     // answer merges into that state, which the store keeps as that host's (slice 2b).
+    // V0.state-paging: a long absence changes nearly every thread. Each host answers the newest PAGE_FIRST at once; the
+    // older pages follow in the background (backfill), and the stored state moves on only when a host's pages are all in.
+    const gen = generation;
+    const more: Array<{ i: number; id: HostId; cursor: string }> = [];
     const results = await Promise.all(
-      addressable(f.hosts).map(async (host): Promise<HostResult> => {
+      addressable(f.hosts).map(async (host, i): Promise<HostResult> => {
         const id = host.id;
         const stored = await cache.hostState(id);
         const since = hostSince(stored);
         try {
-          const r = await read(hostPath(id, since ? `/state?since=${since}` : "/state"), object<StateDTO & { partial?: boolean }>);
+          const q = new URLSearchParams({ limit: String(PAGE_FIRST) });
+          if (since) q.set("since", String(since));
+          const r = await read(hostPath(id, `/state?${q}`), object<StateDTO & { partial?: boolean; more?: boolean; cursor?: string }>);
           if (!r.ok) throw new Error(r.error);
-          const state = nextHostState(stored, r.data);
-          void cache.saveHostState(id, state);
+          const { more: rest, cursor, ...answer } = r.data;
+          const state = nextHostState(stored, answer);
+          if (rest && cursor) more.push({ i, id, cursor });
+          else void cache.saveHostState(id, state);
           return { host, state };
         } catch {
           return { host, state: { now: f.now, user: f.user, threads: [], actions: [], profiles: [], projects: [] } };
         }
       }),
     );
+    if (more.length) void backfill(gen, f, results, more);
     return snapshotOf(f, results);
+  };
+
+  type Page = { answer: StateDTO; next: string | undefined };
+  const olderPage = async (host: HostId, before: string): Promise<Page | null> => {
+    const r = await read(hostPath(host, `/state?limit=${PAGE_NEXT}&before=${before}`), object<StateDTO & { more?: boolean; cursor?: string }>);
+    if (!r.ok) return null;
+    const { more: rest, cursor, ...answer } = r.data;
+    return { answer, next: rest ? cursor : undefined };
+  };
+
+  /** V0.state-paging: the older pages of the hosts that had more, each merged in and shown as it arrives. A newer
+   *  connection, or a page that fails, ends it: the stored state has not moved, so the next load asks again. */
+  const backfill = async (gen: number, f: FrontState, results: HostResult[], more: Array<{ i: number; id: HostId; cursor: string }>) => {
+    await Promise.all(
+      more.map(async (m) => {
+        let before: string | undefined = m.cursor;
+        while (before) {
+          await new Promise((res) => setTimeout(res, PAGE_PAUSE_MS));
+          if (gen !== generation) return;
+          const page: Page | null = await olderPage(m.id, before);
+          if (!page || gen !== generation) return;
+          const state = nextHostState(results[m.i].state, { ...page.answer, partial: true });
+          results[m.i] = { host: results[m.i].host, state };
+          handlers?.state(snapshotOf(f, results));
+          before = page.next;
+          if (!before) void cache.saveHostState(m.id, state);
+        }
+      }),
+    );
   };
 
   const reload = async (gen: number) => {

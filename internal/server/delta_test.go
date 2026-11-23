@@ -152,3 +152,57 @@ func TestDeployProgressInState(t *testing.T) {
 		t.Fatal("a just-finished deploy is gone at once")
 	}
 }
+
+// V0.state-paging: GET /api/state?limit=N answers the newest N threads with a
+// cursor, and ?before=CURSOR the next older page, so a client that was away for
+// long shows the live threads first and backfills the rest.
+func TestStatePaging(t *testing.T) {
+	hs, _ := newServer(t)
+	for i := 0; i < 5; i++ {
+		r := do(t, "POST", hs.URL+"/api/command", "", map[string]string{"X-Fyr": "1"}, fmt.Sprintf(`{"commandId":"p%d","action":"thread.create","args":{"cwd":"/tmp","text":"t%d"}}`, i, i))
+		r.Body.Close()
+	}
+	type page struct {
+		Threads []struct {
+			ID  string `json:"id"`
+			Rev int64  `json:"rev"`
+		} `json:"threads"`
+		Partial bool   `json:"partial"`
+		More    bool   `json:"more"`
+		Cursor  string `json:"cursor"`
+	}
+	get := func(q string) page {
+		r := do(t, "GET", hs.URL+"/api/state"+q, "", nil, "")
+		var p page
+		json.NewDecoder(r.Body).Decode(&p)
+		return p
+	}
+	seen := map[string]bool{}
+	var last int64 = 1<<63 - 1
+	q := "?limit=2"
+	for i := 0; ; i++ {
+		p := get(q)
+		if i > 5 {
+			t.Fatal("paging does not end")
+		}
+		for _, th := range p.Threads {
+			if seen[th.ID] || th.Rev >= last {
+				t.Fatalf("page %d: %s repeated or out of order", i, th.ID)
+			}
+			seen[th.ID], last = true, th.Rev
+		}
+		if !p.More {
+			if p.Cursor != "" && len(p.Threads) == 0 {
+				t.Fatal("a last empty page has a cursor")
+			}
+			break
+		}
+		if len(p.Threads) != 2 || p.Cursor == "" {
+			t.Fatalf("page %d: %d threads, cursor %q", i, len(p.Threads), p.Cursor)
+		}
+		q = "?limit=2&before=" + p.Cursor
+	}
+	if len(seen) != 5 {
+		t.Fatalf("the pages held %d of 5 threads", len(seen))
+	}
+}
