@@ -73,6 +73,13 @@ const md = new Marked({
   },
 });
 
+/** V0.longtask-work: counts of the main thread's work units (a markdown parse, a store flush), read by the layout test
+ *  in place of a wall-time budget: the count does not depend on how busy the machine is. */
+export function workCount(k: "mdParses" | "flushes"): void {
+  const w = ((globalThis as { __fyrWork?: Record<string, number> }).__fyrWork ??= {});
+  w[k] = (w[k] ?? 0) + 1;
+}
+
 export function renderMarkdown(src: string, host?: HostId, urlFor: (host: HostId | undefined, id: string) => string = attachmentUrl): string {
   if (urlFor !== curUrl) {
     // Another Api's URLs: what is cached points elsewhere.
@@ -87,6 +94,7 @@ export function renderMarkdown(src: string, host?: HostId, urlFor: (host: HostId
     return hit;
   }
   curHost = host;
+  workCount("mdParses");
   let html: string;
   try {
     html = md.parse(src, { async: false }) as string;
