@@ -28,7 +28,7 @@ var vocabAllow = map[string][]string{
 	"internal/front/notify.go": {"ask"},
 	// The hub's event name and the front's env key for deploy progress.
 	"internal/stream/hub.go":  {"deploy"},
-	"internal/front/front.go": {"deploy"},
+	"internal/front/stream.go": {"deploy"},
 	// GitHub's deployment state before the first status.
 	"internal/github/deploy.go": {"pending"},
 	// Per-check states of the PR detail view: pass, fail, running, skipped.
