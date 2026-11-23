@@ -156,7 +156,13 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
           const p = get(a.id);
           if (!p || !p.canLogin) return fail("not a Claude account");
           if (p.login && ["starting", "waiting", "checking"].includes(p.login.state)) return fail(`A login for ${p.name} is already running`);
-          p.login = { kind: p.tokenLogin ? "token" : "folder", state: "waiting", url: "https://claude.com/cai/oauth/authorize?code=true&client_id=mock", expires: new Date(Date.now() + 10 * 60_000).toISOString() };
+          // As the real CLI: the login starts with no link, and the link comes a moment later. The page must follow the
+          // running login to show it (#30: a one-host Settings never did, and stayed on "Starting claude…").
+          const login = { kind: p.tokenLogin ? "token" : "folder", state: "starting", expires: new Date(Date.now() + 10 * 60_000).toISOString() } as NonNullable<typeof p.login>;
+          p.login = login;
+          setTimeout(() => {
+            if (p.login === login) p.login = { ...login, state: "waiting", url: "https://claude.com/cai/oauth/authorize?code=true&client_id=mock" };
+          }, 800);
           return { ok: true };
         }
         case "provider.loginCode": {
