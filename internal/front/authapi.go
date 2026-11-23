@@ -42,7 +42,9 @@ func (f *Front) authOnce(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(oncePage))
 	case http.MethodPost:
 		var body struct{ Token string }
-		httpguard.DecodeLoose(w, r, &body, httpguard.SmallBody)
+		if !api.DecodeBody(w, r, &body, httpguard.SmallBody) {
+			return
+		}
 		session, d, err := f.opt.Auth.Redeem(body.Token, cookieOf(r), BrowserName(r.UserAgent()))
 		if err != nil {
 			api.WriteJSON(w, http.StatusGone, map[string]any{"ok": false, "error": err.Error()})
@@ -211,7 +213,9 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ Code, ID string }
-		httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
+		if !api.DecodeBody(w, r, &b, httpguard.SmallBody) {
+			return
+		}
 		var d *auth.Device
 		var err error
 		if b.ID != "" {
@@ -231,7 +235,9 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ ID string }
-		httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
+		if !api.DecodeBody(w, r, &b, httpguard.SmallBody) {
+			return
+		}
 		api.WriteJSON(w, 200, map[string]any{"ok": st.Deny(b.ID, "device:"+p.ID)})
 	})
 	mux.HandleFunc("POST /api/front/auth/revoke", func(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +246,9 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ ID string }
-		httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
+		if !api.DecodeBody(w, r, &b, httpguard.SmallBody) {
+			return
+		}
 		gone := st.Revoke(b.ID, "device:"+p.ID)
 		api.WriteJSON(w, 200, map[string]any{"ok": len(gone) > 0, "revoked": gone})
 	})
@@ -250,7 +258,9 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ Name string }
-		httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
+		if !api.DecodeOptional(w, r, &b, httpguard.SmallBody) {
+			return
+		}
 		origin := originOf(r)
 		api.WriteJSON(w, 200, f.oneTimeLink(func(tok string) string { return origin + "/auth/once#" + tok }, auth.HowLink, nameOr(b.Name, "a new device"), p.ID, 10*time.Minute))
 	})
@@ -260,7 +270,9 @@ func (f *Front) authAPI(mux muxer) {
 			return
 		}
 		var b struct{ Way, Mode string }
-		httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
+		if !api.DecodeBody(w, r, &b, httpguard.SmallBody) {
+			return
+		}
 		if err := st.SetMode(b.Way, b.Mode, "device:"+p.ID); err != nil {
 			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 			return

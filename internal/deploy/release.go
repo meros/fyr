@@ -292,7 +292,9 @@ func (d *Deployer) install(ctx context.Context, run Runner, prog *Progress, gen 
 	out := d.releaseDir(sha)
 	if _, err := os.Stat(filepath.Join(out, verifiedMark)); err != nil {
 		d.report(prog, "download", "release "+release.Tag(sha), nil)
-		os.MkdirAll(filepath.Join(d.Data, "builds"), 0o755)
+		if err := os.MkdirAll(filepath.Join(d.Data, "builds"), 0o755); err != nil {
+			return failed(err)
+		}
 		tmp, err := os.MkdirTemp(filepath.Join(d.Data, "builds"), ".dl-"+id+"-")
 		if err != nil {
 			return failed(err)
@@ -308,8 +310,7 @@ func (d *Deployer) install(ctx context.Context, run Runner, prog *Progress, gen 
 			os.RemoveAll(tmp)
 			return failed(err)
 		}
-		os.RemoveAll(out)
-		if err := os.Rename(tmp, out); err != nil {
+		if err := replaceDir(tmp, out); err != nil {
 			os.RemoveAll(tmp)
 			return failed(err)
 		}
@@ -392,4 +393,28 @@ func (d *Deployer) live() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.Live
+}
+
+// replaceDir puts the directory tmp at out. A build already at out (one
+// without the verified mark) is renamed aside first and removed after, so out
+// is never missing in between, and is put back if the new one cannot take its
+// place.
+func replaceDir(tmp, out string) error {
+	old := ""
+	if _, err := os.Lstat(out); err == nil {
+		old = fmt.Sprintf("%s.old-%d", out, time.Now().UnixNano())
+		if err := os.Rename(out, old); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(tmp, out); err != nil {
+		if old != "" {
+			os.Rename(old, out)
+		}
+		return err
+	}
+	if old != "" {
+		os.RemoveAll(old)
+	}
+	return nil
 }
