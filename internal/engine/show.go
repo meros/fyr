@@ -146,7 +146,7 @@ func (e *Engine) showTool() mcp.Tool {
 				if e.Shooter == nil {
 					return "", errors.New("Fyr has no browser for screenshots on this host")
 				}
-				if !e.shotLimit.allow(th, time.Now()) {
+				if !e.shotLimit.allow(th, e.Now()) {
 					return "", errors.New("screenshot limit: 10 a minute per thread")
 				}
 				sctx, cancel := context.WithTimeout(ctx, 45*time.Second)

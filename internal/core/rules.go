@@ -992,7 +992,7 @@ type QuotaUpdate struct {
 	ResetsAt time.Time
 }
 
-// QuotaSyncArgs carries fresh quota reset times into a thread so armed
+// QuotaSyncArgs carries fresh quota reset times into a thread so its
 // WhenQuota rules follow a reset time that moved.
 type QuotaSyncArgs struct {
 	Updates []QuotaUpdate
@@ -1033,10 +1033,9 @@ func reduceQuotaSync(r Rec, in Input, now time.Time) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// V0.review-correctness (5): a suspended rule follows too, so it does not
+	// resume with an earlier reset and fire early.
 	for i := range r.T.Rules {
-		if r.T.Rules[i].Status != RuleArmed {
-			continue
-		}
 		for _, u := range a.Updates {
 			syncQuotaWhen(&r.T.Rules[i].When, u, now)
 		}

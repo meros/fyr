@@ -21,7 +21,7 @@ import (
 // (applyRecord).
 func (e *Engine) Apply(in core.Input) (any, error) {
 	if core.IsRecordKind(in.Kind) {
-		ps, err := e.applyRecord(in)
+		ps, _, err := e.applyRecord(in)
 		for _, p := range ps {
 			e.publish(p)
 		}
@@ -93,11 +93,33 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 		return nil, err
 	}
 	e.commit(s, false)
-	autoMerge := maps.Clone(e.autoMerge)
-	lastAfter, hasLast := e.last[s.t.ID]
+	check := e.threadChecks(s)
 	e.mu.Unlock()
-	e.checkThreadApplied(s, autoMerge, lastAfter, hasLast) // V0.thread-invariants
+	check()
 	return s.applied, nil
+}
+
+// threadChecks takes, under e.mu right after the commit of ss, what the
+// thread invariants read (V0.thread-invariants); the func it returns checks
+// each staged thread and runs without e.mu. Every path that stages a
+// thread's reduce (apply, applyProject, applyRecord) checks it this way.
+func (e *Engine) threadChecks(ss ...*staged) func() {
+	type one struct {
+		s       *staged
+		last    core.State
+		hasLast bool
+	}
+	autoMerge := maps.Clone(e.autoMerge)
+	all := make([]one, 0, len(ss))
+	for _, s := range ss {
+		last, ok := e.last[s.t.ID]
+		all = append(all, one{s, last, ok})
+	}
+	return func() {
+		for _, o := range all {
+			e.checkThreadApplied(o.s, autoMerge, o.last, o.hasLast)
+		}
+	}
 }
 
 // staged is one thread's reduce, ready to store.
@@ -117,14 +139,11 @@ type staged struct {
 func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh bool) (*staged, error) {
 	in.Thread = cur.ID
 	prevView := cloneViewCopy(e.views[cur.ID], cur.ID)
-	t, v, res, err := core.Reduce(cur, e.views[cur.ID], in, now)
+	t, v, res, err := core.ReduceIn(core.Env{Projects: e.projects}, cur, e.views[cur.ID], in, now)
 	if err != nil {
 		return nil, err
 	}
 	k := core.Kinds[in.Kind]
-	if in.Source == core.FromOwner || fresh {
-		e.assignProject(t)
-	}
 	s := &staged{in: in, cur: cur, t: t, prevView: prevView, v: v, now: now}
 	was, _ := json.Marshal(cur)
 	is, _ := json.Marshal(t)

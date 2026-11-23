@@ -185,7 +185,7 @@ func Covers(folder, dir string) bool {
 // MatchFolder is the one matching rule (SPEC 0.5 V0.55): the project whose
 // folder is dir or contains it, the longest folder first, ties by id; ""
 // when none does.
-func MatchFolder(ps []*Project, dir string) string {
+func MatchFolder(ps map[string]*Project, dir string) string {
 	best, bestLen := "", -1
 	for _, p := range ps {
 		if !Covers(p.Folder, dir) {
@@ -197,6 +197,39 @@ func MatchFolder(ps []*Project, dir string) string {
 		}
 	}
 	return best
+}
+
+// Filed is the project a thread lands in among ps (V0.55, V0.58,
+// V0.review-correctness (2)): a thread whose project is gone loses it and the
+// filed-by-hand mark; a thread not filed by hand moves to the project whose
+// folder covers its folder (MatchFolder), and one that nothing covers keeps
+// its project.
+func Filed(t *Thread, ps map[string]*Project) (id string, manual bool) {
+	id, manual = t.ProjectID, t.ProjectManual
+	if id != "" && ps[id] == nil {
+		id, manual = "", false
+	}
+	if !manual {
+		if m := MatchFolder(ps, t.Cwd); m != "" {
+			id = m
+		}
+	}
+	return id, manual
+}
+
+// Env is what a thread's reduce reads beside its own records.
+type Env struct {
+	// Projects are the host's projects; the reduce files the thread among
+	// them (Filed), so the rules and the invariants see where it lands. nil
+	// leaves the filing as it is (a reduce without the host, in tests).
+	Projects map[string]*Project
+}
+
+// file files t among env's projects.
+func (env Env) file(t *Thread) {
+	if env.Projects != nil {
+		t.ProjectID, t.ProjectManual = Filed(t, env.Projects)
+	}
 }
 
 // Icon is a monogram (Value empty: derived from the name), an emoji, or a

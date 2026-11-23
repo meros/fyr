@@ -18,7 +18,7 @@ type deployState struct {
 // SetDeploy stores the progress and sends it on the stream.
 func (e *Engine) SetDeploy(v any, phase string) {
 	e.mu.Lock()
-	e.deploy = &deployState{v: v, phase: phase, at: time.Now()}
+	e.deploy = &deployState{v: v, phase: phase, at: e.Now()}
 	e.mu.Unlock()
 	e.Hub.Send(stream.FrameDeploy, v) // SPEC 0.5 V0.39
 }

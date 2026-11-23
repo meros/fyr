@@ -600,3 +600,28 @@ func TestThreadInvariantGhostDecisionLiveOutboxGhostBGAndSilentRun(t *testing.T)
 		t.Fatalf("want 1 %s, got %d:\n%s", InvThreadRunSilentStuck, n, out)
 	}
 }
+
+// V0.review-correctness (4): the threads staged by a project command
+// (project.matched) and by a host record's Input (change.observed) pass the
+// thread invariants like any apply.
+func TestThreadInvariantsCheckEveryPath(t *testing.T) {
+	e, _, _ := bare(t)
+	e.Git = &fakeGit{facts: map[string]core.GitFacts{}, ends: map[string][2]bool{}}
+	dir := t.TempDir()
+	id := threadIn(t, e, dir)
+	ring := func() string {
+		e.inv.mu.Lock()
+		defer e.inv.mu.Unlock()
+		return strings.Join(e.inv.threadRing[id], "\n")
+	}
+	if r := e.Command(api.Cmd{CommandID: "p1", Action: core.KindProjectCreate, Args: core.Args{"name": "acme", "folder": dir}}); !r.OK {
+		t.Fatalf("project.create: %+v", r)
+	}
+	if !strings.Contains(ring(), core.KindProjectMatched) {
+		t.Fatalf("project.matched was not checked:\n%s", ring())
+	}
+	e.observeGit(id, &core.GitFacts{Repo: "github.com/acme/app", Path: dir, Branch: "spike", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "s1"})
+	if !strings.Contains(ring(), core.KindChangeObserved) {
+		t.Fatalf("change.observed was not checked:\n%s", ring())
+	}
+}

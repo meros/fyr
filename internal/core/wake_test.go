@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -149,5 +150,41 @@ func TestOwnerWakeOnQuotaClearsFailureAndFollowsMovedReset(t *testing.T) {
 	step(t, th, v, Input{Source: FromOwner, Kind: KindCancelWake, Args: Args{"rule": "w_o1"}}, now.Add(30*time.Minute))
 	if len(Wakes(th)) != 0 || len(th.Feed.Queue) != 0 {
 		t.Fatalf("owner cancel left wakes=%+v queue=%+v", Wakes(th), th.Feed.Queue)
+	}
+}
+
+// V0.review-correctness (5): a quota wake that is suspended (the thread was
+// settled) follows a moved reset too, so it does not resume with the
+// earlier time and fire before the quota is back.
+func TestQuotaSyncMovesASuspendedWake(t *testing.T) {
+	now := ct0
+	at := ct0.Add(2 * time.Hour)
+	th, v := &Thread{ID: "t_1", Profile: "claude", ActivityAt: now}, &View{SeenAt: now}
+	step(t, th, v, Input{Source: FromOwner, Kind: KindWakeOnQuota, Args: Args{
+		"id": "w_s1", "provider": "claude", "window": "5 h", "at": at.UTC().Format(time.RFC3339),
+	}}, now)
+	r := FindRule(th, "w_s1")
+	if r == nil {
+		t.Fatal("no wake")
+	}
+	r.Status = RuleSuspended
+	moved := at.Add(5 * time.Minute)
+	step(t, th, v, Input{Source: Observer(ObsQuota), Kind: KindQuotaSync, Args: QuotaSyncArgs{
+		Updates: []QuotaUpdate{{Provider: "claude", Window: "5 h", ResetsAt: moved}},
+	}}, now.Add(10*time.Minute))
+	got := FindRule(th, "w_s1")
+	var quotaAt *time.Time
+	var find func(w When)
+	find = func(w When) {
+		if w.Kind == WhenQuota {
+			quotaAt = w.At
+		}
+		for _, x := range append(slices.Clone(w.All), w.Any...) {
+			find(x)
+		}
+	}
+	find(got.When)
+	if quotaAt == nil || !quotaAt.Equal(moved) {
+		t.Fatalf("suspended wake kept %v, want %v", quotaAt, moved)
 	}
 }
