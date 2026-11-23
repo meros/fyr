@@ -284,18 +284,8 @@ func (e *Engine) Load() error {
 		return err
 	}
 	// V0.55: threads land in the project whose folder covers theirs; a
-	// thread whose project is gone loses it (core.Filed, the rule each
-	// reduce applies). Only changed threads are written.
-	for _, t := range e.threads {
-		pid, manual := core.Filed(t, e.projects)
-		if t.ProjectID == pid && t.ProjectManual == manual {
-			continue
-		}
-		t.ProjectID, t.ProjectManual = pid, manual
-		if _, err := e.st.Write(func(tx *store.Tx) error { return tx.PutThread(t) }); err != nil {
-			return err
-		}
-	}
+	// thread whose project is gone loses it. The host.restarted reduce below
+	// files each thread (core.Filed in core.ReduceIn, V0.handover-filed).
 	ids := slices.Collect(maps.Keys(e.threads))
 	e.mu.Unlock()
 	// V0.6, V0.33, V0.45: repair what the last run left, through the path

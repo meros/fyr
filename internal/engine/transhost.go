@@ -207,9 +207,6 @@ func (e *Engine) PrepareHandIn(ctx context.Context, spec HandInSpec) (threadID, 
 			ThreadID: spec.FromThreadID,
 		},
 	}
-	if pid != "" {
-		t.ProjectID, t.ProjectManual = pid, true
-	}
 	if spec.LiveView {
 		core.SetView(t, true)
 	}
@@ -254,7 +251,7 @@ func (e *Engine) PrepareHandIn(ctx context.Context, spec HandInSpec) (threadID, 
 		Source: core.Observer(core.ObsHost),
 		Kind:   core.KindThreadHandedIn,
 		Thread: tid,
-		Args:   core.Adopted{Thread: t, View: v, History: hist, At: ats},
+		Args:   core.Adopted{Thread: t, View: v, History: hist, At: ats, Project: pid},
 	}); err != nil {
 		if scratch != "" {
 			os.Remove(scratch)
