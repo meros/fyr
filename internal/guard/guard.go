@@ -33,3 +33,21 @@ type Mechanism interface {
 	// processes it killed (V0.rerun-classes, decision 0036 (F)).
 	Kill(thread string, undeclared bool) int
 }
+
+// Parts is what the guard reads of a thread's undeclared work on one host,
+// and how its parts take turns (decision 0032 slice 2, V0.guard-finish): the
+// tick's View answers from it, and Rotate applies a Rotate decision. Both of
+// internal/cgroup's mechanisms implement it; without the cgroup tree there
+// are no parts and no turns.
+type Parts interface {
+	// RootsMem is what the processes of thread's flagged work hold, false
+	// when thread is not flagged (V0.guard-tidy).
+	RootsMem(thread string) (uint64, bool)
+	// Units are the parts of thread's flagged work, each with its command.
+	Units(thread string) []resource.WorkUnit
+	// Rotate lets the part with pid active run and freezes the others; false
+	// when it did not take.
+	Rotate(thread string, units []resource.WorkUnit, active int) bool
+	// Faults is thread's read-back counter (major faults, in bytes).
+	Faults(thread string) uint64
+}

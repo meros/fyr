@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"github.com/meros/fyr/internal/guard"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +103,7 @@ func TestV209ABackgroundJobIsReleasedWhenItGoesQuiet(t *testing.T) {
 	if !holds(e, a) {
 		t.Fatal("released a busy job")
 	}
-	*now = active.Add(SlotIdle + time.Second)
+	*now = active.Add(guard.SlotIdle + time.Second)
 	e.Tick()
 	if holds(e, a) {
 		t.Fatal("a quiet admission stayed")
@@ -118,12 +119,12 @@ func TestV209ARunningCommandKeepsItsAdmissionWhileQuiet(t *testing.T) {
 	e.SlotActive = func(owner string) (time.Time, bool) { return start, owner == a }
 	guardDeps(t, e)
 	e.HeavyGate(HeavyCall{Thread: a, Class: "make test", ToolUse: "tu1"})
-	*now = start.Add(HeavyCallStale - time.Minute)
+	*now = start.Add(guard.HeavyCallStale - time.Minute)
 	e.Tick()
 	if !holds(e, a) {
 		t.Fatal("released under a running command")
 	}
-	*now = start.Add(HeavyCallStale + time.Minute) // its result never came
+	*now = start.Add(guard.HeavyCallStale + time.Minute) // its result never came
 	e.Tick()
 	if holds(e, a) {
 		t.Fatal("a lost result holds the share for ever")

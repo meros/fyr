@@ -12,7 +12,7 @@ Where the old code needed the host's answer before it went on (whether a freeze 
 
 The state is written back once, at the end of the tick, instead of at several points within it; nothing outside the tick's goroutine read it in between for a decision.
 
-(3) **What is left** of V0.guard-mechanism (4):
+(3) **What is left** of V0.guard-mechanism (4) (done in V0.guard-finish, except the last sentence, which its (5) keeps):
 - The budget step (`AIMD.Step`, with its file kept across a restart), the slots' idle sweep (`sweepSlots`), the heavier-than-predicted notice and the gate's hold while memory is short are still called by the engine; they are guard policy and can join Tick (the budget as a decision, its file as a hand-off).
 - Items 2 to 4: the job-limit sizing in `cgroup/joblimit.go`, a process-table Mechanism of its own, and the rest of `cmd/fyrd/wire_guard.go`'s closures. The engine still calls the host's controls through `SlotDeps` and `UndeclaredDeps` rather than one `guard.Mechanism`.
 

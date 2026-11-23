@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/meros/fyr/internal/guard"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // simFixJob is a job of a class learned at 1.5 GB (5 runs) moved into job/,
@@ -23,8 +26,8 @@ func simFixJob(t *testing.T) (*JobGroups, string, *logs, *[]string) {
 	write(t, filepath.Join(td, CLIDir, "cgroup.procs"), "10\n20\n")
 	var raised []string
 	g := &JobGroups{Tree: tr, Proc: proc, Cores: 8,
-		Size: func(string, bool) JobSize {
-			return JobSize{Class: "pytest", Peak: 1500 << 20, Demand: 2, Known: true, Runs: 5}
+		Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize {
+			return resource.JobSize{Class: "pytest", Peak: 1500 << 20, Demand: 2, Known: true, Runs: 5}
 		},
 		Raise: func(class string) { raised = append(raised, class) }}
 	g.Sync("t_a", "pytest")

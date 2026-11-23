@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -37,37 +38,6 @@ func TestJL1TheCLIStartsInALeafAndTheThreadEnablesControllers(t *testing.T) {
 	}
 }
 
-func TestJL2LimitsFromTheLearnedClass(t *testing.T) {
-	const gb = 1 << 30
-	page := uint64(os.Getpagesize())
-	cases := []struct {
-		name           string
-		z              JobSize
-		budget, used   uint64
-		cores          float64
-		lifted         bool
-		high, cpu, why string
-	}{
-		{"learned", JobSize{Class: "fyr: make test-go", Peak: 2 * gb, Demand: 2.9, Known: true}, 12 * gb, 4 * gb, 8, false, "2684354560", "400000 100000", "learned"},
-		{"at least a core", JobSize{Peak: gb, Demand: 0.2, Known: true}, 12 * gb, 0, 8, false, "1342177280", "100000 100000", "learned"},
-		{"demand above the agents' cores", JobSize{Peak: gb, Demand: 7, Known: true}, 12 * gb, 0, 8, false, "1342177280", "max", "learned"},
-		{"unknown: the free budget", JobSize{}, 12 * gb, 9 * gb, 8, false, "3221225472", "max", "unknown"},
-		{"unknown: at most half the budget", JobSize{}, 12 * gb, gb, 8, false, "6442450944", "max", "unknown"},
-		{"swap nearly full", JobSize{Peak: gb, Demand: 1, Known: true}, 12 * gb, 0, 8, true, "max", "max", "swap-full"},
-		{"no budget", JobSize{}, 0, 0, 8, false, "max", "max", "no-budget"},
-	}
-	for _, c := range cases {
-		high, cpu, why := jobLimits(c.z, c.budget, c.used, c.cores, c.lifted)
-		if c.high != "max" { // whole pages, as the kernel keeps it
-			n, _ := strconv.ParseUint(c.high, 10, 64)
-			c.high = strconv.FormatUint(n/page*page, 10)
-		}
-		if high != c.high || cpu != c.cpu || why != c.why {
-			t.Errorf("%s: high=%s cpu=%s why=%s, want %s %s %s", c.name, high, cpu, why, c.high, c.cpu, c.why)
-		}
-	}
-}
-
 func TestJL3AMovedJobGetsItsLimitsTheValveLiftsThemAndAHitRaisesItsClass(t *testing.T) {
 	o, l := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
@@ -80,8 +50,8 @@ func TestJL3AMovedJobGetsItsLimitsTheValveLiftsThemAndAHitRaisesItsClass(t *test
 	write(t, filepath.Join(td, CLIDir, "cgroup.procs"), "10\n20\n")
 	var raised []string
 	g := &JobGroups{Tree: tr, Proc: proc, Cores: 8, // agents/cpu.max gives 4 of them
-		Size: func(thread string, undeclared bool) JobSize {
-			return JobSize{Class: "fyr: make test-go", Peak: 1 << 30, Demand: 2, Known: true}
+		Limit: guard.JobLimit, Size: func(thread string, undeclared bool) resource.JobSize {
+			return resource.JobSize{Class: "fyr: make test-go", Peak: 1 << 30, Demand: 2, Known: true}
 		},
 		Raise: func(class string) { raised = append(raised, class) }}
 
@@ -196,7 +166,7 @@ func TestJL7AScopesCLIMovesToItsLeaf(t *testing.T) {
 	fakeProc(t, proc, 20, 11, "make", "test-go")
 	write(t, filepath.Join(sc, "cgroup.procs"), "")
 	write(t, filepath.Join(sc, CLIDir, "cgroup.procs"), "11\n20\n")
-	g := &JobGroups{Tree: tr, Proc: proc, Size: func(string, bool) JobSize { return JobSize{Peak: 1 << 30, Demand: 1, Known: true} }}
+	g := &JobGroups{Tree: tr, Proc: proc, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize { return resource.JobSize{Peak: 1 << 30, Demand: 1, Known: true} }}
 	g.Sync("t_a", "make test-go")
 	if got := read(t, filepath.Join(sc, jobDir, "memory.high")); got != "1342177280" {
 		t.Fatalf("job memory.high %q", got)
@@ -220,7 +190,7 @@ func TestJL8TheValveReadsTheAgentsSliceInTheScopeLayout(t *testing.T) {
 	agents := filepath.Join(o.FS, slice)
 	write(t, filepath.Join(agents, "memory.swap.max"), "16G")
 	write(t, filepath.Join(agents, "memory.swap.current"), "1G")
-	g := &JobGroups{Tree: tr, Proc: proc, Size: func(string, bool) JobSize { return JobSize{Peak: 1 << 30, Demand: 1, Known: true} }}
+	g := &JobGroups{Tree: tr, Proc: proc, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize { return resource.JobSize{Peak: 1 << 30, Demand: 1, Known: true} }}
 	g.Sync("t_a", "make test-go")
 	job := filepath.Join(sc, jobDir)
 	if got := read(t, filepath.Join(job, "memory.high")); got != "1342177280" {
@@ -250,7 +220,7 @@ func TestJL9AnUnknownJobKeepsItsFirstLimitAsItGrows(t *testing.T) {
 	fakeProc(t, proc, 10, 1, "claude")
 	fakeProc(t, proc, 20, 10, "make", "build")
 	write(t, filepath.Join(td, CLIDir, "cgroup.procs"), "10\n20\n")
-	g := &JobGroups{Tree: tr, Proc: proc, Size: func(string, bool) JobSize { return JobSize{Class: "fyr: make build"} }}
+	g := &JobGroups{Tree: tr, Proc: proc, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize { return resource.JobSize{Class: "fyr: make build"} }}
 	g.Sync("t_a", "make build")
 	job := filepath.Join(td, jobDir)
 	first := read(t, filepath.Join(job, "memory.high"))

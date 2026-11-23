@@ -4,6 +4,7 @@
 package guard
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -28,11 +29,17 @@ type fakeJobs struct {
 	learned map[string]resource.Learned // by class
 	live    map[string]use              // by owner
 	active  map[string]time.Time        // by owner
+	raised  []string                    // classes, as RaisePeak was asked
 }
 
 func (j *fakeJobs) Learned(c string) (resource.Learned, bool) { l, ok := j.learned[c]; return l, ok }
 func (j *fakeJobs) ClassOf(thread, kind string) string        { return thread + "/" + kind }
 func (j *fakeJobs) Qualify(thread, class string) string       { return thread + "/" + class }
+func (j *fakeJobs) RaisePeak(c string, f float64) bool {
+	j.raised = append(j.raised, fmt.Sprintf("%s×%g", c, f))
+	return true
+}
+
 func (j *fakeJobs) LiveUse(t string) (float64, uint64, bool) {
 	u, ok := j.live[t]
 	return u.cores, u.grew, ok
@@ -236,4 +243,29 @@ func TestAdmissionMemoryRunningJobsGrowthComesOffTheHeadroom(t *testing.T) {
 
 func holderOf(owner string) resource.Holder {
 	return resource.Holder{Owner: owner, Kind: resource.Test}
+}
+
+// V0.rerun-classes, V0.guard-finish: what a kill costs and the raise after
+// it are the policy's (they were closures in fyrd's wiring).
+func TestRerunWallAndRaiseReadTheHeldJobsClass(t *testing.T) {
+	a, _, j := setup(2)
+	if _, ok := a.RerunWall("t1"); ok {
+		t.Fatal("a wall without a hold")
+	}
+	a.RerunRaise("t1")
+	if len(j.raised) != 0 {
+		t.Fatalf("a raise without a hold: %v", j.raised)
+	}
+	a.Pool.(*slots.Pool).Acquire("t1", resource.Test)
+	if _, ok := a.RerunWall("t1"); ok {
+		t.Fatal("a wall for a class with none learned")
+	}
+	j.learned["t1/test"] = resource.Learned{Walls: []float64{60, 120, 90}}
+	if w, ok := a.RerunWall("t1"); !ok || w != time.Duration(resource.Learned{Walls: []float64{60, 120, 90}}.WallP90()*float64(time.Second)) || w < time.Minute {
+		t.Fatalf("wall %s %t", w, ok)
+	}
+	a.RerunRaise("t1")
+	if fmt.Sprint(j.raised) != "[t1/test×1.2]" {
+		t.Fatalf("raised %v", j.raised)
+	}
 }

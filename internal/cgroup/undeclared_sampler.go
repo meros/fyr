@@ -35,8 +35,8 @@ func (s *Sampler) detect(l Load) {
 		work := t.Working - min(t.Working, s.Services.InCgroup(t.ID))
 		in.Reads = append(in.Reads, Reading{Thread: t.ID, CPU: t.CPU, Work: work})
 	}
-	if s.Groups != nil {
-		in.Gone = s.Groups.UndeclaredEmpty // V0.episode-frozen
+	if c := s.control(); c != nil {
+		in.Gone = c.UndeclaredEmpty // V0.episode-frozen
 	}
 	s.Detect.Observe(s.now(), in)
 	names := map[string]string{}
@@ -121,7 +121,7 @@ func (s *Sampler) Undeclared() []resource.Undeclared {
 	sig := s.Signals()
 	for _, f := range s.Detect.Flags() {
 		u := resource.Undeclared{Thread: f.Thread, Name: s.nameOf(f.Thread), CPU: f.CPU, Mem: f.Mem, Since: f.Since, Command: f.Command,
-			Paused: s.Groups.Frozen(f.Thread), Queued: f.Queued, OverCPU: f.OverCPU, OverMem: f.OverMem, Window: f.Window, MemOver: f.MemOver}
+			Paused: s.paused(f.Thread), Queued: f.Queued, OverCPU: f.OverCPU, OverMem: f.OverMem, Window: f.Window, MemOver: f.MemOver}
 		u.CPUPct, u.MemPct = func() (float64, float64) {
 			c, m := resource.Need{CPU: f.CPU, Mem: f.Mem}.Shares(sig)
 			return resource.Pct(c), resource.Pct(m)
@@ -143,4 +143,12 @@ func (s *Sampler) nameOf(thread string) string {
 		return (*p)[thread]
 	}
 	return thread
+}
+
+// paused reports thread's work paused by its job control.
+func (s *Sampler) paused(thread string) bool {
+	if c := s.control(); c != nil {
+		return c.Frozen(thread)
+	}
+	return false
 }

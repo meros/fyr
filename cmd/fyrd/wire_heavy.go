@@ -8,6 +8,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/slots"
@@ -16,7 +17,7 @@ import (
 // wireHeavy makes the heavy-work machinery: the slot pool, the jobs, the services and the sampler.
 //
 // Needs from earlier steps: mgr.
-// Makes: book, detector, groups, guardService, heavyCmds, jobs, n, pool, rerun, sampler, services, svcBook, usettings.
+// Makes: book, detector, groups, guardService, heavyCmds, jobs, n, pool, rerun, sampler, services, stops, svcBook, usettings.
 // Order: after wireAgents (w.mgr); wireGuard reads everything it makes.
 func (w *wiring) wireHeavy() {
 	cfg := w.cfg
@@ -51,6 +52,13 @@ func (w *wiring) wireHeavy() {
 	// V0.209: the gate hook admits a heavy command by itself.
 	groups := &cgroup.JobGroups{Tree: tree, N: n}                                     // decision 0029 S5: each holder's job in a cgroup of its own; V0.admission-memory: N sizes a class under three runs
 	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun                        // V0.job-limits: a job sizes itself
+	groups.Limit = guard.JobLimit                                                     // V0.guard-finish: the guard's policy decides its limits
+	// V0.guard-finish: without the cgroup tree a thread's job is its process
+	// tree, and ProcStops stops it; wireGuard gives it the trees.
+	var stops *cgroup.ProcStops
+	if tree == nil {
+		stops = &cgroup.ProcStops{KV: h.st}
+	}
 	groups.Limited = func(thread, class, why, high string, budget uint64, runs int) { // V0.load-invariants: limit-under-prior
 		if h, err := strconv.ParseUint(high, 10, 64); err == nil && n > 0 {
 			eng.JobLimitSet(thread, class, why, h, resource.Prior(resource.Signals{Memory: budget}, n).Mem, cgroup.LimitSettled(why, runs))
@@ -82,6 +90,7 @@ func (w *wiring) wireHeavy() {
 		}
 		jobs.Saw(c.Thread, class)
 		groups.Seen(c.Thread, text)
+		stops.Seen(c.Thread, text)
 		if cfg.HeavyGate == "off" {
 			return ""
 		}
@@ -91,6 +100,9 @@ func (w *wiring) wireHeavy() {
 		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject, // V0.164
 		Services: services, ServiceBook: svcBook, // V0.services-not-jobs
 		Rerun: rerun} // V0.rerun-classes
+	if stops != nil {
+		sampler.Control = stops
+	}
 	// Decision 0036 (D), E4: the guard never freezes or kills work that holds
 	// one of its thread's services (a dev stack, `docker compose up`).
 	guardService := func(th string) bool {
@@ -110,6 +122,9 @@ func (w *wiring) wireHeavy() {
 		}
 		return false
 	}
+	if stops != nil {
+		stops.Live = groups.Live
+	}
 	// V0.164: an ended episode is kept, teaches its command, and ends its frozen group.
 	detector.OnEnd = func(ep cgroup.Episode) {
 		ep.Project = eng.ThreadProject(ep.Thread)
@@ -118,10 +133,12 @@ func (w *wiring) wireHeavy() {
 			book.Saw(heavy.Seen{Thread: ep.Thread, Command: ep.Command, At: ep.End, Memory: ep.PeakMem, CPU: ep.MeanCores, Seconds: int(ep.End.Sub(ep.Start).Seconds())})
 		}
 		groups.EndUndeclared(ep.Thread)
+		stops.EndUndeclared(ep.Thread)
 	}
 	w.book = book
 	w.detector = detector
 	w.groups = groups
+	w.stops = stops
 	w.guardService = guardService
 	w.heavyCmds = heavyCmds
 	w.jobs = jobs

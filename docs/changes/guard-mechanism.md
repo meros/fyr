@@ -10,7 +10,7 @@ The guard had no single owner. Its types were in `internal/slots` (signals, need
 
 (3) **`guard.Mechanism`.** `internal/guard` declares what the policy asks of a host: `Sample`, `Freeze` and `Thaw` (a job), `FreezeUndeclared` and `ThawUndeclared`, and `Kill`. `cgroup.Mechanism` implements it over the job groups, the sampler and the detector; on a host without the cgroup tree the job groups stop process trees (`TreeReader`, SIGSTOP), so the same type serves macOS and Linux without cgroups. The two wiring closures that froze and thawed undeclared work are its methods now, and the engine's `SlotSignals`, `SlotFreeze`, `SlotThaw`, `UndeclaredFreeze`, `UndeclaredThaw` and `JobKill` are wired from it.
 
-(4) **What is left for the next slices of #458.** These are not done here: (the first is done in V0.guard-tick, which says what of it remains)
+(4) **What is left for the next slices of #458.** These are not done here: (the first is done in V0.guard-tick, the rest in V0.guard-finish, which says what is still left)
 - The policy moves into `internal/guard` as one pure `Tick(signals, holders, jobs) → []Decision{admit, freeze, thaw, kill, notify}`: `slots`' admission rules (`DecideWith`, `EASY`, `Thrashing`, the AIMD), `internal/admission`, and the engine's `freezeGuard` with `guarddecide.go` and `tunables.go`. The engine then only turns notify decisions into Inputs.
 - The job-limit sizing in `cgroup/joblimit.go` (which reads `Prior` and `LearnRuns`) becomes a decision of that policy instead of a choice the mechanism makes.
 - A process-table Mechanism of its own, split out of `JobGroups`' `canStop` branches, so cgroup's type is cgroups only.

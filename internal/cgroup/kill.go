@@ -3,22 +3,17 @@ package cgroup
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // KillJob kills thread's job (or its undeclared work) to free its memory
 // (V0.rerun-classes, decision 0036 (F)): cgroup.kill on its cgroup, which
 // takes every process under it, frozen or not, then process_mrelease on each
-// so the memory comes back at once (Linux 5.15+). Without cgroups it sends
-// SIGKILL to each process the guard stopped, and to the whole group of one
-// that leads its own process group. The freeze is cleared. It returns how
+// so the memory comes back at once (Linux 5.15+). Without cgroups
+// ProcStops.KillJob kills what it stopped. The freeze is cleared. It returns how
 // many processes it killed; 0 when nothing was there.
 func (g *JobGroups) KillJob(thread string, undeclared bool) int {
 	if g == nil {
 		return 0
-	}
-	if g.canStop() {
-		return g.killStopped(thread, undeclared)
 	}
 	if g.Tree == nil {
 		return 0
@@ -55,35 +50,4 @@ func treePIDs(dir string) []int {
 		return nil
 	})
 	return out
-}
-
-// killStopped sends SIGKILL to what the guard stopped for thread.
-func (g *JobGroups) killStopped(thread string, undeclared bool) int {
-	key := stopJob + thread
-	if undeclared {
-		key = stopUndeclared + thread
-	}
-	g.stopMu.Lock()
-	g.loadStopped()
-	ps := g.stopped[key]
-	delete(g.stopped, key)
-	g.saveStopped()
-	g.stopMu.Unlock()
-	n := 0
-	for _, p := range ps {
-		if pg, err := syscall.Getpgid(p); err == nil && pg == p {
-			g.signal(-p, syscall.SIGKILL) // it leads its group: the whole group
-		}
-		if g.signal(p, syscall.SIGKILL) == nil {
-			n++
-		}
-	}
-	g.mu.Lock()
-	if undeclared {
-		delete(g.ufrozen, thread)
-	} else {
-		delete(g.frozen, thread)
-	}
-	g.mu.Unlock()
-	return n
 }

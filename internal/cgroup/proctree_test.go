@@ -192,8 +192,8 @@ type sentSignal struct {
 	sig syscall.Signal
 }
 
-func stopGroups(out *string, kv *memKV, sent *[]sentSignal) *JobGroups {
-	return &JobGroups{Trees: &TreeReader{PS: fixedPS(out)}, KV: kv,
+func stopGroups(out *string, kv *memKV, sent *[]sentSignal) *ProcStops {
+	return &ProcStops{Trees: &TreeReader{PS: fixedPS(out)}, KV: kv,
 		CLIs: func() map[string]int { return map[string]int{"t_a": 10} },
 		Kill: func(p int, s syscall.Signal) error { *sent = append(*sent, sentSignal{p, s}); return nil }}
 }
@@ -299,7 +299,7 @@ func TestV207CAStopSurvivesARestartAndTheNextStartResumes(t *testing.T) {
 	}()
 	kv := &memKV{}
 	clis := func() map[string]int { return map[string]int{"t_a": pid} }
-	g := &JobGroups{Trees: reader, CLIs: clis, KV: kv}
+	g := &ProcStops{Trees: reader, CLIs: clis, KV: kv}
 	if !g.FreezeUndeclared("t_a", []Root{{PID: job[0]}}) {
 		t.Fatal("not stopped")
 	}
@@ -310,7 +310,7 @@ func TestV207CAStopSurvivesARestartAndTheNextStartResumes(t *testing.T) {
 	if s := procState(t, pid); stopped(s) {
 		t.Fatalf("the CLI stopped: %q", s)
 	}
-	next := &JobGroups{Trees: reader, CLIs: clis, KV: kv}
+	next := &ProcStops{Trees: reader, CLIs: clis, KV: kv}
 	next.ResumeStopped()
 	for _, p := range job {
 		waitState(t, p, func(s string) bool { return s != "" && !stopped(s) }, "running")

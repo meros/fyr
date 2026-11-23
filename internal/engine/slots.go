@@ -161,13 +161,12 @@ func (e *Engine) syncSlotQueue() {
 }
 
 // sweepSlots gives back the slots of threads that are gone or held one for
-// SlotIdle without a live run; the tick calls it.
+// guard.SlotIdle without a live run (guard.Sweep decides); the tick calls it.
 func (e *Engine) sweepSlots() {
 	if e.Slots == nil {
 		return
 	}
 	s := e.Slots.Snapshot()
-	var drop []string
 	// V0.147: the tracker is asked before e.mu is taken. Asking it under
 	// e.mu deadlocked fyrd on 17 Nov: the tracker's tick held its own lock
 	// and asked the engine for a thread's project.
@@ -183,61 +182,13 @@ func (e *Engine) sweepSlots() {
 	}
 	calls, background := e.heavyWork()
 	e.mu.Lock()
-	now := e.Now()
-	for _, h := range s.Held {
-		if h.Priority {
-			continue // the self-deploy releases its own
-		}
-		// V0.sim-fixes (1): a job the guard holds frozen does not move its
-		// SlotActive, so its hold read as idle: a foreground call went stale at
-		// HeavyCallStale, a background job at SlotIdle, and after a restart any
-		// frozen job at SlotIdle (heavyCalls is empty). The guard then thawed it
-		// as "episode or hold ended" into the critical stall it was frozen for.
-		// A frozen hold is not swept, and its idle time starts at its thaw.
-		t := e.threads[h.Owner]
-		if t != nil && guard.FrozenJob(e.gs.Frozen, h.Owner) {
-			delete(e.slotIdle, h.Owner)
-			continue
-		}
-		if at, ok := e.jobThawed[h.Owner]; ok {
-			if a, ok := active[h.Owner]; ok && a.Before(at) {
-				active[h.Owner] = at
-			}
-			if since, ok := e.slotIdle[h.Owner]; ok && since.Before(at) {
-				e.slotIdle[h.Owner] = at
-			}
-		}
-		switch {
-		case t == nil:
-			drop = append(drop, h.Owner)
-		case t.Running:
-			delete(e.slotIdle, h.Owner)
-			// V0.209: an admission nothing uses goes back by itself.
-			if at, ok := active[h.Owner]; ok {
-				idle := now.Sub(at)
-				switch {
-				case calls[h.Owner] > 0 && idle < HeavyCallStale:
-				case background[h.Owner] && t.RunsAdmittedWork():
-				case idle >= SlotIdle:
-					drop = append(drop, h.Owner)
-				}
-			}
-		case t.RunsAdmittedWork(): // V0.201: the idle time starts when it is done
-			delete(e.slotIdle, h.Owner)
-		default:
-			since, ok := e.slotIdle[h.Owner]
-			if !ok {
-				e.slotIdle[h.Owner] = now
-			} else if now.Sub(since) >= SlotIdle {
-				drop = append(drop, h.Owner)
-			}
-		}
+	in := guard.SweepIn{Now: e.Now(), Held: s.Held, Waiting: s.Waiting, Threads: map[string]guard.SweepThread{},
+		Active: active, Calls: calls, Background: background, Frozen: e.gs.Frozen, Thawed: e.jobThawed, Idle: e.slotIdle}
+	for id, t := range e.threads {
+		in.Threads[id] = guard.SweepThread{Running: t.Running, Admitted: t.RunsAdmittedWork()}
 	}
-	for _, h := range s.Waiting {
-		if !h.Priority && e.threads[h.Owner] == nil {
-			drop = append(drop, h.Owner)
-		}
-	}
+	drop, idle := guard.Sweep(in)
+	e.slotIdle = idle
 	e.mu.Unlock()
 	for _, id := range drop {
 		e.dropSlot(id)
@@ -280,50 +231,48 @@ func (e *Engine) heavyWork() (map[string]int, map[string]bool) {
 }
 
 // heavierThanPredicted tells a holder once per hold that its job uses more
-// of the budget than predicted (decision 0029 S3); nothing is stopped.
+// of the budget than predicted (decision 0029 S3, guard.HeavierThanPredicted);
+// nothing is stopped.
 func (e *Engine) heavierThanPredicted(s resource.Snapshot) {
 	if e.SlotOver == nil {
 		return
 	}
-	for _, h := range s.Held {
-		if h.Priority {
-			continue
-		}
+	e.mu.Lock()
+	told := maps.Clone(e.slotOverTold)
+	e.mu.Unlock()
+	measure := func(owner string) guard.Over {
+		class, live, pred, over := e.SlotOver(owner)
+		return guard.Over{Class: class, Live: live, Predicted: pred, Over: over}
+	}
+	for _, n := range guard.HeavierThanPredicted(s.Held, told, measure) {
 		e.mu.Lock()
-		since, done := e.slotOverTold[h.Owner]
-		e.mu.Unlock()
-		if done && since.Equal(h.Since) {
-			continue
+		for _, h := range s.Held {
+			if h.Owner == n.Thread {
+				e.slotOverTold[h.Owner] = h.Since
+			}
 		}
-		class, live, pred, over := e.SlotOver(h.Owner)
-		if !over {
-			continue
-		}
-		e.mu.Lock()
-		e.slotOverTold[h.Owner] = h.Since
 		e.saveSlotOverToldLocked(s.Held)
 		e.mu.Unlock()
 		// V0.163: SlotOver answers in percent of the host.
-		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: live, Predicted: pred}}); err != nil {
-			log.Printf("slot over %s: %v", h.Owner, err)
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: n.Thread, Args: core.SlotOverArgs{Class: n.Class, Live: n.Live, Predicted: n.Predicted}}); err != nil {
+			log.Printf("slot over %s: %v", n.Thread, err)
 		}
 	}
 }
 
 // adaptBudget steps the budget controller and sets the pool's budget
-// (decision 0029 S4), outside e.mu.
+// (decision 0029 S4, guard.Budget), outside e.mu.
 func (e *Engine) adaptBudget(s resource.Snapshot) {
 	if e.SlotAIMD == nil || e.SlotSignals == nil {
 		return
 	}
 	sig := e.SlotSignals()
-	f, why := e.SlotAIMD.Step(e.Now(), sig, len(s.Waiting) > 0, e.Slots.LastGrant(), s.Bound)
-	old := e.Slots.Budget()
-	if f != old || (s.Budget != nil && s.BudgetWhy != why) {
-		if f != old { // V0.load-tuning: the budget's moves can be read back
-			log.Printf("slots: budget cpu=%.3f->%.3f mem=%.3f->%.3f why=%q waiting=%d held=%d %s", old.CPU, f.CPU, old.Mem, f.Mem, why, len(s.Waiting), len(s.Held), guard.SignalsLine(sig))
-		}
-		e.Slots.SetBudget(f, why)
+	m := guard.Budget(e.SlotAIMD, guard.BudgetIn{Now: e.Now(), Snapshot: s, Old: e.Slots.Budget(), LastGrant: e.Slots.LastGrant(), Signals: sig})
+	if m.Log != "" { // V0.load-tuning: the budget's moves can be read back
+		log.Print(m.Log)
+	}
+	if m.Set {
+		e.Slots.SetBudget(m.F, m.Why)
 	}
 }
 

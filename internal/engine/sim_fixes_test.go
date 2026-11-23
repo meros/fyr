@@ -94,9 +94,9 @@ func TestSimFixesAFrozenJobKeepsItsHold(t *testing.T) {
 		if !g.frozen[g.b] {
 			t.Fatalf("%s: b not frozen: %v", how, g.frozen)
 		}
-		tickFor(g.e, g.now, HeavyCallStale+time.Minute)
+		tickFor(g.e, g.now, guard.HeavyCallStale+time.Minute)
 		if !g.frozen[g.b] || !g.holds(g.b) {
-			t.Fatalf("%s: after %s in a critical stall: frozen %v, b holds %t", how, HeavyCallStale+time.Minute, g.frozen, g.holds(g.b))
+			t.Fatalf("%s: after %s in a critical stall: frozen %v, b holds %t", how, guard.HeavyCallStale+time.Minute, g.frozen, g.holds(g.b))
 		}
 		// The stall falls: b wakes, and its idle clock starts at the thaw, not
 		// at the last time it ran before the freeze.

@@ -21,6 +21,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/guard"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 const (
@@ -118,7 +121,7 @@ func TestRealFreezeChargeReclaimsCLIsCharge(t *testing.T) {
 		}
 		return c, in
 	}
-	g := &JobGroups{Tree: tr, Size: func(string, bool) JobSize { return JobSize{} }}
+	g := &JobGroups{Tree: tr, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize { return resource.JobSize{} }}
 	ccmd, _ := start("cli")
 	wcmd, _ := start("work")
 	t.Cleanup(func() {

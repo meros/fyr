@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"github.com/meros/fyr/internal/guard"
 	"slices"
 	"strings"
 	"testing"
@@ -156,7 +157,7 @@ func TestV0137SlotOrderDecidesTheNextGrant(t *testing.T) {
 }
 
 // V0.201: a slot outlives the run while a background task may carry the job,
-// and goes back SlotIdle after the task is done. A Monitor or a command gone
+// and goes back guard.SlotIdle after the task is done. A Monitor or a command gone
 // quiet holds nothing.
 func TestV201AdmissionOutlivesTheRunWhileTheJobRuns(t *testing.T) {
 	quiet := time.Unix(1, 0)
@@ -202,7 +203,7 @@ func TestV201AdmissionOutlivesTheRunWhileTheJobRuns(t *testing.T) {
 				return nil
 			})
 			e.Tick()
-			*now = now.Add(SlotIdle + time.Second)
+			*now = now.Add(guard.SlotIdle + time.Second)
 			e.Tick()
 			if held() {
 				t.Fatal("the slot stayed after the task ended")

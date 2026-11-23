@@ -2,7 +2,9 @@ package cgroup
 
 // V0.job-limits (decision 0036 (C)): a job sizes itself. When fyrd moves a job
 // into job/ or undeclared/, the leaf gets a memory.high from its class's
-// learned peak and a cpu.max from its learned demand. Node sizes its heap from
+// learned peak and a cpu.max from its learned demand. The guard's policy
+// decides the values (guard.JobLimit, V0.guard-finish); this file reads what
+// it decides from and writes them. Node sizes its heap from
 // the smaller of memory.max and memory.high of its own cgroup; Go 1.25's
 // GOMAXPROCS (and so `go test -p`) and Jest follow cpu.max. There is no
 // memory.max, so the limit never kills. memory.high with no swap room
@@ -12,7 +14,6 @@ package cgroup
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,119 +23,20 @@ import (
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
-// JobSize is what a job's class has learned; Known is false before its first
-// run (or with no class). Runs is how many runs it is learned from.
-type JobSize struct {
-	Class  string
-	Peak   uint64  // bytes
-	Demand float64 // cores
-	Known  bool
-	Runs   int
-}
-
-// sizeFor is z as a job is sized from it: under resource.LearnRuns runs a
-// class's peak and demand are never below the prior's (1/N of budget and
-// cores), as admission counts them (resource.NeedOf; decision 0029 section 2).
-// V0.admission-memory: a first run its memory.high held back taught a low
-// peak, and the next limit, sized from it, held the next run lower still.
-// Without N (the host's slots setting) z is as learned.
-func (g *JobGroups) sizeFor(z JobSize, budget uint64, cores float64) JobSize {
-	if !z.Known || z.Runs >= resource.LearnRuns || g.N <= 0 {
-		return z
-	}
-	p := resource.Prior(resource.Signals{CPU: cores, Memory: budget}, g.N)
-	z.Peak, z.Demand = max(z.Peak, p.Mem), max(z.Demand, p.CPU)
-	return z
-}
-
 // sizedJob is what was written to one job cgroup, under JobGroups.mu.
 type sizedJob struct {
 	thread, class string
 	undeclared    bool
-	size          JobSize
+	size          resource.JobSize
 	high, cpu     string
 	events        uint64 // memory.events high when the limit was set, or at its last hit
 	hit           bool
 	// raised is the least memory.high the job's hits and stalls have earned:
-	// its use × holdMargin at its last hit or while it stalled (V0.sim-fixes).
+	// its use × resource.HoldMargin at its last hit or while it stalled (V0.sim-fixes).
 	raised uint64
 	// V0.joblimit-slice: the limits of a class not learned yet, sized once
 	// when the job was moved; only the swap valve changes them after.
-	kept                       bool
-	keptHigh, keptCPU, keptWhy string
-}
-
-// unknownShare caps an unknown class's memory.high at this share of the
-// agents' memory budget.
-const unknownShare = 0.5
-
-// cpuPeriod is the cpu.max period fyrd writes.
-const cpuPeriod = 100000
-
-// jobLimits are the memory.high and cpu.max for a job of size z: why says
-// where they come from. budget and used are the agents' memory budget and
-// use now; cores the agents' CPU; lifted is the swap valve.
-func jobLimits(z JobSize, budget, used uint64, cores float64, lifted bool) (high, cpu, why string) {
-	if lifted {
-		return "max", "max", "swap-full"
-	}
-	page := uint64(os.Getpagesize())
-	var mem uint64
-	if z.Known && z.Peak > 0 {
-		mem, why = uint64(holdMargin*float64(z.Peak)), "learned"
-	} else if budget > 0 {
-		free := uint64(0)
-		if budget > used {
-			free = budget - used
-		}
-		mem, why = min(free, uint64(unknownShare*float64(budget))), "unknown"
-	}
-	high = "max"
-	if mem > 0 && (budget == 0 || mem < budget) {
-		high = strconv.FormatUint(max(mem/page*page, page), 10)
-	}
-	cpu = "max"
-	if z.Known && z.Demand > 0 {
-		// The margin of the memory limit, so a job its cap held back can show
-		// more demand next run: a cap at the demand itself would only ratchet down.
-		c := max(1, math.Ceil(holdMargin*z.Demand))
-		if cores <= 0 || c < cores {
-			cpu = fmt.Sprintf("%d %d", int(c)*cpuPeriod, cpuPeriod)
-		}
-	}
-	if why == "" {
-		why = "no-budget"
-	}
-	return high, cpu, why
-}
-
-// unknownHigh is the memory.high kept for a job of a class not learned yet,
-// given high, the agents' free memory at the move (jobLimits). V0.freeze-charge:
-// on 19 Nov at 20:48 the guard moved work into undeclared/ while 73 MB were
-// free, and that became its memory.high: after the thaw every allocation was
-// throttled. Undeclared work is moved only by the guard, to freeze it, so
-// always when memory is short and the free memory least: it gets no limit
-// (the freeze bounds it, and after the thaw the guard's next tick does). Its
-// pages stay charged to cli/ besides,
-// so a limit there would count only what it allocates after the thaw. A job
-// moved into job/ is never limited below the prior, 1/N of the agents, as
-// admission counts it (decision 0029 section 2).
-func (g *JobGroups) unknownHigh(high string, budget uint64, cores float64, undeclared bool) (string, string) {
-	if undeclared {
-		return "max", "unknown-frozen"
-	}
-	if g.N <= 0 || budget == 0 || high == "max" {
-		return high, "unknown"
-	}
-	p := resource.Prior(resource.Signals{CPU: cores, Memory: budget}, g.N).Mem
-	if n, err := strconv.ParseUint(high, 10, 64); err == nil && n >= p {
-		return high, "unknown"
-	}
-	if p >= budget {
-		return "max", "prior"
-	}
-	page := uint64(os.Getpagesize())
-	return strconv.FormatUint(max(p/page*page, page), 10), "prior"
+	kept *resource.Limit
 }
 
 // agentsNow is the agents' memory budget, its use, its cores and whether the
@@ -150,9 +52,10 @@ func (g *JobGroups) agentsNow() (budget, used uint64, cores float64, lifted bool
 }
 
 // sizeJob writes the limits of the job cgroup dir of thread, made by the
-// caller, when they changed; the first call of a job asks its class.
+// caller, when they changed; the first call of a job asks its class. The
+// policy (Limit) decides them from what is read here.
 func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
-	if g == nil || g.Tree == nil || g.Size == nil {
+	if g == nil || g.Tree == nil || g.Size == nil || g.Limit == nil {
 		return
 	}
 	g.mu.Lock()
@@ -164,33 +67,21 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 		s.events, _ = readKey(filepath.Join(dir, "memory.events"), "high")
 	}
 	budget, used, cores, lifted := g.agentsNow()
-	z := g.sizeFor(s.size, budget, cores) // V0.admission-memory: the 3-run prior
-	if !known {
-		// V0.joblimit-slice: a class not learned yet is sized from the agents'
-		// free memory once, here. used counts the job itself, so sizing it again
-		// each tick would shrink its limit as it grows.
-		if h, c, w := jobLimits(z, budget, used, cores, false); w != "learned" {
-			if w == "unknown" {
-				h, w = g.unknownHigh(h, budget, cores, undeclared)
-			}
-			s.kept, s.keptHigh, s.keptCPU, s.keptWhy = true, h, c, w
-		}
-	}
-	var high, cpu, why string
-	if s.kept && !lifted {
-		high, cpu, why = s.keptHigh, s.keptCPU, s.keptWhy
-	} else {
-		high, cpu, why = jobLimits(z, budget, used, cores, lifted)
-	}
-	if !lifted && high != "max" {
-		high, why = s.grown(dir, high, why, budget)
-	}
 	g.mu.Lock()
 	turns := g.turns[dir]
 	g.mu.Unlock()
-	if turns && high != "max" {
-		high, why = "max", "turns" // V0.guard-tidy (liftForTurns)
+	ask := resource.LimitAsk{Size: s.size, N: g.N, Budget: budget, Used: used, Cores: cores, Lifted: lifted,
+		Undeclared: undeclared, First: !known, Kept: s.kept, Raised: s.raised, Turns: turns, Page: uint64(os.Getpagesize())}
+	// V0.sim-fixes (2): the job's own memory full stall, at which its limit lifts.
+	if p, ok := readPSI(filepath.Join(dir, "memory.pressure")); ok && p.hasFull && p.full >= OwnStallLift {
+		ask.Stalled, ask.Current = true, readBytes(filepath.Join(dir, "memory.current"))
 	}
+	lim := g.Limit(ask)
+	if lim.Keep != nil {
+		s.kept = lim.Keep
+	}
+	s.raised = lim.Raised
+	high, cpu, why := lim.High, lim.CPU, lim.Why
 	if known && high == s.high && cpu == s.cpu {
 		g.mu.Lock()
 		if cur, ok := g.sized[dir]; ok && s.raised > cur.raised {
@@ -260,32 +151,6 @@ func LimitSettled(why string, runs int) bool {
 // stall V0.job-limits meant to avoid. StallCritical, as for the agents.
 const OwnStallLift = StallCritical
 
-// grown is memory.high as the job's hits and its own stall leave it
-// (V0.sim-fixes (2)). The load simulation (V0.load-sim) ran a class learned at
-// 1.5 GB whose jobs grew to 7 GB: one ×1.2 on the class left each job a third
-// of its memory, about 30× slower, holding the agents' stall critical.
-//   - A hit raises the limit to the job's use × holdMargin (resize), again at
-//     each hit; at or past the agents' budget there is no limit.
-//   - While the job's own memory full stall is OwnStallLift or more, the limit
-//     lifts; its use × holdMargin is kept as the least it comes back at.
-//
-// s.raised is updated here when the job stalls; the caller stores s.
-func (s *sizedJob) grown(dir, high, why string, budget uint64) (string, string) {
-	if p, ok := readPSI(filepath.Join(dir, "memory.pressure")); ok && p.hasFull && p.full >= OwnStallLift {
-		s.raised = max(s.raised, uint64(holdMargin*float64(readBytes(filepath.Join(dir, "memory.current")))))
-		return "max", "own-stall"
-	}
-	n, err := strconv.ParseUint(high, 10, 64)
-	if err != nil || s.raised <= n {
-		return high, why
-	}
-	if budget > 0 && s.raised >= budget {
-		return "max", "raised"
-	}
-	page := uint64(os.Getpagesize())
-	return strconv.FormatUint(max(s.raised/page*page, page), 10), "raised"
-}
-
 func mbOr(v string) string {
 	if n, err := strconv.ParseUint(v, 10, 64); err == nil {
 		return inMB(n)
@@ -306,7 +171,7 @@ func cpuOr(v string) string {
 
 // resize follows the swap valve for every sized job and notes a job that hit
 // its memory.high: its class's learned peak is raised once per job, and the
-// job's own limit to its use × holdMargin at each hit (V0.sim-fixes (2)).
+// job's own limit to its use × resource.HoldMargin at each hit (V0.sim-fixes (2)).
 func (g *JobGroups) resize() {
 	if g == nil || g.Tree == nil {
 		return
@@ -338,7 +203,7 @@ func (g *JobGroups) resize() {
 		g.mu.Lock()
 		if cur, ok := g.sized[d]; ok {
 			cur.hit, cur.events = true, ev
-			cur.raised = max(cur.raised, uint64(holdMargin*float64(use)))
+			cur.raised = max(cur.raised, uint64(resource.HoldMargin*float64(use)))
 			g.sized[d] = cur
 		}
 		g.mu.Unlock()
@@ -398,8 +263,8 @@ func (g *JobGroups) forgetSize(dir string) {
 // (V0.job-limits): a Go process's soft memory target, and the workers of a test
 // runner. Shares, not numbers, so they fit any host (decision 0029 section 0).
 const (
-	goMemShare     = unknownShare // GOMEMLIMIT: the most an unknown job's memory.high allows
-	workerCPUShare = 0.5          // pytest-xdist, Playwright, turbo: half the agents' cores
+	goMemShare     = resource.UnknownShare // GOMEMLIMIT: the most an unknown job's memory.high allows
+	workerCPUShare = 0.5                   // pytest-xdist, Playwright, turbo: half the agents' cores
 )
 
 // Workers is how many workers a parallel test runner should start on a host
@@ -422,4 +287,29 @@ func JobEnv(c Capacity) []string {
 		env = append(env, "PYTEST_XDIST_AUTO_NUM_WORKERS="+strconv.Itoa(Workers(c)))
 	}
 	return env
+}
+
+// JobHints are the shares of the agents' capacity that the tools of a job
+// read (V0.job-limits): the environment of an agent CLI (JobEnv), and the
+// hint the gate hook gives a heavy command (its runner's workers, and the
+// thread's services). Worker names a runner's workers flag for a command
+// (heavy.WorkerHint); cgroup does not import the patterns' package.
+type JobHints struct {
+	Sampler  *Sampler
+	Services *Services
+	Worker   func(command string, workers int) string
+}
+
+// capacity is the agents' capacity as the sampler reads it now.
+func (h JobHints) capacity() Capacity {
+	sig := h.Sampler.Signals()
+	return Capacity{CPU: sig.CPU, Memory: sig.Memory}
+}
+
+// Env is JobEnv of the agents' capacity now.
+func (h JobHints) Env() []string { return JobEnv(h.capacity()) }
+
+// Hint is the hint for thread's heavy command.
+func (h JobHints) Hint(thread, command string) string {
+	return strings.TrimSpace(h.Worker(command, Workers(h.capacity())) + "\n" + h.Services.Notice(thread, h.capacity()))
 }

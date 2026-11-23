@@ -34,6 +34,8 @@ type Jobs interface {
 	Qualify(thread, class string) string
 	LiveUse(thread string) (cores float64, grew uint64, ok bool)
 	Active(thread string) (time.Time, bool)
+	// RaisePeak raises class's learned peak by the factor f (V0.rerun-classes).
+	RaisePeak(class string, f float64) bool
 }
 
 // Pool is the queue the policy admits into: *Pool.
@@ -233,6 +235,33 @@ func (a *Admission) Over(owner string) (class string, live, predicted float64, o
 	lc, lm := l.Shares(sig)
 	over = ok && (lc > pc+CheapShare || lm > pm+CheapShare)
 	return a.Jobs.ClassOf(owner, h.Kind), resource.Pct(max(lc, lm)), resource.Pct(max(pc, pm)), over
+}
+
+// RerunWall is how long a run of thread's held job's class takes (its p90
+// wall), false when the class has none learned (V0.rerun-classes): a kill
+// costs at most that.
+func (a *Admission) RerunWall(thread string) (time.Duration, bool) {
+	hd, ok := a.Pool.Holding(thread)
+	if !ok {
+		return 0, false
+	}
+	l, ok := a.Jobs.Learned(a.Jobs.ClassOf(thread, hd.Kind))
+	if !ok || len(l.Walls) == 0 {
+		return 0, false
+	}
+	return time.Duration(l.WallP90() * float64(time.Second)), true
+}
+
+// RerunPeakRaise is the factor a killed job's class's learned peak is raised
+// by (V0.rerun-classes): it was killed for its memory.
+const RerunPeakRaise = 1.2
+
+// RerunRaise raises the learned peak of thread's held job's class, before
+// its admission goes back.
+func (a *Admission) RerunRaise(thread string) {
+	if hd, ok := a.Pool.Holding(thread); ok {
+		a.Jobs.RaisePeak(a.Jobs.ClassOf(thread, hd.Kind), RerunPeakRaise)
+	}
 }
 
 // Thrashing: the host thrashes, so agents wait (V0.153).

@@ -309,6 +309,9 @@ func (j simJobs) ClassOf(thread, _ string) string {
 
 func (j simJobs) Qualify(_, class string) string { return class }
 
+// RaisePeak: the simulation wires no rerun classes.
+func (j simJobs) RaisePeak(string, float64) bool { return false }
+
 func (j simJobs) LiveUse(thread string) (float64, uint64, bool) {
 	hd := j.r.h.holds[j.r.sim[thread]]
 	if hd == nil || !hd.unit.live() {

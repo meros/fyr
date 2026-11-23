@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
 )
@@ -164,7 +165,7 @@ func (e *Engine) gateHold(c HeavyCall, soft bool) string {
 		return ""
 	}
 	h, holds := e.Slots.Holding(c.Thread)
-	if (holds && h.Priority) || (!holds && !soft) {
+	if !guard.GateHolds(short, holds, h.Priority, soft) {
 		return ""
 	}
 	e.mu.Lock()

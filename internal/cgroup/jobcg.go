@@ -16,29 +16,20 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/meros/fyr/internal/kvstore"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // jobDir is the name of a thread's job cgroup.
 const jobDir = "job"
 
 // JobGroups keeps the slot holders' jobs in their own cgroups. With a nil Tree
-// nothing is moved; given Trees and CLIs it pauses a job with SIGSTOP instead
-// of a freeze (V0.process-tree-hosts, procstop.go).
+// nothing is moved; a host without the tree pauses a job with SIGSTOP through
+// ProcStops instead (V0.process-tree-hosts, V0.guard-finish: procstop.go).
 type JobGroups struct {
 	Tree *Tree
 	Proc string // default /proc
-
-	Trees *TreeReader
-	CLIs  func() map[string]int
-	KV    kvstore.Table                           // keeps the stopped pids across a restart
-	Kill  func(pid int, sig syscall.Signal) error // default syscall.Kill
-
-	stopMu  sync.Mutex // orders the stops and their KV writes; taken without mu
-	stopped map[string][]int
 
 	mu      sync.Mutex
 	frozen  map[string]bool
@@ -68,8 +59,12 @@ type JobGroups struct {
 	// undeclared work) and what the class learned; Raise raises a class's
 	// learned peak after its job hit its limit. Both optional: without Size
 	// a job gets no limit. sized: the limits written, per job cgroup.
-	Size  func(thread string, undeclared bool) JobSize
+	Size  func(thread string, undeclared bool) resource.JobSize
 	Raise func(class string)
+	// Limit is the guard's policy for a job's limits (guard.JobLimit,
+	// V0.guard-finish): it decides them from what sizeJob reads, and the job
+	// groups write them. Without it a job gets no limit.
+	Limit func(resource.LimitAsk) resource.LimitAnswer
 	Cores int // the host's CPUs for the agents' capacity; default runtime.NumCPU()
 	// N is the host's `slots` setting: a class under resource.LearnRuns runs is
 	// sized no smaller than the prior, 1/N of the agents (V0.admission-memory).
@@ -219,11 +214,7 @@ func (g *JobGroups) Has(thread string) bool {
 
 // Freeze freezes thread's job (not its CLI); false without a job cgroup.
 func (g *JobGroups) Freeze(thread string) bool {
-	if g.canStop() {
-		if !g.stopJobOf(thread) {
-			return false
-		}
-	} else if !g.Has(thread) {
+	if !g.Has(thread) {
 		return false
 	} else if err := put(g.dir(thread), "cgroup.freeze", "1"); err != nil {
 		return false
@@ -234,17 +225,16 @@ func (g *JobGroups) Freeze(thread string) bool {
 	}
 	g.frozen[thread] = true
 	g.mu.Unlock()
-	g.ReclaimFrozen(thread) // V0.guard-swap; nothing without the tree
+	g.ReclaimFrozen(thread) // V0.guard-swap
 	return true
 }
 
 // Thaw lets thread's job run again.
 func (g *JobGroups) Thaw(thread string) {
-	if g.canStop() {
-		g.cont(stopJob + thread)
-	} else if g == nil || g.Tree == nil {
+	if g == nil || g.Tree == nil {
 		return
-	} else if g.Has(thread) {
+	}
+	if g.Has(thread) {
 		put(g.dir(thread), "cgroup.freeze", "0")
 	}
 	g.mu.Lock()
@@ -322,9 +312,6 @@ func (g *JobGroups) HasUndeclared(thread string) bool {
 // process any more, or is gone: what was frozen in it ended, so the freeze
 // holds nothing (decision 0032 slice 1). False while a process is in it.
 func (g *JobGroups) UndeclaredEmpty(thread string) bool {
-	if g.canStop() {
-		return g.stopGone(stopUndeclared + thread)
-	}
 	if g == nil || g.Tree == nil {
 		return false
 	}
@@ -340,9 +327,6 @@ func (g *JobGroups) UndeclaredEmpty(thread string) bool {
 // as UndeclaredEmpty for undeclared work). False while a process is in it, and
 // for a cgroup that does not say (no cgroup.events).
 func (g *JobGroups) JobEmpty(thread string) bool {
-	if g.canStop() {
-		return g.stopGone(stopJob + thread)
-	}
 	if g == nil || g.Tree == nil {
 		return false
 	}
@@ -370,16 +354,7 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 	if g.Live != nil && !g.Live(thread) {
 		return false
 	}
-	if g.canStop() && g.stopRoots(thread, roots) {
-		g.mu.Lock()
-		if g.ufrozen == nil {
-			g.ufrozen = map[string]bool{}
-		}
-		g.ufrozen[thread] = true
-		g.mu.Unlock()
-		return true
-	}
-	if g == nil || g.Tree == nil || len(roots) == 0 {
+	if g.Tree == nil || len(roots) == 0 {
 		return false
 	}
 	td := g.threadDir(thread)
@@ -454,11 +429,10 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 
 // ThawUndeclared lets thread's undeclared work run again.
 func (g *JobGroups) ThawUndeclared(thread string) {
-	if g.canStop() {
-		g.cont(stopUndeclared + thread)
-	} else if g == nil || g.Tree == nil {
+	if g == nil || g.Tree == nil {
 		return
-	} else if g.HasUndeclared(thread) {
+	}
+	if g.HasUndeclared(thread) {
 		put(g.udir(thread), "cgroup.freeze", "0")
 		for _, d := range unitDirs(g.udir(thread)) { // decision 0032 slice 2
 			put(d, "cgroup.freeze", "0")
@@ -467,9 +441,7 @@ func (g *JobGroups) ThawUndeclared(thread string) {
 	g.mu.Lock()
 	delete(g.ufrozen, thread)
 	g.mu.Unlock()
-	if g.Tree != nil {
-		g.endTurns(thread, g.udir(thread)) // V0.guard-tidy: its limit comes back
-	}
+	g.endTurns(thread, g.udir(thread)) // V0.guard-tidy: its limit comes back
 }
 
 // EndUndeclared thaws thread's undeclared work and removes its cgroup once
@@ -544,7 +516,7 @@ func (g *JobGroups) Seen(thread, text string) {
 // jobs of the threads that no longer hold a slot. The sampler's Tick calls
 // it, outside every lock.
 func (g *JobGroups) Tick(held []string) {
-	if g == nil || (g.Tree == nil && !g.canStop()) {
+	if g == nil || g.Tree == nil {
 		return
 	}
 	now := map[string]bool{}

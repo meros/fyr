@@ -76,7 +76,7 @@ func TestKillJobWritesCgroupKill(t *testing.T) {
 
 func TestKillJobWithoutCgroupsKillsWhatWasStopped(t *testing.T) {
 	var sent []int
-	g := &JobGroups{Trees: &TreeReader{}, CLIs: func() map[string]int { return nil }, KV: &memKV{},
+	g := &ProcStops{Trees: &TreeReader{}, CLIs: func() map[string]int { return nil }, KV: &memKV{},
 		Kill: func(pid int, sig syscall.Signal) error {
 			if sig == syscall.SIGKILL {
 				sent = append(sent, pid)

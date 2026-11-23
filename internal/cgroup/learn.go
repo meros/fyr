@@ -249,14 +249,14 @@ func (j *Jobs) RaiseOverrun(class string) {
 // SizeOf is what the class of thread's job learned (V0.job-limits): its hold's
 // class, or the heavy command it ran last (ClassOf). No class, or one not
 // learned yet, is not Known. It does no I/O and calls nothing out.
-func (j *Jobs) SizeOf(thread string, _ bool) JobSize {
+func (j *Jobs) SizeOf(thread string, _ bool) resource.JobSize {
 	if j == nil {
-		return JobSize{}
+		return resource.JobSize{}
 	}
 	class := j.ClassOf(thread, "")
 	if class == "" || strings.HasSuffix(class, ": ") {
-		return JobSize{}
+		return resource.JobSize{}
 	}
 	l, ok := j.Learned(class)
-	return JobSize{Class: class, Peak: l.Peak, Demand: l.Demand, Known: ok, Runs: l.Runs}
+	return resource.JobSize{Class: class, Peak: l.Peak, Demand: l.Demand, Known: ok, Runs: l.Runs}
 }

@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/meros/fyr/internal/guard"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // 19 Nov 20:48: memory short, the guard moved t_5428's work into undeclared/
@@ -24,7 +27,7 @@ func TestFreezeChargeUndeclaredWorkOfAnUnknownClassGetsNoLimit(t *testing.T) {
 	write(t, filepath.Join(td, CLIDir, "cgroup.procs"), "10\n20\n")
 	ud := filepath.Join(td, undeclaredDir)
 	write(t, filepath.Join(ud, "memory.high"), "max")
-	g := &JobGroups{Tree: tr, Proc: proc, N: 3, Size: func(string, bool) JobSize { return JobSize{} }}
+	g := &JobGroups{Tree: tr, Proc: proc, N: 3, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize { return resource.JobSize{} }}
 	if !g.FreezeUndeclared("t_a", []Root{{PID: 20}}) {
 		t.Fatal("not frozen")
 	}
@@ -32,8 +35,8 @@ func TestFreezeChargeUndeclaredWorkOfAnUnknownClassGetsNoLimit(t *testing.T) {
 		t.Fatalf("memory.high %q at the guard's move, want max: %v", got, l.lines)
 	}
 	// A learned class keeps its learned limit.
-	g2 := &JobGroups{Tree: tr, Proc: proc, Size: func(string, bool) JobSize {
-		return JobSize{Class: "node e2e", Peak: 800 << 20, Known: true, Runs: 5}
+	g2 := &JobGroups{Tree: tr, Proc: proc, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize {
+		return resource.JobSize{Class: "node e2e", Peak: 800 << 20, Known: true, Runs: 5}
 	}}
 	g2.sizeJob("t_a", ud, true)
 	if got := read(t, filepath.Join(ud, "memory.high")); got != strconv.Itoa(1000<<20) {
@@ -53,7 +56,7 @@ func TestFreezeChargeAnUnknownJobIsNeverLimitedBelowThePrior(t *testing.T) {
 	fakeProc(t, proc, 10, 1, "claude")
 	fakeProc(t, proc, 20, 10, "make", "build")
 	write(t, filepath.Join(td, CLIDir, "cgroup.procs"), "10\n20\n")
-	g := &JobGroups{Tree: tr, Proc: proc, N: 4, Size: func(string, bool) JobSize { return JobSize{Class: "fyr: make build"} }}
+	g := &JobGroups{Tree: tr, Proc: proc, N: 4, Limit: guard.JobLimit, Size: func(string, bool) resource.JobSize { return resource.JobSize{Class: "fyr: make build"} }}
 	g.Sync("t_a", "make build")
 	page := uint64(os.Getpagesize())
 	want := strconv.FormatUint((13<<30)/4/page*page, 10)
