@@ -116,17 +116,25 @@ case "$(uname -m)" in
 esac
 
 # The layout (V0.agents-unit). A polkit that reads JavaScript rules (0.106
-# and later: Debian 12, Ubuntu 24.04) lets fyrd start each thread in a scope
-# of fyr-agents.slice, out of fyrd's unit. An older one (Ubuntu 22.04's
-# 0.105) or none: the V0.80 layout, a delegated unit that fyrd splits.
+# and later) and a systemd that names the unit to polkit when it starts a
+# transient scope (257 and later: Debian 13, Ubuntu 25.04) let fyrd start
+# each thread in a scope of fyr-agents.slice, out of fyrd's unit. An older
+# polkit (Ubuntu 22.04's 0.105), none, or an older systemd (Debian 12's 252,
+# Ubuntu 24.04's 255: the rule sees no unit and cannot grant the scopes,
+# V0.fresh-ubuntu-run): the V0.80 layout, a delegated unit that fyrd splits.
 layout=unit
 pk="$(pkaction --version 2>/dev/null | awk '{print $NF}')" || pk=""
+sd="$(systemctl --version 2>/dev/null | awk 'NR == 1 {print $2}')" || sd=""
+sd="${sd%%[^0-9]*}"
 case "$pk" in
   "" | 0.10[0-5]*) ;;
-  *) layout=scope ;;
+  *) [ "${sd:-0}" -ge 257 ] && layout=scope ;;
 esac
 if [ "$layout" = unit ]; then
-  echo "layout: unit (polkit ${pk:-not installed} reads no JavaScript rules; install polkitd 0.106 or later and run this again for the agents' slice)"
+  case "$pk" in
+    "" | 0.10[0-5]*) echo "layout: unit (polkit ${pk:-not installed} reads no JavaScript rules; install polkitd 0.106 or later and run this again for the agents' slice)" ;;
+    *) echo "layout: unit (systemd ${sd:-unknown} names no unit to polkit when it starts a scope, so no rule can grant the agents' slice; systemd 257 or later gets it)" ;;
+  esac
 else
   echo "layout: scope (polkit $pk): fyrd in fyr.service, each thread in fyr-agents.slice"
 fi

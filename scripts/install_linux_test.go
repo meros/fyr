@@ -24,8 +24,16 @@ func printInstallPath(t *testing.T, pk, path string) (string, string) {
 	return printInstallArgs(t, pk, path, t.TempDir())
 }
 
-// printInstallArgs runs install-linux.sh --print with args in home.
+// printInstallArgs runs install-linux.sh --print with args in home, on a
+// systemd 257.
 func printInstallArgs(t *testing.T, pk, path, home string, args ...string) (string, string) {
+	t.Helper()
+	return printInstallSystemd(t, pk, "257", path, home, args...)
+}
+
+// printInstallSystemd is printInstallArgs with a fake systemctl that reports
+// systemd version sd.
+func printInstallSystemd(t *testing.T, pk, sd, path, home string, args ...string) (string, string) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("install-linux.sh is for Linux")
@@ -39,6 +47,10 @@ func printInstallArgs(t *testing.T, pk, path, home string, args ...string) (stri
 		stub = "#!/bin/sh\necho pkaction version " + pk + "\n"
 	}
 	if err := os.WriteFile(filepath.Join(bin, "pkaction"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sdStub := "#!/bin/sh\necho 'systemd " + sd + " (" + sd + ".1-1ubuntu1)'\necho '+PAM +AUDIT'\n"
+	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(sdStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", append([]string{"install-linux.sh", "--print"}, args...)...)
@@ -103,6 +115,29 @@ func TestInstallLinuxUnitLayout(t *testing.T) {
 				t.Errorf("polkit %q: unexpected %q in\n%s", pk, not, out)
 			}
 		}
+	}
+}
+
+// V0.fresh-ubuntu-run: systemd before 257 (Debian 12's 252, Ubuntu 24.04's
+// 255) asks polkit about a transient scope with no unit and no verb, so the
+// rule cannot grant the agents' scopes even with polkit 124: the unit layout.
+func TestInstallLinuxOldSystemdUnitLayout(t *testing.T) {
+	for _, sd := range []string{"252", "255", ""} {
+		out, _ := printInstallSystemd(t, "124", sd, os.Getenv("PATH"), t.TempDir())
+		for _, want := range []string{"layout: unit (systemd", "Delegate=cpu memory"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("systemd %q: missing %q in\n%s", sd, want, out)
+			}
+		}
+		for _, not := range []string{"---- fyr-agents.slice", "agentsSlice", "ExecStartPre"} {
+			if strings.Contains(out, not) {
+				t.Errorf("systemd %q: unexpected %q in\n%s", sd, not, out)
+			}
+		}
+	}
+	out, _ := printInstallSystemd(t, "124", "257", os.Getenv("PATH"), t.TempDir())
+	if !strings.Contains(out, "layout: scope") {
+		t.Errorf("systemd 257: not the scope layout:\n%s", out)
 	}
 }
 
