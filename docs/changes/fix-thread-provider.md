@@ -1,4 +1,4 @@
-# fix-thread-provider
+# V0.fix-thread-provider: a fix thread names the host's provider
 
 A fix thread started from an invariant card (Fix it) had no provider in its create args, so core gave it the literal
 id `claude`. A host's providers carry their own ids, so the thread header found no match and showed the raw id as a
