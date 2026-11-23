@@ -8,12 +8,18 @@ import { ProjectIcon } from "./project-ui.tsx";
 import { Empty, Group, Row, useSet } from "./settings-rows.tsx";
 import { Grip, MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
 import { NewProjectStep } from "./project-picker.tsx";
+import { archivedProjects, isArchived } from "./archived.ts";
 
 // ---- Projects ----
 
+/** V0.project-archive: the page lists the active projects; the archived ones follow under "Archived projects". */
+function activeProjects(projects: SettingsProps["projects"]) {
+  return settingsProjects(projects).filter((x) => !isArchived(x));
+}
+
 export function projectsPage(p: SettingsProps, ui: PageUi): Omit<PageView, "title"> {
   return {
-    end: <NewProjectButton ui={ui} n={settingsProjects(p.projects).length} />,
+    end: <NewProjectButton ui={ui} n={activeProjects(p.projects).length} />,
     body: <ProjectsPage p={p} ui={ui} />,
   };
 }
@@ -36,12 +42,14 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
 function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
   const { adding, setAdding, q, setQ } = ui;
   const env = useSet();
-  const all = settingsProjects(p.projects);
+  const all = activeProjects(p.projects);
+  const archived = archivedProjects(p.projects);
   const list = searchProjects(all, q);
   const ro = useReorder(
     all.map((x) => x.id!),
     async (next) => {
-      const e = await p.projectActions.order(next);
+      // V0.project-archive: the archived keep their place after the active ones.
+      const e = await p.projectActions.order([...next, ...archived.map((x) => x.id!)]);
       if (!e) env.saved();
       return e;
     },
@@ -130,7 +138,35 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
           {q.trim() ? <div class="sg-f">{projectSearchLine(list.length, all.length)}</div> : all.length > 1 && <div class="sg-f">This order is used in New thread, the project chips and every list of projects, on all your devices.</div>}
         </section>
       )}
+      {!adding && !mode && archived.length > 0 && <ArchivedList p={p} list={archived} />}
     </>
   );
 }
 
+
+/** V0.project-archive: the archived projects, the same on both fronts; a row opens the project's page, which has
+ *  Unarchive and the project's threads. */
+function ArchivedList({ p, list }: { p: SettingsProps; list: SettingsProps["projects"] }) {
+  return (
+    <section class="sg parchl" aria-label="Archived projects">
+      <div class="sg-h">
+        <span class="sg-t">Archived projects</span>
+      </div>
+      <div class="pls setpl">
+        {list.map((x) => (
+          <button key={x.id} type="button" data-sub={x.id} class="pli" style={{ "--pc": colorVar(x.color, x.name) }} onClick={() => p.go({ page: "projects", sub: x.id! })}>
+            <ProjectIcon project={x} name={x.name} size={28} />
+            <span class="plt">
+              <span class="ell pln">{x.name}</span>
+              <span class="ell pls2">{projectSubtitle(x)}</span>
+            </span>
+            <span class="plc" title={`${x.threads ?? 0} threads`}>
+              {x.threads ?? 0}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div class="sg-f">Their threads are out of the inbox and the pickers until a new message brings one back.</div>
+    </section>
+  );
+}

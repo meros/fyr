@@ -10,6 +10,7 @@ import {
 import { Modal } from "./dialogs.tsx";
 import type { NewThreadArgs } from "./new-thread.ts";
 import { type Directory } from "./project-ui.tsx";
+import { archiveBlock, archiveTargets, archiveToast, isArchived, projectThreads, type ArchiveInfo } from "./archived.ts";
 import { expandOrder, findProject, memberOn, moveToast, recordOf, splitSharedPatch } from "./projects.ts";
 import { FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { failed } from "./api.ts";
@@ -72,6 +73,28 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
       const e = await projectCommand("project.delete", { id });
       if (!e) cmds.notify(`Deleted ${name}`);
       return e;
+    },
+    /** V0.project-archive: Archive (on) or Unarchive. Decision 0034: on a linked project every member, each on its own
+     *  host, so the project leaves the lists everywhere; a member already there gets nothing. Archive offers Undo. */
+    archive: async (id: string, on: boolean): Promise<string | null> => {
+      const p = findProject(fullStore.projects, id); // V0.207: Settings acts on hidden ones too
+      if (!p) return "This project is not here anymore";
+      const errs: string[] = [];
+      for (const m of archiveTargets(p, on)) {
+        const r = m.hostId ? await api.command(m.hostId, on ? "project.archive" : "project.unarchive", undefined, { id: m.id }) : { ok: false, error: "This host reports no install id" };
+        const e = r.ok ? null : (r.error ?? "That did not work");
+        if (e) errs.push(p.members ? `${m.host ?? "A host"}: ${e}` : e);
+      }
+      if (errs.length) return errs[0];
+      const text = archiveToast(p.name, on);
+      if (on) cmds.offerUndo(text, () => projectActions.archive(id, false));
+      else cmds.notify(text);
+      return null;
+    },
+    /** V0.project-archive: whether it is archived, why Archive is off now (a thread works or asks), and its threads. */
+    archiveInfo: (id: string): ArchiveInfo => {
+      const p = findProject(fullStore.projects, id);
+      return p ? { archived: isArchived(p), block: archiveBlock(p, fullStore.threads), threads: projectThreads(p, fullStore.threads) } : { archived: false, block: null, threads: [] };
     },
     /** V0.121: the owner's one project order. It shows at once on this device; a refusal puts the last order back. */
     order: async (ids: string[]): Promise<string | null> => {

@@ -35,6 +35,7 @@ import { pushEnv } from "./pwa.ts";
 import { unsupportedReason, type PushStatus } from "./push.ts";
 import { FILTER_KEY, findProject } from "./projects.ts";
 import { HIDDEN_KEY, applyHidden, hiddenCount, decodeHidden, NOTHING_HIDDEN, type Hidden } from "./hidden.ts";
+import { applyArchived, inboxThreads } from "./archived.ts";
 import { HOSTS_OFF_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { initialEntries, type Nav } from "./nav.ts";
@@ -61,7 +62,8 @@ export function useAppState() {
     setHiddenState(h);
     storedSet(HIDDEN_KEY, hiddenCount(h) ? JSON.stringify(h) : null);
   };
-  const store = useMemo(() => applyHidden(fullStore, deviceHidden), [fullStore, deviceHidden]);
+  // V0.project-archive: an archived project leaves every list too (pickers, filter); Settings lists it from fullStore.
+  const store = useMemo(() => applyHidden(applyArchived(fullStore), deviceHidden), [fullStore, deviceHidden]);
   const threadsRef = useRef(store.threads);
   threadsRef.current = store.threads;
   /** Slice 2b: each host's profiles by install id; a thread's or a project's are its own host's. */
@@ -187,7 +189,9 @@ export function useAppState() {
     const t = setTimeout(() => setHoldClock((n) => n + 1), Math.max(0, steady.next - Date.now()) + 50);
     return () => clearTimeout(t);
   }, [steady.next]);
-  const listThreads = steady.threads;
+  // V0.project-archive: a thread shelved with its archived project is out of the inbox, its counts and search; it still
+  // opens from its project's page (store.threads keeps it).
+  const listThreads = useMemo(() => inboxThreads(steady.threads, fullStore.projects), [steady.threads, fullStore.projects]);
   // V0.134: host AND project.
   const filtered = useMemo(() => applyFilters(listThreads, filterSel, store.projects), [listThreads, store.projects, filterSel]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).

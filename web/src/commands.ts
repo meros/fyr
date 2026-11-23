@@ -35,6 +35,9 @@ export interface ThreadCommands {
   /** Decision 0039, V0.trans-host-handover: front.threadHandover across hosts; resolves to new threadId or error text */
   handoverHost(id: string | null, target: CrossHostHandoverArgs): Promise<{ threadId?: string; error?: string }>;
   doUndo(): Promise<void>;
+  /** V0.project-archive: the Undo toast for something that is not a thread command (a project's Archive): `undo` runs
+   *  on Undo and resolves to its error, or null. */
+  offerUndo(label: string, undo: () => Promise<string | null>): void;
   /** V0.108: asks Fyr for a new title from the conversation; the title changes when the model answers. */
   regenerateTitle(id: string): Promise<void>;
   notify(text: string, error?: boolean): void;
@@ -140,8 +143,21 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     if (await run("thread.regenerateTitle", [id])) notify("Fyr is writing a new title");
   };
 
+  const offerUndo = (label: string, run: () => Promise<string | null>) => {
+    setUndo({ kind: "archive", threadIds: [], at: Date.now(), label, run });
+    setToast({ text: label, undo: true, at: Date.now() });
+  };
+
   const doUndo = async () => {
     const entry = undoRef.current;
+    if (entry?.run) {
+      if (!undoLive(entry, Date.now())) return;
+      setUndo(null);
+      const e = await entry.run();
+      if (e) showError(`Undo failed: ${e}`);
+      else notify("Undone");
+      return;
+    }
     const cmds = undoCommands(entry, Date.now());
     if (!entry || !cmds) return;
     setUndo(null);
@@ -152,5 +168,5 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     opts.current.onUndone?.(entry, !bad);
   };
 
-  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, took, send, handover, handoverHost, doUndo, regenerateTitle, notify, showError };
+  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, took, send, handover, handoverHost, doUndo, offerUndo, regenerateTitle, notify, showError };
 }

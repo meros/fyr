@@ -584,3 +584,58 @@ func TestProjectRepo(t *testing.T) {
 		t.Fatalf("no config: %q", got)
 	}
 }
+
+// V0.project-archive: archiving a project shelves its idle threads in the
+// same write and is refused, with the thread named, while one of them asks;
+// a new message brings only that thread back; unarchive brings the rest.
+func TestProjectArchive(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	sub := filepath.Join(h.dir, "asking")
+	os.MkdirAll(sub, 0o755)
+	pid := h.cmd("project.create", "", core.Args{"name": "Done work", "folder": h.dir}).Result.(map[string]any)["id"].(string)
+	qid := h.cmd("project.create", "", core.Args{"name": "Asking", "folder": sub}).Result.(map[string]any)["id"].(string)
+	a, b := h.create("first"), h.create("second")
+	q := h.cmd("thread.create", "", core.Args{"cwd": sub, "text": "third"}).ThreadID
+	for _, id := range []string{a, b, q} {
+		h.wait(id, "idle", func(t core.Thread, _ core.Attention) bool {
+			return !t.Running && t.Starting == nil && len(t.Outbox) == 0
+		})
+	}
+	if _, err := h.e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindAsk, Thread: q, Args: core.AskArgs{ID: "d_1", Questions: []core.Question{{Question: "Keep it?"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	r := h.cmd(core.KindProjectArchive, "", core.Args{"id": qid})
+	if r.OK || r.Status != 409 || !strings.Contains(r.Error, "has an open question") {
+		t.Fatalf("archive with an open question: %+v", r)
+	}
+	if th, _ := h.e.Thread(q); projectDTO(h.e, qid).ArchivedAt != nil || th.ShelvedAt != nil {
+		t.Fatal("a refused archive stamped the project or shelved its thread")
+	}
+	if r := h.cmd(core.KindProjectArchive, "", core.Args{"id": pid}); !r.OK {
+		t.Fatalf("archive: %+v", r)
+	}
+	for _, id := range []string{a, b} {
+		if th, _ := h.e.Thread(id); th.ShelvedAt == nil {
+			b, _ := json.Marshal(th)
+			t.Fatalf("%s not shelved: %s", id, b)
+		}
+	}
+	if th, _ := h.e.Thread(q); th.ShelvedAt != nil {
+		t.Fatal("another project's thread was shelved")
+	}
+	if r := h.cmd("thread.send", a, core.Args{"text": "one more thing"}); !r.OK {
+		t.Fatalf("send: %+v", r)
+	}
+	if th, _ := h.e.Thread(a); th.ShelvedAt != nil {
+		t.Fatal("a message did not bring the thread back")
+	}
+	if th, _ := h.e.Thread(b); th.ShelvedAt == nil || projectDTO(h.e, pid).ArchivedAt == nil {
+		t.Fatal("a message in one thread brought back more than that thread")
+	}
+	if r := h.cmd(core.KindProjectUnarchive, "", core.Args{"id": pid}); !r.OK {
+		t.Fatalf("unarchive: %+v", r)
+	}
+	if th, _ := h.e.Thread(b); th.ShelvedAt != nil || projectDTO(h.e, pid).ArchivedAt != nil {
+		t.Fatal("unarchive left the project or a thread put away")
+	}
+}

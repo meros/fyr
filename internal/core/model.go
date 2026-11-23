@@ -90,6 +90,10 @@ type Thread struct {
 	// Feed is the agent's queue of notices not delivered yet (#47).
 	Feed       Feed       `json:"feed,omitzero"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	// ShelvedAt is when the thread was put away with its archived project
+	// (V0.project-archive): the fronts leave it out of the inbox until a new
+	// message or question brings it back, which clears it (returnShelved).
+	ShelvedAt *time.Time `json:"shelvedAt,omitempty"`
 
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	// HandedOverFrom and HandedOverTo link threads across a trans-host
