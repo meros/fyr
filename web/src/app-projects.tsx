@@ -22,6 +22,7 @@ import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
 import type { useNavHistory } from "./app-history.tsx";
 import { type ProjectPatch } from "./project-editor.tsx";
+import type { Project } from "./types.ts";
 
 export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" | "setStore" | "fullStore" | "hostOfId" | "store" | "threadsRef" | "setDialog" | "setTheme" | "phone" | "phoneRef" | "cmds" | "now" | "openSettings" | "openPicker" | "filterId" | "filterOn" | "confirmHost"> & Pick<ReturnType<typeof useThreadActions>, "openThread"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navReplace" | "navRef">) {
   const { api, setStore, fullStore, hostOfId, store, threadsRef, setDialog, setTheme, phone, phoneRef, cmds, now, openSettings, openPicker, filterId, filterOn, confirmHost, openThread, navGo, navRef, navReplace } = c;
@@ -75,19 +76,23 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
       return e;
     },
     /** V0.project-archive: Archive (on) or Unarchive. Decision 0034: on a linked project every member, each on its own
-     *  host, so the project leaves the lists everywhere; a member already there gets nothing. Archive offers Undo. */
+     *  host, so the project leaves the lists everywhere; a member already there gets nothing. Archive offers Undo, which
+     *  unarchives the records it archived (the store may not have their new state yet when Undo is pressed). */
     archive: async (id: string, on: boolean): Promise<string | null> => {
       const p = findProject(fullStore.projects, id); // V0.207: Settings acts on hidden ones too
       if (!p) return "This project is not here anymore";
-      const errs: string[] = [];
-      for (const m of archiveTargets(p, on)) {
-        const r = m.hostId ? await api.command(m.hostId, on ? "project.archive" : "project.unarchive", undefined, { id: m.id }) : { ok: false, error: "This host reports no install id" };
-        const e = r.ok ? null : (r.error ?? "That did not work");
-        if (e) errs.push(p.members ? `${m.host ?? "A host"}: ${e}` : e);
-      }
-      if (errs.length) return errs[0];
+      const send = async (records: Project[], to: boolean): Promise<string | null> => {
+        for (const m of records) {
+          const r = m.hostId ? await api.command(m.hostId, to ? "project.archive" : "project.unarchive", undefined, { id: m.id }) : { ok: false, error: "This host reports no install id" };
+          if (!r.ok) return p.members ? `${m.host ?? "A host"}: ${r.error ?? "That did not work"}` : (r.error ?? "That did not work");
+        }
+        return null;
+      };
+      const records = archiveTargets(p, on);
+      const e = await send(records, on);
+      if (e) return e;
       const text = archiveToast(p.name, on);
-      if (on) cmds.offerUndo(text, () => projectActions.archive(id, false));
+      if (on) cmds.offerUndo(text, () => send(records, false));
       else cmds.notify(text);
       return null;
     },

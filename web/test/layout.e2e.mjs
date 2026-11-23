@@ -629,7 +629,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(!!u && /^Update now( · retry)?$/.test(u.text) /* V0.host-updates: a held-back release is retried */ && u.h >= 43.5, `${ctx}: no 44 px Update now button ${JSON.stringify(u)}`);
   }
   if (ctx.startsWith("settings device")) check(!!m.settings && m.settings.device.push && m.settings.device.theme === 3, `${ctx}: This device is wrong ${JSON.stringify(m.settings?.device)}`);
-  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours", `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
+  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours|Archive" /* V0.project-archive */, `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
   if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && m.stepFolder === "~/src/lasso-app", `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, folder "${m.stepFolder}")`);
   if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Garden in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
@@ -1936,7 +1936,7 @@ try {
   await navigate(`${origin}/?mock=rail&dialog=settings&page=projects/p_web`, "!!document.querySelector('.dlg .pedit .sw')");
   await settle();
   const pg = await evaluate(`({ save: [...document.querySelectorAll('.dlg .pedit button')].some(b => b.textContent.trim() === 'Save'), groups: [...document.querySelectorAll('.dlg .pedit > .sg > .sg-h .sg-t')].map(e => e.textContent), title: document.querySelector('.dlg .stp-h h2')?.textContent })`);
-  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours" && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
+  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours|Archive" /* V0.project-archive */ && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
   await shot("settings-project-desktop.png");
   await evaluate(`document.querySelector('.dlg .pedit .sw:not(.on)').click()`);
   await waitFor(`${COMMANDS("project.update")}.length >= 1 && !!document.querySelector('.dlg .stp-h .saved')`, { soft: true });
@@ -3443,7 +3443,7 @@ for (const [label, w, ht] of [
     const b = await evaluate(`({ ...${ARCH}, sent: ${COMMANDS("project.archive")}.map((c) => ({ ...c.args, host: c.host })), toast: document.querySelector('${TOAST}')?.textContent ?? '' })`);
     check(b.sent.length === 1 && /p_dot$/.test(b.sent[0].id) && b.text === "Unarchive" && !b.disabled && b.threads.includes("t_nix") && /Archived dotfiles/.test(b.toast) && /Undo/.test(b.toast), `${ctx}: after Archive ${JSON.stringify(b)}`);
     await shot(`project-archived-${label}.png`);
-    await evaluate(`document.querySelector('${TOAST} .tb')?.click()`);
+    await evaluate(`document.querySelector('${TOAST} button')?.click()`);
     await waitFor(`${COMMANDS("project.unarchive")}.length === 1 && ${GROUP}?.querySelector('.parchb')?.textContent === 'Archive'`, { soft: true });
     const c = await evaluate(`({ ...${ARCH}, sent: ${COMMANDS("project.unarchive")}.length })`);
     check(c.sent === 1 && c.text === "Archive" && c.threads.length === 0, `${ctx}: Undo of Archive ${JSON.stringify(c)}`);
