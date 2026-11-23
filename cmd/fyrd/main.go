@@ -198,7 +198,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	<-ctx.Done()
 	log.Printf("shutting down")
 	stops.ResumeStopped() // nothing with the cgroup tree
-	mcpSrv.Close() // V0.tool-reload: each CLI connects again to the next fyrd
+	mcpSrv.Close()        // V0.tool-reload: each CLI connects again to the next fyrd
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
 	srvs.shutdown(sctx)

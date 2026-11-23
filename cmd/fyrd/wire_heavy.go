@@ -50,9 +50,9 @@ func (w *wiring) wireHeavy() {
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// V0.209: the gate hook admits a heavy command by itself.
-	groups := &cgroup.JobGroups{Tree: tree, N: n}                                     // decision 0029 S5: each holder's job in a cgroup of its own; V0.admission-memory: N sizes a class under three runs
-	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun                        // V0.job-limits: a job sizes itself
-	groups.Limit = guard.JobLimit                                                     // V0.guard-finish: the guard's policy decides its limits
+	groups := &cgroup.JobGroups{Tree: tree, N: n}              // decision 0029 S5: each holder's job in a cgroup of its own; V0.admission-memory: N sizes a class under three runs
+	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun // V0.job-limits: a job sizes itself
+	groups.Limit = guard.JobLimit                              // V0.guard-finish: the guard's policy decides its limits
 	// V0.guard-finish: without the cgroup tree a thread's job is its process
 	// tree, and ProcStops stops it; wireGuard gives it the trees.
 	var stops *cgroup.ProcStops
