@@ -48,7 +48,7 @@ func TestNoProgressBlocksSilentRun(t *testing.T) {
 	h.e.Tick()
 	th := h.wait(id, "blocked", state(core.Blocked))
 	v := h.viewOf(id)
-	a := core.Compute(&th, &v, clk.Now())
+	a := core.ComputeWith(&th, &v, clk.Now(), nil)
 	if a.Group != core.GroupUnblock || a.Word != "No progress for 20 min" || !strings.Contains(a.Subject, "last: ") || !strings.Contains(a.Subject, " at 09:00") {
 		t.Fatalf("attention %+v", a)
 	}
@@ -92,7 +92,7 @@ func TestNoProgressLongBashIsWork(t *testing.T) {
 	}
 	th, _ := h.e.Thread(id)
 	v := h.viewOf(id)
-	if a := core.Compute(&th, &v, clk.Now()); a.State != core.Working || th.NoProgress != nil || noProgressNotice(th) {
+	if a := core.ComputeWith(&th, &v, clk.Now(), nil); a.State != core.Working || th.NoProgress != nil || noProgressNotice(th) {
 		t.Fatalf("long Bash: %+v %+v", a, th.NoProgress)
 	}
 	if r := h.cmd("thread.interrupt", id, nil); !r.OK {
