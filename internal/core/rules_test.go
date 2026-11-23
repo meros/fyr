@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -107,7 +108,8 @@ func TestRuleLoopIsBounded(t *testing.T) {
 	for _, ev := range res.Events {
 		loop = loop || ev.Type == "rule.loop"
 	}
-	if n := fired(res, "a") + fired(res, "b") + fired(res, "c"); n != maxFirings || !loop {
+	n := fired(res, "a") + fired(res, "b") + fired(res, "c")
+	if !loop || n > 3*maxFirings || fired(res, "a") > maxFirings || fired(res, "b") > maxFirings || fired(res, "c") > maxFirings {
 		t.Fatalf("firings %d, loop %v", n, loop)
 	}
 }
@@ -298,5 +300,34 @@ func TestWatchOnChecksOfAnUnpolledPRIsNotAnchored(t *testing.T) {
 		if _, ok := r.Armed["pr:"+c.ID]; ok {
 			t.Fatal("a watch on an unpolled PR was anchored")
 		}
+	}
+}
+
+// V0.rule-fanout: one Input that moves more changes than maxFirings fires each
+// change's built-in rule once; the firing limit is for a loop, not a fan-out.
+func TestRuleFanoutIsNotALoop(t *testing.T) {
+	now := ct0.Add(time.Hour)
+	th := &Thread{ID: "t_1"}
+	var ids []string
+	for i := 1; i <= maxFirings+3; i++ {
+		c := ChangePRObserved(th, PR{URL: fmt.Sprintf("https://github.com/acme/x/pull/%d", i), Repo: "acme/x", Number: i, State: "MERGED", Branch: fmt.Sprintf("b%d", i)}, now)
+		armBuiltins(th, c, now)
+		ids = append(ids, c.ID)
+	}
+	th, v, _, err := Reduce(th, nil, Input{Source: Observer(ObsClock), Kind: KindClock, Thread: th.ID}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, v, res, err := Reduce(th, v, Input{Source: Observer(ObsDeploy), Kind: KindSelfDeployed, Thread: th.ID, Args: SelfDeployedArgs{Changes: ids}}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range res.Events {
+		if ev.Type == "rule.loop" {
+			t.Fatalf("fan-out reported as a loop: %v", ev.Data)
+		}
+	}
+	if ov := OverdueRule(th, v, now.Add(time.Minute)); ov != "" {
+		t.Fatal(ov)
 	}
 }

@@ -582,7 +582,7 @@ func viewRules(v *View) []Rule {
 // place: it suspends and resumes, then fires each Rule whose Condition went
 // from false to true, applying its `then` through the Input kinds, until no
 // Rule fires or maxFirings is reached (a loop between Rules ends there,
-// with a rule.loop event).
+// with a rule.loop event; the limit is per Rule).
 func EvalRules(r Rec, now time.Time) Result {
 	var res Result
 	if r.V == nil {
@@ -595,15 +595,20 @@ func EvalRules(r Rec, now time.Time) Result {
 	// leave it armed forever. The watcher's own thread is told; a dropped Rule
 	// does not act.
 	r.T.Rules = slices.DeleteFunc(r.T.Rules, func(x Rule) bool { return unwatchable(r.T, x) })
-	for fired := 0; ; fired++ {
+	// V0.rule-fanout: the limit counts one Rule's firings, not all of them, so
+	// an Input that moves many changes fires each one's Rule once; a loop
+	// between Rules still stops, as each of them reaches the limit.
+	fired := map[string]int{}
+	for {
 		id, onView := due(r, now)
 		if id == "" {
 			return res
 		}
-		if fired == maxFirings {
-			res.Events = append(res.Events, Event{"rule.loop", map[string]any{"rule": id, "firings": fired}})
+		if fired[id] == maxFirings {
+			res.Events = append(res.Events, Event{"rule.loop", map[string]any{"rule": id, "firings": fired[id]}})
 			return res
 		}
+		fired[id]++
 		fire(r, id, onView, now, &res)
 	}
 }
