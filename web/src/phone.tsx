@@ -66,6 +66,7 @@ import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
 import { AgentsStrip } from "./agents-strip.tsx";
 import { PhoneComposer, sendFrom } from "./composer.tsx";
 import { workingHint, MRow } from "./phone-row.tsx";
+import { FolderChip } from "./folder-ui.tsx";
 
 
 // ---- props from the app shell ----
@@ -656,11 +657,6 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
               <span>{t.host}</span>
             </span>
           )}
-          {t.branch && (
-            <span class="m-chip m brn">
-              <span>{t.branch}</span>
-            </span>
-          )}
           {(() => {
             const pv = threadProvider(t, p.profiles); // V0.206: as the desktop header shows it
             // V0.agent-pill: the desktop header's pill. It only shows here: the chip row is one button that opens Details,
@@ -678,6 +674,10 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             return l ? <span class="m-chip"><span>{l}</span></span> : null;
           })()}
           </button>
+          {/* V0.folder-chip: the desktop header's folder chip (it replaced the branch chip on both fronts). It stands after
+              the Details button, not beside the host as on the desktop: that button takes every tap on the chips inside it,
+              and this one's tap opens its own card with the path and Copy path. */}
+          <FolderChip t={t} phone />
           {/* V0.multi-pr: every open change's PR as a tappable chip outside Details, jumping straight to that PR in the PR tab. */}
           {(() => {
             const multiRepo = hasMultipleRepos(openPrs);

@@ -1,0 +1,13 @@
+# V0.folder-chip: the thread's folder is a chip in the header's chip row; a click shows the full path, the branch and Copy path
+
+→ V0.header-one-block, V0.phone-chips-scroll, V0.change-worktree, V0.hover-cards; issue #26. *Replaces the branch chip of both thread headers.*
+
+(1) **The chip.** The header's one row of chips (V0.header-one-block) holds the folder the thread works in, on desktop and phone, in the place of the branch chip: the folder's last path part and, for a git checkout, `· <branch>`. A folder that is not a git checkout (a scratch folder) shows its name alone. While the thread has an open code change that works in a worktree Fyr made (V0.change-worktree; the newest such change when there are several), the chip shows that worktree: the repo's name and the worktree's branch, since the worktree's own last path part only repeats the branch. Every fact is the host's (the thread's `cwd` and `branch`, the change's `workspace`); the client computes no git fact. A long name is cut in the middle (28 characters for the name, 32 for the branch); the card and Copy path keep it whole.
+
+(2) **The card.** A click (a tap on the phone) opens a card under the chip (the hover card of V0.hover-cards, interactive): the full path, the branch when git, for a worktree its repo and the change Fyr made it for and the thread's own folder, and the host; then **Copy path** (the clipboard, else a hidden text area; when both fail the card says to select the path). A click outside or Escape closes it. One component draws it on both fronts (`web/src/folder-ui.tsx`, words in `web/src/folder.ts`).
+
+(3) **What it folds.** The branch chip went: the folder chip says it. The host chip stays: it carries the host's mark and the offline state, and the folder's card names the host too. The phone's Details sheet keeps its Folder and Branch rows.
+
+(4) **The phone.** The chip keeps its width and the row scrolls (V0.phone-chips-scroll). It stands after the Details button, not beside the host as on the desktop, because that button takes every tap on the chips inside it; its tap target is 44 px tall and so is Copy path (touch size).
+
+*Tests:* `web/test/folder.test.ts` (a repo folder, a scratch folder without git, a Fyr worktree, a worktree that is not Fyr's or whose change ended, two worktrees, long names). `web/test/layout.e2e.mjs`, section V0.folder-chip: desktop 1280 × 800, 1259 × 676 and 1024 × 700, phone 390 × 844 and 360 × 640: the chip's text in the header, no branch chip, the card's rows inside the window, Copy path answers, Escape or a tap outside closes, no horizontal page scroll, the scratch folder's name alone.
