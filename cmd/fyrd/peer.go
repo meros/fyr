@@ -108,7 +108,7 @@ func newPeerSide(cfg config, data, name string, key *identity.Key) *peerSide {
 	p := &peerSide{cfg: cfg, name: name, data: data, key: key}
 	p.dial = &peerlink.Dialer{Key: key, Resolve: resolver(cfg.ResolveFile)}
 	p.env = &peer.Env{Key: key, Roster: ros, Name: name, Serve: serveClient(cfg), ServePort: servePort(cfg), Dial: p.dial,
-		Drive: peer.OpenDrive(data), Invites: &peer.Invites{}, Logf: log.Printf, Port: func() int { return int(p.port.Load()) },
+		Drive: peer.OpenDrive(data), Ignore: peer.OpenIgnored(data), Invites: &peer.Invites{}, Logf: log.Printf, Port: func() int { return int(p.port.Load()) },
 		OwnerLogin: p.effectiveOwner}
 	p.dial.Opts = p.env.DialOptions // a rotated peer is accepted by its chain; this install shows its own
 	if tailnet.Available(cfg.tsSocket()) {

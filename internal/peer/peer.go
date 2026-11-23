@@ -65,6 +65,8 @@ type Env struct {
 	// LAN is where mDNS answers come from (decision 0030 3.6); nil: none. An answer is
 	// an address and a claim, never trust.
 	LAN discovery.Source
+	// Ignore is the owner's list of found installs not to show (#259); nil: none.
+	Ignore *Ignored
 
 	// Mesh is the two-way link manager (decision 0030 Amendment 1); nil keeps the
 	// one-way per-request dial of slice 3.

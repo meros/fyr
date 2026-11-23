@@ -1,9 +1,10 @@
 // SPEC V0.159, decision 0030 3.6: the installs panel of Settings → Hosts, one panel on the desktop and the phone. The
 // installs this one is paired with and how each came in; the tailnet nodes that are not, with why; Pair (open an invite
-// here: text, a QR code, a link; 10 minutes, once) and Add (type one from another install).
-import { useEffect, useState } from "preact/hooks";
+// here: text, a QR code, a link; 10 minutes, once) and Add (type one from another install). #259: an install found on
+// the LAN shows its id, address and who found it, with Pair (Add, bound to its id and address) and Ignore.
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
-import { candidateWords, configNote, inviteFromUrl, memberLink, needsInvite, others, typedInvite, viaWords, type InviteInfo, type PeerState } from "./peers.ts";
+import { candidateWarn, candidateWords, configNote, inviteFromUrl, inviteId, memberLink, needsInvite, others, pairAsks, typedInvite, viaWords, type InviteInfo, type PeerState } from "./peers.ts";
 import { Group, Row, useSet } from "./settings-rows.tsx";
 
 type PeersApi = Pick<Api, "peerState" | "peerAct">;
@@ -35,6 +36,10 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
   const [code, setCode] = useState(() => (typeof location === "undefined" ? "" : inviteFromUrl(location.search)));
   const [addr, setAddr] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
+  /** #259: the found install Pair was pressed on: Add takes only an invite with its id */
+  const [target, setTarget] = useState<{ id: string; name: string; addr: string } | null>(null);
+  const [showIgnored, setShowIgnored] = useState(false);
+  const codeRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!invite) return;
     const t = setTimeout(() => setInvite(null), Math.max(0, Date.parse(invite.until) - Date.now()));
@@ -64,6 +69,7 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
     env.saved();
     setCode("");
     setAddr("");
+    setTarget(null);
     setOk(`Paired with ${r.name}.`);
     reload();
   };
@@ -79,6 +85,27 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
     env.saved();
     reload();
   };
+  const ignore = async (id: string, on: boolean) => {
+    setBusy(true);
+    setMsg(null);
+    setOk(null);
+    const r = await api.peerAct("ignore", { id, on });
+    setBusy(false);
+    if (!r.ok) return setMsg(String(r.error ?? "That did not work"));
+    env.saved();
+    reload();
+  };
+  // Pair on a found install: the code comes from that install, so Add is bound to its id and address.
+  const pairWith = (c: { id: string; name: string; addr: string }) => {
+    setConfirm(null);
+    setTarget(c);
+    setAddr(c.addr);
+    if (code && inviteId(code) !== c.id) setCode("");
+    codeRef.current?.scrollIntoView?.({ block: "center" });
+    codeRef.current?.focus();
+  };
+  const wrongCode = !!target && code.startsWith("FYR1-") && inviteId(code) !== target.id;
+  const ignored = s.ignored ?? [];
   const rest = others(s);
   const cfg = configNote(s);
   return (
@@ -127,11 +154,79 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
         ))}
         {rest.length === 0 && <Row class="peerrow" title="No other install is paired." desc="Installs of one tailnet user pair by themselves; others pair with an invite." />}
       </Group>
-      {s.candidates.length > 0 && (
-        <Group label="Not paired" title="Not paired" foot="Tailnet nodes that are not in the roster. A tag says who may reach a node, not whose it is, so a tagged one is paired with an invite.">
-          {s.candidates.map((c) => (
-            <Row key={c.name} class={`cand${c.online ? "" : " off"}`} mono ell title={c.name} desc={candidateWords(c)} end={needsInvite(c) ? <span class="pill">needs an invite</span> : undefined} />
-          ))}
+      {(s.candidates.length > 0 || ignored.length > 0) && (
+        <Group label="Not paired" title="Not paired" foot="Tailnet nodes and installs found on this LAN that are not in the roster. Being found gives an install nothing: only pairing does, and Pair asks for that install's code. An install you do not know is probably someone else's: ignore it.">
+          {s.candidates.map((c) => {
+            if (c.kind !== "lan" || !c.id)
+              return <Row key={c.name} class={`peercand${c.online ? "" : " off"}`} mono ell title={c.name} desc={candidateWords(c)} end={needsInvite(c) ? <span class="pill">needs an invite</span> : undefined} />;
+            const id = c.id;
+            const warn = candidateWarn(c);
+            const t = { id, name: c.name, addr: c.addr ?? "" };
+            return (
+              // stack: on the phone the two buttons go under the text (two 44 px buttons do not fit beside it).
+              <Row
+                key={id}
+                class={`peercand lan${c.spoof ? " bad" : ""}`}
+                stack
+                mono
+                ell
+                title={c.name}
+                desc={
+                  <>
+                    {candidateWords(c)}
+                    {warn && <span class="cwarn">{warn}</span>}
+                  </>
+                }
+                end={
+                  confirm === `pair:${id}` ? (
+                    <>
+                      <button type="button" class="btn" disabled={ro} onClick={() => pairWith(t)}>
+                        Pair anyway
+                      </button>
+                      <button type="button" class="btn" onClick={() => setConfirm(null)}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" class="btn" disabled={ro} onClick={() => void ignore(id, true)}>
+                        Ignore
+                      </button>
+                      <button type="button" class="btn" disabled={ro} onClick={() => (pairAsks(c) ? setConfirm(`pair:${id}`) : pairWith(t))}>
+                        Pair…
+                      </button>
+                    </>
+                  )
+                }
+              />
+            );
+          })}
+          {ignored.length > 0 && (
+            <Row
+              class="peerign"
+              title={
+                <button type="button" class="lnk" aria-expanded={showIgnored} onClick={() => setShowIgnored(!showIgnored)}>
+                  {showIgnored ? "Hide ignored" : `Show ignored (${ignored.length})`}
+                </button>
+              }
+            />
+          )}
+          {showIgnored &&
+            ignored.map((g) => (
+              <Row
+                key={`ign:${g.id}`}
+                class="peercand ign"
+                mono
+                ell
+                title={g.id}
+                desc={[`Ignored ${new Date(g.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`, g.addr ? `heard at ${g.addr}` : "not heard now"].join(" · ")}
+                end={
+                  <button type="button" class="btn" disabled={ro} onClick={() => void ignore(g.id, false)}>
+                    Stop ignoring
+                  </button>
+                }
+              />
+            ))}
         </Group>
       )}
       <Group label="Pair" title="Pair" foot="Open an invite here and type it on the other install (fyr pair CODE). It works once, for 10 minutes, and only for the install it is typed on.">
@@ -153,12 +248,26 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
         )}
       </Group>
       <Group label="Add" title="Add" foot="Type the invite another install made. Give its address (host:port) when this one cannot find it by itself.">
+        {target && (
+          <Row
+            class="pairfor"
+            mono
+            title={`Pairing with ${target.name}`}
+            desc={`Open an invite on that install (Settings → Hosts → Pair, or fyr pair there) and type it here. Only an invite from ${target.id} is taken.`}
+            end={
+              <button type="button" class="btn" onClick={() => (setTarget(null), setAddr(""))}>
+                Cancel
+              </button>
+            }
+          />
+        )}
         <Row
           stack
           title="Invite"
+          error={wrongCode ? `That invite is from ${inviteId(code)}, not ${target?.id}.` : null}
           end={
             <span class="inl">
-              <input class="mono" type="text" aria-label="Invite from another install" autocomplete="off" spellcheck={false} placeholder="fyr1-…" value={code} disabled={ro} onInput={(e) => setCode(typedInvite((e.target as HTMLInputElement).value))} />
+              <input ref={codeRef} class="mono" type="text" aria-label="Invite from another install" autocomplete="off" spellcheck={false} placeholder="fyr1-…" value={code} disabled={ro} onInput={(e) => setCode(typedInvite((e.target as HTMLInputElement).value))} />
             </span>
           }
         />
@@ -168,7 +277,7 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
           end={
             <span class="inl">
               <input class="mono" type="text" aria-label="Address of the other install" autocomplete="off" spellcheck={false} placeholder="host:port (optional)" value={addr} disabled={ro} onInput={(e) => setAddr((e.target as HTMLInputElement).value)} />
-              <button type="button" class="btn" disabled={ro || !code.startsWith("FYR1-")} onClick={() => void add()}>
+              <button type="button" class="btn" disabled={ro || !code.startsWith("FYR1-") || wrongCode} onClick={() => void add()}>
                 Add
               </button>
             </span>

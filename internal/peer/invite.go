@@ -28,6 +28,7 @@ import (
 
 	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/peerlink"
+	"github.com/meros/fyr/internal/roster"
 )
 
 const (
@@ -352,6 +353,15 @@ type Candidate struct {
 	// ID and Addr: for a LAN candidate, the id it claims and where it was heard.
 	ID   string `json:"id,omitempty"`
 	Addr string `json:"addr,omitempty"`
+	// Addrs: every address a LAN candidate was heard at; Dup says it was heard at
+	// more than one (one install on two networks, or two machines with one id).
+	Addrs []string `json:"addrs,omitempty"`
+	Dup   bool     `json:"dup,omitempty"`
+	// Source: who found it, "mdns" or "hand" (a fixed list).
+	Source string `json:"source,omitempty"`
+	// Spoof: it claims to be a member it is not, as "address:<name>:<id>" (heard
+	// at that member's address) or "name:<name>:<id>" (it goes by its name).
+	Spoof string `json:"spoof,omitempty"`
 }
 
 // LANAddrs is what mDNS says for an install id: addresses to try, never trust.
@@ -369,8 +379,9 @@ func (e *Env) LANAddrs(ctx context.Context, id string) []string {
 	return out
 }
 
-// lanCandidates lists the installs heard on the LAN that are not members: shown
-// "not paired", pairable by the owner's invite, never followed.
+// lanCandidates lists the installs heard on the LAN that are not members and not
+// ignored: shown "not paired", pairable by the owner's invite, never followed. One
+// id is one row, with every address it was heard at (#259).
 func (e *Env) lanCandidates(ctx context.Context) []Candidate {
 	if e.LAN == nil {
 		return nil
@@ -380,18 +391,65 @@ func (e *Env) lanCandidates(ctx context.Context) []Candidate {
 		log.Printf("peer: LAN candidates: %v", err)
 	}
 	var out []Candidate
-	seen := map[string]bool{}
+	at := map[string]int{}
 	for _, c := range cs {
-		if c.ID == "" || c.ID == e.Key.ID() || seen[c.ID+c.Addr] {
+		if c.ID == "" || c.ID == e.Key.ID() || e.Ignore.Has(c.ID) {
 			continue
 		}
 		if _, in := e.Roster.Member(c.ID); in {
 			continue
 		}
-		seen[c.ID+c.Addr] = true
-		out = append(out, Candidate{Name: "fyr-" + strings.ToLower(strings.ReplaceAll(c.ID, "-", ""))[:min(8, len(strings.ReplaceAll(c.ID, "-", "")))], ID: c.ID, Addr: c.Addr, Online: true, Kind: "lan"})
+		if i, ok := at[c.ID]; ok {
+			if c.Addr != "" && !slices.Contains(out[i].Addrs, c.Addr) {
+				out[i].Addrs = append(out[i].Addrs, c.Addr)
+			}
+			continue
+		}
+		at[c.ID] = len(out)
+		k := Candidate{Name: "fyr-" + shortID(c.ID), ID: c.ID, Addr: c.Addr, Online: true, Kind: "lan", Source: c.Source}
+		if c.Name != "" {
+			k.Name = c.Name
+		}
+		if c.Addr != "" {
+			k.Addrs = []string{c.Addr}
+		}
+		out = append(out, k)
+	}
+	ms := e.Roster.Members()
+	for i := range out {
+		slices.Sort(out[i].Addrs)
+		if len(out[i].Addrs) > 0 {
+			out[i].Addr = out[i].Addrs[0]
+		}
+		out[i].Spoof = spoofOf(out[i], ms)
+		out[i].Dup = len(out[i].Addrs) > 1
 	}
 	return out
+}
+
+func shortID(id string) string {
+	s := strings.ToLower(strings.ReplaceAll(id, "-", ""))
+	return s[:min(8, len(s))]
+}
+
+// spoofOf says why a found install looks like a member it is not: it is heard at a
+// member's address, or it goes by a member's name (or the short id a member's
+// unnamed row shows). "" when it does not. Nothing is refused for it: pairing asks
+// for the other install's code either way, and the link is pinned to the id in it.
+func spoofOf(c Candidate, ms []roster.Member) string {
+	for _, m := range ms {
+		if m.ID == c.ID {
+			continue
+		}
+		if m.Port != 0 && slices.Contains(c.Addrs, addr(m)) {
+			return fmt.Sprintf("address:%s:%s", m.Name, m.ID)
+		}
+		n := strings.ToLower(c.Name)
+		if n == strings.ToLower(m.Name) || (m.Host != "" && n == strings.ToLower(m.Host)) || n == "fyr-"+shortID(m.ID) {
+			return fmt.Sprintf("name:%s:%s", m.Name, m.ID)
+		}
+	}
+	return ""
 }
 
 // Candidates lists the nodes of the tailnet and the installs of the LAN that are not

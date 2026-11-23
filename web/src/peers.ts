@@ -20,12 +20,28 @@ interface MemberRow {
 interface CandidateRow {
   name: string;
   online: boolean;
-  kind: "tagged" | "other-user" | "shared" | "expired" | "waiting" | string;
+  kind: "tagged" | "other-user" | "shared" | "expired" | "waiting" | "lan" | string;
+  /** #259, a LAN candidate: the id it claims, where it was heard (every address), who found it */
+  id?: string;
+  addr?: string;
+  addrs?: string[];
+  dup?: boolean;
+  source?: "mdns" | "hand" | string;
+  /** "address:<name>:<id>" (heard at a member's address) or "name:<name>:<id>" (goes by its name) */
+  spoof?: string;
+}
+
+/** #259: a found install the owner ignored on this host; addr while it is heard. */
+export interface IgnoredRow {
+  id: string;
+  at: string;
+  addr?: string;
 }
 
 export interface PeerState {
   members: MemberRow[];
   candidates: CandidateRow[];
+  ignored?: IgnoredRow[];
   whoisLinkUses?: number;
   inviteUntil?: string;
   signedIn?: boolean;
@@ -62,7 +78,7 @@ export function viaWords(m: Pick<MemberRow, "self" | "via" | "by">): string {
 }
 
 /** Why a tailnet node is not paired, and what to do. */
-export function candidateWords(c: Pick<CandidateRow, "kind" | "online">): string {
+export function candidateWords(c: Pick<CandidateRow, "kind" | "online" | "id" | "addr" | "addrs" | "source">): string {
   const off = c.online ? "" : " · offline";
   switch (c.kind) {
     case "tagged":
@@ -75,9 +91,43 @@ export function candidateWords(c: Pick<CandidateRow, "kind" | "online">): string
       return `Its key has expired${off}`;
     case "waiting":
       return `Pairs by itself once its Serve and peer port are up${off}`;
+    case "lan":
+      return [c.id ?? "", lanAddrs(c), foundBy(c.source)].filter(Boolean).join(" · ") + off;
     default:
       return c.kind + off;
   }
+}
+
+function lanAddrs(c: Pick<CandidateRow, "addr" | "addrs">): string {
+  return (c.addrs?.length ? c.addrs : c.addr ? [c.addr] : []).join(", ");
+}
+
+/** #259: who found a LAN candidate (tailnet discovery was retired, #360). */
+export function foundBy(source: string | undefined): string {
+  if (source === "hand") return "added by hand";
+  return source === "mdns" || !source ? "found by mDNS" : `found by ${source}`;
+}
+
+/** #259: the warning line of a candidate that claims a paired install's address or name, or one id
+ * heard at two addresses; "" for none. Pair asks for the other install's code either way. */
+export function candidateWarn(c: Pick<CandidateRow, "spoof" | "dup" | "addrs">): string {
+  const [how, name, id] = (c.spoof ?? "").split(":");
+  const either = "Pair asks for its code either way.";
+  if (how === "address") return `This address is ${name}'s (${(id ?? "").slice(0, 4)}). Pair it only if you reinstalled ${name}. ${either}`;
+  if (how === "name") return `You already have a host named ${name} with another id (${(id ?? "").slice(0, 4)}). ${either}`;
+  if (c.dup) return `One id at ${c.addrs?.length ?? 2} addresses: one install on two networks, or two machines with one id. ${either}`;
+  return "";
+}
+
+/** #259: Pair on a spoof is never one press: it asks first. */
+export function pairAsks(c: Pick<CandidateRow, "spoof">): boolean {
+  return !!c.spoof;
+}
+
+/** #259: the install id an invite names ("" for no invite); an invite carries its maker's id. */
+export function inviteId(code: string): string {
+  const m = /^FYR1-([0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4})-/.exec(typedInvite(code));
+  return m ? m[1] : "";
 }
 
 /** Whether a candidate can be paired with an invite from here: the ones a tag or a missing Serve keep from pairing. */
