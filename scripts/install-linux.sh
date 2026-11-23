@@ -70,6 +70,9 @@ fi
 user="$(id -un)"
 group="$(id -gn)"
 data="$HOME/.local/share/fyr"
+# The fyr command (fyr auth, fyr device add, fyr --version): a link in
+# ~/.local/bin, which Debian's and Ubuntu's ~/.profile put on PATH.
+binlink="$HOME/.local/bin/fyr"
 cfg="$HOME/.config/fyr/config.json"
 repo="${FYR_REPO:-meros/fyr}"
 # The root files. The NixOS module (nix/module.nix) makes the same ones;
@@ -89,6 +92,7 @@ if [ "$mode" = uninstall ]; then
   echo "removing the unit and the root files with sudo:"
   root systemctl disable --now fyr.service || true
   root rm -f "$unit" "$slice" "$rule" "$helper"
+  [ "$(readlink "$binlink" 2>/dev/null)" != "$data/launcher/fyr" ] || rm -f "$binlink"
   root systemctl daemon-reload
   echo "stopped and removed fyr.service; data stays in $data, the config in $cfg"
   exit 0
@@ -116,17 +120,25 @@ case "$(uname -m)" in
 esac
 
 # The layout (V0.agents-unit). A polkit that reads JavaScript rules (0.106
-# and later: Debian 12, Ubuntu 24.04) lets fyrd start each thread in a scope
-# of fyr-agents.slice, out of fyrd's unit. An older one (Ubuntu 22.04's
-# 0.105) or none: the V0.80 layout, a delegated unit that fyrd splits.
+# and later) and a systemd that names the unit to polkit when it starts a
+# transient scope (257 and later: Debian 13, Ubuntu 25.04) let fyrd start
+# each thread in a scope of fyr-agents.slice, out of fyrd's unit. An older
+# polkit (Ubuntu 22.04's 0.105), none, or an older systemd (Debian 12's 252,
+# Ubuntu 24.04's 255: the rule sees no unit and cannot grant the scopes,
+# V0.fresh-ubuntu-run): the V0.80 layout, a delegated unit that fyrd splits.
 layout=unit
 pk="$(pkaction --version 2>/dev/null | awk '{print $NF}')" || pk=""
+sd="$(systemctl --version 2>/dev/null | awk 'NR == 1 {print $2}')" || sd=""
+sd="${sd%%[^0-9]*}"
 case "$pk" in
   "" | 0.10[0-5]*) ;;
-  *) layout=scope ;;
+  *) [ "${sd:-0}" -ge 257 ] && layout=scope ;;
 esac
 if [ "$layout" = unit ]; then
-  echo "layout: unit (polkit ${pk:-not installed} reads no JavaScript rules; install polkitd 0.106 or later and run this again for the agents' slice)"
+  case "$pk" in
+    "" | 0.10[0-5]*) echo "layout: unit (polkit ${pk:-not installed} reads no JavaScript rules; install polkitd 0.106 or later and run this again for the agents' slice)" ;;
+    *) echo "layout: unit (systemd ${sd:-unknown} names no unit to polkit when it starts a scope, so no rule can grant the agents' slice; systemd 257 or later gets it)" ;;
+  esac
 else
   echo "layout: scope (polkit $pk): fyrd in fyr.service, each thread in fyr-agents.slice"
 fi
@@ -285,7 +297,8 @@ had_channel=""
 [ -s "$cfg" ] && had_channel="$(sed -n 's/.*"updateChannel"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | sed -n 1p)"
 set_channel="$channel"
 [ -n "$set_channel" ] || set_channel="$want_version"
-[ -n "$set_channel" ] || [ -s "$cfg" ] || set_channel=stable
+new_stable="" # a new install that follows stable because nothing said otherwise
+[ -n "$set_channel" ] || [ -s "$cfg" ] || { set_channel=stable; new_stable=1; }
 follow="${set_channel:-${had_channel:-main}}"
 # The release to install: --version's, else the channel's.
 pick="${want_version:-$follow}"
@@ -294,6 +307,7 @@ case "$pick" in
   stable) what="the newest stable version (vX.Y.Z, not a prerelease)" ;;
   *) what="version $pick" ;;
 esac
+[ -z "$new_stable" ] || what="$what, or while none is published main's newest build (and follow main)"
 if [ -n "$set_channel" ]; then
   echo "channel: $follow (updateChannel $set_channel in $cfg)"
 else
@@ -307,6 +321,7 @@ if [ "$mode" = print ]; then
   echo "  check SHA256SUMS, link $data/current to it, copy fyrd to $data/seed and fyr to $data/launcher"
   echo "as $user: set \"cgroups\" in $cfg to $cgroups"
   [ -z "$set_channel" ] || echo "as $user: set \"updateChannel\" in $cfg to \"$set_channel\""
+  echo "as $user: link $binlink to $data/launcher/fyr (the fyr command), unless something else is there"
   for f in fyr.service fyr-agents.slice 50-fyr-agents.rules agents-pressure-chown; do
     [ "$layout" = scope ] || [ "$f" = fyr.service ] || continue
     echo
@@ -325,8 +340,19 @@ if [ "$mode" = install ]; then
       tag="build-${sha:0:12}"
       ;;
     stable)
-      tag="$(newest_stable)"
-      sha="$(tag_sha "$tag")"
+      if tag="$(newest_stable)"; then
+        sha="$(tag_sha "$tag")"
+      elif [ -n "$new_stable" ]; then
+        # V0.fresh-ubuntu-run: before the first version is published, a new
+        # install that named no channel takes main rather than failing.
+        echo "so this new install follows main: run this again with --channel stable once a version is published" >&2
+        follow=main
+        set_channel=main
+        sha="$(tag_sha deployable)"
+        tag="build-${sha:0:12}"
+      else
+        exit 1
+      fi
       ;;
     *)
       tag="$pick"
@@ -354,6 +380,12 @@ if [ "$mode" = install ]; then
   install -m 0755 "$build/fyrd" "$data/seed/fyrd"
   install -m 0755 "$build/fyr" "$data/launcher/fyr"
   ln -sfn "builds/$short" "$data/current.tmp" && mv -fT "$data/current.tmp" "$data/current"
+  if [ ! -e "$binlink" ] && [ ! -L "$binlink" ] || [ "$(readlink "$binlink")" = "$data/launcher/fyr" ]; then
+    mkdir -p "$(dirname "$binlink")"
+    ln -sfn "$data/launcher/fyr" "$binlink"
+  else
+    echo "$binlink is there already (not this install's link); the fyr command is $data/launcher/fyr" >&2
+  fi
 
   mkdir -p "$(dirname "$cfg")"
   if [ ! -s "$cfg" ]; then
@@ -400,6 +432,10 @@ root systemctl restart fyr.service
 
 [ "$mode" = print ] && exit 0
 echo "started fyr.service; open http://127.0.0.1:7777 · log: journalctl -u fyr, $data/daemon.log"
+case ":$PATH:" in
+  *":$(dirname "$binlink"):"*) ;;
+  *) echo "the fyr command is $binlink: open a new login shell (~/.profile adds ~/.local/bin to PATH) or add it to PATH" ;;
+esac
 echo "fyrd installs each new release of the $follow channel by itself (Settings → Auto-update)"
 if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
   echo "tailnet (optional): to reach Fyr from your phone over Tailscale, set your Tailscale login once (fyr auth owner <you@example.com>) and publish it: sudo tailscale serve --bg --https=7443 unix:$data/serve.sock"

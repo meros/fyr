@@ -24,8 +24,16 @@ func printInstallPath(t *testing.T, pk, path string) (string, string) {
 	return printInstallArgs(t, pk, path, t.TempDir())
 }
 
-// printInstallArgs runs install-linux.sh --print with args in home.
+// printInstallArgs runs install-linux.sh --print with args in home, on a
+// systemd 257.
 func printInstallArgs(t *testing.T, pk, path, home string, args ...string) (string, string) {
+	t.Helper()
+	return printInstallSystemd(t, pk, "257", path, home, args...)
+}
+
+// printInstallSystemd is printInstallArgs with a fake systemctl that reports
+// systemd version sd.
+func printInstallSystemd(t *testing.T, pk, sd, path, home string, args ...string) (string, string) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("install-linux.sh is for Linux")
@@ -41,6 +49,10 @@ func printInstallArgs(t *testing.T, pk, path, home string, args ...string) (stri
 	if err := os.WriteFile(filepath.Join(bin, "pkaction"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	sdStub := "#!/bin/sh\necho 'systemd " + sd + " (" + sd + ".1-1ubuntu1)'\necho '+PAM +AUDIT'\n"
+	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(sdStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command("bash", append([]string{"install-linux.sh", "--print"}, args...)...)
 	cmd.Env = append(os.Environ(), "HOME="+home, "PATH="+bin+":"+path)
 	out, err := cmd.CombinedOutput()
@@ -50,9 +62,23 @@ func printInstallArgs(t *testing.T, pk, path, home string, args ...string) (stri
 	return string(out), home
 }
 
+// currentUser is the name the script reads with id -un.
+func currentUser(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("id", "-un").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // V0.linux-without-nix: --print changes nothing and asks no sudo.
 func TestInstallLinuxPrintWritesNothing(t *testing.T) {
 	out, home := printInstall(t, "124")
+	// V0.fresh-ubuntu-run: the fyr command goes on PATH as a link.
+	if want := "as " + currentUser(t) + ": link " + home + "/.local/bin/fyr to " + home + "/.local/share/fyr/launcher/fyr (the fyr command)"; !strings.Contains(out, want) {
+		t.Errorf("missing %q in\n%s", want, out)
+	}
 	if es, _ := os.ReadDir(home); len(es) != 0 {
 		t.Fatalf("--print wrote into HOME: %v", es)
 	}
@@ -103,6 +129,29 @@ func TestInstallLinuxUnitLayout(t *testing.T) {
 				t.Errorf("polkit %q: unexpected %q in\n%s", pk, not, out)
 			}
 		}
+	}
+}
+
+// V0.fresh-ubuntu-run: systemd before 257 (Debian 12's 252, Ubuntu 24.04's
+// 255) asks polkit about a transient scope with no unit and no verb, so the
+// rule cannot grant the agents' scopes even with polkit 124: the unit layout.
+func TestInstallLinuxOldSystemdUnitLayout(t *testing.T) {
+	for _, sd := range []string{"252", "255", ""} {
+		out, _ := printInstallSystemd(t, "124", sd, os.Getenv("PATH"), t.TempDir())
+		for _, want := range []string{"layout: unit (systemd", "Delegate=cpu memory"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("systemd %q: missing %q in\n%s", sd, want, out)
+			}
+		}
+		for _, not := range []string{"---- fyr-agents.slice", "agentsSlice", "ExecStartPre"} {
+			if strings.Contains(out, not) {
+				t.Errorf("systemd %q: unexpected %q in\n%s", sd, not, out)
+			}
+		}
+	}
+	out, _ := printInstallSystemd(t, "124", "257", os.Getenv("PATH"), t.TempDir())
+	if !strings.Contains(out, "layout: scope") {
+		t.Errorf("systemd 257: not the scope layout:\n%s", out)
 	}
 }
 
@@ -170,14 +219,17 @@ func TestInstallLinuxChannel(t *testing.T) {
 		not  []string
 	}{
 		{"new install", t.TempDir(), nil,
-			[]string{"channel: stable (updateChannel stable", "download the newest stable version (vX.Y.Z, not a prerelease)", `set "updateChannel" in`},
+			[]string{"channel: stable (updateChannel stable", "download the newest stable version (vX.Y.Z, not a prerelease), or while none is published main's newest build (and follow main)", `set "updateChannel" in`},
 			[]string{"deployable"}},
 		{"existing config without a channel", withConfig(`{"cgroups": {}}`), nil,
 			[]string{"channel: main (kept from", "the release build-<sha12> of tag deployable"},
 			[]string{`set "updateChannel"`}},
 		{"existing config on stable", withConfig(`{"updateChannel": "stable"}`), nil,
 			[]string{"channel: stable (kept from", "the newest stable version"},
-			[]string{`set "updateChannel"`}},
+			[]string{`set "updateChannel"`, "while none is published"}},
+		{"--channel stable", t.TempDir(), []string{"--channel", "stable"},
+			[]string{"channel: stable (updateChannel stable", "the newest stable version"},
+			[]string{"while none is published"}},
 		{"--channel main", t.TempDir(), []string{"--channel", "main"},
 			[]string{"channel: main (updateChannel main", "tag deployable", `set "updateChannel" in`},
 			nil},
