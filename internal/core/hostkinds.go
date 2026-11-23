@@ -43,12 +43,16 @@ const (
 )
 
 // Adopted is a thread received with its owner's view and its history
-// with the times it happened (trans-host handover).
+// with the times it happened (trans-host handover). Project is the project
+// the sender chose for it ("" for none): the reduce files the thread in it
+// by hand, or by its folder when none is chosen (Filed,
+// V0.handover-filed); Thread's own project is not read.
 type Adopted struct {
 	Thread  *Thread
 	View    *View
 	History []Event
 	At      []time.Time
+	Project string
 }
 
 func init() {
@@ -88,6 +92,9 @@ func init() {
 		}
 		*r.T, *r.V = *CloneThread(a.Thread), *cloneView(a.View)
 		r.T.ID, r.V.Entity = in.Thread, in.Thread
+		// V0.handover-filed: the chosen project is a filing by hand; ReduceIn
+		// files the thread (Filed) right after this reduce.
+		r.T.ProjectID, r.T.ProjectManual = a.Project, a.Project != ""
 		return Result{Events: a.History, At: a.At}, nil
 	}
 	RegisterKind(&InputKind{Name: KindThreadHandedIn, From: observed, Makes: true, Untouched: true, Reduce: adoptReduce})

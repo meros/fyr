@@ -260,3 +260,27 @@ func TestFiled(t *testing.T) {
 		t.Errorf("a reduce without the host's projects filed %q", got.ProjectID)
 	}
 }
+
+// V0.handover-filed: a handed-in thread is filed from the Input's Project,
+// not from a project the received thread carries: a chosen project is a
+// filing by hand, no choice files it by its folder.
+func TestHandedInFiledFromTheInput(t *testing.T) {
+	ps := map[string]*Project{"p_a": {ID: "p_a", Folder: "/w/acme"}, "p_b": {ID: "p_b", Folder: "/w/beta"}}
+	for _, c := range []struct {
+		project, want string
+		manual        bool
+	}{{"", "p_a", false}, {"p_b", "p_b", true}} {
+		in := Input{Source: Observer(ObsHost), Kind: KindThreadHandedIn, Thread: "t_1", Args: Adopted{
+			Thread:  &Thread{ID: "t_x", Cwd: "/w/acme/app", ProjectID: "p_b", ProjectManual: true},
+			View:    &View{User: Owner},
+			Project: c.project,
+		}}
+		got, _, _, err := ReduceIn(Env{Projects: ps}, &Thread{ID: "t_1"}, nil, in, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ProjectID != c.want || got.ProjectManual != c.manual {
+			t.Fatalf("project %q: filed in %q manual=%v, want %q manual=%v", c.project, got.ProjectID, got.ProjectManual, c.want, c.manual)
+		}
+	}
+}
