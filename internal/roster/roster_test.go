@@ -477,3 +477,38 @@ func TestAnInstallsLaterStatementWinsWithinTheSameSecond(t *testing.T) {
 		}
 	}
 }
+
+// V0.owner-without-tailnet: the owner's login said only by an install that is
+// then removed stays: the remover says it again. No install takes it from
+// tailnet.Self any more, so without this the remaining installs would lose the
+// owner (and Tailscale Serve sign-in with it) on the removal. A later owner
+// login from the removed install still counts for nothing.
+func TestRemovalKeepsTheOwnerLoginTheRemovedAloneSaid(t *testing.T) {
+	a, b, c := newInst(t, "a"), newInst(t, "b"), newInst(t, "c")
+	a.r.Add(b.k.Public, "b", "", 1)
+	b.r.Add(a.k.Public, "a", "", 1)
+	a.r.Add(c.k.Public, "c", "", 1)
+	c.r.Add(a.k.Public, "a", "", 1)
+	b.r.SetOwnerLogin("owner@example.com") // only b says whose these are
+	sync2(a, b)
+	sync2(a, c)
+	if a.r.OwnerLogin() != "owner@example.com" || c.r.OwnerLogin() != "owner@example.com" {
+		t.Fatalf("owner before: a %q c %q", a.r.OwnerLogin(), c.r.OwnerLogin())
+	}
+	if err := a.r.Remove(b.k.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.r.OwnerLogin(); got != "owner@example.com" {
+		t.Fatalf("a lost the owner on removing b: %q", got)
+	}
+	sync2(a, c)
+	if got := c.r.OwnerLogin(); got != "owner@example.com" {
+		t.Fatalf("c lost the owner after the removal synced: %q", got)
+	}
+	// the removed b names another owner and offers it: void
+	b.r.SetOwnerLogin("intruder@example.com")
+	a.r.Merge(b.r.Statements())
+	if got := a.r.OwnerLogin(); got != "owner@example.com" {
+		t.Fatalf("a removed install changed the owner: %q", got)
+	}
+}
