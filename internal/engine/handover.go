@@ -35,10 +35,15 @@ func (e *Engine) Conversation(id string) (string, error) {
 		at := tn.At.In(time.Local).Format("2006-01-02 15:04")
 		switch tn.Kind {
 		case turnUser:
-			if strings.TrimSpace(tn.Text) == "" {
+			if strings.TrimSpace(tn.Text) == "" && len(tn.Files) == 0 {
 				continue
 			}
 			fmt.Fprintf(&b, "\n## %s · %s\n\n%s\n", speaker("Owner", tn.From), at, tn.Text)
+			// The new agent cannot see the images: list each file with
+			// its path so it can Read it.
+			for _, f := range tn.Files {
+				fmt.Fprintf(&b, "\nAttached: %s (%s) at %s\n", f.Name, f.MediaType, e.attachmentPath(f.ID))
+			}
 			n++
 		case turnAgent:
 			var parts []string
@@ -78,4 +83,15 @@ func toolLine(in any) string {
 		}
 	}
 	return ""
+}
+
+// attachmentPath is where an attachment's file is stored, or a note that it
+// is gone.
+func (e *Engine) attachmentPath(id string) string {
+	if e.Attach != nil {
+		if m, err := e.Attach.Get(id); err == nil && m.Path != "" {
+			return m.Path
+		}
+	}
+	return "(file no longer stored)"
 }

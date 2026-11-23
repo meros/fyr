@@ -17,6 +17,8 @@ type turn struct {
 	At   time.Time
 	// turnUser: the words and who sent them (see speaker).
 	From, Text string
+	// Files are the ids and names of the files the owner attached.
+	Files []file
 	// turnAgent: the top-level assistant message, its parts in order.
 	Parts []part
 	// turnHandover.
@@ -38,6 +40,9 @@ const (
 	turnEffect
 )
 
+// file is an attachment of a user message.
+type file struct{ ID, Name, MediaType string }
+
 // part is a text block or a tool call of an agent turn.
 type part struct {
 	Text  string // a text block; "" for a tool call
@@ -53,9 +58,17 @@ func readTurns(evs []store.Event) []turn {
 		t := turn{At: ev.At}
 		switch ev.Type {
 		case "user":
-			var d struct{ Text, From string }
+			var d struct {
+				Text, From  string
+				Attachments []struct {
+					ID, Name, MediaType string
+				}
+			}
 			json.Unmarshal(ev.Data, &d)
 			t.Kind, t.Text, t.From = turnUser, d.Text, d.From
+			for _, a := range d.Attachments {
+				t.Files = append(t.Files, file{a.ID, a.Name, a.MediaType})
+			}
 		case "msg":
 			var d struct {
 				Type   string `json:"type"`
