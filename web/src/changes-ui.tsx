@@ -41,10 +41,6 @@ type Mode = "since" | "whole";
 /** Lines drawn before "Show all": a 400 KB patch is about 10,000 lines. */
 const FIRST_LINES = 1500;
 
-function message(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
 export function ChangesView({ host, threadId, changes }: { host: HostId; threadId: string; changes?: Change[] }) {
   const source = useApi();
   const [data, setData] = useState<ChangesDTO | null>(null);
@@ -69,26 +65,21 @@ export function ChangesView({ host, threadId, changes }: { host: HostId; threadI
     setLoading(true);
     setError(null);
     setPatches({});
-    source.changes(host, threadId).then(
-      (c) => {
-        if (g !== gen.current) return;
-        setData(c);
-        setMarks({});
-        setLoading(false);
-        const look = lookOf(c);
-        if (look) shown.current = { threadId, look };
-        const m = first ? defaultMode(c) : mode;
-        if (first) setMode(m);
-        // Files that stay open reload their diff.
-        const list = m === "since" && c.since ? c.since.files : (c.files ?? []);
-        for (const path of open) if (list.some((f) => f.path === path)) fetchPatch(path, m, c, g);
-      },
-      (e) => {
-        if (g !== gen.current) return;
-        setError(message(e));
-        setLoading(false);
-      },
-    );
+    void source.changes(host, threadId).then((r) => {
+      if (g !== gen.current) return;
+      setLoading(false);
+      if (!r.ok) return setError(r.error);
+      const c = r.data;
+      setData(c);
+      setMarks({});
+      const look = lookOf(c);
+      if (look) shown.current = { threadId, look };
+      const m = first ? defaultMode(c) : mode;
+      if (first) setMode(m);
+      // Files that stay open reload their diff.
+      const list = m === "since" && c.since ? c.since.files : (c.files ?? []);
+      for (const path of open) if (list.some((f) => f.path === path)) fetchPatch(path, m, c, g);
+    });
   };
 
   const fetchPatch = (path: string, m: Mode, c: ChangesDTO | null = data, g = gen.current) => {
@@ -96,10 +87,9 @@ export function ChangesView({ host, threadId, changes }: { host: HostId; threadI
     // The since diff runs from the seen head; a seen commit that is gone falls back to the branch diff.
     const since = m === "since" && c?.since && c.since.mode !== "missing" ? c.since.head : undefined;
     setPatches((p) => ({ ...p, [key]: { kind: "loading" } }));
-    source.filePatch(host, threadId, path, since).then(
-      (p) => g === gen.current && setPatches((s) => ({ ...s, [key]: { kind: "ok", p } })),
-      (e) => g === gen.current && setPatches((s) => ({ ...s, [key]: { kind: "error", error: message(e) } })),
-    );
+    void source.filePatch(host, threadId, path, since).then((r) => {
+      if (g === gen.current) setPatches((s) => ({ ...s, [key]: r.ok ? { kind: "ok", p: r.data } : { kind: "error", error: r.error } }));
+    });
   };
 
   useEffect(() => {

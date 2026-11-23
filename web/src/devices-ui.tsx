@@ -14,10 +14,7 @@ export function useAuthState(api: Partial<DevicesApi>, live: boolean): { s: Auth
   const [err, setErr] = useState<string | null>(null);
   const load = () => {
     if (!api.authState) return;
-    api.authState().then(
-      (v) => (setS(v), setErr(null)),
-      (e) => setErr(String((e as Error).message ?? e)),
-    );
+    void api.authState().then((r) => (r.ok ? (setS(r.data), setErr(null)) : setErr(r.error)));
   };
   useEffect(() => {
     load();

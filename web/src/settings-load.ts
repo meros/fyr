@@ -14,6 +14,7 @@ import {
   type ProviderDTO,
 } from "./providers.ts";
 import { type SettingsProps } from "./settings-ui.tsx";
+import { failed, type Result } from "./api.ts";
 
 export type Run = (action: string, args: Record<string, unknown>) => Promise<string | null>;
 
@@ -49,55 +50,53 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
   const [slices, setSlices] = useState<Record<string, HostSlice>>({});
   const patch = (host: string, part: Partial<HostSlice>) => setSlices((s) => ({ ...s, [host]: { ...(s[host] ?? EMPTY_SLICE), ...part } }));
   const seen = (host: string, r: { readAt?: string }) => patch(host, { readAt: r.readAt ?? null });
+  /** One host's read; a part with no install id answers as a read that failed, and nothing is sent. */
+  const readOf = <T,>(host: string, read: (id: HostId) => Promise<Result<T>>): Promise<Result<T>> => {
+    let id: HostId;
+    try {
+      id = hid(host);
+    } catch (e) {
+      return Promise.resolve(failed((e as Error).message));
+    }
+    return read(id);
+  };
 
   const loadProviders = async (host: string) => {
-    try {
-      const [l, f] = await Promise.all([api.providers(hid(host)), api.providersFound(hid(host)).catch(() => ({ data: [] as FoundDTO[] }))]);
-      patch(host, { providers: l.data, found: f.data, provErr: null, readAt: l.readAt ?? null });
-    } catch (e) {
-      patch(host, { provErr: `Could not read the providers: ${(e as Error).message}.` });
-    }
+    const [l, f] = await Promise.all([readOf(host, (id) => api.providers(id)), readOf(host, (id) => api.providersFound(id))]);
+    if (!l.ok) return patch(host, { provErr: `Could not read the providers: ${l.error}.` });
+    patch(host, { providers: l.data, found: f.ok ? f.data : [], provErr: null, readAt: l.readAt ?? null });
   };
   const loadDeploy = async (host: string) => {
-    if (!api.autoDeploy) return patch(host, { deploy: null });
-    try {
-      const r = await api.autoDeploy(hid(host));
-      patch(host, { deploy: r.data.on, deployErr: null });
-      seen(host, r);
-    } catch (e) {
-      patch(host, { deployErr: `Could not read the auto-deploy setting: ${(e as Error).message}.` });
-    }
+    const read = api.autoDeploy?.bind(api);
+    if (!read) return patch(host, { deploy: null });
+    const r = await readOf(host, read);
+    if (!r.ok) return patch(host, { deployErr: `Could not read the auto-deploy setting: ${r.error}.` });
+    patch(host, { deploy: r.data.on, deployErr: null });
+    seen(host, r);
   };
   // V0.126 (#151): the update record; a host without one shows nothing.
   const loadUpdates = async (host: string) => {
-    if (!api.updates) return patch(host, { updates: null });
-    try {
-      // A host that never updated itself (a NixOS host) sends "updates": null from an older fyrd: an empty list.
-      const v = (await api.updates(hid(host))).data;
-      patch(host, { updates: { ...v, updates: v.updates ?? [] } });
-    } catch {
-      patch(host, { updates: null });
-    }
+    const read = api.updates?.bind(api);
+    if (!read) return patch(host, { updates: null });
+    const r = await readOf(host, read);
+    // A host that never updated itself (a NixOS host) sends "updates": null from an older fyrd: an empty list.
+    patch(host, { updates: r.ok ? { ...r.data, updates: r.data.updates ?? [] } : null });
   };
   const loadRepos = async (host: string) => {
-    if (!api.autoMerge) return patch(host, { repos: [] });
-    try {
-      const r = await api.autoMerge(hid(host));
-      patch(host, { repos: r.data, reposErr: null });
-      seen(host, r);
-    } catch (e) {
-      patch(host, { reposErr: `Could not read the auto-merge setting: ${(e as Error).message}.` });
-    }
+    const read = api.autoMerge?.bind(api);
+    if (!read) return patch(host, { repos: [] });
+    const r = await readOf(host, read);
+    if (!r.ok) return patch(host, { reposErr: `Could not read the auto-merge setting: ${r.error}.` });
+    patch(host, { repos: r.data, reposErr: null });
+    seen(host, r);
   };
   const loadSa = async (host: string) => {
-    if (!api.systemAgents) return;
-    try {
-      const r = await api.systemAgents(hid(host));
-      patch(host, { sa: r.data, saErr: null });
-      seen(host, r);
-    } catch (e) {
-      patch(host, { saErr: `Could not read the system agents: ${(e as Error).message}.` });
-    }
+    const read = api.systemAgents?.bind(api);
+    if (!read) return;
+    const r = await readOf(host, read);
+    if (!r.ok) return patch(host, { saErr: `Could not read the system agents: ${r.error}.` });
+    patch(host, { sa: r.data, saErr: null });
+    seen(host, r);
   };
   const loadAll = (host: string) => {
     void loadProviders(host);
@@ -197,7 +196,7 @@ export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[]):
     let live = true;
     void Promise.all(
       ids.map((h) =>
-        Promise.all([api.providers(h).then((r) => r.data), api.systemAgents ? api.systemAgents(h).then((r) => r.data).catch(() => null) : null]).catch(() => [[], null] as const),
+        Promise.all([api.providers(h).then((r) => (r.ok ? r.data : [])), api.systemAgents ? api.systemAgents(h).then((r) => (r.ok ? r.data : null)) : null]),
       ),
     ).then((parts) => live && setV(providersNeed(parts.flatMap(([l]) => l), parts.reduce((n, [, sa]) => n + (sa?.jobs.filter((j) => j.error).length ?? 0), 0))));
     return () => void (live = false);

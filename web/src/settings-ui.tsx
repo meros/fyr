@@ -120,7 +120,7 @@ export function Settings(p: SettingsProps) {
   useEffect(() => {
     if (!setupHostId || !p.api.setup) return;
     let alive = true;
-    void p.api.setup(setupHostId).then((r) => alive && setSetupRep(r.data)).catch(() => undefined);
+    void p.api.setup(setupHostId).then((r) => alive && r.ok && setSetupRep(r.data));
     return () => {
       alive = false;
     };

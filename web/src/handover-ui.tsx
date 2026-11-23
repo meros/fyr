@@ -39,13 +39,9 @@ interface HandoverProps {
 }
 
 async function fetchPlan(api: ReturnType<typeof useApi>, t: Thread, profile: string): Promise<HandoverPlan> {
-  try {
-    const p = await api.handoverPlan?.(t.hostId, t.id, profile);
-    if (p) return p;
-  } catch {
-    /* the mock client and old hosts have no plan */
-  }
-  return planGuess(t);
+  // The mock client and old hosts have no plan: a guess stands in.
+  const r = await api.handoverPlan?.(t.hostId, t.id, profile);
+  return r?.ok ? r.data : planGuess(t);
 }
 
 export function HandoverForm(p: HandoverProps & { phone?: boolean }) {

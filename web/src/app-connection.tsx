@@ -9,6 +9,7 @@ import {
   applySnapshot,
   liveEvent,
   mergeEvents,
+  openTimeline,
   resumeSeq,
   resumed,
   setConn,
@@ -189,13 +190,11 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
     const host = hostOfId(id);
     if (!first || !host) return;
     // A page that cannot be read leaves the timeline as it is; the button is there to press again.
-    void api
-      .eventsBefore(host, id, first, PAGE)
-      .then((evs) => {
-        setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
-        setStore((s) => mergeEvents(s, id, evs));
-      })
-      .catch(() => {});
+    void api.eventsBefore(host, id, first, PAGE).then((r) => {
+      if (!r.ok) return;
+      setEarlier((m) => ({ ...m, [id]: r.data.length >= PAGE }));
+      setStore((s) => mergeEvents(s, id, r.data));
+    });
   };
 
   // Load the open thread's events; after a reconnect fetch what was missed.
@@ -231,26 +230,30 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
     const after = resumeSeq(store, openId);
     const known = !!store.events[openId];
     const id = openId;
+    // V0.event-store: the open timeline is the newest kept; the oldest beyond EVENTS_KEPT leave memory.
+    setStore((s) => openTimeline(s, id));
     void (async () => {
       // V0.38: the device's copy draws at once; the host sends only what is newer.
       const stored = !known && api.cache ? await cache.events(id) : null;
       if (cancelled) return;
       if (stored?.length) setStore((s) => (s.events[id] ? s : mergeEvents(s, id, stored, true)));
       const from = known ? after : stored?.length ? stored[stored.length - 1].seq : 0;
-      try {
-        const host = hostOfId(id);
-        if (!host) throw new Error("no host"); // a thread the store does not keep: nothing to read it from
-        const evs = await api.events(host, id, from, PAGE);
-        if (cancelled) return;
-        if (!known && !stored?.length) setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
-        if (!known && stored?.length) {
-          const merged = mergeEventLists(stored, evs, PAGE, evs.length >= PAGE);
-          if (evs.length >= PAGE) setEarlier((m) => ({ ...m, [id]: true }));
-          setStore((s) => mergeEvents(s, id, merged, true));
-        } else setStore((s) => resumed(mergeEvents(s, id, evs, !known), id, from));
-      } catch {
-        if (!cancelled && !known && !stored?.length) setStore((s) => mergeEvents(s, id, [], true));
+      const host = hostOfId(id);
+      // A thread the store does not keep has no host to read it from.
+      const r = host ? await api.events(host, id, from, PAGE) : null;
+      if (cancelled) return;
+      if (!r?.ok) {
+        // Unreadable: a timeline with nothing to draw is shown empty rather than loading for ever.
+        if (!known && !stored?.length) setStore((s) => mergeEvents(s, id, [], true));
+        return;
       }
+      const evs = r.data;
+      if (!known && !stored?.length) setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
+      if (!known && stored?.length) {
+        const merged = mergeEventLists(stored, evs, PAGE, evs.length >= PAGE);
+        if (evs.length >= PAGE) setEarlier((m) => ({ ...m, [id]: true }));
+        setStore((s) => mergeEvents(s, id, merged, true));
+      } else setStore((s) => resumed(mergeEvents(s, id, evs, !known), id, from));
     })();
     return () => {
       cancelled = true;

@@ -219,7 +219,10 @@ export function previewsOf(events: FyrEvent[], host?: HostId, urls?: ContentUrls
   return out;
 }
 
-export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): Item[] {
+/** V0.event-store: the conversation as a fold over the timeline. `feed` takes the next events, oldest first, and
+ *  `items` answers the conversation so far; feeding a timeline in parts gives what feeding it whole gives. `items`
+ *  changes nothing the builder keeps, so it can be asked after every feed. */
+export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { feed(events: readonly FyrEvent[]): void; items(outbox?: string[]): Item[] } {
   const details = !!opts.details;
   const cwd = opts.cwd ?? "";
   const items: Item[] = [];
@@ -259,237 +262,281 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
     sub: [],
   });
 
-  for (const e of events) {
-    const at = Date.parse(e.at) || 0;
-    now = at;
-    const key = String(e.seq);
-    switch (e.type) {
-      case "run.started":
-        run++;
-        inRun = true;
-        break;
-      case "user": {
-        const text = str(e.data?.text);
-        // Fyr's own messages to the agent are system notes, not the user's words: hidden unless details are on.
-        if (/^\[Fyr\]/.test(text)) {
-          if (details) pushItem({ kind: "note", key, text, line: firstLine(text.replace(/^\[Fyr\]\s*/, "")) });
+  const feed = (events: readonly FyrEvent[]) => {
+    for (const e of events) {
+      const at = Date.parse(e.at) || 0;
+      now = at;
+      const key = String(e.seq);
+      switch (e.type) {
+        case "run.started":
+          run++;
+          inRun = true;
+          break;
+        case "user": {
+          const text = str(e.data?.text);
+          // Fyr's own messages to the agent are system notes, not the user's words: hidden unless details are on.
+          if (/^\[Fyr\]/.test(text)) {
+            if (details) pushItem({ kind: "note", key, text, line: firstLine(text.replace(/^\[Fyr\]\s*/, "")) });
+            break;
+          }
+          const id = str(e.data?.id);
+          // V0.128: a message stored with the old View-tab mark ("view-typed", V0.49) is the owner's ordinary message.
+          const from = str(e.data?.from);
+          const it: Extract<Item, { kind: "user" }> = {
+            kind: "user",
+            key,
+            text: str(e.data?.text),
+            images: Number(e.data?.images) || 0,
+            from: from && from !== "view-typed" ? from : undefined,
+            attachments: attachmentsOf(e.data?.attachments),
+            id: id || undefined,
+            delivery: id ? "sent" : "",
+            pending: false,
+            lastRead: false,
+          };
+          if (id) {
+            held.set(id, it);
+            heldAt.set(id, { index: items.length, meta: meta() });
+          } else pushItem(it);
           break;
         }
-        const id = str(e.data?.id);
-        // V0.128: a message stored with the old View-tab mark ("view-typed", V0.49) is the owner's ordinary message.
-        const from = str(e.data?.from);
-        const it: Extract<Item, { kind: "user" }> = {
-          kind: "user",
-          key,
-          text: str(e.data?.text),
-          images: Number(e.data?.images) || 0,
-          from: from && from !== "view-typed" ? from : undefined,
-          attachments: attachmentsOf(e.data?.attachments),
-          id: id || undefined,
-          delivery: id ? "sent" : "",
-          pending: false,
-          lastRead: false,
-        };
-        if (id) {
-          held.set(id, it);
-          heldAt.set(id, { index: items.length, meta: meta() });
-        } else pushItem(it);
-        break;
-      }
-      case "message.state": {
-        const it = held.get(str(e.data?.id));
-        const st = str(e.data?.state);
-        if (!it) break;
-        if (st === "queued") it.delivery = "queued";
-        else if (st === "read" || st === "cancelled" || st === "lost") {
-          it.delivery = st;
-          held.delete(it.id!);
-          pushItem(it);
+        case "message.state": {
+          const it = held.get(str(e.data?.id));
+          const st = str(e.data?.state);
+          if (!it) break;
+          if (st === "queued") it.delivery = "queued";
+          else if (st === "read" || st === "cancelled" || st === "lost") {
+            it.delivery = st;
+            held.delete(it.id!);
+            pushItem(it);
+          }
+          break;
         }
-        break;
-      }
-      case "msg": {
-        const d = e.data ?? {};
-        const parent: string | null = d.parent_tool_use_id ?? null;
-        const blocks = blocksOf(d);
-        if (parent) {
-          const host = calls.get(parent);
-          if (!host) break;
-          host.subMessages++;
+        case "msg": {
+          const d = e.data ?? {};
+          const parent: string | null = d.parent_tool_use_id ?? null;
+          const blocks = blocksOf(d);
+          if (parent) {
+            const host = calls.get(parent);
+            if (!host) break;
+            host.subMessages++;
+            for (const b of blocks) {
+              if (b.type === "tool_use") {
+                const c = newCall(b, at);
+                calls.set(c.id, c);
+                const last = host.sub[host.sub.length - 1];
+                if (last?.kind === "calls") last.calls.push(c);
+                else host.sub.push({ kind: "calls", calls: [c] });
+              } else if (b.type === "tool_result") {
+                finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
+              } else if (b.type === "text" && d.type === "assistant" && b.text?.trim()) {
+                host.sub.push({ kind: "text", text: b.text });
+              }
+            }
+            break;
+          }
           for (const b of blocks) {
-            if (b.type === "tool_use") {
+            if (d.type === "assistant" && b.type === "text") {
+              if (b.text?.trim()) pushItem({ kind: "assistant", key: `${key}.${items.length}`, text: b.text, ...(forcedTurn ? { quiet: true } : {}) });
+            } else if (d.type === "assistant" && b.type === "tool_use") {
               const c = newCall(b, at);
               calls.set(c.id, c);
-              const last = host.sub[host.sub.length - 1];
-              if (last?.kind === "calls") last.calls.push(c);
-              else host.sub.push({ kind: "calls", calls: [c] });
+              if (!group) {
+                group = { kind: "tools", key: `${key}.${items.length}`, calls: [], ...meta() };
+                items.push(group);
+              }
+              group.calls.push(c);
             } else if (b.type === "tool_result") {
               finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
-            } else if (b.type === "text" && d.type === "assistant" && b.text?.trim()) {
-              host.sub.push({ kind: "text", text: b.text });
             }
+            // thinking and image blocks are not shown in v0
           }
           break;
         }
-        for (const b of blocks) {
-          if (d.type === "assistant" && b.type === "text") {
-            if (b.text?.trim()) pushItem({ kind: "assistant", key: `${key}.${items.length}`, text: b.text, ...(forcedTurn ? { quiet: true } : {}) });
-          } else if (d.type === "assistant" && b.type === "tool_use") {
-            const c = newCall(b, at);
-            calls.set(c.id, c);
-            if (!group) {
-              group = { kind: "tools", key: `${key}.${items.length}`, calls: [], ...meta() };
-              items.push(group);
-            }
-            group.calls.push(c);
-          } else if (b.type === "tool_result") {
-            finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
-          }
-          // thinking and image blocks are not shown in v0
+        case "view.forced":
+          forcedTurn = true;
+          break;
+        case "run.ended": {
+          forcedTurn = false;
+          const d = e.data ?? {};
+          pushItem({
+            kind: "run",
+            key,
+            failure: d.failure ?? null,
+            interrupted: !!d.interrupted,
+            durationMs: typeof d.durationMs === "number" ? d.durationMs : undefined,
+            compact: !details,
+          });
+          inRun = false;
+          break;
         }
-        break;
+        case "preview": {
+          const card = previewCard(e.seq, e.at, e.data, opts.host, opts.urls);
+          if (card) pushItem({ kind: "preview", key, card });
+          break;
+        }
+        case "task": {
+          // The Agents strip carries starts and finishes; only a failed agent gets a line by default, and V0.195's quiet wait.
+          const failed = e.data?.kind === "ended" && e.data?.status === "failed";
+          if (details || failed || e.data?.kind === "quiet") pushItem({ kind: "task", key, text: taskEventText(e.data ?? {}), status: str(e.data?.status), started: e.data?.kind === "started" });
+          break;
+        }
+        case "effect.result": {
+          const text = str(e.data?.text);
+          pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
+          break;
+        }
+        case "tool.refused": {
+          // V0.133: the agent CLI refused a tool call without asking Fyr (its
+          // input was closed); one failed line, so "stopped at your request"
+          // is not read as the owner's doing.
+          const tool = str(e.data?.tool) || "A tool call";
+          const why = str(e.data?.why) || "The agent CLI refused it without asking Fyr; not the owner.";
+          pushItem({ kind: "effect", key, action: "refused", ok: false, text: why, line: `${tool} was refused without asking you` });
+          break;
+        }
+        case "agent.unresponsive": {
+          // V0.143: the agent process took nothing Fyr wrote; one failed line with the reason.
+          const reason = str(e.data?.reason) || "it took nothing Fyr wrote";
+          pushItem({ kind: "effect", key, action: "unresponsive", ok: false, text: reason, line: `The agent stopped responding: ${reason}` });
+          break;
+        }
+        case "agent.restarted": {
+          // V0.143: Fyr ended the process and resumed the session; it names the background tasks that ended with it.
+          const why = str(e.data?.why);
+          const tasks = Array.isArray(e.data?.tasks) ? (e.data!.tasks as unknown[]).map(String) : [];
+          const text = [why && `Why: ${why}.`, tasks.length ? `Background tasks ended: ${tasks.join(", ")}.` : "", "The unread messages go to the new process."].filter(Boolean).join("\n");
+          pushItem({ kind: "effect", key, action: "restarted", ok: true, text, line: tasks.length ? `Agent restarted; ended ${tasks.join(", ")}` : "Agent restarted" });
+          break;
+        }
+        case "change": {
+          // V0.59: a change tool call, one line; the Changes tab holds the record.
+          const line = changeEventLine(e.data);
+          pushItem({ kind: "effect", key, action: "change", ok: true, text: line, line });
+          break;
+        }
+        case "run.requested":
+          pushItem({ kind: "runcard", key, action: str(e.data?.action) });
+          break;
+        case "action": {
+          // V0.60: a press and its result; the output is the text.
+          const a = actionEventLine(e.data);
+          pushItem({ kind: "effect", key, action: "action", ok: a.ok, text: str(e.data?.output) || a.line, line: a.line });
+          break;
+        }
+        case "handover":
+          pushItem({
+            kind: "handover",
+            key,
+            from: str(e.data?.from),
+            to: str(e.data?.to),
+            rung: str(e.data?.rung),
+            atIso: e.at,
+            ...(str(e.data?.note) ? { note: str(e.data?.note) } : {}),
+            ...(str(e.data?.fromHost) ? { fromHost: str(e.data?.fromHost) } : {}),
+            ...(str(e.data?.fromHostId) ? { fromHostId: str(e.data?.fromHostId) } : {}),
+            ...(str(e.data?.fromThread) ? { fromThread: str(e.data?.fromThread) } : {}),
+            ...(str(e.data?.toHost) ? { toHost: str(e.data?.toHost) } : {}),
+            ...(str(e.data?.toHostId) ? { toHostId: str(e.data?.toHostId) } : {}),
+            ...(str(e.data?.toThread) ? { toThread: str(e.data?.toThread) } : {}),
+          });
+          break;
+        case "effect.error": {
+          // V0.45: a handover that could not start; other effect errors stay for tool details.
+          const err = str(e.data?.error);
+          if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err)}` });
+          // V0.108: a title call that failed; the host's line says the title stays.
+          if (e.data?.kind === "title") pushItem({ kind: "effect", key, action: "title", ok: false, text: err, line: firstLine(err) });
+          // V0.111: a deploy ask that Fyr did not approve by itself, or that waits for another deploy.
+          if (e.data?.kind === "autoDeploy") pushItem({ kind: "effect", key, action: "autoDeploy", ok: false, text: err, line: firstLine(err) });
+          break;
+        }
+        case "slot":
+          // V0.164: the notice about undeclared heavy work; the other slot events stay out of the log.
+          if (str(e.data?.undeclared)) pushItem({ kind: "undeclared", key, text: str(e.data?.undeclared), line: toldLine(e.data ?? {}) });
+          // V0.176: Fyr ended the thread's leftover processes.
+          if (str(e.data?.leftovers)) pushItem({ kind: "note", key, text: str(e.data?.leftovers), line: str(e.data?.leftovers).replace(/^Fyr /, "") }); // shown as "Fyr: ended …"
+          break;
+        case "decision.closed":
+          // V0.ask-cancel: a card the owner closed without an answer is its own line, not an answer.
+          if (e.data?.cancelled === true) pushItem({ kind: "answer", key, text: str(e.data?.answer), cancelled: true });
+          else if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
+          break;
+        case "decision.autoApproved": {
+          // V0.tool-approval-judge: quiet audit record folded with process work (V0.41).
+          const tool = str(e.data?.tool);
+          const summary = str(e.data?.summary);
+          const reason = str(e.data?.reason);
+          const model = str(e.data?.model);
+          const what = summary && summary !== tool ? `${tool} (${summary})` : tool || "tool call";
+          const line = reason ? `Auto-approved ${what} — ${reason}` : `Auto-approved ${what}`;
+          const text = model ? `${line} [${model}]` : line;
+          pushItem({ kind: "note", key, text, line });
+          break;
+        }
+        default:
+          break; // decision.opened and unknown types are not shown in the log
       }
-      case "view.forced":
-        forcedTurn = true;
-        break;
-      case "run.ended": {
-        forcedTurn = false;
-        const d = e.data ?? {};
-        pushItem({
-          kind: "run",
-          key,
-          failure: d.failure ?? null,
-          interrupted: !!d.interrupted,
-          durationMs: typeof d.durationMs === "number" ? d.durationMs : undefined,
-          compact: !details,
-        });
-        inRun = false;
-        break;
-      }
-      case "preview": {
-        const card = previewCard(e.seq, e.at, e.data, opts.host, opts.urls);
-        if (card) pushItem({ kind: "preview", key, card });
-        break;
-      }
-      case "task": {
-        // The Agents strip carries starts and finishes; only a failed agent gets a line by default, and V0.195's quiet wait.
-        const failed = e.data?.kind === "ended" && e.data?.status === "failed";
-        if (details || failed || e.data?.kind === "quiet") pushItem({ kind: "task", key, text: taskEventText(e.data ?? {}), status: str(e.data?.status), started: e.data?.kind === "started" });
-        break;
-      }
-      case "effect.result": {
-        const text = str(e.data?.text);
-        pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
-        break;
-      }
-      case "tool.refused": {
-        // V0.133: the agent CLI refused a tool call without asking Fyr (its
-        // input was closed); one failed line, so "stopped at your request"
-        // is not read as the owner's doing.
-        const tool = str(e.data?.tool) || "A tool call";
-        const why = str(e.data?.why) || "The agent CLI refused it without asking Fyr; not the owner.";
-        pushItem({ kind: "effect", key, action: "refused", ok: false, text: why, line: `${tool} was refused without asking you` });
-        break;
-      }
-      case "agent.unresponsive": {
-        // V0.143: the agent process took nothing Fyr wrote; one failed line with the reason.
-        const reason = str(e.data?.reason) || "it took nothing Fyr wrote";
-        pushItem({ kind: "effect", key, action: "unresponsive", ok: false, text: reason, line: `The agent stopped responding: ${reason}` });
-        break;
-      }
-      case "agent.restarted": {
-        // V0.143: Fyr ended the process and resumed the session; it names the background tasks that ended with it.
-        const why = str(e.data?.why);
-        const tasks = Array.isArray(e.data?.tasks) ? (e.data!.tasks as unknown[]).map(String) : [];
-        const text = [why && `Why: ${why}.`, tasks.length ? `Background tasks ended: ${tasks.join(", ")}.` : "", "The unread messages go to the new process."].filter(Boolean).join("\n");
-        pushItem({ kind: "effect", key, action: "restarted", ok: true, text, line: tasks.length ? `Agent restarted; ended ${tasks.join(", ")}` : "Agent restarted" });
-        break;
-      }
-      case "change": {
-        // V0.59: a change tool call, one line; the Changes tab holds the record.
-        const line = changeEventLine(e.data);
-        pushItem({ kind: "effect", key, action: "change", ok: true, text: line, line });
-        break;
-      }
-      case "run.requested":
-        pushItem({ kind: "runcard", key, action: str(e.data?.action) });
-        break;
-      case "action": {
-        // V0.60: a press and its result; the output is the text.
-        const a = actionEventLine(e.data);
-        pushItem({ kind: "effect", key, action: "action", ok: a.ok, text: str(e.data?.output) || a.line, line: a.line });
-        break;
-      }
-      case "handover":
-        pushItem({
-          kind: "handover",
-          key,
-          from: str(e.data?.from),
-          to: str(e.data?.to),
-          rung: str(e.data?.rung),
-          atIso: e.at,
-          ...(str(e.data?.note) ? { note: str(e.data?.note) } : {}),
-          ...(str(e.data?.fromHost) ? { fromHost: str(e.data?.fromHost) } : {}),
-          ...(str(e.data?.fromHostId) ? { fromHostId: str(e.data?.fromHostId) } : {}),
-          ...(str(e.data?.fromThread) ? { fromThread: str(e.data?.fromThread) } : {}),
-          ...(str(e.data?.toHost) ? { toHost: str(e.data?.toHost) } : {}),
-          ...(str(e.data?.toHostId) ? { toHostId: str(e.data?.toHostId) } : {}),
-          ...(str(e.data?.toThread) ? { toThread: str(e.data?.toThread) } : {}),
-        });
-        break;
-      case "effect.error": {
-        // V0.45: a handover that could not start; other effect errors stay for tool details.
-        const err = str(e.data?.error);
-        if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err)}` });
-        // V0.108: a title call that failed; the host's line says the title stays.
-        if (e.data?.kind === "title") pushItem({ kind: "effect", key, action: "title", ok: false, text: err, line: firstLine(err) });
-        // V0.111: a deploy ask that Fyr did not approve by itself, or that waits for another deploy.
-        if (e.data?.kind === "autoDeploy") pushItem({ kind: "effect", key, action: "autoDeploy", ok: false, text: err, line: firstLine(err) });
-        break;
-      }
-      case "slot":
-        // V0.164: the notice about undeclared heavy work; the other slot events stay out of the log.
-        if (str(e.data?.undeclared)) pushItem({ kind: "undeclared", key, text: str(e.data?.undeclared), line: toldLine(e.data ?? {}) });
-        // V0.176: Fyr ended the thread's leftover processes.
-        if (str(e.data?.leftovers)) pushItem({ kind: "note", key, text: str(e.data?.leftovers), line: str(e.data?.leftovers).replace(/^Fyr /, "") }); // shown as "Fyr: ended …"
-        break;
-      case "decision.closed":
-        // V0.ask-cancel: a card the owner closed without an answer is its own line, not an answer.
-        if (e.data?.cancelled === true) pushItem({ kind: "answer", key, text: str(e.data?.answer), cancelled: true });
-        else if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
-        break;
-      case "decision.autoApproved": {
-        // V0.tool-approval-judge: quiet audit record folded with process work (V0.41).
-        const tool = str(e.data?.tool);
-        const summary = str(e.data?.summary);
-        const reason = str(e.data?.reason);
-        const model = str(e.data?.model);
-        const what = summary && summary !== tool ? `${tool} (${summary})` : tool || "tool call";
-        const line = reason ? `Auto-approved ${what} — ${reason}` : `Auto-approved ${what}`;
-        const text = model ? `${line} [${model}]` : line;
-        pushItem({ kind: "note", key, text, line });
-        break;
-      }
-      default:
-        break; // decision.opened and unknown types are not shown in the log
     }
-  }
-  // The host's outbox is the truth: a held message it no longer holds was read (its read event may
-  // never have reached this device). It goes back where it was sent, not to the end (found live).
-  const holds = opts.outbox ? new Set(opts.outbox) : null;
-  if (holds) {
-    const back = [...held.values()].filter((it) => !holds.has(it.id!)).map((it) => ({ it, at: heldAt.get(it.id!)! }));
-    for (const { it, at } of back.sort((a, b) => b.at.index - a.at.index)) {
-      items.splice(at.index, 0, { ...at.meta, ...it, delivery: "read", pending: false });
-      held.delete(it.id!);
+  };
+
+  const result = (outbox?: string[]): Item[] => {
+    const out0 = items.slice();
+    const waiting = new Map(held);
+    // The host's outbox is the truth: a held message it no longer holds was read (its read event may
+    // never have reached this device). It goes back where it was sent, not to the end (found live).
+    const holds = outbox ? new Set(outbox) : null;
+    if (holds) {
+      const back = [...waiting.values()].filter((it) => !holds.has(it.id!)).map((it) => ({ it, at: heldAt.get(it.id!)! }));
+      for (const { it, at } of back.sort((a, b) => b.at.index - a.at.index)) {
+        out0.splice(at.index, 0, { ...at.meta, ...it, delivery: "read", pending: false });
+        waiting.delete(it.id!);
+      }
     }
-  }
-  const out = calmTools(items);
-  let last: Extract<Item, { kind: "user" }> | undefined;
-  for (const it of out) if (it.kind === "user" && it.delivery === "read" && !it.from) last = it;
-  if (last) last.lastRead = true;
-  for (const it of held.values()) out.push({ ...it, pending: true });
-  return out;
+    const out = calmTools(out0);
+    let last = -1;
+    out.forEach((it, i) => {
+      if (it.kind === "user" && it.delivery === "read" && !it.from) last = i;
+    });
+    if (last >= 0) out[last] = { ...(out[last] as Extract<Item, { kind: "user" }>), lastRead: true };
+    for (const it of waiting.values()) out.push({ ...it, pending: true });
+    return out;
+  };
+  return { feed, items: result };
+}
+
+/** The conversation of a whole timeline. */
+export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): Item[] {
+  const b = conversationBuilder(opts);
+  b.feed(events);
+  return b.items(opts.outbox);
+}
+
+/** V0.event-store: a builder kept across renders. A timeline that only grew at its end (every event before is the
+ *  same object, as `mergeSeq` keeps them) feeds only the new events; any other change, or other options, builds
+ *  again from the start. */
+export function conversationCache(): (events: readonly FyrEvent[], opts?: BuildOptions) => Item[] {
+  let b: ReturnType<typeof conversationBuilder> | null = null;
+  let fed: readonly FyrEvent[] = [];
+  let was: BuildOptions = {};
+  return (events, opts = {}) => {
+    const same = b && opts.details === was.details && opts.cwd === was.cwd && opts.host === was.host && opts.urls === was.urls;
+    if (!b || !same || !grewFrom(fed, events)) {
+      b = conversationBuilder(opts);
+      fed = [];
+    }
+    b.feed(events.slice(fed.length));
+    fed = events;
+    was = opts;
+    return b.items(opts.outbox);
+  };
+}
+
+/** `next` is `prev` with events added at its end. */
+function grewFrom(prev: readonly FyrEvent[], next: readonly FyrEvent[]): boolean {
+  if (next.length < prev.length) return false;
+  for (let i = 0; i < prev.length; i++) if (prev[i] !== next[i]) return false;
+  return true;
 }
 
 /** V0.33: the quiet word under a message: Waiting, Sent, Read (the last read one only), Cancelled, Not delivered. */

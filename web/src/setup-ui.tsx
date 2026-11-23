@@ -19,12 +19,9 @@ export function SetupInboxCard({ hosts, projectCount, phone, onOpen }: { hosts: 
   useEffect(() => {
     if (!hostId || !api.setup) return;
     let alive = true;
-    void api
-      .setup(hostId)
-      .then((r) => {
-        if (alive) setReport(r.data);
-      })
-      .catch(() => undefined);
+    void api.setup(hostId).then((r) => {
+      if (alive && r.ok) setReport(r.data);
+    });
     return () => {
       alive = false;
     };
@@ -67,14 +64,11 @@ export function SetupPage({
 
   const load = async () => {
     if (!host || !api.setup) return;
-    try {
-      const r = await api.setup(host);
-      setReport(r.data);
-      setGhAuth(r.data.ghAuth ?? null);
-      setErr(null);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
+    const r = await api.setup(host);
+    if (!r.ok) return setErr(r.error);
+    setReport(r.data);
+    setGhAuth(r.data.ghAuth ?? null);
+    setErr(null);
   };
 
   useEffect(() => {

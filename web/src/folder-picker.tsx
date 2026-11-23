@@ -5,15 +5,16 @@ import type { HostId } from "./hostid.ts";
 import { createContext } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { FsDir, FsListing } from "./types.ts";
+import type { Result } from "./api.ts";
 import { breadcrumbs, complete, completions, filterSections, folderNameError, isPathQuery, joinPath, splitPath, visibleDirs, type PickerSection } from "./folders.ts";
 import { tildePath } from "./paths.ts";
 
-/** The host calls the picker needs (api.ts implements them). */
+/** The host calls the picker needs (api.ts implements them; none rejects). */
 export interface FsApi {
-  fsList(path: string): Promise<FsListing>;
-  fsRecent(): Promise<FsDir[]>;
-  fsRepos(): Promise<FsDir[]>;
-  fsMkdir(parent: string, name: string): Promise<string>;
+  fsList(path: string): Promise<Result<FsListing>>;
+  fsRecent(): Promise<Result<FsDir[]>>;
+  fsRepos(): Promise<Result<FsDir[]>>;
+  fsMkdir(parent: string, name: string): Promise<Result<string>>;
 }
 
 export interface PickOptions {
@@ -62,23 +63,20 @@ export function FolderPicker({ fs, first, onPick, autoFocus = true }: { fs: FsAp
 
   const go = async (path: string, thenQ?: string) => {
     want.current = path;
-    try {
-      const l = await fs.fsList(path);
-      if (want.current !== path) return;
-      setListing(l);
-      setErr(null);
-      if (thenQ !== undefined) setQ(thenQ);
-      if (!home && (path === "~" || path === "")) setHome(l.path);
-    } catch (e) {
-      if (want.current === path) setErr(e instanceof Error ? e.message : String(e));
-    }
+    const r = await fs.fsList(path);
+    if (want.current !== path) return;
+    if (!r.ok) return setErr(r.error);
+    setListing(r.data);
+    setErr(null);
+    if (thenQ !== undefined) setQ(thenQ);
+    if (!home && (path === "~" || path === "")) setHome(r.data.path);
   };
 
   useEffect(() => {
     if (autoFocus) field.current?.focus();
-    fs.fsList("~").then((l) => (setHome(l.path), setListing((cur) => cur ?? l)), (e) => setErr(String(e?.message ?? e)));
-    fs.fsRecent().then(setRecent, () => setRecent([]));
-    fs.fsRepos().then(setRepos, () => setRepos([]));
+    void fs.fsList("~").then((r) => (r.ok ? (setHome(r.data.path), setListing((cur) => cur ?? r.data)) : setErr(r.error)));
+    void fs.fsRecent().then((r) => setRecent(r.ok ? r.data : []));
+    void fs.fsRepos().then((r) => setRepos(r.ok ? r.data : []));
   }, []);
 
   const pathMode = isPathQuery(q);
@@ -159,14 +157,11 @@ export function FolderPicker({ fs, first, onPick, autoFocus = true }: { fs: FsAp
     if (!listing || naming === null) return;
     const bad = folderNameError(naming, listing.dirs.map((d) => d.name));
     if (bad) return setErr(bad);
-    try {
-      const path = await fs.fsMkdir(listing.path, naming.trim());
-      setNaming(null);
-      setErr(null);
-      await go(path, pathMode ? tildePath(path, home) + "/" : "");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
+    const r = await fs.fsMkdir(listing.path, naming.trim());
+    if (!r.ok) return setErr(r.error);
+    setNaming(null);
+    setErr(null);
+    await go(r.data, pathMode ? tildePath(r.data, home) + "/" : "");
   };
 
   const crumbs = listing ? breadcrumbs(listing.path, home) : [];

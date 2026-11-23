@@ -65,7 +65,7 @@ export function chipDone(chips: Chip[], key: string, r: UploadReply): Chip[] {
 /** `status` is the HTTP status, or null when the host could not be reached. */
 export function uploadError(status: number | null, message?: string): string {
   if (status === 413) return "Over 25 MB";
-  if (status === null) return "Upload failed: Fyr is not reachable";
+  if (status === null) return message ? `Upload failed: ${message}` : "Upload failed: Fyr is not reachable";
   return message ? `Upload failed: ${message}` : `Upload failed (HTTP ${status})`;
 }
 

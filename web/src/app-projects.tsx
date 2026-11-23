@@ -13,6 +13,7 @@ import { useConfirmHost } from "./confirm-ui.tsx";
 import { type Directory } from "./project-ui.tsx";
 import { expandOrder, findProject, memberOn, moveToast, recordOf, splitSharedPatch } from "./projects.ts";
 import { FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
+import { failed } from "./api.ts";
 import { hostOfflineNote, multiHost } from "./hosts.ts";
 import { asHostId, type HostId } from "./hostid.ts";
 import { restartNowAsk } from "./deploy.ts";
@@ -136,7 +137,7 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
   // Slice 2b: by install id (V0.207: Settings may name a hidden host); a picker opened for no host says so.
   const pickId = folderPick?.host;
   const pickHost = fullStore.hostList.find((h) => h.id === pickId)?.name ?? "";
-  const noHost = () => Promise.reject(new Error("no host to read folders from"));
+  const noHost = () => Promise.resolve(failed("No host to read folders from"));
   const pickFs: FsApi = pickId ? { fsList: (p) => api.fsList(pickId, p), fsRecent: () => api.fsRecent(pickId), fsRepos: () => api.fsRepos(pickId), fsMkdir: (a, b) => api.fsMkdir(pickId, a, b) } : { fsList: noHost, fsRecent: noHost, fsRepos: noHost, fsMkdir: noHost };
   const pickTitle = `${folderPick?.title ?? "Pick a folder"}${pickHost && multiHost(fullStore.hostList) ? ` on ${pickHost}` : ""}`;
   const pickNote = hostOfflineNote(pickId, fullStore.hostList, now);

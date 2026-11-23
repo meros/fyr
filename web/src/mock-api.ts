@@ -1,7 +1,7 @@
 // The mock Api for ?mock=…: fixtures and a tiny in-memory fyrd (src/mock.ts). api.ts loads this module with
 // import() only when a mock scenario is set, so none of it is in the production bundle (#42).
 
-import { newCommandId, type Api, type UploadResult } from "./api.ts";
+import { failed, newCommandId, type Api, type Result, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab } from "./mock.ts";
 import { mockChanges, mockFilePatch } from "./mock-changes.ts";
@@ -82,10 +82,18 @@ export function createMockApi(scenario: string): Api {
     if (!f) otherFs.set(name!, (f = smallFs(name === "lab" ? ["lab-notes", "experiments", "experiments/robot-arm"] : ["src"])));
     return f;
   };
-  const read = <T,>(name: string | undefined, f: (h: MockHost) => T) => {
+  // The Api's contract (api.ts): a read never rejects. What the fixtures throw becomes a failed Result.
+  const answer = async <T,>(f: () => T | Promise<T>): Promise<Result<T>> => {
+    try {
+      return { ok: true, data: await f() };
+    } catch (e) {
+      return failed(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const read = <T,>(name: string | undefined, f: (h: MockHost) => T): Promise<Result<T>> => {
     const r = hostFor(name);
-    if ("error" in r) throw new Error(r.error);
-    return r.readAt ? { data: f(r.h), readAt: r.readAt } : { data: f(r.h) };
+    if ("error" in r) return Promise.resolve(failed(r.error));
+    return answer(() => f(r.h)).then((x) => (x.ok && r.readAt ? { ...x, readAt: r.readAt } : x));
   };
   // Decision 0031: a call names its host by install id. The fixtures name hosts; these two map between them. A front
   // without a host list is one host (desk), reached by any id; a host with no id (old-nuc) is stamped "".
@@ -406,13 +414,13 @@ export function createMockApi(scenario: string): Api {
     // V0.157: Settings → Devices: this device, a phone that got in through Tailscale, a tablet added by a link and one
     // that waits with a code.
     async authState() {
-      return JSON.parse(JSON.stringify(mockAuth)) as AuthState;
+      return answer(() => JSON.parse(JSON.stringify(mockAuth)) as AuthState);
     },
     // V0.159: Settings → Hosts: a paired Mac, a box vouched for by it, a tagged node that needs an invite.
     async peerState() {
       const s = JSON.parse(JSON.stringify(mockPeers)) as PeerState;
       if (q.get("config") === "changed") s.configChanged = "config changed; restart fyrd to apply"; // V0.180
-      return s;
+      return answer(() => s);
     },
     async peerAct(action, body) {
       if (action === "remove") {
@@ -527,7 +535,7 @@ export function createMockApi(scenario: string): Api {
       return h?.profiles ?? server.state().profiles;
     },
     async events(host, threadId, after = 0, limit = 400) {
-      return server.events(bare(refHost(host), threadId), after, limit).map((e) => evOf(e, host));
+      return answer(() => server.events(bare(refHost(host), threadId), after, limit).map((e) => evOf(e, host)));
     },
     async thread() {
       return null; // the mock sends whole threads
@@ -537,10 +545,10 @@ export function createMockApi(scenario: string): Api {
     },
     async eventsBefore(host, threadId, before, limit = 400) {
       const all = server.events(bare(refHost(host), threadId), 0, 1_000_000).filter((e) => e.seq < before);
-      return all.slice(Math.max(0, all.length - limit)).map((e) => evOf(e, host));
+      return answer(() => all.slice(Math.max(0, all.length - limit)).map((e) => evOf(e, host)));
     },
     async pushKey() {
-      return server.pushKey();
+      return answer(() => server.pushKey());
     },
     async pushSubscribe(subscription, device) {
       return server.pushSubscribe(subscription, device);
@@ -604,38 +612,38 @@ export function createMockApi(scenario: string): Api {
       return new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     },
     async commands() {
-      return MOCK_COMMANDS;
+      return answer(() => MOCK_COMMANDS);
     },
     async changes(host, threadId) {
-      return mockChanges(bare(host, threadId));
+      return answer(() => mockChanges(bare(host, threadId)));
     },
     async filePatch(_host, _threadId, path) {
-      return mockFilePatch(path);
+      return answer(() => mockFilePatch(path));
     },
     // V0.132: each host's own folders; desk's are the fixture tree, another host has a small one of its own, and an
     // offline host's cannot be read.
     async fsList(host, path) {
       const f = fsOf(nameOf(host));
-      return f ? f.list(path) : server.fsList(path);
+      return answer(() => (f ? f.list(path) : server.fsList(path)));
     },
     async fsRecent(host) {
       const f = fsOf(nameOf(host));
-      return f ? [] : server.fsRecent();
+      return answer(() => (f ? [] : server.fsRecent()));
     },
     async fsRepos(host) {
       const f = fsOf(nameOf(host));
-      return f ? f.repos() : server.fsRepos();
+      return answer(() => (f ? f.repos() : server.fsRepos()));
     },
     async fsMkdir(host, parent, name) {
       const f = fsOf(nameOf(host));
-      return f ? f.mkdir(parent, name) : server.fsMkdir(parent, name);
+      return answer(() => (f ? f.mkdir(parent, name) : server.fsMkdir(parent, name)));
     },
     async searchThreads(host, query, ids) {
       // V0.ai-search: the mock's "model" takes the first threads, or none for a query with "nothing" in it.
       await new Promise((r) => setTimeout(r, 300));
-      if (/nothing/i.test(query)) return [];
-      if (/fail/i.test(query)) throw new Error("the model gave no usable answer");
-      return ids.slice(0, 2).map((id) => ({ id: bare(host, id), why: `Talks about ${query.trim()}` }));
+      if (/nothing/i.test(query)) return answer(() => []);
+      if (/fail/i.test(query)) return failed("the model gave no usable answer");
+      return answer(() => ids.slice(0, 2).map((id) => ({ id: bare(host, id), why: `Talks about ${query.trim()}` })));
     },
     async prDetail(host, threadId, _fresh, prUrl) {
       await new Promise((r) => setTimeout(r, 120));
