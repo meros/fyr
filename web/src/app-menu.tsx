@@ -1,20 +1,15 @@
-// The right-click menu (V0.31). (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The desktop's right-click menu (V0.31) and its way to carry out a thread action, shared by the row menu and the
+// header's ⋯ menu. A hook of the App in app.tsx; it takes and returns plain objects.
 
 import { useEffect, useState } from "preact/hooks";
-import type { Decision } from "./types.ts";
-import { arrive } from "./arrived.ts";
-import { answerThenNext, cardKey, setOther } from "./question.ts";
 import { actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
 import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import type { useAppState } from "./app-state.tsx";
-import type { useAnswers, useDecisionCards } from "./app-cards.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
 
-export function useContextMenu(c: Pick<ReturnType<typeof useAppState>, "store" | "threadsRef" | "view" | "sel" | "setDialog" | "setHandoverId" | "setCards" | "phone" | "cmds" | "openPicker" | "sec" | "setArrival"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useAnswers>, "answers"> & Pick<ReturnType<typeof useThreadActions>, "openThread" | "settle" | "settleWhenDone" | "archive" | "openSnooze" | "markUnseen">) {
-  const { store, threadsRef, view, sel, setDialog, setHandoverId, setCards, phone, cmds, openPicker, sec, setArrival, decision, card, answers, openThread, settle, settleWhenDone, archive, openSnooze, markUnseen } = c;
+export function useContextMenu(c: Pick<ReturnType<typeof useAppState>, "store" | "threadsRef" | "setDialog" | "setHandoverId" | "phone" | "cmds" | "openPicker"> & Pick<ReturnType<typeof useThreadActions>, "openThread" | "settle" | "settleWhenDone" | "archive" | "openSnooze" | "markUnseen">) {
+  const { store, threadsRef, setDialog, setHandoverId, phone, cmds, openPicker, openThread, settle, settleWhenDone, archive, openSnooze, markUnseen } = c;
   // ---- right-click menu (V0.31) ----
   const [ctx, setCtx] = useState<{ x: number; y: number; items: MenuEntry[]; target: MenuTarget; anchor: Element | null } | null>(null);
   useEffect(() => {
@@ -68,54 +63,5 @@ export function useContextMenu(c: Pick<ReturnType<typeof useAppState>, "store" |
     <ContextMenu x={ctx.x} y={ctx.y} items={ctx.target.kind === "thread" ? (menuFor(ctxTarget) ?? []) : ctx.items} anchor={ctx.anchor} onPick={(it) => pickMenu(it, ctxTarget)} onClose={() => setCtx(null)} />
   );
 
-  /** The desktop walks on to the next thread that needs the owner once the host took the answer, and says so in an
-   *  arrival bar. The phone has no such step: it stays on the thread, whose screen it leaves itself. */
-  const submitAsk = (d: Decision) => {
-    if (!view) return;
-    const id = view.id;
-    const from = { id, title: store.threads[id]?.title ?? "" };
-    void answerThenNext(
-      () => answers.submit(d),
-      () => {
-        const to = nextNeeding(1, id);
-        if (to) setArrival(arrive(from, to, sec.needs.map((t) => t.id)));
-      },
-    );
-  };
-
-  const cancelAsk = (d: Decision) => void answers.cancel(d);
-
-  /** Enter in the answer field: the text answers the active question, then submit or move on. */
-  const answerEnter = () => {
-    if (!decision || decision.kind !== "ask" || !card) return;
-    const r = cardKey(card, decision, "Enter", { inOther: true });
-    setCards((c) => ({ ...c, [decision.id]: r.state }));
-    if (r.submit) submitAsk(decision);
-    if (r.cancel) cancelAsk(decision);
-  };
-  const answerField =
-    decision?.kind === "ask" && card && view?.mode === "open"
-      ? {
-          index: card.index,
-          text: card.other[card.index] ?? "",
-          setText: (text: string) => setCards((c) => (c[decision.id] ? { ...c, [decision.id]: setOther(c[decision.id], decision, text) } : c)),
-          submit: answerEnter,
-        }
-      : null;
-
-  const allow = (d: Decision, ok: boolean) => void answers.allow(d, ok);
-
-  /** Opens the next (or previous) thread that needs the owner; returns its id. */
-  const nextNeeding = (dir: 1 | -1, from?: string | null): string | undefined => {
-    const list = sec.needs.map((t) => t.id).filter((id) => id !== from);
-    if (!list.length) return;
-    const cur = from ?? sel;
-    const i = cur ? list.indexOf(cur) : -1;
-    const j = i < 0 ? (dir === 1 ? 0 : list.length - 1) : (i + dir + list.length) % list.length;
-    openThread(list[j], "open");
-    return list[j];
-  };
-
-
-  return { runDeskAction, ctxMenu, submitAsk, cancelAsk, answerField, allow, nextNeeding };
+  return { runDeskAction, ctxMenu };
 }

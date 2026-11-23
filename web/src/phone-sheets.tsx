@@ -205,9 +205,8 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
   };
   if (sheet.kind === "snooze") {
     return <SnoozeSheet ids={ids} title={ids.length === 1 ? p.store.threads[ids[0]]?.title : undefined} onClose={close} threads={ids.flatMap((id) => p.store.threads[id] ?? [])} onPick={(pick) => {
-      const c = snoozeCommand(pick, ids);
       close();
-      void p.commands.run(c.action, c.ids, c.args);
+      p.actions.snooze(snoozeCommand(pick, ids));
       p.list.setSelecting(false);
       p.list.setPicked(new Set());
     }} />;

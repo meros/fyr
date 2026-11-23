@@ -1,6 +1,6 @@
-// Navigation history: go, replace and back (the phone's screens are history entries). (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The phone's navigation history: go, replace and back (its screens and sheets are history entries), and leaving the
+// open thread after it settled, archived or snoozed (U8). A hook of the App in app.tsx; it takes and returns plain
+// objects.
 
 import { useRef } from "preact/hooks";
 import { backTarget, leavesThread, urlFor, type Nav } from "./nav.ts";
@@ -19,7 +19,8 @@ export function useNavHistory(c: Pick<ReturnType<typeof useAppState>, "threadsRe
   navGoRef.current = navGo;
   const navRef = useRef(nav);
   navRef.current = nav;
-  /** U8: after settling or archiving the open thread on a phone, go back to the inbox (pop, not push). */
+  /** U8, V0.app-shell-tidy: after the host took a settle, archive or snooze of the open thread on a phone, go back to
+   *  the inbox (pop, not push). */
   const leaveOpenThread = (ids: string[]) => {
     const s = navRef.current.screen;
     if (s.name !== "thread" || ids.length !== 1 || ids[0] !== s.id) return;

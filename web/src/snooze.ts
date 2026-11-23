@@ -39,7 +39,14 @@ export function snoozeKeyCount(list: SnoozeChoice[]): number {
   return list.filter((c) => !c.off).length;
 }
 
-export function snoozeCommand(c: Pick<SnoozeChoice, "until" | "done" | "ids">, ids: string[]): { action: string; ids: string[]; args?: Record<string, unknown> } {
+/** The command a snooze choice runs. */
+export interface SnoozeCmd {
+  action: string;
+  ids: string[];
+  args?: Record<string, unknown>;
+}
+
+export function snoozeCommand(c: Pick<SnoozeChoice, "until" | "done" | "ids">, ids: string[]): SnoozeCmd {
   if (c.done) return { action: SNOOZE_DONE_ACTION, ids: c.ids ?? ids, args: undefined };
   return { action: "thread.snooze", ids, args: { until: c.until.toISOString() } };
 }

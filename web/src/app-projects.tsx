@@ -1,6 +1,6 @@
-// Projects (V0.23): the filter, the picker and the commands on projects. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// Projects (V0.23) and the shared dialogs around them: the commands on projects, the folder picker, the host confirm,
+// the hosts context, new threads, the restart and the theme. A hook of the App in app.tsx; it takes and returns plain
+// objects.
 
 import { useMemo, useRef, useState } from "preact/hooks";
 import {

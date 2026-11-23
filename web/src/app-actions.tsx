@@ -1,6 +1,6 @@
-// What a person does to a thread: run, settle, archive, snooze, answer. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// What the owner does to threads: open, close, settle, archive, snooze, mark unseen, and where the desktop goes when
+// threads leave the list (V0.app-shell-tidy: only once the host took the command). A hook of the App in app.tsx; it
+// takes and returns plain objects.
 
 import { useRef } from "preact/hooks";
 import type { Thread } from "./types.ts";
@@ -9,7 +9,8 @@ import {
   bulkSettleText,
   sectionOf,
 } from "./store.ts";
-import { afterSettle, rowAfter } from "./selection.ts";
+import { afterSettle } from "./selection.ts";
+import { leaveAfterHost } from "./leave.ts";
 import { closeView, markedUnseen, openView } from "./seen.ts";
 import { snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
 import { settleRun } from "./actions.ts";
@@ -53,23 +54,16 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
   /** The thread an action applies to: the open thread when the thread pane has focus, else the selected row. */
   const target = (): string | null => (zone === "thread" && view ? view.id : sel);
 
-  /** In the list, the marked row is about to leave: open the next row (V0.109: the mark is the open thread). In the
-   * thread pane the thread stays open. */
-  const stepPast = (ids: string[]) => {
-    if (zone !== "list") return;
-    const next = rowAfter(order, sel, ids, walkRows);
-    if (!next) return;
-    if (view) openThread(next, view.mode);
-    else setLastOpen(next);
-    setZone("list");
-  };
-
-  /** V0.settle-leaves: a settle lets go of the marked thread, from the list and from the thread pane: the next row
-   *  opens (a peek stays a peek, the focus stays where it was), else the status screen. The phone leaves through Back
-   *  (U8, leaveOpenThread), so this is the desktop's. */
-  const leaveSettled = (ids: string[]) => {
+  /** V0.settle-leaves, V0.app-shell-tidy: threads that left the list (settled, archived, snoozed) are let go, from the
+   *  list and from the thread pane alike: the next row opens (a peek stays a peek, the focus stays where it was), else
+   *  the status screen. It runs once the host took the command (`leaveAfterHost`) and reads the marked row then, so an
+   *  owner who moved on meanwhile stays where they went. The order is the one the owner saw when acting. The phone
+   *  leaves through Back (U8, leaveOpenThread), so this is the desktop's. */
+  const selRef = useRef(sel);
+  selRef.current = sel;
+  const leaveGone = (ids: string[]) => {
     if (phoneRef.current) return;
-    const to = afterSettle(order, sel, ids, walkRows);
+    const to = afterSettle(order, selRef.current, ids, walkRows);
     if (to === "stay") return;
     if (to === "home") return view ? closeThread() : setLastOpen(null);
     const z = zone;
@@ -80,8 +74,7 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
 
   /** V0.203: settles now; on a running thread the host stops the run, and the toast says so. */
   const settle = (id: string) => {
-    // The next thread opens once the host took the settle, as the phone leaves (U8): a refused settle leaves the thread where it is.
-    void cmds.run("thread.settle", [id], undefined, settleRun(store.threads[id])).then((n) => n && leaveSettled([id]));
+    void leaveAfterHost(cmds.took("thread.settle", [id], undefined, settleRun(store.threads[id])), leaveGone);
   };
 
   /** V0.203: the explicit wait, or its cancel when it is armed. The thread stays where it is. */
@@ -100,7 +93,7 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
       else cmds.showError("Nothing here can be settled");
       return Promise.resolve([]);
     }
-    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept, unread, running) }).then((n) => (n ? take : []));
+    return cmds.took("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept, unread, running) });
   };
 
   const settleGroup = () => {
@@ -111,16 +104,15 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
       if (k) ids = sec[k].map((t) => t.id);
     }
     setPicked(new Set());
-    void settleBulk(ids, { sweep }).then((done) => done.length && leaveSettled(done));
+    void leaveAfterHost(settleBulk(ids, { sweep }), leaveGone);
   };
 
   /** The Seen header's "Settle merged" (the phone's button too): only the threads whose PR merged. */
-  const settleMerged = (ids: string[]) => void settleBulk(ids).then((done) => done.length && leaveSettled(done));
+  const settleMerged = (ids: string[]) => void leaveAfterHost(settleBulk(ids), leaveGone);
 
   const archive = (ids: string[]) => {
-    stepPast(ids);
     setPicked(new Set());
-    void cmds.run("thread.archive", ids);
+    void leaveAfterHost(cmds.took("thread.archive", ids), leaveGone);
   };
 
   const openSnooze = (ids: string[]) => {
@@ -134,9 +126,8 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
   const snooze = (p: SnoozeChoice) => {
     const c = snoozeCommand(p, snoozeTargets);
     setDialog(null);
-    stepPast(c.ids);
     setPicked(new Set());
-    void cmds.run(c.action, c.ids, c.args);
+    void leaveAfterHost(cmds.took(c.action, c.ids, c.args), leaveGone);
   };
 
   const markUnseen = (id: string) => {

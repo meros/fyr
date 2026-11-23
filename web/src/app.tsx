@@ -1,7 +1,8 @@
-// The app shell: state, commands and the keyboard.
+// The app shell: the App component wires the app-*.tsx hooks (state, connection, answers, actions, the keyboard,
+// navigation) together and draws the phone (PhoneApp) or the desktop, both inside the same providers (AppProviders).
 
 import { type Zone } from "./app-util.tsx";
-import { render } from "preact";
+import { render, type ComponentChildren, type ComponentProps } from "preact";
 import { useAppState } from "./app-state.tsx";
 import { useNavHistory } from "./app-history.tsx";
 import { useConnection } from "./app-connection.tsx";
@@ -68,25 +69,21 @@ function App() {
   const N = useNavHistory({ ...A });
   const B = useConnection({ ...A, ...N });
   const C = useDecisionCards({ ...A, ...N, ...B });
-  const C2 = useAnswers({ ...A });
   const D = useThreadActions({ ...A, ...N, ...B, ...C });
-  const E = useContextMenu({ ...A, ...N, ...B, ...C, ...C2, ...D });
+  const C2 = useAnswers({ ...A, ...C, ...D });
+  const E = useContextMenu({ ...A, ...N, ...B, ...C, ...D });
   const F = useThreadList({ ...A, ...N, ...B, ...C, ...D, ...E });
   const G = useProjectActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F });
-  useKeyboard({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
+  useKeyboard({ ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G });
   const I = useHostActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
   const J = usePhoneNav({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G, ...I });
-  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, setCards, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, filtered, searchable, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, runDeskAction, ctxMenu, submitAsk, cancelAsk, answerField, allow, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
+  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, onCard, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, runDeskAction, ctxMenu, submitAsk, answerField, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
+
+  const providers: Omit<AppProvidersProps, "children"> = { directory, folderPicker, undNav, hostsCtx, hostMarks: store.hostMarks, confirm: confirmHost.ask, profiles: byHost };
 
   if (phone) {
     return (
-      <DirectoryContext.Provider value={directory}>
-        <FolderPickContext.Provider value={folderPicker}>
-        <UndContext.Provider value={undNav}>
-<HostsContext.Provider value={hostsCtx}>
-<HostMarksContext.Provider value={store.hostMarks}>
-        <ConfirmProvider value={confirmHost.ask}>
-        <ProfilesContext.Provider value={byHost}>
+      <AppProviders {...providers}>
         <Boundary name="Fyr">
         <PreviewViewer />
         <PhoneApp
@@ -94,7 +91,7 @@ function App() {
           store={store}
           profiles={byHost}
           allProjects={fullStore.projects}
-          inbox={{ sec, rows, guest, searchable, all: filtered, unlock }}
+          inbox={{ sec, rows, guest, search: { query, setQuery, list: searchList, quietHits }, unlock }}
           now={now}
           commands={cmds}
           open={{
@@ -104,7 +101,7 @@ function App() {
             onEarlier: view && earlier[view.id] ? () => loadEarlier(view.id) : undefined,
             onAtEnd: (b) => setTracker((tr) => setAtEnd(tr, b)),
             card,
-            onCard: (fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c)),
+            onCard,
             submitAsk: answers.submit,
             cancelAsk: answers.cancel,
             allow: answers.allow,
@@ -139,13 +136,7 @@ function App() {
           }
         />
         </Boundary>
-        </ProfilesContext.Provider>
-        </ConfirmProvider>
-        </HostMarksContext.Provider>
-</HostsContext.Provider>
-</UndContext.Provider>
-        </FolderPickContext.Provider>
-      </DirectoryContext.Provider>
+      </AppProviders>
     );
   }
 
@@ -171,13 +162,7 @@ function App() {
       <DeployBanner p={bannerDeploy(store)} threads={store.threads} conn={store.conn} onRestartNow={() => void restartNow()} />
       {ctxMenu}
       <PreviewViewer />
-      <DirectoryContext.Provider value={directory}>
-      <FolderPickContext.Provider value={folderPicker}>
-        <UndContext.Provider value={undNav}>
-<HostsContext.Provider value={hostsCtx}>
-<HostMarksContext.Provider value={store.hostMarks}>
-      <ConfirmProvider value={confirmHost.ask}>
-      <ProfilesContext.Provider value={byHost}>
+      <AppProviders {...providers}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
         <Rail sec={sec} active={activeSection} profiles={byHost} conn={store.conn} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
         <Boundary name="The inbox">
@@ -233,10 +218,10 @@ function App() {
             profiles={byHost}
             card={card}
             answerField={answerField}
-            onCard={(cs) => decision && setCards((c) => ({ ...c, [decision.id]: cs }))}
-            onAllow={allow}
+            onCard={onCard}
+            onAllow={answers.allow}
             onSubmitAsk={submitAsk}
-            onCancelAsk={cancelAsk}
+            onCancelAsk={answers.cancel}
             arrived={arrivedHere ? { a: arrivedHere, onBack: () => (setArrival(null), openThread(arrivedHere.from, "open")), onDismiss: () => setArrival(null) } : undefined}
             onRun={(a, args) => {
               if (a === "thread.settle") return settle(view.id);
@@ -357,16 +342,41 @@ function App() {
         </Modal>
       )}
       {dialog === "snooze" && <SnoozeMenu presets={snoozeList()} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
-      </ProfilesContext.Provider>
       {folderPickView}
       {confirmHost.view}
-      </ConfirmProvider>
-      </HostMarksContext.Provider>
-</HostsContext.Provider>
-</UndContext.Provider>
-        </FolderPickContext.Provider>
-      </DirectoryContext.Provider>
+      </AppProviders>
     </div>
+  );
+}
+
+type AppProvidersProps = {
+  directory: ComponentProps<typeof DirectoryContext.Provider>["value"];
+  folderPicker: ComponentProps<typeof FolderPickContext.Provider>["value"];
+  undNav: ComponentProps<typeof UndContext.Provider>["value"];
+  hostsCtx: ComponentProps<typeof HostsContext.Provider>["value"];
+  hostMarks: ComponentProps<typeof HostMarksContext.Provider>["value"];
+  confirm: ComponentProps<typeof ConfirmProvider>["value"];
+  profiles: ComponentProps<typeof ProfilesContext.Provider>["value"];
+  children: ComponentChildren;
+};
+
+/** The contexts every screen of both fronts reads: projects, the folder picker, undeclared work's navigation, the
+ *  hosts and their marks, the confirm dialog and each host's profiles. One nesting, so the fronts cannot differ. */
+function AppProviders(p: AppProvidersProps) {
+  return (
+    <DirectoryContext.Provider value={p.directory}>
+      <FolderPickContext.Provider value={p.folderPicker}>
+        <UndContext.Provider value={p.undNav}>
+          <HostsContext.Provider value={p.hostsCtx}>
+            <HostMarksContext.Provider value={p.hostMarks}>
+              <ConfirmProvider value={p.confirm}>
+                <ProfilesContext.Provider value={p.profiles}>{p.children}</ProfilesContext.Provider>
+              </ConfirmProvider>
+            </HostMarksContext.Provider>
+          </HostsContext.Provider>
+        </UndContext.Provider>
+      </FolderPickContext.Provider>
+    </DirectoryContext.Provider>
   );
 }
 

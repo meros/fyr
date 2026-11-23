@@ -1,6 +1,5 @@
-// Reloading the profiles and what a host owns. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// What belongs to the hosts and this device: reloading each host's profiles, the install and push controls, and the
+// Settings screen both fronts draw (settingsFor). A hook of the App in app.tsx; it takes and returns plain objects.
 
 import {
   setProfiles,
