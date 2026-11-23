@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -21,7 +22,7 @@ func TestS2QueuedWithAReasonAndGrantedAtTheTick(t *testing.T) {
 		for i := range c {
 			c[i] = resource.Need{CPU: 1, Mem: 1 << 30}
 		}
-		return slots.Decide(resource.DefaultPolicy, sig, p.Budget(), 2, c, resource.Need{CPU: 1, Mem: 1 << 30})
+		return guard.Decide(resource.DefaultPolicy, sig, p.Budget(), 2, c, resource.Need{CPU: 1, Mem: 1 << 30})
 	}
 	e.UseSlots(p)
 	a, b := bareThread(t, e), bareThread(t, e)

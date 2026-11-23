@@ -1,6 +1,6 @@
 // V0.guard-tidy: an empty frozen job is released, work that holds little of
-// its thread's memory is not frozen, the hold past FreezeMax reads the agents'
-// stall and ends at FreezeCeiling, `froze job` logs what `froze undeclared
+// its thread's memory is not frozen, the hold past guard.FreezeMax reads the agents'
+// stall and ends at guard.FreezeCeiling, `froze job` logs what `froze undeclared
 // work` does and the hold is in the history, and a frozen thread gets one
 // notice, not two.
 package engine
@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -59,7 +60,7 @@ func TestGuardTidyAnEmptyJobFreezeIsReleased(t *testing.T) {
 	empty[b] = true // the job ended while frozen
 	*now = now.Add(10 * time.Second)
 	e.Tick()
-	if frozen[b] || e.first().owner != "" {
+	if frozen[b] || e.first().Owner != "" {
 		t.Fatalf("an empty job freeze was kept: %v", frozen)
 	}
 	if !strings.Contains(out.String(), `guard: thawed job thread=`+b) || !strings.Contains(out.String(), `reason="its processes are gone"`) {
@@ -96,8 +97,8 @@ func TestGuardTidyWorkThatHoldsLittleIsNotFrozen(t *testing.T) {
 	}
 }
 
-// Past FreezeMax the host's critical stall alone no longer holds the work (it
-// can come from the desktop); the agents' does, up to FreezeCeiling, and the
+// Past guard.FreezeMax the host's critical stall alone no longer holds the work (it
+// can come from the desktop); the agents' does, up to guard.FreezeCeiling, and the
 // owner's history shows the hold.
 func TestGuardTidyPastTheLimitTheAgentsStallHoldsUntilTheCeiling(t *testing.T) {
 	t.Run("host", func(t *testing.T) {
@@ -108,7 +109,7 @@ func TestGuardTidyPastTheLimitTheAgentsStallHoldsUntilTheCeiling(t *testing.T) {
 		z.free = 0.04
 		e.Tick()
 		z.stall = resource.StallCritical
-		*now = now.Add(FreezeMax + time.Second)
+		*now = now.Add(guard.FreezeMax + time.Second)
 		e.Tick()
 		if z.frozen[a] {
 			t.Fatal("kept past the limit on the host's stall alone")
@@ -125,7 +126,7 @@ func TestGuardTidyPastTheLimitTheAgentsStallHoldsUntilTheCeiling(t *testing.T) {
 		t.Cleanup(func() { log.SetOutput(os.Stderr) })
 		e.Tick()
 		z.agents = resource.StallCritical
-		*now = now.Add(FreezeMax + time.Second)
+		*now = now.Add(guard.FreezeMax + time.Second)
 		e.Tick()
 		if !z.frozen[a] {
 			t.Fatal("thawed past the limit into the agents' critical stall")
@@ -141,7 +142,7 @@ func TestGuardTidyPastTheLimitTheAgentsStallHoldsUntilTheCeiling(t *testing.T) {
 		if kept != 1 {
 			t.Fatalf("%d kept events, want 1", kept)
 		}
-		*now = now.Add(FreezeCeiling - FreezeMax - 5*time.Minute)
+		*now = now.Add(guard.FreezeCeiling - guard.FreezeMax - 5*time.Minute)
 		e.Tick()
 		if z.frozen[a] {
 			t.Fatal("still frozen at the ceiling")

@@ -1,15 +1,13 @@
 // V0.admission-tidy: a holder's own undeclared flag is not counted beside its
 // held need, a quiet heavy call that is still open is not an idle hold, and a
 // class's need can be asked by name for the gate's heavier-command check.
-package admission
+package guard
 
 import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/guard/resource"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // V0.admission-tidy (6): a thread just admitted keeps its undeclared flag until
@@ -37,7 +35,7 @@ func TestAdmissionTidyAnOpenCallIsNotIdle(t *testing.T) {
 	j.active["quiet"] = now.Add(-5 * time.Minute)
 	j.live["quiet"] = use{cores: 0, grew: 1 * gb}
 	hd := resource.Holder{Owner: "quiet", Kind: resource.Test}
-	if c := a.Cost(hd); c.CPU != slots.IdleShare*8 {
+	if c := a.Cost(hd); c.CPU != IdleShare*8 {
 		t.Fatalf("setup: not idle without an open call: %+v", c)
 	}
 	a.Open = func(th string) bool { return th == "quiet" }
@@ -49,7 +47,7 @@ func TestAdmissionTidyAnOpenCallIsNotIdle(t *testing.T) {
 // V0.admission-tidy (1): the need of a class by name, for the gate.
 func TestAdmissionTidyClassNeed(t *testing.T) {
 	a, _, j := setup(2)
-	j.learned["t1/go test"] = cgroup.Learned{Demand: 1, Peak: 1 * gb, Runs: 5}
+	j.learned["t1/go test"] = resource.Learned{Demand: 1, Peak: 1 * gb, Runs: 5}
 	if n := a.ClassNeed("t1", "go test"); n != (resource.Need{CPU: 1, Mem: 1 * gb}) {
 		t.Fatalf("learned: %+v", n)
 	}

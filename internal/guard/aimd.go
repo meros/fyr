@@ -1,4 +1,4 @@
-package slots
+package guard
 
 // Decision 0029 slice S4 (#188), V0.163 per resource: the budget adapts
 // slowly to the host (AIMD, as TCP and Netflix's concurrency limits do).
@@ -78,7 +78,7 @@ type kept struct {
 
 // Step moves the budget at now: waiting is whether a job waits, lastGrant
 // the pool's last admission, binding the resource that holds the head back
-// (ResCPU, ResMem, ResHeadroom or ""; Snapshot.Bound). It returns the factors and why.
+// (resource.ResCPU, resource.ResMem, resource.ResHeadroom or ""; Snapshot.Bound). It returns the factors and why.
 func (a *AIMD) Step(now time.Time, s resource.Signals, waiting bool, lastGrant time.Time, binding string) (resource.Factors, string) {
 	if !a.started {
 		a.started, a.f, a.last, a.why = true, resource.Full, now, "the full budget"
@@ -127,11 +127,11 @@ func (a *AIMD) Step(now time.Time, s resource.Signals, waiting bool, lastGrant t
 		a.why = fmt.Sprintf("new jobs run %.1f× slower: the CPU budget shrinks", *s.Slowdown)
 	case calm && waiting && (lastGrant.IsZero() || now.Sub(lastGrant) >= AIMDHold):
 		switch binding {
-		case ResHeadroom:
+		case resource.ResHeadroom:
 			// V0.admission-memory: memory outside the budget holds the head
 			// back; a larger budget would not admit it, only admit more once
 			// that memory is freed (up to AIMDMax of the host).
-		case ResMem:
+		case resource.ResMem:
 			a.f.Mem = min(AIMDMax, a.f.Mem+AIMDUp)
 			a.why = "the host is calm and a job waits for memory: the memory budget grows"
 		default:

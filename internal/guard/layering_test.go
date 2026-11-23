@@ -14,9 +14,10 @@ func TestLayering(t *testing.T) {
 		dir    string
 		forbid []string
 	}{
-		{"../cgroup", []string{"slots", "heavy", "admission", "engine", "guard"}},
-		{"resource", []string{"slots", "heavy", "admission", "engine", "cgroup", "guard"}},
-		{".", []string{"cgroup", "slots", "heavy", "admission", "engine"}},
+		{"../cgroup", []string{"slots", "heavy", "engine", "guard"}},
+		{"resource", []string{"slots", "heavy", "engine", "cgroup", "guard"}},
+		{"../slots", []string{"guard", "engine", "cgroup", "heavy"}},
+		{".", []string{"cgroup", "slots", "heavy", "engine", "core"}},
 	}
 	for _, c := range cases {
 		for _, goos := range []string{"linux", "darwin"} {

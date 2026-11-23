@@ -34,7 +34,7 @@ func TestAdmissionMemoryAClassUnderThreeRunsSizesWithThePrior(t *testing.T) {
 	j := &Jobs{}
 	j.mu.Lock()
 	j.load()
-	j.table["fyr: make test-go"] = Learned{Demand: 0.5, Peak: gb, Runs: 1}
+	j.table["fyr: make test-go"] = resource.Learned{Demand: 0.5, Peak: gb, Runs: 1}
 	j.projects = map[string]string{"t_a": "fyr"}
 	j.mu.Unlock()
 	j.Saw("t_a", "make test-go")

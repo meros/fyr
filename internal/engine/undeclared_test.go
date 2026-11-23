@@ -14,6 +14,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -204,20 +205,20 @@ func TestF7F8ThawByTheRuleAndNotFrozenAgainInTheEpisode(t *testing.T) {
 		t.Fatalf("not thawed %v", z.frozen)
 	}
 	// Decision 0032 slice 1 (amends V0.164 7): short again in the same
-	// episode it is frozen again, but only once the work has run RefreezeAfter.
+	// episode it is frozen again, but only once the work has run guard.RefreezeAfter.
 	z.free = 0.03
 	e.Tick()
 	if len(z.frozen) != 0 {
 		t.Fatal("frozen again before the slice ran")
 	}
-	*now = now.Add(RefreezeAfter + time.Second)
+	*now = now.Add(guard.RefreezeAfter + time.Second)
 	e.Tick()
 	if !z.frozen[a] {
 		t.Fatal("not frozen again in the long episode")
 	}
 }
 
-// Decision 0032 slice 1: at most MaxFreezes freezes of one episode; then the
+// Decision 0032 slice 1: at most guard.MaxFreezes freezes of one episode; then the
 // work runs and the guard says so once.
 func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 	var buf bytes.Buffer
@@ -228,7 +229,7 @@ func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
 	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	froze := 0
-	for range MaxFreezes + 2 {
+	for range guard.MaxFreezes + 2 {
 		z.free = 0.03
 		e.Tick()
 		if z.frozen[a] {
@@ -239,10 +240,10 @@ func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 		e.Tick() // memory is fine: the 30 s start
 		*now = now.Add(31 * time.Second)
 		e.Tick() // fine for 30 s: thawed
-		*now = now.Add(RefreezeAfter + time.Second)
+		*now = now.Add(guard.RefreezeAfter + time.Second)
 	}
-	if froze != MaxFreezes {
-		t.Fatalf("froze %d times, want %d", froze, MaxFreezes)
+	if froze != guard.MaxFreezes {
+		t.Fatalf("froze %d times, want %d", froze, guard.MaxFreezes)
 	}
 	if !strings.Contains(buf.String(), "letting it run") {
 		t.Fatalf("the cap was not logged:\n%s", buf.String())
@@ -267,12 +268,12 @@ func TestF13AFreezeThatHoldsNothingIsReleased(t *testing.T) {
 	if z.frozen[a] {
 		t.Fatal("an empty freeze was kept")
 	}
-	held := e.first().owner
+	held := e.first().Owner
 	if held != "" {
 		t.Fatalf("still blocks other freezes: %q", held)
 	}
 	z.empty[a] = false
-	*now = now.Add(RefreezeAfter + time.Second)
+	*now = now.Add(guard.RefreezeAfter + time.Second)
 	e.Tick() // memory is still short and new work runs: frozen again
 	if !z.frozen[a] {
 		t.Fatal("not frozen again")
@@ -477,7 +478,7 @@ func TestF16TheGuardViewShowsTheHistoryAndEachThreadsFreezes(t *testing.T) {
 	z.free = 0.04
 	e.Tick()
 	g := e.GuardView()
-	if g == nil || !g.Short || g.ShortSince == nil || g.Max != MaxFreezes || g.RefreezeSec != 60 {
+	if g == nil || !g.Short || g.ShortSince == nil || g.Max != guard.MaxFreezes || g.RefreezeSec != 60 {
 		t.Fatalf("%+v", g)
 	}
 	if len(g.Threads) != 1 || g.Threads[0].Thread != a || !g.Threads[0].Frozen || g.Threads[0].N != 1 || g.Threads[0].FrozenAt == nil {

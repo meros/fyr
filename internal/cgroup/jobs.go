@@ -110,7 +110,7 @@ type Jobs struct {
 	seen   map[string]string    // thread → class of its newest heavy command (in a hold or while waiting)
 	seenAt map[string]time.Time // and when
 	recs   []JobRecord
-	table  map[string]Learned // decision 0029 S3: per class
+	table  map[string]resource.Learned // decision 0029 S3: per class
 	// raise: per class, a peak raise (RaisePeak) that waits for its first
 	// peak (V0.admission-memory); in memory only.
 	raise map[string]float64

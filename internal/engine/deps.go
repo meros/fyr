@@ -7,9 +7,9 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/github"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/quota"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // The engine's dependencies on the rest of the host (V0.182). The host's
@@ -131,7 +131,7 @@ type SlotDeps struct {
 	SlotOver func(owner string) (class string, live, predicted float64, over bool)
 	JobReset func(class string) bool
 	// SlotAIMD adapts the pool's budget at each tick (decision 0029 S4).
-	SlotAIMD *slots.AIMD
+	SlotAIMD *guard.AIMD
 	// V0.admission-tidy: SlotClassNeed is the need of thread's heavy command
 	// of class, as admission predicts it (the gate admits a heavier second
 	// command for the difference); SlotBaseline takes thread's job baseline at

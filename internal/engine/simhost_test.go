@@ -193,7 +193,7 @@ type simHost struct {
 	units    []*simUnit
 	threads  map[string]bool // sim threads whose agent runs (a CLI's memory)
 	desktop  float64
-	learned  map[string]cgroup.Learned
+	learned  map[string]resource.Learned
 	flags    map[string]*simFlag
 	holds    map[string]*simHold // the job tracker's holds, by sim thread
 	nextPID  int
@@ -229,7 +229,7 @@ type simKill struct {
 }
 
 func newSimHost(p simParams) *simHost {
-	return &simHost{p: p, threads: map[string]bool{}, learned: map[string]cgroup.Learned{}, flags: map[string]*simFlag{},
+	return &simHost{p: p, threads: map[string]bool{}, learned: map[string]resource.Learned{}, flags: map[string]*simFlag{},
 		holds: map[string]*simHold{}, oomdOver: -1, nextPID: 1000, cpuSlow: 1}
 }
 

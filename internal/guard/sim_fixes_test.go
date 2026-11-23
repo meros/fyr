@@ -1,7 +1,7 @@
 // V0.sim-fixes (2): while memory is short a cheap job backfills unless the
 // stall is critical (decision 0029 section 4: a job of CheapShare or less
 // barely touches the head's room).
-package slots
+package guard
 
 import (
 	"testing"
@@ -20,7 +20,7 @@ func TestSimFixesACheapJobBackfillsWhileMemoryIsShort(t *testing.T) {
 	if ok, why, _ := Decide(resource.DefaultPolicy, s, resource.Full, 2, held, cheap); !ok {
 		t.Fatalf("the cheap job waits while memory is short and does not stall critically: %s", why)
 	}
-	if ok, _, res := Decide(resource.DefaultPolicy, s, resource.Full, 2, held, dear); ok || res != ResHeadroom {
+	if ok, _, res := Decide(resource.DefaultPolicy, s, resource.Full, 2, held, dear); ok || res != resource.ResHeadroom {
 		t.Fatalf("a job of 2 cores and 2 GB backfilled: ok=%t res=%s", ok, res)
 	}
 	s.AgentsStall = resource.StallCritical

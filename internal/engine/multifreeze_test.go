@@ -1,5 +1,5 @@
 // V0.multi-freeze: while memory stays short the guard freezes one more thread
-// each AddFreezeAfter; and the turns of a frozen thread go to its heavy parts.
+// each guard.AddFreezeAfter; and the turns of a frozen thread go to its heavy parts.
 // V0.guard-wake: at most the running threads less one, the oldest wakes first
 // by Buck2's rule, and the thaw says how long the work was frozen.
 package engine
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -41,7 +42,7 @@ func TestMultiStillShortAMinuteLaterASecondThreadIsFrozen(t *testing.T) {
 	if !z.frozen[b] || len(z.frozen) != 1 {
 		t.Fatalf("first freeze: the newest episode alone, got %v", z.frozen)
 	}
-	tickFor(e, now, AddFreezeAfter-10*time.Second)
+	tickFor(e, now, guard.AddFreezeAfter-10*time.Second)
 	if len(z.frozen) != 1 {
 		t.Fatalf("a second freeze before AddFreezeAfter: %v", z.frozen)
 	}
@@ -59,7 +60,7 @@ func TestMultiNoSecondFreezeOnceMemoryIsFine(t *testing.T) {
 	z.free = 0.04
 	e.Tick()
 	z.free = 0.12 // not short, not fine either
-	tickFor(e, now, 2*AddFreezeAfter)
+	tickFor(e, now, 2*guard.AddFreezeAfter)
 	if z.frozen[a] || !z.frozen[b] {
 		t.Fatalf("one freeze is enough when memory is no longer short: %v", z.frozen)
 	}
@@ -78,14 +79,14 @@ func TestMultiAtMostTheRunningThreadsLessOne(t *testing.T) {
 		}
 		z.free = 0.04
 		e.Tick()
-		tickFor(e, now, time.Duration(n+1)*AddFreezeAfter)
+		tickFor(e, now, time.Duration(n+1)*guard.AddFreezeAfter)
 		if len(z.frozen) != n-1 || z.frozen[ids[0]] {
 			t.Fatalf("%d running: frozen %v, want the %d newest", n, z.frozen, n-1)
 		}
 	}
 }
 
-// V0.guard-wake (decision 0036 E3): the oldest freeze wakes first, then the next at most WakeEvery later.
+// V0.guard-wake (decision 0036 E3): the oldest freeze wakes first, then the next at most guard.WakeEvery later.
 func TestMultiWakeOldestFirstOnePerWakeEvery(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
@@ -94,17 +95,17 @@ func TestMultiWakeOldestFirstOnePerWakeEvery(t *testing.T) {
 	u.flags = []resource.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	z.free = 0.04
 	e.Tick() // b, the newest episode, is frozen first
-	tickFor(e, now, AddFreezeAfter)
+	tickFor(e, now, guard.AddFreezeAfter)
 	if len(z.frozen) != 2 {
 		t.Fatalf("setup: %v", z.frozen)
 	}
 	z.free = 0.30
 	e.Tick()
-	tickFor(e, now, ThawAfterOK)
+	tickFor(e, now, guard.ThawAfterOK)
 	if z.frozen[b] || !z.frozen[a] {
 		t.Fatalf("the oldest freeze (b) wakes first, alone: %v", z.frozen)
 	}
-	*now = now.Add(WakeEvery - time.Second)
+	*now = now.Add(guard.WakeEvery - time.Second)
 	e.Tick()
 	if !z.frozen[a] {
 		t.Fatal("the second wake came before WakeEvery")
@@ -138,7 +139,7 @@ func TestWakeRuleTheCapFromTheFirstCriticalStall(t *testing.T) {
 		t.Fatalf("no cap line:\n%s", out.String())
 	}
 	z.free, z.stall, z.mem = 0.04, resource.StallOK, 8e9 // 8 + 2.8 >= 10
-	tickFor(e, now, 2*ThawAfterOK)
+	tickFor(e, now, 2*guard.ThawAfterOK)
 	if !z.frozen[a] {
 		t.Fatal("woke while it does not fit under the cap")
 	}
@@ -146,13 +147,13 @@ func TestWakeRuleTheCapFromTheFirstCriticalStall(t *testing.T) {
 		t.Fatalf("no line for the wait:\n%s", out.String())
 	}
 	z.mem, z.stall = 7e9, resource.StallElevated // fits, but the stall is elevated
-	tickFor(e, now, 2*ThawAfterOK)
+	tickFor(e, now, 2*guard.ThawAfterOK)
 	if !z.frozen[a] {
 		t.Fatal("woke while the stall is elevated")
 	}
 	z.stall = resource.StallOK
 	e.Tick() // the 30 s start
-	tickFor(e, now, ThawAfterOK-10*time.Second)
+	tickFor(e, now, guard.ThawAfterOK-10*time.Second)
 	if !z.frozen[a] {
 		t.Fatal("woke before 30 s below elevated")
 	}
@@ -203,16 +204,9 @@ func TestMultiTurnsSkipSmallParts(t *testing.T) {
 	if r.last() != 30 {
 		t.Fatalf("first turn %v", r.active)
 	}
-	*now = now.Add(TurnMin)
+	*now = now.Add(guard.TurnMin)
 	e.Tick()
 	if r.last() != 32 {
 		t.Fatalf("the turn went to a 1 MB part: %v", r.active)
-	}
-}
-
-func TestMultiSmallPartsOnlyStillTakeTurns(t *testing.T) {
-	units := []resource.WorkUnit{{PID: 30, RSS: 1 << 20}, {PID: 31, RSS: 1 << 20}}
-	if got := turnTakers(units); len(got) != 2 {
-		t.Fatalf("no heavy part: all take turns, got %v", got)
 	}
 }

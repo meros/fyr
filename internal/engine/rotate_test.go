@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -43,7 +44,7 @@ func TestT1SeveralPartsTakeTurnsInsteadOfAllStopping(t *testing.T) {
 	if len(z.frozen) != 0 || len(r.active) != 1 || r.last() != 30 {
 		t.Fatalf("whole freeze %v, turns %v", z.frozen, r.active)
 	}
-	if v := e.first(); v.owner != th[0] || !v.undeclared || v.active != 30 {
+	if v := e.first(); v.Owner != th[0] || !v.Undeclared || v.Active != 30 {
 		t.Fatalf("%+v", v)
 	}
 }
@@ -53,13 +54,13 @@ func TestT2TheTurnMovesWhenItIsOverAndWrapsAround(t *testing.T) {
 	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
-	*now = now.Add(TurnMin - time.Second)
+	*now = now.Add(guard.TurnMin - time.Second)
 	e.Tick()
 	if r.last() != 30 {
 		t.Fatalf("moved early: %v", r.active)
 	}
 	for _, want := range []int{31, 32, 30} {
-		*now = now.Add(TurnMin)
+		*now = now.Add(guard.TurnMin)
 		e.Tick()
 		if r.last() != want {
 			t.Fatalf("turns %v, want %d next", r.active, want)
@@ -81,27 +82,16 @@ func TestT3APartThatEndedGivesUpItsTurnAtOnce(t *testing.T) {
 }
 
 func TestT4ATurnPaysForTheSwapIn(t *testing.T) {
-	if got := turnLength(1<<30, 0); got != TurnMin {
-		t.Fatalf("no rate: %s", got)
-	}
-	if got := turnLength(1<<30, 100<<20); got != 30720*time.Millisecond {
-		t.Fatalf("1 GB at 100 MB/s: %s", got)
-	}
-	if got := turnLength(1<<20, 1<<30); got != TurnMin {
-		t.Fatalf("floor: %s", got)
-	}
-	if got := turnLength(1<<40, 1<<20); got != TurnMax {
-		t.Fatalf("ceiling: %s", got)
-	}
+	// turnLength itself: internal/guard (TestT4ATurnLength).
 	e, u, now, z, th, r := turnEngine(t, threeUnits...)
 	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
-	*now = now.Add(TurnMin)
+	*now = now.Add(guard.TurnMin)
 	r.faults = 1 << 30 // 1 GB read back in one turn of 30 s: the next 1 GB part gets three times that
 	e.Tick()
-	if d := e.first().turn - 90*time.Second; d < -time.Millisecond || d > time.Millisecond {
-		t.Fatalf("turn %s", e.first().turn)
+	if d := e.first().Turn - 90*time.Second; d < -time.Millisecond || d > time.Millisecond {
+		t.Fatalf("turn %s", e.first().Turn)
 	}
 }
 
@@ -111,7 +101,7 @@ func TestT5OnePartIsFrozenWhole(t *testing.T) {
 	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
-	if !z.frozen[th[0]] || len(r.active) != 0 || e.first().active != 0 {
+	if !z.frozen[th[0]] || len(r.active) != 0 || e.first().Active != 0 {
 		t.Fatalf("frozen %v turns %v", z.frozen, r.active)
 	}
 }
@@ -122,8 +112,8 @@ func TestT6RefusedTurnsFallBackToTheWholeFreeze(t *testing.T) {
 	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
-	if !z.frozen[th[0]] || e.first().active != 0 {
-		t.Fatalf("frozen %v, %+v", z.frozen, e.frozen)
+	if !z.frozen[th[0]] || e.first().Active != 0 {
+		t.Fatalf("frozen %v, %+v", z.frozen, e.gs.Frozen)
 	}
 }
 
@@ -136,20 +126,20 @@ func TestT7TheThawEndsTheTurns(t *testing.T) {
 	e.Tick()
 	z.free = 0.30
 	e.Tick()
-	*now = now.Add(ThawAfterOK)
+	*now = now.Add(guard.ThawAfterOK)
 	calls := len(r.active)
 	e.Tick()
-	if thawed != 1 || e.first().owner != "" || len(r.active) != calls {
-		t.Fatalf("thawed %d, frozen %+v, turns %v", thawed, e.frozen, r.active)
+	if thawed != 1 || e.first().Owner != "" || len(r.active) != calls {
+		t.Fatalf("thawed %d, frozen %+v, turns %v", thawed, e.gs.Frozen, r.active)
 	}
 }
 
 // first is the guard's oldest freeze, or none.
-func (e *Engine) first() frozenJob {
+func (e *Engine) first() guard.Frozen {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.frozen) == 0 {
-		return frozenJob{}
+	if len(e.gs.Frozen) == 0 {
+		return guard.Frozen{}
 	}
-	return e.frozen[0]
+	return e.gs.Frozen[0]
 }

@@ -21,7 +21,7 @@ func TestV163GateSpeaksPercent(t *testing.T) {
 		if len(held) == 0 {
 			return true, "", ""
 		}
-		return false, "needs ≈ 45 % CPU, 10 % free", slots.ResCPU
+		return false, "needs ≈ 45 % CPU, 10 % free", resource.ResCPU
 	}
 	e.UseSlots(p)
 	e.HostName = "home-laptop"

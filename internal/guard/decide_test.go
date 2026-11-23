@@ -1,4 +1,4 @@
-package engine
+package guard
 
 import (
 	"testing"
@@ -50,12 +50,12 @@ func TestMemoryState(t *testing.T) {
 
 func TestThawWords(t *testing.T) {
 	now := time.Now()
-	f := frozenJob{at: now.Add(-FreezeMax - time.Second)}
+	f := Frozen{At: now.Add(-FreezeMax - time.Second)}
 	for _, c := range []struct {
 		t        thawing
 		why, rsn string
 	}{
-		{thawing{f: frozenJob{at: now}, holding: true}, "memory", "memory fine for 30 s"},
+		{thawing{f: Frozen{At: now}, holding: true}, "memory", "memory fine for 30 s"},
 		{thawing{f: f, emptied: true}, "gone", "its processes are gone"},
 		{thawing{f: f}, "ended", "episode or hold ended"},
 		{thawing{f: f, holding: true, woke: "because"}, "memory", "because"},
@@ -65,7 +65,7 @@ func TestThawWords(t *testing.T) {
 			t.Errorf("%+v: got %q %q want %q %q", c.t, r, w, c.rsn, c.why)
 		}
 	}
-	f.pastMax = true
+	f.PastMax = true
 	if r, _ := thawWords(thawing{f: f, holding: true}, now); r != "10 min limit, stall no longer critical" {
 		t.Errorf("past max: %q", r)
 	}
@@ -76,11 +76,11 @@ func TestThawWords(t *testing.T) {
 
 func TestStillHolding(t *testing.T) {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	job := frozenJob{owner: "t1", since: at.Format(time.RFC3339Nano)}
-	und := frozenJob{owner: "t1", undeclared: true, episode: at}
+	job := Frozen{Owner: "t1", Since: at.Format(time.RFC3339Nano)}
+	und := Frozen{Owner: "t1", Undeclared: true, Episode: at}
 	for _, c := range []struct {
 		name    string
-		f       frozenJob
+		f       Frozen
 		flagged []resource.Undeclared
 		held    []resource.Holder
 		want    bool

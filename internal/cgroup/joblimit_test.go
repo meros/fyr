@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func TestJL1TheCLIStartsInALeafAndTheThreadEnablesControllers(t *testing.T) {
@@ -133,7 +135,7 @@ func TestJL5RaisePeakAndSizeOf(t *testing.T) {
 	j := &Jobs{}
 	j.mu.Lock()
 	j.load()
-	j.table["fyr: make test-go"] = Learned{Demand: 2.9, Peak: 1000, Runs: 3}
+	j.table["fyr: make test-go"] = resource.Learned{Demand: 2.9, Peak: 1000, Runs: 3}
 	j.mu.Unlock()
 	j.RaiseOverrun("fyr: make test-go")
 	j.RaiseOverrun("unknown")

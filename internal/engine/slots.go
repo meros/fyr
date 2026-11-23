@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -29,14 +30,14 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.mu.Lock()
 	e.Slots = p
 	e.slotIdle = map[string]time.Time{}
-	e.undFroze = map[string]undFreeze{}
+	e.gs.UndFroze = map[string]guard.UndFreeze{}
 	e.guardLast = map[string]guardLine{}
 	e.rerunWait = map[string]string{}
 	// V0.survive-update: Load read the rerun kills from the store before
 	// fyrd wires the pool, so they are kept here, not made anew (a new map
 	// wiped them on every start); the holds already told come back too.
-	if e.rerunKills == nil {
-		e.rerunKills = map[string][]time.Time{}
+	if e.gs.RerunKills == nil {
+		e.gs.RerunKills = map[string][]time.Time{}
 	}
 	e.loadSlotOverToldLocked()
 	e.mu.Unlock()
@@ -194,7 +195,7 @@ func (e *Engine) sweepSlots() {
 		// as "episode or hold ended" into the critical stall it was frozen for.
 		// A frozen hold is not swept, and its idle time starts at its thaw.
 		t := e.threads[h.Owner]
-		if t != nil && e.frozenJobOf(h.Owner) {
+		if t != nil && guard.FrozenJob(e.gs.Frozen, h.Owner) {
 			delete(e.slotIdle, h.Owner)
 			continue
 		}
@@ -244,8 +245,7 @@ func (e *Engine) sweepSlots() {
 	e.syncSlotQueue()
 	e.checkSlotQueueInvariant() // V0.thread-invariants
 	e.heavierThanPredicted(s)
-	e.freezeGuard(s)
-	e.memoryGuard(s)    // V0.guard-tidy: after the freeze, which told its thread already
+	e.guardTick(s)      // V0.guard-tick: the freezes, then the memory notice (V0.guard-tidy: after the freeze, which told its thread already)
 	e.checkInvariants() // V0.load-invariants
 	e.publishGuard(e.Now())
 	e.adaptBudget(s)
@@ -321,7 +321,7 @@ func (e *Engine) adaptBudget(s resource.Snapshot) {
 	old := e.Slots.Budget()
 	if f != old || (s.Budget != nil && s.BudgetWhy != why) {
 		if f != old { // V0.load-tuning: the budget's moves can be read back
-			log.Printf("slots: budget cpu=%.3f->%.3f mem=%.3f->%.3f why=%q waiting=%d held=%d %s", old.CPU, f.CPU, old.Mem, f.Mem, why, len(s.Waiting), len(s.Held), guardSignals(sig))
+			log.Printf("slots: budget cpu=%.3f->%.3f mem=%.3f->%.3f why=%q waiting=%d held=%d %s", old.CPU, f.CPU, old.Mem, f.Mem, why, len(s.Waiting), len(s.Held), guard.SignalsLine(sig))
 		}
 		e.Slots.SetBudget(f, why)
 	}

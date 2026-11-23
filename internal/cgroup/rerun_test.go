@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func TestRerunClassesAreKeptAndMatch(t *testing.T) {
@@ -97,7 +99,7 @@ func TestRaisePeakAfterAKill(t *testing.T) {
 	}
 	j.mu.Lock()
 	j.load()
-	j.table = map[string]Learned{"fyr: make test": {Peak: 1000, Runs: 3}}
+	j.table = map[string]resource.Learned{"fyr: make test": {Peak: 1000, Runs: 3}}
 	j.mu.Unlock()
 	if !j.RaisePeak("fyr: make test", 1.2) {
 		t.Fatal("not raised")

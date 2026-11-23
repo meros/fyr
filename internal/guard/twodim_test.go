@@ -1,6 +1,6 @@
 // V0.163 (the owner's addition): CPU and memory are admitted as two resources, so a CPU-heavy job runs next to a
 // memory-heavy one, and the wait names the resource that binds.
-package slots
+package guard
 
 import (
 	"strings"
@@ -23,12 +23,12 @@ func TestV163CPUHeavyAndMemoryHeavyCoexist(t *testing.T) {
 	// Two memory-heavy jobs: the second needs 6 GB, 13 − 6 = 7 GB of budget but only (0.6 − 0.1) × 13 = 6.5 GB
 	// of real headroom above the reserve... it fits; a third does not.
 	ok, why, res := Decide(resource.DefaultPolicy, host6, resource.Full, 2, []resource.Need{memHeavy, memHeavy}, memHeavy)
-	if ok || res != ResMem || !strings.Contains(why, "needs ≈ 6.4 GB memory") {
+	if ok || res != resource.ResMem || !strings.Contains(why, "needs ≈ 6.4 GB memory") {
 		t.Fatalf("three memory-heavy jobs: %v %q %q", ok, why, res)
 	}
 	// Two CPU-heavy jobs fill 6 cores; a third waits on CPU.
 	ok, why, res = Decide(resource.DefaultPolicy, host6, resource.Full, 2, []resource.Need{cpuHeavy, cpuHeavy}, cpuHeavy)
-	if ok || res != ResCPU || why != "needs ≈ 50 % CPU, 0 % free" {
+	if ok || res != resource.ResCPU || why != "needs ≈ 50 % CPU, 0 % free" {
 		t.Fatalf("three CPU-heavy jobs: %v %q %q", ok, why, res)
 	}
 }
@@ -39,7 +39,7 @@ func TestV163TwoMemoryHeavyJobsDoNotFitTheRealHeadroom(t *testing.T) {
 	memHeavy := resource.Need{CPU: 0.6, Mem: 6 * gb}
 	ok, why, res := Decide(resource.DefaultPolicy, tight, resource.Full, 2, []resource.Need{memHeavy}, memHeavy)
 	// V0.admission-memory: the host's headroom binds, not the budget (7 GB of it free).
-	if ok || res != ResHeadroom || Wire(res) != ResMem || !strings.Contains(why, "memory,") {
+	if ok || res != resource.ResHeadroom || resource.Wire(res) != resource.ResMem || !strings.Contains(why, "memory,") {
 		t.Fatalf("%v %q %q", ok, why, res)
 	}
 }
@@ -47,7 +47,7 @@ func TestV163TwoMemoryHeavyJobsDoNotFitTheRealHeadroom(t *testing.T) {
 func TestV163BudgetFactorsPerResource(t *testing.T) {
 	cpuHeavy := resource.Need{CPU: 3, Mem: 2 * gb}
 	// The CPU budget cut to 75 %: 4.5 cores; two CPU-heavy jobs no longer fit.
-	if ok, _, res := Decide(resource.DefaultPolicy, host6, resource.Factors{CPU: 0.75, Mem: 1}, 2, []resource.Need{cpuHeavy}, cpuHeavy); ok || res != ResCPU {
+	if ok, _, res := Decide(resource.DefaultPolicy, host6, resource.Factors{CPU: 0.75, Mem: 1}, 2, []resource.Need{cpuHeavy}, cpuHeavy); ok || res != resource.ResCPU {
 		t.Fatal("the CPU factor did not bind")
 	}
 	// A cut memory budget does not hold a CPU job that needs little memory.

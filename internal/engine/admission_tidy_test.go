@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/meros/fyr/internal/guard/resource"
-	"github.com/meros/fyr/internal/slots"
 )
 
 func TestAdmissionTidyAHeavierSecondCommandIsAdmitted(t *testing.T) {
@@ -19,7 +18,7 @@ func TestAdmissionTidyAHeavierSecondCommandIsAdmitted(t *testing.T) {
 	room := true
 	e.Slots.Admit = func(head resource.Holder, _ []resource.Holder) (bool, string, string) {
 		if head.Owner == a && !room {
-			return false, "needs ≈ 8.6 GB memory, 2.0 GB free", slots.ResMem
+			return false, "needs ≈ 8.6 GB memory, 2.0 GB free", resource.ResMem
 		}
 		return true, "", ""
 	}

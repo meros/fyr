@@ -27,9 +27,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/admission"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
@@ -52,7 +52,7 @@ type scenario struct {
 	params  func(*simParams)
 	idle    int // agents that run with no heavy work
 	units   []*simUnit
-	learned map[string]cgroup.Learned
+	learned map[string]resource.Learned
 	desktop func(t time.Duration) float64
 	restart time.Duration // fyrd restarts at this time; 0 never
 	// expect: the violations the current code makes, with the reason.
@@ -109,10 +109,10 @@ func (r *simRun) newEngine() {
 	e.Now = func() time.Time { return *r.now }
 	pool := slots.Open(2, r.st)
 	pool.Now = e.Now
-	adm := admission.New(pool, 2, simSampler{r}, simJobs{r}, 0, 0)
+	adm := guard.NewAdmission(pool, 2, simSampler{r}, simJobs{r}, 0, 0)
 	adm.Now = e.Now
 	adm.Open = e.HeavyOpen
-	adm.Install()
+	pool.Install(adm)
 	e.UseSlots(pool)
 	h := r.h
 	u2s := func(th string) string { return r.sim[th] }
@@ -152,7 +152,7 @@ func (r *simRun) newEngine() {
 				hd.mem0 = 0
 			}
 		},
-		SlotAIMD: &slots.AIMD{N: 2, Path: filepath.Join(r.dir, "slot-budget.json"), Policy: adm.Policy},
+		SlotAIMD: &guard.AIMD{N: 2, Path: filepath.Join(r.dir, "slot-budget.json"), Policy: adm.Policy},
 	}
 	e.UndeclaredDeps = UndeclaredDeps{
 		Undeclared: func() []resource.Undeclared { return r.flags() },
@@ -292,7 +292,7 @@ func (s simSampler) ServiceExtras() []resource.Extra {
 // simJobs is admission's Jobs (cgroup.Jobs).
 type simJobs struct{ r *simRun }
 
-func (j simJobs) Learned(class string) (cgroup.Learned, bool) {
+func (j simJobs) Learned(class string) (resource.Learned, bool) {
 	l, ok := j.r.h.learned[class]
 	return l, ok
 }
@@ -366,7 +366,7 @@ func (r *simRun) checkThaw(th string, kind unitKind) {
 			frozen = max(frozen, r.h.t-u.frozenAt)
 		}
 	}
-	if frozen == 0 || frozen >= FreezeCeiling {
+	if frozen == 0 || frozen >= guard.FreezeCeiling {
 		return
 	}
 	why := "?"
@@ -586,8 +586,8 @@ func unit(th, name, class string, kind unitKind, at time.Duration, cpu, peakGB, 
 	return &simUnit{Name: name, Thread: th, Class: class, Kind: kind, At: at, CPU: cpu, Base: 0.1 * gb, Peak: peakGB * gb, Work: work}
 }
 
-func learnedClass(cpu, peakGB, wall float64) cgroup.Learned {
-	return cgroup.Learned{Demand: cpu, Peak: uint64(peakGB * gb), Walls: []float64{wall, wall, wall}, Runs: 5}
+func learnedClass(cpu, peakGB, wall float64) resource.Learned {
+	return resource.Learned{Demand: cpu, Peak: uint64(peakGB * gb), Walls: []float64{wall, wall, wall}, Runs: 5}
 }
 
 func scenarios() []scenario {
@@ -597,7 +597,7 @@ func scenarios() []scenario {
 
 	// 1. A steady mix of small learned test jobs from six threads.
 	{
-		s := scenario{name: "steady-small", idle: 1, learned: map[string]cgroup.Learned{"go test": learnedClass(2, 1, 60)}}
+		s := scenario{name: "steady-small", idle: 1, learned: map[string]resource.Learned{"go test": learnedClass(2, 1, 60)}}
 		for i := range 30 {
 			th := fmt.Sprintf("t%d", i%6)
 			s.units = append(s.units, unit(th, "go test ./...", "go test", kAdmitted, time.Duration(i)*2*mn, 2, 1, 120))
@@ -608,7 +608,7 @@ func scenarios() []scenario {
 	add(scenario{name: "huge-job", idle: 1, units: []*simUnit{
 		unit("big", "yarn e2e:all", "e2e all", kAdmitted, 0, 4, 16, 1200),
 		unit("small", "go vet ./...", "go vet", kAdmitted, 2*mn, 1, 0.5, 60),
-	}, learned: map[string]cgroup.Learned{"go vet": learnedClass(1, 0.5, 60)}})
+	}, learned: map[string]resource.Learned{"go vet": learnedClass(1, 0.5, 60)}})
 	// 3. Decision 0032's incident: one thread's undeclared turbo run with four
 	// heavy parts that fit one at a time.
 	{
@@ -630,7 +630,7 @@ func scenarios() []scenario {
 		unit("a", "go test", "go test", kAdmitted, 0, 3, 3, 1800),
 		unit("b", "go test", "go test", kAdmitted, 30*time.Second, 3, 3, 1800),
 		unit("c", "go test", "go test", kAdmitted, time.Minute, 2, 3, 1200),
-	}, learned: map[string]cgroup.Learned{"go test": learnedClass(3, 3, 600)},
+	}, learned: map[string]resource.Learned{"go test": learnedClass(3, 3, 600)},
 		desktop: func(t time.Duration) float64 {
 			if t >= 5*mn && t < 25*mn {
 				return 5*gb + 0.4*24*gb
@@ -642,11 +642,11 @@ func scenarios() []scenario {
 		a := unit("a", "webpack", "webpack", kAdmitted, 0, 2, 7, 900)
 		b := unit("b", "webpack", "webpack", kAdmitted, 10*time.Second, 2, 7, 900)
 		a.File, b.File = 0.7, 0.7
-		add(scenario{name: "file-cache", idle: 1, units: []*simUnit{a, b}, learned: map[string]cgroup.Learned{"webpack": learnedClass(2, 3, 450)}})
+		add(scenario{name: "file-cache", idle: 1, units: []*simUnit{a, b}, learned: map[string]resource.Learned{"webpack": learnedClass(2, 3, 450)}})
 	}
 	// 6. A burst of ten learned jobs at once.
 	{
-		s := scenario{name: "burst-10", idle: 1, learned: map[string]cgroup.Learned{"jest": learnedClass(3, 2, 200)}}
+		s := scenario{name: "burst-10", idle: 1, learned: map[string]resource.Learned{"jest": learnedClass(3, 2, 200)}}
 		for i := range 10 {
 			s.units = append(s.units, unit(fmt.Sprintf("t%d", i), "jest", "jest", kAdmitted, 0, 3, 2, 600))
 		}
@@ -656,7 +656,7 @@ func scenarios() []scenario {
 	add(scenario{name: "two-growers", idle: 1, units: []*simUnit{
 		unit("a", "pytest", "pytest", kAdmitted, 0, 2, 7, 1200),
 		unit("b", "pytest", "pytest", kAdmitted, 20*time.Second, 2, 7, 1200),
-	}, learned: map[string]cgroup.Learned{"pytest": learnedClass(2, 1.5, 300)}})
+	}, learned: map[string]resource.Learned{"pytest": learnedClass(2, 1.5, 300)}})
 	// 8. A dev stack (a service) and e2e jobs of two threads beside it.
 	{
 		svc := unit("dev", "process-compose up", "", kService, 0, 0.5, 4, 0)
@@ -664,11 +664,11 @@ func scenarios() []scenario {
 			unit("dev", "yarn e2e", "e2e", kAdmitted, time.Minute, 3, 3, 900),
 			unit("b", "yarn e2e", "e2e", kAdmitted, time.Minute, 3, 3, 900),
 			unit("c", "yarn e2e", "e2e", kAdmitted, 2*time.Minute, 3, 3, 900),
-		}, learned: map[string]cgroup.Learned{"e2e": learnedClass(3, 3, 300)}})
+		}, learned: map[string]resource.Learned{"e2e": learnedClass(3, 3, 300)}})
 	}
 	// 9. CPU only: six jobs of 4 cores, little memory.
 	{
-		s := scenario{name: "cpu-only", idle: 1, learned: map[string]cgroup.Learned{"cargo": learnedClass(4, 0.5, 150)}}
+		s := scenario{name: "cpu-only", idle: 1, learned: map[string]resource.Learned{"cargo": learnedClass(4, 0.5, 150)}}
 		for i := range 6 {
 			s.units = append(s.units, unit(fmt.Sprintf("t%d", i), "cargo build", "cargo", kAdmitted, time.Duration(i)*10*time.Second, 4, 0.5, 600))
 		}
@@ -679,7 +679,7 @@ func scenarios() []scenario {
 	{
 		leak := unit("leaky", "node server.js --watch", "", kUndeclared, 0, 1, 1.5, 3600)
 		leak.Leak, leak.LeakTo = 20e6, 10*gb
-		s := scenario{name: "leak", idle: 1, units: []*simUnit{leak}, learned: map[string]cgroup.Learned{"go test": learnedClass(2, 2, 120)}}
+		s := scenario{name: "leak", idle: 1, units: []*simUnit{leak}, learned: map[string]resource.Learned{"go test": learnedClass(2, 2, 120)}}
 		for i := range 8 {
 			s.units = append(s.units, unit("b", "go test", "go test", kAdmitted, time.Duration(2+i*6)*mn, 2, 2, 240))
 		}
@@ -689,7 +689,7 @@ func scenarios() []scenario {
 	add(scenario{name: "restart-frozen", idle: 1, restart: 4 * mn, units: []*simUnit{
 		unit("a", "pytest", "pytest", kAdmitted, 0, 2, 7, 1200),
 		unit("b", "pytest", "pytest", kAdmitted, 20*time.Second, 2, 7, 1200),
-	}, learned: map[string]cgroup.Learned{"pytest": learnedClass(2, 1.5, 300)}})
+	}, learned: map[string]resource.Learned{"pytest": learnedClass(2, 1.5, 300)}})
 	// 12. The agents' swap is nearly gone: three undeclared jobs of 5 GB.
 	add(scenario{name: "swap-full", idle: 1, params: func(p *simParams) { p.SwapCap = 2 * gb }, units: []*simUnit{
 		unit("a", "tsc -b", "", kUndeclared, 0, 2, 5, 900),
@@ -705,7 +705,7 @@ func scenarios() []scenario {
 			a.Ramp = 0.9 // it grows over most of its run, so most of it comes after the move
 			return []*simUnit{unit("base", "make build", "build", kAdmitted, 0, 2, 7, 1500), a}
 		}
-		l := map[string]cgroup.Learned{"build": learnedClass(2, 7, 750)}
+		l := map[string]resource.Learned{"build": learnedClass(2, 7, 750)}
 		add(scenario{name: "unknown-limit", idle: 1, units: mk(), learned: l})
 		add(scenario{name: "unknown-limit-old", idle: 1, params: func(p *simParams) { p.LimitFloor = false }, units: mk(), learned: l}) // the limits before V0.freeze-charge
 	}
@@ -720,7 +720,7 @@ func scenarios() []scenario {
 		a := unit("a", "make check &", "make check", kAdmitted, 0, 2, 7, 1500)
 		b := unit("b", "make check &", "make check", kAdmitted, 20*time.Second, 2, 7, 1500)
 		a.Background, b.Background = true, true
-		add(scenario{name: "background", idle: 1, units: []*simUnit{a, b}, learned: map[string]cgroup.Learned{"make check": learnedClass(2, 1.5, 300)}})
+		add(scenario{name: "background", idle: 1, units: []*simUnit{a, b}, learned: map[string]resource.Learned{"make check": learnedClass(2, 1.5, 300)}})
 	}
 	// V0.sim-fixes fixed the rest of V0.load-sim's list: a violation of
 	// those scenarios now fails the test.

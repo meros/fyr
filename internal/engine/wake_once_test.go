@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -34,7 +35,7 @@ func TestWakeOnceCountsTheFrozenJobOnce(t *testing.T) {
 	// so the others use 6.7 GB and 6.7 + 2.8 < 10.
 	z.free, z.stall, z.mem = 0.2, resource.StallOK, 9.5e9
 	e.Tick()
-	tickFor(e, now, 2*ThawAfterOK)
+	tickFor(e, now, 2*guard.ThawAfterOK)
 	if z.frozen[a] {
 		t.Fatalf("not woken though the others and the job fit under the cap:\n%s", out.String())
 	}

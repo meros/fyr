@@ -7,13 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/admission"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // wireGuard connects the memory guard: the sampler, groups and leftovers to the engine.
@@ -120,10 +118,10 @@ func (w *wiring) wireGuard() {
 		UndeclaredFaults: groups.MajorFaultBytes,
 	}
 	// Decision 0029 S2–S4, V0.163, V0.164: admission by a budget of costs,
-	// gated by the slowdown and memory; the policy is internal/admission.
-	adm := admission.New(pool, n, sampler, jobs, cfg.SlotSlowdownMax, cfg.SlotMemoryReserve)
+	// gated by the slowdown and memory; the policy is internal/guard.
+	adm := guard.NewAdmission(pool, n, sampler, jobs, cfg.SlotSlowdownMax, cfg.SlotMemoryReserve)
 	adm.Open = eng.HeavyOpen // V0.admission-tidy: a quiet open call is not idle
-	adm.Install()
+	pool.Install(adm)
 	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
 	// being slow and restarts none into the same thrash.
 	mgr.SetPressure(adm.Thrashing)
@@ -144,7 +142,7 @@ func (w *wiring) wireGuard() {
 	}
 	if !pool.Off() {
 		// decision 0029 S4: the budget adapts; V0.budget-restart: and outlives a deploy
-		sd.SlotAIMD = &slots.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json"), Policy: adm.Policy} // V0.admission-tidy: the configured reserve
+		sd.SlotAIMD = &guard.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json"), Policy: adm.Policy} // V0.admission-tidy: the configured reserve
 	}
 	eng.SlotDeps = sd
 	// V0.rerun-classes: kill and rerun, for the classes the owner marked.

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -100,7 +101,7 @@ func TestSimFixesAFrozenJobKeepsItsHold(t *testing.T) {
 		// The stall falls: b wakes, and its idle clock starts at the thaw, not
 		// at the last time it ran before the freeze.
 		g.agents, g.mem = resource.StallOK, 4e9
-		tickFor(g.e, g.now, ThawAfterOK+10*time.Second)
+		tickFor(g.e, g.now, guard.ThawAfterOK+10*time.Second)
 		if g.frozen[g.b] {
 			t.Fatalf("%s: not woken", how)
 		}
@@ -149,18 +150,18 @@ func TestSimFixesTheLastRunningHeavyWorkIsNeverFrozen(t *testing.T) {
 	third(t, e)
 	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free, z.agents = 0.04, resource.StallCritical
-	tickFor(e, now, 2*AddFreezeAfter)
+	tickFor(e, now, 2*guard.AddFreezeAfter)
 	if len(z.frozen) != 0 {
 		t.Fatalf("froze the only heavy work, for three idle agents: %v", z.frozen)
 	}
 	u.flags = append(u.flags, flagFor(b, now.Add(time.Second)))
-	tickFor(e, now, 3*AddFreezeAfter)
+	tickFor(e, now, 3*guard.AddFreezeAfter)
 	if !z.frozen[b] || z.frozen[a] {
 		t.Fatalf("two threads with heavy work and two idle: the newer alone frozen, got %v", z.frozen)
 	}
 }
 
-// The timed thaw at FreezeMax counts the frozen work's memory that is out of
+// The timed thaw at guard.FreezeMax counts the frozen work's memory that is out of
 // RAM: it comes back with the thaw. 2.8 GB of the 12 GB budget in swap and
 // 15 % free would leave the agents under their 10 % reserve.
 func TestSimFixesTheTimedThawCountsTheMemoryThatComesBack(t *testing.T) {
@@ -179,7 +180,7 @@ func TestSimFixesTheTimedThawCountsTheMemoryThatComesBack(t *testing.T) {
 	}
 	resident = 0.2e9 // the reclaim moved 2.6 GB of it to swap
 	z.free, z.agents = 0.15, resource.StallElevated
-	tickFor(e, now, FreezeMax+time.Minute)
+	tickFor(e, now, guard.FreezeMax+time.Minute)
 	if !z.frozen[a] {
 		t.Fatal("thawed at the 10 min limit with no room for the 2.6 GB that comes back")
 	}
@@ -201,7 +202,7 @@ func TestSimFixesNoFreezeOnTheHeadroomAloneWhileNothingStalls(t *testing.T) {
 	e.Slots.Acquire(th[1], resource.Test)
 	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free, z.stall, z.agents = 0.04, resource.StallOK, resource.StallOK
-	tickFor(e, now, 2*AddFreezeAfter)
+	tickFor(e, now, 2*guard.AddFreezeAfter)
 	if len(z.frozen) != 0 || len(z.slotted) != 0 {
 		t.Fatalf("froze on the headroom alone: %v %v", z.frozen, z.slotted)
 	}
@@ -225,14 +226,14 @@ func TestSimFixesTheWakeRuleOfTurnsCountsTheFrozenPartsOnly(t *testing.T) {
 	e.SlotMem = func(string) uint64 { return resident }
 	z.free, z.agents, z.mem = 0.04, resource.StallCritical, 10e9 // the cap: 10 GB
 	e.Tick()
-	if e.first().active != 30 {
+	if e.first().Active != 30 {
 		t.Fatalf("no turns: %+v", e.first())
 	}
 	// Two parts end; the one whose turn it is runs on, nothing else is frozen.
 	r.units = r.units[:1]
 	resident = 1.4e9
 	z.free, z.stall, z.agents, z.mem = 0.04, resource.StallOK, resource.StallOK, 9.0e9
-	tickFor(e, now, ThawAfterOK+10*time.Second)
+	tickFor(e, now, guard.ThawAfterOK+10*time.Second)
 	if len(e.frozenOwners()) != 0 {
 		t.Fatalf("not woken with no part frozen: 9.0 GB < cap 10 GB; frozen %+v", e.first())
 	}
@@ -242,8 +243,8 @@ func (e *Engine) frozenOwners() []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var out []string
-	for _, f := range e.frozen {
-		out = append(out, f.owner)
+	for _, f := range e.gs.Frozen {
+		out = append(out, f.Owner)
 	}
 	return out
 }
