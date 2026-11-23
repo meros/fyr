@@ -4,4 +4,9 @@ __pycache__/
 /spikes/protocol/run/
 bin/
 /fyrd
+# `go build` in a command's folder leaves the binary there.
+/cmd/fyr/fyr
+/cmd/fyrd/fyrd
+/cmd/fyr-desktop/fyr-desktop
+/cmd/fyrrelease/fyrrelease
 /result
