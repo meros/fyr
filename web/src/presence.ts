@@ -10,13 +10,18 @@ export function presenceTarget(openId: string | null, visibility: DocumentVisibi
 
 export interface BeatState {
   last: string;
+  visible: boolean;
   at: number;
 }
 
-/** Beat at once on a change, and every 20 s while a thread is shown. */
-export function shouldBeat(s: BeatState, target: string, now: number): boolean {
-  if (target !== s.last) return true;
-  return target !== "" && now - s.at >= 20_000;
+/**
+ * Beat at once on a change of the thread shown or of the page's visibility, and every 20 s while the page is visible,
+ * on the inbox too: the front counts the owner away after 10 min without a beat from any device and then batches done
+ * and blocked pushes (V0.push-summary-batch). A hidden page sends nothing more.
+ */
+export function shouldBeat(s: BeatState, target: string, visible: boolean, now: number): boolean {
+  if (target !== s.last || visible !== s.visible) return true;
+  return visible && now - s.at >= 20_000;
 }
 
 /** A stable id for this browser, so beats from two devices do not mix. */

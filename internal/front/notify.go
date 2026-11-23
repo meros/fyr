@@ -18,8 +18,9 @@ import (
 // of its hosts. It sees each host's threads on the host's stream and applies
 // the same plan a host used to (V0.20): asking and failed push at once, done
 // and blocked after notify.Delay if still true; never for a thread a device
-// of this front is watching or in its project's quiet hours (V0.46). Hosts
-// send no push.
+// of this front is watching. A push in its project's quiet hours (V0.46) is
+// held for one summary when they end, and done and blocked while the owner
+// is away are batched (V0.push-summary-batch). Hosts send no push.
 
 // attentionOf is a thread DTO's attention state, "" when it has none.
 func attentionOf(m map[string]any) string {
@@ -73,7 +74,10 @@ func (f *Front) noticeLocked(l *link, prev, next map[string]any) {
 
 // send pushes one thread's state to this front's devices. host is the
 // host's name (shown, and what a device hides by); hostID its install id,
-// which the tap opens the thread by (V0.client-refs).
+// which the tap opens the thread by (V0.client-refs). A push for a thread in
+// its project's quiet hours is held for the summary when they end, and done
+// and blocked while the owner is away go into the batch
+// (V0.push-summary-batch, notify.RouteFor).
 func (f *Front) send(host, hostID string, m map[string]any) {
 	d, err := dtoOf(m)
 	if err != nil {
@@ -84,9 +88,26 @@ func (f *Front) send(host, hostID string, m map[string]any) {
 		return
 	}
 	now := time.Now()
-	if !notify.Allowed(f.presence.Watched(d.ID, now), d.QuietUntil, now) {
+	state := string(d.Attention.State)
+	h := notify.Held{Host: host, Thread: d.ID, Project: d.ProjectID, State: state, At: now}
+	switch notify.RouteFor(state, f.presence.Watched(d.ID, now), d.QuietUntil, f.presence.Away(now), now) {
+	case notify.Drop:
+		return
+	case notify.Hold:
+		h.Until = *d.QuietUntil
+		if err := f.held.Hold(h); err != nil {
+			f.opt.Logf("front: push: hold: %v", err)
+		}
+		return
+	case notify.Batch:
+		f.held.Batch(h)
 		return
 	}
+	f.opt.Push.Notify(core.Owner, f.payloadOf(host, hostID, d))
+}
+
+// payloadOf is the push of one thread's state.
+func (f *Front) payloadOf(host, hostID string, d api.Thread) push.Payload {
 	meta, detail := AttentionDetail(d)
 	// V0.140: with several hosts a push says which one the thread runs on.
 	if host != "" && len(f.all()) > 1 {
@@ -99,7 +120,110 @@ func (f *Front) send(host, hostID string, m map[string]any) {
 	pl := push.PayloadFor(d.ID, d.Title, string(d.Attention.State), meta, detail)
 	pl.Host = hostID
 	pl.Origin = &push.Origin{Host: host, ProjectID: d.ProjectID} // V0.207: a device may hide either
-	f.opt.Push.Notify(core.Owner, pl)
+	return pl
+}
+
+// flushHeld sends the held pushes that are due at now (V0.push-summary-batch):
+// one summary per project whose quiet hours ended, and the away batch.
+func (f *Front) flushHeld(now time.Time) {
+	if f.opt.Push == nil {
+		return
+	}
+	quiet, batch, err := f.held.Due(now, f.presence.LastSeen())
+	if err != nil {
+		f.opt.Logf("front: push: held: %v", err)
+	}
+	for _, g := range quiet {
+		f.summarise(g, true, now)
+	}
+	if len(batch) > 0 {
+		f.summarise(batch, false, now)
+	}
+}
+
+// heldNow is a held push's thread as it is now.
+type heldNow struct {
+	host, hostID string
+	d            api.Thread
+}
+
+// summarise sends one push for held pushes, made from each thread's state
+// now: a thread seen, settled or working since, or watched now, is left out,
+// and nothing goes out when none is left. A thread whose project is (again)
+// in its quiet hours is held for their end. Each device gets what it would
+// have been told: not a project or host it hides, not done when it turned
+// finished pushes off. One thread left is that thread's own push, which opens
+// it; more are "Acme: 3 done, 1 asking", which opens the inbox.
+func (f *Front) summarise(hs []notify.Held, quiet bool, now time.Time) {
+	var items []heldNow
+	for _, h := range hs {
+		l, hostID, m := f.threadNamed(h.Host, h.Thread)
+		if l == nil || m == nil {
+			continue
+		}
+		d, err := dtoOf(m)
+		if err != nil {
+			continue
+		}
+		state := string(d.Attention.State)
+		if d.PushQuiet || f.presence.Watched(d.ID, now) || !notify.Summarised(state, quiet) {
+			continue
+		}
+		if d.QuietUntil != nil && now.Before(*d.QuietUntil) {
+			h.State, h.Project, h.Until = state, d.ProjectID, *d.QuietUntil
+			if err := f.held.Hold(h); err != nil {
+				f.opt.Logf("front: push: hold: %v", err)
+			}
+			continue
+		}
+		items = append(items, heldNow{h.Host, hostID, d})
+	}
+	if len(items) == 0 {
+		return
+	}
+	title := "Fyr"
+	if quiet && items[0].d.Project != "" {
+		title = items[0].d.Project // one group is one project
+	}
+	several := len(f.all()) > 1
+	f.opt.Push.Notify(core.Owner, push.Payload{For: func(s push.Subscription) (push.Payload, bool) {
+		var mine []heldNow
+		for _, it := range items {
+			if s.Hidden.Hides(push.Origin{Host: it.host, ProjectID: it.d.ProjectID}) || (s.NoFinished && it.d.Attention.State == core.Done) {
+				continue
+			}
+			mine = append(mine, it)
+		}
+		switch len(mine) {
+		case 0:
+			return push.Payload{}, false
+		case 1:
+			return f.payloadOf(mine[0].host, mine[0].hostID, mine[0].d), true
+		}
+		states := make([]string, len(mine))
+		for i, it := range mine {
+			states[i] = string(it.d.Attention.State)
+		}
+		body := notify.Counts(states)
+		if quiet && several {
+			body = mine[0].host + " · " + body // V0.140
+		}
+		return push.Payload{Title: title, Body: body, State: "summary"}, true
+	}})
+}
+
+// threadNamed is a host's link by its name, its install id and its thread's
+// DTO; nil when the front follows no such host or the host no such thread.
+func (f *Front) threadNamed(host, id string) (*link, string, map[string]any) {
+	for _, l := range f.all() {
+		if l.name() != host {
+			continue
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return l, f.idOfLocked(l), l.raw[id]
+	}
+	return nil, "", nil
 }
 
 // quotaResetLocked plans a push when a provider's quota window resets for a

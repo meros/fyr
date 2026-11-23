@@ -48,6 +48,12 @@ func (p *fakePush) NotifyOne(user, endpoint string, pl push.Payload) int {
 func (p *fakePush) Notify(user string, pl push.Payload) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if pl.For != nil { // one device that hides nothing and wants everything
+		var ok bool
+		if pl, ok = pl.For(push.Subscription{}); !ok {
+			return 0
+		}
+	}
 	p.sent = append(p.sent, pl)
 	return 1
 }

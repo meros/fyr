@@ -9,10 +9,15 @@ test("presence target", () => {
   assert.equal(presenceTarget(null, "visible"), "");
 });
 
-test("beat on change, else every 20 s", () => {
-  assert.equal(shouldBeat({ last: "", at: 0 }, "t1", 1000), true);
-  assert.equal(shouldBeat({ last: "t1", at: 0 }, "t1", 19_000), false);
-  assert.equal(shouldBeat({ last: "t1", at: 0 }, "t1", 20_000), true);
-  assert.equal(shouldBeat({ last: "t1", at: 0 }, "", 1000), true, "stopping is sent at once");
-  assert.equal(shouldBeat({ last: "", at: 0 }, "", 30_000), false, "nothing shown: no beats");
+test("beat on change, else every 20 s while visible", () => {
+  assert.equal(shouldBeat({ last: "", visible: true, at: 0 }, "t1", true, 1000), true);
+  assert.equal(shouldBeat({ last: "t1", visible: true, at: 0 }, "t1", true, 19_000), false);
+  assert.equal(shouldBeat({ last: "t1", visible: true, at: 0 }, "t1", true, 20_000), true);
+  assert.equal(shouldBeat({ last: "t1", visible: true, at: 0 }, "", false, 1000), true, "stopping is sent at once");
+  // V0.push-summary-batch: the inbox on screen beats too, so the front knows the owner is here.
+  assert.equal(shouldBeat({ last: "", visible: true, at: 0 }, "", true, 19_000), false);
+  assert.equal(shouldBeat({ last: "", visible: true, at: 0 }, "", true, 20_000), true);
+  assert.equal(shouldBeat({ last: "", visible: false, at: 0 }, "", true, 1000), true, "coming back to the inbox is sent at once");
+  assert.equal(shouldBeat({ last: "", visible: true, at: 0 }, "", false, 1000), true, "hiding the inbox is sent at once");
+  assert.equal(shouldBeat({ last: "", visible: false, at: 0 }, "", false, 30_000), false, "hidden: no beats");
 });

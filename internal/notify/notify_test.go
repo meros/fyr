@@ -49,7 +49,7 @@ func TestPresence(t *testing.T) {
 }
 
 // SPEC 0.5 V0.46: no push while the thread's project is in its quiet hours;
-// a done push whose wait ends inside the window is dropped, not queued.
+// the push itself is held for a summary (RouteFor, V0.push-summary-batch).
 func TestQuietSuppresses(t *testing.T) {
 	until := t0.Add(time.Hour)
 	if Allowed(false, &until, t0) {

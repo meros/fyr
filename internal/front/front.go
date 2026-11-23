@@ -140,6 +140,9 @@ type Front struct {
 
 	mu       sync.Mutex // guards the caches of every link
 	presence *notify.Presence
+	// held: the pushes held for quiet hours and the away batch
+	// (V0.push-summary-batch).
+	held *notify.Queue
 	// noticed: per host and thread, the number of its last change of
 	// attention state, so a waiting push knows it is still the newest.
 	noticed map[string]uint64
@@ -215,7 +218,11 @@ func New(opt Options, hosts []HostConfig) *Front {
 	if opt.NotifyDelay <= 0 {
 		opt.NotifyDelay = notify.Delay
 	}
-	f := &Front{opt: opt, hub: stream.NewHub(), presence: &notify.Presence{}}
+	f := &Front{opt: opt, hub: stream.NewHub(), presence: &notify.Presence{}, held: &notify.Queue{KV: opt.Store}}
+	f.presence.Seen(time.Now()) // a restart is not an owner long gone
+	if err := f.held.Load(time.Now()); err != nil {
+		opt.Logf("front: push: %v", err)
+	}
 	c := &clientBuild{build: opt.BuildID, web: opt.Web, h: http.NotFoundHandler()}
 	if opt.Web != nil {
 		c.h = webClient(opt.Web)
@@ -362,6 +369,20 @@ func (f *Front) Run(ctx context.Context) {
 	f.runMu.Unlock()
 	wg.Add(1)
 	go func() { defer wg.Done(); f.watchAuth(ctx) }()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := time.NewTicker(notify.Tick)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-t.C:
+				f.flushHeld(now) // V0.push-summary-batch
+			}
+		}
+	}()
 	if f.opt.CacheDir != "" {
 		wg.Add(1)
 		go func() {

@@ -1,0 +1,15 @@
+# V0.push-summary-batch: quiet hours end with one summary push per project, and done and blocked pushes are batched while the owner is away
+
+→ V0.20, V0.46, decision 0014 ("When the window ends": back silently is replaced; the owner kept the summary push), V0.54.
+
+(1) **The cause.** A push refused for quiet hours was dropped, so a question asked in the evening reached the owner only if they opened the app. Several threads finishing while the owner was away sent one push each.
+
+(2) **Quiet hours hold, not drop.** A thread's push that its project's quiet hours refuse is held on the front (`notify.Queue`), one per thread (the newest state wins), until the window's end. The held pushes are kept in the front's KV table (`notify.held`, the one `kvstore.Table`, V0.dedup-kv-backoff), so a restart during the window loses none; one older than `notify.HoldFor` (8 days: quiet stretches join at most a week ahead) is dropped. The front looks every `notify.Tick` (30 s). When a project's window has ended, its held threads are read as they are now: one seen, settled, working, watched or quiet again (held again for the new end) is left out. Of the rest (asking, failed, blocked, done), one push goes to each device: "Acme" with "1 asking, 2 done", which opens the inbox; one thread left is that thread's own push, which opens it. Nothing goes out when nothing is left.
+
+(3) **Away batch.** The owner is away when no device has beat for `notify.AwayAfter` (10 min). Every beat counts, the one that says the page went hidden too; the front's start counts as one. While away, done and blocked go into one batch, sent `notify.BatchEvery` (5 min) after its oldest push as one push ("Fyr", "1 blocked, 3 done"; one thread left is its own push), with the threads read as they are then (only done and blocked counted). Asking and failed still push at once. **A beat ends the batch:** what was collected before the beat is not sent, since the owner came back and saw the inbox; what comes after it pushes at once. The batch is in memory only: a restart counts as presence, which would end it anyway.
+
+(4) **Per device.** A summary counts, for each device, only what that device would have been told: not a host or project it hides (V0.207), not done when it turned finished pushes off (V0.notification-polish). `push.Payload.For` makes the payload per device.
+
+(5) **The client beats while visible.** So that the front knows the owner is there on the inbox too, the client beats every 20 s while the page is visible (with no thread, `threadId: ""`), and at once when visibility changes; a hidden page sends nothing more. Nothing on screen changes, on desktop or phone.
+
+Tests: `internal/notify/held_test.go` (TestRouteFor, TestQuietHeldUntilTheEndAndAcrossARestart, TestHeldExpires, TestBatch, TestCounts, TestAway), `internal/front/pushheld_test.go` (TestQuietHoursEndWithOneSummary, TestQuietHoursEndQuietWhenAllSeen, TestAwayBatch), `internal/push/push_test.go` (TestForMakesThePayloadPerDevice), `web/test/presence.test.ts`.

@@ -38,3 +38,7 @@ Date: 2026-11-14 · Status: accepted (owner, walk-through) · Spec: 0.5 V0.46
 **Why weeknights start Sunday to Friday.** Days are the start day of a window. With Monday to Friday starts and an all-day weekend, the quiet stops at Monday 00:00 and the project can notify between 00:00 and 06:00 on Monday. Starting the weeknights on Sunday too makes the two presets together run from Friday 17:00 to Monday 06:00, which is what "weeknights and all weekend" means. On its own the preset leaves only Saturday evening open, which the weekend preset covers. The owner can turn Sunday off on the row.
 
 **Consequences.** Every client and the push path read the list through the same host computation; nothing else changed for the inbox, the filter or push. A client cached from before the addendum cannot show the list on the project screen until it reloads; hiding and push are unaffected, because the host decides.
+
+## Addendum: one summary push at the end (2026-11-23)
+
+"Back silently" is replaced: the owner kept the summary push. When a project's window ends, one push says what was held back and still needs the owner ("Acme" · "1 asking, 2 done"); nothing when all of it was seen or settled meanwhile. See V0.push-summary-batch.
