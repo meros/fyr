@@ -5,7 +5,7 @@ import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab } from "./mock.ts";
 import { mockChanges, mockFilePatch } from "./mock-changes.ts";
-import { mockLeftoverCommand, mockLoad, mockQueueLoad, mockQuota, mockRerunCommand, mockUndeclaredCommand } from "./mock-load.ts";
+import { mockInvariantCommand, mockLeftoverCommand, mockLoad, mockQueueLoad, mockQuota, mockRerunCommand, mockUndeclaredCommand } from "./mock-load.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { withLongValues } from "./mock-long.ts";
 import { decodeHosts } from "./hosts.ts";
@@ -282,6 +282,12 @@ export function createMockApi(scenario: string): Api {
         const h = load.find((x) => x.host === (hn || load[0]?.host));
         if (!h) return { ok: false, error: `this front follows no host ${hn}` };
         return mockLeftoverCommand(h, action, { ...(args ?? {}), host: h.host }, Date.now());
+      }
+      // V0.load-invariants: Fix it and Dismiss close the card, as the host answers them.
+      if (action === "host.invariantFix" || action === "host.invariantDismiss") {
+        const h = load.find((x) => x.host === (hn || load[0]?.host));
+        if (!h) return { ok: false, error: `this front follows no host ${hn}` };
+        return mockInvariantCommand(h, args ?? {});
       }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];

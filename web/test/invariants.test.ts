@@ -1,9 +1,8 @@
 // V0.load-invariants: a broken load invariant is a card in Needs you on both fronts (invariants-ui.tsx, drawn by the
-// desktop list and the phone inbox) with Fix it and Dismiss; Settings → Automation lists each invariant.
+// desktop list and the phone inbox) with Fix it and Dismiss; Settings → Automation lists each invariant. Both fronts
+// drawing them is the layout test's (V0.load-invariants sections, V0.single-sources); this file holds the words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { HostLoad } from "../src/host-load.ts";
 import type { Invariants } from "../src/guard.ts";
 import { cardHead, cardWhen, fixState, invariantCards, invariantRows, linesLabel } from "../src/invariants.ts";
@@ -46,20 +45,6 @@ test("Settings lists each invariant with its last violation and count", () => {
   assert.match(rows[0].desc, /^2 times · last .+, 12 min ago · in Needs you$/);
   assert.equal(rows[1].desc, "never broken");
   assert.deepEqual(invariantRows(host("old"), NOW), []);
-});
-
-test("both fronts draw the card under Needs you, with both buttons (one shared component)", () => {
-  const src = (f: string) => readFileSync(join(import.meta.dirname, "..", "src", f), "utf8");
-  assert.match(src("inbox.tsx"), /s\.key === "needs" && <InvariantCards phone=\{false\}/);
-  assert.match(src("phone.tsx"), /s\.key === "needs" && <InvariantCards phone /);
-  const ui = src("invariants-ui.tsx");
-  assert.match(ui, /"host\.invariantFix"/);
-  assert.match(ui, /"host\.invariantDismiss"/);
-  assert.match(ui, />\s*Fix it\s*</);
-  assert.match(ui, />\s*Dismiss\s*</);
-  const settings = src("settings-ui.tsx") + src("settings-automation.tsx");
-  assert.match(settings, /label="Load invariants"/);
-  assert.match(settings, /label="Thread invariants"/);
 });
 
 test("V0.thread-invariants: thread cards name Thread, show transitions, split in Settings, and work without slots", () => {

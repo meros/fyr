@@ -8,6 +8,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import { SlideMark } from "./motion-ui.tsx";
 import { haptic } from "./native.ts";
 import { readFold, writeFold } from "./settings-fold.ts";
+import { savedClock } from "./saved.ts";
 
 /** What every control on a page reads: the page is read-only (no connection), it is the phone, and how to show Saved. */
 interface SetEnv {
@@ -19,19 +20,13 @@ interface SetEnv {
 export const SetContext = createContext<SetEnv>({ readOnly: false, phone: false, saved: () => {} });
 export const useSet = () => useContext(SetContext);
 
-/** "✓ Saved" for 2 s after a command answered ok; once per page. */
+/** "✓ Saved" for 2 s after a command answered ok; once per page. The clock is saved.ts's. */
 export function useSaved(): { shown: boolean; mark(): void } {
   const [shown, setShown] = useState(false);
-  const t = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(t.current), []);
-  return {
-    shown,
-    mark: () => {
-      clearTimeout(t.current);
-      setShown(true);
-      t.current = setTimeout(() => setShown(false), 2000);
-    },
-  };
+  const clock = useRef<ReturnType<typeof savedClock> | null>(null);
+  clock.current ??= savedClock(setShown);
+  useEffect(() => () => clock.current?.stop(), []);
+  return { shown, mark: clock.current.mark };
 }
 
 /** The live region is always there, so a screen reader hears "Saved" when it appears. Its place differs: beside the

@@ -3,7 +3,7 @@
 import type { CommandReply } from "./types.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad, Slots, UndeclaredUse } from "./host-load.ts";
-import type { Guard, GuardEvent } from "./guard.ts";
+import type { Guard, GuardEvent, Invariants } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
 import { MOCK_HOSTS, mockParam, railNow } from "./mock-util.ts";
 
@@ -32,7 +32,39 @@ export function mockQuota(now: number): Quota[] {
 /** SPEC 0.5 V0.80: a busy host: load past the cores, the agents at their cap; one thread in each fixture is hot
  * (t_w2, t_mapperf), one calm, one without a second read yet. */
 export function mockLoad(): HostLoad[] {
-  return withGuard(withLeftovers(withUndeclared(mockLoadBase(), MOCK_UNDECLARED), MOCK_LEFTOVERS), MOCK_GUARD);
+  return withInvariants(withGuard(withLeftovers(withUndeclared(mockLoadBase(), MOCK_UNDECLARED), MOCK_LEFTOVERS), MOCK_GUARD), MOCK_INVARIANTS);
+}
+
+/** V0.load-invariants, V0.thread-invariants: ?invariants=1 has a broken load invariant (12 min ago) and a broken thread
+ *  invariant (5 min ago, so its card is first), each a card in Needs you, and a load invariant that never broke. */
+const MOCK_INVARIANTS = mockParam("invariants") ?? "";
+export function withInvariants(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {
+  if (!mode) return list;
+  const [h, ...rest] = list;
+  const ago = (min: number) => new Date(now - min * 60_000).toISOString();
+  const thaw = "The guard thawed work while the agents' memory stalled critically.";
+  const phantom = "A thread is marked Running, but the agent manager has no live turn for it.";
+  const invariants: Invariants = {
+    cards: [
+      { id: "thaw-into-critical", kind: "load", text: thaw, at: ago(12), evidence: "thread=t_mapperf work=undeclared reason=ended agents_stall=critical", lines: ["14:19:50 guard: froze undeclared work thread=t_mapperf", "14:20:00 guard: thawed undeclared work thread=t_mapperf"] },
+      { id: "thread-phantom-running", kind: "thread", text: phantom, at: ago(5), evidence: "thread=t_w1 engine.running=true agent.live=false", lines: ["14:26:00 run.started (observer:process) seen→working running=true"] },
+    ],
+    stats: [
+      { id: "thaw-into-critical", kind: "load", text: thaw, count: 2, last: ago(12) },
+      { id: "probe-silent", kind: "load", text: "The load probe reported within the last minute.", count: 0 },
+      { id: "thread-phantom-running", kind: "thread", text: phantom, count: 1, last: ago(5) },
+    ],
+    fixDir: "/work/fyr",
+  };
+  return [{ ...h, invariants }, ...rest];
+}
+
+/** The owner's Fix it and Dismiss on an invariant's card, as the host answers them: either closes the card. */
+export function mockInvariantCommand(h: HostLoad, args: Record<string, unknown>): CommandReply {
+  const cards = h.invariants?.cards ?? [];
+  if (!cards.some((c) => c.id === args.id)) return { ok: false, error: `no open card ${String(args.id ?? "")}` };
+  h.invariants = { ...h.invariants!, cards: cards.filter((c) => c.id !== args.id) };
+  return { ok: true };
 }
 
 /** Decision 0032: ?guard=1 has the memory guard's history: memory short twice in 15 minutes, Map perf's undeclared work
