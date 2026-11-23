@@ -9,13 +9,6 @@ import (
 	"github.com/meros/fyr/internal/api"
 )
 
-// KV is where a front keeps the owner's settings that belong to no host
-// (V0.121): the database it keeps device data in.
-type KV interface {
-	GetKV(k string) (string, error)
-	SetKV(k, v string) error
-}
-
 const (
 	// KindProjectOrder sets the owner's project order (V0.121). It is the
 	// front's own command: no host has the kind, so no agent tool or MCP

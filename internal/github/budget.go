@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/kvstore"
 	"log"
 	"strconv"
 	"strings"
@@ -62,7 +63,7 @@ type Budget struct {
 	Now            func() time.Time
 	// KV keeps rate-limit waits and low-budget pauses across restarts
 	// (V0.persist-runtime-state); nil keeps them in memory only.
-	KV KV
+	KV kvstore.Table
 
 	mu     sync.Mutex
 	loaded bool

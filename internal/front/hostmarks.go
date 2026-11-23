@@ -152,7 +152,7 @@ func (f *Front) pushMarks(ctx context.Context, l *link, o hostMarks, commandID s
 		marks[id] = map[string]any{"icon": m.Icon, "color": m.Color, "by": core.HostMarkOwned(m.Icon, m.Color, m.By).Map()}
 	}
 	body, _ := json.Marshal(map[string]any{"commandId": commandID, "action": core.KindHostMarksSet, "args": map[string]any{"marks": marks, "at": o.At.UTC().Format(time.RFC3339Nano)}})
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, hostCallTimeout)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/command", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

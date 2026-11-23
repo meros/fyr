@@ -11,7 +11,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
-	"math/rand"
 	"net"
 	"net/http"
 	"slices"
@@ -20,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/roster"
 )
@@ -123,7 +123,7 @@ func New(cfg Config) *Mesh {
 		cfg.MinBackoff = time.Second
 	}
 	if cfg.MaxBackoff <= 0 {
-		cfg.MaxBackoff = 5 * time.Minute
+		cfg.MaxBackoff = 5 * time.Minute // longest wait between dials of one member
 	}
 	return &Mesh{cfg: cfg, links: map[string]*Link{}, losers: map[*Link]struct{}{}, status: map[string]*Status{}, conns: map[string]context.CancelFunc{},
 		waiters: map[string][]chan struct{}{}, kick: make(chan struct{}, 1)}
@@ -142,7 +142,7 @@ func (m *Mesh) Run(ctx context.Context) {
 	m.ctx = ctx
 	m.mu.Unlock()
 	m.Reconcile()
-	t := time.NewTicker(30 * time.Second)
+	t := time.NewTicker(reconcileEvery)
 	defer t.Stop()
 	for {
 		select {
@@ -244,9 +244,18 @@ func (m *Mesh) setStatus(id string, s Status) {
 	m.mu.Unlock()
 }
 
+const (
+	defaultDialTimeout = 8 * time.Second  // a dial's TLS and hello, when the config sets none
+	noAddressRetry     = 5 * time.Second  // a member with no address yet is looked at again
+	olderVersionRetry  = time.Minute      // a member too old to link is tried again rarely
+	acceptReadyTimeout = 10 * time.Second // an accepted link must finish its hello by then
+	drainLimit         = 5 * time.Second  // a closing link waits this long for requests to end
+	reconcileEvery     = 30 * time.Second // the roster is matched to the links
+)
+
 // connector keeps trying to open a link to one member while none is up.
 func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) {
-	backoff := m.cfg.MinBackoff
+	backoff := httpguard.Backoff{Min: m.cfg.MinBackoff, Max: m.cfg.MaxBackoff, Jitter: true}
 	for {
 		if ctx.Err() != nil {
 			return
@@ -260,7 +269,7 @@ func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) 
 			case <-ctx.Done():
 				return
 			}
-			backoff = m.cfg.MinBackoff
+			backoff.Reset()
 			continue
 		}
 		p, ok := m.peer(id)
@@ -270,7 +279,7 @@ func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) 
 		addrs := m.addrs(p)
 		if len(addrs) == 0 {
 			m.setIfNotUp(ctx, id, Status{State: "down", Since: time.Now(), Err: &LinkErr{Kind: ErrNoAddress, Text: "no address for it yet; it may open the link itself"}})
-			if !m.sleep(ctx, 5*time.Second) {
+			if !m.sleep(ctx, noAddressRetry) {
 				return
 			}
 			continue
@@ -283,17 +292,16 @@ func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) 
 				le = classify(err)
 			}
 			m.setIfNotUp(ctx, id, Status{State: "down", Since: time.Now(), Err: le})
-			wait := jitter(backoff)
+			wait := backoff.Next()
 			if le.Kind == ErrOlderVersion {
-				wait = time.Minute
+				wait = olderVersionRetry
 			}
-			backoff = min(backoff*2, m.cfg.MaxBackoff)
 			if !m.sleep(ctx, wait) {
 				return
 			}
 			continue
 		}
-		backoff = m.cfg.MinBackoff
+		backoff.Reset()
 		m.register(l)
 	}
 }
@@ -371,10 +379,6 @@ func (m *Mesh) sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func jitter(d time.Duration) time.Duration {
-	return d/2 + time.Duration(rand.Int63n(int64(d)))
-}
-
 // classify names why a dial failed, from what fyrd can see.
 func classify(err error) *LinkErr {
 	switch {
@@ -397,7 +401,7 @@ func isTimeout(err error) bool {
 func (m *Mesh) dial(ctx context.Context, p Peer, addr string) (*Link, error) {
 	to := m.cfg.DialTimeout
 	if to <= 0 {
-		to = 8 * time.Second
+		to = defaultDialTimeout
 	}
 	dctx, cancel := context.WithTimeout(ctx, to)
 	defer cancel()
@@ -484,7 +488,7 @@ func (m *Mesh) Accept(lc *LinkConn) {
 		case <-l.Ready():
 			m.register(l)
 		case <-l.Done():
-		case <-time.After(10 * time.Second):
+		case <-time.After(acceptReadyTimeout):
 			l.Close()
 		}
 	}()
@@ -577,7 +581,7 @@ func openedBy(l *Link, self string) string {
 // the same; an older peer is not told, and the link waits for the requests it
 // serves to end instead. 5 s is the limit either way, as before.
 func drainAndClose(l *Link) {
-	end := time.Now().Add(5 * time.Second)
+	end := time.Now().Add(drainLimit)
 	until := func(cond func() bool) {
 		for !cond() && time.Now().Before(end) {
 			select {

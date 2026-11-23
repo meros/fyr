@@ -15,6 +15,10 @@ const DefaultClientTimeout = 30 * time.Second
 // NewClient is an HTTP client with a timeout, for callers that need no more.
 func NewClient() *http.Client { return &http.Client{Timeout: DefaultClientTimeout} }
 
+// SmallBody is the cap for the body of a call whose fields are a few short
+// strings and flags.
+const SmallBody = 4 << 10
+
 // ReadJSON reads the request body into v, at most limit bytes, and returns the
 // error without answering: the caller picks the status and text.
 func ReadJSON(w http.ResponseWriter, r *http.Request, v any, limit int64) error {

@@ -36,6 +36,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 const (
@@ -332,14 +334,11 @@ type Leftovers struct {
 	Tree *Tree // nil: the process-tree mode
 	Proc string
 	// PS gives `ps -A -o pid=,ppid=,rss=,etime=,args=` on a host without /proc.
-	PS     func() (string, error)
-	Now    func() time.Time
-	CLIs   func() map[string]int
-	Thread func(name string) ThreadState
-	KV     interface {
-		GetKV(string) (string, error)
-		SetKV(string, string) error
-	}
+	PS       func() (string, error)
+	Now      func() time.Time
+	CLIs     func() map[string]int
+	Thread   func(name string) ThreadState
+	KV       kvstore.Table
 	TermWait time.Duration // SIGTERM to SIGKILL, default 5 s
 	// OnEnd hears what was ended and why, per thread, outside the lock.
 	OnEnd func(thread string, ended []Leftover, why string)

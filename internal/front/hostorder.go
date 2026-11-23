@@ -116,7 +116,7 @@ func (f *Front) pushOrder(ctx context.Context, l *link, o hostOrder, commandID s
 		args["ids"] = o.IDs
 	}
 	body, _ := json.Marshal(map[string]any{"commandId": commandID, "action": "host.hostOrder", "args": args})
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, hostCallTimeout)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/command", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

@@ -54,7 +54,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 		})
 		mux.HandleFunc("POST /auth/owner", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ Login string }
-			httpguard.DecodeLoose(w, r, &b, 4096)
+			httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
 			login := strings.TrimSpace(b.Login)
 			if login == "" || strings.ContainsAny(login, " \t\r\n") {
 				api.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "owner login must be a non-empty Tailscale login without spaces (e.g. you@example.com)"})
@@ -82,7 +82,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 		})
 		mux.HandleFunc("POST /pair/join", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ Code, Addr string }
-			httpguard.DecodeLoose(w, r, &b, 4096)
+			httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
 			res, err := p.Env.Join(r.Context(), b.Code, b.Addr)
 			if err != nil {
 				api.WriteJSON(w, joinStatus(err), map[string]any{"error": err.Error()})
@@ -92,7 +92,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 		})
 		mux.HandleFunc("POST /host/remove", func(w http.ResponseWriter, r *http.Request) {
 			var b struct{ ID string }
-			httpguard.DecodeLoose(w, r, &b, 4096)
+			httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
 			if err := p.Env.Remove(b.ID); err != nil {
 				api.WriteJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 				return
@@ -123,7 +123,7 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 				ID string
 				On bool
 			}
-			httpguard.DecodeLoose(w, r, &b, 4096)
+			httpguard.DecodeLoose(w, r, &b, httpguard.SmallBody)
 			if _, ok := p.Env.Roster.Member(b.ID); !ok || b.ID == p.Env.Key.ID() {
 				http.Error(w, `{"error":"no such install in the roster"}`, http.StatusNotFound)
 				return

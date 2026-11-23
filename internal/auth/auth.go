@@ -15,6 +15,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 // Cookie is the session cookie's name.
@@ -59,12 +61,6 @@ type Device struct {
 	CodeUntil time.Time `json:"codeUntil,omitempty"`
 }
 
-// KV is where the devices are kept (the store's kv table).
-type KV interface {
-	GetKV(string) (string, error)
-	SetKV(string, string) error
-}
-
 type once struct {
 	how, name, by string
 	until         time.Time
@@ -72,7 +68,7 @@ type once struct {
 
 // Store is a front's devices and its one-time links.
 type Store struct {
-	kv  KV
+	kv  kvstore.Table
 	now func() time.Time
 
 	mu      sync.Mutex
@@ -107,7 +103,7 @@ type handed struct {
 }
 
 // Open loads the devices from kv. now is time.Now when nil.
-func Open(kv KV, now func() time.Time) (*Store, error) {
+func Open(kv kvstore.Table, now func() time.Time) (*Store, error) {
 	if now == nil {
 		now = time.Now
 	}

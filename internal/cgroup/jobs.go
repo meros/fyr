@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/kvstore"
 	"github.com/meros/fyr/internal/lockwatch"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -97,7 +98,7 @@ type hold struct {
 // Jobs tracks the holds of a pool and keeps their records. Project names a
 // thread's project; optional.
 type Jobs struct {
-	KV      slots.KV
+	KV      kvstore.Table
 	Project func(thread string) string
 	// Now is the clock of Saw; default time.Now.
 	Now func() time.Time

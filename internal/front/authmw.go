@@ -236,7 +236,7 @@ func (f *Front) enrolTailnet(w http.ResponseWriter, r *http.Request, enforce boo
 		log.Printf("auth: %s signed in through the tailnet as %s", nd.Name, f.ownerLogin())
 		return nd, false, false
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), tailnetLookupTimeout)
 	defer cancel()
 	node, err := f.opt.Tailnet.Node(ctx, forwardedFor(r))
 	switch {
@@ -271,7 +271,7 @@ func (f *Front) enrolTailnet(w http.ResponseWriter, r *http.Request, enforce boo
 }
 
 func (f *Front) bindNode(r *http.Request, d *auth.Device) {
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), tailnetLookupTimeout)
 	defer cancel()
 	node, err := f.opt.Tailnet.Node(ctx, forwardedFor(r))
 	if err != nil || len(node.Tags) > 0 || node.Shared || node.Login != f.ownerLogin() {
