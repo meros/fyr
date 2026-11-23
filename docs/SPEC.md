@@ -402,7 +402,7 @@ This section states the model as built. `internal/core` is the reference: when t
 
 ### Records
 
-The state is a set of typed records (decision 0020, part 1). A record has one owner host (decision 0016): no record has two writers. Every change to a record goes through the one path of 5.1. Messages are in the event log and the conversation. They are not part of a record.
+The state is a set of typed records (decision 0020, part 1). A record has one owner host (decision 0016): no record has two writers. Every change to a record in this table goes through the one path of 5.1, with the exceptions named below. Messages are in the event log and the conversation. They are not part of a record.
 
 | Record | Holds | Stored | Key | Section |
 |---|---|---|---|---|
@@ -420,6 +420,13 @@ The state is a set of typed records (decision 0020, part 1). A record has one ow
 **Events.** One table `events {seq, at, subject, type, data}` per host. `seq` increases per host; `subject` is the thread id (or the change id of a host record). A reduce appends its events in the same transaction as the record (5.1).
 
 **Stored data keeps loading.** A thread or view stored in an older shape is migrated when it is read (`DecodeThread`, `DecodeView`): the PR on the thread (before #32), the settle fields (before #33), the actions' old places (before #31), `settle.when` and `deployWatch` (before #46), a snooze in `snoozeUntil` (before #46), and a landed change without `landedAt` (V0.70).
+
+**Outside the one path (V0.spec-from-code).** Three kinds of state change without an Input of 5.1:
+1. **The front's own state and the owner's preferences** (`internal/front`, 3.17). The front has its own vocabulary, the `front.*` commands sent to `POST /api/front/command` (`front.hostOrder`, `front.projectOrder`, `front.hostMark`, `front.hostId`, `front.projectAdd`, `front.projectLink`, `front.projectUnlink`, `front.projectShared`, `front.threadHandover`), and keeps the result in its own key-value store, beside the device data: sessions, push subscriptions and their settings, presence, the peer roster. A `front.*` command that changes a host's record sends that host an ordinary command (`project.link`, `project.shared`, `project.create`), which takes 5.1 there.
+2. **The guard's runtime state** (`internal/slots`, `internal/admission`, `internal/cgroup`, held by the engine). Heavy-job admission (the queue, the slots, the learned costs and the budget), the memory guard's freezes and thaws, and the leftover processes it ends or an agent keeps (`keep_process`) live in the engine's memory and on the host, not in records. What a thread must hear of it lands as an Input (`leftover.ended`), which takes 5.1.
+3. **The load passes** (until #456). Besides the decoding below, the engine rewrites stored records once when it loads them and writes them straight to the store, with no Input, event or receipt: observed git changes move into host records (`MigrateObserved`, before #35), a change that is not code ends as abandoned (`MigrateCodeOnly`, V0.changes-code-only), and a change that landed or ended is filed as done (`MigrateDone`, V0.98 (7)), on threads and host records alike.
+
+Host settings are not records either: a host kind's effect (5.1) writes auto-merge, auto-deploy and the host marks to the host's key-value store, and `host_setup` (5.12) writes the agent's mark there directly.
 
 **Post-v1.** Coordinator (3.6), Document (3.9), Checkpoint (3.10), User presence per device (3.11), and the entity header with residence and epochs (3.2).
 
@@ -763,7 +770,7 @@ type GrantBody = { coordinator: EntityId;
 Before and after each run, the `git` module writes the worktree's full tree to `refs/fyr/checkpoints/<entityId>/<runId>/{before,after}`. It uses a temporary index. These checkpoints make `thread.fork` at a run, rollback and replay possible. Built: the Changes tab reads git directly (V0.25, V0.65).
 
 ### 3.11 User presence
-Built (V0.20, V0.54): a client that shows a thread while its page is visible sends `POST /api/presence {threadId}` every 20 s; the front counts the thread as watched for 45 s and sends no push for it.
+Built (V0.20, V0.54): a client that shows a thread while its page is visible sends `POST /api/front/presence {host, threadId, device}` every 20 s; the front counts the thread as watched for 45 s and sends no push for it.
 
 **Post-v1** (presence per device):
 - **Per device.** Each client reports `user.presence(state: "active" | "inactive" | "away")` for its own device to every connected host. A client reports at most once a minute, and on each change.
@@ -873,7 +880,7 @@ type Project = { id: string; name: string; color: string; icon: Icon;
   edited?: boolean; createdAt: Time };
 ```
 
-- **Matching.** A thread not filed by hand lands in the project whose folder is the thread's folder or contains it; the longest folder wins, ties by project id. Matching runs when a thread is made or adopted, at start, and after every project Input. It never takes a project away, except from a thread whose project was deleted, which also loses its filed-by-hand mark (V0.58). A thread filed by hand keeps its project. Each thread that matching moves gets the Input `project.matched` (source `observer:host`), which keeps its `updatedAt`.
+- **Matching.** A thread not filed by hand lands in the project whose folder is the thread's folder or contains it; the longest folder wins, ties by project id. Matching runs when a thread is made, at start, and after every project Input. It never takes a project away, except from a thread whose project was deleted, which also loses its filed-by-hand mark (V0.58). A thread filed by hand keeps its project. Each thread that matching moves gets the Input `project.matched` (source `observer:host`), which keeps its `updatedAt`.
 - **Commands.** `project.create {name, folder?, threadId?, link?}`, `project.update {id, name?, color?, icon?, image?, folder?, profile?, model?, effort?, priority?, agentSettle?, toolApproval?, quiet?}` (`image: ""` removes the image icon, V0.116), `project.link {id, link}`, `project.shared {id, link, at, ...}`, `project.delete {id}` (V0.58), `project.setupRun {id}` (V0.116); the agent's `project.setup {id, name?, color?, image?}` through the tool `project_setup` (V0.116). They are Input kinds of the project record on the one path (5.1): the engine checks the folder on the host, reduces the project, then reduces the thread Inputs it causes (the thread `project.create` files, as `thread.setProject`; the threads matching moves) and stores all of it with the receipt in one transaction (#48).
 - **Setup (V0.116).** An agent run fills the fields the owner has not set (`by`): the image icon, the colour from it, the name. The owner's value is kept (the rights rows `project.name`, `project.color`, `project.image`).
 - **Quiet hours.** While a window holds, the thread DTO carries `quietUntil`; the front sends no push for the thread and the client hides it from the inbox (V0.46). Quiet hours are computed, not a Rule (7.6, decision 0020).
@@ -968,7 +975,7 @@ type InputKind = {
   from: ("owner" | "agent" | "observed" | "rule")[];   // the principals that may send it
   available?: (thread, view, now) => "" | reason;      // the guard
   reduce: (records, input, now) => { events, effects, follow, reply } | Rejection;
-  makes?: boolean;                 // it makes its record (a new project, an adopted thread)
+  makes?: boolean;                 // it makes its record (a new thread or project)
   await?: boolean;                 // the reply waits for its effects (below)
 };
 
@@ -1173,38 +1180,40 @@ A read query returns data and changes no state, so it is no Input and writes no 
 | Query | Built | Notes |
 |---|---|---|
 | `fyr_state {about?}` | yes | The thread's records in one compact text: the thread and its settle state, the changes with PR, git and deploy conditions and actions, the live view, the Rules (5.14). |
-| `change_list {scope?: thread \| project, id?}` | yes | Changes with their facts; host records the thread shows included. |
+| `change_list {scope?: thread \| project, id?, done?}` | yes | Changes with their facts; host records the thread shows included. |
 | `threads {query?, state?}`, `thread_read {id, last?}` | yes | The owner's other threads (V0.22). |
-| `GET /api/threads/{id}/events`, `/changes`, `/pr` | yes | The client's reads (V0.2, V0.25, V0.43). |
+| `GET /api/h/<hostId>/threads/{id}/events`, `/changes`, `/pr` | yes | The client's reads, through the front to the host (V0.2, V0.25, V0.43, V0.old-routes-end). |
 | `document.get`, `attention.list`, `thread.summary`, `events.since` | post-v1 | Documents and coordinators. |
 
 ### 5.12 Agent tools
 
-Each session gets Fyr's MCP server (V0.12). A tool call becomes an Input with source `agent` on the agent's own thread, or a read query (5.11). The reply is the tool's text; a rejection is the tool's error with the reason. A test (`TestPromptToolsAreRegistered`) checks that every `mcp__fyr__*` tool named in agent prompts, gates and feed is registered here.
+Each session gets Fyr's MCP server (V0.12, 16.2). A tool call becomes an Input with source `agent` on the agent's own thread, or a read query (5.11). The reply is the tool's text; a rejection is the tool's error with the reason. The table has one row per registered tool (`Engine.Tools` in `internal/engine/tools.go`); `TestSpecListsTheTools` fails when the names in it and the registered tools differ, and `TestNamedToolsExist` when a prompt, a gate reason, a notice or a tool description names a tool that is not registered. A removed tool (`effect_request`, `settle_when`, `slot_acquire`, `slot_release`, `pr_link`) is not listed; a call of one is an error that names what to call instead (V0.one-tool-vocabulary).
 
-| Tool | Input kind | Notes |
+| Tool | Input kind | Does |
 |---|---|---|
-| `ask {questions}` | `decision.open` (`ask`) | Shows a question card to the owner on desktop and phone and returns at once; the answer, skipped questions or cancellation arrive as a `[Fyr]` notice (V0.ask-tool, V0.ask-cancel). |
-| `run_request {command, why, cwd?, root?, timeoutSec?, id?, optional?}` | `decision.open` (`effect`) or `action.offer` | Asks the owner to run a shell script on this host (or offers an optional chip); streams output and sends exit code and tail back to the agent (V0.next-step-dock, V0.run-long-notice). |
-| `change_open {title, branch?, pr?, key?, repo?, workspace?, after?, group?, revision?, targets?}` | `change.open` | Opens a code change (3.13); `workspace: true` creates a git worktree on `branch` (V0.change-worktree). |
-| `change_update {change, phase?, label?, revision?, conditions?, evidence?}` | `change.update` | Reports facts Fyr cannot observe itself about a code change (3.13, decision 0024). |
-| `change_request {change?, ask: merge \| fyr.deploy, args?, reason?}` | `change.request` | Opens an effect Decision (5.10), the one way to ask for a merge or a Fyr deploy; an identical open ask is returned again. `change` may be an untracked PR URL, which Fyr then tracks; `fyr.deploy` is only allowed in Fyr's own repository (V0.one-tool-vocabulary). |
-| `pr_create {title, body, change?, dir?, head?, base?, draft?, labels?, reviewers?}` | `change.open` / `pr.linked` | Opens a GitHub pull request for a pushed branch and links it to the change card immediately (V0.pr-create-tool). |
-| `watch {when, then: notify \| settle, note?}` or `{remove}` | `rule.arm`, `rule.remove` | The agent's own Rules (7.1), including timed wake-ups (`at`), quota resets (`quota`), and `{kind: workDone}` with `then: settle`. An identical armed watch is returned again (V0.one-tool-vocabulary, V0.wakeups-via-watch, V0.quota-reset-wake). |
-| `settle_request {why}` | `thread.settleAsk` | Tells Fyr the thread's work is finished; the project settles it automatically or shows a Settle chip (V0.settle-request). |
-| `offer_action {on, id, label?, run?, prompt?, in?, argv?, cwd?, timeoutSec?, remove?}` | `action.offer` | Declares or removes an optional next-step chip on `thread` or an action on `view` (5.13, V0.next-step-chips). |
-| `keep_process {pid? \| match?, hours?, why?}` | | Marks a background process started by the thread to survive leftover cleanup (V0.kept-not-leftover). |
-| `view_publish`, `view_state`, `view_unchanged` | `view.publish`, `view.state`, `view.unchanged` | Publishes or patches the thread's live view (V0.37). |
-| `project_setup {project?, name?, color?, icon?, ownerAsked?}` | `project.setup` | Sets a project's identity (icon, colour, name); owner-set fields are kept unless `ownerAsked` (V0.116, V0.project-icons-on-demand). |
-| `host_setup {icon?, color?}` | `host.setup` | Sets this host's icon and colour where the owner has not set them (V0.208). |
-| `thread_rename {title? \| regenerate?, id?}` | `thread.retitle` | Renames this thread or one it started (V0.69, V0.title-goal). |
-| `thread_new`, `thread_send` | `thread.create`, `thread.send` | Starts or messages another thread with source `agent` and `from` the sending thread. Field rights (5.2) apply. At most 12 new threads and 30 messages an hour per thread (V0.22, V0.71, V0.202). |
-| `show {path? \| html? \| url?, entry?, title?, caption?, size?, full?}` | | Appends a preview event (image, sandboxed HTML/folder, or screenshot) in the thread (V0.19, V0.47). |
-| `fyr_state`, `change_list`, `threads`, `thread_read` | | Read queries (5.11). |
-
-**Named exceptions to 5.1 (the host reducer path):** two kinds of runtime state deliberately live outside the host's `core.Reduce` transaction:
-1. **Front-wide state** (`/api/front/…`): device sessions, push subscriptions, browser presence, the peer roster, host order, project order, and cross-host handover orchestration live on the front (`internal/front`, `internal/auth`, `internal/roster`, `internal/push`).
-2. **Host resource guard & admission state**: live cgroup measurements, heavy-job admission slots, adaptive budgets, freeze/thaw episodes, and process leftovers (`internal/cgroup`, `internal/slots`, `internal/admission`) are ephemeral runtime observations of the host machine, not replicated thread records.
+| `ask {questions[1..4]}` | `ask.open` | Shows a question card to the owner on desktop and phone and returns at once; the answer, skipped questions or cancellation arrive as a `[Fyr]` notice (V0.ask-tool, V0.ask-cancel). |
+| `run_request {command, why, cwd?, root?, timeoutSec?, id?, optional?}` | `run.request` | Asks the owner to run a shell script on this host, as root through pkexec with `root`; `optional` makes it a chip instead of a card. Fyr streams the output into the card and sends the exit code and the tail back (V0.next-step-dock, V0.run-long-notice). |
+| `change_open {title, key?, kind?, branch?, pr?, targets?, group?, after?, revision?, workspace?, repo?}` | `change.open` | Opens a code change, or returns the one with that key or PR (3.13); `workspace: true` makes a git worktree of `repo` on `branch` and returns its path (V0.change-worktree). |
+| `change_update {change, phase?, label?, conditions?, revision?, evidence?}` | `change.update` | Reports what Fyr cannot observe about a change: its phase, a label, conditions, a new revision, evidence (3.13, decision 0024). |
+| `change_request {change?, ask: merge \| fyr.deploy, args?, reason?}` | `change.request` | Opens an effect Decision (5.10): the one way to ask for a merge or a Fyr deploy; an identical open ask is returned again. `change` may be an untracked PR URL, which Fyr then tracks; `fyr.deploy` needs no `change` and only runs from a Fyr checkout (V0.one-tool-vocabulary). |
+| `pr_create {title, body, change?, dir?, head?, base?, draft?, labels?, reviewers?}` | `change.open` | Opens a GitHub pull request for a pushed branch (the tool runs this itself, not as an effect), then opens or joins the change with the PR (V0.pr-create-tool). |
+| `change_list {scope?: thread \| project, id?, done?}` | read | The changes with their facts (5.11). |
+| `watch {when, then: notify \| settle, note?}` or `{remove}` | `rule.arm`, `rule.remove` | Arms or removes one of the agent's own Rules (7.1): a condition, a time (`at`), a quota reset (`quota`), `{kind: workDone}`; it fires once. An identical armed watch is returned again (V0.one-tool-vocabulary, V0.wakeups-via-watch, V0.quota-reset-wake). |
+| `settle_request {why}` | `settle.request` | Tells Fyr the thread's work is finished; the project settles it, or the owner gets a Settle chip (V0.settle-request). |
+| `offer_action {on: thread \| view, id, label?, run?, prompt?, in?, argv?, cwd?, timeoutSec?, remove?}` | `action.offer` | Declares or removes a next-step chip on the thread or an action of the live view (5.13, V0.next-step-chips). |
+| `keep_process {pid? \| match?, hours?, why?}` | none (guard state, 3) | Keeps a process the thread started past leftover cleanup, 1 to 24 hours (V0.kept-not-leftover). |
+| `view_publish {html? \| path?, state?}` | `view.publish` | Publishes the thread's live view and its state (V0.37). |
+| `view_state {patch}` | `view.state` | Merges a patch into the live view's state (V0.37). |
+| `view_unchanged {reason}` | `view.unchanged` | Says the live view is still current after a turn (V0.37). |
+| `project_setup {project?, name?, color?, icon?, ownerAsked?}` | `project.setup`; `project.update` with `ownerAsked` | Sets a project's name, colour and icon; owner-set fields are kept unless `ownerAsked` (V0.116, V0.project-icons-on-demand). |
+| `host_setup {icon?, color?}` | none (host setting, 3) | Sets this host's icon and colour where the owner has not set them (V0.208). |
+| `thread_rename {title? \| regenerate?, id?}` | `thread.retitle` | Renames this thread or one it started; `regenerate` writes the title from the conversation with a small model; a name the owner gave is kept (V0.69, V0.title-goal). |
+| `thread_new {cwd, text, title?, model?}` | `thread.create` | Starts a thread with source `agent` and `from` this thread; at most 12 an hour per thread (V0.22, V0.202). |
+| `thread_send {id, text}` | `thread.send` | Sends another thread a message with `from` this thread; field rights apply (5.2); at most 30 an hour per thread (V0.22, V0.71). |
+| `threads {query?, state?}` | read | The owner's other threads (5.11, V0.22). |
+| `thread_read {id, last?}` | read | Another thread's recent events (5.11, V0.22). |
+| `show {path? \| html? \| url?, entry?, title?, caption?, size?, full?}` | `record` (observer `host`) | Appends a preview event: an image, a sandboxed HTML page or folder, or a screenshot of a URL (V0.19, V0.47). |
+| `fyr_state {about?}` | read | The thread's records in one compact text (5.11, 5.14). |
 
 ### 5.13 Actions and the press
 

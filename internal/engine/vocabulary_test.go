@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -117,5 +118,60 @@ func TestWatchRetryAnswersTheArmedWatch(t *testing.T) {
 	}
 	if th, _ := e.Thread(a); len(th.Rules) != 1 {
 		t.Fatalf("rules %+v", th.Rules)
+	}
+}
+
+// specToolRow is a row of the table in SPEC 5.12: its first cell starts
+// with the tool's name.
+var specToolRow = regexp.MustCompile("^\\| `([a-z_]+)[ `]")
+
+// TestSpecListsTheTools (V0.spec-from-code): SPEC 5.12 has one row per
+// registered tool, no more and no fewer, so the table cannot drift from the
+// tools again.
+func TestSpecListsTheTools(t *testing.T) {
+	e, _, _ := bare(t)
+	srv := mcp.New(func(string) (string, bool) { return "", false })
+	e.Tools(srv)
+	var registered []string
+	for n := range srv.Descriptions() {
+		registered = append(registered, n)
+	}
+	slices.Sort(registered)
+
+	b, err := os.ReadFile("../../docs/SPEC.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := string(b)
+	start := strings.Index(spec, "\n### 5.12 ")
+	if start < 0 {
+		t.Fatal("SPEC.md has no section 5.12")
+	}
+	section := spec[start+1:]
+	if end := strings.Index(section, "\n### "); end >= 0 {
+		section = section[:end]
+	}
+	var listed []string
+	for _, line := range strings.Split(section, "\n") {
+		if m := specToolRow.FindStringSubmatch(line); m != nil {
+			if slices.Contains(listed, m[1]) {
+				t.Errorf("SPEC 5.12 lists %s twice", m[1])
+			}
+			listed = append(listed, m[1])
+		}
+	}
+	slices.Sort(listed)
+	for _, n := range registered {
+		if !slices.Contains(listed, n) {
+			t.Errorf("the tool %s is registered and has no row in SPEC 5.12", n)
+		}
+	}
+	for _, n := range listed {
+		if !slices.Contains(registered, n) {
+			t.Errorf("SPEC 5.12 has a row for %s, which is not a registered tool", n)
+		}
+	}
+	if len(registered) < 20 {
+		t.Fatalf("only %d tools registered", len(registered))
 	}
 }
