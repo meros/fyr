@@ -1,6 +1,6 @@
 # 0040 Review and land: a note on a diff line written in Fyr, and testing what lands together
 
-Date: 2026-11-22, revised 2026-11-23 · Status: **proposed** (owner decides) · Builds on decision 0018 (changes are records), 0024 (one card per work), V0.65 (the Changes look), V0.102 (auto-merge per repo), V0.136 (the merge ask held for CI), 5.13 (actions and the press) · Spec: V0.review-note, and a change for question 3 once it is answered
+Date: 2026-11-22, revised 2026-11-23 · Status: **accepted 2026-11-23**: nothing is built now; the note is deferred (owner answered the three questions below) · Builds on decision 0018 (changes are records), 0024 (one card per work), V0.65 (the Changes look), V0.102 (auto-merge per repo), V0.136 (the merge ask held for CI), 5.13 (actions and the press) · Spec: V0.review-note, and a change for question 3 once it is answered
 
 **Revised.** The first version overstated the gap and proposed an accept step that contradicts Fyr's design. What changed:
 - Fyr already routes line comments to the agent: the PR tab shows GitHub's unresolved review threads and its Address review action sends them (5.13). The gap is narrower: a note can only be written on GitHub, after a PR exists.
@@ -57,3 +57,13 @@ Not part of this decision: a kanban board (the inbox does that job), a general r
    - (b) use GitHub's merge queue where the repo has one, with Fyr adding the PR to it (today Fyr asks the agent to ask the owner);
    - (c) a queue in Fyr: order the asks of a batch by `after`, rebase each on the previous landing, wait for CI on the new head, land, and stop at the first failure;
    - (d) nothing: a red main after merge is caught by the main branch's own test run and fixed forward.
+
+## The owner's answers (2026-11-23)
+
+| Q | Asked | Owner |
+|---|---|---|
+| 1 | Build the note on a diff line now? | **later**: it stays a proposal; GitHub's review comments and Address review cover it for now |
+| 2 | Does a note wait for the agent's next turn or start one? | **wait** (`next`), when it is built |
+| 3 | How to test what lands together? | **nothing**: a red main is caught by the main branch's own test run and fixed forward |
+
+So this decision changes no code today. When the note is built, it follows row 1 of the Decision table with `next` delivery.
