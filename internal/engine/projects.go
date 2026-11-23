@@ -380,6 +380,9 @@ func (e *Engine) applyProject(in core.Input) api.Reply {
 		e.mu.Unlock()
 		return rejected(err)
 	}
+	// V0.project-archive: the project's threads are shelved or brought back
+	// in the same write; one that cannot be shelved rejects the archive.
+	res.Follow = append(res.Follow, core.ArchiveFollows(in.Source, before, after, e.threads)...)
 	id := before
 	if id == nil {
 		id = after

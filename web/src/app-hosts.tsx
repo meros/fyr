@@ -86,6 +86,8 @@ export function useHostActions(c: Pick<ReturnType<typeof useAppState>, "api" | "
         link: projectActions.link,
         unlink: projectActions.unlink,
         add: async (id, host, folder) => (await projectActions.add(id, host, folder)).error,
+        archive: projectActions.archive,
+        archiveInfo: projectActions.archiveInfo,
       }}
       onOpenThread={(id) => {
         if (phoneHeader) navGo({ screen: { name: "thread", id }, sheet: null });

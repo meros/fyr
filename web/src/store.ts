@@ -512,6 +512,8 @@ export interface UndoEntry {
   threadIds: string[];
   at: number;
   label: string;
+  /** V0.project-archive: an undo that is not a thread command (a project's Unarchive); the error, or null */
+  run?: () => Promise<string | null>;
 }
 
 const INVERSE: Record<UndoKind, string> = {

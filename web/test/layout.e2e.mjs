@@ -300,6 +300,8 @@ const SCREENS = [
   // SPEC 0.5 V0.68: Fyr's own confirmation sheets: a script in a scratch folder, and Delete project (red).
   { name: "confirm sheet for a script", url: "?mock=1&open=t_done", sheet: "confirm" },
   { name: "confirm sheet for Delete project", url: "?mock=rail&project=p_web", sheet: "confirm-delete" },
+  { name: "archived project screen (V0.project-archive)", url: "?mock=rail&archived=p_dot&project=p_dot", ready: "!!document.querySelector('.pedit .parth')" },
+  { name: "settings projects with an archived one (V0.project-archive)", url: "?mock=rail&archived=p_dot&settings=projects", ready: "!!document.querySelector('.m-settings section[aria-label=\"Archived projects\"] .pli')" },
   // V0.54: a front with two hosts, one offline: rows name the host; the offline thread says so under its chips.
   { name: "inbox with two hosts", url: "?mock=rail&hosts=2" },
   { name: "thread on an offline host", url: "?mock=rail&hosts=2&open=t_triage", field: ".m-cmp .in" },
@@ -627,7 +629,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(!!u && /^Update now( · retry)?$/.test(u.text) /* V0.host-updates: a held-back release is retried */ && u.h >= 43.5, `${ctx}: no 44 px Update now button ${JSON.stringify(u)}`);
   }
   if (ctx.startsWith("settings device")) check(!!m.settings && m.settings.device.push && m.settings.device.theme === 3, `${ctx}: This device is wrong ${JSON.stringify(m.settings?.device)}`);
-  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours", `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
+  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours|Archive" /* V0.project-archive */, `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
   if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && m.stepFolder === "~/src/lasso-app", `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, folder "${m.stepFolder}")`);
   if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Garden in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
@@ -1934,7 +1936,7 @@ try {
   await navigate(`${origin}/?mock=rail&dialog=settings&page=projects/p_web`, "!!document.querySelector('.dlg .pedit .sw')");
   await settle();
   const pg = await evaluate(`({ save: [...document.querySelectorAll('.dlg .pedit button')].some(b => b.textContent.trim() === 'Save'), groups: [...document.querySelectorAll('.dlg .pedit > .sg > .sg-h .sg-t')].map(e => e.textContent), title: document.querySelector('.dlg .stp-h h2')?.textContent })`);
-  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours" && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
+  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours|Archive" /* V0.project-archive */ && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
   await shot("settings-project-desktop.png");
   await evaluate(`document.querySelector('.dlg .pedit .sw:not(.on)').click()`);
   await waitFor(`${COMMANDS("project.update")}.length >= 1 && !!document.querySelector('.dlg .stp-h .saved')`, { soft: true });
@@ -3393,6 +3395,94 @@ for (const [label, w, ht] of [
     await open(phone ? `${q}&settings=providers` : `${q}&dialog=settings&page=providers`, `document.querySelectorAll('${root} .htabs .htab').length === 4`);
     const parts = await evaluate(`[...document.querySelectorAll('${root} .htabs .htab')].map(p => p.dataset.host).join('|')`);
     check(parts.startsWith("lab|desk"), `${ctx}: the host tabs follow the order (${parts})`);
+  });
+});
+
+// SPEC V0.project-archive, desktop and phone: 1 the project page's Archive sends project.archive, says so in an Undo
+// toast and turns into Unarchive with the project's threads listed; Undo sends project.unarchive. 2 a project whose
+// thread works or asks has Archive off, the reason in the row's text and on the button. 3 an archived project's
+// thread is not in the inbox and the project is no filter chip. 4 Settings → Projects lists it under Archived
+// projects; its page lists its threads, and a thread opens from there.
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.project-archive ${label}`, async (hn) => {
+  const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
+  const ctx = `V0.project-archive ${label}`;
+  const phone = label === "phone";
+  const root = phone ? ".m-app" : ".dlg";
+  const open = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, ht);
+    else {
+      await hn.send("Emulation.setDeviceMetricsOverride", { width: w, height: ht, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, ready);
+    }
+    await waitFor(ready);
+    await settle();
+  };
+  const page = (id, extra = "") => (phone ? `?mock=rail${extra}&project=${id}` : `?mock=rail${extra}&dialog=settings&page=projects/${id}`);
+  const GROUP = `document.querySelector('${root} section[aria-label="Archive"]')`;
+  const ARCH = `(() => { const g = ${GROUP}; const b = g?.querySelector('.parchb'); return { text: b?.textContent ?? '', disabled: !!b?.disabled, title: b?.title ?? '', desc: g?.querySelector('.sr-d')?.textContent ?? '', h: b ? Math.round(b.getBoundingClientRect().height) : 0, threads: [...(g?.querySelectorAll('.parth') ?? [])].map((r) => r.dataset.thread) }; })()`;
+  const TOAST = phone ? ".m-toast" : ".toast";
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failures.push(`${ctx} ${name}: ${e.message}`);
+    }
+  };
+  await step("archive and undo", async () => {
+    await open(page("p_dot"), `!!${GROUP}?.querySelector('.parchb')`);
+    const a = await evaluate(ARCH);
+    check(a.text === "Archive" && !a.disabled && /leave the inbox, the filter and the pickers/.test(a.desc), `${ctx}: the Archive row of an idle project ${JSON.stringify(a)}`);
+    await evaluate(`${GROUP}.scrollIntoView({ block: 'center' })`);
+    await settle();
+    await shot(`project-archive-${label}.png`);
+    await evaluate(`${GROUP}.querySelector('.parchb').click()`);
+    await waitFor(`${COMMANDS("project.archive")}.length === 1 && /Unarchive/.test(${GROUP}?.querySelector('.parchb')?.textContent ?? '')`, { soft: true });
+    const b = await evaluate(`({ ...${ARCH}, sent: ${COMMANDS("project.archive")}.map((c) => ({ ...c.args, host: c.host })), toast: document.querySelector('${TOAST}')?.textContent ?? '' })`);
+    check(b.sent.length === 1 && /p_dot$/.test(b.sent[0].id) && b.text === "Unarchive" && !b.disabled && b.threads.includes("t_nix") && /Archived dotfiles/.test(b.toast) && /Undo/.test(b.toast), `${ctx}: after Archive ${JSON.stringify(b)}`);
+    await shot(`project-archived-${label}.png`);
+    await evaluate(`document.querySelector('${TOAST} button')?.click()`);
+    await waitFor(`${COMMANDS("project.unarchive")}.length === 1 && ${GROUP}?.querySelector('.parchb')?.textContent === 'Archive'`, { soft: true });
+    const c = await evaluate(`({ ...${ARCH}, sent: ${COMMANDS("project.unarchive")}.length })`);
+    check(c.sent === 1 && c.text === "Archive" && c.threads.length === 0, `${ctx}: Undo of Archive ${JSON.stringify(c)}`);
+  });
+  await step("refused", async () => {
+    await open(page("p_web"), `!!${GROUP}?.querySelector('.parchb')`);
+    const a = await evaluate(ARCH);
+    check(a.text === "Archive" && a.disabled && /^“.+” (is working|has an open question)/.test(a.title) && a.desc === a.title, `${ctx}: Archive while a thread works ${JSON.stringify(a)}`);
+    await evaluate(`${GROUP}.scrollIntoView({ block: 'center' })`);
+    await settle();
+    await shot(`project-archive-refused-${label}.png`);
+  });
+  await step("inbox", async () => {
+    const ready = `document.querySelectorAll('[data-id]').length > 3`;
+    await open("?mock=rail", ready);
+    const before = await evaluate(`({ row: !!document.querySelector('[data-id="t_nix"]'), chips: [...document.querySelectorAll('.pfrow .pfc')].map((b) => b.title.split(':')[0]) })`);
+    await open("?mock=rail&archived=p_dot", ready);
+    const after = await evaluate(`({ row: !!document.querySelector('[data-id="t_nix"]'), chips: [...document.querySelectorAll('.pfrow .pfc')].map((b) => b.title.split(':')[0]) })`);
+    check(before.row && before.chips.includes("dotfiles") && !after.row && after.chips.length > 0 && !after.chips.includes("dotfiles"), `${ctx}: the inbox of an archived project ${JSON.stringify({ before, after })}`);
+    await shot(`inbox-archived-project-${label}.png`);
+  });
+  await step("archived list", async () => {
+    const list = `${root} section[aria-label="Archived projects"]`;
+    await open(phone ? "?mock=rail&archived=p_dot&settings=projects" : "?mock=rail&archived=p_dot&dialog=settings&page=projects", `!!document.querySelector('${list} .pli')`);
+    const l = await evaluate(`({ archived: [...document.querySelectorAll('${list} .pli')].map((b) => b.dataset.sub), active: [...document.querySelectorAll('${root} section[aria-label="Projects"] [data-sub]')].map((b) => b.dataset.sub) })`);
+    check(l.archived.length === 1 && /p_dot$/.test(l.archived[0]) && l.active.length > 3 && !l.active.some((x) => /p_dot$/.test(x)), `${ctx}: Settings → Projects ${JSON.stringify(l)}`);
+    await evaluate(`document.querySelector('${list}').scrollIntoView({ block: 'center' })`);
+    await settle();
+    await shot(`projects-archived-${label}.png`);
+    await evaluate(`document.querySelector('${list} .pli').click()`);
+    await waitFor(`!!${GROUP}?.querySelector('.parth')`, { soft: true });
+    const a = await evaluate(ARCH);
+    check(a.text === "Unarchive" && a.threads.join() === "t_nix", `${ctx}: the archived project's page ${JSON.stringify(a)}`);
+    if (phone) check(a.h >= 44, `${ctx}: Unarchive is ${a.h} px high`);
+    await evaluate(`${GROUP}.querySelector('.parth').click()`);
+    const tt = phone ? ".m-tt" : ".th .tt";
+    await waitFor(`document.querySelector('${tt}')?.textContent === 'Nix flake update'`, { soft: true });
+    const t = await evaluate(`document.querySelector('${tt}')?.textContent ?? ''`);
+    check(t === "Nix flake update", `${ctx}: the archived project's thread did not open ("${t}")`);
   });
 });
 

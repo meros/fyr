@@ -1166,6 +1166,13 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     const quiet = [{ from: hm(now0 - 3600_000), to: hm(now0 + 2 * 3600_000) }, { from: hm(now0 + 10 * 3600_000), to: hm(now0 + 11 * 3600_000), days: ["sat", "sun"] }];
     projects = projects.map((p) => (p.id === MOCK_QUIET ? { ...p, quiet } : p));
   }
+  // V0.project-archive: ?archived=<projectId> archives that project and shelves its threads, as the host does.
+  if (MOCK_ARCHIVED) {
+    const at = new Date(now0 - 3 * 86_400_000).toISOString();
+    const ap = projects.find((p) => p.id === MOCK_ARCHIVED);
+    projects = projects.map((p) => (p.id === MOCK_ARCHIVED ? { ...p, archivedAt: at } : p));
+    for (const t of threads.values()) if (ap && (t.projectId ?? (t.project === ap.name ? ap.id : undefined)) === ap.id && !t.archivedAt) threads.set(t.id, { ...t, shelvedAt: at });
+  }
   // V0.46: the host computes quietUntil; the mock does the same for its own clock.
   const withQuiet = (p: Project): Project => {
     const u = mockQuietUntil(p.quiet, clock());
@@ -1199,6 +1206,8 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const put = (t: ThreadDTO, patch: Partial<ThreadDTO>) => {
     const n: ThreadDTO = { ...t, ...patch, updatedAt: new Date(clock()).toISOString() };
     n.projectId = n.projectId ?? projectIdFor(n);
+    // V0.project-archive: new work (a run, a question) brings a shelved thread back; the project stays archived.
+    if (n.shelvedAt && (n.running || n.decisions?.length)) n.shelvedAt = null;
     threads.set(n.id, n);
     setTimeout(() => sub?.thread(dtoOf(n)), 30);
     return n;
@@ -1332,6 +1341,25 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         }, 1200);
       }
       return { ok: true, result: { on, action: o.id } };
+    }
+    if (action === "project.archive" || action === "project.unarchive") {
+      // V0.project-archive: as internal/core/projectarchive.go: a thread that works or asks refuses the archive.
+      const p = projects.find((x) => x.id === args.id);
+      if (!p) return { ok: false, error: `no project ${args.id}` };
+      const on = action === "project.archive";
+      if (!!p.archivedAt === on) return { ok: true, result: { id: p.id, kept: true } };
+      const mine = [...threads.values()].filter((t) => projectIdFor(t) === p.id);
+      if (on)
+        for (const t of mine) {
+          if (t.archivedAt || t.shelvedAt) continue;
+          const name = t.title || t.id;
+          if (t.running || [...unread.values()].includes(t.id)) return { ok: false, error: `“${name}” is working: stop its run or wait for it first` };
+          if (t.decisions?.length) return { ok: false, error: `“${name}” has an open question: answer it first` };
+        }
+      const at = new Date(clock()).toISOString();
+      for (const t of mine) if (on ? !t.archivedAt && !t.shelvedAt : t.shelvedAt) put(t, { shelvedAt: on ? at : null });
+      putProject({ ...p, archivedAt: on ? at : undefined });
+      return { ok: true, result: { id: p.id } };
     }
     if (action === "project.setupRun") {
       // V0.116: Set up automatically: a thread in the project's folder; the mock agent sets nothing.
@@ -1694,6 +1722,8 @@ export function createMockServer(scenario: string, real0: number): MockServer {
 // V0.195: ?bgwait=1: the waiting thread of ?mock=rail waits for a background command that went quiet.
 const MOCK_BGWAIT = mockParam("bgwait") === "1";
 const MOCK_QUIET = mockParam("quiet");
+// V0.project-archive: ?archived=<projectId> (read once at load).
+const MOCK_ARCHIVED = mockParam("archived");
 
 /** The host's QuietUntil (internal/core/quiet.go) on the device's clock, for the mock only: any window holds, and
  *  windows that follow on join, at most a week ahead. */

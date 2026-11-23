@@ -10,6 +10,7 @@ import {
 import { Modal } from "./dialogs.tsx";
 import type { NewThreadArgs } from "./new-thread.ts";
 import { type Directory } from "./project-ui.tsx";
+import { archiveBlock, archiveTargets, archiveToast, isArchived, projectThreads, type ArchiveInfo } from "./archived.ts";
 import { expandOrder, findProject, memberOn, moveToast, recordOf, splitSharedPatch } from "./projects.ts";
 import { FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { failed } from "./api.ts";
@@ -21,6 +22,7 @@ import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
 import type { useNavHistory } from "./app-history.tsx";
 import { type ProjectPatch } from "./project-editor.tsx";
+import type { Project } from "./types.ts";
 
 export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" | "setStore" | "fullStore" | "hostOfId" | "store" | "threadsRef" | "setDialog" | "setTheme" | "phone" | "phoneRef" | "cmds" | "now" | "openSettings" | "openPicker" | "filterId" | "filterOn" | "confirmHost"> & Pick<ReturnType<typeof useThreadActions>, "openThread"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navReplace" | "navRef">) {
   const { api, setStore, fullStore, hostOfId, store, threadsRef, setDialog, setTheme, phone, phoneRef, cmds, now, openSettings, openPicker, filterId, filterOn, confirmHost, openThread, navGo, navRef, navReplace } = c;
@@ -72,6 +74,32 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
       const e = await projectCommand("project.delete", { id });
       if (!e) cmds.notify(`Deleted ${name}`);
       return e;
+    },
+    /** V0.project-archive: Archive (on) or Unarchive. Decision 0034: on a linked project every member, each on its own
+     *  host, so the project leaves the lists everywhere; a member already there gets nothing. Archive offers Undo, which
+     *  unarchives the records it archived (the store may not have their new state yet when Undo is pressed). */
+    archive: async (id: string, on: boolean): Promise<string | null> => {
+      const p = findProject(fullStore.projects, id); // V0.207: Settings acts on hidden ones too
+      if (!p) return "This project is not here anymore";
+      const send = async (records: Project[], to: boolean): Promise<string | null> => {
+        for (const m of records) {
+          const r = m.hostId ? await api.command(m.hostId, to ? "project.archive" : "project.unarchive", undefined, { id: m.id }) : { ok: false, error: "This host reports no install id" };
+          if (!r.ok) return p.members ? `${m.host ?? "A host"}: ${r.error ?? "That did not work"}` : (r.error ?? "That did not work");
+        }
+        return null;
+      };
+      const records = archiveTargets(p, on);
+      const e = await send(records, on);
+      if (e) return e;
+      const text = archiveToast(p.name, on);
+      if (on) cmds.offerUndo(text, () => send(records, false));
+      else cmds.notify(text);
+      return null;
+    },
+    /** V0.project-archive: whether it is archived, why Archive is off now (a thread works or asks), and its threads. */
+    archiveInfo: (id: string): ArchiveInfo => {
+      const p = findProject(fullStore.projects, id);
+      return p ? { archived: isArchived(p), block: archiveBlock(p, fullStore.threads), threads: projectThreads(p, fullStore.threads) } : { archived: false, block: null, threads: [] };
     },
     /** V0.121: the owner's one project order. It shows at once on this device; a refusal puts the last order back. */
     order: async (ids: string[]): Promise<string | null> => {

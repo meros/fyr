@@ -60,7 +60,8 @@ import { ArrivedBar } from "./arrived-bar.tsx";
 import { type AnswerMove, arrive } from "./arrived.ts";
 import { HostMark } from "./host-mark-ui.tsx";
 import { hostTag, offlineLine, profilesOf, threadProvider, type HostProfiles } from "./hosts.ts";
-import { type ProjectPatch, ProjectEditor } from "./project-editor.tsx";
+import { type ProjectPatch, ProjectEditor, archiveFor } from "./project-editor.tsx";
+import type { ArchiveInfo } from "./archived.ts";
 import { linkingFor } from "./project-linking.tsx";
 import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
 import { AgentsStrip } from "./agents-strip.tsx";
@@ -185,6 +186,9 @@ export interface PhoneProps {
     link(id: string, other: string): Promise<string | null>;
     unlink(id: string): Promise<string | null>;
     add(id: string, host: HostId, folder: string): Promise<{ error: string | null; id?: string }>;
+    /** V0.project-archive */
+    archive(id: string, on: boolean): Promise<string | null>;
+    archiveInfo(id: string): ArchiveInfo;
   };
   actions: PhoneActions;
   /** V0.119: a Settings screen (the app builds it with its Api): the nav (null) or a page, under this header */
@@ -823,6 +827,7 @@ function MProject(p: PhoneProps & { id: string }) {
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
             onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
+            archive={archiveFor(pr.id!, p.projectActions, (id) => p.nav.go({ screen: { name: "thread", id }, sheet: null }))}
             onDelete={async () => {
               const e = await p.projectActions.delete(pr.id!);
               if (!e) p.nav.back();

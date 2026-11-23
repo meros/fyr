@@ -60,6 +60,10 @@ type Project struct {
 	// SharedAt stamps the values the members share: name, colour, glyph icon,
 	// quiet hours, priority, agentSettle and toolApproval. The newest stamp in a link wins (decision 0034).
 	SharedAt time.Time `json:"sharedAt,omitzero"`
+	// ArchivedAt is when the owner archived the finished project
+	// (V0.project-archive, decision 0017): it leaves the pickers and the
+	// filter, and its threads leave the inbox. nil is an active project.
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
 // A project's priority (V0.project-priority); "" is normal.

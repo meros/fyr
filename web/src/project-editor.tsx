@@ -2,7 +2,8 @@
 import { type ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { HostInfo } from "./hosts.ts";
-import type { Profile, Project, QuietHours } from "./types.ts";
+import type { Profile, Project, QuietHours, Thread } from "./types.ts";
+import type { ArchiveInfo } from "./archived.ts";
 import { quietList, quietNote, quietSaver } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, toolApprovalLine, toolApprovalOf, type ToolApproval, setByAgent, setupLine, colorName, colorVar, monogram, projectDefaults, resolveIcon } from "./projects.ts";
@@ -43,7 +44,26 @@ type IconTab = "image" | "monogram" | "emoji" | "line";
 /** A project's page (V0.55, V0.58, V0.116; V0.119 amends the Save button away): Identity, Threads, Quiet hours, Delete.
  *  Each change saves at once with only its own field (V0.116 (2)); quiet hours 600 ms after the last change and at
  *  once when the page closes. The same page in the desktop Settings and on the phone's project screen. */
-type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null> };
+type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null>; /** V0.project-archive */ archive?: ProjectArchive };
+
+/** V0.project-archive: the project's Archive group, the same on the desktop (Settings → Projects → a project) and the
+ *  phone (the project screen). */
+/** The Archive group of project `id`, from the app's project actions; `open` opens a thread. */
+export function archiveFor(id: string, a: { archive(id: string, on: boolean): Promise<string | null>; archiveInfo(id: string): ArchiveInfo }, open: (id: string) => void): ProjectArchive {
+  return { ...a.archiveInfo(id), set: (on) => a.archive(id, on), open };
+}
+
+export interface ProjectArchive {
+  archived: boolean;
+  /** why Archive is off now (a thread works or asks), shown in the row's text as well as on the button: the phone has
+   *  no hover, so a tooltip alone would hide it there */
+  block: string | null;
+  /** the project's threads, which an archived project's page lists to open (the inbox leaves them out) */
+  threads: Thread[];
+  /** Archive (true) or Unarchive; the error, or null */
+  set(on: boolean): Promise<string | null>;
+  open(id: string): void;
+}
 
 /** V0.139, V0.host-tabs: a project lives on one host, or on several when linked (decision 0034). Linked projects show
  *  HostTabs directly under the header to switch between host records in the owner's host order; unlinked projects on a
@@ -119,7 +139,7 @@ function imageTarget(members: Project[], own: Project, hosts: readonly HostInfo[
   return t ? [t] : [];
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) or the Host group (single-host), under the header */ host?: ComponentChildren; /** V0.host-tabs: compact folded linking actions for a linked project */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** V0.linked-values-sync: the record an image goes to; the front copies it to the other members */ imageTargets: Project[] }) {
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, archive, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) or the Host group (single-host), under the header */ host?: ComponentChildren; /** V0.host-tabs: compact folded linking actions for a linked project */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** V0.linked-values-sync: the record an image goes to; the front copies it to the other members */ imageTargets: Project[] }) {
   // Decision 0034: name, colour, icon, quiet hours, priority, agentSettle and toolApproval are the link's; the rest of the page is this host's record.
   if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
@@ -461,6 +481,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
         </div>
       )}
       {hostManage}
+      {archive && <ArchiveGroup a={archive} linked={!!linked} err={errs.archive} setErr={(e) => err("archive", e)} />}
       {onDelete && (
         <Group danger class="pdel">
           <Row
@@ -484,5 +505,40 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
         </Group>
       )}
     </div>
+  );
+}
+
+/** V0.project-archive: Archive or Unarchive, and an archived project's threads to open. */
+function ArchiveGroup({ a, linked, err, setErr }: { a: ProjectArchive; linked: boolean; err?: string | null; setErr(e: string | null): void }) {
+  const env = useSet();
+  const [busy, setBusy] = useState(false);
+  const off = !a.archived && !!a.block;
+  const run = async () => {
+    setBusy(true);
+    const e = await a.set(!a.archived);
+    setBusy(false);
+    setErr(e);
+  };
+  const where = linked ? " on every host" : "";
+  const desc = a.archived
+    ? `Its threads are out of the inbox, the filter and the pickers${where}. A new message or question brings that thread back; the project stays archived.`
+    : (a.block ?? `When its work is done: the project and its threads leave the inbox, the filter and the pickers${where}. Nothing is deleted, and a new message brings a thread back.`);
+  return (
+    <Group title="Archive" label="Archive" class="parch">
+      <Row
+        title={a.archived ? "Archived" : "Archive project"}
+        desc={desc}
+        error={err}
+        end={
+          <button type="button" class="btn parchb" disabled={busy || env.readOnly || off} title={off ? a.block! : undefined} onClick={() => void run()}>
+            {a.archived ? "Unarchive" : "Archive"}
+          </button>
+        }
+      />
+      {a.archived &&
+        a.threads.map((t) => (
+          <Row key={t.id} class="parth" onClick={() => a.open(t.id)} data={{ thread: t.id }} title={t.title || "Untitled"} ell desc={t.shelvedAt ? "Put away with the project" : "Back in the inbox"} end={<span aria-hidden="true">›</span>} />
+        ))}
+    </Group>
   );
 }

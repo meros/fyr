@@ -166,6 +166,8 @@ export interface ThreadDTO {
   /** V0.104: when the owner pinned the thread; a pinned thread sorts above every other */
   pinnedAt?: string | null;
   archivedAt?: string | null;
+  /** V0.project-archive: put away with its archived project; out of the inbox until new work brings it back */
+  shelvedAt?: string | null;
   settleWhenDone?: boolean;
   settleWhenMerged?: boolean;
   /** V0.settle-request: the agent said its work is done, on a project that asks the owner; a Settle chip shows */
@@ -280,6 +282,8 @@ export interface Project {
   repo?: string;
   /** Decision 0034: when the values the members share were set; the newest wins */
   sharedAt?: string;
+  /** V0.project-archive: when the owner archived it; absent is active. A linked project is archived when every member is */
+  archivedAt?: string;
   /** Decision 0034: the client's: the member whose image a linked project shows */
   imageFrom?: { id: string; hostId: HostId };
   /** Decision 0034: the client's: every record of a linked project, the one shown first; absent on any other project */

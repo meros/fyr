@@ -34,7 +34,8 @@ import { PeersPanel, usePeerState } from "./peers-ui.tsx";
 import { devicesNeed, devicesSummary } from "./devices.ts";
 import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
 import { Empty, Group, LoadError, Row, SavedMark, Seg, SetContext, Skeleton, Switch, useSaved, useSet } from "./settings-rows.tsx";
-import { type ProjectPatch, ProjectEditor } from "./project-editor.tsx";
+import { type ProjectPatch, ProjectEditor, archiveFor } from "./project-editor.tsx";
+import type { ArchiveInfo } from "./archived.ts";
 import { linkingFor } from "./project-linking.tsx";
 import { type AllSettings, useSettingsData } from "./settings-load.ts";
 
@@ -70,6 +71,9 @@ interface ProjectActions {
   link(id: string, other: string): Promise<string | null>;
   unlink(id: string): Promise<string | null>;
   add(id: string, host: HostId, folder: string): Promise<string | null>;
+  /** V0.project-archive: Archive (on) or Unarchive; the error, or null */
+  archive(id: string, on: boolean): Promise<string | null>;
+  archiveInfo(id: string): ArchiveInfo;
 }
 
 export interface SettingsProps {
@@ -394,6 +398,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
               now={p.now}
               onSave={(patch) => p.projectActions.update(pr.id!, patch)}
               onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
+              archive={archiveFor(pr.id!, p.projectActions, (id) => p.onOpenThread?.(id))}
               onDelete={async () => {
                 const e = await p.projectActions.delete(pr.id!);
                 if (!e) go({ page: "projects" });
