@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -149,11 +148,10 @@ type State[T, P, F any] struct {
 	Projects []P      `json:"projects"`
 	// Partial: ?since=REV listed only the threads changed after REV (V0.38).
 	Partial bool `json:"partial"`
-	// More and Cursor: ?limit=N answered the newest N threads (V0.state-paging);
-	// More says older ones remain, and Cursor (a string: a rev is above 2^53) is
-	// the oldest rev in this page, to ask the next page with ?before=CURSOR.
-	More   bool   `json:"more,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
+	// Index: `?index=1` answers it in place of the threads: every thread the host
+	// has, as id, rev and attention state (V0.state-index). `?ids=a,b` answers
+	// those threads only, also Partial.
+	Index []IndexEntry `json:"index,omitempty"`
 	// Deploy is the deploy progress to show (V0.39), or nil.
 	Deploy any `json:"deploy"`
 	// Stall is the host's newest stall of the last 24 h (V0.147), or nil.
@@ -284,26 +282,14 @@ func decode(w http.ResponseWriter, r *http.Request, v any, limit int64, emptyOK 
 	return false
 }
 
-// PageByRev is one page of a state's threads, newest first (V0.state-paging):
-// those with a rev below before (all when before is 0), at most limit of them
-// (all when limit is 0). more says older ones remain after the page; cursor is
-// the oldest rev in it, the next page's before. The input is not changed.
-func PageByRev[T any](items []T, rev func(T) int64, before int64, limit int) (page []T, more bool, cursor int64) {
-	page = make([]T, 0, len(items))
-	for _, it := range items {
-		if before <= 0 || rev(it) < before {
-			page = append(page, it)
-		}
-	}
-	if limit <= 0 {
-		return page, false, 0
-	}
-	sort.SliceStable(page, func(i, j int) bool { return rev(page[i]) > rev(page[j]) })
-	if len(page) > limit {
-		page, more = page[:limit], true
-	}
-	if len(page) > 0 {
-		cursor = rev(page[len(page)-1])
-	}
-	return page, more, cursor
+// IndexEntry is one thread in a state's index (V0.state-index): enough for a
+// device to tell which of its stored threads are current, gone or missing, and
+// which to fetch first (State), without building any thread.
+type IndexEntry struct {
+	ID    string `json:"id"`
+	Rev   int64  `json:"rev"`
+	State string `json:"state"`
 }
+
+// MaxStateIDs is how many threads one `?ids=` answer holds.
+const MaxStateIDs = 100

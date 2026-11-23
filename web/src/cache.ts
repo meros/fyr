@@ -16,28 +16,9 @@ export function mergeStateDelta(stored: StateDTO, next: Partial): StateDTO {
   return { ...next, partial: undefined, threads: [...byId.values()] } as StateDTO;
 }
 
-/** V0.host-ids (decision 0031 2.5, C7): the device keeps each host's own state, by install id, as that host last sent
- *  it. A host's "since" is its own newest rev, and its partial answer merges into its own state, and the hosts are
- *  kept apart (slice 2b), so one host's clock or records never decide what is asked of another. */
-export function hostSince(stored: StateDTO | null): number {
-  return stored ? sinceRev(stored) : 0;
-}
-
 /** A host's answer on top of its stored state: a partial answer is the threads that changed, a full one is all. */
 export function nextHostState(stored: StateDTO | null, answer: Partial): StateDTO {
   return stored ? mergeStateDelta(stored, answer) : ({ ...answer, partial: undefined } as StateDTO);
-}
-
-/** Revs are the host's clock in ns. Frames reach a device out of rev order (the stream holds a thread up to
- *  100 ms, a front relays several hosts), so a frame lost when the stream drops can be older than the newest rev the
- *  device holds. Asking a minute early fetches it again; the cost is the threads that changed in that minute. */
-const SINCE_SLACK_NS = 60_000_000_000;
-
-/** The rev to ask "since": a minute before the newest the device holds (also covers that revs above 2^53 round). */
-export function sinceRev(s: StateDTO): number {
-  let max = 0;
-  for (const t of s.threads) if (typeof t.rev === "number" && t.rev > max) max = t.rev;
-  return max > SINCE_SLACK_NS ? max - SINCE_SLACK_NS : 0;
 }
 
 /** Stored and new events by seq, the newest `limit`. A full page of new events means a gap: drop the stored ones. */
@@ -151,13 +132,40 @@ async function moveHost(was: string, now: string): Promise<void> {
   });
 }
 
+/** V0.state-index: the stored timelines of a host's threads that are not in `keep` (refs) go: the host dropped them. */
+async function pruneEvents(hostId: string, keep: Set<string>): Promise<void> {
+  const d = await db();
+  if (!d || !hostId) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = d.transaction(STORE, "readwrite");
+      const st = tx.objectStore(STORE);
+      const prefix = `events:${hostId}/`;
+      const r = st.openCursor();
+      r.onsuccess = () => {
+        const c = r.result;
+        if (!c) return;
+        const k = String(c.key);
+        if (k.startsWith(prefix) && !keep.has(k.slice("events:".length))) c.delete();
+        c.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 export const cache = {
   moveHost,
+  pruneEvents,
   /** the device's copy of the whole state, drawn at once on start (V0.38): slice 2b's snapshot, one state per host.
    *  V0.old-routes-end: the older flat copy ("state2", the old /api/state's shape) goes when the new one is written. */
   state: () => get<Snapshot>("state3").then((s) => (s && typeof s.states === "object" && s.states && Array.isArray(s.hosts) ? s : null)),
   saveState: (s: Snapshot) => put("state3", s).then(() => del("state2")),
-  /** one host's own state as it last sent it, by install id: its "since" (V0.host-ids) */
+  /** one host's own state as it last sent it, by install id; its threads' revs are what the next sync diffs (V0.state-index) */
   hostState: (hostId: string) => get<StateDTO>(`host:${hostId}`),
   saveHostState: (hostId: string, s: StateDTO) => put(`host:${hostId}`, s),
   events: (threadId: string) => get<FyrEvent[]>(`events:${threadId}`),

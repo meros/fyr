@@ -324,6 +324,13 @@ func TestOfflineHostIsServedFromTheCache(t *testing.T) {
 	if _, stamped := st.Threads[0]["host"]; stamped || st.Threads[0]["hostOffline"] != nil || fmt.Sprint(st.Threads[0]["rev"]) != "100" {
 		t.Errorf("the host's own state is not stamped or raised: %v", st.Threads[0])
 	}
+	// V0.state-index: an offline host's cached state answers the index and ?ids= as a host does.
+	if code, _, b := probeGet(t, fs.URL+"/api/h/"+idOne+"/state?index=1"); code != 200 || !strings.Contains(string(b), `"index":[{"id":"t_same","rev":100,`) || strings.Contains(string(b), "on one") {
+		t.Errorf("index of an offline host: %d %s", code, b)
+	}
+	if code, _, b := probeGet(t, fs.URL+"/api/h/"+idOne+"/state?ids=t_same,t_nope"); code != 200 || !strings.Contains(string(b), "on one") || strings.Contains(string(b), "t_nope") {
+		t.Errorf("ids of an offline host: %d %s", code, b)
+	}
 	if code, hdr, b := probeGet(t, fs.URL+"/api/h/"+idOne+"/threads/t_same"); code != 200 || hdr.Get("X-Fyr-Read-At") == "" || !strings.Contains(string(b), "on one") {
 		t.Errorf("thread of an offline host: %d %s", code, b)
 	}

@@ -214,26 +214,42 @@ func (f *Front) cachedState(w http.ResponseWriter, r *http.Request, l *link) {
 	if v := r.URL.Query().Get("since"); v != "" {
 		since, _ = strconv.ParseInt(v, 10, 64)
 	}
-	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	q := r.URL.Query()
+	asIndex := q.Get("index") == "1" // V0.state-index
+	var wantIDs map[string]bool
+	if q.Has("ids") {
+		wantIDs = map[string]bool{}
+		for _, id := range strings.Split(q.Get("ids"), ",") {
+			wantIDs[id] = true
+		}
+	}
 	f.mu.Lock()
-	st := map[string]any{"now": time.Now().UTC(), "partial": since > 0 || before > 0}
+	st := map[string]any{"now": time.Now().UTC(), "partial": since > 0 || asIndex || wantIDs != nil}
 	for k, v := range l.env {
 		st[k] = v
 	}
-	changed := []map[string]any{}
-	for _, d := range l.raw {
-		if since <= 0 || revOf(d) > since {
-			changed = append(changed, d)
+	threads := []any{}
+	switch {
+	case asIndex:
+		index := make([]map[string]any, 0, len(l.raw))
+		for id, d := range l.raw {
+			att, _ := d["attention"].(map[string]any)
+			state, _ := att["state"].(string)
+			index = append(index, map[string]any{"id": id, "rev": revOf(d), "state": state})
 		}
-	}
-	page, more, cursor := api.PageByRev(changed, revOf, before, limit) // V0.state-paging
-	threads := make([]any, 0, len(page))
-	for _, d := range page {
-		threads = append(threads, d)
-	}
-	if more {
-		st["more"], st["cursor"] = true, strconv.FormatInt(cursor, 10)
+		st["index"] = index
+	case wantIDs != nil:
+		for id := range wantIDs {
+			if d := l.raw[id]; d != nil && len(threads) < api.MaxStateIDs {
+				threads = append(threads, d)
+			}
+		}
+	default:
+		for _, d := range l.raw {
+			if since <= 0 || revOf(d) > since {
+				threads = append(threads, d)
+			}
+		}
 	}
 	projects := []any{}
 	for _, p := range l.projects {
