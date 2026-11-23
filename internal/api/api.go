@@ -79,6 +79,22 @@ type Thread struct {
 	// password on the thread's host, or "" (V0.149 (4)); set only when the
 	// thread has one.
 	RootPrompt string `json:"rootPrompt,omitempty"`
+	// Usage is the thread's tokens so far, from the host's usage ledger
+	// (V0.usage-ledger); absent before its first counted result.
+	Usage *Usage `json:"usage,omitempty"`
+}
+
+// Usage is a sum of tokens by kind (V0.usage-ledger, decision 0041).
+// Thinking is part of Output; Total is a plain sum of the kinds, a count
+// and not a weight.
+type Usage struct {
+	Input        int64 `json:"input"`
+	Output       int64 `json:"output"`
+	CacheRead    int64 `json:"cacheRead"`
+	CacheWrite5m int64 `json:"cacheWrite5m"`
+	CacheWrite1h int64 `json:"cacheWrite1h"`
+	Thinking     int64 `json:"thinking"`
+	Total        int64 `json:"total"`
 }
 
 // View is the owner's view as clients read it: the snooze is derived

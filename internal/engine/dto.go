@@ -55,7 +55,27 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now), PushQuiet: quiet,
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
 		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Wakes: core.Wakes(t), Waits: core.Waits(t, now), Changes: changes,
-		RootPrompt: e.threadRootPrompt(t)}
+		RootPrompt: e.threadRootPrompt(t), Usage: e.threadUsage(t.ID)}
+}
+
+// threadUsage is the thread's token total (V0.usage-ledger). Call it with
+// e.mu held.
+func (e *Engine) threadUsage(id string) *api.Usage {
+	if u := e.usage[id]; u != nil {
+		c := *u
+		return &c
+	}
+	return nil
+}
+
+// SetThreadUsage takes a thread's token total from the meter
+// (V0.usage-ledger). The meter calls it right after it wrote a report and
+// before the agent reports the run's end, so that apply's DTO carries the
+// new total. It calls no dependency and takes e.mu only to store the total.
+func (e *Engine) SetThreadUsage(thread string, u api.Usage) {
+	e.mu.Lock()
+	e.usage[thread] = &u
+	e.mu.Unlock()
 }
 
 // threadRootPrompt is why the thread's root run requests cannot ask for a

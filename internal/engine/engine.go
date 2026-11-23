@@ -61,6 +61,7 @@ type Engine struct {
 	stored   map[string]*storedJSON   // V0.structure-cost (4): by thread id
 	last     map[string]core.State    // last broadcast state, for time-driven changes
 	revs     map[string]int64         // per-thread rev (SPEC 0.5 V0.2)
+	usage    map[string]*api.Usage    // V0.usage-ledger: each thread's token total, as the meter last said
 	projects map[string]*core.Project // V0.23
 	// records are the host change records (#35): observed branches.
 	records map[string]*core.Change
@@ -201,7 +202,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, textAskSlots: make(chan struct{}, textAskCalls), searchSlots: make(chan struct{}, searchCalls), threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, stored: map[string]*storedJSON{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{},
+		last: map[string]core.State{}, revs: map[string]int64{}, usage: map[string]*api.Usage{}, projects: map[string]*core.Project{}, stored: map[string]*storedJSON{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{},
 		quotaWindows: map[string]time.Time{}, quotaResetSent: map[string]time.Time{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute},
 		newLimit:  window{max: 12, span: time.Hour, st: st, key: "engine.newLimit"},
