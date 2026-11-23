@@ -32,16 +32,6 @@ const (
 	NoAuth AuthKind = "none"
 )
 
-// CredentialVars are the variables that name who an agent process talks to
-// and as whom. The adapter sets every one the provider needs (V0.50 (2));
-// a process must not inherit a stale one from whatever started fyrd, which
-// would point the agent at that endpoint (or that key) instead (V0.agent-env).
-// A profile's own env still sets them, so a legacy profile keeps working.
-var CredentialVars = []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY",
-	"ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
-	"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
-	"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CONFIG_DIR"}
-
 // Auth is data the adapter applies; it never holds a secret value.
 type Auth struct {
 	Kind AuthKind `json:"kind"`
@@ -76,6 +66,14 @@ type Caps struct {
 	Efforts []string `json:"efforts,omitempty"`
 	// Models: the CLI's own list for a login (an endpoint lists its own).
 	Models []Model `json:"models,omitempty"`
+	// CredentialVars are the variables that name who the CLI talks to and
+	// as whom. The adapter sets every one the provider needs (V0.50 (2));
+	// a process must not inherit a stale one from whatever started fyrd,
+	// which would point the agent at that endpoint (or that key) instead
+	// (V0.agent-env, V0.review-hangs (1)). Every launch of the CLI (session,
+	// print, model list, login) starts from launchenv.AgentEnv with them. A
+	// profile's own env still sets them, so a legacy profile keeps working.
+	CredentialVars []string `json:"-"`
 }
 
 // Launch is everything one session process starts with. Key is the

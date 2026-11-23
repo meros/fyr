@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -59,35 +61,84 @@ func Available(socket string) bool {
 	return ok
 }
 
+// clients holds one *http.Client per socket path: a server asks tailscaled
+// on every request (PeerGuard, the Host check), and a client per call left
+// a transport with its idle connections and goroutines behind each time.
+var clients sync.Map
+
 // localClient talks to the LocalAPI at socket, or, when there is none, at
-// the macOS app's port with its token.
+// the macOS app's port with its token. Which one is decided per connection,
+// so a cached client follows tailscaled starting or the app restarting on
+// another port.
 func localClient(socket string) *http.Client {
-	if _, err := os.Stat(socket); err != nil {
-		if port, token, ok := macLocalAPI(MacDir); ok {
-			return &http.Client{Timeout: 3 * time.Second, Transport: tokenTransport{token: token, rt: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+	if c, ok := clients.Load(socket); ok {
+		return c.(*http.Client)
+	}
+	t := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			if _, err := os.Stat(socket); err != nil {
+				if port, _, ok := macLocalAPI(MacDir); ok {
 					return (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", port))
-				}}}}
+				}
+			}
+			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		},
+		MaxIdleConns:    2,
+		IdleConnTimeout: 30 * time.Second,
+	}
+	c, _ := clients.LoadOrStore(socket, &http.Client{Timeout: 3 * time.Second, Transport: localTransport{socket: socket, rt: t}})
+	return c.(*http.Client)
+}
+
+// localTransport sends the macOS app's token as the LocalAPI asks (basic
+// auth with an empty user) when there is no socket, and the Sec-Tailscale
+// header every LocalAPI call needs.
+type localTransport struct {
+	socket string
+	rt     http.RoundTripper
+}
+
+func (t localTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Sec-Tailscale", "localapi")
+	if _, err := os.Stat(t.socket); err != nil {
+		if _, token, ok := macLocalAPI(MacDir); ok {
+			r.SetBasicAuth("", token)
 		}
 	}
-	return &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
-		}}}
-}
-
-// tokenTransport sends the macOS app's token as the LocalAPI asks: basic
-// auth with an empty user.
-type tokenTransport struct {
-	token string
-	rt    http.RoundTripper
-}
-
-func (t tokenTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	r = r.Clone(r.Context())
-	r.SetBasicAuth("", t.token)
 	return t.rt.RoundTrip(r)
 }
+
+// maxLocalBody bounds a LocalAPI answer; status on a large tailnet is the
+// largest.
+const maxLocalBody = 16 << 20
+
+// localGet asks the LocalAPI for path and decodes its JSON answer into v.
+func localGet(ctx context.Context, socket, path string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://local-tailscaled.sock/localapi/v0/"+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := localClient(socket).Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		// Read to the end, so the connection goes back to the pool: the
+		// decoder stops at the value's end, before the body's EOF.
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tailscaled %s: %s", path, resp.Status)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxLocalBody)).Decode(v); err != nil {
+		return fmt.Errorf("tailscaled %s: %w", path, err)
+	}
+	return nil
+}
+
+func whoisPath(remoteAddr string) string { return "whois?addr=" + url.QueryEscape(remoteAddr) }
 
 // Peers names the owner of a tailnet peer by the address of its connection
 // (LocalAPI whois). A host's tailnet listener serves a front only when that
@@ -96,23 +147,13 @@ func (t tokenTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 type Peers struct{ Socket string }
 
 func (p Peers) Login(ctx context.Context, remoteAddr string) (string, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", "http://local-tailscaled.sock/localapi/v0/whois?addr="+url.QueryEscape(remoteAddr), nil)
-	req.Header.Set("Sec-Tailscale", "localapi")
-	resp, err := localClient(p.Socket).Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("tailscaled whois %s: %s", remoteAddr, resp.Status)
-	}
 	var w struct {
 		Node struct {
 			Tags []string
 		}
 		UserProfile struct{ LoginName string }
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&w); err != nil {
+	if err := localGet(ctx, p.Socket, whoisPath(remoteAddr), &w); err != nil {
 		return "", err
 	}
 	if len(w.Node.Tags) > 0 || w.UserProfile.LoginName == "" {
@@ -128,18 +169,7 @@ var ErrTagged = errors.New("this node is tagged and has no Tailscale user: set o
 
 // Self returns the login of this node's user and its MagicDNS name. On a
 // tagged node it returns the name with ErrTagged.
-func Self(socket string) (login, dnsName string, err error) {
-	c := localClient(socket)
-	req, _ := http.NewRequest("GET", "http://local-tailscaled.sock/localapi/v0/status", nil)
-	req.Header.Set("Sec-Tailscale", "localapi")
-	resp, err := c.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", "", fmt.Errorf("tailscaled status: %s", resp.Status)
-	}
+func Self(ctx context.Context, socket string) (login, dnsName string, err error) {
 	var s struct {
 		Self struct {
 			UserID  int64
@@ -148,7 +178,7 @@ func Self(socket string) (login, dnsName string, err error) {
 		}
 		User map[string]struct{ LoginName string }
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+	if err := localGet(ctx, socket, "status", &s); err != nil {
 		return "", "", err
 	}
 	if len(s.Self.Tags) > 0 {
@@ -164,21 +194,11 @@ func Self(socket string) (login, dnsName string, err error) {
 // IPv4 is this node's tailnet IPv4 address (SPEC 0.5 V0.54): a host's
 // `hostListen` of "tailnet:PORT" listens there, so a config need not name
 // the address.
-func IPv4(socket string) (string, error) {
-	req, _ := http.NewRequest("GET", "http://local-tailscaled.sock/localapi/v0/status", nil)
-	req.Header.Set("Sec-Tailscale", "localapi")
-	resp, err := localClient(socket).Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("tailscaled status: %s", resp.Status)
-	}
+func IPv4(ctx context.Context, socket string) (string, error) {
 	var s struct {
 		TailscaleIPs []string
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+	if err := localGet(ctx, socket, "status", &s); err != nil {
 		return "", err
 	}
 	for _, ip := range s.TailscaleIPs {
@@ -193,7 +213,7 @@ func IPv4(socket string) (string, error) {
 // label), which a front may use as the Host of its requests; the host's
 // listener refuses any other name (decision 0030 slice 1: DNS rebinding).
 func (p Peers) Names(ctx context.Context) []string {
-	_, dns, err := Self(p.Socket)
+	_, dns, err := Self(ctx, p.Socket)
 	if err != nil && !errors.Is(err, ErrTagged) {
 		return nil
 	}
@@ -217,16 +237,6 @@ type NodeInfo struct {
 
 // Node asks whois about the node at remoteAddr (an IP or IP:port).
 func (p Peers) Node(ctx context.Context, remoteAddr string) (NodeInfo, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", "http://local-tailscaled.sock/localapi/v0/whois?addr="+url.QueryEscape(remoteAddr), nil)
-	req.Header.Set("Sec-Tailscale", "localapi")
-	resp, err := localClient(p.Socket).Do(req)
-	if err != nil {
-		return NodeInfo{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return NodeInfo{}, fmt.Errorf("tailscaled whois %s: %s", remoteAddr, resp.Status)
-	}
 	var w struct {
 		Node struct {
 			StableID string
@@ -239,7 +249,7 @@ func (p Peers) Node(ctx context.Context, remoteAddr string) (NodeInfo, error) {
 			LoginName string
 		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&w); err != nil {
+	if err := localGet(ctx, p.Socket, whoisPath(remoteAddr), &w); err != nil {
 		return NodeInfo{}, err
 	}
 	n := NodeInfo{StableID: w.Node.StableID, Name: strings.TrimSuffix(w.Node.Name, "."), Tags: w.Node.Tags, Shared: w.Node.Sharer != 0}
@@ -270,16 +280,6 @@ func (n StatusNode) Untagged() bool { return len(n.Tags) == 0 }
 // Status is this node and its peers (decision 0030 3.6 condition 1 reads who is
 // the same user's, untagged, not shared in and not expired).
 func Status(ctx context.Context, socket string) (self StatusNode, peers []StatusNode, err error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", "http://local-tailscaled.sock/localapi/v0/status", nil)
-	req.Header.Set("Sec-Tailscale", "localapi")
-	resp, err := localClient(socket).Do(req)
-	if err != nil {
-		return self, nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return self, nil, fmt.Errorf("tailscaled status: %s", resp.Status)
-	}
 	type node struct {
 		DNSName      string
 		UserID       int64
@@ -294,7 +294,7 @@ func Status(ctx context.Context, socket string) (self StatusNode, peers []Status
 		Peer map[string]node
 		User map[string]struct{ LoginName string }
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+	if err := localGet(ctx, socket, "status", &s); err != nil {
 		return self, nil, err
 	}
 	mk := func(n node) StatusNode {

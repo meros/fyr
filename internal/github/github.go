@@ -3,6 +3,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,14 +21,37 @@ import (
 	"github.com/meros/fyr/internal/proc"
 )
 
-// Runner runs gh with arguments and returns its combined output.
+// Runner runs gh with arguments and returns its standard output.
 type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
 // Gh runs the real gh CLI.
-func Gh(ctx context.Context, args ...string) ([]byte, error) {
-	out, err := proc.Command(ctx, "gh", args...).CombinedOutput()
+func Gh(ctx context.Context, args ...string) ([]byte, error) { return runGh(ctx, "", args) }
+
+// GhIn returns a Runner that executes gh in dir (for commands such as gh pr
+// create that read the checkout's git remotes and current branch).
+func GhIn(dir string) Runner {
+	return func(ctx context.Context, args ...string) ([]byte, error) { return runGh(ctx, dir, args) }
+}
+
+// ghBin is the gh CLI; a variable for the test.
+var ghBin = "gh"
+
+// runGh runs gh in dir ("" for fyrd's own) and returns its standard output
+// only: a notice gh prints on stderr (an update, a deprecation) would break
+// the JSON or the HTTP head the caller reads (V0.review-hangs (5)). Stderr
+// goes into the error.
+func runGh(ctx context.Context, dir string, args []string) ([]byte, error) {
+	cmd := proc.Command(ctx, ghBin, args...)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		return out, fmt.Errorf("gh %s: %w: %s", strings.Join(args[:min(2, len(args))], " "), err, strings.TrimSpace(string(out)))
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(string(out))
+		}
+		return out, fmt.Errorf("gh %s: %w: %s", strings.Join(args[:min(2, len(args))], " "), err, msg)
 	}
 	return out, nil
 }

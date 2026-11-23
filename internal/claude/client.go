@@ -42,6 +42,19 @@ type Spec struct {
 	Meta   []byte
 }
 
+// CredentialVars are the variables that name who the claude CLI talks to
+// and as whom (cli.Caps.CredentialVars, V0.agent-env).
+var CredentialVars = []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY",
+	"ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+	"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CONFIG_DIR"}
+
+// Env is the environment of a claude process: launchenv.AgentEnv with
+// CredentialVars, CLAUDE_CODE_ENTRYPOINT=sdk-go, then extra (the adapter's).
+func Env(extra ...string) []string {
+	return launchenv.AgentEnv(CredentialVars, append([]string{"CLAUDE_CODE_ENTRYPOINT=sdk-go"}, extra...)...)
+}
+
 // SeqKey is the key under which a message from a runner carries its
 // sequence number; Handled acks it.
 const SeqKey = "_fyrSeq"
@@ -89,7 +102,7 @@ func Start(s Spec) (*Client, error) {
 	// name the live install (its runner and ready file). V0.agent-env: nor a
 	// credential or endpoint variable from whoever started fyrd; the
 	// adapter's (s.Env) are the only ones it gets.
-	env := launchenv.ClaudeEnv(launchenv.Scrub(s.Env)...)
+	env := Env(s.Env...)
 	if len(s.Wrap) > 0 {
 		args = append(append(append([]string{}, s.Wrap[1:]...), s.Binary), args...)
 		s.Binary = s.Wrap[0]

@@ -114,7 +114,7 @@ func Start(ctx context.Context, d Deps) {
 	}
 	self := d.Self
 	if self == nil && tailnet.Available(cfg.TSSocket) {
-		self = func() (string, string, error) { return tailnet.Self(cfg.TSSocket) }
+		self = func() (string, string, error) { return tailnet.Self(ctx, cfg.TSSocket) }
 	}
 	selfHost := ""
 	if self == nil {

@@ -109,11 +109,11 @@ func TestInitForce(t *testing.T) {
 	}
 }
 
-func TestClaudeEnv(t *testing.T) {
+func TestAgentEnv(t *testing.T) {
 	t.Setenv(Runner, "/live.sock")
 	t.Setenv("ANTHROPIC_API_KEY", "k")
 	t.Setenv("HOME_KEEP", "1")
-	env := ClaudeEnv("X=1")
+	env := AgentEnv([]string{"ANTHROPIC_API_KEY"}, "CLAUDE_CODE_ENTRYPOINT=sdk-go", Runner+"=/extra.sock", "X=1")
 	has := func(kv string) bool {
 		for _, e := range env {
 			if e == kv {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -176,7 +175,7 @@ type acpSession struct {
 }
 
 func startACP(s acpSpec, h cli.Handlers) (*acpSession, error) {
-	env := append(launchenv.Scrub(os.Environ()), launchenv.Scrub(s.Env)...)
+	env := launchenv.AgentEnv(CredentialVars, s.Env...) // #167, V0.review-hangs (1)
 	bin, args := s.Binary, s.Args
 	if len(s.Wrap) > 0 {
 		args = append(append(append([]string{}, s.Wrap[1:]...), bin), args...)
@@ -895,8 +894,6 @@ func (c *acpSession) promptWorker() {
 				continue
 			case <-c.readDone:
 				return
-			case <-c.done:
-				return
 			}
 		}
 		if c.reattachActive || c.unsolicitedActive {
@@ -906,8 +903,6 @@ func (c *acpSession) promptWorker() {
 			case <-c.qCh:
 				continue
 			case <-c.readDone:
-				return
-			case <-c.done:
 				return
 			}
 		}
@@ -931,9 +926,13 @@ func (c *acpSession) promptWorker() {
 				continue
 			case <-c.readDone:
 				return
-			case <-c.done:
-				return
 			}
+		}
+		if isClosed(c.readDone) {
+			// The process is gone: a queued prompt never starts, and it gets
+			// no made-up result either.
+			c.mu.Unlock()
+			return
 		}
 		item := c.queue[0]
 		c.queue = c.queue[1:]
@@ -969,6 +968,15 @@ func (c *acpSession) promptWorker() {
 			"prompt":    convertPromptBlocks(item.content),
 		}, true, started)
 		durMs := time.Since(start).Milliseconds()
+		if err != nil && isClosed(c.readDone) {
+			// The process exited: read() closes Out and reports Err. A
+			// result here would be a made-up one, and read() waits for this
+			// worker before it closes Out (V0.review-hangs (9)).
+			c.mu.Lock()
+			c.turnRunning = false
+			c.mu.Unlock()
+			return
+		}
 
 		// Flush any trailing assistant text, promote any still-open background
 		// tools, and emit result atomically under emitMu so a subsequent
@@ -1001,12 +1009,6 @@ func (c *acpSession) promptWorker() {
 		}
 		if err != nil {
 			c.emitMu.Unlock()
-			// If the process exited, read() will close Out and report Err.
-			select {
-			case <-c.done:
-				return
-			default:
-			}
 			c.emitHeld(cli.Msg{
 				"type":        "result",
 				"subtype":     "error",
@@ -1754,4 +1756,13 @@ func gateDenied(resp cli.Msg) bool {
 		return false
 	}
 	return inner["permissionDecision"] == "deny"
+}
+
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }

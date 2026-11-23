@@ -46,6 +46,12 @@ var Models = []cli.Model{
 	{ID: "gpt-oss-120b-medium", Name: "GPT-OSS 120B (Medium)"},
 }
 
+// CredentialVars are the variables that name who `agy` talks to and as whom
+// (cli.Caps.CredentialVars, V0.review-hangs (1)): Env sets the key and the
+// endpoint of an api-key provider; a cli-login or no-auth provider must not
+// inherit fyrd's.
+var CredentialVars = []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL", "AGY_ADC_AUTH"}
+
 // Adapter runs `agy` via ACP.
 type Adapter struct{}
 
@@ -102,9 +108,10 @@ func (Adapter) LoginNeed(configDir string, _ bool) string {
 
 func (Adapter) Caps() cli.Caps {
 	return cli.Caps{
-		Auth:    []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth},
-		Efforts: Efforts,
-		Models:  Models,
+		Auth:           []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth},
+		Efforts:        Efforts,
+		Models:         Models,
+		CredentialVars: CredentialVars,
 	}
 }
 

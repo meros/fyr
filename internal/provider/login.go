@@ -173,7 +173,7 @@ func (r *Registry) runLogin(p Provider, l *loginRun) error {
 	}
 	base := r.LoginEnv
 	if base == nil {
-		base = launchenv.Without(os.Environ(), cli.CredentialVars) // #167, V0.agent-env
+		base = launchenv.AgentEnv(l.adapter.Caps().CredentialVars) // #167, V0.review-hangs (1)
 	}
 	spec := l.loginer.LoginSpec(base, dir, l.kind == "token")
 	bin := r.LoginBinary

@@ -33,6 +33,9 @@ func runFakeACP() {
 	if logPath := os.Getenv("FYR_FAKE_AGY_ARGS"); logPath != "" {
 		_ = os.WriteFile(logPath, []byte(strings.Join(os.Args[1:], "\n")), 0o600)
 	}
+	if envPath := os.Getenv("FYR_FAKE_AGY_ENV"); envPath != "" {
+		_ = os.WriteFile(envPath, []byte(strings.Join(os.Environ(), "\n")), 0o600)
+	}
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
 	write := func(v any) {
@@ -591,6 +594,59 @@ func TestPrintAndListModels(t *testing.T) {
 	}
 	if lst.Models[2].ID != "gpt-oss-120b-medium" || len(lst.Models[2].Efforts) != 0 {
 		t.Fatalf("third model: %+v", lst.Models[2])
+	}
+}
+
+// V0.review-hangs (1): a credential or endpoint variable in fyrd's own
+// environment never reaches an agy process; only the profile's own (its
+// key, its endpoint, its legacy env) does.
+func TestAgentEnvDropsAmbientCredentials(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "ambient-key")
+	t.Setenv("GOOGLE_API_KEY", "ambient-google")
+	t.Setenv("GOOGLE_GEMINI_BASE_URL", "https://ambient.example.com")
+	t.Setenv("AGY_ADC_AUTH", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	childEnv := func(l cli.Launch) []string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "env")
+		l.Env = append(l.Env, "FYR_FAKE_AGY_ENV="+path)
+		if _, err := (Adapter{}).Print(ctx, l, "S", "hi"); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Split(string(b), "\n")
+	}
+	values := func(env []string, name string) (vs []string) {
+		for _, kv := range env {
+			if k, v, _ := strings.Cut(kv, "="); k == name {
+				vs = append(vs, v)
+			}
+		}
+		return vs
+	}
+	env := childEnv(fakeLaunch(t))
+	for _, n := range CredentialVars {
+		if vs := values(env, n); len(vs) > 0 {
+			t.Errorf("cli-login: %s=%v inherited from fyrd", n, vs)
+		}
+	}
+	l := fakeLaunch(t)
+	l.Auth = cli.Auth{Kind: cli.APIKey}
+	l.Key = "profile-key"
+	l.Endpoint.BaseURL = "https://profile.example.com"
+	l.Env = append(l.Env, "AGY_ADC_AUTH=0")
+	env = childEnv(l)
+	for n, want := range map[string]string{"GEMINI_API_KEY": "profile-key", "GOOGLE_GEMINI_BASE_URL": "https://profile.example.com", "AGY_ADC_AUTH": "0"} {
+		if vs := values(env, n); !slices.Equal(vs, []string{want}) {
+			t.Errorf("api-key: %s=%v, want only the profile's %q", n, vs, want)
+		}
+	}
+	if vs := values(env, "GOOGLE_API_KEY"); len(vs) > 0 {
+		t.Errorf("api-key: GOOGLE_API_KEY=%v inherited from fyrd", vs)
 	}
 }
 
@@ -1502,5 +1558,49 @@ func TestACPReactiveWakeupInterruptAndFallbackSettle(t *testing.T) {
 	res2 := nextOut(t, sess.Out(), time.Second)
 	if txt["type"] != "assistant" || res2["type"] != "result" || res2["result"] != "Quota reached." {
 		t.Fatalf("expected fallback assistant+result, got %+v and %+v", txt, res2)
+	}
+}
+
+// V0.review-hangs (9): when the agy process exits mid-turn, the worker makes
+// up no result for the running prompt, starts none of the queued ones, and
+// Out and Done close.
+func TestACPProcessExitEndsWithoutMadeUpResults(t *testing.T) {
+	p := newChanPipe()
+	sess, err := Adapter{}.ReattachSession(p, cli.ReattachState{
+		SessionID: "s1",
+		Model:     "gemini-4-neon",
+		Queued: []cli.QueuedMessage{
+			{ID: "q1", Content: []cli.Msg{{"type": "text", "text": "first"}}},
+			{ID: "q2", Content: []cli.Msg{{"type": "text", "text": "second"}}},
+		},
+	}, nil, cli.Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := nextWritten(t, p, 2*time.Second); m["method"] != "session/prompt" {
+		t.Fatalf("first write %+v", m)
+	}
+	p.closeRead() // the process exits before it answers
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case m, ok := <-sess.Out():
+			if !ok {
+				select {
+				case <-sess.Done():
+				case <-timeout:
+					t.Fatal("Done did not close")
+				}
+				return
+			}
+			if m["type"] == "result" {
+				t.Fatalf("a made-up result after the process exited: %+v", m)
+			}
+			if m["type"] == "command_lifecycle" && m["command_uuid"] == "q2" {
+				t.Fatalf("a queued prompt started after the process exited: %+v", m)
+			}
+		case <-timeout:
+			t.Fatal("Out did not close after the process exited")
+		}
 	}
 }

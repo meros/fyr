@@ -17,7 +17,6 @@ import (
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/hostfs"
-	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/runner"
 )
@@ -98,7 +97,8 @@ func (Adapter) LoginNeed(configDir string, token bool) string {
 }
 
 func (Adapter) Caps() cli.Caps {
-	return cli.Caps{Auth: []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth}, Efforts: Efforts, Models: Models}
+	return cli.Caps{Auth: []cli.AuthKind{cli.CLILogin, cli.APIKey, cli.NoAuth}, Efforts: Efforts, Models: Models,
+		CredentialVars: claude.CredentialVars}
 }
 
 // Env applies auth and endpoint:
@@ -229,7 +229,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 	}
 	cmd := proc.Command(ctx, bin, printArgs(l.Model, l.Effort, system)...)
 	cmd.Dir = l.Dir
-	cmd.Env = launchenv.ClaudeEnv(env...) // #167, V0.agent-env
+	cmd.Env = claude.Env(env...) // #167, V0.agent-env
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb

@@ -5,6 +5,7 @@
 package push
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -13,9 +14,12 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
+	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -217,7 +221,11 @@ func (p *Pusher) Notify(user string, pl Payload) int {
 		log.Printf("push: %v", err)
 		return 0
 	}
-	ok := 0
+	var (
+		ok   atomic.Int32
+		wg   sync.WaitGroup
+		gate = make(chan struct{}, sendParallel)
+	)
 	for _, s := range subs {
 		if pl.Origin != nil && s.Hidden.Hides(*pl.Origin) {
 			continue
@@ -228,10 +236,27 @@ func (p *Pusher) Notify(user string, pl Payload) int {
 		if pl.State == "quota" && !s.QuotaReset {
 			continue
 		}
-		ok += p.deliver(s, pl)
+		gate <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-gate }()
+			ok.Add(int32(p.deliver(s, pl)))
+		})
 	}
-	return ok
+	wg.Wait()
+	return int(ok.Load())
 }
+
+// sendParallel is how many push services Notify waits on at once
+// (V0.review-hangs (3)): one that hangs until sendTimeout must not hold
+// back a user's other devices.
+const sendParallel = 4
+
+// sendTimeout bounds one send to a push service, the answer included.
+const sendTimeout = 15 * time.Second
+
+// pushClient sends to the push services: webpush-go's own default is an
+// http.Client without a timeout.
+var pushClient = httpguard.NewClient()
 
 // NotifyOne sends to the one subscription of a user with this endpoint
 // (V0.notification-polish: the test goes to the device that asked) and
@@ -304,15 +329,17 @@ func Topic(pl Payload) string {
 }
 
 func (p *Pusher) webpushSend(s Subscription, body []byte, k Keys, pl Payload) (int, error) {
-	resp, err := webpush.SendNotification(body, &webpush.Subscription{Endpoint: s.Endpoint,
+	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+	defer cancel()
+	resp, err := webpush.SendNotificationWithContext(ctx, body, &webpush.Subscription{Endpoint: s.Endpoint,
 		Keys: webpush.Keys{P256dh: s.Keys.P256dh, Auth: s.Keys.Auth}},
-		&webpush.Options{Subscriber: p.Subject, VAPIDPublicKey: k.Public, VAPIDPrivateKey: k.Private,
+		&webpush.Options{HTTPClient: pushClient, Subscriber: p.Subject, VAPIDPublicKey: k.Public, VAPIDPrivateKey: k.Private,
 			TTL: int((12 * time.Hour).Seconds()), Urgency: Urgency(pl), Topic: Topic(pl)})
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)) // reuse the connection; a push service's answer is short
 	return resp.StatusCode, nil
 }
 

@@ -21,7 +21,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/runner"
 )
 
@@ -63,13 +62,14 @@ func Scrub(env []string) []string {
 	return Without(env, Names)
 }
 
-// ClaudeEnv is the environment of a claude process: this process's own,
-// without the launcher's variables (#167) and without a credential or
-// endpoint variable (V0.agent-env: the adapter sets those it needs, in
-// extra), CLAUDE_CODE_ENTRYPOINT=sdk-go, then extra.
-func ClaudeEnv(extra ...string) []string {
-	drop := append(append([]string{}, Names...), cli.CredentialVars...)
-	return append(append(Without(os.Environ(), drop), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), extra...)
+// AgentEnv is the environment of an agent process: this process's own,
+// without the launcher's variables (#167) and without the adapter's
+// credential and endpoint variables (V0.agent-env, V0.review-hangs (1):
+// cli.Caps.CredentialVars; the adapter sets those it needs, in extra), then
+// extra without the launcher's variables.
+func AgentEnv(credentials []string, extra ...string) []string {
+	drop := append(append([]string{}, Names...), credentials...)
+	return append(Without(os.Environ(), drop), Scrub(extra)...)
 }
 
 // Without returns env without the named variables.
