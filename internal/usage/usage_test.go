@@ -207,3 +207,16 @@ func TestSeed(t *testing.T) {
 		t.Fatalf("child counted %+v", got)
 	}
 }
+
+// V0.usage-jobs: a report that names no model (agy) is the thread's model's.
+func TestRecordUnnamedModel(t *testing.T) {
+	m := New(open(t), "test", time.UTC)
+	rows, err := m.Record("r", Dims{Thread: "t", MainModel: "gem"}, cli.UsageReport{Scope: cli.PerTurn, Models: map[string]cli.TokenCount{"": tc(1, 2, 3)}})
+	if err != nil || len(rows) != 1 || rows[0].Model != "gem" || rows[0].Part != PartMain {
+		t.Fatalf("%+v %v", rows, err)
+	}
+	rows, _ = m.Record("r2", Dims{Thread: "t"}, cli.UsageReport{Scope: cli.PerTurn, Models: map[string]cli.TokenCount{"": tc(1, 2, 3)}})
+	if len(rows) != 1 || rows[0].Model != "unknown" {
+		t.Fatalf("%+v", rows)
+	}
+}

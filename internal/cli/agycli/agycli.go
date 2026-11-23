@@ -308,6 +308,8 @@ func (Adapter) ReattachSession(p runner.Pipe, state cli.ReattachState, log io.Wr
 // the session system prompt. Prompts travel on stdin so arbitrarily large
 // conversations never hit command-line limits or leak into process listings.
 func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string) (string, error) {
+	onResult := l.Result
+	l.Result = nil
 	l.MCPConfigFile = ""
 	l.AllowedTools = nil
 	l.Resume = false
@@ -370,6 +372,9 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 					}
 				}
 			case "result":
+				if onResult != nil {
+					onResult(msg) // V0.usage-jobs
+				}
 				isErr, _ := msg["is_error"].(bool)
 				res, _ := msg["result"].(string)
 				if isErr {

@@ -1,7 +1,10 @@
 package claudecli
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/meros/fyr/internal/cli"
@@ -53,5 +56,31 @@ func TestUsageWithoutSplit(t *testing.T) {
 	}
 	if _, ok := (Adapter{}).Usage(cli.Msg{"type": "result"}); ok {
 		t.Fatal("a result without modelUsage gave a report")
+	}
+}
+
+// V0.usage-jobs: Print reads `claude -p --output-format json`, gives the
+// result to Launch.Result and returns its text; an errored result is an
+// error; output that is not a result is the answer as it is.
+func TestPrintReadsTheJSONResult(t *testing.T) {
+	run := func(out string) (string, cli.Msg, error) {
+		p := filepath.Join(t.TempDir(), "claude")
+		if err := os.WriteFile(p, []byte("#!/bin/sh\ncat >/dev/null\ncat <<'EOF'\n"+out+"\nEOF\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var got cli.Msg
+		text, err := Adapter{}.Print(context.Background(), cli.Launch{Binary: p, Dir: t.TempDir(), Auth: cli.Auth{Kind: cli.CLILogin},
+			Result: func(m cli.Msg) { got = m }}, "SYS", "hi")
+		return text, got, err
+	}
+	text, res, err := run(`{"type":"result","is_error":false,"result":" ok \n","uuid":"u"}`)
+	if err != nil || text != "ok" || res["uuid"] != "u" {
+		t.Fatalf("%q %v %v", text, res, err)
+	}
+	if _, res, err := run(`{"type":"result","is_error":true,"result":"overloaded","uuid":"u"}`); err == nil || res == nil {
+		t.Fatalf("an errored result: %v %v", res, err)
+	}
+	if text, res, err := run("plain words"); err != nil || text != "plain words" || res != nil {
+		t.Fatalf("plain: %q %v %v", text, res, err)
 	}
 }
