@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -207,8 +206,12 @@ func (w *wiring) wireProjects() {
 	eng.Icons = &projicon.Store{Dir: filepath.Join(data, "project-icons")}
 	eng.AutoSetup = true
 	go func() {
-		time.Sleep(setupExistingAfter)
-		if n := eng.SetupExisting(setupExistingEvery); n > 0 {
+		select {
+		case <-time.After(setupExistingAfter):
+		case <-w.ctx.Done():
+			return
+		}
+		if n := eng.SetupExisting(w.ctx, setupExistingEvery); n > 0 {
 			log.Printf("project setup: started %d runs for projects from before", n)
 		}
 	}()
@@ -371,10 +374,7 @@ func (w *wiring) wireGuard() {
 		// process tree under the CLI, and a pause is SIGSTOP.
 		trees := &cgroup.TreeReader{}
 		if runtime.GOOS == "darwin" {
-			trees.PS = func() (string, error) {
-				out, err := exec.Command("ps", "-A", "-o", cgroup.TreePS).Output()
-				return string(out), err
-			}
+			trees.PS = func() (string, error) { return cgroup.PS(w.ctx, "-A", "-o", cgroup.TreePS) }
 		}
 		sampler.Trees, sampler.CLIs = trees, mgr.CLIs
 		groups.Trees, groups.CLIs, groups.KV = trees, mgr.CLIs, h.st
@@ -780,7 +780,11 @@ func (w *wiring) wireListeners() {
 	// V0.208: this host's mark gets one setup run, as a project does.
 	eng.InstallID = id
 	go func() {
-		time.Sleep(setupHostAfter)
+		select {
+		case <-time.After(setupHostAfter):
+		case <-w.ctx.Done():
+			return
+		}
 		if eng.SetupHostOnce() {
 			log.Printf("host setup: started a run for this host's mark")
 		}

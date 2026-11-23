@@ -135,8 +135,8 @@ func (e *Engine) startSetup(id string, src core.Source, cmdID string, all bool) 
 // image and no run yet (V0.116: once for the projects from before), gap
 // apart, and returns how many threads it started. A run that never started
 // (an error, no thread) gets another try (V0.117); one that started is
-// never repeated.
-func (e *Engine) SetupExisting(gap time.Duration) int {
+// never repeated. A cancelled ctx stops the wait between two runs.
+func (e *Engine) SetupExisting(ctx context.Context, gap time.Duration) int {
 	e.mu.Lock()
 	var ids []string
 	for id, p := range e.projects {
@@ -149,7 +149,11 @@ func (e *Engine) SetupExisting(gap time.Duration) int {
 	n := 0
 	for i, id := range ids {
 		if i > 0 && gap > 0 {
-			time.Sleep(gap)
+			select {
+			case <-time.After(gap):
+			case <-ctx.Done():
+				return n
+			}
 		}
 		r := e.startSetup(id, core.Observer(core.ObsHost), NewID("setup_"), false)
 		if !r.OK {

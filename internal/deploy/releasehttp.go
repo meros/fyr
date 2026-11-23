@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/proc"
 )
 
@@ -98,7 +99,7 @@ func (r *Releases) client() *http.Client {
 	if r.HTTP != nil {
 		return r.HTTP
 	}
-	return http.DefaultClient
+	return httpguard.NewClient()
 }
 
 func (r *Releases) token() string {

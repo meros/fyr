@@ -7,8 +7,6 @@ package cgroup
 import (
 	"context"
 	"encoding/binary"
-	"os"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -206,13 +204,11 @@ const queueBusy = 2.0
 func hostQueue(ctx context.Context) (float64, bool) {
 	ctx, cancel := context.WithTimeout(ctx, ProbeEvery-time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ps", "-A", "-M", "-o", "%cpu=,state=")
-	cmd.Env = append(os.Environ(), "LC_ALL=C") // %cpu has a decimal comma in many locales
-	out, err := cmd.Output()
+	out, err := PS(ctx, "-A", "-M", "-o", "%cpu=,state=") // C locale: %cpu has a decimal comma in many locales
 	if err != nil {
 		return 0, false
 	}
-	return queueSlowdown(string(out), runtime.NumCPU())
+	return queueSlowdown(out, runtime.NumCPU())
 }
 
 // queueSlowdown reads `ps -A -M -o %cpu=,state=`: ps keeps its own columns

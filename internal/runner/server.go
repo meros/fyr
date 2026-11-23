@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -176,15 +177,14 @@ func (s *Server) Close(grace time.Duration) {
 	for _, p := range ps {
 		p.in.Close()
 	}
-	timer := time.NewTimer(grace)
-	defer timer.Stop()
+	// One deadline for all of them: once the grace is spent every process
+	// still running is killed, and the rest are checked without waiting.
+	ctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
 	for _, p := range ps {
 		select {
 		case <-p.done:
-		case <-timer.C:
-			// Grace is spent: a timer fires once, so every process still
-			// running now is killed, and the rest are checked without waiting.
-			timer.Reset(0)
+		case <-ctx.Done():
 		}
 		if !p.isExited() {
 			p.kill()

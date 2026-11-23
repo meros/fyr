@@ -50,7 +50,7 @@ func CopySession(src, fromDir, toDir, sid string) error {
 	if err := os.MkdirAll(dstProj, 0o700); err != nil {
 		return err
 	}
-	if err := copyFile(src, filepath.Join(dstProj, sid+".jsonl")); err != nil {
+	if err := fsutil.CopyFile(src, filepath.Join(dstProj, sid+".jsonl"), 0o600); err != nil {
 		return err
 	}
 	if err := copyTree(strings.TrimSuffix(src, ".jsonl"), filepath.Join(dstProj, sid)); err != nil {
@@ -59,7 +59,6 @@ func CopySession(src, fromDir, toDir, sid string) error {
 	return copyTree(filepath.Join(fromDir, "file-history", sid), filepath.Join(toDir, "file-history", sid))
 }
 
-func copyFile(src, dst string) error { return fsutil.CopyFile(src, dst, 0o600) }
 
 // copyTree copies a folder if it exists; a missing one is not an error.
 func copyTree(src, dst string) error {
@@ -78,7 +77,7 @@ func copyTree(src, dst string) error {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		return copyFile(p, target)
+		return fsutil.CopyFile(p, target, 0o600)
 	})
 }
 

@@ -113,10 +113,9 @@ func OwnerRoutes(p Owner) func(mux *http.ServeMux) {
 			}
 			p.Env.Roster.Rotate(nk.Public)
 			api.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "from": p.Key.ID(), "to": nk.ID()})
-			go func() { // the launcher restarts fyrd on exit 75, as for a release
-				time.Sleep(300 * time.Millisecond)
-				p.Restart()
-			}()
+			// The launcher restarts fyrd on exit 75, as for a release. A timer, not a
+			// sleeping goroutine: the reply above is on its way first.
+			time.AfterFunc(300*time.Millisecond, p.Restart)
 		})
 		mux.HandleFunc("POST /host/drive", func(w http.ResponseWriter, r *http.Request) {
 			var b struct {

@@ -85,8 +85,27 @@ func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return proc.GitWith(ctx, dir, proc.GitOpts{NoOptionalLocks: true, SSHBatch: true}, args...)
 }
 
+// Bounds of the git calls on a worktree: a repository on a stalled disk or a
+// lock another process holds must not hold up a sweep for good.
+const (
+	gitReadTimeout  = time.Minute     // status, list, update-ref, remove
+	gitCheckoutWait = 5 * time.Minute // worktree add checks a tree out
+)
+
+// gitRun runs git in dir with a deadline and returns its stdout, or with
+// combined its stdout and stderr together.
+func gitRun(dir string, timeout time.Duration, combined bool, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := gitCmd(ctx, dir, args...)
+	if combined {
+		return cmd.CombinedOutput()
+	}
+	return cmd.Output()
+}
+
 func gitOut(dir string, args ...string) string {
-	out, err := gitCmd(context.Background(), dir, args...).Output()
+	out, err := gitRun(dir, gitReadTimeout, false, args...)
 	if err != nil {
 		return ""
 	}
@@ -122,7 +141,7 @@ func worktreesOf(dir string) []wtree {
 // worktreeSafe: nothing uncommitted, untracked or ignored outside a build
 // folder, and HEAD kept on the remote (a branch or a PR's head).
 func worktreeSafe(path string) (bool, string) {
-	st, err := gitCmd(context.Background(), path, "status", "--porcelain", "--ignored=matching").Output()
+	st, err := gitRun(path, gitReadTimeout, false, "status", "--porcelain", "--ignored=matching")
 	if err != nil {
 		return false, "not a git worktree"
 	}
@@ -257,10 +276,10 @@ func (tp *Temps) removeWorktree(w wtree, common, thread string, now time.Time) e
 		head = gitOut(w.path, "rev-parse", "HEAD")
 	}
 	pin := "refs/fyr/worktrees/" + name + "-" + short(head) // two folders of one name never share a pin
-	if out, err := gitCmd(context.Background(), w.path, "update-ref", "-m", "fyr: worktree removed", pin, "HEAD").CombinedOutput(); err != nil {
+	if out, err := gitRun(w.path, gitReadTimeout, true, "update-ref", "-m", "fyr: worktree removed", pin, "HEAD"); err != nil {
 		return fmt.Errorf("pin HEAD: %s", strings.TrimSpace(string(out)))
 	}
-	if out, err := gitCmd(context.Background(), w.path, "worktree", "remove", w.path).CombinedOutput(); err != nil {
+	if out, err := gitRun(w.path, gitReadTimeout, true, "worktree", "remove", w.path); err != nil {
 		return fmt.Errorf("git worktree remove: %s", strings.TrimSpace(string(out)))
 	}
 	rs := tp.removed()
@@ -310,7 +329,7 @@ func (tp *Temps) Restore(dir string) (bool, error) {
 	repo := r.Common
 	var errs []string
 	try := func(args ...string) bool {
-		out, err := gitCmd(context.Background(), repo, append([]string{"worktree", "add", "-q", r.Path}, args...)...).CombinedOutput()
+		out, err := gitRun(repo, gitCheckoutWait, true, append([]string{"worktree", "add", "-q", r.Path}, args...)...)
 		if err != nil {
 			errs = append(errs, strings.TrimSpace(string(out)))
 		}

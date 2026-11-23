@@ -11,6 +11,7 @@ import (
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/fsutil"
 	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/provider"
 )
@@ -127,7 +128,7 @@ func (m *Manager) writeHandoverFile(threadID, kind, text string) (string, error)
 		return "", err
 	}
 	p := filepath.Join(dir, fmt.Sprintf("%s-%s-%s.md", threadID, time.Now().Format("20060102-150405"), kind))
-	if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+	if err := fsutil.WriteAtomic(p, []byte(text), 0o600); err != nil {
 		return "", err
 	}
 	return p, nil
