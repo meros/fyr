@@ -29,7 +29,7 @@ Fyr turns that around. It runs Claude Code and Antigravity (`agy`) sessions on y
 
 ## What you get
 
-- **One inbox for every agent.** Each conversation is a *thread*. Asking, failed, blocked and finished threads come to the top, ordered by what to do: *Answer*, *Approve*, *Unblock*. Snooze, settle, quiet hours and per-project priority keep the list short. Press `?` for the keyboard shortcuts.
+- **One inbox for every agent.** Each conversation is a *thread*. Asking, failed, blocked and finished threads come to the top, ordered by what to do: *Answer*, *Approve*, *Unblock*. Snooze, settle, quiet hours, per-project priority and archiving a finished project keep the list short. A run silent for 20 minutes rises to *Your move* as blocked. Press `?` for the keyboard shortcuts.
 - **Questions become cards.** When an agent asks, you get a card with its options. Answer with `1` `2` Enter on the desktop or two taps on the phone (skip a question, step back or cancel the card), and the answer goes straight back into the run. Questions from subagents arrive the same way.
 - **Agents ask, you approve, Fyr acts.** An agent never merges or deploys on its own. It *requests*, and you approve when it suits you (and an optional per-project approval judge can auto-allow routine tool calls and escalate the rest):
   - A **merge ask** reaches you only once CI is green on the commit you will merge.
@@ -45,7 +45,7 @@ Fyr turns that around. It runs Claude Code and Antigravity (`agy`) sessions on y
 - **Agents get tools to work with you.** Over MCP an agent can ask you something, request a command or a merge, open a PR, open a change in its own git worktree, wait for a condition (CI green, a PR merged, a quota reset, a time), show you a page or a screenshot, and start or message other threads.
 - **Your machine stays usable.** Heavy jobs (test suites, builds, e2e runs) are admitted by the CPU and memory they need, and the rest queue. A memory guard pauses runaway work before the kernel's OOM killer acts. On Linux every agent runs in its own cgroup.
 - **Agents survive restarts.** The launcher holds the agent processes, so a crash, a restart or an update of the daemon does not interrupt a run.
-- **Native desktop apps and a full phone client.** Run Fyr in a browser, in `Fyr.app` on macOS, or in `fyr-desktop` on Linux (window, tray icon and native desktop notifications). Your phone is an installable PWA with push notifications: answer, steer, approve, start a thread with a screenshot, and settle.
+- **Native desktop apps and a full phone client.** Run Fyr in a browser, in `Fyr.app` on macOS, or in `fyr-desktop` on Linux (window, tray icon and native desktop notifications). Your phone is an installable PWA with push notifications: answer, steer, approve, start a thread with a screenshot, and settle. When quiet hours end you get one summary push per project, and pushes are batched while you are away.
 - **Several machines, one list.** Installs find each other on a LAN (mDNS) or over an optional tailnet and pair with an invite code. Every host's threads show in one inbox, a new thread picks which machine runs it, and you can hand a thread over to another provider or another host.
 - **Your own agent subscriptions.** Fyr drives the `claude` CLI (Claude logins or Anthropic-compatible endpoints) and the Antigravity CLI (`agy`, Google accounts or Gemini endpoints). Several logins can sit side by side; each thread shows its plan's remaining window and waits cleanly when quota runs out.
 - **Updates that roll back.** Fyr installs only signed CI releases (on the `stable` channel of version tags or `main`'s green builds). It tests each one on a copy of its database first and goes back to the previous build if the new one is not healthy.
@@ -106,7 +106,7 @@ scripts/install-linux.sh --print   # shows every file and command, changes nothi
 scripts/install-linux.sh
 ```
 
-Run it as yourself, not as root. It downloads the current signed release into `~/.local/share/fyr` as you, then asks `sudo` for the system part, showing each command: the unit `fyr.service` (it runs as you), the agents' slice, a polkit rule and a small helper. Fyr serves http://127.0.0.1:7777 and updates itself. `scripts/install-linux.sh --uninstall` removes the unit and the root files. [`docs/INSTALL.md`](docs/INSTALL.md#linux-without-nix) has the details.
+Run it as yourself, not as root. It downloads the current signed release into `~/.local/share/fyr` as you, then asks `sudo` for the system part, showing each command: the unit `fyr.service` (it runs as you) and, on systemd 257+, the agents' slice, a polkit rule and a small helper (else the unit is delegated). It links `fyr` into `~/.local/bin`. Fyr serves http://127.0.0.1:7777 and updates itself. `scripts/install-linux.sh --uninstall` removes the unit and the root files. [`docs/INSTALL.md`](docs/INSTALL.md#linux-without-nix) has the details.
 
 ### From source
 
