@@ -1,6 +1,11 @@
-// The thread list (V0.40): hideable, hidden by default in a narrow window. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The thread list (V0.40): hidden by default in a narrow window, the sections' folds and their auto-hide, jumping to a
+// section, and keeping the marked row in view.
+//
+// Reads:   data.store; cmds; open (view, marked row and their setters); inbox (folds, limits, rows, drawn, guest, order);
+//          device.phone; h.actions.openThread.
+// Returns: winW, listOn, toggleList (the list's width and visibility), hideAt, toggleSection, nameSection, sectionUsed,
+//          hideShown (auto-hide of Snoozed and Settled), jump (g1-g5), send (a message to the open thread).
+// Desktop and phone share it; the phone has no marked row, so no section waits for one (V0.phone-no-guest).
 
 import { useEffect, useState } from "preact/hooks";
 import {
@@ -13,12 +18,18 @@ import { cutSection } from "./selection.ts";
 import { isOpen } from "./inbox.tsx";
 import { listPref, listShown, setListPref } from "./prefs.ts";
 import { AUTO_HIDE_MS, AUTO_HIDE_SECTIONS, hideClocks, hideStep, type HideAt } from "./inbox-autohide.ts";
-import type { useAppState } from "./app-state.tsx";
-import type { useThreadActions } from "./app-actions.tsx";
 import { type SendArgs } from "./composer.tsx";
 
-export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "sel" | "setZone" | "sectionOpen" | "setSectionOpen" | "setExpanded" | "phone" | "cmds" | "limits" | "listed" | "rows" | "drawn" | "guest" | "order"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
-  const { store, setLastOpen, view, sel, setZone, sectionOpen, setSectionOpen, setExpanded, phone, cmds, limits, listed, rows, drawn, guest, order, openThread } = c;
+import type { AppState } from "./app-state.tsx";
+import type { ThreadActions } from "./app-actions.tsx";
+
+export function useThreadList(s: Pick<AppState, "data" | "cmds" | "open" | "inbox" | "device">, h: { actions: ThreadActions }) {
+  const { store } = s.data;
+  const { cmds } = s;
+  const { setLastOpen, view, sel, setZone } = s.open;
+  const { sectionOpen, setSectionOpen, setExpanded, limits, listed, rows, drawn, guest, order } = s.inbox;
+  const { phone } = s.device;
+  const { openThread } = h.actions;
   // ---- the thread list (V0.40): hideable, hidden by default in a narrow window ----
   const [listPrefState, setListPrefState] = useState<boolean | null>(() => listPref());
   const [winW, setWinW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1440));
@@ -111,6 +122,7 @@ export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | 
 
   const send = async (args: SendArgs): Promise<boolean> => (view ? cmds.send(view.id, args) : false);
 
-
   return { winW, listOn, toggleList, hideAt, toggleSection, nameSection, sectionUsed, hideShown, jump, send };
 }
+
+export type ThreadList = ReturnType<typeof useThreadList>;

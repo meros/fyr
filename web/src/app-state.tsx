@@ -1,6 +1,16 @@
-// State of the shell: the store, the filters, the open thread, the dialogs. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The shell's state: the store, the filters, the open thread, the dialogs, the device. useAppState owns every useState of
+// the shell and returns it in cohesive groups; the other app-*.tsx hooks take the groups they read (`Pick<AppState, ...>`)
+// and return what they add. No context: app.tsx passes the groups down, and the order its hooks are called in is fixed
+// there (hooks that read another hook's result come after it).
+//
+// Returns:
+//   data    the store and its views (raw, full, with this device's hidden left out), host lookups, the clock
+//   cmds    the thread commands (run, undo, toast, send, handover)
+//   open    what is open and marked: view, marked row, zone, picked rows, seen tracker, decision cards, the quiet gate
+//   inbox   what the list shows: search, filters, folds, the sections and rows, j/k order
+//   route   the phone's navigation entry and the refs the history hook fills
+//   ui      dialogs and their arguments, the key help, the theme
+//   device  this device: phone or desktop, push, install, a thread to open from a notification
 
 import { storedGet, storedSet } from "./prefs.ts";
 import { type Zone, type Dialog, readTheme, usePhone, useViewportVars, useStaticPage, params } from "./app-util.tsx";
@@ -114,7 +124,6 @@ export function useAppState() {
       if (ok && back && phoneRef.current && entry.threadIds.includes(back)) navGoRef.current({ screen: { name: "thread", id: back }, sheet: null });
     },
   });
-  const { toast } = cmds;
   const [nav, setNav] = useState<Nav>(() => initialEntries(location.search).at(-1)!);
   const [selecting, setSelecting] = useState(false);
   // PWA (SPEC V0.15): push bell, install prompt, and a thread to open from a notification tap.
@@ -277,6 +286,16 @@ export function useAppState() {
   const walkRows = useMemo(() => (place ? flatOrder(stillRows(rows, place)) : allRows), [rows, place, allRows]);
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
-
-  return { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, setHidden, store, threadsRef, byHost, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, tracker, setTracker, cards, setCards, sectionOpen, setSectionOpen, query, setQuery, help, setHelp, searchRef, expanded, setExpanded, theme, setTheme, tick, setTick, inText, setInText, toolDetailsOn, phone, phoneRef, reopenRef, navGoRef, cmds, toast, nav, setNav, selecting, setSelecting, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason, now, projectFilter, setProjectFilterState, setProjectFilter, setHostsOffState, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, filterId, filterOn, unlock, filtered, searchable, searchList, quietHits, queue, sec, filterView, limits, gate, gatedRef, gatedThread, arrival, setArrival, arrivedHere, hidden, listed, rows, drawn, guest, order, walkRows, viewThread };
+  return {
+    data: { api, rawStore, setStore, fullStore, store, hostOfId, threadsRef, byHost, deviceHidden, setHidden, now, setTick },
+    cmds,
+    open: { view, setView, setLastOpen, sel, zone, setZone, picked, setPicked, tracker, setTracker, cards, setCards, gate, gatedRef, gatedThread, viewThread, arrival, setArrival, arrivedHere },
+    inbox: { query, setQuery, searchRef, sectionOpen, setSectionOpen, expanded, setExpanded, setProjectFilter, setProjectFilterState, setHostsOffState, filterId, filterOn, unlock, filtered, searchable, searchList, quietHits, sec, filterView, limits, listed, rows, drawn, guest, order, walkRows },
+    route: { nav, setNav, navGoRef, reopenRef },
+    ui: { dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, help, setHelp, theme, setTheme, inText, setInText, toolDetailsOn, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, selecting, setSelecting },
+    device: { phone, phoneRef, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason },
+  };
 }
+
+/** The shell's state, in groups (see the header). A hook names the groups it reads: `Pick<AppState, "data" | "open">`. */
+export type AppState = ReturnType<typeof useAppState>;

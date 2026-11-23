@@ -1,6 +1,9 @@
-// The right-click menu (V0.31). (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The right-click menu (V0.31), the desktop's way to carry out a thread action, and the answers to a decision card.
+//
+// Reads:   data (store, threadsRef); cmds; open (view, marked row, setCards, setArrival); ui (dialogs it opens);
+//          device.phone; inbox.sec; h.cards (decision, card); h.answers; h.actions (openThread, settle, ...).
+// Returns: ctxMenu (the element to draw), runDeskAction, submitAsk, cancelAsk, answerField, allow, nextNeeding.
+// Desktop only: the menu opens on a right click and never on a phone (it still stops the browser's menu there).
 
 import { useEffect, useState } from "preact/hooks";
 import type { Decision } from "./types.ts";
@@ -9,12 +12,20 @@ import { answerThenNext, cardKey, setOther } from "./question.ts";
 import { actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
 import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
-import type { useAppState } from "./app-state.tsx";
-import type { useAnswers, useDecisionCards } from "./app-cards.tsx";
-import type { useThreadActions } from "./app-actions.tsx";
+import type { AppState } from "./app-state.tsx";
+import type { Answers, DecisionCards } from "./app-cards.tsx";
+import type { ThreadActions } from "./app-actions.tsx";
 
-export function useContextMenu(c: Pick<ReturnType<typeof useAppState>, "store" | "threadsRef" | "view" | "sel" | "setDialog" | "setHandoverId" | "setCards" | "phone" | "cmds" | "openPicker" | "sec" | "setArrival"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useAnswers>, "answers"> & Pick<ReturnType<typeof useThreadActions>, "openThread" | "settle" | "settleWhenDone" | "archive" | "openSnooze" | "markUnseen">) {
-  const { store, threadsRef, view, sel, setDialog, setHandoverId, setCards, phone, cmds, openPicker, sec, setArrival, decision, card, answers, openThread, settle, settleWhenDone, archive, openSnooze, markUnseen } = c;
+export function useContextMenu(s: Pick<AppState, "data" | "cmds" | "open" | "ui" | "device" | "inbox">, h: { cards: DecisionCards; answers: Answers; actions: ThreadActions }) {
+  const { store, threadsRef } = s.data;
+  const { cmds } = s;
+  const { view, sel, setCards, setArrival } = s.open;
+  const { setDialog, setHandoverId, openPicker } = s.ui;
+  const { phone } = s.device;
+  const { sec } = s.inbox;
+  const { decision, card } = h.cards;
+  const { answers } = h.answers;
+  const { openThread, settle, settleWhenDone, archive, openSnooze, markUnseen } = h.actions;
   // ---- right-click menu (V0.31) ----
   const [ctx, setCtx] = useState<{ x: number; y: number; items: MenuEntry[]; target: MenuTarget; anchor: Element | null } | null>(null);
   useEffect(() => {
@@ -116,6 +127,7 @@ export function useContextMenu(c: Pick<ReturnType<typeof useAppState>, "store" |
     return list[j];
   };
 
-
   return { runDeskAction, ctxMenu, submitAsk, cancelAsk, answerField, allow, nextNeeding };
 }
+
+export type ContextMenuState = ReturnType<typeof useContextMenu>;

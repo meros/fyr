@@ -1,6 +1,9 @@
-// The open decision, the seen mark, the title and the toast timer. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The open decision and its card, the seen mark, the window title and the focus-in-a-text-field flag.
+//
+// Reads:   data (api, threadsRef); open (tracker, cards, gatedRef, viewThread and their setters); ui.setInText;
+//          inbox.sec (the title counts what needs the owner).
+// Returns: decision (the open thread's current decision) and card (its answer state, for an ask).
+// Desktop and phone share it.
 
 import { isTextTarget } from "./app-util.tsx";
 import { useEffect, useRef } from "preact/hooks";
@@ -8,10 +11,14 @@ import type { Decision } from "./types.ts";
 import { currentDecision } from "./decode.ts";
 import { markSent, setWindowFocus, shouldMarkSeen } from "./seen.ts";
 import { allowArgs, answerArgs, initCard, submitOf } from "./question.ts";
-import type { useAppState } from "./app-state.tsx";
 
-export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" | "threadsRef" | "tracker" | "setTracker" | "cards" | "setCards" | "setInText" | "sec" | "gatedRef" | "viewThread">) {
-  const { api, threadsRef, tracker, setTracker, cards, setCards, setInText, sec, gatedRef, viewThread } = c;
+import type { AppState } from "./app-state.tsx";
+
+export function useDecisionCards(s: Pick<AppState, "data" | "open" | "ui" | "inbox">) {
+  const { api, threadsRef } = s.data;
+  const { tracker, setTracker, cards, setCards, gatedRef, viewThread } = s.open;
+  const { setInText } = s.ui;
+  const { sec } = s.inbox;
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread ? currentDecision(viewThread) : null;
   useEffect(() => {
@@ -62,7 +69,6 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
     };
   }, []);
 
-
   return { decision, card };
 }
 
@@ -70,8 +76,9 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
  *  each says whether the host took it. What follows an answer is the front's own (the desktop walks on to the next
  *  thread that needs the owner and shows an arrival bar; the phone stays on the thread it answered, which its own
  *  screen leaves). */
-export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "view" | "cards">) {
-  const { cmds, view, cards } = c;
+export function useAnswers(s: Pick<AppState, "cmds" | "open">) {
+  const { cmds } = s;
+  const { view, cards } = s.open;
   const submit = async (d: Decision): Promise<boolean> => {
     const cs = cards[d.id];
     const send = cs ? submitOf(cs, d) : null;
@@ -83,3 +90,6 @@ export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "vie
   const allow = async (d: Decision, ok: boolean): Promise<boolean> => (view ? (await cmds.run("thread.answer", [view.id], allowArgs(d, ok))) > 0 : false);
   return { answers: { submit, cancel, allow } };
 }
+
+export type DecisionCards = ReturnType<typeof useDecisionCards>;
+export type Answers = ReturnType<typeof useAnswers>;

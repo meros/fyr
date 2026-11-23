@@ -1,6 +1,11 @@
-// The desktop keyboard. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The desktop keyboard (SPEC 6.x keys), and opening the thread a notification tap named.
+//
+// Reads:   data.store; cmds; open (view, marked row, zone, picked, decision cards and their setters); ui (dialog, help,
+//          settings page); device (phone, pendingOpen); inbox (search, order, walkRows); h.cards, h.actions, h.menu,
+//          h.list, h.projects (the folder picker's Esc), h.history.navGo.
+// Returns: nothing: it only listens (one keydown handler, always the latest through keyRef; the effect deps are unchanged).
+// Desktop only: the phone has a touch form for every key (design/mobile, section 2), so the handler returns early there.
+// The notification tap is shared: the phone navigates to the thread, the desktop opens it.
 
 import { isTextTarget } from "./app-util.tsx";
 import { sessionStore } from "./prefs.ts";
@@ -15,16 +20,28 @@ import { cardKey, goTo } from "./question.ts";
 import { escapeTarget } from "./settings-nav.ts";
 import { snoozeChoiceForKey } from "./snooze.ts";
 import { takeOpen } from "./push.ts";
-import type { useAppState } from "./app-state.tsx";
-import type { useDecisionCards } from "./app-cards.tsx";
-import type { useThreadActions } from "./app-actions.tsx";
-import type { useContextMenu } from "./app-menu.tsx";
-import type { useThreadList } from "./app-list.tsx";
-import type { useProjectActions } from "./app-projects.tsx";
-import type { useNavHistory } from "./app-history.tsx";
 
-export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "sel" | "zone" | "setZone" | "picked" | "setPicked" | "dialog" | "setDialog" | "setCards" | "query" | "setQuery" | "setHelp" | "searchRef" | "phone" | "phoneRef" | "cmds" | "pendingOpen" | "setPendingOpen" | "settingsAt" | "setSettingsAt" | "openPicker" | "order" | "walkRows" | "viewThread"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread" | "closePeek" | "closeThread" | "target" | "settle" | "settleGroup" | "archive" | "openSnooze" | "snoozeList" | "snooze" | "markUnseen"> & Pick<ReturnType<typeof useContextMenu>, "submitAsk" | "cancelAsk" | "allow" | "nextNeeding"> & Pick<ReturnType<typeof useThreadList>, "toggleList" | "jump"> & Pick<ReturnType<typeof useProjectActions>, "folderPickRef" | "closeFolderPick"> & Pick<ReturnType<typeof useNavHistory>, "navGo">) {
-  const { store, setLastOpen, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, setCards, query, setQuery, setHelp, searchRef, phone, phoneRef, cmds, pendingOpen, setPendingOpen, settingsAt, setSettingsAt, openPicker, order, walkRows, viewThread, decision, card, openThread, closePeek, closeThread, target, settle, settleGroup, archive, openSnooze, snoozeList, snooze, markUnseen, submitAsk, cancelAsk, allow, nextNeeding, toggleList, jump, folderPickRef, closeFolderPick, navGo } = c;
+import type { AppState } from "./app-state.tsx";
+import type { DecisionCards } from "./app-cards.tsx";
+import type { ThreadActions } from "./app-actions.tsx";
+import type { ContextMenuState } from "./app-menu.tsx";
+import type { ThreadList } from "./app-list.tsx";
+import type { ProjectActions } from "./app-projects.tsx";
+import type { NavHistory } from "./app-history.tsx";
+
+export function useKeyboard(s: Pick<AppState, "data" | "cmds" | "open" | "ui" | "device" | "inbox">, h: { cards: DecisionCards; actions: ThreadActions; menu: ContextMenuState; list: ThreadList; projects: ProjectActions; history: NavHistory }) {
+  const { store } = s.data;
+  const { cmds } = s;
+  const { setLastOpen, view, sel, zone, setZone, picked, setPicked, setCards, viewThread } = s.open;
+  const { dialog, setDialog, setHelp, settingsAt, setSettingsAt, openPicker } = s.ui;
+  const { phone, phoneRef, pendingOpen, setPendingOpen } = s.device;
+  const { query, setQuery, searchRef, order, walkRows } = s.inbox;
+  const { decision, card } = h.cards;
+  const { openThread, closePeek, closeThread, target, settle, settleGroup, archive, openSnooze, snoozeList, snooze, markUnseen } = h.actions;
+  const { submitAsk, cancelAsk, allow, nextNeeding } = h.menu;
+  const { toggleList, jump } = h.list;
+  const { folderPickRef, closeFolderPick } = h.projects;
+  const { navGo } = h.history;
   // ---- keyboard ----
   const gPending = useRef(0);
   const lastEsc = useRef(0);

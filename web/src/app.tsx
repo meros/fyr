@@ -64,19 +64,37 @@ const HOME_KEYS: [string, string][] = [
 const hostApi = await createApi(); // #42: the mock Api is a chunk loaded only in mock mode
 
 function App() {
-  const A = useAppState();
-  const N = useNavHistory({ ...A });
-  const B = useConnection({ ...A, ...N });
-  const C = useDecisionCards({ ...A, ...N, ...B });
-  const C2 = useAnswers({ ...A });
-  const D = useThreadActions({ ...A, ...N, ...B, ...C });
-  const E = useContextMenu({ ...A, ...N, ...B, ...C, ...C2, ...D });
-  const F = useThreadList({ ...A, ...N, ...B, ...C, ...D, ...E });
-  const G = useProjectActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F });
-  useKeyboard({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
-  const I = useHostActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
-  const J = usePhoneNav({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G, ...I });
-  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, setCards, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, filtered, searchable, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, runDeskAction, ctxMenu, submitAsk, cancelAsk, answerField, allow, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
+  // The hook order is the contract: a hook that reads another's result comes after it (each header says what it reads).
+  const s = useAppState();
+  const history = useNavHistory(s);
+  const conn = useConnection(s, { history });
+  const decisionState = useDecisionCards(s);
+  const answerState = useAnswers(s);
+  const actions = useThreadActions(s);
+  const menu = useContextMenu(s, { cards: decisionState, answers: answerState, actions });
+  const list = useThreadList(s, { actions });
+  const projects = useProjectActions(s, { actions, history });
+  useKeyboard(s, { cards: decisionState, actions, menu, list, projects, history });
+  const hosts = useHostActions(s, { conn, actions, projects, history });
+  const phoneNav = usePhoneNav(s, { actions, projects, history });
+  const { cmds } = s;
+  const { toast } = cmds;
+  const { rawStore, fullStore, store, byHost, now, api } = s.data;
+  const { view, sel, zone, setZone, picked, setPicked, setTracker, setCards, gate, gatedThread, viewThread, setArrival, arrivedHere } = s.open;
+  const { query, setQuery, searchRef, sectionOpen, expanded, setExpanded, setProjectFilter, filterId, unlock, filtered, searchable, searchList, quietHits, sec, filterView, rows, guest } = s.inbox;
+  const { nav } = s.route;
+  const { dialog, setDialog, snoozeTargets, handoverId, help, theme, inText, toolDetailsOn, settingsAt, setSettingsAt, pickIds, selecting, setSelecting } = s.ui;
+  const { phone, pushSt, canInstall, setCanInstall, env, pushReason } = s.device;
+  const { navGo, navReplace, navBack } = history;
+  const { earlier, loadEarlier } = conn;
+  const { decision, card } = decisionState;
+  const { answers } = answerState;
+  const { openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze } = actions;
+  const { runDeskAction, ctxMenu, submitAsk, cancelAsk, answerField, allow } = menu;
+  const { winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send } = list;
+  const { projectActions, folderPicker, confirmHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme } = projects;
+  const { pwaControls, settingsFor } = hosts;
+  const { phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = phoneNav;
 
   if (phone) {
     return (

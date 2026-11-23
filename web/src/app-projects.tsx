@@ -1,6 +1,12 @@
-// Projects (V0.23): the filter, the picker and the commands on projects. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// Projects (V0.23): the commands on projects, the host folder picker, the directory the screens find records through,
+// creating a thread, the restart banner and the theme cycle.
+//
+// Reads:   data (api, setStore, raw/full/store, hostOfId, threadsRef, now); cmds; ui (dialogs, settings, picker, theme);
+//          device (phone, phoneRef); inbox (filterId, filterOn); h.actions.openThread; h.history (navGo, navReplace, navRef).
+// Returns: projectActions, folderPicker, folderPickRef, closeFolderPick, folderPickView, confirmHost, hostsCtx,
+//          allHostsCtx (V0.207: Settings sees hidden hosts), openProjectScreen, directory, create, restartNow, cycleTheme.
+// Desktop and phone differ where a screen opens: a project is a Settings page on the desktop and a screen on the phone;
+// the folder picker is a dialog on the desktop and a sheet on the phone; Confirm likewise.
 
 import { useMemo, useRef, useState } from "preact/hooks";
 import {
@@ -17,13 +23,20 @@ import { hostOfflineNote, multiHost } from "./hosts.ts";
 import { asHostId, type HostId } from "./hostid.ts";
 import { restartNowAsk } from "./deploy.ts";
 import { BottomSheet } from "./motion-ui.tsx";
-import type { useAppState } from "./app-state.tsx";
-import type { useThreadActions } from "./app-actions.tsx";
-import type { useNavHistory } from "./app-history.tsx";
 import { type ProjectPatch } from "./project-editor.tsx";
 
-export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" | "setStore" | "fullStore" | "hostOfId" | "store" | "threadsRef" | "setDialog" | "setTheme" | "phone" | "phoneRef" | "cmds" | "now" | "openSettings" | "openPicker" | "filterId" | "filterOn"> & Pick<ReturnType<typeof useThreadActions>, "openThread"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navReplace" | "navRef">) {
-  const { api, setStore, fullStore, hostOfId, store, threadsRef, setDialog, setTheme, phone, phoneRef, cmds, now, openSettings, openPicker, filterId, filterOn, openThread, navGo, navRef, navReplace } = c;
+import type { AppState } from "./app-state.tsx";
+import type { ThreadActions } from "./app-actions.tsx";
+import type { NavHistory } from "./app-history.tsx";
+
+export function useProjectActions(s: Pick<AppState, "data" | "cmds" | "ui" | "device" | "inbox">, h: { actions: ThreadActions; history: NavHistory }) {
+  const { api, setStore, fullStore, hostOfId, store, threadsRef, now } = s.data;
+  const { cmds } = s;
+  const { setDialog, setTheme, openSettings, openPicker } = s.ui;
+  const { phone, phoneRef } = s.device;
+  const { filterId, filterOn } = s.inbox;
+  const { openThread } = h.actions;
+  const { navGo, navReplace, navRef } = h.history;
   // ---- projects (V0.23) ----
   const projectCommand = async (action: string, args: Record<string, unknown>, threadId?: string): Promise<string | null> => {
     // A project command goes to the project's host, a thread's to the thread's (decision 0031).
@@ -229,6 +242,7 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
 
   const cycleTheme = () => setTheme((t) => (t === "system" ? "light" : t === "light" ? "dark" : "system"));
 
-
   return { projectActions, folderPickRef, closeFolderPick, folderPicker, confirmHost, hostsCtx, allHostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme };
 }
+
+export type ProjectActions = ReturnType<typeof useProjectActions>;

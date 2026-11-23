@@ -1,6 +1,12 @@
-// What a person does to a thread: run, settle, archive, snooze, answer. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// What a person does to a thread: open, close, settle, archive, snooze, mark unseen.
+//
+// Reads:   data.store; cmds (run, undo, toasts live in useThreadCommands); open (view, marked row, zone, picked, tracker
+//          and their setters); ui (the snooze dialog); device.phoneRef; inbox (sec, order, walkRows).
+// Returns: openThread, closePeek, closeThread, target, settle, settleWhenDone, settleBulk, settleGroup, archive,
+//          openSnooze, snoozeList, snooze, markUnseen, and deskAtRef (the desktop history entry on screen).
+// Desktop and phone differ in three places, each marked where it is: a desktop open is a history entry (the phone keeps
+// its own, nav.ts); a settle leaves the row on the desktop (the phone goes Back, leaveOpenThread); stepping past a row is
+// the list's, which the phone does not mark.
 
 import { useRef } from "preact/hooks";
 import type { Thread } from "./types.ts";
@@ -15,10 +21,16 @@ import { snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
 import { settleRun } from "./actions.ts";
 import { SETTLE_DONE_TOAST } from "./menu.ts";
 import { isDeskEntry, leaveDeskThread, recordOpen, type OpenCause } from "./desk-history.ts";
-import type { useAppState } from "./app-state.tsx";
 
-export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "setView" | "sel" | "zone" | "setZone" | "picked" | "setPicked" | "setDialog" | "snoozeTargets" | "setSnoozeTargets" | "setTracker" | "phoneRef" | "cmds" | "sec" | "order" | "walkRows">) {
-  const { store, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, setDialog, snoozeTargets, setSnoozeTargets, setTracker, phoneRef, cmds, sec, order, walkRows } = c;
+import type { AppState } from "./app-state.tsx";
+
+export function useThreadActions(s: Pick<AppState, "data" | "cmds" | "open" | "ui" | "device" | "inbox">) {
+  const { store } = s.data;
+  const { cmds } = s;
+  const { setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, setTracker } = s.open;
+  const { setDialog, snoozeTargets, setSnoozeTargets } = s.ui;
+  const { phoneRef } = s.device;
+  const { sec, order, walkRows } = s.inbox;
   // ---- actions (#41: run, undo, toasts and errors live in useThreadCommands) ----
 
   /** V0.145: on the desktop a thread the owner opens is one history entry; Fyr's own openings (back and forward, the
@@ -144,6 +156,7 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
     void cmds.run("thread.markUnseen", [id]);
   };
 
-
   return { deskAtRef, openThread, closePeek, closeThread, target, settle, settleWhenDone, settleBulk, settleGroup, settleMerged, archive, openSnooze, snoozeList, snooze, markUnseen };
 }
+
+export type ThreadActions = ReturnType<typeof useThreadActions>;
