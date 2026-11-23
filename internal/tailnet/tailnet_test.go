@@ -203,11 +203,10 @@ func TestLocalAPIReusesOneConnection(t *testing.T) {
 			t.Fatalf("names %v", names)
 		}
 	}
-	// The transport puts a finished connection back from its own goroutine,
-	// so a call can now and then race it and dial a second one; a client
-	// per call dialled 100.
-	if n := conns.Load(); n > 5 {
-		t.Fatalf("100 calls opened %d connections to tailscaled, want them to share one", n)
+	// The calls are sequential and every body is read to EOF and closed, so
+	// they share one kept-alive connection; a client per call dialled 100.
+	if n := conns.Load(); n != 1 {
+		t.Fatalf("100 calls opened %d connections to tailscaled, want 1", n)
 	}
 	if localClient(sock) != localClient(sock) {
 		t.Fatal("a second client for the same socket")
