@@ -398,6 +398,22 @@ func TestFrontMarksOfflineHost(t *testing.T) {
 	}
 }
 
+// A host that is unreachable for a moment (a dead pooled connection, a link
+// that resets as the Mac wakes) is not marked offline: the dot does not blink.
+func TestFrontHostDotSurvivesABlip(t *testing.T) {
+	h := newHost(t, "host-a")
+	fs := newFront(t, HostConfig{Name: "host-a", URL: h.hs.URL})
+	online(t, fs.URL, 1)
+	h.setDown(true)
+	time.AfterFunc(60*time.Millisecond, func() { h.setDown(false) })
+	for end := time.Now().Add(700 * time.Millisecond); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if s := getState(t, fs.URL); len(s.Hosts) == 1 && s.Hosts[0]["online"] == false {
+			t.Fatal("the host showed offline for a blip")
+		}
+	}
+	online(t, fs.URL, 1)
+}
+
 // SPEC 0.5 V0.51: the front serves the web client; the browser guard holds.
 func TestFrontServesClientAndGuards(t *testing.T) {
 	h := newHost(t, "x")

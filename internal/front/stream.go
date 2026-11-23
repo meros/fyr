@@ -45,8 +45,20 @@ func (f *Front) follow(ctx context.Context, l *link) {
 		if was {
 			// A stream that ends (the host dropped a slow subscriber, or it
 			// restarts) is tried again at once; the mark waits for that try.
-			if err = f.session(ctx, l); ctx.Err() != nil {
-				return
+			// A network blip (a dead pooled connection, a link that resets
+			// as the Mac wakes) fails the first try too, and the host answers
+			// a second later: the dot waits for two more tries, a pause apart.
+			for try := 0; try < 3; try++ {
+				if try > 0 {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(f.opt.MinBackoff << try):
+					}
+				}
+				if err = f.session(ctx, l); ctx.Err() != nil {
+					return
+				}
 			}
 		}
 		f.setOffline(l, err)
