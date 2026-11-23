@@ -28,13 +28,14 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
       setNav(seedHistory(history, location.search));
     }
     return listenPopState(window, { search: () => location.search, current: () => navRef.current, set: setNav, slide: (apply) => navTransition("back", apply) });
-  }, [phone]);
+  }, [phone, navRef, setNav]);
   // V0.145: Back and Forward on the desktop (the mouse's side buttons, Alt+Left and Alt+Right, the browser's arrows)
   // open the thread of the entry, with the tab it had (ThreadPane reads it from the URL). A thread archived or deleted
   // since is skipped in the same direction. The browser handles the side buttons itself, in a tab and in the installed
   // window alike, so Fyr listens to popstate only.
   const viewRef = useRef(view);
   viewRef.current = view;
+  /* eslint-disable react-hooks/exhaustive-deps -- the desktop's popstate listener is set once per front; openThread (new each render) only calls setters and reads refs, so the first one acts the same */
   useEffect(() => {
     if (phone) return;
     if (isDeskEntry(history.state)) deskAtRef.current = history.state.desk;
@@ -52,7 +53,9 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [phone]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   // The open thread follows the screen.
+  /* eslint-disable react-hooks/exhaustive-deps -- follows the phone's screen (its name or thread id) only; view, openThread and closePeek are read at that moment, so a view change alone does not reopen the thread */
   useEffect(() => {
     if (!phone) return;
     const s = nav.screen;
@@ -60,6 +63,7 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
       if (view?.id !== s.id || view.mode !== "open") openThread(s.id, "open");
     } else if (view) closePeek();
   }, [phone, nav.screen.name === "thread" ? nav.screen.id : nav.screen.name]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // V0.app-shell-tidy: settle, archive and snooze leave the open thread once the host took them, as on the desktop.
   const phoneActions: PhoneActions = {

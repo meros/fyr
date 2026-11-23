@@ -110,6 +110,7 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
   // load once the id comes, not stay on "no install id" (V0.client-per-host).
   const online = hosts.map((h) => `${h.name}:${h.id ?? ""}:${h.online ? 1 : 0}`).join(" ");
   const was = useRef<Record<string, boolean>>({});
+  /* eslint-disable react-hooks/exhaustive-deps -- loads a host when it is new or comes back online (was keeps each one's last state); hosts and loadAll are read at that moment */
   useEffect(() => {
     for (const h of hosts) {
       if (!h.id) continue; // V0.host-ids: no call can name it (noId), or the host list has not arrived yet
@@ -117,8 +118,10 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
       was.current[h.name] = h.online;
     }
   }, [online]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   // V0.53: while a login runs on a host, follow it there (its link, the code's answer, the end).
   const logging = hosts.filter((h) => slices[h.name]?.providers?.some((x) => loginActive(x.login))).map((h) => h.name);
+  /* eslint-disable react-hooks/exhaustive-deps -- the poll restarts only when the set of hosts with a login running changes (its JSON key); loadProviders is new each render and p.onChanged is read when the poll ends */
   useEffect(() => {
     if (!logging.length) return;
     const t = setInterval(() => logging.forEach((h) => void loadProviders(h)), 1500);
@@ -128,6 +131,7 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
     };
     // The key must differ from no login at all: one host's part is named "", and [""].join(" ") is "" too (#30).
   }, [JSON.stringify(logging)]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   /** One owner command to a host; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
   const command = async (host: string, action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
@@ -193,6 +197,7 @@ export type Data = AllSettings["all"][number];
 export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[]): string {
   const [v, setV] = useState("");
   const ids = settingsHosts(hosts).flatMap((h) => (h.id ? [h.id] : [])); // a host with no install id cannot be asked
+  /* eslint-disable react-hooks/exhaustive-deps -- reloads only when the set of hosts changes (its joined ids); api is fixed for the settings' life */
   useEffect(() => {
     let live = true;
     void Promise.all(
@@ -202,6 +207,7 @@ export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[]):
     ).then((parts) => live && setV(providersNeed(parts.flatMap(([l]) => l), parts.reduce((n, [, sa]) => n + (sa?.jobs.filter((j) => j.error).length ?? 0), 0))));
     return () => void (live = false);
   }, [ids.join(" ")]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   return v;
 }
 

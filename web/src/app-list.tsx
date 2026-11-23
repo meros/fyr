@@ -56,7 +56,7 @@ export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | 
     if (r.wait === null) return;
     const t = setTimeout(() => setAhTick((x) => x + 1), r.wait + 20);
     return () => clearTimeout(t);
-  }, [hideAt, sectionOpen, activeForHide, ahTick]);
+  }, [hideAt, sectionOpen, activeForHide, ahTick, setSectionOpen]);
   /** A header's click or tap. */
   const toggleSection = (k: SectionKey) => {
     const opening = !isOpen(k, sectionOpen);
@@ -96,10 +96,12 @@ export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | 
   // moves there. A folded section stays folded, whatever opened the thread, and draws that row alone (V0.192). A row
   // that search hides stays hidden, and no row is marked; one the filters hide is added to `rows` (V0.192).
   const openSection = view && store.threads[view.id] ? sectionOf(store.threads[view.id]) : null;
+  /* eslint-disable react-hooks/exhaustive-deps -- expands the open thread's section only when the open thread, the open section or whether it is listed changes; on every rows update it would re-expand a section the owner folded */
   useEffect(() => {
     const k = cutSection(rows, view?.id ?? null, limits);
     if (k) setExpanded((x) => ({ ...x, [k]: true }));
   }, [view?.id, openSection, !!(view && listed[view.id]), limits]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Keep the mark visible: when it changes, moves to another section or the pinned block, or is drawn again.
   const selPlace = sel && listed[sel] ? `${placeOf(rows, sel)?.section ?? sectionOf(listed[sel])}:${isPinned(listed[sel])}:${order.includes(sel)}:${guest?.why ?? ""}` : "";

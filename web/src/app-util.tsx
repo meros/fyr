@@ -15,12 +15,14 @@ export const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: 
 export function usePhone(): boolean {
   const mq = typeof window.matchMedia === "function" ? window.matchMedia(PHONE_QUERY) : null;
   const [phone, setPhone] = useState(!!mq?.matches);
+  /* eslint-disable react-hooks/exhaustive-deps -- mq is a new MediaQueryList for the same query on each render; the first one is listened to for the hook's life */
   useEffect(() => {
     if (!mq) return;
     const f = () => setPhone(mq.matches);
     mq.addEventListener("change", f);
     return () => mq.removeEventListener("change", f);
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   return phone;
 }
 

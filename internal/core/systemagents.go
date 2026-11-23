@@ -16,10 +16,10 @@ const (
 	// EffectSystemAgentsSet stores the owner's setting on the host.
 	EffectSystemAgentsSet EffectKind = "systemAgents.set"
 
-	JobTitle    = "title"    // V0.108: Regenerate title
-	JobSetup    = "setup"    // the project setup run: icon, colour and name
-	JobQuestion = "question" // V0.210: does a turn's end wait on the owner
-	JobSearch   = "search"   // V0.ai-search: which threads fit the owner's words
+	JobTitle    = "title"                  // V0.108: Regenerate title
+	JobSetup    = "setup"                  // the project setup run: icon, colour and name
+	JobQuestion = "question"               // V0.210: does a turn's end wait on the owner
+	JobSearch   = "search"                 // V0.ai-search: which threads fit the owner's words
 	JobApproval = string(DecisionApproval) // V0.tool-approval-judge: allow or escalate a tool approval
 
 	// ProfileSystemDefault is a sentinel profile value on a thread-defaulting

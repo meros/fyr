@@ -219,9 +219,11 @@ export function SaveField(p: SaveFieldProps) {
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => setText(p.value), [p.value]);
+  /* eslint-disable react-hooks/exhaustive-deps -- focus on mount only, and not on a phone */
   useEffect(() => {
     if (p.autoFocus && !env.phone) ref.current?.focus();
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const differs = text !== p.value && !(p.clears && !text.trim());
   const save = async () => {
     if (!differs || busy) return;

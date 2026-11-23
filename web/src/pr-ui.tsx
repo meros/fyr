@@ -61,6 +61,7 @@ export function PrView(p: PrViewProps) {
 
   const snap = `${pr.state}|${pr.checks}|${pr.conflict}|${pr.review}`;
   const lastSnap = useRef(snap);
+  /* eslint-disable react-hooks/exhaustive-deps -- a new PR or thread loads from scratch; fetchDetail is new each render and snap is recorded as the baseline here; gen and later are a counter and a timer, not elements, so the cleanup wants their newest values */
   useEffect(() => {
     lastSnap.current = snap;
     setLoad({ kind: "loading" });
@@ -71,12 +72,15 @@ export function PrView(p: PrViewProps) {
       if (later.current) clearTimeout(later.current);
     };
   }, [t.id, pr.url]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   // The poller's snapshot changed (checks finished, merged elsewhere): read again.
+  /* eslint-disable react-hooks/exhaustive-deps -- refreshes when the PR's snapshot changes; fetchDetail is a new function each render */
   useEffect(() => {
     if (lastSnap.current === snap) return;
     lastSnap.current = snap;
     fetchDetail(true);
   }, [snap]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const refreshSoon = (ms: number) => {
     if (later.current) clearTimeout(later.current);
@@ -414,6 +418,7 @@ function MergeDialog({ d, sha, sensitive, onClose, onMerge }: { d: PrDetail; sha
   const [method, setMethod] = useState<MergeMethod>("squash");
   const [sending, setSending] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
+  /* eslint-disable react-hooks/exhaustive-deps -- the focus and the Escape handler are set once, when the dialog opens; onClose is the parent's callback */
   useEffect(() => {
     btn.current?.focus();
     const key = (e: KeyboardEvent) => {
@@ -425,6 +430,7 @@ function MergeDialog({ d, sha, sensitive, onClose, onMerge }: { d: PrDetail; sha
     document.addEventListener("keydown", key, true);
     return () => document.removeEventListener("keydown", key, true);
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const go = async () => {
     setSending(true);
     await onMerge(method);

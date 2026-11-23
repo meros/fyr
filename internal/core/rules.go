@@ -140,18 +140,18 @@ type When struct {
 
 // The Condition kinds. Each reads the thread record only.
 const (
-	WhenRunEnded    = "runEnded"      // anchored: a run ended after the Rule was armed
-	WhenReached     = "changeReached" // {change, phase}: the change got at least that far
-	WhenCondition   = "condition"     // {change, type, status}: a condition of the change has that status
-	WhenAt          = "at"            // anchored: {at}: now ≥ at
-	WhenQuota       = "quota"         // anchored: {provider, window, at}: now ≥ the provider window's reset time (V0.quota-reset-wake)
-	WhenIdleFor     = "idleFor"       // {ms}: nothing happened on the thread for ms
-	WhenIdle        = "idle"          // no run is live and the last one did not fail
-	WhenMoved       = "changeMoved"   // anchored: {change}: the change's phase, conditions or evidence moved since the last firing
-	WhenEnded       = "changeEnded"   // {change}: the change ended (abandoned or reverted)
-	WhenWorkOver    = "workOver"      // V0.185: no work goes on, or the thread needs the owner
-	WhenWorkDone    = "workDone"      // V0.203: no work goes on, nothing waits for the owner, no PR is open
-	WhenNoOpenPR    = "noOpenPR"      // V0.settle-merge-fixes (2): no PR of the thread is open
+	WhenRunEnded  = "runEnded"      // anchored: a run ended after the Rule was armed
+	WhenReached   = "changeReached" // {change, phase}: the change got at least that far
+	WhenCondition = "condition"     // {change, type, status}: a condition of the change has that status
+	WhenAt        = "at"            // anchored: {at}: now ≥ at
+	WhenQuota     = "quota"         // anchored: {provider, window, at}: now ≥ the provider window's reset time (V0.quota-reset-wake)
+	WhenIdleFor   = "idleFor"       // {ms}: nothing happened on the thread for ms
+	WhenIdle      = "idle"          // no run is live and the last one did not fail
+	WhenMoved     = "changeMoved"   // anchored: {change}: the change's phase, conditions or evidence moved since the last firing
+	WhenEnded     = "changeEnded"   // {change}: the change ended (abandoned or reverted)
+	WhenWorkOver  = "workOver"      // V0.185: no work goes on, or the thread needs the owner
+	WhenWorkDone  = "workDone"      // V0.203: no work goes on, nothing waits for the owner, no PR is open
+	WhenNoOpenPR  = "noOpenPR"      // V0.settle-merge-fixes (2): no PR of the thread is open
 )
 
 // AgentWhens are the kinds the agent may use in its own Rules.

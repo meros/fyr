@@ -42,6 +42,7 @@ export function ChangesBoard(p: BoardProps) {
   const [showSettled, setShowSettled] = useState(boardSettledPref); // V0.78 (#54): remembered per device
   // V0.98 (3): opening the board is a visit; what finished since the one before folds into its own group.
   const [seenAt, setSeenAt] = useState<string | null | undefined>(undefined);
+  /* eslint-disable react-hooks/exhaustive-deps -- the last visit is read once, when the board opens, so what is new stays put while it is open */
   useEffect(() => {
     if (!p.visit) return setSeenAt(null);
     let live = true;
@@ -50,6 +51,7 @@ export function ChangesBoard(p: BoardProps) {
       live = false;
     };
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const now = p.now ?? Date.now();
   const filter = { projectId, q, ended: showEnded, settled: showSettled };
   const items = boardItems(p.threads, p.projects, filter);

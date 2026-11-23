@@ -16,7 +16,7 @@
           pname = "fyr-web";
           version = "0-${rev}";
           src = ./web;
-          npmDepsHash = "sha256-rykyCcVohrMCXg3EVUw9fQCX94XY0h3rXMjzO5wxW5o=";
+          npmDepsHash = "sha256-5qiAnBcN/hWzDoef7IEP8WrWhWpGOVJBMsnXh4jkk7c=";
           npmFlags = [ "--legacy-peer-deps" ];
           installPhase = ''
             mkdir -p $out

@@ -72,22 +72,26 @@ export function FolderPicker({ fs, first, onPick, autoFocus = true }: { fs: FsAp
     if (!home && (path === "~" || path === "")) setHome(r.data.path);
   };
 
+  /* eslint-disable react-hooks/exhaustive-deps -- the first listings load once, when the picker opens; autoFocus applies to that first render and fs is the caller's file API for the picker's life */
   useEffect(() => {
     if (autoFocus) field.current?.focus();
     void fs.fsList("~").then((r) => (r.ok ? (setHome(r.data.path), setListing((cur) => cur ?? r.data)) : setErr(r.error)));
     void fs.fsRecent().then((r) => setRecent(r.ok ? r.data : []));
     void fs.fsRepos().then((r) => setRepos(r.ok ? r.data : []));
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const pathMode = isPathQuery(q);
   const typed = pathMode ? splitPath(q) : null;
   // In path mode the listing follows the typed folder.
+  /* eslint-disable react-hooks/exhaustive-deps -- follows a typed folder (its path) only; the listing it loads must not trigger it again, and go is a new function each render */
   useEffect(() => {
     if (!typed) return;
     const target = typed.dir;
     if (listing && tildePath(listing.path, home) === tildePath(target.replace(/^~(?=\/|$)/, home), home)) return;
     void go(target);
   }, [typed?.dir]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const here = listing ? tildePath(listing.path, home) : "~";
   const listingMatches = !!(typed && listing && tildePath(listing.path, home) === tildePath(typed.dir.replace(/^~(?=\/|$)/, home), home));
   const children = !listing ? [] : typed ? (listingMatches ? completions(listing.dirs, typed.prefix) : []) : visibleDirs(listing.dirs);

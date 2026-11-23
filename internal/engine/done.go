@@ -55,4 +55,3 @@ func (e *Engine) recordOwner(in core.Input, a core.Args, kind string) (api.Reply
 	}
 	return reply, true
 }
-

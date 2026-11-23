@@ -117,9 +117,10 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       document.removeEventListener("visibilitychange", onVisible);
       api.stop();
     };
-  }, []);
+  }, [api, setCanInstall, setPendingOpen, setPushSt, setStore, setTick]);
 
   // A link names a record by the host's own id; once the records are here it names the ref (decision 0031 C12).
+  /* eslint-disable react-hooks/exhaustive-deps -- re-resolves the screen's thread ref when the store loads or the screen's thread changes; nav, navReplace (new each render) and the store are read at that moment, so a store update alone replaces no history entry */
   useEffect(() => {
     if (!store.loaded) return;
     const s = nav.screen;
@@ -131,6 +132,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       if (r !== s.id) navReplace({ ...nav, screen: { ...s, id: r } });
     }
   }, [store.loaded, nav.screen.name, "id" in nav.screen ? nav.screen.id : ""]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // The filters read again what a host's rotation moved.
   const rereadFilters = () => {
@@ -140,6 +142,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
   // Decision 0031 2.1, 2.5: a host listed with a new id and the one it had (idWas): what the device keeps under the old
   // id moves to the new one (the keys, the stored timelines, the store, the thread on screen).
   const rotationKey = rotations(fullStore.hostList).map((r) => `${r.was}>${r.now}`).join(",");
+  /* eslint-disable react-hooks/exhaustive-deps -- runs once per host-id rotation (rotationKey); nav, navReplace, rereadFilters and the host list are read at that moment, and the setters are stable */
   useEffect(() => {
     if (!rotationKey) return;
     const moves = rotations(fullStore.hostList);
@@ -157,9 +160,11 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       if (id !== sc.id) navReplace({ ...nav, screen: { ...sc, id } });
     }
   }, [rotationKey]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Initial selection and ?open= for screenshots.
   const didInit = useRef(false);
+  /* eslint-disable react-hooks/exhaustive-deps -- the first open runs once, when the store first loads (didInit guards it); the threads are read at that moment and the setters are stable */
   useEffect(() => {
     if (!store.loaded || didInit.current) return;
     didInit.current = true;
@@ -182,6 +187,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       setDialog("snooze");
     }
   }, [store.loaded]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Threads whose timeline has older events on the host (API v0 paging).
   const [earlier, setEarlier] = useState<Record<string, boolean>>({});
@@ -202,6 +208,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
 
   // Presence (V0.20): tell the host which thread is shown while visible; V0.push-summary-batch: and that the page is.
   const beatRef = useRef<BeatState>({ last: "", visible: false, at: 0 });
+  /* eslint-disable react-hooks/exhaustive-deps -- the heartbeat restarts only when the open thread changes; api is fixed for the app's life, and hostOfId (new each render) reads the store through a ref */
   useEffect(() => {
     const device = deviceId();
     const tick = () => {
@@ -224,6 +231,8 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       window.removeEventListener("pagehide", tick);
     };
   }, [openId]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+  /* eslint-disable react-hooks/exhaustive-deps -- fetches the open thread's timeline when the thread, the load or the live connection changes, not on each store update the fetch itself causes; the store is read at that moment */
   useEffect(() => {
     if (!openId || !store.loaded) return;
     let cancelled = false;
@@ -260,6 +269,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       cancelled = true;
     };
   }, [openId, store.loaded, store.conn === "live"]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // V0.38: keep the open thread's events and the state on the device, when the browser is idle.
   const openEvents = openId ? store.events[openId] : undefined;
@@ -268,7 +278,8 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
     const id = openId;
     const t = setTimeout(() => idle(() => void cache.saveEvents(id, openEvents.slice(-PAGE))), 2000);
     return () => clearTimeout(t);
-  }, [openId, openEvents]);
+  }, [api.cache, openId, openEvents]);
+  /* eslint-disable react-hooks/exhaustive-deps -- saves the cache 2 s after the hosts or the load change, not after every event; rawStore is read then, and api.cache is fixed for the app's life */
   useEffect(() => {
     if (!store.loaded || !api.cache) return;
     const t = setTimeout(
@@ -280,6 +291,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
     );
     return () => clearTimeout(t);
   }, [rawStore.hosts, rawStore.hostList, rawStore.loaded]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // V0.207: the front leaves this device out of the pushes of what it hides. Sent again when push turns on and on a
   // reconnect, so a change made offline arrives.
@@ -287,7 +299,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
   useEffect(() => {
     if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || !api.pushes) return;
     void syncPushHidden(api, JSON.parse(pushHidden) as PushHidden);
-  }, [pushHidden, pushSt, fullStore.loaded, fullStore.conn]);
+  }, [api, pushHidden, pushSt, fullStore.loaded, fullStore.conn]);
 
   // V0.notification-polish: what this device is told about, kept in this browser and sent to the front like the hidden
   // list: again when push turns on and on a reconnect.
@@ -299,7 +311,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
   useEffect(() => {
     if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || !api.pushes) return;
     void syncPushPrefs(api, pushPrefs);
-  }, [pushPrefs.finished, pushPrefs.quotaReset, pushSt, fullStore.loaded, fullStore.conn]);
+  }, [api, pushPrefs, pushSt, fullStore.loaded, fullStore.conn]);
 
 
   return { earlier, loadEarlier, pushPrefs, setPushPrefs };

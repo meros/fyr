@@ -42,7 +42,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   const outKey = outbox ? outbox.join(",") : null;
   // V0.event-store: one builder per thread; a live event at the end feeds only itself.
   const build = useMemo(conversationCache, [threadId]);
-  const all = useMemo(() => build(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [build, events, details, cwd, host, outKey]);
+  const all = useMemo(() => build(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [api, build, events, details, cwd, host, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
   // V0.run-cards-in-conversation: a Run card stands where the agent asked, on desktop and phone.
   const openCards = cards ? requests(cards.t).filter((o) => cardShows(o, cards.t.runs)).map((o) => o.id).join("\n") : "";
@@ -151,6 +151,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
     landed.current = null;
   }, [threadId]);
 
+  /* eslint-disable react-hooks/exhaustive-deps -- follows new content (all), a new thread or new cards; onAtEnd is the parent's callback, which only updates the seen-tracker through a setter */
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -162,7 +163,9 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
       onAtEnd(true);
     }
   }, [all, threadId, followCards]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
+  /* eslint-disable react-hooks/exhaustive-deps -- one ResizeObserver for the view's life; the check it keeps reads the element and refs, and the onAtEnd it calls updates the seen-tracker through a setter */
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -175,6 +178,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
     if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // V0.34: Copy on code blocks inside rendered markdown (their buttons are plain HTML).
   const onCodeCopy = async (e: MouseEvent) => {

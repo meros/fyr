@@ -64,7 +64,9 @@ export function HomeScreen(p: HomeProps) {
     };
   }, []);
   const log = useMemo(() => homeLog(byId, p.projects, since), [byId, p.projects, since]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed once a minute (the minute of now), not on each tick of now
   const mergedToday = useMemo(() => homeLog(byId, p.projects, startOfDay(p.now)).filter((e) => e.kind === "merged").length, [byId, p.projects, minuteOf(p.now)]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed once a minute (the minute of now), not on each tick of now
   const today = useMemo(() => homeDay(byId, p.projects, p.now), [byId, p.projects, minuteOf(p.now)]);
   const day = new Date(p.now).toLocaleDateString(undefined, { weekday: "long" });
 

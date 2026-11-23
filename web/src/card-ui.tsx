@@ -61,6 +61,7 @@ export function HoverCard({ at, place = "right", interactive = false, popRef, ch
   const ref = popRef ?? inner;
   const start = place === "right" ? { left: at.right + 10, top: at.top } : { left: at.left, top: at.bottom + 6 };
   const [pos, setPos] = useState(start);
+  /* eslint-disable react-hooks/exhaustive-deps -- measures after every render on purpose (any render can change the card's size); it sets the position only when it changed, so it settles at once */
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -69,6 +70,7 @@ export function HoverCard({ at, place = "right", interactive = false, popRef, ch
     const top = place === "below" && start.top + el.offsetHeight > window.innerHeight - 8 ? Math.max(8, at.top - 6 - el.offsetHeight) : Math.max(8, Math.min(start.top, window.innerHeight - el.offsetHeight - 8));
     if (left !== pos.left || top !== pos.top) setPos({ left, top });
   });
+  /* eslint-enable react-hooks/exhaustive-deps */
   return createPortal(
     <div ref={ref} class={`lcpop${interactive ? " pop-click" : ""}`} role={interactive ? "dialog" : "tooltip"} style={{ left: `${pos.left}px`, top: `${pos.top}px` }}>
       {children}

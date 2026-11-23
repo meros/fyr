@@ -44,7 +44,7 @@ export function DeployBanner({
     return () => clearInterval(iv);
   }, []);
   useEffect(() => {
-    if (key && seen?.key !== key) setSeen({ key, at: Date.now() });
+    if (key) setSeen((s) => (s?.key === key ? s : { key, at: Date.now() }));
     setOpen(false);
   }, [key]);
   const line = deployLine(p, threads, now, conn);

@@ -163,9 +163,11 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
   const [q, setQ] = useState("");
   const ref = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
+  /* eslint-disable react-hooks/exhaustive-deps -- focus on mount only */
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const list = matchProjects(projects, q);
   // Keyboard: Enter in the search picks the first match, or names a new project when nothing matches; arrows walk the
   // rows and back to the search.

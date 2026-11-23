@@ -26,7 +26,9 @@ type fakePrinterAdapter struct {
 
 func (f *fakePrinterAdapter) ID() string            { return f.id }
 func (f *fakePrinterAdapter) DefaultBinary() string { return f.id }
-func (f *fakePrinterAdapter) Caps() cli.Caps        { return cli.Caps{Auth: []cli.AuthKind{cli.CLILogin}, Models: f.models} }
+func (f *fakePrinterAdapter) Caps() cli.Caps {
+	return cli.Caps{Auth: []cli.AuthKind{cli.CLILogin}, Models: f.models}
+}
 func (f *fakePrinterAdapter) Env(cli.Launch) ([]string, error) {
 	return nil, nil
 }
@@ -290,8 +292,13 @@ func TestResolveApprovalJudgeModes(t *testing.T) {
 	}
 	mk := func(sa core.SystemAgents) *Manager {
 		return New(nil, Config{
-			HostName:      "host-a",
-			Profile:       func(id string) provider.Profile { if p, ok := profiles[id]; ok { return p }; return profiles["claude"] },
+			HostName: "host-a",
+			Profile: func(id string) provider.Profile {
+				if p, ok := profiles[id]; ok {
+					return p
+				}
+				return profiles["claude"]
+			},
 			ProfileExists: func(id string) bool { _, ok := profiles[id]; return ok },
 			SystemAgents:  func() core.SystemAgents { return sa },
 		})

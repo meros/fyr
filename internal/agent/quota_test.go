@@ -23,7 +23,9 @@ func (h *qhHost) Apply(in core.Input) (any, error) {
 	h.mu.Unlock()
 	return nil, nil
 }
-func (h *qhHost) Thread(id string) (core.Thread, bool) { return core.Thread{ID: id, Profile: "claude"}, true }
+func (h *qhHost) Thread(id string) (core.Thread, bool) {
+	return core.Thread{ID: id, Profile: "claude"}, true
+}
 
 func (h *qhHost) runEnded() *core.RunEndedArgs {
 	h.mu.Lock()

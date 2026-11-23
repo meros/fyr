@@ -312,12 +312,12 @@ func (m *Manager) HandoverIn(threadID string, req HandoverInReq) (HandoverInResu
 			data["git"] = req.Git
 		}
 		m.observe(threadID, core.KindHandoverDone, core.HandoverDoneArgs{
-			Profile:    req.Profile,
-			Model:      model,
-			SessionID:  sid,
-			Effort:     req.Effort,
-			Data:       data,
-			HostNotice: hostNotice,
+			Profile:      req.Profile,
+			Model:        model,
+			SessionID:    sid,
+			Effort:       req.Effort,
+			Data:         data,
+			HostNotice:   hostNotice,
 			FirstMessage: first != "",
 		})
 		m.mu.Lock()

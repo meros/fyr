@@ -65,6 +65,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const [f, setF] = useState<NewThreadForm>(() => settleForm(initialForm(), ctx, o.projectFilter, last));
   // The projects and profiles may arrive after the form opens (phone deep link, reconnect).
   const profileCount = Object.values(o.profiles).reduce((n, ps) => n + ps.length, 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- settles the form when the offered choices change in number; the project filter and the last choice are read at that moment
   useEffect(() => setF((x) => settleForm(x, ctxRef.current, o.projectFilter, last)), [offered.length, profileCount, o.hosts?.length]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

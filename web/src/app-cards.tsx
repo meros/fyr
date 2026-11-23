@@ -16,9 +16,11 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
   const { api, threadsRef, tracker, setTracker, cards, setCards, setInText, sec, gatedRef, viewThread } = c;
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread ? currentDecision(viewThread) : null;
+  /* eslint-disable react-hooks/exhaustive-deps -- only a newly opened decision (its id) seeds a card; the decision and the cards are read at that moment */
   useEffect(() => {
     if (decision?.kind === "ask" && !cards[decision.id]) setCards((c) => ({ ...c, [decision.id]: initCard(decision) }));
   }, [decision?.id]);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const card = decision?.kind === "ask" ? (cards[decision.id] ?? null) : null;
 
   // ---- mark seen (SPEC 6.4) ----
@@ -44,7 +46,7 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
     };
-  }, []);
+  }, [api, gatedRef, setTracker, threadsRef]);
 
   // ---- the window title ----
   useEffect(() => {
@@ -62,7 +64,7 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
       document.removeEventListener("focusin", f);
       document.removeEventListener("focusout", out);
     };
-  }, []);
+  }, [setInText]);
 
 
   return { decision, card };

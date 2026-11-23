@@ -40,6 +40,7 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
 
+  /* eslint-disable react-hooks/exhaustive-deps -- the key handler is set once, when the confirmation opens; doneRef holds the newest callback, and the front it opened on (phone) decides what Enter does */
   useEffect(() => {
     ok.current?.focus();
     const onKey = (e: KeyboardEvent) => {
@@ -60,6 +61,7 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const c = a.command;
   const copy = async () => {

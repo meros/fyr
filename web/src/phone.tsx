@@ -545,10 +545,12 @@ function MSearch(p: PhoneProps) {
   // inbox it goes back to is not filtered.
   const { query: q, setQuery: setQ, list: all, quietHits } = p.inbox.search;
   const ref = useRef<HTMLInputElement>(null);
+  /* eslint-disable react-hooks/exhaustive-deps -- focuses the field when the search opens and clears the query when it closes, once each; setQ is the search's setter, passed down */
   useEffect(() => {
     ref.current?.focus();
     return () => setQ("");
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const needle = q.trim().toLowerCase();
   const hits = needle ? all.filter((t) => matchesQuery(t, needle)).slice(0, 200) : [];
   const ai = useAiSearch(q, all);

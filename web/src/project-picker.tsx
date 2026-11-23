@@ -56,6 +56,7 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
   const down = hostOfflineNote(host, hs.hosts, hs.now);
   const [name, setName] = useState(initialName);
   const [folder, setFolder] = useState(initialFolder);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reports the draft when the name or folder changes; onDraft is the parent's callback, new on each of its renders
   useEffect(() => onDraft?.(name, folder), [name, folder]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
