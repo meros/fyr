@@ -1,4 +1,4 @@
-# V0.ci-gates: a PR runs main's gate, the Linux desktop shell is built on every PR and on main, and a PR that changes macos/ compiles Fyr.app
+# V0.ci-gates: a PR runs main's gate, the Linux desktop shell is built on every PR and on main, and a PR that changes macos/ compiles Fyr.app, advisory
 
 → V0.ci-self-hosted, V0.mac-ci, decision 0038. *Amends V0.ci-self-hosted: a PR's gate is `make test-ci` and the Nix packages, not `make test`.*
 
@@ -8,6 +8,6 @@ Why: no gate compiled the Linux GTK shell. `cmd/fyr-desktop`'s window, tray and 
 
 (2) **The Nix packages on every PR.** `pr.yml`, `test.yml` and `scripts/ci-local.sh` run `nix build .#fyr .#fyr-desktop` (about two minutes on the runner): the Go tests in the sandbox, the Go and npm dependency hashes, and the only compile of the cgo GTK shell. A break that only the Nix build catches no longer reaches main first.
 
-(3) **Fyr.app on a PR.** `.github/workflows/mac-pr.yml` runs `swift build -c release` for both architectures on the self-hosted Mac runner when a PR changes `macos/` (or the Mac workflows). It signs nothing, reads no secret and publishes nothing. The lock against forks is `pr.yml`'s: the repository setting that holds every outside contributor's run for approval, which the owner does not give on these runners, and a job `if` that skips a fork's run. While the Mac sleeps that check, and the PR's merge ask, wait for it. A PR that does not touch `macos/` never starts it.
+(3) **Fyr.app on a PR, advisory.** `.github/workflows/mac-pr.yml` runs `swift build -c release` for both architectures on the self-hosted Mac runner when a PR changes `macos/` (or the Mac workflows). It signs nothing, reads no secret and publishes nothing. The lock against forks is `pr.yml`'s: the repository setting that holds every outside contributor's run for approval, which the owner does not give on these runners, and a job `if` that skips a fork's run. It never gates a merge: its job is named `swift build (advisory)`, which Fyr leaves out of the PR's CI state (V0.advisory-checks), because while the Mac sleeps the job stays queued and GitHub ends no queued job by itself. The build on main (`mac.yml`) stays the gate for the app. A PR that does not touch `macos/` never starts it.
 
 (4) **Text.** `scripts/ci-local.sh` says it is the fallback for when the runner is down; `docs/PROCESS.md`, `macos/README.md` and the Makefile's timing comment say what CI runs.
