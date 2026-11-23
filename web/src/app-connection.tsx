@@ -1,6 +1,11 @@
-// The connection to the hosts: events, the first selection, the device cache and the push settings it sends. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// The connection to the hosts: the event stream into the store, the device cache, presence, the open thread's timeline,
+// the first selection, and what is sent to the push front.
+//
+// Reads:   data (api, raw/full/store, hostOfId, deviceHidden, setStore, setTick); open (view, gate, setters of the view,
+//          the zone and the seen tracker); ui (theme, dialogs it opens from ?dialog=); route.nav; device (push, install, a
+//          thread to open); inbox (the two filter setters a host rotation rereads); history.navReplace.
+// Returns: earlier and loadEarlier (the open thread's older events), pushPrefs and setPushPrefs (what this device is told).
+// Desktop and phone share it; the first selection differs (the phone opens on the inbox, the desktop on the status screen).
 
 import { browserStorage, sessionStore, storedGet, storedSet } from "./prefs.ts";
 import { applyTheme, params, PAGE, idle } from "./app-util.tsx";
@@ -35,11 +40,18 @@ import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence
 import { cache, mergeEventLists } from "./cache.ts";
 import { PHONE_QUERY } from "./motion-ui.tsx";
 import { recordOpen } from "./desk-history.ts";
-import type { useAppState } from "./app-state.tsx";
-import type { useNavHistory } from "./app-history.tsx";
 
-export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "rawStore" | "setStore" | "fullStore" | "hostOfId" | "deviceHidden" | "store" | "setLastOpen" | "view" | "setView" | "setZone" | "setDialog" | "setSnoozeTargets" | "setTracker" | "theme" | "setTick" | "nav" | "pushSt" | "setPushSt" | "setCanInstall" | "setPendingOpen" | "setProjectFilterState" | "setHostsOffState" | "gate"> & Pick<ReturnType<typeof useNavHistory>, "navReplace">) {
-  const { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, store, setLastOpen, view, setView, setZone, setDialog, setSnoozeTargets, setTracker, theme, setTick, nav, pushSt, setPushSt, setCanInstall, setPendingOpen, setProjectFilterState, setHostsOffState, gate, navReplace } = c;
+import type { AppState } from "./app-state.tsx";
+import type { NavHistory } from "./app-history.tsx";
+
+export function useConnection(s: Pick<AppState, "data" | "open" | "ui" | "route" | "device" | "inbox">, h: { history: NavHistory }) {
+  const { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, store, setTick } = s.data;
+  const { setLastOpen, view, setView, setZone, setTracker, gate } = s.open;
+  const { setDialog, setSnoozeTargets, theme } = s.ui;
+  const { nav } = s.route;
+  const { pushSt, setPushSt, setCanInstall, setPendingOpen } = s.device;
+  const { setProjectFilterState, setHostsOffState } = s.inbox;
+  const { navReplace } = h.history;
   // ---- connection ----
   useEffect(() => {
     applyTheme(theme);
@@ -295,6 +307,7 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
     void syncPushPrefs(api, pushPrefs);
   }, [pushPrefs.finished, pushPrefs.quotaReset, pushSt, fullStore.loaded, fullStore.conn]);
 
-
   return { earlier, loadEarlier, pushPrefs, setPushPrefs };
 }
+
+export type Connection = ReturnType<typeof useConnection>;

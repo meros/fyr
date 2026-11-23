@@ -1,6 +1,12 @@
-// Phone navigation and the open thread following the screen. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// Phone navigation and the open thread following the screen, the phone's thread actions, Settings screens and the
+// undeclared-work navigation both fronts use.
+//
+// Reads:   data (store, threadsRef); cmds; open.view; ui (setDialog, openSettings); device (phone, phoneRef);
+//          route (nav, setNav); h.actions, h.projects (directory, create), h.history.
+// Returns: phoneActions (what the phone's screens call), phoneSettingsGo and phoneSettingsReplace (Settings as screens),
+//          undNav (V0.164: find a thread's title, go to a thread or to Settings, on both fronts).
+// The popstate handlers are split by form factor: the phone's rebuilds its history entries, the desktop's (V0.145) steps
+// through the threads it opened.
 
 import { useEffect, useRef } from "preact/hooks";
 import { type PageRef } from "./settings-nav.ts";
@@ -10,13 +16,22 @@ import { backTarget, listenPopState, seedHistory, type Nav } from "./nav.ts";
 import { navTransition } from "./native.ts";
 import { settleRun } from "./actions.ts";
 import { isDeskEntry, popStep } from "./desk-history.ts";
-import type { useAppState } from "./app-state.tsx";
-import type { useThreadActions } from "./app-actions.tsx";
-import type { useProjectActions } from "./app-projects.tsx";
-import type { useNavHistory } from "./app-history.tsx";
 
-export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "threadsRef" | "view" | "setDialog" | "phone" | "phoneRef" | "cmds" | "nav" | "setNav" | "openSettings"> & Pick<ReturnType<typeof useThreadActions>, "deskAtRef" | "openThread" | "closePeek" | "settleWhenDone" | "settleBulk" | "markUnseen"> & Pick<ReturnType<typeof useProjectActions>, "directory" | "create"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navRef" | "leaveOpenThread" | "navReplace" | "navBack">) {
-  const { store, threadsRef, view, setDialog, phone, phoneRef, cmds, nav, setNav, openSettings, deskAtRef, openThread, closePeek, settleWhenDone, settleBulk, markUnseen, directory, create, navGo, navRef, leaveOpenThread, navReplace, navBack } = c;
+import type { AppState } from "./app-state.tsx";
+import type { ThreadActions } from "./app-actions.tsx";
+import type { ProjectActions } from "./app-projects.tsx";
+import type { NavHistory } from "./app-history.tsx";
+
+export function usePhoneNav(s: Pick<AppState, "data" | "cmds" | "open" | "ui" | "device" | "route">, h: { actions: ThreadActions; projects: ProjectActions; history: NavHistory }) {
+  const { store, threadsRef } = s.data;
+  const { cmds } = s;
+  const { view } = s.open;
+  const { setDialog, openSettings } = s.ui;
+  const { phone, phoneRef } = s.device;
+  const { nav, setNav } = s.route;
+  const { deskAtRef, openThread, closePeek, settleWhenDone, settleBulk, markUnseen } = h.actions;
+  const { directory, create } = h.projects;
+  const { navGo, navRef, leaveOpenThread, navReplace, navBack } = h.history;
   // Build the history once (navInit); the listener is added whenever the phone layout is on, and removed when it goes
   // (a window resized to the desktop and back must have it again).
   const navInit = useRef(false);
@@ -94,6 +109,7 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
     openSettings: (at) => (phoneRef.current ? phoneSettingsGo(at) : openSettings(at)),
   };
 
-
   return { phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav };
 }
+
+export type PhoneNav = ReturnType<typeof usePhoneNav>;

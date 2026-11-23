@@ -1,14 +1,19 @@
-// Navigation history: go, replace and back (the phone's screens are history entries). (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// Navigation history of the phone (its screens are history entries): go, replace, back, and leaving a settled thread.
+//
+// Reads:   data.threadsRef; route.nav, setNav, navGoRef, reopenRef.
+// Returns: navGo, navReplace, navBack (push, replace, pop an entry), navRef (the entry now), leaveOpenThread (U8: after
+//          a settle or archive of the open thread, Back to the inbox).
+// Phone only in effect: the desktop has its own history (desk-history.ts, see app-nav.tsx).
 
 import { useRef } from "preact/hooks";
 import { backTarget, leavesThread, urlFor, type Nav } from "./nav.ts";
 import { navTransition } from "./native.ts";
-import type { useAppState } from "./app-state.tsx";
 
-export function useNavHistory(c: Pick<ReturnType<typeof useAppState>, "threadsRef" | "reopenRef" | "navGoRef" | "nav" | "setNav">) {
-  const { threadsRef, reopenRef, navGoRef, nav, setNav } = c;
+import type { AppState } from "./app-state.tsx";
+
+export function useNavHistory(s: Pick<AppState, "data" | "route">) {
+  const { threadsRef } = s.data;
+  const { reopenRef, navGoRef, nav, setNav } = s.route;
   // ---- phone navigation ----
   const navGo = (n: Nav) => {
     history.pushState(n, "", urlFor(n, location.search));
@@ -41,3 +46,5 @@ export function useNavHistory(c: Pick<ReturnType<typeof useAppState>, "threadsRe
 
   return { navGo, navRef, leaveOpenThread, navReplace, navBack };
 }
+
+export type NavHistory = ReturnType<typeof useNavHistory>;

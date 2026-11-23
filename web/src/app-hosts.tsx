@@ -1,6 +1,10 @@
-// Reloading the profiles and what a host owns. (split from the App of app.tsx; takes and returns plain objects).
-
-// The app shell: state, commands and the keyboard.
+// Reloading the profiles, and what a host owns: the Settings pages, the This device settings and the rail's push and
+// install controls.
+//
+// Reads:   data (api, setStore, raw/full/store, deviceHidden, byHost, now); ui (dialogs, settings, theme); device (push,
+//          install, env); h.conn (push prefs); h.actions.openThread; h.projects (projectActions, allHostsCtx); h.history.navGo.
+// Returns: pwaControls (the rail's bell and install), settingsFor (the Settings pages for a dialog or a phone screen).
+// Desktop and phone share the Settings pages; the phone passes a header and its own go and replace (screens, not a dialog).
 
 import {
   setProfiles,
@@ -10,14 +14,21 @@ import { Settings, type SettingsDevice, type SettingsProps } from "./settings-ui
 import { disablePush, testPush, enablePush, isStandalone, promptInstall } from "./pwa.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import { HostsContext } from "./host-pick-ui.tsx";
-import type { useAppState } from "./app-state.tsx";
-import type { useConnection } from "./app-connection.tsx";
-import type { useThreadActions } from "./app-actions.tsx";
-import type { useProjectActions } from "./app-projects.tsx";
-import type { useNavHistory } from "./app-history.tsx";
 
-export function useHostActions(c: Pick<ReturnType<typeof useAppState>, "api" | "setStore" | "fullStore" | "deviceHidden" | "setHidden" | "store" | "byHost" | "setDialog" | "theme" | "setTheme" | "pushSt" | "setPushSt" | "canInstall" | "setCanInstall" | "env" | "pushReason" | "now" | "openSettings"> & Pick<ReturnType<typeof useConnection>, "pushPrefs" | "setPushPrefs"> & Pick<ReturnType<typeof useThreadActions>, "openThread"> & Pick<ReturnType<typeof useProjectActions>, "projectActions" | "allHostsCtx"> & Pick<ReturnType<typeof useNavHistory>, "navGo">) {
-  const { api, setStore, fullStore, deviceHidden, setHidden, store, byHost, setDialog, theme, setTheme, pushSt, setPushSt, canInstall, setCanInstall, env, pushReason, now, openSettings, pushPrefs, setPushPrefs, openThread, projectActions, allHostsCtx, navGo } = c;
+import type { AppState } from "./app-state.tsx";
+import type { Connection } from "./app-connection.tsx";
+import type { ThreadActions } from "./app-actions.tsx";
+import type { ProjectActions } from "./app-projects.tsx";
+import type { NavHistory } from "./app-history.tsx";
+
+export function useHostActions(s: Pick<AppState, "data" | "ui" | "device">, h: { conn: Connection; actions: ThreadActions; projects: ProjectActions; history: NavHistory }) {
+  const { api, setStore, fullStore, deviceHidden, setHidden, store, byHost, now } = s.data;
+  const { setDialog, theme, setTheme, openSettings } = s.ui;
+  const { pushSt, setPushSt, canInstall, setCanInstall, env, pushReason } = s.device;
+  const { pushPrefs, setPushPrefs } = h.conn;
+  const { openThread } = h.actions;
+  const { projectActions, allHostsCtx } = h.projects;
+  const { navGo } = h.history;
   // Slice 2b: each host's own, into that host's state.
   const reloadProfiles = () => {
     for (const h of fullStore.hostList) {
@@ -99,6 +110,7 @@ export function useHostActions(c: Pick<ReturnType<typeof useAppState>, "api" | "
     </HostsContext.Provider>
   );
 
-
   return { pwaControls, settingsFor };
 }
+
+export type HostActions = ReturnType<typeof useHostActions>;
