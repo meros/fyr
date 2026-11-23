@@ -2,7 +2,7 @@
 // is not what the screen reads decodes to its empty value instead of throwing, and a failed read never escapes unhandled.
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { request, replyError } from "../src/http.ts";
 import { createApi } from "../src/api.ts";
@@ -60,9 +60,11 @@ test("every call carries a signal (a timeout) by default", async () => {
   assert.ok(seen[0].init.signal);
 });
 
-test("api.ts makes no call of its own: every request goes through http.ts", () => {
-  const src = readFileSync(join(import.meta.dirname, "..", "src", "api.ts"), "utf8");
-  assert.doesNotMatch(src, /\bfetch\(/);
+test("no file of the client makes a call of its own: every request goes through http.ts (the service worker has its own)", () => {
+  const dir = join(import.meta.dirname, "..", "src");
+  const files = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => /\.tsx?$/.test(f) && f !== "http.ts" && f !== "sw.ts");
+  assert.ok(files.includes("api.ts"), "the walk finds the client's files");
+  for (const f of files) assert.doesNotMatch(readFileSync(join(dir, f), "utf8"), /\bfetch\(/, f);
 });
 
 test("a settings list whose body is null or not a list reads as empty; an object one as {}", async () => {

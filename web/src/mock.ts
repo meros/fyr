@@ -11,6 +11,7 @@ import { quietList } from "./quiet.ts";
 import type { SlashCommand } from "./slash.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { baseName } from "./paths.ts";
+import viewBridge from "../viewbridge/bridge.html";
 
 // V0.35: a table that squeezed on the phone (a commit column, long change text).
 const TRIAGE_TABLE =
@@ -910,26 +911,8 @@ const px=new Uint8Array(4);g.readPixels(c.width>>1,c.height>>1,1,1,g.RGBA,g.UNSI
 </script>`;
 
 // V0.37: the live view page as the host stores it: the Fyr theme around a fragment, the bridge first in <head>.
-// TestMockBridgeMatches (Go) keeps VIEW_BRIDGE equal to the host's bridge.
-export const VIEW_BRIDGE = `<script>(function(){
-var state={},subs=[],n=0,wait={};
-function post(m){m.jsonrpc="2.0";parent.postMessage(m,"*")}
-function pick(o,p){return p.split(".").reduce(function(a,k){return a==null?a:a[k]},o)}
-function fill(){var els=document.querySelectorAll("[data-text]");for(var i=0;i<els.length;i++){var v=pick(state,els[i].getAttribute("data-text"));els[i].textContent=v==null?"":typeof v=="object"?JSON.stringify(v):String(v)}}
-window.fyr={get state(){return state},onState:function(f){subs.push(f);try{f(state)}catch(e){console.error(e)}},
-send:function(t){t=String(t||"").trim();if(!t)return Promise.resolve(false);return ask("ui/message",{role:"user",content:[{type:"text",text:t}]})},
-run:function(a){a=String(a||"").trim();if(!a)return Promise.resolve(false);return ask("ui/action",{action:a})}};
-function ask(m,p){var id="m"+(++n);return new Promise(function(r){wait[id]=r;setTimeout(function(){if(wait[id]){delete wait[id];r(false)}},15000);post({id:id,method:m,params:p})})}
-addEventListener("message",function(e){if(e.source!==parent)return;var d=e.data;if(d&&d.id&&wait[d.id]){var r=wait[d.id];delete wait[d.id];r(!d.error);return}if(!d||d.method!=="ui/notifications/state")return;
-state=(d.params&&d.params.state)||{};fill();subs.forEach(function(f){try{f(state)}catch(x){console.error(x)}})});
-document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest("[data-send],[data-action]");if(!b)return;e.preventDefault();if(b.getAttribute("data-fyr")==="busy")return;
-b.setAttribute("data-fyr","busy");b.setAttribute("aria-busy","true");
-(b.hasAttribute("data-action")?fyr.run(b.getAttribute("data-action")):fyr.send(b.getAttribute("data-send")||b.textContent)).then(function(ok){b.removeAttribute("aria-busy");b.setAttribute("data-fyr",ok?"sent":"failed");setTimeout(function(){if(b.getAttribute("data-fyr")!=="busy")b.removeAttribute("data-fyr")},ok?1800:3000)})});
-var last=-1;function size(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);if(h!==last){last=h;post({method:"ui/notifications/size-changed",params:{height:h}})}}
-if(window.ResizeObserver)new ResizeObserver(size).observe(document.documentElement);addEventListener("load",size);
-document.addEventListener("DOMContentLoaded",function(){fill();size()});
-post({method:"ui/notifications/initialized",params:{}});
-})();</script><style>[data-send],[data-action]{transition:opacity .12s}[data-send]:active,[data-action]:active{transform:scale(.97)}[data-fyr=busy]{opacity:.55;cursor:progress;pointer-events:none}[data-fyr=sent]::after{content:" ✓ Sent"}[data-fyr=failed]::after{content:" · Not sent";color:#c0392b}</style>`;
+// The bridge is the host's own file (V0.single-sources): esbuild and the unit tests' loader read it as text.
+const VIEW_BRIDGE = viewBridge.trim();
 const VIEW_THEME = `
 :root{--bg:#ffffff;--fg:#111820;--muted:#56616d;--line:#dde1e6;--accent:#e8960f;--surface:#f6f7f8;color-scheme:light dark}
 @media (prefers-color-scheme: dark){:root{--bg:#161d24;--fg:#e8ecf0;--muted:#9aa6b2;--line:#26303a;--accent:#f5a524;--surface:#0f1419}}

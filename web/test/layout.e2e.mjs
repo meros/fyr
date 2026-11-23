@@ -1353,7 +1353,7 @@ try {
 
 // V0.187: an entry of the conversation clips what leaves its box (content-visibility, V0.41's list work), so a message's
 // Copy has to lie inside its entry to be seen. On the desktop it shows on hover, under the message.
-section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
+section("V0.187 message copy", async ({ send, evaluate, waitFor, navigate }) => {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail&runs=1&open=t_run`, "!!document.querySelector('.msgw>.msgcp')");
@@ -1369,7 +1369,8 @@ section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
     return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
   })()`);
   await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
-  await new Promise((r) => setTimeout(r, 250));
+  // The hover fades Copy in: wait until it is fully shown, not a fixed time.
+  await waitFor(`getComputedStyle([...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop().querySelector(':scope>.msgcp')).opacity === '1'`, { soft: true });
   const r = await evaluate(`(() => {
     const w = [...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop();
     const c = w.querySelector(':scope>.msgcp'), b = c.getBoundingClientRect(), e = c.closest('.convo-in>*').getBoundingClientRect(), m = w.getBoundingClientRect();
@@ -1446,7 +1447,7 @@ try {
   check(ch.labels.join("|") === "Fix the badge build|▸ Dry-run the minting" && ch.afterMsg && ch.cards === 2 && ch.outside === 0, `V0.next-step-chips ${front}: the chips ${JSON.stringify(ch)}`);
   if (front === "phone") check(ch.minH >= 44, `V0.next-step-chips phone: a chip is ${ch.minH} px tall, under 44`);
   await evaluate("(() => { const b = [...document.querySelectorAll('.nstep.run')][0]; b.scrollIntoView({ block: 'center' }); b.click(); })()");
-  await new Promise((r) => setTimeout(r, 300));
+  await waitFor("!!document.querySelector('.nsteps .chiprun .runc-cmd')", { soft: true });
   const op = await evaluate(`(() => { const d = document.querySelector('.nsteps .chiprun'); return d ? { cmd: d.querySelector('.runc-cmd')?.textContent ?? '', labels: [...d.querySelectorAll('.runc-b button')].map((x) => x.textContent) } : null; })()`);
   check(op && op.cmd.startsWith("nix flake check\nnix run .#badges") && op.labels.join("|") === "Run|Copy|Not now", `V0.next-step-chips ${front}: the opened chip ${JSON.stringify(op)}`);
   await shot(`chips-${front}.png`);
@@ -1938,8 +1939,8 @@ try {
   await waitFor(`${COMMANDS("project.update")}.length >= 1 && !!document.querySelector('.dlg .stp-h .saved')`, { soft: true });
   const c = await evaluate(`({ cmds: ${COMMANDS("project.update")}.map(c => Object.keys(c.args).sort().join(',')), saved: !!document.querySelector('.dlg .stp-h .saved') })`);
   check(c.cmds.length === 1 && c.cmds[0] === "color,id" && c.saved, `V0.119 desktop: a swatch does not save its colour alone at once (${JSON.stringify(c)})`);
-  await sleep(2300);
-  check(await evaluate(`!document.querySelector('.dlg .stp-h .saved')`), "V0.119 desktop: Saved still shows after 2 s");
+  // It goes again; that it shows for 2 s is test/saved.test.ts's, on a fake clock.
+  check(await waitFor(`!document.querySelector('.dlg .stp-h .saved')`, { soft: true }), "V0.119 desktop: Saved never goes");
 } catch (e) {
   failures.push(`V0.119 desktop save at once: ${e.message}`);
 }
@@ -4476,29 +4477,34 @@ try {
     await navigate(`${origin}/?mock=rail`, `!!document.querySelector(${JSON.stringify(head("settled"))})`);
   }
   const STATE = (k) => `({ expanded: document.querySelector(${JSON.stringify(head(k))})?.getAttribute('aria-expanded'), clock: !!document.querySelector(${JSON.stringify(`${head(k)} .ahc`)}) })`;
-  const t0 = Date.now();
-  await evaluate(`for (const s of ${JSON.stringify([head("snoozed"), head("settled")])}) document.querySelector(s).click()`);
+  // The harness reduces motion, which stops the clock; it runs here for the length of the clock's check below, from the
+  // press on, so each clock starts when its section opens.
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+  // The page's clock at the press: the sections close 10 s after it.
+  const t0 = await evaluate(`(() => { for (const s of ${JSON.stringify([head("snoozed"), head("settled")])}) document.querySelector(s).click(); return Date.now(); })()`);
   for (const k of ["snoozed", "settled"]) {
     await waitFor(`${STATE(k)}.clock`, { soft: true });
     const a = await evaluate(STATE(k));
     check(a.expanded === "true" && a.clock, `${ctx}: ${k} opened without its clock (${JSON.stringify(a)})`);
   }
   // V0.autoclose-clock: the clock shows the time left: a re-render that does not restart it (another section folds and opens again)
-  // leaves the pie where the deadline puts it, not drained by the time already gone. The harness reduces motion,
-  // which stops the clock; it runs here for the length of this check.
-  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
-  await new Promise((r) => setTimeout(r, 3_000));
+  // leaves the pie where the deadline puts it, not drained by the time already gone. Each clock's end is read on the
+  // page's own clock (its start on the animation timeline plus its length, as wall time), not against the harness's
+  // wall time, which a loaded machine stretches.
+  const CLOCK = (k) => `(() => {
+    const a = document.querySelector(${JSON.stringify(`${head(k)} .ahc`)})?.getAnimations()[0];
+    return a && a.startTime !== null ? { ran: a.currentTime, ends: Math.round(performance.timeOrigin + a.startTime + a.effect.getComputedTiming().endTime) } : null;
+  })()`;
+  // Let both clocks run 3 s by their own animations, so that one restarted or rescaled by the re-render below would end
+  // seconds after the deadline.
+  await waitFor(`(${CLOCK("snoozed")})?.ran >= 3000 && (${CLOCK("settled")})?.ran >= 3000`, { soft: true });
   await evaluate(`(async () => {
     const h = document.querySelector(${JSON.stringify(head("seen"))});
     h?.click(); await new Promise((r) => requestAnimationFrame(r)); h?.click(); await new Promise((r) => requestAnimationFrame(r));
   })()`);
   for (const k of ["snoozed", "settled"]) {
-    const c = await evaluate(`(() => {
-      const a = document.querySelector(${JSON.stringify(`${head(k)} .ahc`)})?.getAnimations()[0];
-      if (!a) return null;
-      return { shown: a.effect.getComputedTiming().endTime - a.currentTime, real: ${t0 + 10_000} - Date.now() };
-    })()`);
-    check(c && Math.abs(c.shown - c.real) < 800, `${ctx}: ${k}'s clock shows ${Math.round(c?.shown)} ms left, the section closes in ${Math.round(c?.real)} ms`);
+    const c = await evaluate(CLOCK(k));
+    check(c && c.ran >= 3000 && Math.abs(c.ends - (t0 + 10_000)) < 800, `${ctx}: ${k}'s clock ends ${c ? c.ends - (t0 + 10_000) : "?"} ms after the section closes (${JSON.stringify(c)})`);
   }
   await send("Emulation.setEmulatedMedia", { features: [] });
   for (const k of ["snoozed", "settled"]) {
@@ -5116,7 +5122,13 @@ try {
   const atC = await evaluate(AT);
   check(await evaluate(`navigator.userActivation.hasBeenActive`), `V0.145 desktop: the page has no user activation, so Chrome's Back would skip its entries`);
   check(atC.n === n0 + 3 && atC.open === C, `V0.145 desktop: opening three threads does not add three entries (${JSON.stringify({ n0, atC })})`);
-  await new Promise((r) => setTimeout(r, 1500));
+  // Waiting adds no entry: the stream brings an update of the open thread and of one in the list (the mock's hook, as a
+  // host sends them); once both show, the history has not grown.
+  const D = ids.find((x) => ![first, A, B, C].includes(x));
+  titles[C] = `${titles[C]} (renamed)`;
+  await evaluate(`window.__fyrThread(${JSON.stringify(C)}, { title: ${JSON.stringify(titles[C])} }); ${D ? `window.__fyrThread(${JSON.stringify(D)}, { title: "Renamed by the stream" })` : ""}`);
+  const D_SHOWN = D ? `document.querySelector('.ib .list [data-id=${JSON.stringify(D)}] .hd .t')?.textContent === "Renamed by the stream"` : "true";
+  check(await waitFor(`${AT}.pane === ${JSON.stringify(titles[C])} && ${D_SHOWN}`, { soft: true }), `V0.145 desktop: the stream's updates do not show (${JSON.stringify(await evaluate(AT))})`);
   await settle();
   check((await evaluate(AT)).n === atC.n, `V0.145 desktop: an entry added while nobody opened a thread`);
   const want = async (id, what) => {
@@ -6400,6 +6412,44 @@ for (const [w, ht] of [[390, 844]]) section(`V0.quota-wait phone ${w}`, async ({
     const run = await evaluate(`(() => { const e = document.querySelector('.convo .runmark, .convo .sys'); return { text: e.textContent, fail: e.classList.contains('fail') }; })()`);
     check(/^Waiting for quota: Individual quota reached/.test(run.text) && !run.fail, `${ctx}: the end of the run does not read as a wait (${JSON.stringify(run)})`);
     await shot(`quota-wait-phone-${w}.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+// V0.load-invariants, V0.thread-invariants: a broken invariant is a card under Needs you on both fronts (one component),
+// the newest first, with Fix it and Dismiss; a press sends the command with the card's id and the card goes; Settings →
+// Automation lists the load and the thread invariants. With ?invariants=1 the mock has two open cards.
+for (const phone of [false, true]) section(`V0.load-invariants ${phone ? "phone" : "desktop"}`, async ({ send, evaluate, waitFor, navigate, openScreen, shot }) => {
+  const ctx = `V0.load-invariants ${phone ? "phone" : "desktop"}`;
+  try {
+    const needs = phone ? "#m-sec-needs" : "#sec-needs";
+    const ready = `document.querySelectorAll('${needs} .invc').length === 2`;
+    if (phone) await openScreen({ url: "?mock=rail&invariants=1", ready }, 390, 844);
+    else {
+      await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/?mock=rail&invariants=1`, ready);
+    }
+    const CARDS = `[...document.querySelectorAll('.invc')].map((c) => ({ head: c.querySelector('.invc-t')?.textContent, inNeeds: !!c.closest('${needs}'),
+      buttons: [...c.querySelectorAll('.invc-a button')].map((b) => b.textContent.trim() + (b.disabled ? ' (off)' : '')), minH: Math.min(...[...c.querySelectorAll('.invc-a button')].map((b) => b.getBoundingClientRect().height)) }))`;
+    const cs = await evaluate(CARDS);
+    check(cs.map((c) => c.head).join("|") === "Thread invariant broken: thread-phantom-running|Load invariant broken: thaw-into-critical", `${ctx}: the cards, newest first (${JSON.stringify(cs)})`);
+    check(cs.every((c) => c.inNeeds && c.buttons.join("|") === "Fix it|Dismiss"), `${ctx}: a card is not under Needs you with Fix it and Dismiss (${JSON.stringify(cs)})`);
+    if (phone) check(cs.every((c) => c.minH >= 44), `${ctx}: a card's button is under 44 px (${JSON.stringify(cs)})`);
+    await shot(`invariants-${phone ? "phone" : "desktop"}.png`);
+    // The desktop dismisses the newest card, the phone fixes it: either sends its id and closes it.
+    const [label, action] = phone ? ["Fix it", "host.invariantFix"] : ["Dismiss", "host.invariantDismiss"];
+    await evaluate(`[...document.querySelectorAll('.invc')][0].querySelectorAll('.invc-a button').forEach((b) => { if (b.textContent.trim() === ${JSON.stringify(label)}) b.click(); })`);
+    const after = await waitFor(`document.querySelectorAll('.invc').length === 1 && ${CARDS}`, { soft: true });
+    const sent = await evaluate(`${COMMANDS(action)}.map((c) => c.args.id)`);
+    check(sent.join("|") === "thread-phantom-running", `${ctx}: ${label} sent ${JSON.stringify(sent)}`);
+    check(after && after[0].head === "Load invariant broken: thaw-into-critical", `${ctx}: ${label} did not close the card (${JSON.stringify(after)})`);
+    // Settings → Automation lists each invariant, the load ones and the thread ones apart.
+    const groups = `[...document.querySelectorAll('section[aria-label$=" invariants"]')].map((g) => g.getAttribute('aria-label'))`;
+    if (phone) await openScreen({ url: "?mock=rail&invariants=1&settings=automation", ready: `${groups}.length === 2` }, 390, 844);
+    else await navigate(`${origin}/?mock=rail&invariants=1&dialog=settings&page=automation`, `${groups}.length === 2`);
+    const gs = await evaluate(groups);
+    check(gs.join("|") === "Load invariants|Thread invariants", `${ctx}: Settings → Automation lists ${JSON.stringify(gs)}`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }

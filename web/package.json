@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --import ./test/text-loader.mjs --test \"test/**/*.test.ts\"",
     "test:layout": "node test/layout.e2e.mjs",
     "test:auth": "node test/auth.e2e.mjs"
   },

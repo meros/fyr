@@ -32,6 +32,8 @@ const app = await build({
   target: "es2022",
   jsx: "automatic",
   jsxImportSource: "preact",
+  // The live view's bridge (src/mock.ts imports ../viewbridge/bridge.html), the file the Go host embeds too.
+  loader: { ".html": "text" },
   minify: !watch,
   sourcemap: watch ? "inline" : false,
   legalComments: "none",
