@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // freezeVictim is the job to freeze: of the holds not frozen yet, the one whose
@@ -17,8 +17,8 @@ import (
 // and stops nothing), the newest of equals. V0.guard-wake (decision 0036 E4,
 // Buck2's "forward progress"): never the oldest hold, which always runs, and
 // never a service.
-func (e *Engine) freezeVictim(held []slots.Holder) (slots.Holder, bool) {
-	var best slots.Holder
+func (e *Engine) freezeVictim(held []resource.Holder) (resource.Holder, bool) {
+	var best resource.Holder
 	var bestGrew uint64
 	found := false
 	oldest := held[0]
@@ -52,7 +52,7 @@ func (e *Engine) freezeVictim(held []slots.Holder) (slots.Holder, bool) {
 // Each freeze thaws when its work or hold ended, after FreezeMax unless the
 // stall is critical (V0.oomd-guard), or by the wake rule (wakeable). Freeze
 // and Thaw run outside e.mu.
-func (e *Engine) freezeGuard(s slots.Snapshot) {
+func (e *Engine) freezeGuard(s resource.Snapshot) {
 	if e.SlotFreeze == nil || e.SlotThaw == nil || e.SlotSignals == nil {
 		return
 	}
@@ -111,14 +111,14 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	}
 	e.mu.Unlock()
 	if newCap {
-		log.Printf("guard: wake cap agents=%s: the agents' memory when the stall first went critical in this episode %s", slots.GB(float64(capNow)), guardSignals(sig))
+		log.Printf("guard: wake cap agents=%s: the agents' memory when the stall first went critical in this episode %s", resource.GB(float64(capNow)), guardSignals(sig))
 	}
 	if short != wasShort {
 		state := "recovered"
 		if short {
 			state = "short"
 		}
-		e.guardRecord(slots.GuardEvent{At: now, Kind: state}, sig)
+		e.guardRecord(resource.GuardEvent{At: now, Kind: state}, sig)
 		log.Printf("guard: memory %s: %s flagged=%d held=%d running=%d frozen=%q", state, guardSignals(sig), len(e.flags()), len(s.Held), len(e.Running()), frozenOwners(frozen))
 	}
 	slices.Sort(retry)
@@ -129,7 +129,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	var thaws []thawing
 	var pastMax []frozenJob // newly held past FreezeMax: told once
 	for _, f := range frozen {
-		var flagged []slots.Undeclared
+		var flagged []resource.Undeclared
 		if f.undeclared {
 			flagged = e.flags()
 		}
@@ -245,7 +245,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 			kind, work = "undeclared work", "undeclared"
 		}
 		held := e.frozenFor(f, now) // read before the thaw: the cgroup may go with it
-		e.guardRecord(slots.GuardEvent{At: now, Kind: "thaw", Work: work, Thread: f.owner, Reason: why}, sig)
+		e.guardRecord(resource.GuardEvent{At: now, Kind: "thaw", Work: work, Thread: f.owner, Reason: why}, sig)
 		log.Printf("guard: thawed %s thread=%s after=%s frozen=%s reason=%q %s still_frozen=%d", kind, f.owner, now.Sub(f.at).Round(time.Second), held.Round(time.Second), reason, guardSignals(sig), len(keep))
 		if f.undeclared {
 			e.UndeclaredThaw(f.owner)
@@ -267,7 +267,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		if f.undeclared {
 			work = "undeclared"
 		}
-		e.guardRecord(slots.GuardEvent{At: now, Kind: "kept", Work: work, Thread: f.owner}, sig)
+		e.guardRecord(resource.GuardEvent{At: now, Kind: "kept", Work: work, Thread: f.owner}, sig)
 		e.slotNotice(f.owner, map[string]any{"waits": true, "work": f.undeclared})
 	}
 	switch freezeGate(mem, stalls(sig), len(thaws)+killed) {
@@ -314,7 +314,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		}
 	}
 	// One job always runs: a job is frozen only while two or more run.
-	var running []slots.Holder
+	var running []resource.Holder
 	for _, h := range s.Held {
 		e.mu.Lock()
 		f := e.isFrozen(h.Owner)
@@ -367,8 +367,8 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		cores = victim.Need.CPU
 	}
 	log.Printf("guard: froze job thread=%s freeze=1/1 episode_age=%s cmd=%q why=%q mem=%s cores=%.1f %s held=%d running=%d frozen_now=%d",
-		victim.Owner, now.Sub(victim.Since).Round(time.Second), cmd, why, slots.GB(float64(fj.mem)), cores, guardSignals(sig), len(s.Held), len(e.Running()), frozenNow)
-	e.guardRecord(slots.GuardEvent{At: now, Kind: "freeze", Work: "job", Thread: victim.Owner}, sig)
+		victim.Owner, now.Sub(victim.Since).Round(time.Second), cmd, why, resource.GB(float64(fj.mem)), cores, guardSignals(sig), len(s.Held), len(e.Running()), frozenNow)
+	e.guardRecord(resource.GuardEvent{At: now, Kind: "freeze", Work: "job", Thread: victim.Owner}, sig)
 	e.slotNotice(victim.Owner, map[string]any{"paused": why})
 }
 
@@ -376,7 +376,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 // decision 0036 E4): the threads with heavy work (a hold or a flag) less one,
 // so one always runs. V0.sim-fixes (3): it was the running threads less one,
 // and an agent with no heavy work let the last heavy work be frozen for it.
-func (e *Engine) maxFrozen(s slots.Snapshot, fl []slots.Undeclared) int {
+func (e *Engine) maxFrozen(s resource.Snapshot, fl []resource.Undeclared) int {
 	ths := map[string]bool{}
 	for _, h := range s.Held {
 		if !h.Priority {
@@ -392,7 +392,7 @@ func (e *Engine) maxFrozen(s slots.Snapshot, fl []slots.Undeclared) int {
 // runningHeavy is the heavy work that runs now, by thread, with since when
 // (V0.sim-fixes (3)): the holds and the flagged undeclared work the guard does
 // not hold frozen. Work taking turns runs (one part has the turn).
-func (e *Engine) runningHeavy(s slots.Snapshot, fl []slots.Undeclared) map[string]time.Time {
+func (e *Engine) runningHeavy(s resource.Snapshot, fl []resource.Undeclared) map[string]time.Time {
 	out := map[string]time.Time{}
 	note := func(th string, at time.Time) {
 		if was, ok := out[th]; !ok || at.Before(was) {
@@ -429,7 +429,7 @@ func (e *Engine) slotNotice(owner string, d map[string]any) {
 
 // memoryGuard tells the holder whose job grew most, once per episode, when
 // memory is short (decision 0029 S2); nothing is stopped.
-func (e *Engine) memoryGuard(s slots.Snapshot) {
+func (e *Engine) memoryGuard(s resource.Snapshot) {
 	if e.SlotSignals == nil || e.SlotGrowth == nil {
 		return
 	}

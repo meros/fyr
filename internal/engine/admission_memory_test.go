@@ -7,32 +7,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
-func memoryWait(t *testing.T, headroom float64, held, head uint64) (*slots.Pool, slots.Snapshot) {
+func memoryWait(t *testing.T, headroom float64, held, head uint64) (*slots.Pool, resource.Snapshot) {
 	t.Helper()
 	e, _, now := bare(t)
 	p := slots.New(2)
 	p.Now = e.Now
 	calm := 1.0
-	sig := slots.Signals{Provider: "cgroups", Slowdown: &calm, Headroom: &headroom, Stall: slots.StallOK, CPU: 8, Memory: 8 << 30}
-	p.Admit = func(h slots.Holder, hs []slots.Holder) (bool, string, string) {
-		c := make([]slots.Need, len(hs))
+	sig := resource.Signals{Provider: "cgroups", Slowdown: &calm, Headroom: &headroom, Stall: resource.StallOK, CPU: 8, Memory: 8 << 30}
+	p.Admit = func(h resource.Holder, hs []resource.Holder) (bool, string, string) {
+		c := make([]resource.Need, len(hs))
 		for i := range c {
-			c[i] = slots.Need{CPU: 1, Mem: held}
+			c[i] = resource.Need{CPU: 1, Mem: held}
 		}
-		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 2, c, slots.Need{CPU: 1, Mem: head})
+		return slots.Decide(resource.DefaultPolicy, sig, p.Budget(), 2, c, resource.Need{CPU: 1, Mem: head})
 	}
 	e.UseSlots(p)
-	e.SlotSignals = func() slots.Signals { return sig }
+	e.SlotSignals = func() resource.Signals { return sig }
 	guardDeps(t, e)
 	e.SlotAIMD = &slots.AIMD{N: 2}
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	p.Acquire(a, slots.Test)
-	p.Acquire(b, slots.Test)
+	p.Acquire(a, resource.Test)
+	p.Acquire(b, resource.Test)
 	e.Tick()
 	for i := 0; i < 8; i++ {
 		*now = now.Add(30 * time.Second)

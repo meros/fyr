@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -167,9 +168,9 @@ func TestSvc4ThePeaksOutliveARestart(t *testing.T) {
 }
 
 func TestSvc5TheWaitReasonNamesAService(t *testing.T) {
-	sig := slots.Signals{Provider: "cgroups", CPU: 8, Memory: 10 << 30}
-	ok, why, _ := slots.DecideWith(slots.DefaultPolicy, sig, slots.Factors{CPU: 1, Mem: 1}, 4, []slots.Need{{CPU: 1, Mem: 1 << 30}},
-		[]slots.Extra{{Owner: "t_b", Name: "Shop", Need: slots.Need{Mem: 8 << 30}, Service: true}}, "t_a", slots.Need{CPU: 1, Mem: 2 << 30})
+	sig := resource.Signals{Provider: "cgroups", CPU: 8, Memory: 10 << 30}
+	ok, why, _ := slots.DecideWith(resource.DefaultPolicy, sig, resource.Factors{CPU: 1, Mem: 1}, 4, []resource.Need{{CPU: 1, Mem: 1 << 30}},
+		[]resource.Extra{{Owner: "t_b", Name: "Shop", Need: resource.Need{Mem: 8 << 30}, Service: true}}, "t_a", resource.Need{CPU: 1, Mem: 2 << 30})
 	if ok || !strings.Contains(why, "Shop's services hold") {
 		t.Fatalf("%v %q", ok, why)
 	}

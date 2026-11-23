@@ -12,6 +12,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -103,8 +104,8 @@ func TestV086SlotsAfterRestart(t *testing.T) {
 		}
 	}
 	p := slots.Open(1, st)
-	p.Acquire(a, slots.Test)
-	p.Acquire(b, slots.Test)
+	p.Acquire(a, resource.Test)
+	p.Acquire(b, resource.Test)
 
 	e.UseSlots(slots.Open(1, st)) // the restarted daemon; neither thread runs
 	e.Tick()
@@ -133,7 +134,7 @@ func TestV0137SlotOrderDecidesTheNextGrant(t *testing.T) {
 	if !r.OK {
 		t.Fatalf("reorder: %+v", r)
 	}
-	if s, ok := r.Result.(slots.Snapshot); !ok || len(s.Waiting) != 2 || s.Waiting[0].Owner != c {
+	if s, ok := r.Result.(resource.Snapshot); !ok || len(s.Waiting) != 2 || s.Waiting[0].Owner != c {
 		t.Fatalf("the receipt is not the new queue: %#v", r.Result)
 	}
 	if out := acquire(e, b, "test"); !strings.Contains(out, "1 ahead") {

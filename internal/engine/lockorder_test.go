@@ -6,8 +6,6 @@
 package engine
 
 import (
-	"github.com/meros/fyr/internal/api"
-	"github.com/meros/fyr/internal/core"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +13,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/api"
+	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard/resource"
 
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/lockwatch"
@@ -48,20 +50,20 @@ func TestV147LoadSlotsAndTicksDoNotDeadlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	sampler := &cgroup.Sampler{Proc: proc, Cores: 4, Slots: pool, Jobs: jobs}
-	pool.Cost = func(h slots.Holder) slots.Need {
+	pool.Cost = func(h resource.Holder) resource.Need {
 		if _, ok := jobs.Active(h.Owner); ok {
-			return slots.Need{CPU: 1}
+			return resource.Need{CPU: 1}
 		}
-		return slots.Need{CPU: 1}
+		return resource.Need{CPU: 1}
 	}
-	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
+	pool.Admit = func(head resource.Holder, held []resource.Holder) (bool, string, string) {
 		_ = sampler.Signals()
 		return len(held) < 1, "", ""
 	}
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a) // a running holder: sweepSlots asks SlotActive under e.mu
 	running(e, b)
-	pool.Acquire(a, slots.Test)
+	pool.Acquire(a, resource.Test)
 
 	noHang(t, 10*time.Second, func() {
 		stop := time.Now().Add(1500 * time.Millisecond)
@@ -83,9 +85,9 @@ func TestV147LoadSlotsAndTicksDoNotDeadlock(t *testing.T) {
 			// b's holds end between two sampler ticks: Jobs records them
 			// and asks the engine for b's project.
 			pool.Release(a)
-			pool.Acquire(b, slots.Test)
+			pool.Acquire(b, resource.Test)
 			pool.Release(b)
-			pool.Acquire(a, slots.Test)
+			pool.Acquire(a, resource.Test)
 		})
 		wg.Wait()
 	})
@@ -131,7 +133,7 @@ func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
 		return map[string]any{"ok": true}, nil
 	}
 	e.HeavyRefused = func(class string) { calls = append(calls, "refused "+class) }
-	e.Undeclared = func() []slots.Undeclared { return []slots.Undeclared{flagFor(a, *now)} }
+	e.Undeclared = func() []resource.Undeclared { return []resource.Undeclared{flagFor(a, *now)} }
 	guardDeps(t, e)
 	for i, c := range []api.Cmd{
 		{Action: core.KindHeavyRemove, Args: map[string]any{"pattern": "make check"}},
@@ -145,8 +147,8 @@ func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
 			t.Fatalf("%s: %+v", c.Action, r)
 		}
 	}
-	e.Slots.Acquire("t_other1", slots.Test)
-	e.Slots.Acquire("t_other2", slots.Test)
+	e.Slots.Acquire("t_other1", resource.Test)
+	e.Slots.Acquire("t_other2", resource.Test)
 	e.HeavyGate(HeavyCall{Thread: a, Class: "make check", ToolUse: "tu"})
 	e.Tick()
 	want := []string{"remove make check", "settings", "service +rails server -", "update", "setup clt", "refused make check"}

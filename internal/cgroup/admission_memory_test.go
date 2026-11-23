@@ -6,7 +6,7 @@ package cgroup
 import (
 	"testing"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func TestAdmissionMemoryAClassUnderThreeRunsSizesWithThePrior(t *testing.T) {
@@ -23,7 +23,7 @@ func TestAdmissionMemoryAClassUnderThreeRunsSizesWithThePrior(t *testing.T) {
 		t.Fatalf("a learned peak above the prior was lowered: %+v", z)
 	}
 	three := one
-	three.Runs = slots.LearnRuns
+	three.Runs = resource.LearnRuns
 	if z := g.sizeFor(three, 12*gb, 8); z != three {
 		t.Fatalf("three runs size with the learned peak: %+v", z)
 	}

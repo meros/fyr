@@ -14,6 +14,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -47,8 +48,8 @@ func TestRerunAFrozenRerunnableWorkIsKilledAfterTwoMinutes(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
 	r := useRerun(t, e, "layout.e2e")
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	if !z.frozen[a] {
@@ -80,8 +81,8 @@ func TestRerunNothingIsKilledUnlessMarked(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
 	r := useRerun(t, e) // no entries
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	tickFor(e, now, 5*time.Minute)
@@ -96,8 +97,8 @@ func TestRerunAServiceIsNeverKilled(t *testing.T) {
 	r := useRerun(t, e, "layout.e2e")
 	e.GuardService = func(string) bool { return true }
 	guardDeps(t, e)
-	e.Slots.Acquire(b, slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
 	tickFor(e, now, 5*time.Minute)
@@ -116,9 +117,9 @@ func slotEngine(t *testing.T) (*Engine, *time.Time, string, string, map[string]b
 	running(e, a)
 	running(e, b)
 	free := 0.5
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free), CPU: 8, Memory: 16 << 30}
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free), CPU: 8, Memory: 16 << 30}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	frozen := map[string]bool{}
@@ -132,8 +133,8 @@ func slotEngine(t *testing.T) (*Engine, *time.Time, string, string, map[string]b
 		t.Fatal(r)
 	}
 	// The pool's admission as on a host with signals: memory short holds every job (decision 0029 S2).
-	p.Admit = func(slots.Holder, []slots.Holder) (bool, string, string) {
-		if free < slots.DefaultPolicy.MemoryReserve {
+	p.Admit = func(resource.Holder, []resource.Holder) (bool, string, string) {
+		if free < resource.DefaultPolicy.MemoryReserve {
 			return false, "memory short", slots.ResMem
 		}
 		return true, "", ""

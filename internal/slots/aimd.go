@@ -13,11 +13,13 @@ package slots
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/meros/fyr/internal/fsutil"
 	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/meros/fyr/internal/fsutil"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // The controller's settings.
@@ -44,15 +46,15 @@ type AIMD struct {
 	Path string
 	// Policy is the host's thresholds, as admission reads them (V0.admission-tidy);
 	// zero is DefaultPolicy.
-	Policy Policy
+	Policy resource.Policy
 
-	f         Factors
+	f         resource.Factors
 	started   bool
 	last      time.Time
 	slowSince time.Time
 	why       string
 	written   time.Time
-	wrote     Factors // the budget Path holds
+	wrote     resource.Factors // the budget Path holds
 }
 
 // keptPrefix starts the reason of a budget read back after a restart.
@@ -69,7 +71,7 @@ func trimKept(why string) string {
 
 // kept is the budget as Path holds it.
 type kept struct {
-	Factors
+	resource.Factors
 	Why string    `json:"why"`
 	At  time.Time `json:"at"`
 }
@@ -77,9 +79,9 @@ type kept struct {
 // Step moves the budget at now: waiting is whether a job waits, lastGrant
 // the pool's last admission, binding the resource that holds the head back
 // (ResCPU, ResMem, ResHeadroom or ""; Snapshot.Bound). It returns the factors and why.
-func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time, binding string) (Factors, string) {
+func (a *AIMD) Step(now time.Time, s resource.Signals, waiting bool, lastGrant time.Time, binding string) (resource.Factors, string) {
 	if !a.started {
-		a.started, a.f, a.last, a.why = true, Full, now, "the full budget"
+		a.started, a.f, a.last, a.why = true, resource.Full, now, "the full budget"
 		if k, ok := a.load(now); ok {
 			// V0.restart-why: what an earlier restart kept says so once.
 			a.f, a.why, a.written, a.wrote = k.Factors, keptPrefix+trimKept(k.Why), k.At, k.Factors
@@ -88,7 +90,7 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 	}
 	defer a.save(now)
 	if s.Provider == "" {
-		a.f, a.why = Full, "no measures on this host: the fixed count"
+		a.f, a.why = resource.Full, "no measures on this host: the fixed count"
 		return a.f, a.why
 	}
 	slow := s.Slowdown != nil && *s.Slowdown > AIMDSlow
@@ -110,12 +112,12 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 		own = s.Stall
 	}
 	pol := a.Policy
-	if pol == (Policy{}) {
-		pol = DefaultPolicy
+	if pol == (resource.Policy{}) {
+		pol = resource.DefaultPolicy
 	}
-	short := (s.Headroom != nil && *s.Headroom < s.Reserve(pol)) || own == StallCritical
-	calm := s.Slowdown != nil && *s.Slowdown < AIMDCalm && !short && own != StallElevated &&
-		s.Stall != StallElevated && s.Stall != StallCritical
+	short := (s.Headroom != nil && *s.Headroom < s.Reserve(pol)) || own == resource.StallCritical
+	calm := s.Slowdown != nil && *s.Slowdown < AIMDCalm && !short && own != resource.StallElevated &&
+		s.Stall != resource.StallElevated && s.Stall != resource.StallCritical
 	switch {
 	case short:
 		a.f.Mem = max(floor, round(a.f.Mem*AIMDDown))

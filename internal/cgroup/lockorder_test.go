@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -34,7 +35,7 @@ func TestV147RecordAsksProjectWithoutTheLock(t *testing.T) {
 		return "fyr"
 	}
 	p := slots.New(1)
-	p.Acquire("t_a", slots.Test)
+	p.Acquire("t_a", resource.Test)
 	t0 := time.Now()
 	j.tick(nil, nil, p.Snapshot(), nil, nil, t0)
 	j.tick(nil, nil, p.Snapshot(), nil, nil, t0.Add(5*time.Second))
@@ -56,7 +57,7 @@ func TestV147LoadAnswersWhileThePoolAndTheTrackerAreBusy(t *testing.T) {
 	p := slots.New(1)
 	j := &Jobs{}
 	s := &Sampler{Proc: proc, Cores: 4, Slots: p, Jobs: j}
-	p.Acquire("t_a", slots.Test)
+	p.Acquire("t_a", resource.Test)
 	j.Saw("t_a", "make test")
 	j.tick(nil, nil, p.Snapshot(), nil, nil, time.Now())
 	if l := s.Get(); len(l.Slots.Held) != 1 {
@@ -64,12 +65,12 @@ func TestV147LoadAnswersWhileThePoolAndTheTrackerAreBusy(t *testing.T) {
 	}
 	// Admission runs under the pool's lock; one that hangs holds it.
 	block, entered := make(chan struct{}), make(chan struct{})
-	p.Admit = func(slots.Holder, []slots.Holder) (bool, string, string) {
+	p.Admit = func(resource.Holder, []resource.Holder) (bool, string, string) {
 		close(entered)
 		<-block
 		return false, "x", ""
 	}
-	go p.Acquire("t_b", slots.Test)
+	go p.Acquire("t_b", resource.Test)
 	<-entered
 	j.mu.Lock() // and the tracker's lock is held too
 	within(t, 2*time.Second, "GET /api/load", func() {
@@ -90,21 +91,21 @@ func TestS3PoolCallbacksNeverReachTheEngine(t *testing.T) {
 	stuck := make(chan struct{})
 	j := &Jobs{KV: kv{}, Project: func(string) string { <-stuck; return "fyr" }} // the engine, stuck
 	p := slots.New(1)
-	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
+	p.Admit = func(head resource.Holder, held []resource.Holder) (bool, string, string) {
 		j.ClassOf(head.Owner, head.Kind)
 		j.Learned("fyr: test")
 		j.LiveUse(head.Owner)
 		j.Active(head.Owner)
 		return len(held) == 0, "busy", ""
 	}
-	p.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
+	p.Backfill = func(head, c resource.Holder, held []resource.Holder) bool {
 		j.ClassOf(c.Owner, c.Kind)
 		return true
 	}
 	within(t, 2*time.Second, "admission with the engine stuck", func() {
-		p.Acquire("t_a", slots.Test)
-		p.Acquire("t_b", slots.Test)
-		p.Acquire("t_c", slots.Test)
+		p.Acquire("t_a", resource.Test)
+		p.Acquire("t_b", resource.Test)
+		p.Acquire("t_c", resource.Test)
 	})
 	close(stuck)
 }

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // HeavyGate answers the gate hook for a Bash command (V0.209): it admits a
@@ -114,7 +114,7 @@ type grantedClass struct {
 // heavier says c's class needs more of the host, in either resource, than the
 // class h was admitted for (V0.admission-tidy). A hold the gate did not grant
 // (a queued grant, slot_acquire) is taken as granted for c's class.
-func (e *Engine) heavier(c HeavyCall, h slots.Holder) bool {
+func (e *Engine) heavier(c HeavyCall, h resource.Holder) bool {
 	e.heavyMu.Lock()
 	if e.heavyGranted == nil {
 		e.heavyGranted = map[string]grantedClass{}

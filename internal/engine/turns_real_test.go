@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/cgroup"
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 const proofHog = `import os, sys
@@ -105,7 +105,7 @@ func TestRealGuardTakesTurns(t *testing.T) {
 		t.Logf("without the guard: not done in %s", limit)
 	}
 	killThreadWork(off)
-	t.Logf("without the guard: %s, read back %s", unguarded.Round(100*time.Millisecond), slots.GB(float64(g.MajorFaultBytes("t_off"))))
+	t.Logf("without the guard: %s, read back %s", unguarded.Round(100*time.Millisecond), resource.GB(float64(g.MajorFaultBytes("t_off"))))
 	time.Sleep(2 * time.Second)
 
 	// With it: the engine's own tick, every 10 s as in fyrd.
@@ -120,15 +120,15 @@ func TestRealGuardTakesTurns(t *testing.T) {
 	e.UndeclaredThaw = g.ThawUndeclared
 	e.UndeclaredEmpty = g.UndeclaredEmpty
 	e.UndeclaredFaults = g.MajorFaultBytes
-	e.UndeclaredUnits = func(o string) []slots.WorkUnit {
-		var out []slots.WorkUnit
+	e.UndeclaredUnits = func(o string) []resource.WorkUnit {
+		var out []resource.WorkUnit
 		for _, x := range g.Units(o, roots) {
-			out = append(out, slots.WorkUnit{PID: x.PID, RSS: x.RSS, Command: "hog"})
+			out = append(out, resource.WorkUnit{PID: x.PID, RSS: x.RSS, Command: "hog"})
 		}
 		return out
 	}
 	turns := map[int]bool{}
-	e.UndeclaredRotate = func(o string, us []slots.WorkUnit, active int) bool {
+	e.UndeclaredRotate = func(o string, us []resource.WorkUnit, active int) bool {
 		cu := make([]cgroup.Unit, 0, len(us))
 		for _, x := range us {
 			cu = append(cu, cgroup.Unit{PID: x.PID, RSS: x.RSS})
@@ -137,7 +137,7 @@ func TestRealGuardTakesTurns(t *testing.T) {
 		return g.RotateUndeclared(o, cu, active)
 	}
 	guardDeps(t, e)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	time.Sleep(3 * time.Second) // the children have memory to split by
 	tick := time.NewTicker(10 * time.Second)
@@ -166,7 +166,7 @@ loop:
 	faults := g.MajorFaultBytes(a)
 	killThreadWork(td)
 	g.ThawUndeclared(a)
-	t.Logf("with the guard: %s, read back %s, parts that had a turn %d, most parts running at once %d", guarded.Round(100*time.Millisecond), slots.GB(float64(faults)), len(turns), maxRunning)
+	t.Logf("with the guard: %s, read back %s, parts that had a turn %d, most parts running at once %d", guarded.Round(100*time.Millisecond), resource.GB(float64(faults)), len(turns), maxRunning)
 	if len(turns) < 4 {
 		t.Errorf("only %d parts had a turn", len(turns))
 	}

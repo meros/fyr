@@ -5,21 +5,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 type turns struct {
-	units  []slots.WorkUnit
+	units  []resource.WorkUnit
 	active []int // the active pid of every rotate call
 	faults uint64
 	refuse bool
 }
 
-func turnEngine(t *testing.T, units ...slots.WorkUnit) (*Engine, *und, *time.Time, *fz, []string, *turns) {
+func turnEngine(t *testing.T, units ...resource.WorkUnit) (*Engine, *und, *time.Time, *fz, []string, *turns) {
 	e, u, now, z, th := fzEngine(t)
 	r := &turns{units: units}
-	e.UndeclaredUnits = func(string) []slots.WorkUnit { return r.units }
-	e.UndeclaredRotate = func(_ string, _ []slots.WorkUnit, active int) bool {
+	e.UndeclaredUnits = func(string) []resource.WorkUnit { return r.units }
+	e.UndeclaredRotate = func(_ string, _ []resource.WorkUnit, active int) bool {
 		if r.refuse {
 			return false
 		}
@@ -33,11 +33,11 @@ func turnEngine(t *testing.T, units ...slots.WorkUnit) (*Engine, *und, *time.Tim
 
 func (r *turns) last() int { return r.active[len(r.active)-1] }
 
-var threeUnits = []slots.WorkUnit{{PID: 30, RSS: 1 << 30}, {PID: 31, RSS: 1 << 30}, {PID: 32, RSS: 1 << 30}}
+var threeUnits = []resource.WorkUnit{{PID: 30, RSS: 1 << 30}, {PID: 31, RSS: 1 << 30}, {PID: 32, RSS: 1 << 30}}
 
 func TestT1SeveralPartsTakeTurnsInsteadOfAllStopping(t *testing.T) {
 	e, u, now, z, th, r := turnEngine(t, threeUnits...)
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	if len(z.frozen) != 0 || len(r.active) != 1 || r.last() != 30 {
@@ -50,7 +50,7 @@ func TestT1SeveralPartsTakeTurnsInsteadOfAllStopping(t *testing.T) {
 
 func TestT2TheTurnMovesWhenItIsOverAndWrapsAround(t *testing.T) {
 	e, u, now, z, th, r := turnEngine(t, threeUnits...)
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	*now = now.Add(TurnMin - time.Second)
@@ -69,7 +69,7 @@ func TestT2TheTurnMovesWhenItIsOverAndWrapsAround(t *testing.T) {
 
 func TestT3APartThatEndedGivesUpItsTurnAtOnce(t *testing.T) {
 	e, u, now, z, th, r := turnEngine(t, threeUnits...)
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	r.units = threeUnits[1:]
@@ -94,7 +94,7 @@ func TestT4ATurnPaysForTheSwapIn(t *testing.T) {
 		t.Fatalf("ceiling: %s", got)
 	}
 	e, u, now, z, th, r := turnEngine(t, threeUnits...)
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	*now = now.Add(TurnMin)
@@ -107,8 +107,8 @@ func TestT4ATurnPaysForTheSwapIn(t *testing.T) {
 
 func TestT5OnePartIsFrozenWhole(t *testing.T) {
 	e, u, now, z, th, r := turnEngine(t, threeUnits[0])
-	e.Slots.Acquire(th[1], slots.Test) // V0.sim-fixes (3): not the only heavy work
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	e.Slots.Acquire(th[1], resource.Test) // V0.sim-fixes (3): not the only heavy work
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	if !z.frozen[th[0]] || len(r.active) != 0 || e.first().active != 0 {
@@ -119,7 +119,7 @@ func TestT5OnePartIsFrozenWhole(t *testing.T) {
 func TestT6RefusedTurnsFallBackToTheWholeFreeze(t *testing.T) {
 	e, u, now, z, th, r := turnEngine(t, threeUnits...)
 	r.refuse = true
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	if !z.frozen[th[0]] || e.first().active != 0 {
@@ -131,7 +131,7 @@ func TestT7TheThawEndsTheTurns(t *testing.T) {
 	e, u, now, z, th, r := turnEngine(t, threeUnits...)
 	thawed := 0
 	e.UndeclaredThaw = func(string) { thawed++ }
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	z.free = 0.30

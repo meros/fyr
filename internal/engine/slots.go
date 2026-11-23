@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -280,7 +281,7 @@ func (e *Engine) heavyWork() (map[string]int, map[string]bool) {
 
 // heavierThanPredicted tells a holder once per hold that its job uses more
 // of the budget than predicted (decision 0029 S3); nothing is stopped.
-func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
+func (e *Engine) heavierThanPredicted(s resource.Snapshot) {
 	if e.SlotOver == nil {
 		return
 	}
@@ -311,12 +312,12 @@ func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
 
 // adaptBudget steps the budget controller and sets the pool's budget
 // (decision 0029 S4), outside e.mu.
-func (e *Engine) adaptBudget(s slots.Snapshot) {
+func (e *Engine) adaptBudget(s resource.Snapshot) {
 	if e.SlotAIMD == nil || e.SlotSignals == nil {
 		return
 	}
 	sig := e.SlotSignals()
-	f, why := e.SlotAIMD.Step(e.Now(), sig, len(s.Waiting) > 0, e.Slots.LastGrant(), s.Bound())
+	f, why := e.SlotAIMD.Step(e.Now(), sig, len(s.Waiting) > 0, e.Slots.LastGrant(), s.Bound)
 	old := e.Slots.Budget()
 	if f != old || (s.Budget != nil && s.BudgetWhy != why) {
 		if f != old { // V0.load-tuning: the budget's moves can be read back
@@ -342,7 +343,7 @@ func (e *Engine) loadSlotOverToldLocked() {
 
 // saveSlotOverToldLocked writes the told holds that still hold a slot: an
 // entry ends with its hold, so a hold that ended is dropped here.
-func (e *Engine) saveSlotOverToldLocked(held []slots.Holder) {
+func (e *Engine) saveSlotOverToldLocked(held []resource.Holder) {
 	if e.st == nil {
 		return
 	}

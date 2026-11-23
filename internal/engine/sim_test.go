@@ -30,6 +30,7 @@ import (
 	"github.com/meros/fyr/internal/admission"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 )
@@ -123,7 +124,7 @@ func (r *simRun) newEngine() {
 			}
 			return r.t0.Add(hd.active), true
 		},
-		SlotSignals: func() slots.Signals { return h.signals() },
+		SlotSignals: func() resource.Signals { return h.signals() },
 		SlotGrowth:  func(o string) uint64 { return uint64(r.growth(u2s(o))) },
 		SlotPolicy:  adm.Policy,
 		SlotOver:    adm.Over,
@@ -154,7 +155,7 @@ func (r *simRun) newEngine() {
 		SlotAIMD: &slots.AIMD{N: 2, Path: filepath.Join(r.dir, "slot-budget.json"), Policy: adm.Policy},
 	}
 	e.UndeclaredDeps = UndeclaredDeps{
-		Undeclared: func() []slots.Undeclared { return r.flags() },
+		Undeclared: func() []resource.Undeclared { return r.flags() },
 		UndeclaredFreeze: func(o string) bool {
 			th := u2s(o)
 			us := h.threadUnits(th, kUndeclared)
@@ -187,14 +188,14 @@ func (r *simRun) newEngine() {
 			}
 			return uint64(m), true
 		},
-		UndeclaredUnits: func(o string) []slots.WorkUnit {
-			var out []slots.WorkUnit
+		UndeclaredUnits: func(o string) []resource.WorkUnit {
+			var out []resource.WorkUnit
 			for _, u := range h.threadUnits(u2s(o), kUndeclared) {
-				out = append(out, slots.WorkUnit{PID: u.pid, RSS: uint64(u.res), Command: u.Name})
+				out = append(out, resource.WorkUnit{PID: u.pid, RSS: uint64(u.res), Command: u.Name})
 			}
 			return out
 		},
-		UndeclaredRotate: func(o string, units []slots.WorkUnit, active int) bool {
+		UndeclaredRotate: func(o string, units []resource.WorkUnit, active int) bool {
 			th := u2s(o)
 			var stop []*simUnit
 			for _, u := range h.threadUnits(th, kUndeclared) {
@@ -246,9 +247,9 @@ func (r *simRun) growth(th string) float64 {
 }
 
 // flags are the detector's flags as the engine reads them.
-func (r *simRun) flags() []slots.Undeclared {
+func (r *simRun) flags() []resource.Undeclared {
 	h := r.h
-	var out []slots.Undeclared
+	var out []resource.Undeclared
 	ths := make([]string, 0, len(h.flags))
 	for th := range h.flags {
 		ths = append(ths, th)
@@ -265,8 +266,8 @@ func (r *simRun) flags() []slots.Undeclared {
 			cmd = us[0].Name
 		}
 		over := mem >= 0.08*h.p.Budget
-		out = append(out, slots.Undeclared{Thread: r.ids[th], Name: th, CPU: cpu, Mem: uint64(mem), Since: r.t0.Add(f.since), Command: cmd,
-			OverCPU: cpu >= 0.025*h.p.Cores, OverMem: mem >= 0.008*h.p.Budget, MemOver: over, Kind: slots.Test, Window: 45 * time.Second})
+		out = append(out, resource.Undeclared{Thread: r.ids[th], Name: th, CPU: cpu, Mem: uint64(mem), Since: r.t0.Add(f.since), Command: cmd,
+			OverCPU: cpu >= 0.025*h.p.Cores, OverMem: mem >= 0.008*h.p.Budget, MemOver: over, Kind: resource.Test, Window: 45 * time.Second})
 	}
 	return out
 }
@@ -274,15 +275,15 @@ func (r *simRun) flags() []slots.Undeclared {
 // simSampler is admission's Host.
 type simSampler struct{ r *simRun }
 
-func (s simSampler) Signals() slots.Signals         { return s.r.h.signals() }
-func (s simSampler) Undeclared() []slots.Undeclared { return s.r.flags() }
+func (s simSampler) Signals() resource.Signals         { return s.r.h.signals() }
+func (s simSampler) Undeclared() []resource.Undeclared { return s.r.flags() }
 
 // ServiceExtras reserves a running service's peak (V0.services-not-jobs).
-func (s simSampler) ServiceExtras() []slots.Extra {
-	var out []slots.Extra
+func (s simSampler) ServiceExtras() []resource.Extra {
+	var out []resource.Extra
 	for _, u := range s.r.h.units {
 		if u.Kind == kService && u.live() {
-			out = append(out, slots.Extra{Owner: s.r.ids[u.Thread], Name: u.Thread, Need: slots.Need{CPU: u.CPU, Mem: uint64(u.Peak)}, Service: true})
+			out = append(out, resource.Extra{Owner: s.r.ids[u.Thread], Name: u.Thread, Need: resource.Need{CPU: u.CPU, Mem: uint64(u.Peak)}, Service: true})
 		}
 	}
 	return out
@@ -336,7 +337,7 @@ func (r *simRun) checkFreeze(o, th string, job bool) {
 	if !job {
 		return
 	}
-	var oldest *slots.Holder
+	var oldest *resource.Holder
 	for _, hd := range r.e.Slots.Snapshot().Held {
 		fz := false
 		for _, u := range r.h.threadUnits(r.sim[hd.Owner], kAdmitted) {

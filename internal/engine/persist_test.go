@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
@@ -124,7 +125,7 @@ func TestSlotOverToldSurvivesRestart(t *testing.T) {
 	e.UseSlots(slots.Open(2, st))
 	e.SlotOver = over
 	since := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
-	snap := slots.Snapshot{Held: []slots.Holder{{Owner: "t_a", Since: since}}}
+	snap := resource.Snapshot{Held: []resource.Holder{{Owner: "t_a", Since: since}}}
 	e.heavierThanPredicted(snap)
 	if told != 1 {
 		t.Fatalf("told %d times, want 1", told)
@@ -136,7 +137,7 @@ func TestSlotOverToldSurvivesRestart(t *testing.T) {
 	if told != 1 {
 		t.Fatalf("the same hold was told again after a restart (%d)", told)
 	}
-	e2.heavierThanPredicted(slots.Snapshot{Held: []slots.Holder{{Owner: "t_a", Since: since.Add(time.Minute)}}})
+	e2.heavierThanPredicted(resource.Snapshot{Held: []resource.Holder{{Owner: "t_a", Since: since.Add(time.Minute)}}})
 	if told != 2 {
 		t.Fatalf("a new hold was not told (%d)", told)
 	}

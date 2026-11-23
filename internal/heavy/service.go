@@ -9,13 +9,14 @@ package heavy
 import (
 	"encoding/json"
 	"errors"
-	"github.com/meros/fyr/internal/kvstore"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/meros/fyr/internal/guard/resource"
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 // DefaultServices are the built-in service patterns, matched against a Bash
@@ -32,12 +33,6 @@ var DefaultServices = []string{
 
 const servicesKey = "service-patterns"
 
-// ServicePattern is one pattern as Settings shows it.
-type ServicePattern struct {
-	Pattern string `json:"pattern"`
-	BuiltIn bool   `json:"builtIn,omitempty"`
-}
-
 // Services is the host's service patterns: the built-in ones less those the
 // owner removed, then the config's and the owner's own. Match never waits.
 type Services struct {
@@ -51,7 +46,7 @@ type Services struct {
 }
 
 type serviceSet struct {
-	list []ServicePattern
+	list []resource.ServicePattern
 	res  []*regexp.Regexp
 }
 
@@ -78,14 +73,14 @@ func (s *Services) Load() {
 func (s *Services) applyLocked() {
 	set := &serviceSet{}
 	add := func(p string, builtIn bool) {
-		if slices.ContainsFunc(set.list, func(x ServicePattern) bool { return x.Pattern == p }) {
+		if slices.ContainsFunc(set.list, func(x resource.ServicePattern) bool { return x.Pattern == p }) {
 			return
 		}
 		re, err := regexp.Compile(p)
 		if err != nil {
 			return
 		}
-		set.list = append(set.list, ServicePattern{Pattern: p, BuiltIn: builtIn})
+		set.list = append(set.list, resource.ServicePattern{Pattern: p, BuiltIn: builtIn})
 		set.res = append(set.res, re)
 	}
 	for _, p := range DefaultServices {
@@ -126,7 +121,7 @@ func (s *Services) Match(command string) bool {
 }
 
 // List is the patterns in force.
-func (s *Services) List() []ServicePattern {
+func (s *Services) List() []resource.ServicePattern {
 	if s == nil {
 		return nil
 	}
@@ -166,87 +161,4 @@ func (s *Services) Edit(add, remove string) error {
 	}
 	s.applyLocked()
 	return nil
-}
-
-var (
-	composeCmd  = regexp.MustCompile(`(^|[\s/;&|(])(docker\s+compose|docker-compose)\b`)
-	composeDown = regexp.MustCompile(`\s(down|stop|kill|rm)\b`)
-	composeUp   = regexp.MustCompile(`\sup\b`)
-	unsafeName  = regexp.MustCompile(`[^a-z0-9_-]`)
-)
-
-// ComposeProject is the compose project a command names, the way compose
-// itself names it: -p/--project-name, else COMPOSE_PROJECT_NAME in the
-// command, else the directory of --project-directory or of the first -f file
-// (relative to cwd), else cwd's name. up says the command starts it (`up`),
-// down that it stops it (`down`, `stop`, `kill`, `rm`). "" when the command
-// runs no compose.
-func ComposeProject(command, cwd string) (project string, up, down bool) {
-	loc := composeCmd.FindStringIndex(command)
-	if loc == nil {
-		return "", false, false
-	}
-	pre, rest := command[:loc[0]], command[loc[1]:]
-	// The compose command ends at the next shell separator.
-	if i := strings.IndexAny(rest, ";&|\n"); i >= 0 {
-		rest = rest[:i]
-	}
-	args := strings.Fields(rest)
-	arg := func(i int) string {
-		if i < len(args) {
-			return strings.Trim(args[i], `"'`)
-		}
-		return ""
-	}
-	var name, dir, file string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		k, v, eq := strings.Cut(a, "=")
-		val := func() string {
-			if eq {
-				return strings.Trim(v, `"'`)
-			}
-			i++
-			return arg(i)
-		}
-		switch k {
-		case "-p", "--project-name":
-			name = val()
-		case "--project-directory":
-			dir = val()
-		case "-f", "--file":
-			if f := val(); file == "" {
-				file = f
-			}
-		}
-	}
-	if name == "" {
-		for _, f := range strings.Fields(pre) {
-			if v, ok := strings.CutPrefix(f, "COMPOSE_PROJECT_NAME="); ok {
-				name = strings.Trim(v, `"'`)
-			}
-		}
-	}
-	if name == "" {
-		switch {
-		case dir != "":
-			name = filepath.Base(join(cwd, dir))
-		case file != "":
-			name = filepath.Base(filepath.Dir(join(cwd, file)))
-		case cwd != "":
-			name = filepath.Base(cwd)
-		}
-	}
-	name = unsafeName.ReplaceAllString(strings.ToLower(name), "")
-	if name == "" || name == "." || name == "/" {
-		return "", false, false
-	}
-	return name, composeUp.MatchString(" " + rest), composeDown.MatchString(" " + rest)
-}
-
-func join(cwd, p string) string {
-	if filepath.IsAbs(p) || cwd == "" {
-		return filepath.Clean(p)
-	}
-	return filepath.Join(cwd, p)
 }

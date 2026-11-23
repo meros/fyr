@@ -5,34 +5,38 @@ package slots
 import (
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func TestS3BackfillPassesTheHeadAtMostThreeTimesAndForTenMinutes(t *testing.T) {
 	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	p := New(2)
 	p.Now = func() time.Time { return now }
-	p.Admit = func(head Holder, held []Holder) (bool, string, string) {
+	p.Admit = func(head resource.Holder, held []resource.Holder) (bool, string, string) {
 		if len(held) == 0 {
 			return true, "", ""
 		}
 		return len(head.Owner) < 3 || head.Owner[:3] != "big", "needs ≈ 75 % CPU, 50 % free", ResCPU
 	}
-	p.Backfill = func(head, c Holder, held []Holder) bool { return len(c.Owner) > 4 && c.Owner[:5] == "small" }
-	p.Acquire("a", Test)
-	p.Acquire("big", Test)
-	if held, _ := p.Acquire("small1", Test); !held {
+	p.Backfill = func(head, c resource.Holder, held []resource.Holder) bool {
+		return len(c.Owner) > 4 && c.Owner[:5] == "small"
+	}
+	p.Acquire("a", resource.Test)
+	p.Acquire("big", resource.Test)
+	if held, _ := p.Acquire("small1", resource.Test); !held {
 		t.Fatal("a cheap job behind the head was not backfilled")
 	}
 	p.Release("small1")
-	if held, _ := p.Acquire("small2", Test); !held {
+	if held, _ := p.Acquire("small2", resource.Test); !held {
 		t.Fatal("second backfill")
 	}
 	p.Release("small2")
-	if held, _ := p.Acquire("small3", Test); !held {
+	if held, _ := p.Acquire("small3", resource.Test); !held {
 		t.Fatal("third backfill")
 	}
 	p.Release("small3")
-	if held, ahead := p.Acquire("small4", Test); held || ahead != 1 {
+	if held, ahead := p.Acquire("small4", resource.Test); held || ahead != 1 {
 		t.Fatal("the head was passed a fourth time")
 	}
 	if s := p.Snapshot(); s.Waiting[0].Owner != "big" {
@@ -41,9 +45,9 @@ func TestS3BackfillPassesTheHeadAtMostThreeTimesAndForTenMinutes(t *testing.T) {
 	// A new head: its own count; but once it waited 10 min, no backfill.
 	p.Release("big")
 	p.Release("small4")
-	p.Acquire("big2", Test)
+	p.Acquire("big2", resource.Test)
 	now = now.Add(11 * time.Minute)
-	if held, _ := p.Acquire("small5", Test); held {
+	if held, _ := p.Acquire("small5", resource.Test); held {
 		t.Fatal("backfilled past a head that waited 10 min")
 	}
 }

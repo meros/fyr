@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -18,16 +19,16 @@ import (
 // 2× slow wanted about two; a factor over 3 learns at half weight.
 func TestAdmissionTidyDemandWithoutAStallReadingUsesTheSlowdown(t *testing.T) {
 	t0 := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
-	h := &hold{kind: slots.Test, since: t0, last: t0.Add(100 * time.Second), cpu: 100_000_000, sSum: 4, sN: 2}
+	h := &hold{kind: resource.Test, since: t0, last: t0.Add(100 * time.Second), cpu: 100_000_000, sSum: 4, sN: 2}
 	r, ok := (&Jobs{}).record("t_a", h)
 	if !ok || r.Cores != 1 || r.Demand != 2 {
 		t.Fatalf("%+v", r)
 	}
-	h = &hold{kind: slots.Test, since: t0, last: t0.Add(100 * time.Second), cpu: 100_000_000, sSum: 9, sN: 1}
+	h = &hold{kind: resource.Test, since: t0, last: t0.Add(100 * time.Second), cpu: 100_000_000, sSum: 9, sN: 1}
 	if r, _ := (&Jobs{}).record("t_a", h); r.Demand != demandMax {
 		t.Fatalf("not capped at 4×: %+v", r)
 	}
-	h = &hold{kind: slots.Test, since: t0, last: t0.Add(100 * time.Second), cpu: 100_000_000}
+	h = &hold{kind: resource.Test, since: t0, last: t0.Add(100 * time.Second), cpu: 100_000_000}
 	if r, _ := (&Jobs{}).record("t_a", h); r.Demand != 1 {
 		t.Fatalf("without a slowdown: %+v", r)
 	}
@@ -42,7 +43,7 @@ func TestAdmissionTidyTheBaselineIsTakenAtTheGrant(t *testing.T) {
 	p := slots.New(2)
 	p.Now = func() time.Time { return now }
 	j := &Jobs{Now: func() time.Time { return now }}
-	p.Acquire("t_a", slots.Test)
+	p.Acquire("t_a", resource.Test)
 	j.Mark("t_a", reading{cpu: 0, hasCPU: true, mem: 1 << 30}, nil, t0)
 	read := func(cpu uint64, mem uint64) map[string]reading {
 		return map[string]reading{"t_a": {cpu: cpu, hasCPU: true, mem: mem}}
@@ -61,7 +62,7 @@ func TestAdmissionTidyTheBaselineIsTakenAtTheGrant(t *testing.T) {
 	// A mark from an earlier grant is not this hold's baseline.
 	j.Mark("t_a", reading{cpu: 0, hasCPU: true}, nil, t0)
 	now = t0.Add(10 * time.Minute)
-	p.Acquire("t_a", slots.Test)
+	p.Acquire("t_a", resource.Test)
 	j.tick(nil, read(30_000_000, 1<<30), p.Snapshot(), nil, nil, now)
 	now = now.Add(5 * time.Second)
 	j.tick(nil, read(35_000_000, 1<<30), p.Snapshot(), nil, nil, now)

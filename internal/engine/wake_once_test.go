@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // V0.wake-once: a frozen job's pages stay charged to the agents while they
@@ -21,18 +21,18 @@ func TestWakeOnceCountsTheFrozenJobOnce(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	e, u, now, z, th := fzEngine(t)
 	a := th[0] // flagFor: 2.8 GB
-	e.Slots.Acquire(th[1], slots.Test)
+	e.Slots.Acquire(th[1], resource.Test)
 	resident := uint64(2_800_000_000)
 	e.SlotMem = func(string) uint64 { return resident }
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	z.free, z.stall, z.mem = 0.04, slots.StallCritical, 10e9 // the cap
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
+	z.free, z.stall, z.mem = 0.04, resource.StallCritical, 10e9 // the cap
 	e.Tick()
 	if !z.frozen[a] {
 		t.Fatal("not frozen")
 	}
 	// Calm, the frozen job still in RAM: the agents' 9.5 GB holds its 2.8 GB,
 	// so the others use 6.7 GB and 6.7 + 2.8 < 10.
-	z.free, z.stall, z.mem = 0.2, slots.StallOK, 9.5e9
+	z.free, z.stall, z.mem = 0.2, resource.StallOK, 9.5e9
 	e.Tick()
 	tickFor(e, now, 2*ThawAfterOK)
 	if z.frozen[a] {

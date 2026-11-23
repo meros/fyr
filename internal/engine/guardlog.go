@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // guardLine is the guard's last log line for a key and when it was written.
@@ -35,7 +35,7 @@ func (e *Engine) guardOnce(now time.Time, key, msg string) {
 }
 
 // guardSignals is the signals the guard acted on, for its log lines.
-func guardSignals(sig slots.Signals) string {
+func guardSignals(sig resource.Signals) string {
 	h, s := "n/a", "n/a"
 	if sig.Headroom != nil {
 		h = fmt.Sprintf("%.0f%%", *sig.Headroom*100)
@@ -60,7 +60,7 @@ func guardSignals(sig slots.Signals) string {
 }
 
 // guardRecord adds a decision to the history the front shows (decision 0032).
-func (e *Engine) guardRecord(ev slots.GuardEvent, sig slots.Signals) {
+func (e *Engine) guardRecord(ev resource.GuardEvent, sig resource.Signals) {
 	e.invEvent(ev, sig) // V0.load-invariants
 	if sig.Headroom != nil {
 		h := *sig.Headroom
@@ -70,27 +70,27 @@ func (e *Engine) guardRecord(ev slots.GuardEvent, sig slots.Signals) {
 	e.mu.Lock()
 	e.guardEvents = append(e.guardEvents, ev)
 	if n := len(e.guardEvents); n > guardKeep {
-		e.guardEvents = append([]slots.GuardEvent(nil), e.guardEvents[n-guardKeep:]...)
+		e.guardEvents = append([]resource.GuardEvent(nil), e.guardEvents[n-guardKeep:]...)
 	}
 	e.mu.Unlock()
 }
 
 // GuardView is the guard's last published view (nil before the first tick).
 // It waits for nothing: the pool reads it under its own lock.
-func (e *Engine) GuardView() *slots.Guard { return e.guardPub.Load() }
+func (e *Engine) GuardView() *resource.Guard { return e.guardPub.Load() }
 
 // publishGuard builds the view at the end of a tick.
 func (e *Engine) publishGuard(now time.Time) {
 	e.mu.Lock()
-	g := &slots.Guard{Short: e.guardShort, Max: MaxFreezes, RefreezeSec: int(RefreezeAfter / time.Second),
-		Events: append([]slots.GuardEvent{}, e.guardEvents...), // never nil: the front gets [], not null
+	g := &resource.Guard{Short: e.guardShort, Max: MaxFreezes, RefreezeSec: int(RefreezeAfter / time.Second),
+		Events: append([]resource.GuardEvent{}, e.guardEvents...), // never nil: the front gets [], not null
 		Rerun:  e.rerunView(now)}
 	if e.guardShort && !e.guardSince.IsZero() {
 		t := e.guardSince
 		g.ShortSince = &t
 	}
 	for thread, u := range e.undFroze {
-		t := slots.GuardThread{Thread: thread, N: u.n, Capped: u.n >= MaxFreezes}
+		t := resource.GuardThread{Thread: thread, N: u.n, Capped: u.n >= MaxFreezes}
 		if f, ok := e.frozenUndeclared(thread); ok {
 			t.Frozen = true
 			at := f.at
@@ -104,14 +104,14 @@ func (e *Engine) publishGuard(now time.Time) {
 	}
 	e.mu.Unlock()
 	g.Invariants = e.invariantView() // V0.load-invariants
-	slices.SortFunc(g.Threads, func(a, b slots.GuardThread) int { return strings.Compare(a.Thread, b.Thread) })
+	slices.SortFunc(g.Threads, func(a, b resource.GuardThread) int { return strings.Compare(a.Thread, b.Thread) })
 	e.guardPub.Store(g)
 }
 
 // guardWhy says why memory is short, for a freeze's notice and log: the
 // headroom first, else the critical stall, the host's or the agents'
 // (V0.guard-agents-stall), else the unit's stall near oomd's limit.
-func guardWhy(sig slots.Signals, p slots.Policy) string {
+func guardWhy(sig resource.Signals, p resource.Policy) string {
 	if sig.Headroom != nil && *sig.Headroom < sig.Reserve(p) {
 		return sig.MemoryWhy()
 	}

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // tickFor ticks every 10 s for d.
@@ -34,8 +34,8 @@ func TestMultiStillShortAMinuteLaterASecondThreadIsFrozen(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
 	c := third(t, e)
-	e.Slots.Acquire(c, slots.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
-	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
+	e.Slots.Acquire(c, resource.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
+	u.flags = []resource.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	z.free = 0.04
 	e.Tick()
 	if !z.frozen[b] || len(z.frozen) != 1 {
@@ -55,7 +55,7 @@ func TestMultiNoSecondFreezeOnceMemoryIsFine(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
 	third(t, e)
-	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
+	u.flags = []resource.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	z.free = 0.04
 	e.Tick()
 	z.free = 0.12 // not short, not fine either
@@ -90,8 +90,8 @@ func TestMultiWakeOldestFirstOnePerWakeEvery(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
 	c := third(t, e)
-	e.Slots.Acquire(c, slots.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
-	u.flags = []slots.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
+	e.Slots.Acquire(c, resource.Test) // V0.sim-fixes (3): a third thread with heavy work, so two may be frozen
+	u.flags = []resource.Undeclared{flagFor(a, *now), flagFor(b, now.Add(time.Second))}
 	z.free = 0.04
 	e.Tick() // b, the newest episode, is frozen first
 	tickFor(e, now, AddFreezeAfter)
@@ -125,19 +125,19 @@ func TestWakeRuleTheCapFromTheFirstCriticalStall(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	e, u, now, z, th := fzEngine(t)
 	a := th[0] // flagFor: 2.8 GB
-	e.Slots.Acquire(th[1], slots.Test)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	z.free, z.stall, z.mem = 0.04, slots.StallCritical, 10e9
+	e.Slots.Acquire(th[1], resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
+	z.free, z.stall, z.mem = 0.04, resource.StallCritical, 10e9
 	e.Tick()
 	if !z.frozen[a] {
 		t.Fatal("not frozen")
 	}
-	z.stall, z.mem = slots.StallCritical, 12e9 // a later, higher reading does not move the cap
+	z.stall, z.mem = resource.StallCritical, 12e9 // a later, higher reading does not move the cap
 	tickFor(e, now, 20*time.Second)
 	if !strings.Contains(out.String(), "guard: wake cap agents=10.0 GB") {
 		t.Fatalf("no cap line:\n%s", out.String())
 	}
-	z.free, z.stall, z.mem = 0.04, slots.StallOK, 8e9 // 8 + 2.8 >= 10
+	z.free, z.stall, z.mem = 0.04, resource.StallOK, 8e9 // 8 + 2.8 >= 10
 	tickFor(e, now, 2*ThawAfterOK)
 	if !z.frozen[a] {
 		t.Fatal("woke while it does not fit under the cap")
@@ -145,12 +145,12 @@ func TestWakeRuleTheCapFromTheFirstCriticalStall(t *testing.T) {
 	if !strings.Contains(out.String(), "not waking thread="+a+" yet: agents=8.0 GB + its 2.8 GB >= cap=10.0 GB") {
 		t.Fatalf("no line for the wait:\n%s", out.String())
 	}
-	z.mem, z.stall = 7e9, slots.StallElevated // fits, but the stall is elevated
+	z.mem, z.stall = 7e9, resource.StallElevated // fits, but the stall is elevated
 	tickFor(e, now, 2*ThawAfterOK)
 	if !z.frozen[a] {
 		t.Fatal("woke while the stall is elevated")
 	}
-	z.stall = slots.StallOK
+	z.stall = resource.StallOK
 	e.Tick() // the 30 s start
 	tickFor(e, now, ThawAfterOK-10*time.Second)
 	if !z.frozen[a] {
@@ -171,10 +171,10 @@ func TestThawSaysHowLongItWasFrozen(t *testing.T) {
 	for _, kernel := range []bool{true, false} {
 		e, u, now, z, th := fzEngine(t)
 		a := th[0]
-		e.Slots.Acquire(th[1], slots.Test)
+		e.Slots.Acquire(th[1], resource.Test)
 		usec := uint64(5_000_000)
 		e.FrozenUsec = func(string, bool) (uint64, bool) { return usec, kernel }
-		u.flags = []slots.Undeclared{flagFor(a, *now)}
+		u.flags = []resource.Undeclared{flagFor(a, *now)}
 		z.free = 0.04
 		e.Tick()
 		usec += uint64((2*time.Minute + 3*time.Second) / time.Microsecond)
@@ -195,9 +195,9 @@ func TestThawSaysHowLongItWasFrozen(t *testing.T) {
 }
 
 func TestMultiTurnsSkipSmallParts(t *testing.T) {
-	units := []slots.WorkUnit{{PID: 30, RSS: 1 << 30}, {PID: 31, RSS: 1 << 20}, {PID: 32, RSS: 1 << 30}}
+	units := []resource.WorkUnit{{PID: 30, RSS: 1 << 30}, {PID: 31, RSS: 1 << 20}, {PID: 32, RSS: 1 << 30}}
 	e, u, now, z, th, r := turnEngine(t, units...)
-	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
+	u.flags = []resource.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	if r.last() != 30 {
@@ -211,7 +211,7 @@ func TestMultiTurnsSkipSmallParts(t *testing.T) {
 }
 
 func TestMultiSmallPartsOnlyStillTakeTurns(t *testing.T) {
-	units := []slots.WorkUnit{{PID: 30, RSS: 1 << 20}, {PID: 31, RSS: 1 << 20}}
+	units := []resource.WorkUnit{{PID: 30, RSS: 1 << 20}, {PID: 31, RSS: 1 << 20}}
 	if got := turnTakers(units); len(got) != 2 {
 		t.Fatalf("no heavy part: all take turns, got %v", got)
 	}

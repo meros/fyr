@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // Decision 0032 slice 2: when the undeclared work the guard freezes has several
@@ -27,8 +27,8 @@ const (
 
 // turnTakers are the parts that get turns: those of TurnMinRSS or more, or
 // all of them when none is.
-func turnTakers(units []slots.WorkUnit) []slots.WorkUnit {
-	var out []slots.WorkUnit
+func turnTakers(units []resource.WorkUnit) []resource.WorkUnit {
+	var out []resource.WorkUnit
 	for _, u := range units {
 		if u.RSS >= TurnMinRSS {
 			out = append(out, u)
@@ -52,7 +52,7 @@ func turnLength(rss uint64, rate float64) time.Duration {
 }
 
 // workUnits are the parts of thread's undeclared work, in a stable order.
-func (e *Engine) workUnits(thread string) []slots.WorkUnit {
+func (e *Engine) workUnits(thread string) []resource.WorkUnit {
 	if e.UndeclaredUnits == nil || e.UndeclaredRotate == nil {
 		return nil
 	}
@@ -69,14 +69,14 @@ func (e *Engine) majorFaults(thread string) uint64 {
 
 // startTurns freezes all of thread's units but the first that takes turns; false when the work
 // has fewer than two, or the cgroups refused, and is frozen whole instead.
-func (e *Engine) startTurns(thread string) (slots.WorkUnit, int, bool) {
+func (e *Engine) startTurns(thread string) (resource.WorkUnit, int, bool) {
 	units := e.workUnits(thread)
 	if len(units) < 2 {
-		return slots.WorkUnit{}, 0, false
+		return resource.WorkUnit{}, 0, false
 	}
 	first := turnTakers(units)[0]
 	if !e.UndeclaredRotate(thread, units, first.PID) {
-		return slots.WorkUnit{}, 0, false
+		return resource.WorkUnit{}, 0, false
 	}
 	return first, len(units), true
 }
@@ -137,7 +137,7 @@ func (e *Engine) nextTurn(f frozenJob, now time.Time) frozenJob {
 	f.parts = parts
 	if next.PID != f.active {
 		log.Printf("guard: turn thread=%s pid=%d cmd=%q mem=%s turn=%s units=%d read_back=%s/s", f.owner, next.PID, next.Command,
-			slots.GB(float64(next.RSS)), turn.Round(time.Second), len(units), slots.GB(rate))
+			resource.GB(float64(next.RSS)), turn.Round(time.Second), len(units), resource.GB(rate))
 	}
 	f.active, f.turnAt, f.turn, f.faults = next.PID, now, turn, faults
 	return f

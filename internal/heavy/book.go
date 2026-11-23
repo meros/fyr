@@ -11,7 +11,6 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/meros/fyr/internal/kvstore"
 	"log"
 	"regexp"
 	"slices"
@@ -19,11 +18,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/meros/fyr/internal/guard/resource"
+	"github.com/meros/fyr/internal/kvstore"
 )
 
 type bookView struct {
 	sugg  []Suggestion
-	added []Added
+	added []resource.Added
 }
 
 const (
@@ -62,17 +64,6 @@ type Suggestion struct {
 	ThreadIDs  []string  `json:"threadIds,omitempty"`
 }
 
-// Added is a heavy command beyond the built-in ones: learned by Fyr, or added
-// by the owner before V0.209.
-type Added struct {
-	Pattern string    `json:"pattern"`
-	Kind    string    `json:"kind"`
-	Name    string    `json:"name"`
-	At      time.Time `json:"at"`
-	Refused int       `json:"refused"`
-	Learned bool      `json:"learned,omitempty"`
-}
-
 // Book keeps the suggestions and the added patterns, and gives the added ones
 // to Matcher.
 type Book struct {
@@ -86,7 +77,7 @@ type Book struct {
 	pub     atomic.Pointer[bookView] // for readers that must not wait (GET /api/load)
 	loaded  bool
 	sugg    []Suggestion
-	added   []Added
+	added   []resource.Added
 	ignored []string
 }
 
@@ -97,7 +88,7 @@ func (b *Book) Load() {
 	defer b.mu.Unlock()
 	b.loadLocked()
 	// V0.freeze-fast-class-name: a filter learned before names no work.
-	var kept []Added
+	var kept []resource.Added
 	for _, a := range b.added {
 		if a.Learned && Trivial(a.Pattern) {
 			log.Printf("heavy: dropped the learned class %q: a filter or wrapper, not the command that did the work", a.Name)
@@ -191,7 +182,7 @@ func (b *Book) Saw(s Seen) (matched bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.loadLocked()
-	if slices.Contains(b.ignored, pat) || slices.ContainsFunc(b.added, func(a Added) bool { return a.Pattern == pat }) {
+	if slices.Contains(b.ignored, pat) || slices.ContainsFunc(b.added, func(a resource.Added) bool { return a.Pattern == pat }) {
 		return false
 	}
 	i := slices.IndexFunc(b.sugg, func(x Suggestion) bool { return x.Pattern == pat })
@@ -228,14 +219,14 @@ func (b *Book) Saw(s Seen) (matched bool) {
 // not taken (removed by the owner before, known already, or it does not
 // compile). The caller drops x from the suggestions.
 func (b *Book) learnLocked(x Suggestion) bool {
-	if slices.Contains(b.ignored, x.Pattern) || slices.ContainsFunc(b.added, func(a Added) bool { return a.Pattern == x.Pattern }) {
+	if slices.Contains(b.ignored, x.Pattern) || slices.ContainsFunc(b.added, func(a resource.Added) bool { return a.Pattern == x.Pattern }) {
 		return false
 	}
 	name := strings.TrimSpace(strings.ReplaceAll(x.Pattern, `\`, ""))
 	if KindOf(name) != x.Kind {
 		name += " (" + x.Kind + ")"
 	}
-	b.added = append(b.added, Added{Pattern: x.Pattern, Kind: x.Kind, Name: name, At: x.LastAt, Learned: true})
+	b.added = append(b.added, resource.Added{Pattern: x.Pattern, Kind: x.Kind, Name: name, At: x.LastAt, Learned: true})
 	if err := b.applyLocked(); err != nil {
 		b.added = b.added[:len(b.added)-1]
 		b.applyLocked()
@@ -258,8 +249,8 @@ func (b *Book) Suggestions() []Suggestion {
 }
 
 // Added are the learned and added patterns with how often the gate refused each.
-func (b *Book) Added() []Added {
-	var out []Added
+func (b *Book) Added() []resource.Added {
+	var out []resource.Added
 	if v := b.pub.Load(); v != nil {
 		out = slices.Clone(v.added)
 	} else {
@@ -283,7 +274,7 @@ func (b *Book) Remove(pattern string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.loadLocked()
-	i := slices.IndexFunc(b.added, func(a Added) bool { return a.Pattern == pattern })
+	i := slices.IndexFunc(b.added, func(a resource.Added) bool { return a.Pattern == pattern })
 	if i < 0 {
 		return false
 	}

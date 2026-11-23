@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -138,7 +139,7 @@ func TestS1ASlotHoldLeavesAJobRecord(t *testing.T) {
 	j := &Jobs{KV: store, Project: func(id string) string { return map[string]string{"t_a": "fyr"}[id] }, Now: func() time.Time { return now }}
 	s := &Sampler{Tree: tr, Proc: proc, Cores: 4, Slots: pool, Jobs: j, Now: func() time.Time { return now }}
 
-	pool.Acquire("t_a", slots.Test)
+	pool.Acquire("t_a", resource.Test)
 	s.Tick()                  // the grant: the baseline
 	j.Saw("t_a", "make test") // the gate hook's class of "cd /x && make test 2>&1 | tail -20"
 	// 60 s: 120 core-seconds (2 cores), stalled half the time, the peak 3 GB.
@@ -161,7 +162,7 @@ func TestS1ASlotHoldLeavesAJobRecord(t *testing.T) {
 		t.Fatalf("records %+v", recs)
 	}
 	r := recs[0]
-	if r.Class != "fyr: make test" || r.Thread != "t_a" || r.Kind != slots.Test || r.Wall != 60 {
+	if r.Class != "fyr: make test" || r.Thread != "t_a" || r.Kind != resource.Test || r.Wall != 60 {
 		t.Fatalf("record %+v", r)
 	}
 	if r.CoreSeconds != 120 || r.Cores != 2 || r.Demand != 4 || r.Peak != 2<<30 {
@@ -190,7 +191,7 @@ func TestS1AHoldWithoutAMatchedCommandIsNamedByItsKind(t *testing.T) {
 	pool.Now = func() time.Time { return now }
 	j := &Jobs{KV: kv{}, Now: func() time.Time { return now }}
 	s := &Sampler{Tree: tr, Proc: t.TempDir(), Cores: 4, Slots: pool, Jobs: j, Now: func() time.Time { return now }}
-	pool.Acquire("t_b", slots.E2E)
+	pool.Acquire("t_b", resource.E2E)
 	s.Tick()
 	now = now.Add(10 * time.Second)
 	s.Tick()
@@ -221,7 +222,7 @@ func TestH174HoldActivity(t *testing.T) {
 	if _, ok := j.Active("t_a"); ok {
 		t.Fatal("active without a hold")
 	}
-	pool.Acquire("t_a", slots.Test)
+	pool.Acquire("t_a", resource.Test)
 	s.Tick()
 	if at, ok := j.Active("t_a"); !ok || !at.Equal(t0) {
 		t.Fatalf("at the grant %v %v", at, ok)

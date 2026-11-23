@@ -21,9 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/meros/fyr/internal/heavy"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/kvstore"
-	"github.com/meros/fyr/internal/slots"
 )
 
 const (
@@ -61,8 +60,8 @@ type servicePeak struct {
 }
 
 // Services follows the threads' services. Match is the service patterns
-// (*heavy.Services); Cwd a thread's folder, for a compose project named by
-// its directory. Each optional.
+// (*heavy.Services, set by the wiring); Cwd a thread's folder, for a compose
+// project named by its directory. Each optional.
 type Services struct {
 	Match  func(command string) bool
 	Docker *Docker
@@ -116,7 +115,7 @@ func (s *Services) Bash(thread, command string) {
 	if s.Cwd != nil {
 		cwd = s.Cwd(thread)
 	}
-	project, up, down := heavy.ComposeProject(command, cwd)
+	project, up, down := ComposeProject(command, cwd)
 	if project == "" || (!up && !down) {
 		return
 	}
@@ -158,7 +157,7 @@ func (s *Services) InCgroup(thread string) uint64 {
 
 // Extras are the services' reservations for admission: one per thread, named
 // by name (its project or title).
-func (s *Services) Extras(name func(thread string) string) []slots.Extra {
+func (s *Services) Extras(name func(thread string) string) []resource.Extra {
 	if s == nil {
 		return nil
 	}
@@ -166,14 +165,14 @@ func (s *Services) Extras(name func(thread string) string) []slots.Extra {
 	if p == nil {
 		return nil
 	}
-	var out []slots.Extra
+	var out []resource.Extra
 	for th, vs := range *p {
 		var r uint64
 		for _, v := range vs {
 			r += v.Reserve
 		}
 		if r > 0 {
-			out = append(out, slots.Extra{Owner: th, Name: name(th), Need: slots.Need{Mem: r}, Service: true})
+			out = append(out, resource.Extra{Owner: th, Name: name(th), Need: resource.Need{Mem: r}, Service: true})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Owner < out[j].Owner })
@@ -207,7 +206,7 @@ func (s *Services) Notice(thread string, c Capacity) string {
 	s.saveNoticedLocked(now)
 	return fmt.Sprintf("[Fyr] The containers of compose project %s, which this thread started, hold %s outside this thread's own memory. "+
 		"Fyr counts them as this thread's service: it reserves that memory before admitting heavy jobs and never pauses them. "+
-		"Stop them (`docker compose -p %s down`) when this thread no longer needs them.", big.Project, slots.GB(float64(big.Containers)), big.Project)
+		"Stop them (`docker compose -p %s down`) when this thread no longer needs them.", big.Project, resource.GB(float64(big.Containers)), big.Project)
 }
 
 func (s *Services) loadLocked() {
@@ -408,7 +407,7 @@ func (s *Services) read(tr *Tree, thread string) []Service {
 			v.Name = v.Name[:serviceNameMax]
 		}
 		cwd, _ := os.Readlink(filepath.Join(proc, strconv.Itoa(p), "cwd"))
-		if project, _, _ := heavy.ComposeProject(e.cmd, cwd); project != "" {
+		if project, _, _ := ComposeProject(e.cmd, cwd); project != "" {
 			v.Project = project
 		}
 		out = append(out, v)

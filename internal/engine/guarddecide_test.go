@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 func noRoom() (bool, string) { return false, "would not fit" }
@@ -39,10 +39,10 @@ func TestJudgeFrozen(t *testing.T) {
 }
 
 func TestMemoryState(t *testing.T) {
-	if m := memoryState(slots.Signals{}, slots.Policy{}); m.short || !m.calm {
+	if m := memoryState(resource.Signals{}, resource.Policy{}); m.short || !m.calm {
 		t.Fatalf("no signals must be calm and not short: %+v", m)
 	}
-	m := memoryState(slots.Signals{Provider: "x", AgentsStall: slots.StallCritical}, slots.Policy{})
+	m := memoryState(resource.Signals{Provider: "x", AgentsStall: resource.StallCritical}, resource.Policy{})
 	if !m.agentsCritical || !m.critical || !m.short || m.calm {
 		t.Fatalf("agents' critical stall: %+v", m)
 	}
@@ -81,15 +81,15 @@ func TestStillHolding(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		f       frozenJob
-		flagged []slots.Undeclared
-		held    []slots.Holder
+		flagged []resource.Undeclared
+		held    []resource.Holder
 		want    bool
 	}{
-		{"job still held", job, nil, []slots.Holder{{Owner: "t1", Since: at}}, true},
-		{"job released", job, nil, []slots.Holder{{Owner: "t2", Since: at}}, false},
-		{"job held under a newer hold", job, nil, []slots.Holder{{Owner: "t1", Since: at.Add(time.Second)}}, false},
-		{"undeclared still flagged", und, []slots.Undeclared{{Thread: "t1", Since: at}}, nil, true},
-		{"undeclared flagged with a newer start", und, []slots.Undeclared{{Thread: "t1", Since: at.Add(time.Second)}}, nil, false},
+		{"job still held", job, nil, []resource.Holder{{Owner: "t1", Since: at}}, true},
+		{"job released", job, nil, []resource.Holder{{Owner: "t2", Since: at}}, false},
+		{"job held under a newer hold", job, nil, []resource.Holder{{Owner: "t1", Since: at.Add(time.Second)}}, false},
+		{"undeclared still flagged", und, []resource.Undeclared{{Thread: "t1", Since: at}}, nil, true},
+		{"undeclared flagged with a newer start", und, []resource.Undeclared{{Thread: "t1", Since: at.Add(time.Second)}}, nil, false},
 		{"undeclared no longer flagged", und, nil, nil, false},
 	} {
 		if got := stillHolding(c.f, c.flagged, c.held); got != c.want {

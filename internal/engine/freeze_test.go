@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -24,15 +25,15 @@ func TestS5MemoryGuardFreezesTheNewestJob(t *testing.T) {
 		running(e, id)
 	}
 	start := *now
-	p.Acquire(a, slots.Test)
+	p.Acquire(a, resource.Test)
 	*now = start.Add(time.Minute)
-	p.Acquire(b, slots.Test)
+	p.Acquire(b, resource.Test)
 	*now = start.Add(2 * time.Minute)
-	p.Acquire(c, slots.E2E)
+	p.Acquire(c, resource.E2E)
 	free := 0.05
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	frozen := map[string]bool{}
@@ -71,11 +72,11 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	p.Acquire(a, slots.Test)
+	p.Acquire(a, resource.Test)
 	free := 0.02
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	frozen := map[string]bool{}
@@ -87,21 +88,23 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 		t.Fatal("the only running job was frozen")
 	}
 	*now = now.Add(time.Minute)
-	p.Acquire(b, slots.Test) // memory is short, but one job always runs; b was admitted before (here: by hand)
+	p.Acquire(b, resource.Test) // memory is short, but one job always runs; b was admitted before (here: by hand)
 	e.Tick()
 	if !frozen[b] {
 		t.Fatal("the newest of two was not frozen")
 	}
 	// V0.oomd-guard (decision 0036 E2): not while memory stalls critically;
 	// V0.guard-tidy: the agents' memory.
-	stall := slots.StallCritical
-	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, AgentsStall: stall} }
+	stall := resource.StallCritical
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, AgentsStall: stall}
+	}
 	*now = now.Add(10*time.Minute + time.Second)
 	e.Tick()
 	if !frozen[b] || !told(e, b, "Your heavy job stays frozen past 10 min") {
 		t.Fatal("thawed at 10 min into a critical stall")
 	}
-	stall = slots.StallElevated
+	stall = resource.StallElevated
 	e.Tick()
 	if frozen[b] {
 		t.Fatal("still frozen after 10 min")
@@ -119,15 +122,15 @@ func TestGuardFreezesTheJobThatGrewMostButNeverTheOldest(t *testing.T) {
 	for _, id := range []string{big, mid, idle} {
 		running(e, id)
 	}
-	p.Acquire(big, slots.Test)
+	p.Acquire(big, resource.Test)
 	*now = now.Add(time.Minute)
-	p.Acquire(mid, slots.Test)
+	p.Acquire(mid, resource.Test)
 	*now = now.Add(time.Minute)
-	p.Acquire(idle, slots.Test)
+	p.Acquire(idle, resource.Test)
 	free := 0.05
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
 	}
 	e.SlotGrowth = func(o string) uint64 {
 		switch o {
@@ -160,15 +163,15 @@ func TestGuardNeverFreezesAService(t *testing.T) {
 	for _, id := range []string{a, svc, c} {
 		running(e, id)
 	}
-	p.Acquire(a, slots.Test)
+	p.Acquire(a, resource.Test)
 	*now = now.Add(time.Minute)
-	p.Acquire(c, slots.Test)
+	p.Acquire(c, resource.Test)
 	*now = now.Add(time.Minute)
-	p.Acquire(svc, slots.E2E) // the newest: it would be frozen first
+	p.Acquire(svc, resource.E2E) // the newest: it would be frozen first
 	free := 0.05
-	e.SlotPolicy = slots.DefaultPolicy
-	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: shortStall(free)}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	e.GuardService = func(th string) bool { return th == svc }
@@ -189,8 +192,8 @@ func TestAdmissionAfterAQueueLogsTheWait(t *testing.T) {
 	p.Now = e.Now
 	e.UseSlots(p)
 	a, b := bareThread(t, e), bareThread(t, e)
-	p.Acquire(a, slots.Test)
-	p.Acquire(b, slots.E2E)
+	p.Acquire(a, resource.Test)
+	p.Acquire(b, resource.E2E)
 	e.syncSlotQueue()
 	var out bytes.Buffer
 	log.SetOutput(&out)

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -30,14 +31,14 @@ func TestGuardSwapFullAtNinetyPercentOfTheCap(t *testing.T) {
 }
 
 func TestGuardSwapFullDoublesTheReserve(t *testing.T) {
-	p := slots.Policy{MemoryReserve: 0.10}
+	p := resource.Policy{MemoryReserve: 0.10}
 	h := 0.12
-	s := slots.Signals{Provider: "cgroups", Headroom: &h, CPU: 6, Memory: 12 << 30}
-	if ok, _, _ := slots.DecideWith(p, s, slots.Factors{CPU: 1, Mem: 1}, 2, nil, nil, "", slots.Need{}); !ok {
+	s := resource.Signals{Provider: "cgroups", Headroom: &h, CPU: 6, Memory: 12 << 30}
+	if ok, _, _ := slots.DecideWith(p, s, resource.Factors{CPU: 1, Mem: 1}, 2, nil, nil, "", resource.Need{}); !ok {
 		t.Fatal("12 % free with swap room: a job is admitted")
 	}
 	s.SwapFull = true
-	ok, why, _ := slots.DecideWith(p, s, slots.Factors{CPU: 1, Mem: 1}, 2, nil, nil, "", slots.Need{})
+	ok, why, _ := slots.DecideWith(p, s, resource.Factors{CPU: 1, Mem: 1}, 2, nil, nil, "", resource.Need{})
 	if ok || why != "memory: 12 % free (swap full)" {
 		t.Fatalf("12 %% free with the swap full: ok=%v why=%q, want a wait that names the swap", ok, why)
 	}

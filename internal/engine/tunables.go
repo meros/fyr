@@ -3,11 +3,11 @@ package engine
 import (
 	"time"
 
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // The engine's slot and memory-guard tunables, in one place. They stay here
-// and are not slots.Policy fields: they are the engine's own clocks (the
+// and are not resource.Policy fields: they are the engine's own clocks (the
 // slots package has no frozen work or heavy calls), and moving them would
 // export new Policy fields that the config and the fronts would then carry.
 
@@ -63,7 +63,7 @@ const (
 // TriggerFresh is how long after the PSI trigger fired the agents' stall is
 // critical and the guard may freeze work that grows without waiting the
 // detector's window (V0.freeze-fast-class-name): two ticks.
-const TriggerFresh = slots.TriggerFresh
+const TriggerFresh = resource.TriggerFresh
 
 // guardKeep is how many decisions the front's history holds.
 const guardKeep = 60

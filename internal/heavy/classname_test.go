@@ -6,6 +6,8 @@ package heavy
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // The shapes of 20 Nov 07:33: an episode's command that ended in `| cut -c…`
@@ -42,7 +44,7 @@ func TestClassNameAFilterIsNeverLearned(t *testing.T) {
 func TestClassNameALearnedFilterIsDroppedOnLoad(t *testing.T) {
 	m := Default()
 	kv := mapKV{}
-	added, _ := json.Marshal([]Added{
+	added, _ := json.Marshal([]resource.Added{
 		{Pattern: `cut`, Kind: "test", Name: "cut", At: t0, Learned: true},
 		{Pattern: `node scripts/big\.mjs`, Kind: "test", Name: "node scripts/big.mjs", At: t0, Learned: true},
 		{Pattern: `grep -a`, Kind: "test", Name: "grep -a", At: t0, Learned: true},
@@ -61,7 +63,7 @@ func TestClassNameALearnedFilterIsDroppedOnLoad(t *testing.T) {
 	if len(b.Suggestions()) != 0 {
 		t.Fatalf("kept the suggestion %+v", b.Suggestions())
 	}
-	var stored []Added
+	var stored []resource.Added
 	json.Unmarshal([]byte(kv[addedKey]), &stored)
 	if len(stored) != 1 {
 		t.Fatalf("stored %+v", stored)

@@ -21,7 +21,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/slots"
+	"github.com/meros/fyr/internal/guard/resource"
 )
 
 // The invariants' ids, stable: the log, the card and the fix thread name them.
@@ -97,12 +97,12 @@ const invKey = "loadInvariants"
 
 // invState is one invariant's record, kept in the host's kv.
 type invState struct {
-	Count     int                  `json:"count"`
-	Last      time.Time            `json:"last"`
-	CardAt    time.Time            `json:"cardAt"`
-	Dismissed time.Time            `json:"dismissed"`
-	Open      *slots.InvariantCard `json:"open,omitempty"`
-	Thread    string               `json:"thread,omitempty"` // the last Fix it's thread
+	Count     int                     `json:"count"`
+	Last      time.Time               `json:"last"`
+	CardAt    time.Time               `json:"cardAt"`
+	Dismissed time.Time               `json:"dismissed"`
+	Open      *resource.InvariantCard `json:"open,omitempty"`
+	Thread    string                  `json:"thread,omitempty"` // the last Fix it's thread
 }
 
 type violation struct{ id, evidence, thread string }
@@ -219,27 +219,27 @@ func (e *Engine) PSITrigger(scope, armed bool) {
 
 // JobLimitSet is the `guard: job limit` decision as JobGroups wrote it
 // (limit-under-prior): a memory.high below the prior, budget/N, is a
-// violation unless the class has learned its peak from slots.LearnRuns runs.
+// violation unless the class has learned its peak from resource.LearnRuns runs.
 func (e *Engine) JobLimitSet(thread, class, why string, high, prior uint64, settled bool) {
 	if high == 0 || prior == 0 || high >= prior || settled {
 		return
 	}
 	c := &e.inv
 	c.mu.Lock()
-	c.pending = append(c.pending, violation{id: InvLimitUnderPrior, evidence: fmt.Sprintf("thread=%s class=%q high=%s prior=%s why=%s", thread, class, slots.GB(float64(high)), slots.GB(float64(prior)), why)})
+	c.pending = append(c.pending, violation{id: InvLimitUnderPrior, evidence: fmt.Sprintf("thread=%s class=%q high=%s prior=%s why=%s", thread, class, resource.GB(float64(high)), resource.GB(float64(prior)), why)})
 	c.mu.Unlock()
 }
 
 // invEvent sees each guard decision (guardRecord): thaw-into-critical and
 // freeze-cycling.
-func (e *Engine) invEvent(ev slots.GuardEvent, sig slots.Signals) {
+func (e *Engine) invEvent(ev resource.GuardEvent, sig resource.Signals) {
 	if ev.Kind != "thaw" || ev.Thread == "" {
 		return
 	}
 	c := &e.inv
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if sig.AgentsStall == slots.StallCritical && ev.Reason != "ceiling" && ev.Reason != "gone" {
+	if sig.AgentsStall == resource.StallCritical && ev.Reason != "ceiling" && ev.Reason != "gone" {
 		c.pending = append(c.pending, violation{id: InvThawIntoCritical, evidence: fmt.Sprintf("thread=%s work=%s reason=%s %s", ev.Thread, ev.Work, ev.Reason, guardSignals(sig))})
 	}
 	if c.thaws == nil {
@@ -322,7 +322,7 @@ func (e *Engine) checkInvariants() {
 	if mayFreeze && !since.IsZero() && now.Sub(since) > InvShortAfter && first("short@"+since.Format(time.RFC3339Nano)) {
 		names := make([]string, 0, len(flags))
 		for _, f := range flags {
-			names = append(names, fmt.Sprintf("%s(%s %s)", f.Thread, f.Command, slots.GB(float64(f.Mem))))
+			names = append(names, fmt.Sprintf("%s(%s %s)", f.Thread, f.Command, resource.GB(float64(f.Mem))))
 		}
 		c.pending = append(c.pending, violation{id: InvShortNothingFroze, evidence: fmt.Sprintf("short for %s flagged=%s frozen=0 held=0 running=%d %s", now.Sub(since).Round(time.Second), strings.Join(names, ","), len(e.Running()), guardSignals(sig))})
 	}
@@ -355,7 +355,7 @@ func (e *Engine) violate(v violation, now time.Time) {
 		quiet = s.Dismissed
 	}
 	if s.Open == nil && (quiet.IsZero() || now.Sub(quiet) >= InvCardEvery) {
-		s.Open = &slots.InvariantCard{ID: v.id, Kind: kind, Text: invText(v.id), At: now, Evidence: v.evidence, Lines: lines}
+		s.Open = &resource.InvariantCard{ID: v.id, Kind: kind, Text: invText(v.id), At: now, Evidence: v.evidence, Lines: lines}
 		s.CardAt = now
 	}
 	e.invSave()
@@ -399,17 +399,17 @@ func (e *Engine) invSave() {
 
 // InvariantView is the cards and the counts for the front (both load and thread
 // invariants, V0.load-invariants, V0.thread-invariants).
-func (e *Engine) InvariantView() *slots.Invariants { return e.invariantView() }
+func (e *Engine) InvariantView() *resource.Invariants { return e.invariantView() }
 
 // invariantView is the cards and the counts for the front.
-func (e *Engine) invariantView() *slots.Invariants {
+func (e *Engine) invariantView() *resource.Invariants {
 	c := &e.inv
 	c.mu.Lock()
 	e.invLoad("")
-	v := &slots.Invariants{Stats: []slots.InvariantStat{}}
+	v := &resource.Invariants{Stats: []resource.InvariantStat{}}
 	addGroup := func(kind string, ids []string) {
 		for _, id := range ids {
-			st := slots.InvariantStat{ID: id, Kind: kind, Text: invText(id)}
+			st := resource.InvariantStat{ID: id, Kind: kind, Text: invText(id)}
 			if s := c.state[id]; s != nil {
 				st.Count = s.Count
 				if !s.Last.IsZero() {
@@ -495,7 +495,7 @@ func (e *Engine) invariantFix(id string) api.Reply {
 	c := &e.inv
 	c.mu.Lock()
 	s := e.invLoad(id)
-	var card slots.InvariantCard
+	var card resource.InvariantCard
 	if s.Open != nil {
 		card = *s.Open
 	}
@@ -529,7 +529,7 @@ func (e *Engine) invariantFix(id string) api.Reply {
 }
 
 // invPrompt is the fix thread's first message.
-func invPrompt(card slots.InvariantCard, host string) string {
+func invPrompt(card resource.InvariantCard, host string) string {
 	var b strings.Builder
 	if card.Kind == InvKindThread || invKind(card.ID) == InvKindThread {
 		fmt.Fprintf(&b, "Fyr's thread invariant `%s` was violated on %s at %s.\n\n%s\n\nEvidence: %s\n", card.ID, host, card.At.Format(time.RFC3339), card.Text, card.Evidence)

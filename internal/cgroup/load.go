@@ -11,9 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/meros/fyr/internal/heavy"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/lockwatch"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // Load is what GET /api/load answers for one host (SPEC 0.5 V0.80).
@@ -35,8 +34,8 @@ type Load struct {
 	// Heavy is the host's heavy jobs (V0.86; V0.163 in percent of the
 	// host), read fresh on each Get; nil without a pool. Slots is the same,
 	// under its old name, for older fronts for one release.
-	Heavy *slots.Snapshot `json:"heavy,omitempty"`
-	Slots *slots.Snapshot `json:"slots,omitempty"`
+	Heavy *resource.Snapshot `json:"heavy,omitempty"`
+	Slots *resource.Snapshot `json:"slots,omitempty"`
 
 	// Decision 0029 S1 (#185), absent without a provider:
 	// Provider reads the signals ("cgroups", "proc" or "sysctl"); Capacity is what
@@ -66,8 +65,8 @@ type Load struct {
 	Jobs []JobClass `json:"jobs,omitempty"`
 	// V0.164: the suggested heavy jobs, the ones the owner added, and the
 	// thresholds of "undeclared".
-	HeavyAdded         []heavy.Added   `json:"heavyAdded,omitempty"`
-	UndeclaredSettings *UndeclaredView `json:"undeclaredSettings,omitempty"`
+	HeavyAdded         []resource.Added `json:"heavyAdded,omitempty"`
+	UndeclaredSettings *UndeclaredView  `json:"undeclaredSettings,omitempty"`
 	// V0.rerun-classes: the classes the owner marked rerunnable.
 	Rerun *RerunView `json:"rerun,omitempty"`
 	// V0.176: the leftover processes past their grace, and the temporary
@@ -75,9 +74,9 @@ type Load struct {
 	Leftovers []Leftover `json:"leftovers,omitempty"`
 	Temps     []Temp     `json:"temps,omitempty"`
 	// ServicePatterns: the host's service patterns (V0.services-not-jobs).
-	ServicePatterns []heavy.ServicePattern `json:"servicePatterns,omitempty"`
+	ServicePatterns []resource.ServicePattern `json:"servicePatterns,omitempty"`
 	// Invariants: load and thread invariants when Slots/Guard is absent (V0.thread-invariants).
-	Invariants *slots.Invariants `json:"invariants,omitempty"`
+	Invariants *resource.Invariants `json:"invariants,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -109,6 +108,25 @@ type ThreadLoad struct {
 	Services []Service `json:"services,omitempty"`
 }
 
+// Pool is the slot pool as the load reads it (V0.guard-mechanism: the
+// mechanism names the policy's pool by what it reads, not by its package);
+// *slots.Pool is one.
+type Pool interface {
+	Off() bool
+	N() int
+	Snapshot() resource.Snapshot
+	View() resource.Snapshot
+}
+
+// AddedBook is the book of heavy commands Fyr learned or the owner added;
+// *heavy.Book is one.
+type AddedBook interface{ Added() []resource.Added }
+
+// ServiceBook is the host's service patterns; *heavy.Services is one.
+type ServiceBook interface {
+	List() []resource.ServicePattern
+}
+
 // MinGap is how often the host reads at most; a client asks every 5 s.
 const MinGap = 2 * time.Second
 
@@ -119,7 +137,7 @@ type Sampler struct {
 	Proc  string // default /proc
 	Cores int    // default runtime.NumCPU()
 	Now   func() time.Time
-	Slots *slots.Pool // V0.86; optional
+	Slots Pool // V0.86; optional
 	// Decision 0029 S1: the slowdown probe and the job records; optional.
 	Probe *Slowdown
 	Jobs  *Jobs
@@ -133,7 +151,7 @@ type Sampler struct {
 	DetectConfig func() UndeclaredConfig
 	Settings     *UndeclaredSettings        // GET /api/load shows it
 	Rerun        *RerunClasses              // V0.rerun-classes; GET /api/load shows it
-	Book         *heavy.Book                // the suggestions and added patterns GET /api/load shows
+	Book         AddedBook                  // the suggestions and added patterns GET /api/load shows
 	Project      func(thread string) string // a thread's project name, asked outside every lock
 	names        atomic.Pointer[map[string]string]
 	Trees        *TreeReader
@@ -144,9 +162,9 @@ type Sampler struct {
 	Temps     *Temps
 	// V0.services-not-jobs: the threads' services and the host's patterns; optional.
 	Services    *Services
-	ServiceBook *heavy.Services
+	ServiceBook ServiceBook
 	// V0.thread-invariants: invariant view fallback when slots are off.
-	Invariants func() *slots.Invariants
+	Invariants func() *resource.Invariants
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -208,12 +226,12 @@ func (s *Sampler) Get() Load {
 		// Decision 0029 S3, V0.163: each class's need on this host now, as
 		// percentages of it (CPU and memory); Cost is the old one number.
 		if l.Capacity != nil && s.Slots != nil && !s.Slots.Off() {
-			host := slots.Signals{Provider: l.Provider, CPU: l.Capacity.CPU, Memory: l.Capacity.Memory}
+			host := resource.Signals{Provider: l.Provider, CPU: l.Capacity.CPU, Memory: l.Capacity.Memory}
 			for i, c := range l.Jobs {
 				if lr, ok := s.Jobs.Learned(c.Class); ok {
-					need := slots.NeedOf(lr.Demand, lr.Peak, lr.Runs, host, s.Slots.N())
+					need := resource.NeedOf(lr.Demand, lr.Peak, lr.Runs, host, s.Slots.N())
 					cpu, mem := need.Shares(host)
-					l.Jobs[i].CPUPct, l.Jobs[i].MemPct = slots.Pct(cpu), slots.Pct(mem)
+					l.Jobs[i].CPUPct, l.Jobs[i].MemPct = resource.Pct(cpu), resource.Pct(mem)
 					l.Jobs[i].Cost = float64(int(max(cpu, mem)*float64(s.Slots.N())*100+0.5)) / 100
 					l.Jobs[i].Learned = lr.Runs
 				}
@@ -358,14 +376,14 @@ func (s *Sampler) threadHolds() map[string]bool {
 // Signals are the measures admission reads (decision 0029 S2): the last
 // published read (V0.147: admission runs under the pool's lock, so it does
 // no I/O; the sampler's tick reads every ProbeEvery). The first call reads.
-func (s *Sampler) Signals() slots.Signals {
+func (s *Sampler) Signals() resource.Signals {
 	var l Load
 	if p := s.pub.Load(); p != nil {
 		l = *p
 	} else {
 		l = s.get()
 	}
-	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall), AgentsStall: slots.Stall(l.AgentsMemoryStall), SwapFull: l.AgentsSwapFull,
+	sig := resource.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: resource.Stall(l.MemoryStall), AgentsStall: resource.Stall(l.AgentsMemoryStall), SwapFull: l.AgentsSwapFull,
 		UnitStall: l.UnitMemoryStall, OomdLimit: l.OomdLimit}
 	if l.Capacity != nil {
 		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
@@ -382,7 +400,7 @@ func (s *Sampler) Signals() slots.Signals {
 }
 
 // Triggered notes that the PSI trigger on the agents' memory.pressure fired
-// now: for slots.TriggerFresh Signals reads the agents' stall as critical.
+// now: for resource.TriggerFresh Signals reads the agents' stall as critical.
 func (s *Sampler) Triggered() {
 	s.trig.Store(s.now().UnixNano())
 }

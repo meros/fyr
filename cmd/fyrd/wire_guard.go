@@ -10,6 +10,8 @@ import (
 	"github.com/meros/fyr/internal/admission"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/guard"
+	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -40,6 +42,9 @@ func (w *wiring) wireGuard() {
 	tree := w.tree
 	usettings := w.usettings
 	pool.Undeclared = sampler.Undeclared
+	// V0.guard-mechanism: the guard's freeze, thaw, kill and signals go through
+	// its Mechanism; cgroup's serves a host with the tree and one without (the process table).
+	var mech guard.Mechanism = &cgroup.Mechanism{Groups: groups, Sampler: sampler, Detector: detector}
 	// V0.job-limits: the tools that ignore cgroups get shares of this host.
 	capOf := func() cgroup.Capacity {
 		sig := sampler.Signals()
@@ -70,10 +75,7 @@ func (w *wiring) wireGuard() {
 	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
 		Undeclared: sampler.Undeclared, UndeclaredSettings: usettings.Set,
-		UndeclaredThaw: func(thread string) {
-			groups.ThawUndeclared(thread)
-			detector.MarkThawed(thread) // V0.episode-frozen: its calm counts again
-		},
+		UndeclaredThaw: mech.ThawUndeclared, // V0.episode-frozen: its calm counts again
 		// V0.guard-tidy: what the episode's processes hold, against its flagged memory.
 		UndeclaredRootsMem: func(thread string) (uint64, bool) {
 			for _, f := range detector.Flags() {
@@ -89,30 +91,22 @@ func (w *wiring) wireGuard() {
 		},
 		UndeclaredFlagNow: sampler.FlagNow, // V0.freeze-fast-class-name
 		UndeclaredEmpty:   groups.UndeclaredEmpty, HeavyRemove: book.Remove, ServicePatterns: svcBook.Edit, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
-		UndeclaredFreeze: func(thread string) bool {
-			for _, f := range detector.Flags() {
-				if f.Thread == thread && groups.FreezeUndeclared(thread, sampler.Roots(f)) {
-					detector.MarkPaused(thread)
-					return true
-				}
-			}
-			return false
-		},
+		UndeclaredFreeze: mech.FreezeUndeclared,
 		// Decision 0032 slice 2: the parts of the work take turns.
-		UndeclaredUnits: func(thread string) []slots.WorkUnit {
+		UndeclaredUnits: func(thread string) []resource.WorkUnit {
 			for _, f := range detector.Flags() {
 				if f.Thread != thread {
 					continue
 				}
-				var out []slots.WorkUnit
+				var out []resource.WorkUnit
 				for _, u := range groups.Units(thread, sampler.Roots(f)) {
-					out = append(out, slots.WorkUnit{PID: u.PID, RSS: u.RSS, Command: cgroup.CommandOf(cgroup.Root{PID: u.PID, Cmdline: u.Cmdline}, groups.Bashes(thread))})
+					out = append(out, resource.WorkUnit{PID: u.PID, RSS: u.RSS, Command: cgroup.CommandOf(cgroup.Root{PID: u.PID, Cmdline: u.Cmdline}, groups.Bashes(thread))})
 				}
 				return out
 			}
 			return nil
 		},
-		UndeclaredRotate: func(thread string, units []slots.WorkUnit, active int) bool {
+		UndeclaredRotate: func(thread string, units []resource.WorkUnit, active int) bool {
 			us := make([]cgroup.Unit, 0, len(units))
 			for _, u := range units {
 				us = append(us, cgroup.Unit{PID: u.PID, RSS: u.RSS})
@@ -137,10 +131,10 @@ func (w *wiring) wireGuard() {
 	eng.FolderEnv = engine.FolderArgv // V0.run-folder-env: a Run card runs in its folder's direnv
 	sd := engine.SlotDeps{
 		SlotActive:  jobs.Active, // #174
-		SlotSignals: sampler.Signals, SlotGrowth: jobs.Growth, SlotPolicy: adm.Policy,
+		SlotSignals: mech.Sample, SlotGrowth: jobs.Growth, SlotPolicy: adm.Policy,
 		SlotOver:   adm.Over, // V0.163
 		JobReset:   jobs.Reset,
-		SlotFreeze: groups.Freeze, SlotThaw: groups.Thaw, // decision 0029 S5
+		SlotFreeze: mech.Freeze, SlotThaw: mech.Thaw, // decision 0029 S5
 		SlotEmpty: groups.JobEmpty, // V0.guard-tidy
 		// V0.guard-wake: the wake rule's memory and the time frozen.
 		SlotMem: sampler.ThreadMemory, FrozenUsec: groups.FrozenUsec,
@@ -154,7 +148,7 @@ func (w *wiring) wireGuard() {
 	}
 	eng.SlotDeps = sd
 	// V0.rerun-classes: kill and rerun, for the classes the owner marked.
-	eng.RerunDeps = engine.RerunDeps{RerunMatch: rerun.Match, RerunSet: rerun.Set, JobKill: groups.KillJob,
+	eng.RerunDeps = engine.RerunDeps{RerunMatch: rerun.Match, RerunSet: rerun.Set, JobKill: mech.Kill,
 		RerunWall: func(thread string) (time.Duration, bool) {
 			hd, ok := pool.Holding(thread)
 			if !ok {
