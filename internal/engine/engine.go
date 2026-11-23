@@ -431,7 +431,7 @@ func (e *Engine) Running() []string {
 func (e *Engine) Continue(id, commandID string) bool {
 	e.mu.Lock()
 	t := e.threads[id]
-	skip := t == nil || t.ArchivedAt != nil || t.Settle.At != nil
+	skip := t == nil || t.Asleep()
 	e.mu.Unlock()
 	if skip {
 		return false

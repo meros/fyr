@@ -219,7 +219,7 @@ func (e *Engine) dueQuotaResetsLocked(now time.Time) []quotaResetFrame {
 		changed = true
 		prov, win, _ := strings.Cut(k, "\x00")
 		for id, t := range e.threads {
-			if t.Profile != prov || t.Failure == nil || t.Running || t.Settle.At != nil || t.ArchivedAt != nil {
+			if t.Profile != prov || t.Failure == nil || t.Running || t.Asleep() {
 				continue
 			}
 			sk := id + "\x00" + prov + "\x00" + win

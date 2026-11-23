@@ -138,9 +138,10 @@ func images(a Args) []Image {
 	return out
 }
 
-// OpenMain is the main change while its PR is open, or nil.
+// OpenMain is the main change while its PR is open (Change.OpenPR), or nil:
+// an owner-done or ended main PR offers no "Settle when merged".
 func OpenMain(t *Thread) *Change {
-	if c := t.Main(); c != nil && c.PR.State == "OPEN" {
+	if c := t.Main(); c != nil && c.OpenPR() {
 		return c
 	}
 	return nil

@@ -385,15 +385,24 @@ var FyrEffects = map[string]*FyrEffect{
 		}},
 }
 
-// FyrEffectFor is the effect a change_request ask runs, or nil.
-func FyrEffectFor(ask ChangeAsk) *FyrEffect {
+// fyrEffectByAsk is FyrEffects by their change_request ask; two effects
+// with one ask stop the build's first run (V0.one-predicate (3)).
+var fyrEffectByAsk = func() map[ChangeAsk]*FyrEffect {
+	m := map[ChangeAsk]*FyrEffect{}
 	for _, fx := range FyrEffects {
-		if ask != "" && fx.Ask == ask {
-			return fx
+		if fx.Ask == "" {
+			continue
 		}
+		if m[fx.Ask] != nil {
+			panic("two Fyr effects for the ask " + string(fx.Ask))
+		}
+		m[fx.Ask] = fx
 	}
-	return nil
-}
+	return m
+}()
+
+// FyrEffectFor is the effect a change_request ask runs, or nil.
+func FyrEffectFor(ask ChangeAsk) *FyrEffect { return fyrEffectByAsk[ask] }
 
 // noPRText is why a merge ask on c cannot be made, and what to do instead
 // (V0.prompt-fits-setup): its repository has no GitHub remote, or it has no

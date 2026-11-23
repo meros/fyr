@@ -85,7 +85,8 @@ func agentWatch() Rule {
 // What the thread still waits on keeps it snoozed after the run; when that
 // ends, it wakes.
 func TestSnoozeDoneWaitsForWhatTheThreadArmed(t *testing.T) {
-	pending := []Change{{ID: "c1", Kind: KindCode, Phase: PhaseWorking, PR: &PR{State: "OPEN", Checks: ChecksPending, Head: "abc"}}}
+	read := ct0
+	pending := []Change{{ID: "c1", Kind: KindCode, Phase: PhaseWorking, PR: &PR{State: "OPEN", Checks: ChecksPending, Head: "abc", CheckedAt: &read}}}
 	for name, c := range map[string]struct{ set, clear func(*Thread) }{
 		"slot":      {func(x *Thread) { x.SlotQueued = true }, func(x *Thread) { x.SlotQueued = false }},
 		"task":      {func(x *Thread) { x.Tasks = []Task{{ID: "k", Status: TaskRunning}} }, func(x *Thread) { x.Tasks = nil }},

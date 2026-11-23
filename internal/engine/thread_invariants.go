@@ -40,6 +40,11 @@ const (
 	InvThreadDuplicateSend     = "thread-duplicate-send"
 	InvThreadFailureChurn      = "thread-failure-churn"
 	InvThreadRunSilentStuck    = "thread-run-silent-stuck"
+	// InvThreadQuotaMissedOnEnd is the engine's half of core's
+	// thread-quota-misclassified (V0.one-predicate (4)): a clean run.ended
+	// whose turn summary opens with a quota notice, read from the run's
+	// Inputs, which the thread record alone does not hold.
+	InvThreadQuotaMissedOnEnd = "thread-quota-missed-on-end"
 )
 
 // Thresholds for temporal and process-consistency thread invariants.
@@ -104,6 +109,7 @@ var engineThreadInvTexts = map[string]string{
 	InvThreadDuplicateSend:     "The same owner message text arrived twice on one thread within 3 seconds with distinct command ids.",
 	InvThreadFailureChurn:      "A thread hit 3 or more consecutive failed runs within 10 minutes without an owner send or retry.",
 	InvThreadRunSilentStuck:    "A live turn with no open tools, tasks, decisions, or approval judge emitted no stream output for more than 15 minutes.",
+	InvThreadQuotaMissedOnEnd:  "A run ended cleanly while its turn summary opened with a provider quota notice: the quota halt was not classified.",
 }
 
 // engineThreadInvOrder is the display order of the engine/runtime thread invariants.
@@ -129,6 +135,7 @@ var engineThreadInvOrder = []string{
 	InvThreadDuplicateSend,
 	InvThreadFailureChurn,
 	InvThreadRunSilentStuck,
+	InvThreadQuotaMissedOnEnd,
 }
 
 // threadInvOrder is every thread invariant in display order (core pure + engine runtime).
@@ -377,7 +384,7 @@ func (e *Engine) cleanEndQuotaNotice(s *staged) *violation {
 		if s.cur.Running && !interrupted && a.Failure == nil && s.t.Failure == nil && dirty {
 			if notice := core.QuotaNotice(s.t.Summary); notice != "" {
 				return &violation{
-					id:       core.InvThreadQuotaMisclass,
+					id:       InvThreadQuotaMissedOnEnd,
 					evidence: fmt.Sprintf("thread=%s clean run.ended with quota notice in summary: %q", id, notice),
 					thread:   id,
 				}

@@ -534,8 +534,8 @@ func TestThreadInvariantCleanEndQuotaNotice(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if n := invLines(out, core.InvThreadQuotaMisclass); n != 1 {
-		t.Fatalf("want 1 %s for missed mid-turn quota notice, got %d:\n%s", core.InvThreadQuotaMisclass, n, out)
+	if n := invLines(out, InvThreadQuotaMissedOnEnd); n != 1 {
+		t.Fatalf("want 1 %s for missed mid-turn quota notice, got %d:\n%s", InvThreadQuotaMissedOnEnd, n, out)
 	}
 }
 

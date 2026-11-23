@@ -84,9 +84,7 @@ func workGoing(t *Thread, counts func(Rule) bool, now time.Time) bool {
 	if t.wakeable() && slices.ContainsFunc(t.Feed.Queue, func(n Notice) bool { return n.Urgency == Wake && !n.Self }) {
 		return true
 	}
-	return slices.ContainsFunc(t.Changes, func(c Change) bool {
-		return c.PR != nil && c.PR.State == "OPEN" && c.PR.Checks == ChecksPending && !c.Dismissed && !c.IsDone() && !c.Phase.Ended()
-	})
+	return slices.ContainsFunc(t.Changes, func(c Change) bool { return c.PRWaitsOnCI() })
 }
 
 // WorkOver is the Condition's value: the snooze has nothing left to wait for.
@@ -115,14 +113,10 @@ func SnoozeWhenDone(v *View, now time.Time) {
 }
 
 // workBound reports a Condition that reads workOver.
-func (w When) workBound() bool {
-	return w.Kind == WhenWorkOver || slices.ContainsFunc(w.Any, When.workBound)
-}
+func (w When) workBound() bool { return w.has(WhenWorkOver) }
 
 // doneBound reports a Condition that reads workDone.
-func (w When) doneBound() bool {
-	return w.Kind == WhenWorkDone || slices.ContainsFunc(w.All, When.doneBound)
-}
+func (w When) doneBound() bool { return w.has(WhenWorkDone) }
 
 // SnoozedWhenDone reports that the armed snooze is the one until work is done.
 func SnoozedWhenDone(v *View) bool {
@@ -138,13 +132,23 @@ func SnoozedWhenDone(v *View) bool {
 // merge asks are gated and the agent's notices are queued, so a firing watch,
 // which wakes the agent, does not count as the end. A feed.take is skipped:
 // the notice has left the queue and the turn it starts has not begun.
+// due skips every view Rule that reads workOver, so this takes each one
+// (V0.one-predicate (2)).
 func wakeWhenDone(r Rec, in Input, now time.Time) Result {
 	var res Result
-	if in.Kind == KindFeedTake || !SnoozedWhenDone(r.V) {
+	if in.Kind == KindFeedTake {
 		return res
 	}
-	if x := findIn(r.V.Rules, snoozeRule); x.When.eval(r.T, x.Armed, now) == yes {
-		fire(r, x.ID, true, now, &res)
+	var ids []string
+	for _, x := range r.V.Rules {
+		if x.When.workBound() {
+			ids = append(ids, x.ID)
+		}
+	}
+	for _, id := range ids {
+		if x := findIn(r.V.Rules, id); x != nil && x.When.eval(r.T, x.Armed, now) == yes {
+			fire(r, x.ID, true, now, &res)
+		}
 	}
 	return res
 }
