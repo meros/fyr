@@ -128,3 +128,71 @@ func thawWords(t thawing, now time.Time) (reason, why string) {
 	}
 	return reason, why
 }
+
+// stillHolding says whether frozen job f's hold or episode goes on: an
+// undeclared freeze while its thread is still flagged with the same start
+// (admitted, ended or released, it is not), a job while the slot holder it
+// was frozen under is still held.
+func stillHolding(f frozenJob, flagged []slots.Undeclared, held []slots.Holder) bool {
+	if f.undeclared {
+		for _, u := range flagged {
+			if u.Thread == f.owner && u.Since.Equal(f.episode) {
+				return true
+			}
+		}
+	}
+	for _, h := range held {
+		if h.Owner == f.owner && h.Since.Format(time.RFC3339Nano) == f.since {
+			return true
+		}
+	}
+	return false
+}
+
+// wakesAlone is V0.sim-fixes (3): the frozen work left is all the heavy work
+// (nothing runs that it could take memory from), memory does not stall
+// critically, and WakeEvery has passed since the last wake: the oldest freeze
+// wakes at once. heavyRunning is asked last, so its cost is paid only then.
+func wakesAlone(kept, thawing int, m guardMemory, sinceWake time.Duration, heavyRunning func() int) bool {
+	return kept > 0 && thawing == 0 && !m.critical && !m.nearOomd && heavyRunning() == 0 && sinceWake >= WakeEvery
+}
+
+// wakeDue is V0.guard-wake (E3): the wake clock has run ThawAfterOK, and
+// WakeEvery has passed since the last wake, with a freeze kept and no thaw
+// this tick.
+func wakeDue(kept, thawing int, okSince, lastWake, now time.Time) bool {
+	return kept > 0 && thawing == 0 && !okSince.IsZero() && now.Sub(okSince) >= ThawAfterOK && now.Sub(lastWake) >= WakeEvery
+}
+
+// freezeGateWhy is what stands between a tick and a new freeze.
+type freezeGateWhy int
+
+const (
+	gateOpen    freezeGateWhy = iota // memory is short and stalls: go on
+	gateQuiet                        // not short, or a thaw or a kill this tick: nothing to say
+	gateNoStall                      // short on headroom alone: say it once
+)
+
+// freezeGate decides whether a tick may freeze more work.
+func freezeGate(m guardMemory, stalling bool, thawedOrKilled int) freezeGateWhy {
+	switch {
+	case !m.short || thawedOrKilled > 0:
+		return gateQuiet
+	case !m.critical && !m.nearOomd && !stalling:
+		return gateNoStall
+	}
+	return gateOpen
+}
+
+// freezeRoom says whether one more freeze must wait: block when n freezes (at
+// most max(maxFrozen, 1)) are held or the last one is younger than
+// AddFreezeAfter (not near oomd's limit, where the next does not wait: oomd
+// kills after its duration, sooner than that). say is true when the limit
+// itself, not the wait, is why (so it is logged once).
+func freezeRoom(kept, maxFrozen int, lastFrozen, now time.Time, nearOomd bool) (block, say bool) {
+	wait := kept > 0 && now.Sub(lastFrozen) < AddFreezeAfter && !nearOomd
+	if kept >= max(maxFrozen, 1) || wait {
+		return true, kept >= maxFrozen && maxFrozen > 0
+	}
+	return false, false
+}
