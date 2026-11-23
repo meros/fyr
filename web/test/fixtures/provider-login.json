@@ -1,0 +1,13 @@
+{
+  "after": {
+    "kind": "folder",
+    "state": "starting",
+    "url": false
+  },
+  "before": null,
+  "link": {
+    "kind": "folder",
+    "state": "waiting",
+    "url": true
+  }
+}

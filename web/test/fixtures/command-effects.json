@@ -1,0 +1,2075 @@
+{
+  "effects": [
+    {
+      "name": "mark seen",
+      "action": "thread.markSeen",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:03Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "done",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:01Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "done",
+        "section": "seen"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "mark unseen",
+      "action": "thread.markUnseen",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:04Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:04Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "done",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "pin",
+      "action": "thread.pin",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:05Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "done",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:02Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "done",
+        "section": "seen"
+      },
+      "after": {
+        "state": "done",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "unpin",
+      "action": "thread.unpin",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:06Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "pinnedAt": "2026-01-01T00:00:06Z",
+        "rev": 1,
+        "attention": {
+          "state": "done",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:02Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "Already pinned",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "done",
+        "section": "seen"
+      },
+      "after": {
+        "state": "done",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "settle",
+      "action": "thread.settle",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:07Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "done",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:02Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "done",
+        "section": "seen"
+      },
+      "after": {
+        "state": "settled",
+        "section": "settled"
+      }
+    },
+    {
+      "name": "unsettle",
+      "action": "thread.unsettle",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:08Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "settled",
+          "section": "settled"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:08Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "Settled threads do not pin",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settle": "Already settled",
+          "thread.settleWhenDone": "Already settled",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snooze": "Settled threads do not snooze",
+          "thread.snoozeWhenDone": "Settled threads do not snooze",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsnooze": "Not snoozed",
+          "thread.wakeOnQuota": "Settled threads do not wake"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": "",
+        "settledAt": "2026-01-01T00:00:08Z"
+      },
+      "projects": [],
+      "before": {
+        "state": "settled",
+        "section": "settled"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "snooze",
+      "action": "thread.snooze",
+      "args": {
+        "until": "2099-01-01T00:00:00Z"
+      },
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:09Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:08Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "snoozed",
+        "section": "snoozed"
+      }
+    },
+    {
+      "name": "unsnooze",
+      "action": "thread.unsnooze",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:10Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "snoozed",
+          "section": "snoozed",
+          "reason": "until 2099-01-01T00:00:00Z"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:10Z",
+          "rules": [
+            {
+              "id": "snooze",
+              "purpose": "snooze",
+              "when": {
+                "kind": "at",
+                "at": "2099-01-01T00:00:00Z"
+              },
+              "then": {
+                "kind": "rule.wake"
+              },
+              "after": "disarm",
+              "createdBy": "owner",
+              "status": "armed",
+              "armedAt": "2026-01-01T00:00:10Z"
+            }
+          ],
+          "snoozeUntil": "2099-01-01T00:00:00Z",
+          "snoozedAt": "2026-01-01T00:00:10Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "Snoozed threads do not pin",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "snoozed",
+        "section": "snoozed"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "archive",
+      "action": "thread.archive",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:11Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:10Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "archived",
+        "section": "archived"
+      }
+    },
+    {
+      "name": "unarchive",
+      "action": "thread.unarchive",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:12Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "archivedAt": "2026-01-01T00:00:12Z",
+        "rev": 1,
+        "attention": {
+          "state": "archived",
+          "section": "archived"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:10Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.archive": "Already archived",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.handover": "The thread is archived",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "The thread is archived",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.send": "The thread is archived",
+          "thread.setModel": "The thread is archived",
+          "thread.setView": "The thread is archived",
+          "thread.settle": "The thread is archived",
+          "thread.settleWhenDone": "The thread is archived",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snooze": "The thread is archived",
+          "thread.snoozeWhenDone": "The thread is archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed",
+          "thread.wakeOnQuota": "The thread is archived"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "archived",
+        "section": "archived"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "pin then settle",
+      "action": "thread.pin",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:13Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:10Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "settle a pinned thread",
+      "action": "thread.settle",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:14Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "pinnedAt": "2026-01-01T00:00:14Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:10Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "Already pinned",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "settled",
+        "section": "settled"
+      }
+    },
+    {
+      "name": "unsettle again",
+      "action": "thread.unsettle",
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:15Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "settled",
+          "section": "settled"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:15Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "Settled threads do not pin",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settle": "Already settled",
+          "thread.settleWhenDone": "Already settled",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snooze": "Settled threads do not snooze",
+          "thread.snoozeWhenDone": "Settled threads do not snooze",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsnooze": "Not snoozed",
+          "thread.wakeOnQuota": "Settled threads do not wake"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": "",
+        "settledAt": "2026-01-01T00:00:15Z"
+      },
+      "projects": [],
+      "before": {
+        "state": "settled",
+        "section": "settled"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "set project",
+      "action": "thread.setProject",
+      "args": {
+        "projectId": "p_2"
+      },
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:16Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:15Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 0,
+          "lastUsed": "0001-01-01T00:00:00Z"
+        }
+      ],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "project archive",
+      "action": "project.archive",
+      "args": {
+        "id": "p_2"
+      },
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "projectId": "p_2",
+        "projectManual": true,
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:18Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:15Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": "Acme"
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "project unarchive",
+      "action": "project.unarchive",
+      "args": {
+        "id": "p_2"
+      },
+      "thread": {
+        "id": "t_1",
+        "title": "hello",
+        "cwd": "/home/owner/src/app",
+        "projectId": "p_2",
+        "projectManual": true,
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:18Z",
+        "running": false,
+        "summary": "echo: hello",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:03Z",
+        "activityAt": "2026-01-01T00:00:03Z",
+        "shelvedAt": "2026-01-01T00:00:19Z",
+        "rev": 1,
+        "attention": {
+          "state": "seen",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_1",
+          "seenAt": "2026-01-01T00:00:15Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": "Acme"
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "archivedAt": "2026-01-01T00:00:19Z",
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "snooze an unread thread",
+      "action": "thread.snooze",
+      "args": {
+        "until": "2099-01-01T00:00:00Z"
+      },
+      "thread": {
+        "id": "t_3",
+        "title": "unread snooze",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:20Z",
+        "updatedAt": "2026-01-01T00:00:22Z",
+        "running": false,
+        "summary": "echo: unread snooze",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:22Z",
+        "activityAt": "2026-01-01T00:00:22Z",
+        "rev": 1,
+        "attention": {
+          "state": "done",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_3",
+          "seenAt": "2026-01-01T00:00:21Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "done",
+        "section": "seen"
+      },
+      "after": {
+        "state": "snoozed",
+        "section": "snoozed"
+      }
+    },
+    {
+      "name": "unsnooze a thread that was unread",
+      "action": "thread.unsnooze",
+      "thread": {
+        "id": "t_3",
+        "title": "unread snooze",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:20Z",
+        "updatedAt": "2026-01-01T00:00:23Z",
+        "running": false,
+        "summary": "echo: unread snooze",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:22Z",
+        "activityAt": "2026-01-01T00:00:22Z",
+        "rev": 1,
+        "attention": {
+          "state": "snoozed",
+          "section": "snoozed",
+          "reason": "until 2099-01-01T00:00:00Z"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_3",
+          "seenAt": "2026-01-01T00:00:23Z",
+          "rules": [
+            {
+              "id": "snooze",
+              "purpose": "snooze",
+              "when": {
+                "kind": "at",
+                "at": "2099-01-01T00:00:00Z"
+              },
+              "then": {
+                "kind": "rule.wake"
+              },
+              "after": "disarm",
+              "createdBy": "owner",
+              "status": "armed",
+              "armedAt": "2026-01-01T00:00:23Z"
+            }
+          ],
+          "snoozeUntil": "2099-01-01T00:00:00Z",
+          "snoozedAt": "2026-01-01T00:00:23Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "Snoozed threads do not pin",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "snoozed",
+        "section": "snoozed"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "archive an unread thread",
+      "action": "thread.archive",
+      "thread": {
+        "id": "t_4",
+        "title": "unread archive",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:24Z",
+        "updatedAt": "2026-01-01T00:00:26Z",
+        "running": false,
+        "summary": "echo: unread archive",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:26Z",
+        "activityAt": "2026-01-01T00:00:26Z",
+        "rev": 1,
+        "attention": {
+          "state": "done",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_4",
+          "seenAt": "2026-01-01T00:00:25Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "done",
+        "section": "seen"
+      },
+      "after": {
+        "state": "archived",
+        "section": "archived"
+      }
+    },
+    {
+      "name": "unarchive a thread that was unread",
+      "action": "thread.unarchive",
+      "thread": {
+        "id": "t_4",
+        "title": "unread archive",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:24Z",
+        "updatedAt": "2026-01-01T00:00:27Z",
+        "running": false,
+        "summary": "echo: unread archive",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:26Z",
+        "activityAt": "2026-01-01T00:00:26Z",
+        "archivedAt": "2026-01-01T00:00:27Z",
+        "rev": 1,
+        "attention": {
+          "state": "archived",
+          "section": "archived"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_4",
+          "seenAt": "2026-01-01T00:00:25Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.archive": "Already archived",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.handover": "The thread is archived",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "The thread is archived",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.send": "The thread is archived",
+          "thread.setModel": "The thread is archived",
+          "thread.setView": "The thread is archived",
+          "thread.settle": "The thread is archived",
+          "thread.settleWhenDone": "The thread is archived",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snooze": "The thread is archived",
+          "thread.snoozeWhenDone": "The thread is archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed",
+          "thread.wakeOnQuota": "The thread is archived"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "archived",
+        "section": "archived"
+      },
+      "after": {
+        "state": "done",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "settle an unread thread",
+      "action": "thread.settle",
+      "thread": {
+        "id": "t_5",
+        "title": "unread settle",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:28Z",
+        "updatedAt": "2026-01-01T00:00:30Z",
+        "running": false,
+        "summary": "echo: unread settle",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:30Z",
+        "activityAt": "2026-01-01T00:00:30Z",
+        "rev": 1,
+        "attention": {
+          "state": "done",
+          "section": "seen"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_5",
+          "seenAt": "2026-01-01T00:00:29Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenDone": "Nothing to wait for",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "Nothing is working",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "done",
+        "section": "seen"
+      },
+      "after": {
+        "state": "settled",
+        "section": "settled"
+      }
+    },
+    {
+      "name": "unsettle a thread that was unread",
+      "action": "thread.unsettle",
+      "thread": {
+        "id": "t_5",
+        "title": "unread settle",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:28Z",
+        "updatedAt": "2026-01-01T00:00:31Z",
+        "running": false,
+        "summary": "echo: unread settle",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:30Z",
+        "activityAt": "2026-01-01T00:00:30Z",
+        "rev": 1,
+        "attention": {
+          "state": "settled",
+          "section": "settled"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_5",
+          "seenAt": "2026-01-01T00:00:31Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.pin": "Settled threads do not pin",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settle": "Already settled",
+          "thread.settleWhenDone": "Already settled",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snooze": "Settled threads do not snooze",
+          "thread.snoozeWhenDone": "Settled threads do not snooze",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsnooze": "Not snoozed",
+          "thread.wakeOnQuota": "Settled threads do not wake"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": "",
+        "settledAt": "2026-01-01T00:00:31Z"
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "settled",
+        "section": "settled"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      }
+    },
+    {
+      "name": "answer",
+      "action": "thread.answer",
+      "args": {
+        "answers": {
+          "Which database?": "SQLite"
+        },
+        "decisionId": "d_6"
+      },
+      "thread": {
+        "id": "t_7",
+        "title": "x",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:32Z",
+        "updatedAt": "2026-01-01T00:00:35Z",
+        "running": false,
+        "summary": "echo: x",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:34Z",
+        "activityAt": "2026-01-01T00:00:35Z",
+        "decisions": [
+          {
+            "id": "d_6",
+            "kind": "ask",
+            "assignee": "owner",
+            "questions": [
+              {
+                "question": "Which database?",
+                "options": [
+                  {
+                    "label": "Postgres"
+                  },
+                  {
+                    "label": "SQLite"
+                  }
+                ]
+              }
+            ],
+            "async": true,
+            "createdAt": "2026-01-01T00:00:35Z"
+          }
+        ],
+        "rev": 1,
+        "attention": {
+          "state": "asking",
+          "section": "needs",
+          "reason": "ask",
+          "group": "answer"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_7",
+          "seenAt": "2026-01-01T00:00:33Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.handover": "Answer the open question first",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.send": "Answer the open question first",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "It needs you now",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "asking",
+        "section": "needs",
+        "group": "answer"
+      },
+      "after": {
+        "state": "seen",
+        "section": "seen"
+      },
+      "path": [
+        {
+          "state": "seen",
+          "section": "seen"
+        },
+        {
+          "state": "working",
+          "section": "working"
+        },
+        {
+          "state": "done",
+          "section": "seen"
+        }
+      ]
+    },
+    {
+      "name": "run a Run card",
+      "action": "action.run",
+      "args": {
+        "action": "run-1",
+        "digest": "digest-1",
+        "on": "thread"
+      },
+      "thread": {
+        "id": "t_8",
+        "title": "x",
+        "cwd": "/home/owner/src/app",
+        "owner": "owner",
+        "visibility": "private",
+        "profile": "claude",
+        "model": "fake-model",
+        "sessionId": "00000000-0000-0000-0000-000000000000",
+        "createdAt": "2026-01-01T00:00:36Z",
+        "updatedAt": "2026-01-01T00:00:39Z",
+        "running": false,
+        "summary": "echo: x",
+        "runEnds": 1,
+        "runEndedAt": "2026-01-01T00:00:38Z",
+        "activityAt": "2026-01-01T00:00:39Z",
+        "offers": [
+          {
+            "id": "run-1",
+            "on": "thread",
+            "label": "Run",
+            "run": "script",
+            "argv": [
+              "bash",
+              "-euo",
+              "pipefail",
+              "-c",
+              "echo hi"
+            ],
+            "cwd": "/home/owner/src/app",
+            "request": true,
+            "command": "echo hi",
+            "why": "Say hi",
+            "by": "agent",
+            "digest": "digest-1"
+          }
+        ],
+        "rev": 1,
+        "attention": {
+          "state": "blocked",
+          "section": "needs",
+          "reason": "Run: Say hi",
+          "group": "approve",
+          "word": "Run",
+          "subject": "Say hi"
+        },
+        "view": {
+          "user": "owner",
+          "entity": "t_8",
+          "seenAt": "2026-01-01T00:00:37Z"
+        },
+        "unavailable": {
+          "change.done": "No open change",
+          "change.end": "No change to end",
+          "change.park": "No change needs you",
+          "change.refresh": "No change to read",
+          "change.unpark": "No change is parked",
+          "pr.merge": "No PR",
+          "pr.rerunFailed": "No PR",
+          "thread.answer": "Nothing to answer",
+          "thread.cancelAsk": "No question to cancel",
+          "thread.cancelWait": "Nothing is waited for",
+          "thread.cancelWake": "No wake-up is set",
+          "thread.dismiss": "No failure to dismiss",
+          "thread.dismissPR": "No PR",
+          "thread.interrupt": "No run is going",
+          "thread.restart": "The agent is responding",
+          "thread.retry": "The last run did not fail",
+          "thread.settleWhenMerged": "No open PR",
+          "thread.snoozeWhenDone": "It needs you now",
+          "thread.unarchive": "Not archived",
+          "thread.unpin": "Not pinned",
+          "thread.unsettle": "Not settled",
+          "thread.unsnooze": "Not snoozed"
+        },
+        "newProject": {
+          "name": "001",
+          "folder": "/home/owner/src/app"
+        },
+        "project": ""
+      },
+      "projects": [
+        {
+          "id": "p_2",
+          "edited": true,
+          "name": "Acme",
+          "color": "olive",
+          "icon": {
+            "kind": "monogram"
+          },
+          "createdAt": "2026-01-01T00:00:17Z",
+          "by": {
+            "color": "",
+            "image": "",
+            "name": "owner"
+          },
+          "rev": 1,
+          "threads": 1,
+          "lastUsed": "2026-01-01T00:00:18Z"
+        }
+      ],
+      "before": {
+        "state": "blocked",
+        "section": "needs",
+        "group": "approve",
+        "word": "Run"
+      },
+      "after": {
+        "state": "done",
+        "section": "seen"
+      },
+      "path": [
+        {
+          "state": "done",
+          "section": "seen"
+        },
+        {
+          "state": "working",
+          "section": "working"
+        },
+        {
+          "state": "done",
+          "section": "seen"
+        }
+      ]
+    }
+  ]
+}

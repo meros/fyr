@@ -1168,6 +1168,8 @@ interface MockServer {
   putAttachment(name: string, mediaType: string, size: number): { id: string; name: string; size: number; mediaType: string; path: string };
   /** the PR tab's detail (V0.43) */
   prDetail(threadId: string, prUrl?: string): PrReply;
+  /** V0.mock-contract: start from a real host's threads and projects (test/mock-contract.test.ts). */
+  seed(threads: ThreadDTO[], projects: Project[]): void;
 }
 
 /** A P-256 public key in the VAPID format; the mock has no private key and never pushes. */
@@ -1254,6 +1256,12 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   // V0.conversation-jumps: the layout test makes the agent say something while the owner reads further up.
   if (MOCK_JUMPS && typeof window !== "undefined") (window as unknown as { __fyrMockSay?: (id: string, text: string) => void }).__fyrMockSay = (id, text) => emit(id, "msg", assistantText(text));
   const quiet = { ...NOT_RUNNING };
+  // V0.mock-contract: what a thread shows once a mark that keeps it unread lifts, as the host computes it: a turn the
+  // owner has not read since (activityAt after seenAt) is Unread. The mock's own threads carry no seenAt, so an archive
+  // also remembers that it was Unread.
+  const unreadAtArchive = new Set<string>();
+  const readState = (t: ThreadDTO): "done" | "seen" =>
+    unreadAtArchive.has(t.id) || (!!t.view?.seenAt && !!t.activityAt && t.activityAt > t.view.seenAt) ? "done" : "seen";
   // V0.33: messages the mock agent has not read; a running thread reads them after a step.
   const unread = new Map<string, string>(Object.entries(events).flatMap(([tid, list]) => {
     const st = new Map<string, string>();
@@ -1368,11 +1376,21 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         // #31: a change, the live view and the thread each hold their runs.
         const withRuns = (cur: ThreadDTO, f: (rs: Runs | undefined) => Runs): Partial<ThreadDTO> =>
           ch ? { changes: cur.changes!.map((c) => (c.id === ch.id ? { ...c, runs: f(c.runs) } : c)) } : on === "view" ? { live: { ...cur.live, runs: f(cur.live?.runs) } } : { runs: f(cur.runs) };
-        put(t, withRuns(t, (rs) => [...(rs ?? []), run]));
+        // V0.mock-contract: a Run the agent asked for leaves Needs you when the owner presses it, as on the host; another
+        // request that has not run keeps the thread there.
+        const next = o.request && t.attention.word === "Run" && !ch && on !== "view"
+          ? (t.offers ?? []).find((x) => x.request && !x.optional && x.id !== o.id && !(t.runs ?? []).some((r) => r.action === x.id))
+          : null;
+        const need: Partial<ThreadDTO> = !o.request || t.attention.word !== "Run" || ch || on === "view" ? {}
+          : next ? { attention: { ...t.attention, reason: `Run: ${next.why ?? ""}`, subject: next.why } }
+          : t.decisions?.length ? {} : { attention: { state: readState(t), section: "seen", reason: "" } };
+        put(t, { ...withRuns(t, (rs) => [...(rs ?? []), run]), ...need });
         setTimeout(() => {
           const cur = threads.get(t.id)!;
           const done = { ...run, running: false, ok: true, output: `$ ${(o.argv ?? [o.effect]).join(" ")}\nok (mock)`, endedAt: new Date(clock()).toISOString() };
           put(cur, withRuns(cur, (rs) => (rs ?? []).map((r) => (r === run || (r.action === run.action && r.running) ? done : r))));
+          // V0.mock-contract: the end of a run the agent asked for tells the agent, which takes a turn, as on the host.
+          if (o.request && !cur.running) runFor(t.id, "The command ran; going on. (mock)");
         }, 1200);
       }
       return { ok: true, result: { on, action: o.id } };
@@ -1462,9 +1480,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         const ans = pairs.length ? pairs.join("\n") : args.allow ? "Allowed" : "Denied";
         emit(t.id, "decision.closed", { id: args.decisionId, answer: ans, ...((args.skipped as string[] | undefined)?.length ? { skipped: args.skipped } : {}) });
         if (d?.kind === "effect" && args.allow) emit(t.id, "effect.result", { action: d.effect?.action, ok: true, text: "Merged #4170 with squash." });
-        // V0.101: an answered or declined ask leaves Needs you.
-        put(t, { decisions: (t.decisions ?? []).filter((x) => x.id !== args.decisionId), changes: (t.changes ?? []).map((x) => (x.need?.ask && x.need.ask === args.decisionId ? { ...x, need: undefined } : x)) });
-        runFor(t.id, "Thanks, continuing with that answer. (mock)");
+        // V0.101: an answered or declined ask leaves Needs you. V0.mock-contract: as on the host, the answer reads the
+        // thread and the agent's turn starts a moment later, when it takes the answer.
+        const left = (t.decisions ?? []).filter((x) => x.id !== args.decisionId);
+        put(t, {
+          decisions: left,
+          changes: (t.changes ?? []).map((x) => (x.need?.ask && x.need.ask === args.decisionId ? { ...x, need: undefined } : x)),
+          ...(left.length ? {} : { attention: { state: "seen", section: "seen", reason: "" }, view: { ...t.view, seenAt: new Date(clock()).toISOString() } }),
+        });
+        setTimeout(() => runFor(t.id, "Thanks, continuing with that answer. (mock)"), 100);
         break;
       }
       case "thread.cancelAsk": {
@@ -1528,11 +1552,16 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         idle("seen", "seen", { view: { snoozeUntil: null } });
         break;
       case "thread.archive":
+        // V0.mock-contract: an archive does not read the thread; Unarchive brings back an Unread one Unread.
+        if (t.attention.state === "done") unreadAtArchive.add(t.id);
         idle("archived", "archived", { archivedAt: new Date(clock()).toISOString(), pinnedAt: null });
         break;
-      case "thread.unarchive":
-        idle("seen", "seen", { archivedAt: null });
+      case "thread.unarchive": {
+        const st = readState(t);
+        unreadAtArchive.delete(t.id);
+        idle(st, "seen", { archivedAt: null });
         break;
+      }
       case "thread.markSeen":
         if (t.attention.state === "done") idle("seen", "seen", { view: { seenAt: new Date(clock()).toISOString() } });
         break;
@@ -1696,6 +1725,13 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     },
     prDetail(threadId, prUrl) {
       return mockPrDetail(threads.get(threadId), clock(), prUrl);
+    },
+    seed(ts, ps) {
+      projects = [...projects.filter((p) => !ps.some((x) => x.id === p.id)), ...ps];
+      for (const t of ts) {
+        threads.set(t.id, t);
+        events[t.id] ??= [];
+      }
     },
     events(threadId, after, limit) {
       const list = events[threadId] ?? [];

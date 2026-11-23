@@ -41,6 +41,15 @@ func fakeLogin(mode string) {
 		os.WriteFile(f, []byte(fmt.Sprintf("args=%s\nconfig=%s\ncwd=%s\noauthEnv=%v\nbrowser=%s\n",
 			strings.Join(os.Args[1:], " "), os.Getenv("CLAUDE_CONFIG_DIR"), wd, tok, os.Getenv("BROWSER"))), 0o600)
 	}
+	// FYR_FAKE_LOGIN_GATE: the CLI prints nothing until that file exists, so
+	// a test sees the login before its link (TestProviderLoginFixture).
+	if gate := os.Getenv("FYR_FAKE_LOGIN_GATE"); gate != "" {
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			if _, err := os.Stat(gate); err == nil {
+				break
+			}
+		}
+	}
 	link := "https://claude.com/cai/oauth/authorize?code=true&client_id=fake&state=abc"
 	if mode == "token" || mode == "hang" {
 		// As setup-token draws it: an OSC 8 link whose visible text wraps.
