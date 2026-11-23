@@ -1,0 +1,161 @@
+/* Phone: one rule set for touch (rows 56 px, every control at least 44 px, inputs 16 px so iOS does not zoom). */
+.set.phone .stn{background:none;border:0;padding:0;gap:0}
+.set.phone .stn-c{background:var(--raised);border:1px solid var(--line);border-radius:10px;gap:0;overflow:hidden}
+.set.phone .stn-i{min-height:56px;padding:8px 12px;border-radius:0;border-bottom:1px solid var(--line)}
+.set.phone .stn-i:last-child{border-bottom:0}
+.set.phone .stn-t{font-size:15px;line-height:20px}
+.set.phone .stn-s{font-size:13px;line-height:18px}
+.set.phone .stp{display:flex;flex-direction:column;gap:16px;min-width:0}
+.set.phone .stp-lede{margin:0}
+.set.phone .sr{min-height:56px}
+.set.phone .sg-fb{min-height:44px;font-size:13px;line-height:18px} /* touch: the fold header is a 44 px target */
+.set.phone .sr-t{font-size:15px;line-height:20px}
+.set.phone .sr-d{font-size:13px;line-height:18px}
+.set.phone .btn{height:auto;min-height:44px;padding:0 14px;font-size:14px}
+.set.phone .seg button{height:44px;padding:0 14px}
+.set.phone .htab{height:44px;min-height:44px;padding:0 12px;font-size:14px}
+.set.phone .htab-n{font-size:13.5px}
+.set.phone .htabs.compact .htab{height:44px;min-height:44px;padding:0 12px}
+.set.phone .stp>.htabs{margin:-4px 0 0}
+.set.phone :is(.sr select,.inl input,.pq,.fld input,.fld select,.qtime select){height:44px;font-size:16px}
+.set.phone .fld{font-size:13px}
+.set.phone .xb,.set.phone .star{width:44px;height:44px}
+.set.phone .star{font-size:20px;margin:0 -8px}
+.set.phone .lnk{min-height:44px;padding:0 8px;font-size:14px}
+.set.phone .sw{width:44px;height:44px;border-radius:22px}
+.set.phone .qd{max-width:none}
+.set.phone .qd button{height:44px}
+.set.phone .ig{height:44px}
+.set.phone .igrid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
+.set.phone .swt{width:46px;height:28px;border-radius:14px}
+.set.phone .swt::after{width:24px;height:24px}
+.set.phone .swt[aria-checked="true"]::after{transform:translateX(18px)}
+.set.phone .qw-top .allday{min-height:44px;font-size:15px}
+.set.phone .sr.stack{flex-direction:column;align-items:stretch;gap:6px}
+.set.phone .sr.stack .sr-e{max-width:none;flex:none}
+.set.phone .sr.stack .sr-e select{width:100%}
+.set.phone .sr.two .sr-e{grid-template-columns:minmax(0,1fr)}
+.set.phone .sr-e{max-width:none}
+.set.phone .fieldrow .inl,.set.phone .keyf{flex-wrap:wrap}
+.set.phone .fieldrow .inl input{flex:1 1 160px}
+.set.phone .setkey{flex-wrap:wrap}
+.set.phone .setkey input{flex:1 1 180px}
+.set.phone .login .loginlink{align-self:stretch}
+.set.phone .qline .qsum{min-height:44px;width:100%;text-align:left}
+/* V0.59, V0.60: changes and their actions */
+.pr.chgchip{max-width:180px} /* not .chg: that is the Changes tab pane (#56) */
+.chtab{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+.chl{display:flex;flex-direction:column;gap:8px;padding:12px 16px 4px;flex:0 1 auto;min-height:0;max-height:50%;overflow-y:auto;scrollbar-width:thin}
+/* #72: without git the diff section is one line and takes no height; the cards get the tab */
+.chg.nogit{flex:none;overflow:visible;padding-top:0;padding-bottom:8px}
+.chg.nogit .chg-empty{padding:4px 0;font-size:13px}
+.chtab:has(.chg.nogit) .chl{max-height:none}
+.chc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--raised);min-width:0}
+.chc.fail{border-color:var(--signal-ink)}
+.chc.end{opacity:.65}
+.chh{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0}
+.chk{flex:none;width:20px;text-align:center;color:var(--ink-muted)}
+.cht{flex:1 1 60%;font:600 14px/20px var(--ui)}
+.chp{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 12px/16px var(--mono);color:var(--ink-muted)} /* #84: a long phase label ends in … inside its card */
+.chrail{display:flex;gap:4px;margin:0;padding:0;list-style:none}
+.chrail li{flex:1;font:500 11px/14px var(--ui);color:var(--ink-muted);border-top:3px solid var(--line);padding-top:3px}
+.chrail li.done{border-color:var(--harbour);color:var(--ink)}
+.chrail li.now{border-color:var(--harbour);color:var(--harbour);font-weight:600}
+.chcond{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px;font:400 12px/16px var(--ui)}
+.chcond li.fail{color:var(--signal-ink)}
+.chcond li.pending{color:var(--ink-muted)}
+.chneed{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font:500 12px/16px var(--ui);color:var(--ink);padding:6px 8px;border-radius:8px;background:var(--beam-wash)}
+.chneed.muted{background:none;padding:0;color:var(--ink-muted);font-weight:400}
+.chneed .chnq{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
+/* A label an agent wrote can be any length: the button wraps inside its card and keeps every word. */
+.chneed .btn,.offb .btn{flex:0 1 auto;min-width:0;max-width:100%;height:auto;padding-block:5px;white-space:normal;overflow-wrap:anywhere;text-align:left}
+.beamdot{width:8px;height:8px;border-radius:50%;background:var(--beam);flex:none;display:inline-block}
+.rneed{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+/* V0.row-calm: a Your move row's button (or its beam dot) stands right of the state line and the chip, under the age */
+.rw.hasneed .m,.rw.hasneed .cl{grid-column:2}
+.rw>.rneed,.rw>.beamdot{grid-column:3;grid-row:2/span 2;align-self:center;justify-self:end;margin-left:0}
+.rneed .btn{min-height:24px;padding:2px 10px}
+.chchk{font:400 11px/16px var(--mono);align-self:center}
+.chev{display:flex;flex-wrap:wrap;gap:8px;font:400 12px/16px var(--ui)}
+.chc a{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.offers{display:flex;flex-direction:column;gap:6px;min-width:0;margin-top:12px}
+.offb{display:flex;flex-wrap:wrap;gap:6px}
+.offrun{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.offrun.ok{color:var(--calm)}.offrun.fail{color:var(--signal-ink)}
+/* V0.75 (1), #62: a used action stays in place, quiet; a failure keeps its weight and turns to the signal colour. */
+.btn.used{color:var(--ink-muted);background:transparent;border-color:var(--line);font-weight:400} /* #62: AA, 6.3:1 light and 6.9:1 dark; --ink-faint was 3.6 and 3.9 */
+.btn.used:hover:not(:disabled){color:var(--ink);background:var(--sunken)}
+.btn.bad{color:var(--signal-ink);border-color:var(--signal-ink)}
+.offout-b{flex:none;width:24px;height:24px;border-radius:6px;font:400 12px/22px var(--mono);color:var(--ink-muted);border:1px solid var(--line)}
+.offout-b.on{background:var(--sunken);color:var(--ink)}
+
+.offrl{padding:0;text-align:left;color:inherit}
+.offout{margin:4px 0 0;max-height:200px;overflow:auto;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11px/15px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+/* V0.64: the Changes board */
+.board{display:flex;flex-direction:column;gap:10px;min-width:0}
+.bdf{display:flex;flex-direction:column;gap:8px}
+.bdchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bdchips .chip{cursor:pointer}
+.bdchips .chip.on{border-color:var(--pc,var(--harbour));color:var(--pc,var(--harbour))}
+.bdend{display:inline-flex;gap:6px;align-items:center;font:400 12px/16px var(--ui);color:var(--ink-muted);margin-left:auto}
+.bdcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;align-items:start}
+.bdcol{display:flex;flex-direction:column;gap:8px;min-width:0}
+.bdcol h3{margin:0;font:600 13px/18px var(--ui);display:flex;gap:6px;align-items:center}
+.bdcol.needs h3{color:var(--signal-ink)}
+.bdn{font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.bdsum{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.bdgreen{flex:none}
+.board.phone .bdgreen{width:100%;min-height:44px;justify-content:center}
+.bdmerged{display:flex;flex-direction:column;gap:4px}
+.bderr{font:400 12px/16px var(--ui);color:var(--signal-ink)}
+.bdgroup{display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--line);padding-left:8px}
+.bdgh{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.bdfrom{display:flex;align-items:center;gap:6px;padding:0;min-width:0;font:400 12px/16px var(--ui);color:var(--ink-muted);text-align:left}
+.bdfrom:hover{color:var(--ink)}
+.bdempty{padding:24px 0;font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.board.phone .bdcols{grid-template-columns:1fr}
+/* V0.98: Untouched for 3 days and Finished since your last visit fold under the columns; Done here under a thread's changes. */
+.bdfold,.chdone{border-top:1px solid var(--line);padding-top:8px;margin-top:12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.bdfold summary,.chdone summary{cursor:pointer;font:600 13px/18px var(--ui);display:flex;gap:6px;align-items:center;list-style:none}
+.bdfold summary::before,.chdone summary::before{content:"▸";color:var(--ink-muted)}
+.bdfold[open] summary::before,.chdone[open] summary::before{content:"▾"}
+.bdrow,.chdrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) auto auto;gap:4px 12px;align-items:center;font:400 13px/18px var(--ui);padding:4px 0;min-width:0}
+.chdrow{grid-template-columns:minmax(0,1fr) auto;color:var(--ink-muted)}
+.bdrow.done{grid-template-columns:minmax(0,1fr) minmax(0,auto) auto;color:var(--ink-muted)}
+.bdrow .ok,.chdrow .ok,.chdonel{color:var(--calm);font:400 12px/16px var(--ui)}
+.board.phone .bdrow{grid-template-columns:minmax(0,1fr) auto}
+.board.phone .bdrow .bdfrom,.board.phone .bdrow .setd{grid-column:1}
+.rchg{position:relative}
+.rchg .rb{position:absolute;top:-2px;right:2px;min-width:16px;height:16px;border-radius:8px;background:var(--signal-ink);color:var(--bg,#fff);font:600 10px/16px var(--ui);text-align:center;padding:0 4px}
+
+/* V0.68: Fyr's own confirmation (confirm-ui.tsx); the phone's sheet is in phone.css. */
+.cfm-scrim{z-index:30}
+.dlg.cfm{width:min(480px,100%)}
+.cfm .dh{height:auto;min-height:44px;padding:10px 16px}
+.cfm-t{overflow-wrap:anywhere}
+.cfm-b{padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+.cfm-text{margin:0;font:400 14px/20px var(--ui);overflow-wrap:anywhere}
+.cfm-cmd{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px;background:var(--sunken);border-radius:10px;--knock:var(--sunken)}
+.cfm-code{display:flex;flex-direction:column;gap:4px;padding:10px 12px;min-width:0;cursor:pointer;user-select:text;-webkit-user-select:text}
+.cfm-code code{font:400 13px/19px var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.cfm-in{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.cfm-copy{height:30px;margin:6px 6px 0 0;padding:0 10px;border-radius:7px;font:500 12px/16px var(--ui);color:var(--harbour)}
+.cfm-copy:hover{background:var(--raised)}
+.cfm-pick{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.cfm-pick .cfm-in{flex-basis:100%}
+.cfm-opt{height:30px;padding:0 12px;border:1px solid var(--line);border-radius:7px;font:500 13px/18px var(--ui);color:var(--ink)}
+.cfm-opt.on{border-color:var(--harbour);background:var(--sunken);color:var(--harbour)}
+.cfm-why{display:flex;flex-direction:column;gap:4px}
+.cfm-why input{height:32px;padding:0 10px;border:1px solid var(--line);border-radius:7px;background:var(--raised);min-width:0}
+.chend{align-self:flex-start;padding:0;font:400 12px/16px var(--ui);color:var(--ink-muted);text-decoration:underline;text-underline-offset:2px}
+.chend:hover{color:var(--ink)}
+/* V0.84: Not now beside End this change; a parked card says so quietly, with Undo. */
+.chfoot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px}
+.chpark{padding:0;font:600 12px/16px var(--ui);color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+.chpark:hover{color:var(--signal-ink)}
+.chparked{display:flex;align-items:center;gap:8px;font:400 12px/16px var(--ui)}
+.chundo{padding:0;font:400 12px/16px var(--ui);color:var(--ink-muted);text-decoration:underline;text-underline-offset:2px}
+.chundo:hover{color:var(--ink)}
+.btn.p.danger,.m-bt.p.danger{background:var(--signal-ink);border-color:var(--signal-ink);color:var(--raised)}
+.btn.p.danger kbd{color:var(--raised)}
+

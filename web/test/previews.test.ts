@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FRAME_ALLOW, FRAME_MAX, filmstrip, frameHeight, inlineAttachmentId, previewCard, stepImage, thumbBox } from "../src/previews.ts";
+import { FRAME_ALLOW, FRAME_MAX, filmstrip, frameHeight, inlineAttachmentId, previewCard } from "../src/previews.ts";
 import { buildConversation, previewsOf } from "../src/conversation.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
 import { hid } from "./helpers.ts";
@@ -38,12 +38,6 @@ test("V0.47 frame height: 16:10 of the card without a size; the page's own repor
   assert.match(FRAME_ALLOW, /xr-spatial-tracking/);
 });
 
-test("thumbnail box keeps the aspect inside 360 px tall", () => {
-  assert.deepEqual(thumbBox(390, 844, 680), { width: 166, height: 360 });
-  assert.deepEqual(thumbBox(1280, 800, 680), { width: 576, height: 360 });
-  assert.deepEqual(thumbBox(200, 100, 680), { width: 200, height: 100 });
-});
-
 test("only same-origin /api/attachments/{id} images are inline", () => {
   const o = "https://desk.tail.ts.net:7443";
   assert.equal(inlineAttachmentId("/api/attachments/a_1", o), "a_1");
@@ -71,7 +65,4 @@ test("preview events: cards in the log in time order, filmstrip newest first, vi
   assert.deepEqual(buildConversation(evs).map((i) => i.kind), ["user", "preview", "preview", "preview"]);
   const cards = previewsOf(evs);
   assert.deepEqual(filmstrip(cards).map((c) => c.seq), [4, 3, 2]);
-  assert.equal(stepImage(cards, 2, 1)?.seq, 4, "skips the HTML preview");
-  assert.equal(stepImage(cards, 4, 1), null);
-  assert.equal(stepImage(cards, 4, -1)?.seq, 2);
 });

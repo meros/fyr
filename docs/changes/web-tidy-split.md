@@ -1,0 +1,13 @@
+# V0.web-tidy-split: the big web modules are split by seam, the stylesheet by area, and the casts and dead code are gone
+
+No behaviour change, except one small one in (4).
+
+(1) **Modules.** `project-ui.tsx` keeps the project's icon, tags and list; the one picker and New project are `project-picker.tsx`, the project page is `project-editor.tsx`, cross-host linking is `project-linking.tsx`, quiet projects are `quiet-ui.tsx`. `thread.tsx` keeps the pane, its tabs and the PR tab; the agents strip, the conversation, the tool-call cards, the decision card and the composer are `agents-strip.tsx`, `conversation-ui.tsx`, `tool-calls-ui.tsx`, `decision-card.tsx`, `composer.tsx` (no import cycle between them: the contexts and `useToolDetails` that the cards share live in `tool-calls-ui.tsx`). The phone's inbox row is `phone-row.tsx`. Settings' host loaders are the hook `useSettingsData` in `settings-load.ts`.
+
+(2) **Stylesheet.** `app.css` is a list of `@import`s of `base.css`, `rail-inbox.css`, `thread.css`, `chrome.css`, `projects.css`, `cards.css`, `settings.css`, `changes.css` and `layout.css`, after `phone.css`, in the order the rules had. esbuild bundles them into the same one `dist/app.css` (byte for byte the same as before), so the service worker's list is unchanged. The palette test reads `base.css`.
+
+(3) **Casts.** `h.slots?.guard` needs no cast (`Slots` has `guard`); a command's receipt is read through `slotsOf`, `ghAuthOf` and `ghReposOf` instead of `as unknown as`; `conversation.ts` has no `any` in `blocksOf` and the attachments of a message. One `graphemes` in `format.ts` replaces the two `Intl.Segmenter` shims.
+
+(4) **Formatting.** `clockAt`, `dayMonth` and `shortWeekday` in `format.ts` replace the hand-built HH:MM of the quiet hold, the wake chip's and the board's ad-hoc date calls. The sign-in end time in Settings → Providers shows the 24-hour clock like every other time (it followed the browser's locale before). `baseName`, `dirName` and `pathSegments` in `paths.ts` replace the path splitting in the board, New thread, the folder picker and the mock.
+
+(5) **Dead code.** `findGuard`, `headerPr`, `pairedSummary`, `thumbBox`, `stepImage`, `paletteColor`, `startedBy`, `messageFrom`, `modelsSummary`, `pushNext`, `moveBy`, `automationSummary`, `SaveRow`, `actionsOn` and `visibleTasks` had no caller but their own tests; they and those tests are gone (the phone's bottom bar now calls `showsBottomBar` instead of repeating it; the test oracle `filterByProject` moved to `test/helpers.ts`). Types and functions only their own file used are no longer exported. `setMarkdownOrigin` stays: the tests use it to set the page's origin.

@@ -4,7 +4,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  actionsOn,
   applySnapshot,
   applyThreadPatch,
   bannerDeploy,
@@ -87,8 +86,6 @@ test("profiles and actions are each host's own: there is no merged list", () => 
   assert.deepEqual(profilesOn(s, hid("gone")), []);
   assert.deepEqual(profilesByHost(s), { [A]: profilesOn(s, A), [B]: profilesOn(s, B) });
   assert.equal(profilesByHost(s), profilesByHost(s), "the same hosts give the same object (a context value)");
-  assert.deepEqual(actionsOn(s, A).map((a) => a.name), ["thread.settle"]);
-  assert.deepEqual(actionsOn(s, B), []);
 });
 
 test("each host has its own deploy; the banner is the one of the host the front runs in", () => {

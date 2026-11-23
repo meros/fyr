@@ -10,6 +10,7 @@ import { MOCK_UNDECLARED, UNDECLARED_NOTICE } from "./mock-load.ts";
 import { quietList } from "./quiet.ts";
 import type { SlashCommand } from "./slash.ts";
 import type { DeployProgress } from "./deploy.ts";
+import { baseName } from "./paths.ts";
 
 // V0.35: a table that squeezed on the phone (a commit column, long change text).
 const TRIAGE_TABLE =
@@ -1164,7 +1165,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   };
   const tree = mockTree([...fx.threads.map((t) => t.cwd), ...projects.map((p) => p.folder ?? "")].filter((p) => p.startsWith(MOCK_HOME)));
   const expand = (p: string) => (p.trim() === "~" || p.trim() === "" ? MOCK_HOME : p.trim().startsWith("~/") ? MOCK_HOME + p.trim().slice(1) : p.trim()).replace(/\/+$/, "") || "/";
-  const dirOf = (p: string): FsDir => ({ name: p.split("/").pop() ?? p, path: p, repo: tree.repos.has(p) || undefined });
+  const dirOf = (p: string): FsDir => ({ name: baseName(p), path: p, repo: tree.repos.has(p) || undefined });
   const putProject = (p: Project) => {
     projects = projects.some((x) => x.id === p.id) ? projects.map((x) => (x.id === p.id ? p : x)) : [...projects, p];
     setTimeout(() => sub?.project?.(withQuiet(p)), 30);

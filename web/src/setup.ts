@@ -22,6 +22,23 @@ export interface GHAuthState {
   done?: boolean;
 }
 
+export interface GHRepoItem {
+  nameWithOwner: string;
+  description?: string;
+}
+
+/** The receipt of the gh.login fix: the device-login state; null when the reply is not one. */
+export function ghAuthOf(result: unknown): GHAuthState | null {
+  const a = result as Partial<GHAuthState> | null;
+  return a && typeof a === "object" && typeof a.running === "boolean" ? (a as GHAuthState) : null;
+}
+
+/** The receipt of the gh.repos fix: the repositories the account can see. */
+export function ghReposOf(result: unknown): GHRepoItem[] {
+  const r = (result as { repos?: unknown } | null)?.repos;
+  return Array.isArray(r) ? (r as GHRepoItem[]) : [];
+}
+
 export interface SetupStep {
   id: string;
   title: string;

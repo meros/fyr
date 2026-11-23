@@ -6,11 +6,11 @@ import { type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Decision, Thread } from "./types.ts";
 import { StateIcon } from "./icons.tsx";
-import { ApprovalBody, EffectBody } from "./thread.tsx";
 import { approvalView } from "./approval-view.ts";
 import { prForEffect } from "./offers.ts";
 import { answerOf, back, goTo, pickStay, chooseOther, questionsOf, setOther, settledOf, skip, type CardState } from "./question.ts";
 import { ADVANCE_MS, allowCommit, askCommit, stepLabel, type Choice } from "./mobile.ts";
+import { EffectBody, ApprovalBody } from "./decision-card.tsx";
 
 // ---- decisions ----
 

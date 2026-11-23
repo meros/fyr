@@ -49,7 +49,7 @@ export function whenLabel(iso: string | null | undefined, now: number): string {
   const diff = daysBetween(d, new Date(now));
   if (diff === 0) return hm;
   if (diff > 0 && diff < 7) return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hm}`;
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return dayMonth(d);
 }
 
 /** V0.125: "08:12" today, "Mon 06:00" this week, "9 Nov 06:00" before that: a past time with its clock time. */
@@ -60,14 +60,36 @@ export function dayTime(iso: string | null | undefined, now: number): string {
   const diff = daysBetween(d, new Date(now));
   if (diff === 0) return hm;
   if (diff > 0 && diff < 7) return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hm}`;
-  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm}`;
+  return `${dayMonth(d)} ${hm}`;
 }
 
+/** "14:20": the clock time of an instant in epoch ms, 24-hour with two digits, whatever the locale. */
+export function clockAt(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+}
+
+/** "14:20" for an ISO time; "" for none or one that does not parse. */
 export function clockTime(iso: string | null | undefined): string {
   if (!iso) return "";
   const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
-  return new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return Number.isNaN(t) ? "" : clockAt(t);
+}
+
+/** "12 Nov": the day and month of a date. */
+export function dayMonth(d: Date): string {
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** "Fri": the short weekday of an ISO time; "" for none or one that does not parse. */
+export function shortWeekday(iso: string | null | undefined): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isNaN(t) ? "" : new Date(t).toLocaleDateString(undefined, { weekday: "short" });
+}
+
+/** The grapheme clusters of a string (an emoji with its modifiers is one); code points where Intl.Segmenter is missing. */
+export function graphemes(s: string): string[] {
+  if (typeof Intl.Segmenter !== "function") return Array.from(s);
+  return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s), (x) => x.segment);
 }
 
 /** "Tomorrow 06:00", "Mon 06:00", "14:30" for a future time. */
@@ -81,7 +103,7 @@ export function untilLabel(iso: string | null | undefined, now: number): string 
   if (diff === 0) return hm;
   if (diff === 1) return `tomorrow ${hm}`;
   if (diff < 7) return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hm}`;
-  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm}`;
+  return `${dayMonth(d)} ${hm}`;
 }
 
 export function duration(ms: number | null | undefined): string {

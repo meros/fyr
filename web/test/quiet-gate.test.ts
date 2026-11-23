@@ -4,9 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { QUIET_SHOW_MS, admitThread, createProjects, hideQuiet, loadQuietShow, quietLocked, reachable, setQuietShow, subscribeQuietShow } from "../src/quiet.ts";
 import { flatOrder, sections } from "../src/store.ts";
-import { filterByProject } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
-import { thread } from "./helpers.ts";
+import { filterByProject, thread } from "./helpers.ts";
 
 const now = Date.parse("2026-11-16T20:00:00Z");
 const until = "2026-11-17T05:00:00Z";

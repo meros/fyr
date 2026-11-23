@@ -195,11 +195,17 @@ interface Block {
   content?: unknown;
 }
 
-function blocksOf(data: any): Block[] {
-  const c = data?.message?.content;
+function blocksOf(data: unknown): Block[] {
+  const c = (data as { message?: { content?: unknown } } | null | undefined)?.message?.content;
   if (Array.isArray(c)) return c as Block[];
   if (typeof c === "string") return [{ type: "text", text: c }];
   return [];
+}
+
+/** A user message's attachment records, as the host logged them: those without an id are dropped. */
+function attachmentsOf(v: unknown): { id: string; name: string; mediaType: string; size: number }[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((a: Record<string, unknown> | null) => (a && typeof a.id === "string" ? [{ id: a.id, name: str(a.name) || "file", mediaType: str(a.mediaType), size: Number(a.size) || 0 }] : []));
 }
 
 /** The thread's preview cards, in log order (for the filmstrip). */
@@ -278,9 +284,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           text: str(e.data?.text),
           images: Number(e.data?.images) || 0,
           from: from && from !== "view-typed" ? from : undefined,
-          attachments: (Array.isArray(e.data?.attachments) ? e.data.attachments : [])
-            .filter((a: any) => a && typeof a.id === "string")
-            .map((a: any) => ({ id: a.id, name: str(a.name) || "file", mediaType: str(a.mediaType), size: Number(a.size) || 0 })),
+          attachments: attachmentsOf(e.data?.attachments),
           id: id || undefined,
           delivery: id ? "sent" : "",
           pending: false,

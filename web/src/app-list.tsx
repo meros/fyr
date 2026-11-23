@@ -11,11 +11,11 @@ import {
 import { placeOf } from "./still-list.ts";
 import { cutSection } from "./selection.ts";
 import { isOpen } from "./inbox.tsx";
-import { type SendArgs } from "./thread.tsx";
 import { listPref, listShown, setListPref } from "./prefs.ts";
 import { AUTO_HIDE_MS, AUTO_HIDE_SECTIONS, hideClocks, hideStep, type HideAt } from "./inbox-autohide.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
+import { type SendArgs } from "./composer.tsx";
 
 export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | "setLastOpen" | "view" | "sel" | "setZone" | "sectionOpen" | "setSectionOpen" | "setExpanded" | "phone" | "cmds" | "limits" | "listed" | "rows" | "drawn" | "guest" | "order"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
   const { store, setLastOpen, view, sel, setZone, sectionOpen, setSectionOpen, setExpanded, phone, cmds, limits, listed, rows, drawn, guest, order, openThread } = c;

@@ -5,7 +5,7 @@ import type { Project } from "./types.ts";
 import { ProfileQuota } from "./quota-ui.tsx";
 import { AgentPill, newThreadAgent } from "./agent-ui.tsx";
 import { ChipStrip, ClipPicker } from "./attach-ui.tsx";
-import { NewProjectStep, ProjectIcon, ProjectList, QuietHold } from "./project-ui.tsx";
+import { ProjectIcon, ProjectList } from "./project-ui.tsx";
 import { HostField } from "./host-pick-ui.tsx";
 import type { HostProfiles } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
@@ -16,6 +16,8 @@ import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm, type NewThreadFormOptions } from "./new-thread-form.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { DialogScrim } from "./motion-ui.tsx";
+import { NewProjectStep } from "./project-picker.tsx";
+import { QuietHold } from "./quiet-ui.tsx";
 
 export function Modal({ title, onClose, children, wide, cls }: { title: string; onClose(): void; children: any; wide?: boolean; /** V0.119: "settings" keeps one size on every page */ cls?: string }) {
   return (

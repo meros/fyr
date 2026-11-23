@@ -1,6 +1,6 @@
 // The Automation settings page (split from settings-ui.tsx).
 
-import { type Data, type SettingsProps } from "./settings-ui.tsx";
+import { type SettingsProps } from "./settings-ui.tsx";
 import { useEffect, useState } from "preact/hooks";
 import type { HostId } from "./hostid.ts";
 import { hostUrl } from "./urls.ts";
@@ -17,6 +17,7 @@ import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { repoKey, sortRepos } from "./automerge.ts";
 import { changeLines, changesLabel, githubPause, githubRows, githubState, releaseSource, updateRow, updateState } from "./updates.ts";
 import { Empty, Group, LoadError, Row, SaveField, Skeleton, Switch, useSet } from "./settings-rows.tsx";
+import { type Data } from "./settings-load.ts";
 
 // ---- Automation ----
 

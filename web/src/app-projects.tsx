@@ -10,7 +10,7 @@ import {
 import { Modal } from "./dialogs.tsx";
 import type { NewThreadArgs } from "./new-thread.ts";
 import { useConfirmHost } from "./confirm-ui.tsx";
-import { type Directory, type ProjectPatch } from "./project-ui.tsx";
+import { type Directory } from "./project-ui.tsx";
 import { expandOrder, findProject, memberOn, moveToast, recordOf, splitSharedPatch } from "./projects.ts";
 import { FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { hostOfflineNote, multiHost } from "./hosts.ts";
@@ -20,6 +20,7 @@ import { BottomSheet } from "./motion-ui.tsx";
 import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
 import type { useNavHistory } from "./app-history.tsx";
+import { type ProjectPatch } from "./project-editor.tsx";
 
 export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" | "setStore" | "fullStore" | "hostOfId" | "store" | "threadsRef" | "setDialog" | "setTheme" | "phone" | "phoneRef" | "cmds" | "now" | "openSettings" | "openPicker" | "filterId" | "filterOn"> & Pick<ReturnType<typeof useThreadActions>, "openThread"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navReplace" | "navRef">) {
   const { api, setStore, fullStore, hostOfId, store, threadsRef, setDialog, setTheme, phone, phoneRef, cmds, now, openSettings, openPicker, filterId, filterOn, openThread, navGo, navRef, navReplace } = c;

@@ -2,14 +2,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mockLoad, withGuard } from "../src/mock-load.ts";
-import { GUARD_WINDOW, findGuard, guardChart, guardLine, guardLog, guardSummary, type GuardEvent } from "../src/guard.ts";
+import { GUARD_WINDOW, guardChart, guardLine, guardLog, guardSummary, type GuardEvent } from "../src/guard.ts";
 import { rowUndeclared } from "../src/undeclared.ts";
 import { withUndeclared } from "../src/mock-load.ts";
 
 const NOW = Date.parse("2026-11-18T08:00:00");
 const title = (t: string) => ({ t_mapperf: "Map perf", t_babysit: "Babysit PR #4170" })[t] ?? t;
 const guarded = () => withGuard(mockLoad(), "1", NOW);
-const g = () => findGuard(guarded())!.g;
+const guardOf = (load: ReturnType<typeof mockLoad>) => load.find((h) => h.slots?.guard)!.slots!.guard!;
+const g = () => guardOf(guarded());
 
 test("G1 the chart has a lane per frozen thread, in the order they first froze, and a band for each short stretch", () => {
   const c = guardChart(g(), NOW, title);
@@ -60,7 +61,7 @@ test("G6 the text alternative says what the picture says", () => {
 test("G7 a thread's line: frozen n of max and for how long; the wait to the next pause; let run at the cap", () => {
   assert.equal(guardLine(g(), "t_mapperf", NOW), "paused 3/8 · 2 min");
   assert.equal(guardLine(g(), "t_babysit", NOW), "runs · next pause possible in 24 s");
-  const capped = findGuard(withGuard(mockLoad(), "capped", NOW))!.g;
+  const capped = guardOf(withGuard(mockLoad(), "capped", NOW));
   capped.threads![0].frozen = false;
   assert.equal(guardLine(capped, "t_mapperf", NOW), "let run after 8 pauses");
   assert.equal(guardLine(g(), "t_other", NOW), null);

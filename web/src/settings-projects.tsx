@@ -4,9 +4,10 @@ import type { PageView, PageUi, SettingsProps } from "./settings-ui.tsx";
 import { Fragment } from "preact";
 import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
-import { NewProjectStep, ProjectIcon } from "./project-ui.tsx";
+import { ProjectIcon } from "./project-ui.tsx";
 import { Empty, Group, Row, useSet } from "./settings-rows.tsx";
 import { Grip, MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
+import { NewProjectStep } from "./project-picker.tsx";
 
 // ---- Projects ----
 

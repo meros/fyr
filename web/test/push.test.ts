@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { base64UrlToBytes, deviceLabel, openTargets, parsePayload, pushNext, pushStatus, rememberOpen, takeOpen, unsupportedReason, type PushEnv } from "../src/push.ts";
+import { base64UrlToBytes, deviceLabel, openTargets, parsePayload, pushStatus, rememberOpen, takeOpen, unsupportedReason, type PushEnv } from "../src/push.ts";
 
 const desktop: PushEnv = { secure: true, serviceWorker: true, pushManager: true, notification: true, ios: false, standalone: false };
 
@@ -29,16 +29,6 @@ test("iOS needs the app on the home screen first", () => {
   assert.equal(pushStatus(ios, "default", false), "unsupported");
   assert.equal(unsupportedReason({ ...ios, standalone: true }), null);
   assert.equal(pushStatus({ ...ios, standalone: true }, "default", false), "off");
-});
-
-test("transitions of the bell", () => {
-  assert.equal(pushNext("off", { type: "permission", result: "denied" }), "denied");
-  assert.equal(pushNext("off", { type: "permission", result: "granted" }), "off", "on only after subscribing");
-  assert.equal(pushNext("off", { type: "subscribed" }), "on");
-  assert.equal(pushNext("off", { type: "failed" }), "off");
-  assert.equal(pushNext("on", { type: "unsubscribed" }), "off");
-  assert.equal(pushNext("on", { type: "failed" }), "on", "a failed turn-off keeps it on");
-  assert.equal(pushNext("unsupported", { type: "subscribed" }), "unsupported");
 });
 
 test("device labels and payload parsing", () => {

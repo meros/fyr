@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardItems, columns, finishedSince, untouchedItems, UNTOUCHED_MS } from "../src/board.ts";
-import { doneText, headerPr, isDone, openAndDone } from "../src/offers.ts";
+import { doneText, headerPrs, isDone, openAndDone } from "../src/offers.ts";
 import type { Change, Project, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -55,10 +55,10 @@ test("SPEC V0.98 (6): the header shows the newest open change's PR, never a done
   const done = { at: at(2), by: "observed" as const, reason: "merged" };
   // The thread's main PR is a done change's: not shown; the open change's PR is.
   const t = { pr: pr(116, "MERGED"), changes: [ch({ id: "a", key: "pr:o/r#116", pr: pr(116, "MERGED"), phase: "landed", done, createdAt: at(3) }), ch({ id: "b", key: "k2", pr: pr(120), phase: "review", createdAt: at(1) })] };
-  assert.equal(headerPr(t)?.number, 120);
-  assert.equal(headerPr({ pr: pr(116, "MERGED"), changes: [t.changes[0]] }), null, "nothing when none is open");
+  assert.equal(headerPrs(t)[0]?.number, 120);
+  assert.deepEqual(headerPrs({ pr: pr(116, "MERGED"), changes: [t.changes[0]] }), [], "nothing when none is open");
   const two = { pr: null, changes: [ch({ id: "a", pr: pr(1), phase: "review", createdAt: at(1) }), ch({ id: "b", pr: pr(2), phase: "review", createdAt: at(2) })] };
-  assert.equal(headerPr(two)?.number, 2, "the newest open one");
+  assert.equal(headerPrs(two)[0]?.number, 2, "the newest open one");
 });
 
 test("SPEC V0.98 (3): the thread's Changes tab lists open changes, then Done here", () => {

@@ -1,7 +1,7 @@
 // V0.119: the one reorder control's pure part.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dropIndex, edgeSpeed, move, moveBy, moveLabel, shiftOf, slotOffset, stepOf } from "../src/reorder.ts";
+import { dropIndex, edgeSpeed, move, moveLabel, shiftOf, slotOffset, stepOf } from "../src/reorder.ts";
 
 const ids = ["a", "b", "c", "d"];
 
@@ -14,14 +14,6 @@ test("move: first, last, same place, out of range", () => {
   assert.deepEqual(move(ids, 1, 9), ids);
   assert.notEqual(move(ids, 0, 1), ids, "a new list, the old one untouched");
   assert.deepEqual(ids, ["a", "b", "c", "d"]);
-});
-
-test("moveBy stops at the ends", () => {
-  assert.deepEqual(moveBy(ids, "b", -1), ["b", "a", "c", "d"]);
-  assert.deepEqual(moveBy(ids, "b", 1), ["a", "c", "b", "d"]);
-  assert.deepEqual(moveBy(ids, "a", -1), ids);
-  assert.deepEqual(moveBy(ids, "d", 1), ids);
-  assert.deepEqual(moveBy(ids, "zz", 1), ids);
 });
 
 test("the grip's label", () => {

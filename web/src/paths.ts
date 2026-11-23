@@ -8,6 +8,21 @@ export function tildePath(p: string, home = ""): string {
   return p.replace(HOME_RE, "~");
 }
 
+/** The last segment of a path or URL: "/src/acme" → "acme"; "" when it ends in a slash. */
+export function baseName(p: string): string {
+  return p.slice(p.lastIndexOf("/") + 1);
+}
+
+/** The folder part of a path: "~/src/fy" → "~/src"; "/" for a child of the root. */
+export function dirName(p: string): string {
+  return p.slice(0, Math.max(p.lastIndexOf("/"), 0)) || "/";
+}
+
+/** The non-empty segments of a path: "/src//acme/" → ["src", "acme"]. */
+export function pathSegments(p: string): string[] {
+  return p.split("/").filter(Boolean);
+}
+
 /** Shortens a path in the middle to at most `max` characters; the file name stays whole when it fits. */
 export function shortenPath(path: string, max: number): string {
   if (path.length <= max) return path;

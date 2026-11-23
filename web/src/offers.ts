@@ -1,6 +1,6 @@
 // Changes and actions in the client (SPEC 0.5 V0.59, V0.60, decision 0018). Pure: what a change shows, which
 // actions the owner can press now, and the words for the conversation lines.
-import { ago } from "./format.ts";
+import { dayMonth, clockTime, ago } from "./format.ts";
 
 import type { Change, ChangeNeed, ChangePhase, Offer, OfferRun, PullRequest, Thread } from "./types.ts";
 import { shortHead } from "./pr.ts";
@@ -287,11 +287,6 @@ export function headerPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullR
   return out;
 }
 
-/** The header chip (V0.98 (6), amends V0.73 (2)): the newest open change's PR, or null when none is open. */
-export function headerPr(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullRequest | null {
-  return headerPrs(t)[0] ?? null;
-}
-
 /** V0.multi-pr: the PR an effect decision acts on (matching args.pr across the thread's PRs), falling back to t.pr. */
 export function prForEffect(t: Pick<Thread, "pr"> & { changes?: Change[] }, d?: { effect?: { args?: Record<string, unknown> } } | null): PullRequest | null | undefined {
   const url = typeof d?.effect?.args?.pr === "string" ? d.effect.args.pr : "";
@@ -348,9 +343,9 @@ export function wakeChip(t: Pick<Thread, "wakes">, now: number): { text: string;
   const at = new Date(Date.parse(w.at));
   if (Number.isNaN(at.getTime())) return null;
   const n = new Date(now);
-  const hm = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const hm = clockTime(w.at);
   const today = at.getFullYear() === n.getFullYear() && at.getMonth() === n.getMonth() && at.getDate() === n.getDate();
-  const when = today ? hm : `${at.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm}`;
+  const when = today ? hm : `${dayMonth(at)} ${hm}`;
   const quota = w.window ? `, when the ${w.window} window resets` : w.provider ? ", when quota resets" : "";
   const note = (w.note ?? "").trim();
   const n2 = (t.wakes?.length ?? 0) - 1;

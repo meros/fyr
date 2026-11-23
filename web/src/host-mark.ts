@@ -2,6 +2,7 @@
 // on (a laptop, a desktop's monitor, a server) in the host's colour. Circles are hosts; squares are projects. Pure.
 import type { HostInfo } from "./hosts.ts";
 import { PALETTE_NAMES } from "./projects.ts";
+import { graphemes } from "./format.ts";
 
 type HostGlyph = "laptop" | "monitor" | "server";
 
@@ -22,8 +23,7 @@ export function ownerIcon(v: string | undefined): { glyph: HostIcon } | { emoji:
   if (!v) return null;
   if (isIcon(v)) return { glyph: v };
   if (/^[a-z0-9-]+$/.test(v)) return null; // a glyph name this client does not know
-  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment(s: string): Iterable<{ segment: string }> } }).Segmenter;
-  const first = Seg ? [...new Seg(undefined, { granularity: "grapheme" }).segment(v)][0]?.segment : Array.from(v)[0];
+  const first = graphemes(v)[0];
   return first ? { emoji: first } : null;
 }
 

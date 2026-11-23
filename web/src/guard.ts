@@ -191,15 +191,6 @@ export function guardSummary(g: Guard | undefined, now: number): string {
   return frozen ? `${head} · ${frozen} thread${frozen === 1 ? "" : "s"} frozen` : head;
 }
 
-/** The guard of the first host that has one. */
-export function findGuard(list: HostLoad[]): { h: HostLoad; g: Guard } | null {
-  for (const h of list) {
-    const g = (h.slots as { guard?: Guard } | undefined)?.guard;
-    if (g) return { h, g };
-  }
-  return null;
-}
-
 const WHY: Record<string, string> = {
   memory: "memory was fine for 30 s",
   gone: "its processes ended",
@@ -230,7 +221,7 @@ export function guardLog(g: Guard | undefined, titleOf: (thread: string) => stri
 /** V0.rerun-classes (Settings → Automation, desktop and phone): one row per class the owner marked rerunnable, with what
  *  the guard did to it in the last hour. */
 export function rerunRows(h: HostLoad, clock: (iso: string) => string): { class: string; line: string }[] {
-  const kills = (h.slots as { guard?: Guard } | undefined)?.guard?.rerun ?? [];
+  const kills = h.slots?.guard?.rerun ?? [];
   return (h.rerun?.classes ?? []).map((c) => {
     const k = kills.find((x) => x.class === c);
     if (!k) return { class: c, line: "Not killed in the last hour" };

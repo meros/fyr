@@ -8,8 +8,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import { recordUndo, undoCommands, undoKindOf, undoLive, type UndoEntry } from "./store.ts";
 import { createSendDedupe } from "./send-guard.ts";
-import type { SendArgs } from "./thread.tsx";
 import type { CrossHostHandoverArgs } from "./handover.ts";
+import { type SendArgs } from "./composer.tsx";
 
 interface Toast {
   text: string;

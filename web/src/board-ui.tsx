@@ -13,6 +13,8 @@ import { doneArgs, doneText } from "./offers.ts";
 import { ProjectIcon } from "./project-ui.tsx";
 import { colorVar } from "./projects.ts";
 import { boardSettledPref, setBoardSettledPref } from "./prefs.ts";
+import { baseName } from "./paths.ts";
+import { shortWeekday } from "./format.ts";
 
 interface BoardProps {
   threads: Record<string, Thread>;
@@ -64,7 +66,7 @@ export function ChangesBoard(p: BoardProps) {
   const [mergeErrs, setMergeErrs] = useState<Record<string, string>>({});
   const mergeAll = async () => {
     const list = greens;
-    const names = list.map((m) => `#${m.pr.split("/").pop()} at ${shortHead(m.args.head)}`).join(", ");
+    const names = list.map((m) => `#${baseName(m.pr)} at ${shortHead(m.args.head)}`).join(", ");
     if (!(await ask({ title: `Merge ${list.length} green PR${list.length === 1 ? "" : "s"}?`, text: `Fyr merges ${names} on GitHub, one after another. A PR whose head moved is left as it is.`, confirm: "Merge all" }))) return;
     setMerging(true);
     setMergeErrs({});
@@ -145,7 +147,7 @@ export function ChangesBoard(p: BoardProps) {
                 <span class="ell">{i.thread.title || "Untitled thread"}</span>
                 <BoardHost i={i} />
               </button>
-              <span class="setd">since {weekday(i.change.touchedAt ?? i.change.updatedAt)}</span>
+              <span class="setd">since {shortWeekday(i.change.touchedAt ?? i.change.updatedAt)}</span>
               <button class="btn sm" title="Mark this change done: it leaves the board" onClick={() => p.onRun(i.thread.id, "change.done", doneArgs(i.change))}>
                 Done
               </button>
@@ -174,11 +176,6 @@ export function ChangesBoard(p: BoardProps) {
   );
 }
 
-/** The day of a time, for "since Fri". */
-const weekday = (iso: string) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { weekday: "short" });
-};
 
 /** V0.140: with several hosts, the host a change is made on, after its thread's title (cards and the folded rows). */
 function BoardHost({ i }: { i: BoardItem }) {

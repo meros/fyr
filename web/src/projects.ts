@@ -8,6 +8,7 @@ import { effortsFor } from "./providers.ts";
 import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import type { HostInfo } from "./hosts.ts";
+import { graphemes } from "./format.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
 export const PALETTE: Record<string, { light: string; dark: string }> = {
@@ -36,20 +37,9 @@ export function colorName(color: string | undefined, name: string): string {
   return PALETTE_NAMES[hash(name.toLowerCase()) % PALETTE_NAMES.length];
 }
 
-export function paletteColor(color: string | undefined, name: string, dark: boolean): string {
-  const c = PALETTE[colorName(color, name)];
-  return dark ? c.dark : c.light;
-}
-
-/** The CSS variable a project colour reads (the tokens are in app.css). */
+/** The CSS variable a project colour reads (the tokens are in base.css). */
 export function colorVar(color: string | undefined, name: string): string {
   return `var(--p-${colorName(color, name)})`;
-}
-
-function graphemes(s: string): string[] {
-  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment(s: string): Iterable<{ segment: string }> } }).Segmenter;
-  if (Seg) return [...new Seg(undefined, { granularity: "grapheme" }).segment(s)].map((x) => x.segment);
-  return Array.from(s);
 }
 
 /** 1 or 2 letters: the first letters of the first two words ("acme/web" → AW), else the first letter. */
@@ -225,15 +215,6 @@ export function addHosts(p: Project, hosts: readonly HostInfo[]): HostInfo[] {
   return hosts.filter((h) => h.online && h.id && !taken.has(h.id));
 }
 
-/** The inbox filter: only this project's threads; null shows all. */
-export function filterByProject(threads: Record<string, Thread>, projectId: string | null, projects: Project[]): Record<string, Thread> {
-  if (!projectId) return threads;
-  const want = findProject(projects, projectId)?.id ?? projectId;
-  const out: Record<string, Thread> = {};
-  for (const t of Object.values(threads)) if (projectOf(t, projects)?.id === want) out[t.id] = t;
-  return out;
-}
-
 /** Where a project lives, for a subtitle: its folder, else that threads are filed by hand (V0.55). */
 export function projectSubtitle(p: Project): string {
   if (p.members) return `On ${p.members.length} hosts`; // decision 0034: each has its own folder
@@ -263,20 +244,6 @@ export function matchProjects(projects: Project[], query: string): Project[] {
   const q = query.trim().toLowerCase();
   if (!q) return projects;
   return projects.filter((p) => `${p.name} ${projectSubtitle(p)}`.toLowerCase().includes(q));
-}
-
-/** Started-by (V0.22): "from <parent title>", or null. */
-export function startedBy(t: Pick<Thread, "parent">, threads: Record<string, Thread>): { id: string; title: string } | null {
-  if (!t.parent) return null;
-  const p = threads[t.parent];
-  return { id: t.parent, title: p?.title || "another thread" };
-}
-
-/** A message another thread's agent sent: who sent it. */
-export function messageFrom(fromId: string | undefined, threads: Record<string, Thread>, projects: Project[]): { id: string; title: string; project?: Project } | null {
-  if (!fromId) return null;
-  const t = threads[fromId];
-  return { id: fromId, title: t?.title || "another thread", project: t ? projectOf(t, projects) : undefined };
 }
 
 /** The remembered inbox filter (per device). */

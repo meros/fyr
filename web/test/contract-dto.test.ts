@@ -93,7 +93,7 @@ test("load: a pool whose lists arrive as null (a Go nil slice) reads as empty", 
 import { decodeChanges, decodeFilePatch, defaultMode, sinceLabel, sinceLine } from "../src/changes.ts";
 import { changeList, changeChip } from "../src/offers.ts";
 import { decodeThread } from "../src/decode.ts";
-import { findGuard, guardChart, guardLine, guardLog, guardSummary } from "../src/guard.ts";
+import { guardChart, guardLine, guardLog, guardSummary } from "../src/guard.ts";
 import { hostLeftovers, leftoverRows, tempRows } from "../src/leftovers.ts";
 import { withGuard, withLeftovers } from "../src/mock-load.ts";
 import { TH } from "./helpers.ts";
@@ -153,12 +153,12 @@ test("guard and leftovers: the functions survive any optional field of the mock 
   const withBoth = () => withLeftovers(withGuard(mockLoad(), "1", NOW), "1", NOW);
   survives("guard", withBoth(), ["host", "cores", "load", "id", "pid", "name", "n", "kind"], (list) => {
     const norm = normalizeLoad(list);
-    const f = findGuard(norm);
-    if (f) {
-      guardChart(f.g, NOW, (id) => id);
-      guardSummary(f.g, NOW);
-      guardLine(f.g, "t_mapperf", NOW);
-      guardLog(f.g, (id) => id, (iso) => iso);
+    const g = norm.find((h) => h.slots?.guard)?.slots?.guard;
+    if (g) {
+      guardChart(g, NOW, (id) => id);
+      guardSummary(g, NOW);
+      guardLine(g, "t_mapperf", NOW);
+      guardLog(g, (id) => id, (iso) => iso);
     }
     for (const h of norm) {
       hostLeftovers(h);

@@ -7,12 +7,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { applySnapshot, flatOrder, initialStore, sections, unavailableReason, upsertProject, upsertThread } from "../src/store.ts";
-import { colorName, filterByProject, matchProjects, newProjectDraft, projectName, projectOf, projectSubtitle, resolveIcon } from "../src/projects.ts";
+import { colorName, matchProjects, newProjectDraft, projectName, projectOf, projectSubtitle, resolveIcon } from "../src/projects.ts";
 import { relTime, whenLabel } from "../src/format.ts";
 import { decodeProject, decodeThread } from "../src/decode.ts";
 import { blockedReason, needsGroup } from "../src/rows.ts";
 import { hideQuiet, nextQuietEnd, quietLine, quietList, quietNote } from "../src/quiet.ts";
-import { TH, snapshot, view } from "./helpers.ts";
+import { TH, filterByProject, snapshot, view } from "./helpers.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/host-state.json", import.meta.url), "utf8"));
 const REQUIRED = new Set(["id"]); // a thread or project without an id is not data
