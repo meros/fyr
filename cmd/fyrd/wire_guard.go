@@ -13,7 +13,6 @@ import (
 	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // wireGuard connects the memory guard: the sampler, groups and leftovers to the engine.
@@ -144,7 +143,7 @@ func (w *wiring) wireGuard() {
 	}
 	if !pool.Off() {
 		// decision 0029 S4: the budget adapts; V0.budget-restart: and outlives a deploy
-		sd.SlotAIMD = &slots.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json"), Policy: adm.Policy} // V0.admission-tidy: the configured reserve
+		sd.SlotAIMD = &guard.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json"), Policy: adm.Policy} // V0.admission-tidy: the configured reserve
 	}
 	eng.SlotDeps = sd
 	// V0.rerun-classes: kill and rerun, for the classes the owner marked.

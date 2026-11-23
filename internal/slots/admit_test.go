@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -44,7 +45,7 @@ func TestS2DecideByTheRules(t *testing.T) {
 		{"no provider: full", resource.Signals{}, []resource.Need{idle, idle}, job, false, "2 of 2 heavy jobs run"},
 		{"no slowdown yet: budget and memory only", resource.Signals{Provider: "proc", Headroom: f(0.6), CPU: 4, Memory: 8 * gb}, []resource.Need{job}, job, true, ""},
 	} {
-		ok, why, _ := Decide(p, c.sig, resource.Full, 2, c.held, c.head)
+		ok, why, _ := guard.Decide(p, c.sig, resource.Full, 2, c.held, c.head)
 		if ok != c.ok || !strings.Contains(why, c.why) || (c.ok && why != "") {
 			t.Errorf("%s: got %v %q, want %v %q", c.name, ok, why, c.ok, c.why)
 		}
@@ -58,7 +59,7 @@ func TestS2ThePoolAsksAdmitAndKeepsItsOrder(t *testing.T) {
 		if len(held) == 0 || open {
 			return true, "", ""
 		}
-		return false, "CPU: new jobs run 2.0× slower", ResCPU
+		return false, "CPU: new jobs run 2.0× slower", resource.ResCPU
 	}
 	if held, _ := p.Acquire("a", resource.Test); !held {
 		t.Fatal("progress: the first job is admitted")
@@ -91,7 +92,7 @@ func TestS2SnapshotCarriesCostsAndUse(t *testing.T) {
 	p.Acquire("busy", resource.Test)
 	p.Acquire("idle", resource.E2E)
 	s := p.Snapshot()
-	if s.Held[0].CPUPct != 50 || s.Held[0].MemPct != 13 || s.Held[1].CPUPct != 5 || *s.CPUPct != 55 || *s.MemPct != 19 || s.Tight != ResCPU {
+	if s.Held[0].CPUPct != 50 || s.Held[0].MemPct != 13 || s.Held[1].CPUPct != 5 || *s.CPUPct != 55 || *s.MemPct != 19 || s.Tight != resource.ResCPU {
 		t.Fatalf("%+v %+v", s, s.Held)
 	}
 	// Older fronts read the one-number cost and use for one release.

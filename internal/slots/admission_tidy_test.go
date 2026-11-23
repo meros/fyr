@@ -1,6 +1,6 @@
 // V0.admission-tidy: a thread that holds an admission and starts a heavier
 // command is admitted again for the difference; a new job asks the queue's
-// head before it backfills past it; the AIMD controller reads the host's
+// head before it backfills past it; the guard.AIMD controller reads the host's
 // configured memory reserve.
 package slots
 
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -23,7 +24,7 @@ func TestAdmissionTidyGrowAdmitsTheDifference(t *testing.T) {
 			asked = append(asked, head.Owner+" beside "+h.Owner)
 		}
 		if head.Owner == "a" && !room {
-			return false, "no room", ResMem
+			return false, "no room", resource.ResMem
 		}
 		return true, "", ""
 	}
@@ -94,7 +95,7 @@ func TestAdmissionTidyAcquireAsksTheHeadFirst(t *testing.T) {
 // default: 15 % free is short where the host keeps 20 %.
 func TestAdmissionTidyAIMDReadsTheConfiguredReserve(t *testing.T) {
 	t0 := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
-	a := &AIMD{N: 2, Policy: resource.Policy{SlowdownMax: 1.5, MemoryReserve: 0.2}}
+	a := &guard.AIMD{N: 2, Policy: resource.Policy{SlowdownMax: 1.5, MemoryReserve: 0.2}}
 	s := resource.Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.15), Stall: resource.StallOK}
 	a.Step(t0, s, false, time.Time{}, "")
 	if b, _ := a.Step(t0.Add(30*time.Second), s, false, time.Time{}, ""); b.Mem >= 1 {
@@ -111,7 +112,7 @@ func TestAdmissionTidyTwoGrowersDoNotBlockEachOther(t *testing.T) {
 	p.Acquire("b", resource.Test)
 	// A heavier job fits only with nothing else held.
 	p.Admit = func(_ resource.Holder, held []resource.Holder) (bool, string, string) {
-		return len(held) == 0, "needs more", ResMem
+		return len(held) == 0, "needs more", resource.ResMem
 	}
 	if held, _ := p.Grow("a", resource.E2E); held {
 		t.Fatal("setup: a grew beside b's ungrown hold")
@@ -130,7 +131,7 @@ func TestAdmissionTidyTwoGrowersDoNotBlockEachOther(t *testing.T) {
 	q.Acquire("a", resource.Test)
 	q.Acquire("b", resource.Test)
 	q.Admit = func(resource.Holder, []resource.Holder) (bool, string, string) {
-		return false, "memory short", ResHeadroom
+		return false, "memory short", resource.ResHeadroom
 	}
 	q.Grow("a", resource.E2E)
 	q.Grow("b", resource.E2E)

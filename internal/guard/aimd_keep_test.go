@@ -1,5 +1,5 @@
 // V0.budget-restart: the budget outlives a restart of fyrd when it is young.
-package slots
+package guard
 
 import (
 	"os"
@@ -18,30 +18,30 @@ func TestBudgetKeptAcrossARestart(t *testing.T) {
 	a := &AIMD{N: 2, Path: path}
 	var b resource.Factors
 	for i := 0; i < 5; i++ {
-		b, _ = a.Step(t0.Add(time.Duration(30*i)*time.Second), short, true, time.Time{}, ResMem)
+		b, _ = a.Step(t0.Add(time.Duration(30*i)*time.Second), short, true, time.Time{}, resource.ResMem)
 	}
 	if b.Mem != 0.5 {
 		t.Fatalf("memory not cut: %+v", b)
 	}
 	// The deploy restarts fyrd 10 s later: the new controller starts where
 	// the old one was, not at the full budget.
-	b, why := (&AIMD{N: 2, Path: path}).Step(t0.Add(130*time.Second), short, true, time.Time{}, ResMem)
+	b, why := (&AIMD{N: 2, Path: path}).Step(t0.Add(130*time.Second), short, true, time.Time{}, resource.ResMem)
 	if b != (resource.Factors{CPU: 1, Mem: 0.5}) || !strings.Contains(why, "kept across a restart") {
 		t.Fatalf("restart forgot the budget: %+v %q", b, why)
 	}
 	// A budget older than AIMDKeep says nothing of the host now.
-	if b, _ := (&AIMD{N: 2, Path: path}).Step(t0.Add(time.Hour), short, true, time.Time{}, ResMem); b != resource.Full {
+	if b, _ := (&AIMD{N: 2, Path: path}).Step(t0.Add(time.Hour), short, true, time.Time{}, resource.ResMem); b != resource.Full {
 		t.Fatalf("a stale budget was taken: %+v", b)
 	}
 	// A budget the host's N no longer allows is bounded; junk is ignored.
-	if b, _ := (&AIMD{N: 4, Path: path}).Step(t0.Add(130*time.Second), short, true, time.Time{}, ResMem); b.Mem != 0.5 {
+	if b, _ := (&AIMD{N: 4, Path: path}).Step(t0.Add(130*time.Second), short, true, time.Time{}, resource.ResMem); b.Mem != 0.5 {
 		t.Fatalf("bounded wrong: %+v", b)
 	}
-	if b, _ := (&AIMD{N: 1, Path: path}).Step(t0.Add(130*time.Second), short, true, time.Time{}, ResMem); b.Mem != 1 {
+	if b, _ := (&AIMD{N: 1, Path: path}).Step(t0.Add(130*time.Second), short, true, time.Time{}, resource.ResMem); b.Mem != 1 {
 		t.Fatalf("not raised to 1/N: %+v", b)
 	}
 	os.WriteFile(path, []byte("{"), 0o600)
-	if b, _ := (&AIMD{N: 2, Path: path}).Step(t0, short, true, time.Time{}, ResMem); b != resource.Full {
+	if b, _ := (&AIMD{N: 2, Path: path}).Step(t0, short, true, time.Time{}, resource.ResMem); b != resource.Full {
 		t.Fatalf("junk taken: %+v", b)
 	}
 }
@@ -52,13 +52,13 @@ func TestBudgetKeptIsRewrittenWhileItHolds(t *testing.T) {
 	short := resource.Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.05), Stall: resource.StallOK}
 	still := resource.Signals{Provider: "cgroups", Slowdown: f(2), Headroom: f(0.5), Stall: resource.StallOK}
 	a := &AIMD{N: 2, Path: path}
-	a.Step(t0, short, true, time.Time{}, ResMem)
-	a.Step(t0.Add(30*time.Second), short, true, time.Time{}, ResMem)
+	a.Step(t0, short, true, time.Time{}, resource.ResMem)
+	a.Step(t0.Add(30*time.Second), short, true, time.Time{}, resource.ResMem)
 	// An hour on a budget that does not move: still young when fyrd restarts.
 	for i := 2; i < 120; i++ {
 		a.Step(t0.Add(time.Duration(30*i)*time.Second), still, false, time.Time{}, "")
 	}
-	b, _ := (&AIMD{N: 2, Path: path}).Step(t0.Add(time.Hour), short, true, time.Time{}, ResMem)
+	b, _ := (&AIMD{N: 2, Path: path}).Step(t0.Add(time.Hour), short, true, time.Time{}, resource.ResMem)
 	if b.Mem != 0.75 {
 		t.Fatalf("an unmoving budget aged out: %+v", b)
 	}
@@ -71,7 +71,7 @@ func TestBudgetKeptTwiceSaysItOnce(t *testing.T) {
 	short := resource.Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.05), Stall: resource.StallOK}
 	a := &AIMD{N: 2, Path: path}
 	for i := 0; i < 5; i++ {
-		a.Step(t0.Add(time.Duration(30*i)*time.Second), short, true, time.Time{}, ResMem)
+		a.Step(t0.Add(time.Duration(30*i)*time.Second), short, true, time.Time{}, resource.ResMem)
 	}
 	// The next fyrd holds the kept budget and writes it again while it holds;
 	// the one after reads what it wrote.

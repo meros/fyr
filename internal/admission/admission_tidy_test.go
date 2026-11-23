@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/cgroup"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
-	"github.com/meros/fyr/internal/slots"
 )
 
 // V0.admission-tidy (6): a thread just admitted keeps its undeclared flag until
@@ -37,7 +37,7 @@ func TestAdmissionTidyAnOpenCallIsNotIdle(t *testing.T) {
 	j.active["quiet"] = now.Add(-5 * time.Minute)
 	j.live["quiet"] = use{cores: 0, grew: 1 * gb}
 	hd := resource.Holder{Owner: "quiet", Kind: resource.Test}
-	if c := a.Cost(hd); c.CPU != slots.IdleShare*8 {
+	if c := a.Cost(hd); c.CPU != guard.IdleShare*8 {
 		t.Fatalf("setup: not idle without an open call: %+v", c)
 	}
 	a.Open = func(th string) bool { return th == "quiet" }

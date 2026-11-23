@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -18,27 +19,27 @@ func TestB1AFlaggedThreadsCPUMakesTheHeadWait(t *testing.T) {
 	held := []resource.Need{{CPU: 2.4, Mem: gb}}          // 40 % of 6 cores
 	flagged := []resource.Extra{extra("Map perf", 3, gb)} // 50 %
 	head := resource.Need{CPU: 1.8, Mem: gb}              // 30 %
-	ok, why, res := DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_head", head)
-	if ok || res != ResCPU || why != "needs ≈ 30 % CPU, 10 % free (Map perf uses 50 % undeclared)" {
+	ok, why, res := guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_head", head)
+	if ok || res != resource.ResCPU || why != "needs ≈ 30 % CPU, 10 % free (Map perf uses 50 % undeclared)" {
 		t.Fatalf("%v %q %q", ok, why, res)
 	}
 }
 
 func TestB2WithoutTheFlaggedThreadItIsAdmitted(t *testing.T) {
-	if ok, why, _ := DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, []resource.Need{{CPU: 2.4, Mem: gb}}, nil, "t_head", resource.Need{CPU: 1.8, Mem: gb}); !ok {
+	if ok, why, _ := guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, []resource.Need{{CPU: 2.4, Mem: gb}}, nil, "t_head", resource.Need{CPU: 1.8, Mem: gb}); !ok {
 		t.Fatal(why)
 	}
-	// Decide is DecideWith without extras.
-	if ok, _, _ := Decide(resource.DefaultPolicy, host6, resource.Full, 2, []resource.Need{{CPU: 2.4, Mem: gb}}, resource.Need{CPU: 1.8, Mem: gb}); !ok {
-		t.Fatal("Decide changed")
+	// guard.Decide is guard.DecideWith without extras.
+	if ok, _, _ := guard.Decide(resource.DefaultPolicy, host6, resource.Full, 2, []resource.Need{{CPU: 2.4, Mem: gb}}, resource.Need{CPU: 1.8, Mem: gb}); !ok {
+		t.Fatal("guard.Decide changed")
 	}
 }
 
 func TestB3MemoryOfAFlaggedThreadBinds(t *testing.T) {
 	held := []resource.Need{{CPU: 0.5, Mem: 4 * gb}}
 	flagged := []resource.Extra{extra("Map perf", 0.2, 5*gb)}
-	ok, why, res := DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_head", resource.Need{CPU: 0.5, Mem: 6 * gb})
-	if ok || res != ResMem || !strings.Contains(why, "needs ≈ 6.4 GB memory") || !strings.Contains(why, "Map perf uses") || !strings.Contains(why, "undeclared") {
+	ok, why, res := guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_head", resource.Need{CPU: 0.5, Mem: 6 * gb})
+	if ok || res != resource.ResMem || !strings.Contains(why, "needs ≈ 6.4 GB memory") || !strings.Contains(why, "Map perf uses") || !strings.Contains(why, "undeclared") {
 		t.Fatalf("%v %q %q", ok, why, res)
 	}
 }
@@ -46,20 +47,20 @@ func TestB3MemoryOfAFlaggedThreadBinds(t *testing.T) {
 func TestB4TheDimensionsAreApart(t *testing.T) {
 	held := []resource.Need{{CPU: 0.1, Mem: gb / 2}}
 	flagged := []resource.Extra{extra("Map perf", 5, gb)} // CPU-heavy
-	if ok, why, _ := DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_head", resource.Need{CPU: 0.6, Mem: 6 * gb}); !ok {
+	if ok, why, _ := guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_head", resource.Need{CPU: 0.6, Mem: 6 * gb}); !ok {
 		t.Fatalf("a memory-heavy head beside a CPU-heavy flagged thread: %q", why)
 	}
 }
 
 func TestB5OneJobThatAskedAlwaysRuns(t *testing.T) {
 	flagged := []resource.Extra{extra("Map perf", 5.4, gb)} // 90 %
-	if ok, why, _ := DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, nil, flagged, "t_head", resource.Need{CPU: 3, Mem: gb}); !ok {
+	if ok, why, _ := guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, nil, flagged, "t_head", resource.Need{CPU: 3, Mem: gb}); !ok {
 		t.Fatalf("nothing admitted, so the head starts: %q", why)
 	}
 	// The memory rules can still hold it.
 	low := host6
 	low.Headroom = f(0.05)
-	if ok, _, res := DecideWith(resource.DefaultPolicy, low, resource.Full, 2, nil, flagged, "t_head", resource.Need{CPU: 3, Mem: gb}); ok || res != ResHeadroom {
+	if ok, _, res := guard.DecideWith(resource.DefaultPolicy, low, resource.Full, 2, nil, flagged, "t_head", resource.Need{CPU: 3, Mem: gb}); ok || res != resource.ResHeadroom {
 		t.Fatal("the memory reserve did not hold")
 	}
 }
@@ -68,10 +69,10 @@ func TestB6AThreadsOwnUseDoesNotCountAgainstItsOwnRequest(t *testing.T) {
 	held := []resource.Need{{CPU: 1, Mem: gb}}
 	flagged := []resource.Extra{extra("t_me", 3, gb)} // 50 %, its own
 	flagged[0].Owner = "t_me"
-	if ok, why, _ := DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_me", resource.Need{CPU: 3, Mem: gb}); !ok {
+	if ok, why, _ := guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_me", resource.Need{CPU: 3, Mem: gb}); !ok {
 		t.Fatalf("its own use was counted: %q", why)
 	}
-	if ok, _, _ := DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_other", resource.Need{CPU: 3, Mem: gb}); ok {
+	if ok, _, _ := guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, held, flagged, "t_other", resource.Need{CPU: 3, Mem: gb}); ok {
 		t.Fatal("another thread's request ignored the flagged use")
 	}
 }
@@ -88,7 +89,7 @@ func TestB7B8TheEpisodeEndsAndTheQueueMovesAtOnce(t *testing.T) {
 		for range held {
 			needs = append(needs, resource.Need{CPU: 2.4, Mem: gb})
 		}
-		return DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, needs, flagged, head.Owner, resource.Need{CPU: 1.8, Mem: gb})
+		return guard.DecideWith(resource.DefaultPolicy, host6, resource.Full, 2, needs, flagged, head.Owner, resource.Need{CPU: 1.8, Mem: gb})
 	}
 	p.Acquire("a", resource.Test)
 	if held, _ := p.Acquire("b", resource.Test); held {
@@ -124,7 +125,7 @@ func TestB9TheSnapshotListsThemAndTheUsedPercentagesIncludeThem(t *testing.T) {
 	if s.UndeclaredCPUPct == nil || *s.UndeclaredCPUPct != 50 || *s.UndeclaredMemPct != 38 {
 		t.Fatalf("shares %v %v", s.UndeclaredCPUPct, s.UndeclaredMemPct)
 	}
-	if *s.CPUPct != 70 || *s.MemPct != 46 || *s.UsedPct != 70 || s.Tight != ResCPU || *s.CPUFreePct != 30 {
+	if *s.CPUPct != 70 || *s.MemPct != 46 || *s.UsedPct != 70 || s.Tight != resource.ResCPU || *s.CPUFreePct != 30 {
 		t.Fatalf("used %v %v %v %q", *s.CPUPct, *s.MemPct, *s.UsedPct, s.Tight)
 	}
 	// It is not one of the held jobs.

@@ -30,6 +30,7 @@ import (
 	"github.com/meros/fyr/internal/admission"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
@@ -152,7 +153,7 @@ func (r *simRun) newEngine() {
 				hd.mem0 = 0
 			}
 		},
-		SlotAIMD: &slots.AIMD{N: 2, Path: filepath.Join(r.dir, "slot-budget.json"), Policy: adm.Policy},
+		SlotAIMD: &guard.AIMD{N: 2, Path: filepath.Join(r.dir, "slot-budget.json"), Policy: adm.Policy},
 	}
 	e.UndeclaredDeps = UndeclaredDeps{
 		Undeclared: func() []resource.Undeclared { return r.flags() },

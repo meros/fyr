@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/cgroup"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -104,7 +105,7 @@ func (a *Admission) Live(h resource.Holder) (resource.Need, bool) {
 }
 
 // Cost is a holder's need for the budget: the prior for a priority hold (the
-// deploy's tests); for an idle hold (no heavy command for slots.IdleAfter) a
+// deploy's tests); for an idle hold (no heavy command for guard.IdleAfter) a
 // little CPU and the memory it holds; else the prediction, at least what it
 // uses now.
 func (a *Admission) Cost(h resource.Holder) resource.Need {
@@ -122,7 +123,7 @@ func (a *Admission) cost(h resource.Holder) (need resource.Need, grow uint64) {
 	case h.Priority:
 		need = resource.Prior(sig, a.N)
 	case a.idle(h):
-		return resource.Need{CPU: slots.IdleShare * sig.CPU, Mem: l.Mem}, 0
+		return resource.Need{CPU: guard.IdleShare * sig.CPU, Mem: l.Mem}, 0
 	default:
 		need, _ = a.Predict(h)
 		if isLive {
@@ -146,7 +147,7 @@ func (a *Admission) ClassNeed(thread, class string) resource.Need {
 	return resource.NeedOf(l.Demand, l.Peak, l.Runs, sig, a.N)
 }
 
-// idle: no heavy command or busy reading for slots.IdleAfter, and no heavy
+// idle: no heavy command or busy reading for guard.IdleAfter, and no heavy
 // call open. V0.admission-tidy: a quiet call (a test waiting on a server) kept
 // its hold for up to HeavyCallStale but counted as idle after 3 min.
 func (a *Admission) idle(h resource.Holder) bool {
@@ -154,7 +155,7 @@ func (a *Admission) idle(h resource.Holder) bool {
 		return false
 	}
 	at, ok := a.Jobs.Active(h.Owner)
-	return ok && a.now().Sub(at) >= slots.IdleAfter
+	return ok && a.now().Sub(at) >= guard.IdleAfter
 }
 
 // heldNeeds is the holders' needs, and sig with their growth still to come
@@ -199,7 +200,7 @@ func (a *Admission) extras(held []resource.Holder) []resource.Extra {
 func (a *Admission) Admit(head resource.Holder, held []resource.Holder) (bool, string, string) {
 	need, _ := a.Predict(head)
 	needs, sig := a.heldNeeds(held)
-	return slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), head.Owner, need)
+	return guard.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), head.Owner, need)
 }
 
 // Backfill is EASY backfill: c may pass the head when it fits now and is
@@ -208,7 +209,7 @@ func (a *Admission) Admit(head resource.Holder, held []resource.Holder) (bool, s
 func (a *Admission) Backfill(head, c resource.Holder, held []resource.Holder) bool {
 	need, wall := a.Predict(c)
 	needs, sig := a.heldNeeds(held)
-	if ok, _, _ := slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), c.Owner, need); !ok {
+	if ok, _, _ := guard.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), c.Owner, need); !ok {
 		return false
 	}
 	ends := make([]time.Time, len(held))
@@ -217,7 +218,7 @@ func (a *Admission) Backfill(head, c resource.Holder, held []resource.Holder) bo
 			ends[i] = h.Since.Add(time.Duration(w * float64(time.Second)))
 		}
 	}
-	return slots.EASY(a.now(), slots.Cheap(need, sig), wall, ends)
+	return guard.EASY(a.now(), guard.Cheap(need, sig), wall, ends)
 }
 
 // Over says whether owner's job is heavier than predicted, in either
@@ -233,11 +234,11 @@ func (a *Admission) Over(owner string) (class string, live, predicted float64, o
 	l, ok := a.Live(h)
 	pc, pm := p.Shares(sig)
 	lc, lm := l.Shares(sig)
-	over = ok && (lc > pc+slots.CheapShare || lm > pm+slots.CheapShare)
+	over = ok && (lc > pc+guard.CheapShare || lm > pm+guard.CheapShare)
 	return a.Jobs.ClassOf(owner, h.Kind), resource.Pct(max(lc, lm)), resource.Pct(max(pc, pm)), over
 }
 
 // Thrashing: the host thrashes, so agents wait (V0.153).
 func (a *Admission) Thrashing() (bool, string) {
-	return slots.Thrashing(a.Host.Signals(), a.Policy)
+	return guard.Thrashing(a.Host.Signals(), a.Policy)
 }

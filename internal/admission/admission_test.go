@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/cgroup"
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -96,9 +97,9 @@ func TestV182CostOfPriorityIdleAndLiveHolds(t *testing.T) {
 		t.Fatalf("priority: %+v", c)
 	}
 	// An idle hold: a little CPU and the memory it holds now.
-	j.active["idle"] = now.Add(-slots.IdleAfter)
+	j.active["idle"] = now.Add(-guard.IdleAfter)
 	j.live["idle"] = use{cores: 3, grew: 2 * gb}
-	if c := a.Cost(resource.Holder{Owner: "idle", Kind: resource.Test}); c != (resource.Need{CPU: slots.IdleShare * 8, Mem: 2 * gb}) {
+	if c := a.Cost(resource.Holder{Owner: "idle", Kind: resource.Test}); c != (resource.Need{CPU: guard.IdleShare * 8, Mem: 2 * gb}) {
 		t.Fatalf("idle: %+v", c)
 	}
 	// A busy hold: at least what it uses now.
@@ -223,7 +224,7 @@ func TestAdmissionMemoryRunningJobsGrowthComesOffTheHeadroom(t *testing.T) {
 	// Each fits the headroom now (7 GB ≤ 12.8 GB) and the budget (7 + 7 ≤ 16), but t1's 6.5 GB still to come
 	// leaves 6.3 GB: t2 waits on the host's memory.
 	ok, why, binding := a.Admit(head, held)
-	if ok || binding != slots.ResHeadroom || slots.Wire(binding) != slots.ResMem {
+	if ok || binding != resource.ResHeadroom || resource.Wire(binding) != resource.ResMem {
 		t.Fatalf("admitted beside a job that will grow 6.5 GB: %v %q %q", ok, why, binding)
 	}
 	if a.Backfill(holderOf("t0"), head, held) {

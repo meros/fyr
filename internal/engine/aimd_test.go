@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -23,12 +24,12 @@ func TestS4TheTickRaisesTheBudgetOnACalmHost(t *testing.T) {
 		for i := range c {
 			c[i] = resource.Need{CPU: 2, Mem: 1 << 30}
 		}
-		return slots.Decide(resource.DefaultPolicy, sig, p.Budget(), 1, c, resource.Need{CPU: 4, Mem: 1 << 30})
+		return guard.Decide(resource.DefaultPolicy, sig, p.Budget(), 1, c, resource.Need{CPU: 4, Mem: 1 << 30})
 	}
 	e.UseSlots(p)
 	e.SlotSignals = func() resource.Signals { return sig }
 	guardDeps(t, e)
-	e.SlotAIMD = &slots.AIMD{N: 1}
+	e.SlotAIMD = &guard.AIMD{N: 1}
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)

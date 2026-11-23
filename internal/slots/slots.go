@@ -25,6 +25,13 @@ import (
 // Default is N when the host sets none, or a negative one.
 const Default = 2
 
+// The backfill cap (EASY): a head is passed at most BackfillPasses times,
+// and not at all once it has waited BackfillFor.
+const (
+	BackfillPasses = 3
+	BackfillFor    = 10 * time.Minute
+)
+
 // key is where the pool is kept in the store's KV table.
 const key = "slots"
 
@@ -37,8 +44,8 @@ type Pool struct {
 	// Admit decides whether head may start beside held (decision 0029 S2),
 	// and why not; nil is the count rule. It runs under the pool's lock and
 	// must not call the pool.
-	// It also names the resource that binds (V0.163: ResCPU or ResMem;
-	// V0.admission-memory: ResHeadroom).
+	// It also names the resource that binds (V0.163: resource.ResCPU or resource.ResMem;
+	// V0.admission-memory: resource.ResHeadroom).
 	Admit func(head resource.Holder, held []resource.Holder) (bool, string, string)
 	// Cost is a holder's need (learned, or live while it runs) for the
 	// snapshot; optional. Host is the host's measures and capacity (V0.163:
@@ -560,7 +567,7 @@ func (p *Pool) SetBudget(f resource.Factors, why string) {
 func (p *Pool) Binding() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return Wire(p.binding)
+	return resource.Wire(p.binding)
 }
 
 // LastGrant is when the pool last admitted a job.
@@ -611,7 +618,7 @@ func (p *Pool) snapshotLocked() resource.Snapshot {
 		s.Why = p.why
 	}
 	if len(s.Waiting) > 0 {
-		s.Binding, s.Bound = Wire(p.binding), p.binding
+		s.Binding, s.Bound = resource.Wire(p.binding), p.binding
 	}
 	n := float64(p.n)
 	f := p.Budget()
@@ -680,9 +687,9 @@ func (p *Pool) snapshotLocked() resource.Snapshot {
 	s.CPUFreePct, s.MemFreePct = pct(max(0, resource.Pct(f.CPU-uc))), pct(max(0, resource.Pct(f.Mem-um)))
 	rc, rm := uc/max(f.CPU, 1e-9), um/max(f.Mem, 1e-9)
 	if rm > rc {
-		s.UsedPct, s.Tight = pct(resource.Pct(rm)), ResMem
+		s.UsedPct, s.Tight = pct(resource.Pct(rm)), resource.ResMem
 	} else {
-		s.UsedPct, s.Tight = pct(resource.Pct(rc)), ResCPU
+		s.UsedPct, s.Tight = pct(resource.Pct(rc)), resource.ResCPU
 	}
 	if len(s.Waiting) > 0 {
 		s.NeedPct = pct(s.Waiting[0].Pct)

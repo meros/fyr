@@ -135,7 +135,7 @@ func slotEngine(t *testing.T) (*Engine, *time.Time, string, string, map[string]b
 	// The pool's admission as on a host with signals: memory short holds every job (decision 0029 S2).
 	p.Admit = func(resource.Holder, []resource.Holder) (bool, string, string) {
 		if free < resource.DefaultPolicy.MemoryReserve {
-			return false, "memory short", slots.ResMem
+			return false, "memory short", resource.ResMem
 		}
 		return true, "", ""
 	}

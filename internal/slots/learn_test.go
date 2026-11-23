@@ -1,11 +1,12 @@
 // Decision 0029 slice S3 (#187): a cost from learned raw measures, as the dominant share of the host's capacity over
-// N; EASY backfill with an aging cap.
+// N; guard.EASY backfill with an aging cap.
 package slots
 
 import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 )
 
@@ -17,7 +18,7 @@ func TestS3BackfillPassesTheHeadAtMostThreeTimesAndForTenMinutes(t *testing.T) {
 		if len(held) == 0 {
 			return true, "", ""
 		}
-		return len(head.Owner) < 3 || head.Owner[:3] != "big", "needs ≈ 75 % CPU, 50 % free", ResCPU
+		return len(head.Owner) < 3 || head.Owner[:3] != "big", "needs ≈ 75 % CPU, 50 % free", resource.ResCPU
 	}
 	p.Backfill = func(head, c resource.Holder, held []resource.Holder) bool {
 		return len(c.Owner) > 4 && c.Owner[:5] == "small"
@@ -69,7 +70,7 @@ func TestS3EASYPromise(t *testing.T) {
 		{"a holder without an estimate", false, 60, []time.Time{end, {}}, false},
 		{"nothing held", false, 60, nil, false},
 	} {
-		if got := EASY(now, c.cheap, c.wall, c.ends); got != c.ok {
+		if got := guard.EASY(now, c.cheap, c.wall, c.ends); got != c.ok {
 			t.Errorf("%s: got %v", c.name, got)
 		}
 	}

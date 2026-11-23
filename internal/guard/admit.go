@@ -1,4 +1,4 @@
-package slots
+package guard
 
 // Decision 0029 slice S2 (#186): admission by a budget of costs instead of
 // a count. The pool's queue and order stay (V0.86, V0.137); only "may the
@@ -23,27 +23,6 @@ const IdleShare = 0.05
 
 // IdleAfter is how long a hold must be idle to count as idle.
 const IdleAfter = 3 * time.Minute
-
-// Resources a wait can name.
-const (
-	ResCPU = "cpu"
-	ResMem = "memory"
-	// ResHeadroom: memory, held back by the host's real headroom (memory
-	// outside the budget: the owner's browser, the running jobs' growth),
-	// not by the memory budget. V0.admission-memory: the AIMD controller
-	// grows the memory budget only for ResMem, since a larger budget does
-	// not make the host's free memory any larger; the snapshot sends it as
-	// ResMem, so the front reads the same two values.
-	ResHeadroom = "headroom"
-)
-
-// Wire is binding as the snapshot sends it: ResHeadroom is memory.
-func Wire(binding string) string {
-	if binding == ResHeadroom {
-		return ResMem
-	}
-	return binding
-}
 
 // Decide says whether head may start beside held, why not, and which
 // resource binds (V0.163). In order: without a provider (or capacity) the
@@ -75,15 +54,15 @@ func DecideWith(p resource.Policy, s resource.Signals, f resource.Factors, n int
 	backfill := false
 	if s.Headroom != nil && *s.Headroom < s.Reserve(p) {
 		if !Cheap(head, s) || s.SwapFull {
-			return false, s.MemoryWhy(), ResHeadroom
+			return false, s.MemoryWhy(), resource.ResHeadroom
 		}
 		backfill = true
 	}
 	if crit, why := s.Critical(); crit {
-		return false, why, ResMem
+		return false, why, resource.ResMem
 	}
 	if why := s.OomdWhy(); why != "" { // V0.guard-agents-stall: as the guard
-		return false, why, ResMem
+		return false, why, resource.ResMem
 	}
 	if len(held) == 0 {
 		return true, "", ""
@@ -101,26 +80,26 @@ func DecideWith(p resource.Policy, s resource.Signals, f resource.Factors, n int
 	}
 	cpuFree := f.CPU*s.CPU - used.CPU
 	if head.CPU > cpuFree+1e-9 {
-		return false, fmt.Sprintf("needs ≈ %.0f %% CPU, %.0f %% free", resource.Pct(head.CPU/s.CPU), max(0, resource.Pct(cpuFree/s.CPU))) + undeclaredWhy(others, s, ResCPU), ResCPU
+		return false, fmt.Sprintf("needs ≈ %.0f %% CPU, %.0f %% free", resource.Pct(head.CPU/s.CPU), max(0, resource.Pct(cpuFree/s.CPU))) + undeclaredWhy(others, s, resource.ResCPU), resource.ResCPU
 	}
-	// V0.admission-memory: the budget binds (ResMem) or the real headroom
-	// does (ResHeadroom), less what the running jobs may still grow.
-	memFree, memBind := f.Mem*float64(s.Memory)-float64(used.Mem), ResMem
+	// V0.admission-memory: the budget binds (resource.ResMem) or the real headroom
+	// does (resource.ResHeadroom), less what the running jobs may still grow.
+	memFree, memBind := f.Mem*float64(s.Memory)-float64(used.Mem), resource.ResMem
 	if s.Headroom != nil {
 		if room := (*s.Headroom-s.Reserve(p))*float64(s.Memory) - float64(s.Growth); room < memFree {
-			memFree, memBind = room, ResHeadroom
+			memFree, memBind = room, resource.ResHeadroom
 		}
 	}
 	if float64(head.Mem) > memFree+1 && !backfill {
 		grow := ""
-		if memBind == ResHeadroom && s.Growth > 0 {
+		if memBind == resource.ResHeadroom && s.Growth > 0 {
 			grow = fmt.Sprintf(" (the running jobs may still grow %s)", resource.GB(float64(s.Growth)))
 		}
-		return false, fmt.Sprintf("needs ≈ %s memory, %s free", resource.GB(float64(head.Mem)), resource.GB(max(0, memFree))) + grow + undeclaredWhy(others, s, ResMem), memBind
+		return false, fmt.Sprintf("needs ≈ %s memory, %s free", resource.GB(float64(head.Mem)), resource.GB(max(0, memFree))) + grow + undeclaredWhy(others, s, resource.ResMem), memBind
 	}
 	c, m := head.Shares(s)
 	if (c > CheapShare || m > CheapShare) && s.Slowdown != nil && *s.Slowdown >= p.SlowdownMax {
-		return false, fmt.Sprintf("CPU: new jobs run %.1f× slower", *s.Slowdown), ResCPU
+		return false, fmt.Sprintf("CPU: new jobs run %.1f× slower", *s.Slowdown), resource.ResCPU
 	}
 	return true, "", ""
 }
@@ -134,7 +113,7 @@ func undeclaredWhy(others []resource.Extra, s resource.Signals, res string) stri
 	for i := range others {
 		c, m := others[i].Need.Shares(s)
 		sh := c
-		if res == ResMem {
+		if res == resource.ResMem {
 			sh = m
 		}
 		if sh <= 0 {
@@ -149,7 +128,7 @@ func undeclaredWhy(others []resource.Extra, s resource.Signals, res string) stri
 		return ""
 	}
 	use := fmt.Sprintf("%.0f %%", resource.Pct(bigShare))
-	if res == ResMem {
+	if res == resource.ResMem {
 		use = resource.GB(float64(big.Need.Mem))
 	}
 	more := ""
@@ -167,13 +146,6 @@ func Cheap(a resource.Need, s resource.Signals) bool {
 	c, m := a.Shares(s)
 	return c <= CheapShare && m <= CheapShare
 }
-
-// The backfill cap (EASY): a head is passed at most BackfillPasses times,
-// and not at all once it has waited BackfillFor.
-const (
-	BackfillPasses = 3
-	BackfillFor    = 10 * time.Minute
-)
 
 // EASY says whether a job that already fits may pass the queue's head
 // (decision 0029 S3): a cheap one always; else only when its p90 wall time

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -23,12 +24,12 @@ func memoryWait(t *testing.T, headroom float64, held, head uint64) (*slots.Pool,
 		for i := range c {
 			c[i] = resource.Need{CPU: 1, Mem: held}
 		}
-		return slots.Decide(resource.DefaultPolicy, sig, p.Budget(), 2, c, resource.Need{CPU: 1, Mem: head})
+		return guard.Decide(resource.DefaultPolicy, sig, p.Budget(), 2, c, resource.Need{CPU: 1, Mem: head})
 	}
 	e.UseSlots(p)
 	e.SlotSignals = func() resource.Signals { return sig }
 	guardDeps(t, e)
-	e.SlotAIMD = &slots.AIMD{N: 2}
+	e.SlotAIMD = &guard.AIMD{N: 2}
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
@@ -49,7 +50,7 @@ func TestAdmissionMemoryHeadroomBoundHeadKeepsTheMemoryBudget(t *testing.T) {
 	if p.Budget().Mem != 1 {
 		t.Fatalf("the memory budget moved while the host's headroom held the head: %+v", p.Budget())
 	}
-	if len(s.Waiting) != 1 || s.Binding != slots.ResMem {
+	if len(s.Waiting) != 1 || s.Binding != resource.ResMem {
 		t.Fatalf("the front reads memory: binding %q, waiting %d", s.Binding, len(s.Waiting))
 	}
 }
