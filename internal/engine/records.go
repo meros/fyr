@@ -35,11 +35,10 @@ func (e *Engine) git() GitReader {
 	return agent.Git{}
 }
 
-// loadRecords reads the host records, runs the load passes on every thread
-// and record once (core.Migrate, core.MigrateRecord: V0.structure-cost (2)), and
-// drops records that ended over 30 days ago with the threads' references to
-// them. It stores what changed. Call it with e.mu held, after the threads
-// are loaded.
+// loadRecords reads the host records and drops records that ended over 30
+// days ago with the threads' references to them. It stores what changed.
+// The load passes ran once, at store.Open (V0.versioned-store). Call it with
+// e.mu held, after the threads are loaded.
 func (e *Engine) loadRecords() error {
 	rs, err := e.st.Changes()
 	if err != nil {
@@ -48,20 +47,8 @@ func (e *Engine) loadRecords() error {
 	for _, c := range rs {
 		e.records[c.ID] = c
 	}
-	before := maps.Clone(e.records)
 	now := e.Now()
 	var dirty []*core.Thread
-	for _, t := range e.threads {
-		if core.Migrate(t, e.records, now) {
-			dirty = append(dirty, t)
-		}
-	}
-	migrated := map[string]bool{}
-	for id, c := range e.records {
-		if core.MigrateRecord(c, now) {
-			migrated[id] = true
-		}
-	}
 	var gone []string
 	for id, c := range e.records {
 		if core.RecordExpired(c, now) {
@@ -72,21 +59,14 @@ func (e *Engine) loadRecords() error {
 	for _, t := range e.threads {
 		n := len(t.Refs)
 		t.Refs = slices.DeleteFunc(t.Refs, func(r core.Ref) bool { return e.records[r.ID] == nil })
-		if len(t.Refs) != n && !slices.Contains(dirty, t) {
+		if len(t.Refs) != n {
 			dirty = append(dirty, t)
 		}
 	}
-	if len(dirty) == 0 && len(gone) == 0 && len(migrated) == 0 && len(before) == len(e.records) {
+	if len(dirty) == 0 && len(gone) == 0 {
 		return nil
 	}
 	_, err = e.st.Write(func(tx *store.Tx) error {
-		for id, c := range e.records {
-			if before[id] != c || migrated[id] {
-				if err := tx.PutChange(c); err != nil {
-					return err
-				}
-			}
-		}
 		for _, id := range gone {
 			if err := tx.DeleteChange(id); err != nil {
 				return err

@@ -92,52 +92,12 @@ func TestSettleNotOnAFailedRun(t *testing.T) {
 	}
 }
 
-// #33: a thread stored before #33 loads: settledAt, settleWhenDone and
-// settleWhen become its Settle, liveView its Live.Enabled, and the stored
-// project name is dropped.
-func TestDecodeThreadBefore33(t *testing.T) {
-	old := `{"id":"t_1","project":"fyr","cwd":"/src/fyr","running":true,"summary":"hi",
-		"settledAt":"2026-11-14T08:00:00Z","settleWhenDone":true,"settleWhen":{"change":"c_1","phase":"live"},
-		"liveView":true,"live":{"pageId":"p1","headline":"h"},
-		"changes":[{"id":"c_1","key":"k","kind":"host","title":"Rebuild","phase":"review"}]}`
-	th, err := DecodeThread([]byte(old))
-	if err != nil {
-		t.Fatal(err)
-	}
-	at := time.Date(2026, 11, 14, 8, 0, 0, 0, time.UTC)
-	if th.Settle.At == nil || !th.Settle.At.Equal(at) {
-		t.Fatalf("settledAt: %+v", th.Settle.At)
-	}
-	if len(RulesOf(th, PurposeSettle)) != 2 || !SettlesWhenDone(th) {
-		t.Fatalf("settle conditions: %+v", th.Rules)
-	}
-	if w := SettleWhenChange(th); w == nil || w.Change != "c_1" || w.Phase != PhaseLive {
-		t.Fatalf("settle when change: %+v", w)
-	}
-	if !th.ViewOn() || th.Live.PageID != "p1" || th.Live.Headline != "h" {
-		t.Fatalf("live view: %+v", th.Live)
-	}
-	if !th.Running || th.Summary != "hi" {
-		t.Fatalf("conversation: %+v", th.Conversation)
-	}
-	b, _ := json.Marshal(th)
-	for _, k := range []string{`"project"`, `"settledAt"`, `"settleWhenDone"`, `"settleWhen"`, `"liveView"`} {
-		if strings.Contains(string(b), k) {
-			t.Fatalf("stored again with %s: %s", k, b)
-		}
-	}
-	again, err := DecodeThread(b)
-	if err != nil || again.Settle.At == nil || len(RulesOf(again, PurposeSettle)) != 2 || !again.ViewOn() {
-		t.Fatalf("the new shape does not round-trip: %v %+v", err, again)
-	}
-}
-
 // SPEC V0.remove-t3 (#68): a thread JSON carrying the removed t3Id and source
 // fields loads without error, keeps its history identity, and saves without them.
 func TestDecodeThreadDropsT3Fields(t *testing.T) {
 	old := `{"id":"t_1","title":"Adopted thread","cwd":"/src/app","profile":"claudeAlt","sessionId":"sess-1","source":"t3","t3Id":"t3_abc"}`
-	th, err := DecodeThread([]byte(old))
-	if err != nil {
+	th := &Thread{}
+	if err := json.Unmarshal([]byte(old), th); err != nil {
 		t.Fatal(err)
 	}
 	if th.ID != "t_1" || th.Title != "Adopted thread" || th.Cwd != "/src/app" || th.SessionID != "sess-1" {

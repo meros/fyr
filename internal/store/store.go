@@ -58,9 +58,15 @@ func Open(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1) // one writer; the engine serialises commands anyway
 	if _, err := db.Exec(schema); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("schema: %w", err)
 	}
-	return &Store{db}, nil
+	s := &Store{db}
+	if err := s.migrate(time.Now()); err != nil { // V0.versioned-store
+		db.Close()
+		return nil, err
+	}
+	return s, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -266,8 +272,8 @@ func (s *Store) Threads() ([]*core.Thread, error) {
 		if err := rows.Scan(&d); err != nil {
 			return nil, err
 		}
-		t, err := core.DecodeThread([]byte(d)) // #31: also the shape stored before
-		if err != nil {
+		t := &core.Thread{}
+		if err := json.Unmarshal([]byte(d), t); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -287,8 +293,8 @@ func (s *Store) Views(user string) (map[string]*core.View, error) {
 		if err := rows.Scan(&d); err != nil {
 			return nil, err
 		}
-		v, err := core.DecodeView([]byte(d)) // #46: also the snooze stored before Rules
-		if err != nil {
+		v := &core.View{}
+		if err := json.Unmarshal([]byte(d), v); err != nil {
 			return nil, err
 		}
 		out[v.Entity] = v
@@ -458,41 +464,6 @@ func (s *Store) Projects() ([]*core.Project, error) {
 func (tx *Tx) DeleteProject(id string) error {
 	_, err := tx.tx.Exec(`DELETE FROM projects WHERE id=?`, id)
 	return err
-}
-
-// OldSource is a source of a project stored before V0.55 (decision 0017);
-// only the migration at start reads it.
-type OldSource struct {
-	Kind string `json:"kind"` // folder, repo
-	Host string `json:"host,omitempty"`
-	Path string `json:"path,omitempty"`
-	URL  string `json:"url,omitempty"`
-	Main bool   `json:"main,omitempty"`
-}
-
-// OldProjectSources returns, by project id, the sources of the projects
-// still stored with them (before V0.55).
-func (s *Store) OldProjectSources() (map[string][]OldSource, error) {
-	rows, err := s.db.Query(`SELECT data FROM projects`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string][]OldSource{}
-	for rows.Next() {
-		var d string
-		if err := rows.Scan(&d); err != nil {
-			return nil, err
-		}
-		var p struct {
-			ID      string      `json:"id"`
-			Sources []OldSource `json:"sources"`
-		}
-		if json.Unmarshal([]byte(d), &p) == nil && p.Sources != nil {
-			out[p.ID] = p.Sources
-		}
-	}
-	return out, rows.Err()
 }
 
 // PutProvider stores a provider's settings as JSON at a position (SPEC 0.5

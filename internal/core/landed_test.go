@@ -48,19 +48,6 @@ func TestFailureWithTheLandingBlocks(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.70 (1): a landed change stored before landedAt existed takes
-// its last update as the landing.
-func TestDecodeLandedAt(t *testing.T) {
-	b := []byte(`{"id":"t1","changes":[{"id":"c1","key":"k","kind":"code","phase":"landed","phaseBy":"agent","updatedAt":"2026-11-15T13:21:33Z","conditions":[{"type":"claude-review","status":"fail","source":"agent","at":"2026-11-15T13:20:59Z"}]}]}`)
-	th, err := DecodeThread(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := needText(th); r != "" {
-		t.Fatalf("a stored landed change still blocks: %q", r)
-	}
-}
-
 // SPEC 0.5 V0.70 (2): change_open for a code change on a branch that
 // already has a code change in the same repo returns that change.
 func TestOpenCodeChangeJoinsItsBranch(t *testing.T) {

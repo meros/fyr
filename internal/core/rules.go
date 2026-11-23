@@ -777,30 +777,6 @@ func SnoozeOf(v *View) (until, at *time.Time) {
 	return nil, nil
 }
 
-// DecodeView reads a stored View, also in the shape stored before #46: the
-// snooze in snoozeUntil and snoozedAt becomes its snooze Rule.
-func DecodeView(b []byte) (*View, error) {
-	v := &View{}
-	if err := json.Unmarshal(b, v); err != nil {
-		return nil, err
-	}
-	var old struct {
-		SnoozeUntil *time.Time `json:"snoozeUntil"`
-		SnoozedAt   *time.Time `json:"snoozedAt"`
-	}
-	if err := json.Unmarshal(b, &old); err != nil {
-		return nil, err
-	}
-	if old.SnoozeUntil != nil && findIn(v.Rules, snoozeRule) == nil {
-		at := v.SeenAt
-		if old.SnoozedAt != nil {
-			at = *old.SnoozedAt
-		}
-		Snooze(v, *old.SnoozeUntil, at)
-	}
-	return v, nil
-}
-
 // --- the agent's own Rules ---
 
 // RuleArmArgs is the agent's watch tool: id is new (the engine makes it),

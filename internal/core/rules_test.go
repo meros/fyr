@@ -1,9 +1,7 @@
 package core
 
 import (
-	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 )
@@ -157,59 +155,6 @@ func TestWatchSuspendedWhileSettled(t *testing.T) {
 	}
 	if len(RulesOf(th, PurposeWatch)) != 0 {
 		t.Fatalf("a watch that fired is still armed: %+v", th.Rules)
-	}
-}
-
-// #46: a thread and a view stored before Rules load: settle.when becomes
-// settle Rules, a deploy watch that had not ended its deploy Rule (one that
-// ended none), a change with a PR gets its built-in actions' Rule, and the
-// view's snooze its snooze Rule.
-func TestDecodeBeforeRules(t *testing.T) {
-	old := `{"id":"t_1","updatedAt":"2026-11-15T08:00:00Z","running":true,
-		"settle":{"when":[{"kind":"done"},{"kind":"change","change":"c_1","phase":"live"}]},
-		"changes":[{"id":"c_1","key":"k","kind":"code","title":"Fix","phase":"landed",
-			"pr":{"url":"https://github.com/o/r/pull/7","repo":"o/r","number":7,"state":"MERGED","checks":"pass","mergeSha":"m1"},
-			"deployWatch":{"repo":"o/r","sha":"m1","mergedAt":"2026-11-15T07:00:00Z","checked":true,"seen":true}},
-			{"id":"c_2","key":"k2","kind":"code","title":"Old","phase":"landed",
-			"deployWatch":{"repo":"o/r","sha":"m0","mergedAt":"2026-11-10T07:00:00Z","done":true}}]}`
-	th, err := DecodeThread([]byte(old))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !SettlesWhenDone(th) || len(RulesOf(th, PurposeSettle)) != 2 {
-		t.Fatalf("settle rules: %+v", th.Rules)
-	}
-	if w := SettleWhenChange(th); w == nil || w.Change != "c_1" || w.Phase != PhaseLive {
-		t.Fatalf("settle when change: %+v", w)
-	}
-	merged := time.Date(2026, 11, 15, 7, 0, 0, 0, time.UTC)
-	w := DeployWatches(th, merged.Add(48*time.Hour)) // seen: 7 days
-	if len(w) != 1 || w[0].Change != "c_1" || w[0].SHA != "m1" || w[0].Repo != "o/r" || w[0].First {
-		t.Fatalf("deploy watches: %+v", w)
-	}
-	if FindRule(th, deployRuleID("c_2")) != nil || FindRule(th, "builtins:c_1") == nil {
-		t.Fatalf("rules: %+v", th.Rules)
-	}
-	b, _ := json.Marshal(th)
-	again, err := DecodeThread(b)
-	if err != nil || len(again.Rules) != len(th.Rules) {
-		t.Fatalf("the new shape does not round-trip: %v %+v", err, again.Rules)
-	}
-	if strings.Contains(string(b), `"deployWatch":{`) {
-		t.Fatalf("stored again with deployWatch: %s", b)
-	}
-
-	v, err := DecodeView([]byte(`{"user":"owner","entity":"t_1","seenAt":"2026-11-15T08:00:00Z","snoozeUntil":"2026-11-16T06:00:00Z","snoozedAt":"2026-11-15T08:30:00Z"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	until, since := SnoozeOf(v)
-	if until == nil || !until.Equal(time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)) || !since.Equal(time.Date(2026, 11, 15, 8, 30, 0, 0, time.UTC)) {
-		t.Fatalf("snooze: %v %v", until, since)
-	}
-	vb, _ := json.Marshal(v)
-	if strings.Contains(string(vb), `"snoozeUntil"`) {
-		t.Fatalf("view stored again with snoozeUntil: %s", vb)
 	}
 }
 

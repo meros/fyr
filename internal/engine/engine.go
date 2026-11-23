@@ -271,16 +271,6 @@ func (e *Engine) Load() error {
 	e.sendLimit.load(now)
 	e.loadQuotaResetsLocked(now)
 	e.loadRerunKillsLocked(now)
-	old, err := e.st.OldProjectSources()
-	if err != nil {
-		return err
-	}
-	if err := e.migrateFolders(old); err != nil {
-		return err
-	}
-	if err := e.migrateAuto(); err != nil {
-		return err
-	}
 	// V0.55: threads land in the project whose folder covers theirs; a
 	// thread whose project is gone loses it. The host.restarted reduce below
 	// files each thread (core.Filed in core.ReduceIn, V0.handover-filed).

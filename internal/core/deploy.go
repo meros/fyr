@@ -77,15 +77,6 @@ func deployWhen(c *Change, since time.Time, seen bool) When {
 		When{Kind: WhenEnded, Change: c.ID})
 }
 
-// endsWithChange gives a deploy watch stored before #48 its changeEnded
-// clause.
-func endsWithChange(r *Rule) {
-	if r.Purpose != PurposeDeploy || slices.ContainsFunc(r.When.Any, func(w When) bool { return w.Kind == WhenEnded }) {
-		return
-	}
-	r.When.Any = append(r.When.Any, When{Kind: WhenEnded, Change: r.About})
-}
-
 // watchMerge arms the watch when the PR merged and the change is not live.
 // A change that already has a deploy condition was watched before.
 func watchMerge(t *Thread, c *Change, p PR, now time.Time) {

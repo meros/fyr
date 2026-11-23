@@ -128,9 +128,9 @@ func TestChangeToolsCodeOnly(t *testing.T) {
 
 // V0.changes-code-only (4): at load, a stored change that is not code and
 // has not ended ends as abandoned, under Done here; its open ask is closed
-// and the agent hears it once; the pass is stored.
+// and the agent hears it once; the pass is stored. Since
+// V0.versioned-store the pass runs once, when store.Open migrates a store.
 func TestLoadEndsChangesThatAreNotCode(t *testing.T) {
-	_, st, _ := bare(t)
 	was := time.Now().Add(-time.Hour)
 	th := &core.Thread{ID: "t_old", Cwd: "/w", ActivityAt: was, Changes: []core.Change{
 		{ID: "c_infra", Key: "k8s:prod/api", Kind: core.KindInfra, Title: "Raise replicas", Phase: core.PhaseReview, PhaseBy: core.ByAgent, UpdatedAt: was},
@@ -139,9 +139,7 @@ func TestLoadEndsChangesThatAreNotCode(t *testing.T) {
 		{ID: "d_apply", Kind: core.DecisionEffect, Assignee: core.Owner, CreatedAt: was,
 			Effect: &core.EffectReq{Action: "change.apply", Args: map[string]any{"change": "c_infra", "title": "Raise replicas"}, Reason: "scale"}},
 	}}
-	if _, err := st.Write(func(tx *store.Tx) error { return tx.PutThread(th) }); err != nil {
-		t.Fatal(err)
-	}
+	st := unversioned(t, func(tx *store.Tx) error { return tx.PutThread(th) })
 	e := New(st)
 	if err := e.Load(); err != nil {
 		t.Fatal(err)

@@ -2,7 +2,8 @@ package engine
 
 // Done changes on the host (SPEC V0.98, decision 0024 slice 4): the owner's
 // Done on a host record and the board's visit time. The load pass that
-// marks what landed before is core.Migrate (V0.structure-cost (2)).
+// marks what landed before is core.Migrate, run once by store.Open
+// (V0.versioned-store).
 
 import (
 	"strings"

@@ -16,7 +16,7 @@ func TestMigrateRetiredWhens(t *testing.T) {
 		{ID: "w_old", Purpose: PurposeWatch, When: When{Not: &When{Kind: retiredNoDecisions}}, Then: Then{Kind: KindRuleNotify}, CreatedBy: ByAgent, Status: RuleArmed},
 	}}
 	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
-	if !Migrate(th, map[string]*Change{}, now) {
+	if !Migrate(th, now) {
 		t.Fatal("the pass changed nothing")
 	}
 	if len(th.Rules) != 1 || th.Rules[0].ID != settleDoneRule {
@@ -25,7 +25,7 @@ func TestMigrateRetiredWhens(t *testing.T) {
 	if w := th.Rules[0].When; w.has(retiredNoDecisions) || !w.doneBound() {
 		t.Fatalf("settle when done reads %+v", w)
 	}
-	if Migrate(th, map[string]*Change{}, now) {
+	if Migrate(th, now) {
 		t.Fatal("a second pass changed the thread")
 	}
 }
