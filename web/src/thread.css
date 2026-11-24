@@ -351,6 +351,11 @@ button.al,button.subprompt{width:-webkit-fill-available;width:stretch;text-align
 .toast.err{background:var(--signal-ink);color:#fff}
 .toast .btn{height:26px;padding:0 9px;background:transparent;color:var(--on-night);border-color:rgba(255,255,255,.3)}
 .toast .btn kbd{background:transparent;color:var(--on-night);border-color:rgba(255,255,255,.3)}
+/* Dark mode: the night tone (#2a3a4a) is nearly the page, so the toast lifts to the raised surface with ink text, and its Undo
+   and kbd take the same ink: one pair of tokens, never a light box with a dark button. Shared with .m-toast. */
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) :is(.toast,.m-toast):not(.err){background:var(--select);color:var(--ink);border:1px solid var(--line-strong)}:root:not([data-theme="light"]) :is(.toast,.m-toast):not(.err) :is(.btn,.tb,kbd){color:var(--ink);border-color:var(--line-strong);background:transparent}}
+:root[data-theme="dark"] :is(.toast,.m-toast):not(.err){background:var(--select);color:var(--ink);border:1px solid var(--line-strong)}
+:root[data-theme="dark"] :is(.toast,.m-toast):not(.err) :is(.btn,.tb,kbd){color:var(--ink);border-color:var(--line-strong);background:transparent}
 
 
 /* V0.diff-line-comments: a press on a line's numbers picks it (Shift for a range); the comment box opens under the picked
