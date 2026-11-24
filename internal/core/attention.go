@@ -202,6 +202,10 @@ func ciWait(t *Thread) string {
 	}
 	for _, c := range t.Changes {
 		if c.PRWaitsOnCI() {
+			if p := c.PR; p.Checks == ChecksFail {
+				// V0.ci-failed-still-running: name the red check.
+				return fmt.Sprintf("Waiting for CI on #%d: %d of %d checks done, %d failed", p.Number, p.ChecksDone, p.ChecksTotal, max(len(p.FailedChecks), 1))
+			}
 			return fmt.Sprintf("Waiting for CI on #%d", c.PR.Number)
 		}
 	}
