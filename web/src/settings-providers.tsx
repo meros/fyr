@@ -294,7 +294,7 @@ function SystemAgents({ d }: { d: Data }) {
 }
 
 /** A provider's page: what blocks it first (a login, a key), its models, its usage, Remove last. */
-export function ProviderPage({ p, host, run, refresh, now, clockKnown, onRemoved }: { p: ProviderDTO; host: string; run: Run; refresh(): Promise<string | null>; now: number; clockKnown: boolean; onRemoved(): void }) {
+export function ProviderPage({ p, host, projects, run, refresh, now, clockKnown, onRemoved }: { p: ProviderDTO; host: string; projects: { id: string; name: string }[]; run: Run; refresh(): Promise<string | null>; now: number; clockKnown: boolean; onRemoved(): void }) {
   const quota = quotaFor(useQuotas(), p.id, host || undefined);
   const ask = useAsk();
   const env = useSet();
@@ -309,6 +309,7 @@ export function ProviderPage({ p, host, run, refresh, now, clockKnown, onRemoved
         <LoginGroup p={p} run={run} />
       )}
       <ModelsGroup p={p} run={run} refresh={refresh} now={now} clockKnown={clockKnown} />
+      <ProjectsGroup p={p} projects={projects} run={run} />
       <Group title="Quota" class="usage">
         <Row title={quota ? <QuotaLine q={quota} name={p.name} bare /> : "No reading yet"} desc={usageLine(p)} />
       </Group>
@@ -611,6 +612,24 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
           }
         />
       )}
+    </Group>
+  );
+}
+
+// V0.provider-projects: an optional limit of the provider to some projects on its host. None picked is every project.
+function ProjectsGroup({ p, projects, run }: { p: ProviderDTO; projects: { id: string; name: string }[]; run: Run }) {
+  const env = useSet();
+  const [err, setErr] = useState<string | null>(null);
+  const on = p.projects ?? [];
+  const set = async (next: string[]) => setErr(await run("provider.update", { id: p.id, projects: next }));
+  // a project that is gone stays listed (by id) so the owner can take it off
+  const gone = on.filter((id) => !projects.some((x) => x.id === id)).map((id) => ({ id, name: `${id} (not on this host)` }));
+  return (
+    <Group title="Projects" foot={on.length ? "Offered only to the projects switched on." : "Offered to every project. Switch some on to limit it to them."}>
+      {[...projects, ...gone].map((x) => (
+        <Row key={x.id} title={x.name} error={err} end={<Switch on={on.includes(x.id)} label={`Offer to ${x.name}`} disabled={env.readOnly} onChange={(v) => void set(v ? [...on, x.id] : on.filter((y) => y !== x.id))} />} />
+      ))}
+      {!projects.length && !gone.length && <Row desc="No projects on this host." />}
     </Group>
   );
 }

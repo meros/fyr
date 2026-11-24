@@ -1,0 +1,3 @@
+# V0.provider-projects: a provider can be limited to some projects
+
+A provider on a host may name the projects it is offered to (`provider.update` with `projects`, the host's own project ids). None named is every project, as before. The New thread form and its project default skip a provider that does not name the thread's project (a thread with no project is offered only unlimited providers). Threads that already run on a provider keep running: the limit filters what is offered, not what runs. The provider's page (Settings, both fronts) has a Projects group with a switch per project of that host.

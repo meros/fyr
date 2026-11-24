@@ -275,3 +275,23 @@ func TestDailyCheckSurvivesRestart(t *testing.T) {
 		t.Fatalf("not checked a day later: %d calls", calls)
 	}
 }
+
+// V0.provider-projects: update sets and clears the project limit.
+func TestUpdateProjects(t *testing.T) {
+	f := newFixture(t)
+	r := newReg(t, f)
+	r.Run(cmd("provider.create", map[string]any{"id": "ds", "name": "DS", "kind": "endpoint", "baseURL": "https://e.example", "key": "k-123456789"}))
+	if rep := r.Run(cmd("provider.update", map[string]any{"id": "ds", "projects": []any{"p1", " p2 ", "p1", ""}})); !rep.OK {
+		t.Fatal(rep.Error)
+	}
+	if p, _ := r.get("ds"); !slices.Equal(p.Projects, []string{"p1", "p2"}) {
+		t.Fatalf("%v", p.Projects)
+	}
+	if ps := r.Profiles(); !slices.Equal(ps[len(ps)-1].Projects, []string{"p1", "p2"}) {
+		t.Fatalf("%+v", ps)
+	}
+	r.Run(cmd("provider.update", map[string]any{"id": "ds", "projects": []any{}}))
+	if p, _ := r.get("ds"); len(p.Projects) != 0 {
+		t.Fatalf("%v", p.Projects)
+	}
+}

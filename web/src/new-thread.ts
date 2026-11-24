@@ -208,7 +208,7 @@ export function chooseHost(f: NewThreadForm, host: HostId, ctx: FormCtx, last: R
   } else own = !!f.hand?.project; // No project stays No project
   // A project the change of host assigned is not the owner's pick: the way back must not blame them for it.
   next = { ...next, hand: { ...f.hand, project: own }, reset: mine ? "" : hostResetNote(f, next, ctx) };
-  const there = profilesOn(ctx, host);
+  const there = forProject(profilesOn(ctx, host), currentProject(next, ctx));
   if (!there.length) return next;
   return { ...next, ...profileFor(currentProject(next, ctx), there, f, last) };
 }
@@ -225,9 +225,16 @@ export function hostResetNote(f: NewThreadForm, next: NewThreadForm, ctx: FormCt
   return `Not on this host: ${gone.join(" and ")}${from ? ` (${gone.length > 1 ? "they are" : "it is"} on ${from})` : ""}.`;
 }
 
-/** The profiles of that host. */
+/** The profiles of that host that are offered to the form's project (a provider limited to other projects is not). */
 export function formProfiles(f: NewThreadForm, ctx: FormCtx): Profile[] {
-  return profilesOn(ctx, formHost(f, ctx));
+  return forProject(profilesOn(ctx, formHost(f, ctx)), currentProject(f, ctx));
+}
+
+/** The providers offered to a project: those with no project limit and those that name it. No project (scratch) is
+ *  offered only the unlimited. */
+export function forProject(ps: Profile[], pr: Pick<Project, "id" | "rid"> | undefined): Profile[] {
+  const id = pr?.rid ?? pr?.id; // the host's own id of the project
+  return ps.filter((p) => !p.projects?.length || (!!id && p.projects.includes(id)));
 }
 
 /** V0.42, V0.63: where the thread starts. */
@@ -297,7 +304,7 @@ export function chooseProject(f: NewThreadForm, pr: Project | null, ctx: FormCtx
   // V0.139: a project of another host (a filter, a deep link) moves the thread's host to it.
   const host = pr?.hostId ?? f.host;
   const next: NewThreadForm = { ...f, picking: false, creating: null, projectId: pr?.id, picked: "", reset: "", ...(host ? { host } : {}) };
-  const there = profilesOn(ctx, host);
+  const there = forProject(profilesOn(ctx, host), pr ?? undefined);
   if (!there.length) return next;
   return { ...next, ...profileFor(pr ?? undefined, there, f, last) };
 }

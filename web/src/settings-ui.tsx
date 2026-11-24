@@ -447,7 +447,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           body: (
             <HostEnv d={d}>
               {note && x && <div class="note hnote">{note}</div>}
-              {x ? <ProviderPage key={`${d.host.name}/${x.id}`} p={x} host={d.host.name} run={d.runProvider} refresh={() => d.refreshModels(x.id)} now={p.now} clockKnown={p.clockKnown ?? true} onRemoved={() => go({ page: "providers" })} /> : d.providers === null && !d.provErr ? <Skeleton rows={4} /> : d.provErr ? <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} /> : <Group><Empty text="This provider is not here anymore." /></Group>}
+              {x ? <ProviderPage key={`${d.host.name}/${x.id}`} p={x} host={d.host.name} projects={projectRecords(p.projects).filter((r) => r.hostId === d.host.id && r.rid).map((r) => ({ id: r.rid!, name: r.name }))} run={d.runProvider} refresh={() => d.refreshModels(x.id)} now={p.now} clockKnown={p.clockKnown ?? true} onRemoved={() => go({ page: "providers" })} /> : d.providers === null && !d.provErr ? <Skeleton rows={4} /> : d.provErr ? <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} /> : <Group><Empty text="This provider is not here anymore." /></Group>}
             </HostEnv>
           ),
         };

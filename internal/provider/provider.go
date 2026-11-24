@@ -73,6 +73,9 @@ type Provider struct {
 	// folder's login (maybe another account's) does not count, and it does
 	// not start without the token.
 	TokenLogin bool `json:"tokenLogin,omitempty"`
+	// Projects limits the provider to these project ids on this host; empty
+	// offers it to every project.
+	Projects []string `json:"projects,omitempty"`
 	// QuotaKind: "" picks by auth and endpoint (V0.44 kinds).
 	QuotaKind string `json:"quotaKind,omitempty"`
 	// Imported: where an imported provider came from ("" when made here).
@@ -205,7 +208,7 @@ func (p Provider) Profile(key func() (string, error), permissionMode string) Pro
 	return Profile{ID: p.ID, Name: p.Name, Binary: p.binary(), Color: p.Color, Models: ids, DefaultModel: def,
 		PermissionMode: permissionMode, Quota: p.quotaSpec(), ConfigDir: p.Auth.ConfigDir,
 		CLI: p.CLI, Auth: p.Auth, Endpoint: p.Endpoint, Key: key, KeyRequired: p.Auth.Kind == cli.APIKey || p.TokenLogin,
-		ModelCaps: p.Models, DefaultEffort: p.DefaultEffort}
+		ModelCaps: p.Models, DefaultEffort: p.DefaultEffort, Projects: p.Projects}
 }
 
 // modelsFor gives each id its name and effort levels: the catalog's

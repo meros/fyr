@@ -13,6 +13,8 @@ type ProviderKind = "claude-account" | "agy-account" | "endpoint";
 
 export interface ProviderDTO {
   id: string;
+  /** the project ids on its host it is limited to; none is every project */
+  projects?: string[];
   name: string;
   kind: ProviderKind;
   cli: string;

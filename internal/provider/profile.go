@@ -44,6 +44,8 @@ type Profile struct {
 	// is used when the thread names none and the model takes it.
 	ModelCaps     []cli.Model `json:"modelCaps,omitempty"`
 	DefaultEffort string      `json:"defaultEffort,omitempty"`
+	// Projects: the provider is offered only to these project ids; empty is all.
+	Projects []string `json:"projects,omitempty"`
 }
 
 // ConfigDirPath is where the profile's CLI keeps its sessions: the
