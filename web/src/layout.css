@@ -187,9 +187,11 @@
   --spring:linear(0,.058,.173,.312,.453,.584,.696,.788,.86,.915,.954,.981,.999,1.009,1.014,1.016,1.016,1.014,1.012,1.01,1.008,1.006,1.004,1.003,1.002,1.001,1);--spring-ms:.48s;
   --spring-pop:linear(0,.08,.242,.436,.627,.793,.923,1.015,1.071,1.098,1.103,1.094,1.076,1.056,1.037,1.02,1.007,.998,.992,.99,.989,.99,.992,.994,.996,.998,.999,1);--spring-pop-ms:.6s;
   --ease-sheet:cubic-bezier(.32,.72,0,1);
-  --lift-1:0 1px 2px rgba(60,40,20,.05),0 2px 8px rgba(60,40,20,.05); /* V0.warm-polish: warm, soft shadows */
-  --lift-2:0 2px 6px rgba(60,40,20,.06),0 12px 32px rgba(60,40,20,.10);
-  --lift-3:0 4px 12px rgba(60,40,20,.08),0 28px 72px rgba(60,40,20,.18);
+  /* V0.depth-polish: each lift is a hairline ring, a tight contact shadow and a soft ambient one, in a warm grey */
+  --lift-1:0 0 0 1px rgba(70,45,15,.07),0 1px 2px rgba(70,45,15,.06),0 3px 8px -3px rgba(70,45,15,.10);
+  --lift-2:0 0 0 1px rgba(70,45,15,.05),0 2px 4px rgba(70,45,15,.05),0 8px 18px -6px rgba(70,45,15,.10),0 22px 44px -14px rgba(70,45,15,.14);
+  --lift-3:0 0 0 1px rgba(70,45,15,.08),0 8px 16px -4px rgba(70,45,15,.08),0 28px 64px -12px rgba(70,45,15,.32);
+  --shade:70,45,15;--face:linear-gradient(to bottom,var(--raised),#fbf8f3); /* what a shadow is made of: warm in the light, black in the dark (warm.css) */
   --edge-light:inset 0 1px 0 rgba(255,255,255,.08);
 }
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;text-rendering:optimizeLegibility}

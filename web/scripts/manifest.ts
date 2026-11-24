@@ -1,7 +1,7 @@
 // The web app manifest (SPEC 0.5 V0.15). Colours come from the design tokens in src/base.css.
 import { iconUrl } from "../src/icon-paths.ts";
 
-export const THEME = { light: "#f7f4ef", dark: "#191714" } as const; // --surface, light and dark
+export const THEME = { light: "#f9f6f1", dark: "#161412" } as const; // --surface, light and dark
 
 export const ICONS = [
   { src: iconUrl("any192"), sizes: "192x192", type: "image/png", purpose: "any" },
