@@ -36,12 +36,12 @@ Every route of the front, every route of the host and every Input kind an owner 
 | Class | Meaning | A locked device | Examples |
 |---|---|---|---|
 | `read` | changes nothing | allowed | every `GET` of state, streams, events, changes, previews, attachments; `POST …/push/status` |
-| `view` | changes only this owner's view or this device's own record | allowed | `thread.markSeen`, `thread.markUnseen`, `thread.snooze`, `thread.unsnooze`, `thread.changesSeen`, `thread.fileViewed`, `thread.pin`, `thread.unpin`; `POST /api/threads/{id}/focus`, `/api/board/visit`, `/api/front/presence`; this device's push subscription and prefs |
+| `view` | changes only this owner's view or this device's own record | allowed | `thread.markSeen`, `thread.markUnseen`, `thread.snooze`, `thread.snoozeWhenDone`, `thread.unsnooze`, `thread.changesSeen`, `thread.fileViewed`, `thread.pin`, `thread.unpin`; `POST /api/threads/{id}/focus`, `/api/board/visit`, `/api/front/presence`; this device's push subscription and prefs |
 | `write` | anything an agent, a repo, a provider, a project or another device can notice | refused with `403 {locked: true}` | `thread.create`, `thread.send`, `thread.answer`, `thread.interrupt`, `thread.settle*`, `thread.archive`, `thread.handover`, `pr.merge`, `action.run`, every project, provider and host-setup kind; `POST /api/attachments`, `/api/fs/mkdir`, `/api/search` (it runs a model), the handover routes; all of `/api/front/auth/*` and `/api/front/peer/*` but their state reads |
 
 - **A kind or route without a class is `write`.** The HTTP method decides nothing: a POST can be a read and a command can be view state.
 - The class is a field on the Input kind (`core.Kinds`) and on the route's registration, so it sits next to the code it describes. A test walks `Front.RoutePatterns()`, the host's routes and `core.Kinds` and fails for one without a class; a second test sends each `write` as a locked device through a real front and host and expects 403 and no record changed.
-- `thread.snoozeWhenDone` and `thread.settleWhenDone` arm Rules that later change the thread for every device: `write`. A snooze is the View's alone: `view`.
+- A snooze is the View's alone, `thread.snoozeWhenDone` included (its Rule is stored with the View, V0.185): `view`. `thread.settleWhenDone` and `thread.settleWhenMerged` arm a Rule that later settles the thread itself: `write`.
 - A draft is kept in the browser and never sent, so typing stays possible. Send is what asks for the unlock.
 
 ### 3. Enforced twice: the front that holds the session, and the host that acts
@@ -140,4 +140,4 @@ Each slice: red tests first, a change file in `docs/changes/`, and `internal/aut
 ## Open, for the review of this record
 
 1. Rule 5 is stricter than "5 minutes for everything": an unlocked read-only device still cannot add a device or change a way in. The record proposes it because the window would otherwise undo the switch.
-2. `thread.snooze` is `view` and `thread.snoozeWhenDone` is `write`. The line is whether another device or an agent can notice. If the owner wants both on a locked phone, the second moves.
+2. A snooze removes a pin (V0.104), and pin and snooze are `view`. If a pin should count as something other devices notice, both pin kinds and the snoozes move to `write`.
