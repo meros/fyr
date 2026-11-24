@@ -94,7 +94,7 @@ test("V0.124: a host keeps its install id, and the id it had when another instal
   assert.equal(shortID(hs[0].id), "F7QK");
   assert.equal(idChangedLine(hs[0]), "");
   // V0.125: the advice to trust it moved to the host's page.
-  assert.equal(idChangedLine(hs[1]), "Another install answers as server: id BBBB, it was AAAA.");
+  assert.equal(idChangedLine(hs[1]), "Another host answers as server: id BBBB, it was AAAA.");
 });
 
 // SPEC 0.5 V0.125 (decision 0026): Settings → Hosts. A host's route from the URL the front dials.
@@ -138,11 +138,12 @@ test("V0.125: a host row's line: state since, route, short id", () => {
     { name: "older", online: true },
   ]);
   assert.equal(hs[0].url, "http://127.0.0.1:7777");
-  assert.equal(hostLine(hs[0], now), `online since ${clockTime(at(16, 8, 12))} · this machine · id F7QK`);
+  assert.equal(hostLine(hs[0], now), `online since ${clockTime(at(16, 8, 12))} · this host · id F7QK`); // V0.settings-ia: "this host", the one this device is connected to
   assert.equal(hostLine(hs[1], now), `offline since ${clockTime(at(16, 19, 40))} · tailnet · id M3RS`);
+  assert.equal(hostLine(hs[0], now, true), "as last read · this host · id F7QK", "no connection: the row does not say online");
   assert.equal(hostLine(hs[2], now), `online since ${clockTime(at(16, 8, 31))} · updating Fyr · LAN · id K2VD`);
   assert.equal(hostLine(hs[3], now), `online since ${clockTime(at(16, 9, 0))} · LAN · needs an update`);
-  assert.equal(hostLine(hs[4], now), "Another install answers as lab: id B7LA, it was AX2C.");
+  assert.equal(hostLine(hs[4], now), "Another host answers as lab: id B7LA, it was AX2C.");
   const day = new Date(2026, 10, 9, 6, 0).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   assert.equal(hostLine(hs[5], now), `online since ${day} ${clockTime(at(9, 6, 0))} · by address · id V9PS`);
   const mon = new Date(2026, 10, 16, 6, 0).toLocaleDateString(undefined, { weekday: "short" });
@@ -151,18 +152,19 @@ test("V0.125: a host row's line: state since, route, short id", () => {
   assert.equal(decodeHosts([{ name: "a", online: true, url: 3 }])[0].url, undefined);
 });
 
-test("decision 0031 2.6: the route says \"this machine\" for the host the front's link is the pipe to, whatever its URL; no host is the front's by name", () => {
-  assert.equal(hostRoute({ url: "http://100.64.0.3:7778", link: { state: "up", via: "pipe" } }), "this machine");
+test("decision 0031 2.6, V0.settings-ia: the route says \"this host\" for the host the front's link is the pipe to, whatever its URL; no host is the front's by name", () => {
+  assert.equal(hostRoute({ url: "http://100.64.0.3:7778", link: { state: "up", via: "pipe" } }), "this host");
+  assert.equal(hostRoute({ url: "http://127.0.0.1:7777" }), "this host", "one dialled on the loopback is the same host");
   assert.equal(hostRoute({ url: "http://100.64.0.3:7778", link: { state: "up", via: "peer" } }), "tailnet");
   assert.equal(hostRoute({ found: true }), "tailnet");
   assert.deepEqual(decodeHosts([{ name: "desk", online: true, link: { state: "up", via: "pipe" } }, { name: "x", online: true, link: "up" }]).map((h) => h.link), [{ state: "up", via: "pipe" }, undefined]);
 });
 
 test("V0.125: how this browser gets in, from the page's host and the state's user", () => {
-  assert.equal(howIn("desk.tail1234.ts.net", "owner@github"), "Through Tailscale Serve, as owner@github. Any browser signed in to your tailnet with that login can open this Fyr.");
-  assert.equal(howIn("localhost", "owner"), "On this machine itself (localhost). A browser on this machine is always allowed.");
-  assert.equal(howIn("127.0.0.1", "owner"), "On this machine itself (localhost). A browser on this machine is always allowed.");
-  assert.equal(howIn("[::1]", "owner"), "On this machine itself (localhost). A browser on this machine is always allowed.");
+  assert.equal(howIn("desk.tail1234.ts.net", "owner@github"), "Through Tailscale Serve, as owner@github. Any device signed in to your tailnet with that login can open this Fyr.");
+  assert.equal(howIn("localhost", "owner"), "This device is the host itself (localhost): it is always allowed.");
+  assert.equal(howIn("127.0.0.1", "owner"), "This device is the host itself (localhost): it is always allowed.");
+  assert.equal(howIn("[::1]", "owner"), "This device is the host itself (localhost): it is always allowed.");
   assert.equal(howIn("fyr.example.net", "owner@github"), "At fyr.example.net, as owner@github. What stands in front of Fyr there decides who gets in.");
   assert.equal(howIn("fyr.example.net", ""), "At fyr.example.net. What stands in front of Fyr there decides who gets in.");
 });
@@ -183,7 +185,7 @@ test("V0.206: a thread's provider is its host's, and a row names it only when th
 });
 
 test("V0.host-updates: a host's row says how far behind it is and how its last update ended", async () => {
-  const { updateLine, updateRows, badLine } = await import("../src/hosts.ts");
+  const { updateLine, updateRows, updateAction } = await import("../src/hosts.ts");
   const now = Date.parse("2026-11-19T15:00:00");
   const [h] = decodeHosts([
     {
@@ -205,11 +207,42 @@ test("V0.host-updates: a host's row says how far behind it is and how its last u
 
   const held = { ...h.update!, bad: { commit: "c705ef5365660a8f", why: "exited with code 1", at: "2026-11-19T14:02:00" } };
   assert.equal(updateLine({ update: held }).text, "3 commits behind · holds back c705ef5");
-  assert.equal(badLine(held.bad, now), `Release c705ef5 is held back here since ${clockTime("2026-11-19T14:02:00")}: exited with code 1. Fyr skips it until a newer release.`);
+  // V0.settings-ia: the held-back release is the title of the one row that asks for a press (it was a foot line)
+  assert.deepEqual(updateAction({ update: held }, null, now), { title: "Release c705ef5 is held back", desc: `Reason: exited with code 1 (${clockTime("2026-11-19T14:02:00")}). Fyr skips it until a newer release; Try again installs it now.`, button: "Try again", chip: "Update held back" });
 
   assert.deepEqual(updateLine({ update: { behind: 0, running: "a", wanted: "a" } }), { text: "up to date", bad: false });
   assert.equal(updateLine({ update: { behind: 0, last: { build: "x", result: "failed", startedAt: "" } } }).bad, false, "a failure the host has since got past is not red");
   assert.equal(updateLine({ update: { behind: -1, paused: true } }).text, "local build");
   assert.equal(updateLine({}).text, "", "a host without update state says nothing");
   assert.equal(decodeHosts([{ name: "x", online: true, update: { running: "a" } }])[0].update!.behind, -1);
+});
+
+// V0.settings-ia: the count read a held-back release from the host's row only, the host's page from the row or the
+// settings read, and Automation from the settings read only: three answers for one fact.
+test("V0.settings-ia: what is wrong with a host's update is read one way: its own summary, else its settings read", async () => {
+  const { updateTrouble, updateAction } = await import("../src/hosts.ts");
+  const now = Date.parse("2026-11-19T15:00:00");
+  const bad = { commit: "9b3e1d2c4a5f6e7d", why: "was not healthy" };
+  assert.equal(updateTrouble(undefined, null), null);
+  assert.equal(updateTrouble({ update: { behind: 0 } }, null), null, "up to date");
+  assert.deepEqual(updateTrouble({ update: { behind: 1, bad } }, null), { chip: "Update held back", held: bad });
+  assert.deepEqual(updateTrouble({ update: { behind: 2, last: { build: "x", result: "failed", startedAt: "" } } }, null), { chip: "Update failed" });
+  assert.equal(updateTrouble({ update: { behind: 0, last: { build: "x", result: "failed", startedAt: "" } } }, null), null, "a failure the host got past");
+  assert.deepEqual(updateTrouble({}, { bad }), { chip: "Update held back", held: bad }, "a host that sends no summary: its settings read");
+  assert.deepEqual(updateTrouble(undefined, { bad }), { chip: "Update held back", held: bad }, "a front with one host has no row");
+  assert.equal(updateTrouble({ update: { behind: 0 } }, { bad }), null, "the host's own summary wins: it is live, the settings read may be older");
+  assert.equal(updateTrouble({}, { bad: { commit: "", why: "" } }), null);
+
+  // the one row that asks for a press
+  assert.equal(updateAction({ update: { behind: 0 } }, null, now), null, "nothing to install");
+  assert.deepEqual(updateAction({ update: { behind: 3 } }, null, now), { title: "3 commits behind the newest release", desc: "Fyr installs it by itself when Auto-update is on; Update now does not wait.", button: "Update now" });
+  assert.equal(updateAction({ update: { behind: 1 } }, null, now)?.title, "1 commit behind the newest release");
+  assert.equal(updateAction({ update: { behind: -1 } }, null, now)?.button, "Update now", "not known: the press is offered");
+  assert.deepEqual(updateAction({ update: { behind: 2, last: { build: "x", result: "failed", reason: "the smoke test failed", startedAt: "" } } }, null, now), { title: "The last update failed", desc: "Reason: the smoke test failed. This host is still behind the newest release.", button: "Update now", chip: "Update failed" });
+  assert.equal(updateAction({ update: { behind: -1, paused: true } }, null, now)?.button, "Back to release");
+  assert.equal(updateAction({}, { paused: { build: "x" } }, now)?.button, "Back to release");
+  assert.deepEqual(updateAction({}, {}, now), { title: "Install the newest release now", desc: "This host does not say how far behind it is.", button: "Update now" }, "no summary: Fyr cannot tell, so the press shows");
+  assert.equal(updateAction({}, null, now), null, "nothing read");
+  assert.equal(updateAction({}, { bad }, now)?.button, "Try again");
+  assert.equal(updateAction({}, { bad }, now)?.chip, "Update held back");
 });

@@ -48,7 +48,7 @@ test("the rail and the phone's sheet count a host's leftovers and their memory",
   assert.equal(r.card.head, "Still running after their thread");
   assert.deepEqual(cardLines(r.card), ["3 processes that threads started and left behind, 2.0 GB in all.", ...cardLines({ sections: r.card.sections })]);
   assert.match(cardLines({ sections: r.card.sections })[0], /^chromium · (\d+ processes · )?1\.9 GB$/);
-  assert.equal(r.card.source, "End or keep them in Settings → Automation.");
+  assert.equal(r.card.source, "End or keep them in Settings → Hosts → desk.", "V0.settings-ia: on the host's page");
 });
 
 test("Settings lists each leftover with its thread, what holds it and when it ends; orphans name no thread", () => {
@@ -59,7 +59,7 @@ test("Settings lists each leftover with its thread, what holds it and when it en
       ["11@1", "chromium · 9 processes · 1.9 GB", "Map perf · fyr · ends in 25 min", "t_map"],
       ["13@1", "kubectl port-forward · 2 processes · 60 MB", "t_nix · fyr · its timeout ends it in 10 h", "t_nix"],
       ["14@1", "vite · 20 MB", "Map perf · fyr · kept for 3 h by the agent: dev server", "t_map"],
-      ["15@1", "engine.test", "in no thread's cgroup · ends now", null],
+      ["15@1", "engine.test", "of no thread · ends now", null],
     ],
   );
   assert.equal(rows[2].canKeep, false);
@@ -108,4 +108,14 @@ test("the mock host ends and keeps a leftover and removes a safe worktree", () =
   assert.equal(mockLeftoverCommand(h, "host.tempRemove", { path: safe.path }).ok, true);
   const unsafe = h.temps!.find((t) => !t.safe)!;
   assert.equal(mockLeftoverCommand(h, "host.tempRemove", { path: unsafe.path }).ok, false);
+});
+
+// V0.settings-ia: a leftover of a thread this device cannot look up showed the thread's raw id, with an Open that led nowhere.
+test("V0.settings-ia: a leftover whose thread is gone says so and offers no Open", () => {
+  const gone = (id: string) => (id === "t_map" ? { title: "Map perf", project: "fyr" } : { title: id, gone: true });
+  const rows = leftoverRows(host([chrome, fwd]), gone, NOW);
+  assert.deepEqual(rows.map((r) => [r.desc, r.thread]), [
+    ["Map perf · fyr · ends in 25 min", "t_map"],
+    ["of a thread that is gone · its timeout ends it in 10 h", null],
+  ]);
 });

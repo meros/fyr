@@ -156,7 +156,7 @@ export interface Api {
   updates(host: HostId): Promise<Result<UpdatesView>>;
   /** Decision 0037: the host's setup wizard checks derived from real host state. */
   setup?(host: HostId): Promise<Result<SetupReport>>;
-  /** V0.157: Settings → Devices: the signed-in devices, the ones that wait, the browser way in's mode. */
+  /** V0.157: Settings → Sign-in: the signed-in devices, the ones that wait, the browser way in's mode. */
   authState(): Promise<Result<AuthState>>;
   /** V0.157: approve (code or id), deny, revoke, add (a one-time link and its QR code), mode (browser way in). */
   authAct(action: "approve" | "deny" | "revoke" | "add" | "mode", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;

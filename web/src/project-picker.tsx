@@ -52,10 +52,12 @@ function FolderField({ folder, title, host, onPick, onClear, none }: { folder: s
  *  by the caller (`host`: the New thread form's host, or the threads' host when it is made from them); the folder is
  *  that host's, and a new host drops a folder picked on another. `plain` (V0.dialogs-review (11)): the form around it
  *  has the primary button (New thread's "Create project and start"), so this step's own is a plain one. */
-export function NewProjectStep({ initialName, initialFolder, fromThread, many, host: fixed, onCreate, onCancel, onDraft, plain, note, onError, onEnter }: { initialName: string; initialFolder: string; fromThread: boolean; /** several threads are filed in it */ many?: boolean; host?: HostId; onCreate(name: string, folder: string, host: HostId): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void; plain?: boolean; /** a line above the buttons (New thread: where the thread starts) */ note?: string; /** the form around it shows the step's errors (New thread's foot, always in view); else they show here */ onError?(e: string | null): void; /** what Enter in Name does instead of this step's own button (New thread: its one primary button) */ onEnter?(): void }) {
+export function NewProjectStep({ initialName, initialFolder, fromThread, many, host: fixed, onCreate, onCancel, cancelLabel, onDraft, plain, note, onError, onEnter }: { initialName: string; initialFolder: string; fromThread: boolean; /** several threads are filed in it */ many?: boolean; host?: HostId; onCreate(name: string, folder: string, host: HostId): Promise<string | null>; onCancel(): void; /** V0.settings-ia: "Cancel" where the step is a page of its own (Settings); "Back" where it is a step of the picker */ cancelLabel?: string; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void; plain?: boolean; /** a line above the buttons (New thread: where the thread starts) */ note?: string; /** the form around it shows the step's errors (New thread's foot, always in view); else they show here */ onError?(e: string | null): void; /** what Enter in Name does instead of this step's own button (New thread: its one primary button) */ onEnter?(): void }) {
   const hs = useHosts();
   // Slice 2b: the picker starts on the first host in the owner's order (shown in it), the only one with one host.
-  const [own, setOwn] = useState<HostId | undefined>(() => pickerStart(hs.hosts));
+  // Until one is picked it follows the list: a link can open the form before the host list has arrived.
+  const [picked, setOwn] = useState<HostId | undefined>(undefined);
+  const own = picked ?? pickerStart(hs.hosts);
   const host = fixed ?? own;
   const down = hostOfflineNote(host, hs.hosts, hs.now);
   const [name, setName] = useState(initialName);
@@ -135,7 +137,7 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, many, h
       {note && <p class="lede pnote">{note}</p>}
       <div class="pformb">
         <button class="btn" onClick={onCancel}>
-          Back
+          {cancelLabel ?? "Back"}
         </button>
         <button class={plain ? "btn" : "btn p"} disabled={busy} onClick={() => void submit()}>
           {fromThread ? (many ? "Create and file these threads" : "Create and file this thread") : "Create project"}

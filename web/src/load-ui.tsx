@@ -30,6 +30,24 @@ async function poll(): Promise<void> {
   lastAt = Date.now();
   const api = source;
   await feed.poll(() => api.load());
+  if (!readOnce) {
+    readOnce = true;
+    for (const f of [...readSubs]) f();
+  }
+}
+
+// V0.settings-ia: whether the load was read at least once, so a page that shows a host's load keeps its place until
+// then (the section arrived after the page and pushed what was under it down).
+let readOnce = false;
+const readSubs = new Set<() => void>();
+export function useLoadRead(): boolean {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const f = () => bump((n) => n + 1);
+    readSubs.add(f);
+    return () => void readSubs.delete(f);
+  }, []);
+  return readOnce;
 }
 
 function onVisible(): void {
@@ -328,7 +346,7 @@ function RailUndeclared({ h }: { h: HostLoad }) {
 }
 
 /** The rail's count under a host's meters (desktop: the phone has no rail and shows SheetLeftovers in its load sheet).
- *  A press opens Settings → Automation, where each one has End and Keep; hover or focus shows them as a card
+ *  A press opens Settings → Hosts → a host, where each one has End and Keep; hover or focus shows them as a card
  *  (V0.hover-cards). Null without any. */
 function RailLeftovers({ h }: { h: HostLoad }) {
   const nav = useUnd();
@@ -337,7 +355,7 @@ function RailLeftovers({ h }: { h: HostLoad }) {
   if (!r) return null;
   return (
     <>
-      <button type="button" class="rlft" aria-label={`${h.host}: ${r.text}. Show them`} {...hv.bind} onClick={() => (hv.close(), nav.openSettings({ page: "automation", host: h.host, sub: "leftovers" }))}>
+      <button type="button" class="rlft" aria-label={`${h.host}: ${r.text}. Show them`} {...hv.bind} onClick={() => (hv.close(), nav.openSettings({ page: "hosts", sub: h.host, focus: "leftovers" }) /* V0.settings-ia: on the host's page */)}>
         {r.count} left
       </button>
       {hv.at && (
@@ -349,13 +367,18 @@ function RailLeftovers({ h }: { h: HostLoad }) {
   );
 }
 
-/** The phone's load sheet: the same card as the rail's hover card, as text (no hover on a phone). */
+/** The phone's load sheet: the same card as the rail's hover card, as text (no hover on a phone), and the same way to
+ *  the host's page as a press on the rail's count (V0.settings-ia). */
 function SheetLeftovers({ h }: { h: HostLoad }) {
+  const nav = useUnd();
   const r = hostLeftovers(h);
   if (!r) return null;
   return (
     <li class="lft">
       <CardView c={r.card} />
+      <button type="button" class="btn lftgo" onClick={() => nav.openSettings({ page: "hosts", sub: h.host, focus: "leftovers" })}>
+        End or keep them
+      </button>
     </li>
   );
 }

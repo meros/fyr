@@ -102,7 +102,7 @@ type TailscaleInfo struct {
 	DNSName   string
 }
 
-// PeerInfo is what the peer layer reports to the Other installs step.
+// PeerInfo is what the peer layer reports to the Other hosts step.
 type PeerInfo struct {
 	Paired     int
 	Candidates int
@@ -285,7 +285,7 @@ func (c *Checker) Check(ctx context.Context) Report {
 
 func (c *Checker) checkMachine(ctx context.Context) Step {
 	isMac := c.osName() == "darwin"
-	title := "This machine"
+	title := "This host"
 	if isMac {
 		title = "This Mac"
 	}
@@ -377,7 +377,7 @@ func (c *Checker) checkClaude() Step {
 		return Step{ID: "claude", Title: "Claude", Status: OK, Reason: fmt.Sprintf("Claude Code is ready (%d provider%s)", ready, plural(ready)), Detail: detail}
 	}
 	if !hasCLI {
-		return Step{ID: "claude", Title: "Claude", Status: Missing, Reason: "Install Claude Code (claude) on this machine, then sign in under Providers", Detail: detail}
+		return Step{ID: "claude", Title: "Claude", Status: Missing, Reason: "Install Claude Code (claude) on this host, then sign in under Providers", Detail: detail}
 	}
 	if needsLoginID != "" {
 		return Step{ID: "claude", Title: "Claude", Status: Fixable, Reason: "Claude Code is installed; sign in under Settings → Providers", Detail: detail}
@@ -553,12 +553,12 @@ func (c *Checker) checkPeers(ctx context.Context) Step {
 	}
 	detail := map[string]any{"paired": pi.Paired, "candidates": pi.Candidates}
 	if pi.Paired > 0 {
-		return Step{ID: "peers", Title: "Other installs", Status: OK, Optional: true, Reason: fmt.Sprintf("Paired with %d other install%s", pi.Paired, plural(pi.Paired)), Detail: detail}
+		return Step{ID: "peers", Title: "Other hosts", Status: OK, Optional: true, Reason: fmt.Sprintf("Paired with %d other host%s", pi.Paired, plural(pi.Paired)), Detail: detail}
 	}
 	if pi.Candidates > 0 {
-		return Step{ID: "peers", Title: "Other installs", Status: Fixable, Optional: true, Reason: fmt.Sprintf("Found %d other install%s to pair in Settings → Hosts", pi.Candidates, plural(pi.Candidates)), Detail: detail}
+		return Step{ID: "peers", Title: "Other hosts", Status: Fixable, Optional: true, Reason: fmt.Sprintf("Found %d other host%s to pair in Settings → Hosts", pi.Candidates, plural(pi.Candidates)), Detail: detail}
 	}
-	return Step{ID: "peers", Title: "Other installs", Status: Missing, Optional: true, Reason: "Optional: pair another Mac or Linux install under Settings → Hosts", Detail: detail}
+	return Step{ID: "peers", Title: "Other hosts", Status: Missing, Optional: true, Reason: "Optional: pair another Mac or Linux host under Settings → Hosts", Detail: detail}
 }
 
 func (c *Checker) tailscaleBinary() string {

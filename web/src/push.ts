@@ -32,7 +32,7 @@ export function unsupportedReason(env: PushEnv): string | null {
   if (env.native) return null;
   if (env.ios && !env.standalone) return "On an iPhone, add Fyr to the Home Screen first: Share, then Add to Home Screen.";
   if (!env.secure) return "Notifications need a secure address: the tailnet https:// address or localhost.";
-  if (!env.serviceWorker || !env.pushManager || !env.notification) return "This browser does not support Web Push.";
+  if (!env.serviceWorker || !env.pushManager || !env.notification) return "This device does not support Web Push.";
   return null;
 }
 
@@ -205,7 +205,7 @@ export function pushRow(status: PushStatus, reason: string | null, tested: boole
         test: false,
       };
     case "unsupported":
-      return { desc: reason ?? "Notifications are not available in this browser.", error: false, disabled: true, on: false, test: false };
+      return { desc: reason ?? "Notifications are not available on this device.", error: false, disabled: true, on: false, test: false };
   }
 }
 

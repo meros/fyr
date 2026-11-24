@@ -1,15 +1,15 @@
 // The data every Settings page and the nav read (V0.127): each part of each host loads by itself, on open and when the
 // host comes back online. A hook; the pages and the shell are in settings-ui.tsx.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { type HostInfo } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
 import { settingsHosts, type SettingsHost } from "./host-settings.ts";
 import { type AutoMergeRepo } from "./automerge.ts";
 import { type UpdatesView } from "./updates.ts";
 import { type SystemAgentsView } from "./system-agents.ts";
-import { providersNeed, type PageRef } from "./settings-nav.ts";
+import { type PageRef } from "./settings-nav.ts";
 import {
   loginActive,
+  newProviderId,
   type FoundDTO,
   type ProviderDTO,
 } from "./providers.ts";
@@ -44,7 +44,7 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
   /** The install id of a part (keyed by its host's name): a host with none cannot be named, and nothing is sent. */
   const hid = (name: string): HostId => {
     const id = hosts.find((h) => h.name === name)?.id;
-    if (!id) throw new Error("this host reports no install id");
+    if (!id) throw new Error("this host reports no id");
     return id;
   };
   const [slices, setSlices] = useState<Record<string, HostSlice>>({});
@@ -70,7 +70,7 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
     const read = api.autoDeploy?.bind(api);
     if (!read) return patch(host, { deploy: null });
     const r = await readOf(host, read);
-    if (!r.ok) return patch(host, { deployErr: `Could not read the auto-deploy setting: ${r.error}.` });
+    if (!r.ok) return patch(host, { deployErr: `Could not read the auto-update setting: ${r.error}.` });
     patch(host, { deploy: r.data.on, deployErr: null });
     seen(host, r);
   };
@@ -94,7 +94,7 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
     const read = api.systemAgents?.bind(api);
     if (!read) return;
     const r = await readOf(host, read);
-    if (!r.ok) return patch(host, { saErr: `Could not read the system agents: ${r.error}.` });
+    if (!r.ok) return patch(host, { saErr: `Could not read Fyr's own calls: ${r.error}.` });
     patch(host, { sa: r.data, saErr: null });
     seen(host, r);
   };
@@ -136,7 +136,7 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
   /** One owner command to a host; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
   const command = async (host: string, action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
     const id = hosts.find((h) => h.name === host)?.id;
-    if (!id) return "This host reports no install id, so nothing can be sent to it until it updates";
+    if (!id) return "This host reports no id, so nothing can be sent to it until it updates";
     const r = await api.command(id, action, undefined, args);
     if (!r.ok) {
       await reload(); // the control goes back to what the host has
@@ -167,10 +167,19 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
       loadRepos: () => loadRepos(host),
       loadSa: () => loadSa(host),
       runProvider,
+      /** V0.settings-ia: Add provider, and the id of the provider it made (so the form lands on its page): the list
+       *  is read again and compared with the one the form opened on. */
+      createProvider: async (args: Record<string, unknown>): Promise<{ error: string | null; id?: string }> => {
+        const before = (slice.providers ?? []).map((x) => x.id);
+        const e = await runProvider("provider.create", args);
+        if (e) return { error: e };
+        const l = await readOf(host, (id) => api.providers(id));
+        return { error: null, id: l.ok ? newProviderId(before, l.data, String(args.name ?? "")) : undefined };
+      },
       /** V0.120: ask a provider for its models now. Not a save: no Saved mark. The reply waits for the check. */
       refreshModels: async (id: string): Promise<string | null> => {
         const to = hosts.find((h) => h.name === host)?.id;
-        if (!to) return "This host reports no install id, so nothing can be sent to it until it updates";
+        if (!to) return "This host reports no id, so nothing can be sent to it until it updates";
         const r = await api.command(to, "provider.refreshModels", undefined, { id });
         await loadProviders(host);
         if (r.ok) p.onChanged?.();
@@ -191,23 +200,3 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
 }
 export type AllSettings = ReturnType<typeof useSettingsData>;
 export type Data = AllSettings["all"][number];
-
-/** What needs the owner on the Providers page, for the phone's More sheet ("1 needs a login"); "" while unknown. V0.127:
- *  over every host the front follows. */
-export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[]): string {
-  const [v, setV] = useState("");
-  const ids = settingsHosts(hosts).flatMap((h) => (h.id ? [h.id] : [])); // a host with no install id cannot be asked
-  /* eslint-disable react-hooks/exhaustive-deps -- reloads only when the set of hosts changes (its joined ids); api is fixed for the settings' life */
-  useEffect(() => {
-    let live = true;
-    void Promise.all(
-      ids.map((h) =>
-        Promise.all([api.providers(h).then((r) => (r.ok ? r.data : [])), api.systemAgents ? api.systemAgents(h).then((r) => (r.ok ? r.data : null)) : null]),
-      ),
-    ).then((parts) => live && setV(providersNeed(parts.flatMap(([l]) => l), parts.reduce((n, [, sa]) => n + (sa?.jobs.filter((j) => j.error).length ?? 0), 0))));
-    return () => void (live = false);
-  }, [ids.join(" ")]);
-  /* eslint-enable react-hooks/exhaustive-deps */
-  return v;
-}
-

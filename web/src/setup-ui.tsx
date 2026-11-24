@@ -8,6 +8,7 @@ import type { HostId } from "./hostid.ts";
 import type { HostInfo } from "./hosts.ts";
 import type { PageRef } from "./settings-nav.ts";
 import { Empty, Group } from "./settings-rows.tsx";
+import { noteSetup } from "./settings-count.ts";
 import { setupCardLabel, setupNeedsCard, stepPill, type GHAuthState, type GHRepoItem, ghAuthOf, ghReposOf, type SetupRepo, type SetupReport, type SetupStep } from "./setup.ts";
 
 /** Reads the first online addressable host's setup report (for the inbox card). */
@@ -66,6 +67,7 @@ export function SetupPage({
     if (!host || !api.setup) return;
     const r = await api.setup(host);
     if (!r.ok) return setErr(r.error);
+    noteSetup(host, r.data); // V0.settings-ia: the nav's badge and the count at the door follow each read here, so a step fixed on this page leaves them at once
     setReport(r.data);
     setGhAuth(r.data.ghAuth ?? null);
     setErr(null);
@@ -173,7 +175,7 @@ export function SetupPage({
         <div class="setup-err">
           <span>{err}</span>
           <button type="button" class="btn sm" onClick={() => void load()}>
-            Retry
+            Try again
           </button>
         </div>
       </Group>
@@ -194,7 +196,7 @@ export function SetupPage({
           {report.done} of {report.total} ready
         </span>
         <button type="button" class="btn sm" disabled={!!busy} onClick={() => void load()}>
-          Re-check
+          Check now
         </button>
       </div>
       {note && <div class="note">{note}</div>}
@@ -253,7 +255,9 @@ function StepCard({
     <div class={`setup-step ${pill.cls}`}>
       <div class="setup-step-h">
         <strong>{step.title}</strong>
-        <span class={`setup-pill ${pill.cls}`}>{pill.text}</span>
+        {/* V0.settings-ia: a required step that is not ready is counted (settings-nav.ts settingsCounts), so its pill is
+            the amber chip of a counted row; an optional or a ready one keeps the plain pill. */}
+        <span class={!step.optional && step.status !== "ok" ? `pst needs-login setup-need ${pill.cls}` : `setup-pill ${pill.cls}`}>{pill.text}</span>
       </div>
       <p class="setup-why">{step.reason}</p>
       <div class="setup-acts">
@@ -283,7 +287,7 @@ function StepCard({
         )}
         {step.id === "peers" && (
           <button type="button" class="btn sm" onClick={() => onGo({ page: "hosts" })}>
-            Open Hosts &amp; Pairing
+            Open Hosts
           </button>
         )}
       </div>

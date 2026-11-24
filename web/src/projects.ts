@@ -376,8 +376,8 @@ export function setByAgent(p: Pick<Project, "by">, f: SetupField): boolean {
 /** The setup line of the project screen: what the last run did, or why it could not start; null before any. */
 export function setupLine(p: Pick<Project, "setup" | "folder">): { text: string; error: boolean } | null {
   if (!p.setup) return null;
-  if (p.setup.error) return { text: `Automatic setup could not start: ${p.setup.error}`, error: true };
-  return { text: "Set up automatically: an agent filled in what you had not set.", error: false };
+  if (p.setup.error) return { text: `The automatic fill-in could not start: ${p.setup.error}`, error: true };
+  return { text: "Done once: an agent filled in what you had not set.", error: false }; // V0.settings-ia: the row is "Fill in automatically"; "Setup" is the page of host checks
 }
 
 /** The owner's upload is checked before it is sent: an image, at most 2 MB (the host checks it again). */

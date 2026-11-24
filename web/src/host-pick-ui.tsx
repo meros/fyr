@@ -9,7 +9,7 @@ import type { HostTabItem } from "./host-tabs.ts";
 import { HostTabs } from "./host-tabs-ui.tsx";
 
 /** The front's hosts, its own among them (decision 0031 2.6: nothing here says which one is the front's). */
-export const HostsContext = createContext<{ hosts: HostInfo[]; now: number }>({ hosts: [], now: 0 });
+export const HostsContext = createContext<{ hosts: HostInfo[]; now: number; /** V0.settings-ia: every host, the ones this device hides too (Settings lists them, and so does its count) */ all?: HostInfo[]; /** no connection to Fyr: nothing can be pressed, so the Settings count is none */ offline?: boolean }>({ hosts: [], now: 0 });
 export const useHosts = () => useContext(HostsContext);
 
 /** Each host's providers by install id (slice 2b: no merged list): a thread's provider is its own host's (V0.206). */

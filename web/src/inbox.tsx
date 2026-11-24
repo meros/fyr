@@ -8,6 +8,7 @@ import { LoadRail } from "./load-ui.tsx";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { InvariantCards } from "./invariants-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
+import { SettingsGear } from "./settings-entry.tsx";
 import { ProjectIcon } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { DESKTOP_LOOK, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
@@ -91,12 +92,7 @@ export function Rail(p: RailProps) {
           {!!p.changesNeeds && <span class="rb">{p.changesNeeds}</span>}
         </button>
       )}
-      {p.onSettings && (
-        <button class="ri rgear" title="Settings (providers, notifications)" aria-label="Settings" onClick={p.onSettings}>
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: LINE_ICONS.settings }} />
-          <span class="l">Settings</span>
-        </button>
-      )}
+      {p.onSettings && <SettingsGear onClick={p.onSettings} /> /* V0.settings-ia: with the one count, as Changes has */}
       <div class={`foot ${p.conn}`} title={title}>
         <i />
         <span class="hn">{connLabel(p.conn)}</span>

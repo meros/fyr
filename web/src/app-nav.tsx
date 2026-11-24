@@ -80,7 +80,7 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
 
   /** V0.119 phone: a Settings page is a screen; a project is its own screen; going to the level above goes Back. */
   const phoneSettingsScreen = (r: PageRef | null): Nav["screen"] =>
-    r?.page === "projects" && r.sub ? { name: "project", id: r.sub } : r ? { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}), ...(r.host ? { host: r.host } : {}) } : { name: "settings" };
+    r?.page === "projects" && r.sub && r.sub !== "new" /* V0.settings-ia: New project is a Settings sub-page */ ? { name: "project", id: r.sub } : r ? { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}), ...(r.host ? { host: r.host } : {}), ...(r.focus ? { focus: r.focus } : {}) } : { name: "settings" };
   const phoneSettingsGo = (r: PageRef | null) => {
     const screen = phoneSettingsScreen(r);
     if (screen.name === "project") return navGo({ screen, sheet: null });
@@ -92,13 +92,15 @@ export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "t
 
   // V0.164: undeclared work's components find a thread's title and go to a thread or to Settings through this, on both fronts.
   const undNav: UndNav = {
-    lookup: (id) => ({ title: store.threads[id]?.title || id, project: store.threads[id]?.project }),
+    lookup: (id) => ({ title: store.threads[id]?.title || id, project: store.threads[id]?.project, ...(store.threads[id] ? {} : { gone: true }) }),
     now: () => Date.now() + store.clockOffset,
     openThread: (id) => {
       if (!phoneRef.current) setDialog(null); // the desktop's Settings is a dialog over the list
       directory.openThread(id);
     },
-    openSettings: (at) => (phoneRef.current ? phoneSettingsGo(at) : openSettings(at)),
+    // From an open sheet (the load sheet's "End or keep them") Settings takes the sheet's place in the history, as the
+    // More sheet's rows do: pushed above it, Back from the host's page reopened the sheet.
+    openSettings: (at) => (phoneRef.current ? (navRef.current.sheet ? phoneSettingsReplace(at) : phoneSettingsGo(at)) : openSettings(at)),
   };
 
 

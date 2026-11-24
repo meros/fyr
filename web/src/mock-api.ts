@@ -3,7 +3,7 @@
 
 import { failed, newCommandId, type Api, type Result, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab } from "./mock.ts";
+import { HELD_COMMIT, MOCK_COMMANDS, MOCK_HELD, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab } from "./mock.ts";
 import { mockChanges, mockFilePatch } from "./mock-changes.ts";
 import { mockFileStat, mockFileText, mockFileUrl } from "./mock-files.ts";
 import { mockInvariantCommand, mockLeftoverCommand, mockLoad, mockQueueLoad, mockQuota, mockRerunCommand, mockUndeclaredCommand } from "./mock-load.ts";
@@ -19,6 +19,7 @@ import { addressable, bare, ref, stampDeploy, stampEvent, stampLoad, stampProjec
 import { asHostId, type HostId } from "./hostid.ts";
 import { baseName } from "./paths.ts";
 import { mockUsage } from "./mock-usage.ts";
+import { MOCK_HOSTS } from "./mock-util.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -477,11 +478,11 @@ export function createMockApi(scenario: string): Api {
           { id: "github", title: "GitHub", status: "ok" as const, reason: "Signed in as owner" },
           { id: "project", title: "First project", status: "ok" as const, reason: "3 projects set up" },
           { id: "phone", title: "Phone", status: "ok" as const, optional: true, reason: "Reachable on https://desk.tail1234.ts.net:7443" },
-          { id: "peers", title: "Other installs", status: "ok" as const, optional: true, reason: "Paired with 1 other install" },
+          { id: "peers", title: "Other hosts", status: "ok" as const, optional: true, reason: "Paired with 1 other host" },
         ],
       }));
     },
-    // V0.126: a host that updated twice and rolled one release back (desk); another host never updated itself and sends
+    // V0.126: a host that updated twice, rolled one release back and then installed a newer one (desk); another host never updated itself and sends
     // null for the list, as an older fyrd on a NixOS host did (the owner's Settings could not close, 17 Nov).
     async updates(host) {
       const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
@@ -490,6 +491,8 @@ export function createMockApi(scenario: string): Api {
           ? {
               live: "c705ef536566",
               updates: [
+                // V0.settings-ia: ?held=1: the newest release was tried 12 minutes ago, rolled back and is held back
+                ...(MOCK_HELD ? [{ build: HELD_COMMIT.slice(0, 12), commit: HELD_COMMIT, trigger: "deployable", result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: at(12), endedAt: at(10), logs: ["smoke.log"] }] : []),
                 {
                   build: "c705ef536566",
                   commit: "c705ef5365660a8608badc1fe181f9a08293e663",
@@ -509,7 +512,9 @@ export function createMockApi(scenario: string): Api {
                 },
                 { build: "9b3e1d2c4a5f", commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", trigger: "deployable", result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: at(90), endedAt: at(88), logs: ["smoke.log"] },
               ],
-              bad: { commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", why: "was not healthy" },
+              // 9b3e1d2 rolled back 90 minutes ago and c705ef5 was installed after it, so nothing is held back now: the
+              // view says what the host's row says.
+              ...(MOCK_HELD ? { bad: { commit: HELD_COMMIT, why: "was not healthy" } } : {}),
               repo: "meros/fyr",
               key: { fingerprint: "SHA256:RPhCNjz0mCuohR8sdDkJ0bw4JXHzmNJAAZ/BR5C9uWM", builtIn: true }, // V0.release-without-gh
               version: "v1.0.0", // V0.versioned-releases
@@ -536,7 +541,7 @@ export function createMockApi(scenario: string): Api {
           };
         const first = ps[0];
         const haiku = first?.models.find((m) => m.id.includes("haiku"))?.id;
-        const runs = first && haiku ? { profile: first.id, model: haiku } : { error: first ? `${first.name} has no Haiku model: pick a model in Settings → System agents` : "This host has no provider: add one in Settings → Providers" };
+        const runs = first && haiku ? { profile: first.id, model: haiku } : { error: first ? `${first.name} has no Haiku model: pick a model in Settings → Providers → Fyr's own calls` : "This host has no provider: add one in Settings → Providers" };
         return {
           default: {},
           providers: ps.map((p) => ({ id: p.id, name: p.name, models: p.models.map((m) => m.id), ...(p.models.some((m) => m.id.includes("haiku")) ? { haiku: p.models.find((m) => m.id.includes("haiku"))!.id } : {}) })),
@@ -758,6 +763,8 @@ const mockPeers: PeerState = {
     { id: "F7QK-2M9X-AB34-CD56", name: "desk", self: true, drive: true, via: "paired" },
     { id: "QX2C-7LD4-9PWE-1ABN", name: "mac", port: 7779, drive: true, via: "paired", link: { state: "up", via: "peer", opened: "them", since: new Date(Date.now() - 40 * 60_000).toISOString() } },
     { id: "H3TT-8KQM-2ZRD-4VYC", name: "box", port: 7779, drive: false, via: "vouched", by: "mac", link: { state: "down", via: "peer", error: { kind: "timeout", text: "" } } },
+    // V0.settings-ia: with ?hosts=2 host-b is a paired host (its page says "Paired"), so it is in the roster too
+    ...(MOCK_HOSTS ? [{ id: "M3RS-QX7P-5LKA-2WNE", name: "host-b", port: 7779, drive: true, via: "paired" as const, link: { state: "down", via: "peer", error: { kind: "timeout", text: "" } } }] : []),
   ],
   candidates: [
     { name: "server.tail1234.ts.net", online: true, kind: "tagged" },

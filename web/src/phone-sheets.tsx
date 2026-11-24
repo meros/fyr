@@ -3,7 +3,6 @@
 import { type PhoneProps, ThreadQuotaRow } from "./phone.tsx";
 import { I } from "./phone-icons.tsx";
 import { BottomSheet } from "./motion-ui.tsx";
-import { useApi } from "./api-context.ts";
 import { type ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { Thread } from "./types.ts";
@@ -26,12 +25,11 @@ import { tildePath } from "./paths.ts";
 import { SnoozeCustom } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import type { Sheet } from "./nav.ts";
-import { hostsNeed, settingsNeed } from "./settings-nav.ts";
+import { useSettingsEntry } from "./settings-entry.tsx";
 import { PIN_ICON } from "./row-ui.tsx";
 import { QuotaList } from "./quota-ui.tsx";
 import { profilesOf, threadProvider, type HostInfo, type HostProfiles } from "./hosts.ts";
 import { ProjectPicker } from "./project-picker.tsx";
-import { useProvidersNeed } from "./settings-load.ts";
 
 // ---- sheets ----
 
@@ -56,12 +54,11 @@ function Item({ icon, label, sub, right, disabled, onClick }: { icon?: Component
   );
 }
 
-/** The More sheet's Settings row: what it holds, and at its right what needs the owner ("1 needs a login"). */
-function MSettingsItem({ hosts, onClick }: { hosts: HostInfo[]; onClick(): void }) {
-  // V0.125: the hosts that need the owner add to the count, as the Hosts badge does on the Settings screen. V0.127:
-  // the providers of every host count.
-  const need = settingsNeed(useProvidersNeed(useApi(), hosts), hostsNeed(hosts));
-  return <Item label="Settings" sub="Providers, automation, projects, hosts, this device" right={need || undefined} onClick={onClick} />;
+/** The More sheet's Settings row. V0.settings-ia: the one count the desktop's gear shows ("2 need you"), and under the
+ *  label the pages that hold it ("Sign-in 1 · Providers 1"), or what Settings holds while nothing waits. */
+function MSettingsItem({ onClick }: { onClick(): void }) {
+  const e = useSettingsEntry();
+  return <Item label="Settings" sub={e.line} right={e.need || undefined} onClick={onClick} />;
 }
 
 /** V0.166, V0.host-tabs: the host load sheet: what the desktop rail's tooltips say, as text, and the host's provider quotas. */
@@ -100,7 +97,7 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.list.setSelecting(true))} />
         <Item label="Status" sub="What needs you, what runs, what happened" onClick={() => p.nav.replace({ screen: { name: "status" }, sheet: null })} />
         <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
-        <MSettingsItem hosts={p.store.hostList} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
+        <MSettingsItem onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
       </MSheet>

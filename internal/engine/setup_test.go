@@ -217,7 +217,7 @@ func TestProjectSetupRun(t *testing.T) {
 		t.Fatalf("set up a project without a folder: %+v", r)
 	}
 	h.e.SystemAgentResolve = func(string) (string, string, error) {
-		return "", "", errors.New("no Haiku on this provider; Settings → System agents")
+		return "", "", errors.New("no Haiku on this provider; Settings → Providers → Fyr's own calls")
 	}
 	guardDeps(t, h.e)
 	r = h.cmd("project.setupRun", "", core.Args{"id": pid})
@@ -309,7 +309,7 @@ func TestSetupThatCouldNotStartRunsAgain(t *testing.T) {
 	dir := filepath.Join(h.dir, "a")
 	os.MkdirAll(dir, 0o755)
 	h.e.SystemAgentResolve = func(string) (string, string, error) {
-		return "", "", errors.New("Claude has no Haiku model: pick a model in Settings → System agents")
+		return "", "", errors.New("Claude has no Haiku model: pick a model in Settings → Providers → Fyr's own calls")
 	}
 	guardDeps(t, h.e)
 	pid := newProject(t, h, core.Args{"folder": dir})

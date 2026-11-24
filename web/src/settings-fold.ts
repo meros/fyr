@@ -6,18 +6,23 @@ import { storedJson, storedSet } from "./prefs.ts";
 
 const SETTINGS_FOLD_KEY = "fyr.settingsFold";
 
-/** Whether the group `id` is open: what the device remembers, else its default. */
-export function foldOpen(folds: Record<string, boolean>, id: string, byDefault: boolean): boolean {
-  return folds[id] ?? byDefault;
-}
-
 /** What the device stored: its boolean fields; anything else counts as nothing. */
 function read(): Record<string, boolean> {
   return storedJson(SETTINGS_FOLD_KEY, flags, {});
 }
 
-export function readFold(id: string, byDefault: boolean): boolean {
-  return foldOpen(read(), id, byDefault);
+/** What the device remembers for the group `id`; undefined when the owner never opened or closed it here. */
+export function storedFold(id: string): boolean | undefined {
+  return read()[id];
+}
+
+/** V0.settings-ia: whether a fold is open now. In this order: what the owner pressed on this visit; `force` (a link
+ *  landed on it, or it reports something wrong now: it opens whatever the device remembers, and one press closes it);
+ *  what the device remembers; the default, which may change while the page is up (a report that arrives late). */
+export function foldNow(a: { touched: boolean | null; force?: boolean; stored: boolean | undefined; byDefault: boolean }): boolean {
+  if (a.touched !== null) return a.touched;
+  if (a.force) return true;
+  return a.stored ?? a.byDefault;
 }
 
 export function writeFold(id: string, open: boolean): void {

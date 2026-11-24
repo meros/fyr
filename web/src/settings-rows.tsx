@@ -4,10 +4,10 @@
 // controls, 16 px inputs) come from one rule set under `.set.phone` in app.css, never from a patch per control.
 
 import { createContext, type ComponentChildren } from "preact";
-import { useContext, useEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { SlideMark } from "./motion-ui.tsx";
 import { haptic } from "./native.ts";
-import { readFold, writeFold } from "./settings-fold.ts";
+import { foldNow, storedFold, writeFold } from "./settings-fold.ts";
 import { savedClock } from "./saved.ts";
 
 /** What every control on a page reads: the page is read-only (no connection), it is the phone, and how to show Saved. */
@@ -45,29 +45,29 @@ export interface Fold {
   id: string;
   open: boolean;
   summary?: ComponentChildren;
-  /** open now whatever the device remembers (a link landed on it) */
+  /** open now whatever the device remembers: a link landed on it, or it reports something wrong now. One press
+   *  closes it all the same (settings-fold.ts foldNow). */
   force?: boolean;
+  /** the summary reports something wrong: it shows in the error colour */
+  bad?: boolean;
 }
 
 /** A label, a card of rows, a foot line. Nothing sits above a group; the foot says what the whole group does.
  *  With `fold` the header is a button that folds the card and the foot away (V0.automation-folds). */
-export function Group(p: { title?: ComponentChildren; end?: ComponentChildren; foot?: ComponentChildren; footErr?: boolean; danger?: boolean; label?: string; class?: string; fold?: Fold; children: ComponentChildren }) {
-  const [stored, setStored] = useState(() => (p.fold ? readFold(p.fold.id, p.fold.open) : true));
-  const open = !p.fold || p.fold.force || stored;
-  const toggle = () => {
-    if (!p.fold) return;
-    writeFold(p.fold.id, !open);
-    setStored(!open);
-  };
+export function Group(p: { title?: ComponentChildren; end?: ComponentChildren; foot?: ComponentChildren; /** V0.settings-ia: the long explanation, behind "How it works" in the foot; the foot itself is one sentence */ how?: ComponentChildren; footErr?: boolean; danger?: boolean; label?: string; class?: string; fold?: Fold; children: ComponentChildren }) {
+  const flat = useContext(FlatContext); // inside a folding section: the group shows whole
+  const gf = flat ? undefined : p.fold;
+  const fold = useFolds(p.fold);
+  const { open, toggle } = fold;
   return (
-    <section class={`sg${p.danger ? " danger-z" : ""}${p.fold ? " fold" : ""}${open ? "" : " shut"}${p.class ? ` ${p.class}` : ""}`} aria-label={p.label}>
+    <section class={`sg${p.danger ? " danger-z" : ""}${gf ? " fold" : ""}${open ? "" : " shut"}${p.class ? ` ${p.class}` : ""}`} aria-label={p.label}>
       {(p.title || p.end) && (
         <div class="sg-h">
-          {p.fold ? (
+          {gf ? (
             <button type="button" class="sg-fb" aria-expanded={open} onClick={toggle}>
               <span class="sg-chev" aria-hidden="true">{open ? "▾" : "▸"}</span>
               {p.title && <span class="sg-t">{p.title}</span>}
-              {!open && p.fold.summary && <span class="sg-sum">{p.fold.summary}</span>}
+              {!open && gf.summary && <span class={`sg-sum${gf.bad ? " bad" : ""}`}>{gf.summary}</span>}
             </button>
           ) : (
             p.title && <span class="sg-t">{p.title}</span>
@@ -76,8 +76,118 @@ export function Group(p: { title?: ComponentChildren; end?: ComponentChildren; f
         </div>
       )}
       {open && <div class="sg-c">{p.children}</div>}
-      {open && p.foot && <div class={`sg-f${p.footErr ? " err" : ""}`}>{p.foot}</div>}
+      {open && (p.foot || p.how) && (
+        <div class={`sg-f${p.footErr ? " err" : ""}`}>
+          {p.foot}
+          {p.how && (
+            <details class="sg-how">
+              <summary>How it works</summary>
+              {p.how}
+            </details>
+          )}
+        </div>
+      )}
     </section>
+  );
+}
+
+/** Inside an open folding section its groups do not fold again: one press shows what the section holds. */
+const FlatContext = createContext(false);
+
+/** The fold state of a group or a section (settings-fold.ts foldNow): the owner's press on this visit, else `force`,
+ *  else what the device remembers, else the default as it is now (a report that arrives after the page opens the fold
+ *  it belongs to). A link that lands on it again opens it again. */
+function useFolds(fold: Fold | undefined): { open: boolean; toggle(): void } {
+  const flat = useContext(FlatContext);
+  const f = flat ? undefined : fold;
+  const [touched, setTouched] = useState<boolean | null>(null);
+  const force = !!f?.force;
+  useEffect(() => {
+    if (force) setTouched(null);
+  }, [force, f?.id]);
+  const open = !f || foldNow({ touched, force, stored: storedFold(f.id), byDefault: f.open });
+  return {
+    open,
+    toggle: () => {
+      if (!f) return;
+      writeFold(f.id, !open);
+      setTouched(!open);
+    },
+  };
+}
+
+/** V0.settings-ia: a section of a long page (a host's): a heading over several groups; every part of such a page is
+ *  one, so the page has one heading level. With `fold` the heading folds the whole section to one summary line, and
+ *  its groups then show without folds of their own. The same on the desktop and the phone. */
+export function Section(p: { title: string; fold?: Fold; id?: string; children: ComponentChildren }) {
+  const { open, toggle } = useFolds(p.fold);
+  return (
+    <section class={`ssec${open ? "" : " shut"}`} aria-label={p.title} data-section={p.id}>
+      <div class="ssec-h">
+        {p.fold ? (
+          <button type="button" class="sg-fb" aria-expanded={open} onClick={toggle}>
+            <span class="sg-chev" aria-hidden="true">{open ? "▾" : "▸"}</span>
+            <h3 class="ssec-t">{p.title}</h3>
+            {!open && p.fold.summary && <span class={`sg-sum${p.fold.bad ? " bad" : ""}`}>{p.fold.summary}</span>}
+          </button>
+        ) : (
+          <h3 class="ssec-t">{p.title}</h3>
+        )}
+      </div>
+      {open && <FlatContext.Provider value={!!p.fold}>{p.children}</FlatContext.Provider>}
+    </section>
+  );
+}
+
+/** A caption inside a section, over the groups that belong together ("Running now", "Rules"). */
+export function SubCaption({ children }: { children: ComponentChildren }) {
+  return <div class="ssec-cap">{children}</div>;
+}
+
+/** V0.settings-ia: the three levels of a press. One that can be taken back (a switch, Keep, Archive, Unlink, removing
+ *  what a field beside it adds again) acts at once and has no "…". A small one that cannot be taken back and touches
+ *  this host only (it ends a leftover process, drops a learned command, trusts an id, signs a device out) asks in
+ *  place, with this button: the first press sends nothing and its label ends in "…"; the row then shows the act in red
+ *  and Cancel, with the focus on Cancel; Esc cancels, and the focus goes back to the button. What loses stored data
+ *  for ever or touches another machine (a project, a provider, removing a host) asks in the confirmation dialog, which
+ *  names the object (confirm-ui.tsx; the words are in confirm.ts and settings-asks.ts).
+ *  The wrapper's class is `cfmb`: `cfm` is the confirmation dialog's. */
+export function ConfirmButton({ label, confirm, disabled, onConfirm }: { /** without the "…", which the button adds */ label: string; /** the red button's words; the label when missing */ confirm?: string; disabled?: boolean; onConfirm(): void }) {
+  const [asking, setAsking] = useState(false);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const first = useRef<HTMLButtonElement>(null);
+  const asked = useRef(false);
+  // A layout effect: the focus moves in the same frame as the buttons change, so it is never on a button that is gone.
+  useLayoutEffect(() => {
+    if (asking) cancel.current?.focus();
+    else if (asked.current) first.current?.focus(); // the question is over: the focus is not dropped to the page
+    asked.current = asking;
+  }, [asking]);
+  if (!asking)
+    return (
+      <button type="button" class="btn" ref={first} disabled={disabled} onClick={() => setAsking(true)}>
+        {label}…
+      </button>
+    );
+  return (
+    <span
+      class="cfmb"
+      role="group"
+      aria-label={`${confirm ?? label}?`}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation(); // Esc cancels the question first; the next Esc leaves the page
+        setAsking(false);
+      }}
+    >
+      <button type="button" class="btn danger" disabled={disabled} onClick={() => (setAsking(false), onConfirm())}>
+        {confirm ?? label}
+      </button>
+      <button type="button" class="btn" ref={cancel} onClick={() => setAsking(false)}>
+        Cancel
+      </button>
+    </span>
   );
 }
 
@@ -91,6 +201,9 @@ export interface RowProps {
   lead?: ComponentChildren;
   /** on the phone the control goes under the label (two selects, a wide field) */
   stack?: boolean;
+  /** the row ends in several buttons: on the phone they go on a line of their own under the text (three 44 px buttons
+   *  beside it left the text a few characters a line); the desktop has the width */
+  acts?: boolean;
   /** the row's body is its children, top to bottom (a login panel, quiet hours) */
   col?: boolean;
   /** the whole row is a button (a list row that opens a page) */
@@ -112,7 +225,7 @@ export interface RowProps {
 
 /** A title, help text under it, the control at the end. */
 export function Row(p: RowProps) {
-  const cls = `sr${p.stack ? " stack" : ""}${p.col ? " col" : ""}${p.error ? " bad" : ""}${p.class ? ` ${p.class}` : ""}`;
+  const cls = `sr${p.stack ? " stack" : ""}${p.acts ? " sr-acts" : ""}${p.col ? " col" : ""}${p.error ? " bad" : ""}${p.class ? ` ${p.class}` : ""}`;
   const body = (
     <>
       {p.lead}

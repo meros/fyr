@@ -119,7 +119,7 @@ export function UsagePage({ api, now, onOpenThread }: { api: UsageApi; now: numb
   const [by, setBy] = useState<UsageBy>("model");
   const [filter, setFilter] = useState<UsageFilter | null>(null);
   const u = useUsage(api, range, by, filter, now);
-  if (!api.usage) return <Empty text="This front cannot read usage." />;
+  if (!api.usage) return <Empty text="This host cannot read usage." />;
   const byLabel = (k: UsageBy) => BYS.find((b) => b.value === k)?.label ?? k;
   const controls = (
     <Group>

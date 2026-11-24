@@ -12,8 +12,8 @@ const state: PeerState = {
   candidates: [],
 };
 
-test("how an install came in", () => {
-  assert.equal(viaWords(state.members[0]), "This install");
+test("how a host came in", () => {
+  assert.equal(viaWords(state.members[0]), "This host"); // V0.settings-ia: one word, "host"
   assert.equal(viaWords(state.members[1]), "Paired");
   assert.equal(viaWords(state.members[2]), "Vouched for by mac");
   assert.equal(viaWords({ via: "vouched" }), "Vouched for by a member");
@@ -95,7 +95,7 @@ test("a spoof or a duplicate says so, and Pair on a spoof asks first", () => {
   assert.equal(candidateWarn(named), "You already have a host named lab with another id (AX2C). Pair asks for its code either way.");
   assert.equal(pairAsks(named), true);
   const dup = { ...plain, dup: true, addrs: ["192.0.2.31:7778", "192.0.2.32:7778"] };
-  assert.match(candidateWarn(dup), /^One id at 2 addresses: one install on two networks, or two machines with one id\./);
+  assert.match(candidateWarn(dup), /^One id at 2 addresses: one host on two networks, or two hosts with one id\./);
   assert.equal(pairAsks(dup), false, "a duplicate is warned of; the code still decides");
   assert.match(candidateWarn({ ...dup, spoof: "address:lab:AX2C-1111-2222-3333" }), /^This address is lab's/, "a spoof's line wins");
 });

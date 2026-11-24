@@ -120,7 +120,7 @@ test("the Notifications row per state", () => {
   assert.deepEqual(pushRow("denied", null, false), { desc: "Blocked for this site. Allow them in the browser's site settings, then reload Fyr.", error: true, disabled: true, on: false, test: false });
   const ios = pushRow("unsupported", unsupportedReason({ secure: true, serviceWorker: true, pushManager: true, notification: true, ios: true, standalone: false }), false);
   assert.deepEqual(ios, { desc: "On an iPhone, add Fyr to the Home Screen first: Share, then Add to Home Screen.", error: false, disabled: true, on: false, test: false });
-  assert.equal(pushRow("unsupported", null, false).desc, "Notifications are not available in this browser.");
+  assert.equal(pushRow("unsupported", null, false).desc, "Notifications are not available on this device.");
 });
 
 test("V0.notification-polish, V0.quota-reset-wake: finished threads are on by default, quota resets opt-in", () => {

@@ -1,25 +1,25 @@
-// SPEC V0.119 (amends V0.50), V0.125: Settings is five pages behind one nav: Providers (with System agents),
-// Automation (Auto-deploy, Auto-merge), Projects, Hosts and This device (Notifications, Theme, Show tool details,
-// Install, How this browser gets in). A provider, Add provider, a project and a host are sub-pages. Every change saves at once. The same pages on the desktop (a
-// dialog: the nav is its left column, the page its right pane) and the phone (the nav is the Settings screen, a page
-// is the next screen); the reason for the difference is width.
+// SPEC V0.119 (amends V0.50), V0.125, V0.settings-ia: Settings is eight pages behind one nav, in two groups. Only on
+// this device: This device (Notifications, Appearance, what it shows). On your hosts: Sign-in (who is signed in to the
+// host this device is connected to), Providers (with Fyr's own calls), Projects, Automation (Auto-update, Auto-merge:
+// only what Fyr does without a press), Hosts (a host's page holds its own: updates, load, diagnostics, look, about),
+// Usage and Setup (each host's checks). A provider, Add provider, a project, New project and a host are sub-pages. Every change saves at once. The same pages
+// on the desktop (a dialog: the nav is its left column, the page its right pane) and the phone (the nav is the
+// Settings screen, a page is the next screen); the reason for the difference is width.
 
 import { AutomationPage } from "./settings-automation.tsx";
 import { HostEnv, AddProvider, ProviderBadge, ProviderPage, HostParts, ProvidersPage } from "./settings-providers.tsx";
-import { HostPill, HostPage, HostsPage, HostsReorderButton } from "./settings-hosts.tsx";
+import { AddHostButton, HostPill, HostPage, HostsPage, HostsReorderButton } from "./settings-hosts.tsx";
 import { projectsPage } from "./settings-projects.tsx";
-import { automationBadge, type HostTabItem } from "./host-tabs.ts";
+import { type HostTabItem } from "./host-tabs.ts";
 import { HostTabs } from "./host-tabs-ui.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
-import { howIn, profilesOf, updateLine, type HostInfo, type HostProfiles } from "./hosts.ts";
+import { howIn, profilesOf, type HostInfo, type HostProfiles } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
 import { resolveRef } from "./store.ts";
 import { automationSummaryHosts, readOnlyNote } from "./host-settings.ts";
-import { type HostLoad } from "./host-load.ts";
-import { useLoad } from "./load-ui.tsx";
 import type { Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { findProject, projectRecords, recordOf, settingsProjects } from "./projects.ts";
@@ -28,16 +28,19 @@ import { isNativePush, openNativeNotificationSettings } from "./pwa.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
 import { SetupPage } from "./setup-ui.tsx";
-import { setupBadge, setupSummary, type SetupReport } from "./setup.ts";
+import { setupSummaryHosts, type SetupReport } from "./setup.ts";
+import { NewProjectStep } from "./project-picker.tsx";
 import { hiddenCount, hostIsHidden, lastShownHost, projectIsHidden, setHostShown, setProjectShown, type Hidden } from "./hidden.ts";
 import { PeersPanel, usePeerState } from "./peers-ui.tsx";
 import { devicesNeed, devicesSummary } from "./devices.ts";
-import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
+import { COULD_NOT_READ, NAV_GROUPS, PAGES, deviceSummary, hostsSummary, projectsSummary, providersSummary, type PageId, type PageRef, type SettingsCounts } from "./settings-nav.ts";
 import { Empty, Group, LoadError, Row, SavedMark, Seg, SetContext, Skeleton, Switch, useSaved, useSet } from "./settings-rows.tsx";
 import { type ProjectPatch, ProjectEditor, archiveFor } from "./project-editor.tsx";
 import type { ArchiveInfo } from "./archived.ts";
 import { linkingFor } from "./project-linking.tsx";
 import { type AllSettings, useSettingsData } from "./settings-load.ts";
+import { countsFrom, noteSetup, publishCounts, settingsOpened, setupAge, useKnown } from "./settings-count.ts";
+import { EMPTY_FORM, type ProviderForm } from "./providers.ts";
 import { UsagePage } from "./settings-usage.tsx";
 
 
@@ -83,7 +86,7 @@ export interface SettingsProps {
   front: string;
   /** V0.51: the front's hosts with their state, the front's own among them */
   hosts?: HostInfo[];
-  /** V0.125: the state's user, for How this browser gets in */
+  /** V0.125: the state's user, for How this device gets in */
   user?: string;
   phone?: boolean;
   /** the page shown; null is the phone's nav screen (the desktop always shows a page) */
@@ -119,38 +122,91 @@ export function Settings(p: SettingsProps) {
   const sv = useSaved();
   const data = useSettingsData(p, sv.mark);
   const peers = usePeerState(p.api, p.at?.page === "hosts"); // V0.159: the installs panel of Hosts
-  const auth = useAuthState(p.api, true); // V0.157: Devices, read by the page and by the nav's line
-  const [setupRep, setSetupRep] = useState<SetupReport | null>(null);
-  const setupHostId = (p.hosts ?? []).find((h) => h.online && h.id)?.id;
+  // V0.157: Sign-in, read by the page and by the nav's line: once when Settings opens, and every 5 s on its own page
+  const auth = useAuthState(p.api, p.at?.page === "devices");
+  // V0.settings-ia: the setup report of every host that can be asked (the nav's line and badge count them all). Each
+  // read runs the checks live on the host, so Settings reads a host once
+  // when it opens, and not at all when its report is younger than a minute; after that the Setup page keeps the
+  // report current (it notes each of its own reads, so a step fixed there leaves the badge and the gear at once).
+  const known = useKnown();
+  const setupReps = known.setup;
+  const setupIds = (p.hosts ?? []).flatMap((h) => (h.online && h.id ? [h.id] : []));
+  /* eslint-disable react-hooks/exhaustive-deps -- reads when the set of online hosts changes (its joined ids) */
   useEffect(() => {
-    if (!setupHostId || !p.api.setup) return;
-    let alive = true;
-    void p.api.setup(setupHostId).then((r) => alive && r.ok && setSetupRep(r.data));
+    const read = p.api.setup?.bind(p.api);
+    if (!read) return;
+    for (const id of setupIds) if (setupAge(id) > 60_000) void read(id).then((r) => r.ok && noteSetup(id, r.data));
+  }, [p.api, setupIds.join(" ")]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+  // While Settings is open it publishes the count its pages show; when it closes the entry points read again, and the
+  // half-filled forms are dropped (the desktop's dialog closed; the phone left Settings from its first screen).
+  const atNow = useRef(p.at);
+  atNow.current = p.at;
+  /* eslint-disable react-hooks/exhaustive-deps -- once per mount; the front does not change while it is mounted */
+  useEffect(() => {
+    const closed = settingsOpened();
     return () => {
-      alive = false;
+      closed();
+      if (!p.phone || atNow.current === null) for (const k of Object.keys(DRAFTS) as (keyof Drafts)[]) delete DRAFTS[k];
     };
-  }, [p.api, setupHostId, p.at?.page]);
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
   const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
   // V0.127: the nav's lines count every host; an offline host Fyr has never read is left out.
   // A host with no install id (older than V0.124) cannot be addressed (decision 0031): nothing is read from it.
   const read = data.all.filter((d) => (d.host.online || d.providers !== null) && !d.host.noId);
   const provs = read.some((d) => d.providers === null) ? null : read.flatMap((d) => d.providers!);
   const blocked = data.all.reduce((n, d) => n + (d.sa?.jobs.filter((j) => j.error).length ?? 0), 0);
+  // V0.settings-ia: the one count. The nav's badges, the host tabs on Providers, a host's page and Setup, and (through
+  // publishCounts) the desktop's gear and the phone's More row all show these numbers.
+  const counts = countsFrom(
+    p.hosts,
+    data.all.map((d) => ({ host: d.host, providers: d.providers, blocked: d.sa?.jobs.filter((j) => j.error).length ?? 0, view: d.updates })),
+    setupReps,
+    devicesNeed(auth.s),
+    !!p.offline,
+  );
+  const countsKey = JSON.stringify(counts);
+  // Published once every host's providers are read or their read has failed (a failed read counts nothing, at the
+  // door too); before that the number would shrink while the page loads.
+  const settled = read.every((d) => d.providers !== null || !!d.provErr);
+  /* eslint-disable react-hooks/exhaustive-deps -- publishes when the numbers change (their JSON), once the providers are read */
+  useEffect(() => {
+    if (settled) publishCounts(counts);
+  }, [countsKey, settled]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+  // V0.settings-ia: a form that is half filled (New project, Add provider) keeps what was typed while Settings stays
+  // open: Esc and Back leave the form, and coming back finds the text (as New thread keeps its nested step). Cancel,
+  // and adding, empty it; so does closing Settings. A pasted API key is never kept: it is a secret, and the draft
+  // outlives the form. Kept outside the component: on the phone a project's page is a screen of its own, and opening
+  // one from the list unmounts this shell without closing Settings.
+  const drafts = { current: DRAFTS };
+  // A link from before V0.settings-ia that names a section and no host ("automation/leftovers") gets its host once the
+  // list is known, so the URL, Esc and the crumb treat the page as the host's page it shows.
+  const shownFirst = (p.hosts ?? []).at(0); // the page such a link shows (pageView does the same); no call is sent to it by this
+  /* eslint-disable react-hooks/exhaustive-deps -- once per such link, when the first host is known */
+  useEffect(() => {
+    if (p.at?.page === "hosts" && !p.at.sub && p.at.focus && shownFirst) (p.replace ?? p.go)({ page: "hosts", sub: shownFirst.name, focus: p.at.focus });
+  }, [p.at?.page, p.at?.sub, p.at?.focus, shownFirst?.name]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+  const autoErr = data.all.some((d) => (d.deploy === null && d.deployErr) || (d.repos === null && d.reposErr));
   const summaries: Record<PageId, string> = {
-    providers: providersSummary(provs, blocked),
-    automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: (!d.host.online && d.repos === null) || !!d.host.noId }))),
+    providers: providersSummary(provs, blocked, read.some((d) => d.providers === null && !!d.provErr)),
+    automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: (!d.host.online && d.repos === null) || !!d.host.noId }))) || (autoErr ? COULD_NOT_READ : ""),
     projects: projectsSummary(settingsProjects(p.projects).length),
-    hosts: hostsSummary(p.hosts),
-    usage: "Tokens by model, account, project", // V0.usage-page: read only when the page opens
+    hosts: hostsSummary(p.hosts, counts.pages.hosts),
+    usage: "Tokens by model and project", // V0.usage-page: read only when the page opens
     devices: devicesSummary(auth.s),
     device: deviceSummary(p.device.push, p.device.theme, hiddenCount(p.device.hidden)),
-    setup: setupSummary(setupRep),
+    setup: setupSummaryHosts(
+      setupIds.map((id) => setupReps[id] ?? null),
+      (p.hosts ?? []).filter((h) => !h.online || !h.id).length, // offline, or too old to be read: said, not left out
+    ),
   };
-  const badges: Partial<Record<PageId, number>> = { providers: navBadge(provs, blocked), hosts: hostsNeed(p.hosts), devices: devicesNeed(auth.s), setup: setupBadge(setupRep) };
-  const [adding, setAdding] = useState(false);
+  const badges: Partial<Record<PageId, number>> = counts.pages;
   const [q, setQ] = useState("");
   const [reordering, setReordering] = useState(false);
-  useEffect(() => (setAdding(false), setReordering(false), setQ("")), [p.at?.page]);
+  useEffect(() => (setReordering(false), setQ("")), [p.at?.page]);
   // V0.host-tabs: remember the picked host across Providers, Automation, Setup and Hosts so switching Settings pages
   // keeps working on the same host, and returning from a provider sub-page stays on its host tab.
   const [hostPick, setHostPick] = useState<string | null>(() => p.at?.host ?? (p.at?.page === "hosts" ? (p.at.sub ?? null) : null));
@@ -158,9 +214,11 @@ export function Settings(p: SettingsProps) {
     if (p.at?.host) setHostPick(p.at.host);
     else if (p.at?.page === "hosts" && p.at.sub) setHostPick(p.at.sub);
   }, [p.at?.page, p.at?.host, p.at?.sub]);
-  const loadByHost = new Map(useLoad().map((h) => [h.host, h]));
-  const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0, q, setQ, reordering, setReordering, hostPick, setHostPick, loadByHost };
+  const ui: PageUi = { empty: settingsProjects(p.projects).length === 0, q, setQ, reordering, setReordering, hostPick, setHostPick, counts, setupReps, drafts: drafts.current };
   const view = p.at ? pageView(p.at, p, data, ui, auth, peers) : null;
+  // No connection: nothing a host holds can be changed. This device's own page is kept in the browser, so it stays
+  // usable and shows no banner (V0.settings-ia).
+  const offBan = !!p.offline && p.at?.page !== "device";
 
   // Opening a page moves focus to its heading; coming back from a sub-page focuses the row it came from.
   const pane = useRef<HTMLDivElement>(null);
@@ -202,9 +260,9 @@ export function Settings(p: SettingsProps) {
     return (
       <SetContext.Provider value={env}>
         {p.header?.(view ? view.title : "Settings", view ? <SavedMark shown={sv.shown} /> : undefined)}
-        {p.offline && <div class="m-ban">{OFFLINE()}</div>}
+        {offBan && <div class="m-ban">{OFFLINE()}</div>}
         <div class="m-nbody" ref={pane}>
-          <div class={`set phone${p.offline ? " ro" : ""}`}>
+          <div class={`set phone${offBan ? " ro" : ""}`}>
             {view ? (
               <div class="stp" data-page={pageKey(p.at!)}>
                 {view.end && <div class="sbar">{view.end}</div>}
@@ -225,10 +283,10 @@ export function Settings(p: SettingsProps) {
   const at = p.at ?? { page: "providers" };
   return (
     <SetContext.Provider value={env}>
-      <div class={`set stx${p.offline ? " ro" : ""}`}>
+      <div class={`set stx${offBan ? " ro" : ""}`}>
         {nav}
         <div class="stp" ref={pane} data-page={pageKey(at)}>
-          {p.offline && <div class="m-ban d">{OFFLINE()}</div>}
+          {offBan && <div class="m-ban d">{OFFLINE()}</div>}
           <div class="stp-h">
             {v.parent && (
               <>
@@ -238,7 +296,7 @@ export function Settings(p: SettingsProps) {
                 <span class="sep">/</span>
               </>
             )}
-            <h2 tabIndex={-1} class={at.sub && at.page !== "automation" ? "wrap" : ""}>
+            <h2 tabIndex={-1} class={at.sub ? "wrap" : ""}>
               {v.title}
             </h2>
             <span class="end">
@@ -261,10 +319,10 @@ const pageKey = (r: PageRef) => (r.sub ? `${r.page}/${subKey(r)}` : r.page);
 /** A sub-page's row (data-sub), where focus goes back to: "lab/claude" for a host's provider (V0.127), else the id. */
 export const subKey = (r: PageRef) => (r.host ? `${r.host}/${r.sub ?? ""}` : (r.sub ?? ""));
 
-/** The five pages: a title and a line of state each, and the amber count on a page that needs the owner (Providers,
- *  V0.125 Hosts). Desktop: the dialog's left
- *  column; ↑ and ↓ move between pages and the page follows the focus. Phone: the Settings screen; the chevron shows
- *  there only, because there the row leaves the screen. */
+/** The eight pages in their two captioned groups (V0.settings-ia): a title and a line of state each, and the amber
+ *  count on a page that holds something that waits for the owner (settingsCounts). Desktop: the dialog's left column;
+ *  ↑ and ↓ move between pages and the page follows the focus. Phone: the Settings screen; the chevron shows there
+ *  only, because there the row leaves the screen. */
 function SettingsNav({ phone, active, summaries, badges, onPick }: { phone: boolean; active: PageId | null; summaries: Record<PageId, string>; badges: Partial<Record<PageId, number>>; onPick(id: PageId, keys?: boolean): void }) {
   const ref = useRef<HTMLElement>(null);
   const onKey = (e: KeyboardEvent) => {
@@ -279,18 +337,25 @@ function SettingsNav({ phone, active, summaries, badges, onPick }: { phone: bool
   };
   return (
     <nav class="stn" aria-label="Settings" ref={ref} onKeyDown={onKey}>
-      <div class="stn-c">
-        {PAGES.map((x) => (
-          <button type="button" class={`stn-i${x.id === active ? " on" : ""}`} aria-current={x.id === active ? "page" : undefined} data-page={x.id} onClick={() => onPick(x.id)}>
-            <span class="stn-t">{x.title}</span>
-            <span class="stn-s">{summaries[x.id]}</span>
-            <span class="stn-a">
-              {(badges[x.id] ?? 0) > 0 && <span class="pst needs-login">{badges[x.id]}</span>}
-              {phone && <span class="chev">›</span>}
-            </span>
-          </button>
-        ))}
-      </div>
+      {NAV_GROUPS.map((g) => (
+        <div class="stn-g" role="group" aria-label={g.caption} key={g.caption}>
+          <div class="stn-cap" aria-hidden="true">
+            {g.caption}
+          </div>
+          <div class="stn-c">
+          {g.pages.map((x) => (
+            <button type="button" class={`stn-i${x.id === active ? " on" : ""}`} aria-current={x.id === active ? "page" : undefined} data-page={x.id} onClick={() => onPick(x.id)}>
+              <span class="stn-t">{x.title}</span>
+              <span class="stn-s" title={phone ? undefined : summaries[x.id] /* the desktop cuts a long line with an ellipsis */}>{summaries[x.id]}</span>
+              <span class="stn-a">
+                {(badges[x.id] ?? 0) > 0 && <span class="pst needs-login">{badges[x.id]}</span>}
+                {phone && <span class="chev">›</span>}
+              </span>
+            </button>
+          ))}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 }
@@ -305,10 +370,8 @@ export interface PageView {
   body: ComponentChildren;
 }
 
-/** Page state the shell keeps, so a page's title line and its body agree (New project). */
+/** Page state the shell keeps, so a page's title line and its body agree. */
 export interface PageUi {
-  adding: boolean;
-  setAdding(b: boolean): void;
   empty: boolean;
   /** V0.121: the Projects page's search and the phone's Reorder mode, kept here because the header holds Reorder */
   q: string;
@@ -318,15 +381,29 @@ export interface PageUi {
   /** V0.host-tabs: active host tab shared across multi-host Settings pages */
   hostPick: string | null;
   setHostPick(h: string): void;
-  loadByHost: Map<string, HostLoad>;
+  /** V0.settings-ia: the one count, for the host tabs' badges */
+  counts: SettingsCounts;
+  /** each host's setup report, by install id */
+  setupReps: Record<string, SetupReport>;
+  /** what was typed into a form that was left without Cancel */
+  drafts: Drafts;
 }
+
+/** The half-filled forms Settings keeps while it is open. */
+interface Drafts {
+  project?: { name: string; folder: string };
+  /** by the host's name ("" with one host) */
+  provider?: Record<string, ProviderForm>;
+}
+const DRAFTS: Drafts = {};
 
 function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, auth: ReturnType<typeof useAuthState>, peers: ReturnType<typeof usePeerState>): PageView {
   const go = p.go;
   switch (at.page) {
     case "providers": {
       // V0.127: a host's provider and Add provider name the host; with several hosts the page says which one.
-      const d = at.sub ? s.at(at.host) : undefined;
+      // V0.settings-ia: "providers/new" with several hosts and no host named is Add provider on the first host.
+      const d = at.sub ? (s.at(at.host) ?? (at.sub === "new" && !at.host ? s.all[0] : undefined)) : undefined;
       const on = d && s.grouped ? d.host.label : "";
       if (d && at.sub === "new")
         return {
@@ -335,7 +412,27 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           lede: on ? `On ${on}. A key you paste is kept on ${on} and never leaves it.` : undefined,
           body: (
             <HostEnv d={d}>
-              <AddProvider host={d.host.id} onCancel={() => go({ page: "providers" })} onCreate={async (args) => { const e = await d.runProvider("provider.create", args); if (!e) go({ page: "providers" }); return e; }} />
+              {/* V0.settings-ia: after adding, the form lands on the new provider's page, where its next step is (Log in,
+                  or the key); on the phone it takes the form's place in the history, so Back goes to the list. */}
+              <AddProvider
+                host={d.host.id}
+                draft={ui.drafts.provider?.[d.host.name] ?? EMPTY_FORM}
+                onDraft={(f) => (ui.drafts.provider = { ...ui.drafts.provider, [d.host.name]: { ...f, key: "" } })}
+                onCancel={() => {
+                  delete ui.drafts.provider?.[d.host.name];
+                  go({ page: "providers" });
+                }}
+                onCreate={async (args) => {
+                  const r = await d.createProvider(args);
+                  if (r.error) return r.error;
+                  delete ui.drafts.provider?.[d.host.name];
+                  // the new provider's page takes the form's place (phone: Back then goes to the list); when its id
+                  // cannot be told, the list, by going Back to it and not as a second Providers entry in the history
+                  if (r.id) (p.replace ?? go)(d.ref(r.id));
+                  else go({ page: "providers" });
+                  return null;
+                }}
+              />
             </HostEnv>
           ),
         };
@@ -345,7 +442,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
         return {
           title: x?.name ?? "Provider",
           parent: "Providers",
-          end: x && <ProviderBadge p={x} host={d.host.name} />,
+          end: x && <ProviderBadge p={x} host={d.host.name} online={d.host.online} />,
           lede: on ? `On ${on}.` : undefined,
           body: (
             <HostEnv d={d}>
@@ -355,17 +452,26 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           ),
         };
       }
-      // An unknown host shows the Providers page.
+      // An unknown host shows the Providers page. Add provider is in the title line (the desktop) or first on the
+      // page (the phone, whose header holds only the title and Back), as Hosts and Projects have theirs; with several
+      // hosts it adds on the host whose tab is open.
+      const tab = (s.grouped && s.all.find((x) => x.host.name === ui.hostPick)) || s.all[0];
       return {
         title: "Providers",
+        end: (
+          <button type="button" class={`btn addp${tab.providers?.length === 0 ? " p" : ""}`} disabled={!!p.offline || !tab.host.online || !!tab.host.noId} data-sub={subKey(tab.ref("new"))} onClick={() => go(tab.ref("new"))}>
+            Add provider
+          </button>
+        ),
+        lede: s.grouped ? "The logins and API endpoints threads run on. Each host has its own." : "The logins and API endpoints threads run on.",
         body: (
           <HostParts
             s={s}
             now={p.now}
             picked={ui.hostPick}
             onPick={ui.setHostPick}
-            badge={(d) => navBadge(d.providers, d.sa?.jobs.filter((j) => j.error).length ?? 0)}
-            part={(d) => <ProvidersPage d={d} go={go} grouped={s.grouped} />}
+            badge={(d) => ui.counts.tabs.providers[d.host.name] ?? 0}
+            part={(d) => <ProvidersPage d={d} go={go} />}
           />
         ),
       };
@@ -374,18 +480,40 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       return {
         title: "Automation",
         lede: "What Fyr does without your press. Only you change these; an agent cannot.",
-        body: (
-          <HostParts
-            s={s}
-            now={p.now}
-            picked={ui.hostPick}
-            onPick={ui.setHostPick}
-            badge={(d) => automationBadge(d.updates, ui.loadByHost.get(d.host.name))}
-            part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} focus={at.sub} />}
-          />
-        ),
+        body: <HostParts s={s} now={p.now} picked={ui.hostPick} onPick={ui.setHostPick} part={(d) => <AutomationPage d={d} row={s.grouped ? (p.hosts ?? []).find((h) => h.name === d.host.name) : p.hosts?.[0]} hasDeploy={!!p.api.autoDeploy} go={go} />} />,
       };
     case "projects": {
+      // V0.settings-ia: New project is a sub-page, so Esc and Back go to the list (as from Add provider), not out of
+      // Settings with the typed text dropped.
+      if (at.sub === "new")
+        return {
+          title: "New project",
+          parent: "Projects",
+          body: (
+            <Group title="Name and folder">
+              <Row col>
+                <NewProjectStep
+                  initialName={ui.drafts.project?.name ?? ""}
+                  initialFolder={ui.drafts.project?.folder ?? ""}
+                  fromThread={false}
+                  cancelLabel="Cancel"
+                  onDraft={(name, folder) => (ui.drafts.project = { name, folder })}
+                  onCancel={() => {
+                    delete ui.drafts.project;
+                    go({ page: "projects" });
+                  }}
+                  onCreate={async (name, folder, host) => {
+                    const e = await p.projectActions.create(name, folder, host);
+                    if (e) return e;
+                    delete ui.drafts.project;
+                    go({ page: "projects" });
+                    return null;
+                  }}
+                />
+              </Row>
+            </Group>
+          ),
+        };
       if (at.sub) {
         const rid = resolveRef(projectRecords(p.projects), at.sub!); // a link names the host's own id (C12)
         const pr = recordOf(p.projects, rid); // decision 0034: a member of a linked project has its own page
@@ -403,6 +531,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
               onSave={(patch) => p.projectActions.update(pr.id!, patch)}
               onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
               archive={archiveFor(pr.id!, p.projectActions, (id) => p.onOpenThread?.(id))}
+              shownHere={shownHereFor(group ?? pr, p.device.hidden, p.device.setHidden)}
               onDelete={async () => {
                 const e = await p.projectActions.delete(pr.id!);
                 if (!e) go({ page: "projects" });
@@ -416,19 +545,28 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           ),
         };
       }
-      return { title: "Projects", ...projectsPage(p, ui) };
+      return { title: "Projects", lede: "A project is a folder on a host, with the defaults its threads start with.", ...projectsPage(p, ui) };
     }
     case "hosts": {
       const rows = p.hosts ?? [];
-      const h = at.sub ? rows.find((x) => x.name === at.sub) : undefined;
-      // An unknown name shows the Hosts page.
+      // An unknown name shows the Hosts page. A link to a section that names no host ("automation/leftovers", from
+      // before V0.settings-ia, a front with one host) opens the first host; one that names a host this front does not
+      // list opens the only host there is (a front with one host: the rail's load may name it differently).
+      const h = (at.sub ? rows.find((x) => x.name === at.sub) : undefined) ?? (at.focus && (!at.sub || rows.length === 1) ? rows[0] : undefined);
       if (h) {
+        const d = s.grouped ? s.at(h.name) : s.all[0];
+        // V0.host-ids: nothing is read from a host with no install id, nor from an offline one Fyr never read.
+        const readable = !!d && !d.host.noId && (d.host.online || !!d.readAt || d.providers !== null || d.deploy !== null || d.repos !== null);
+        const key = d?.host.name ?? h.name;
+        // Remove is for a host that is paired with the one this device is connected to (never that one itself).
+        const member = peers.s?.members.find((m) => m.id === h.id && !m.self);
+        const peerAct = p.api.peerAct;
         const hostTabs: HostTabItem[] = rows.map((x) => ({
           id: x.name,
           name: x.name,
           label: x.name,
           offline: !x.online,
-          badge: (x.idWas ? 1 : 0) + (updateLine(x).bad ? 1 : 0),
+          badge: ui.counts.tabs.hosts[s.grouped ? x.name : ""] ?? 0,
         }));
         return {
           title: <span class="mono">{h.name}</span>,
@@ -445,7 +583,31 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
                   (p.replace ?? go)({ page: "hosts", sub: name });
                 }}
               />
-              <HostPage key={h.name} h={h} api={p.api} now={p.now} />
+              <HostPage
+                key={h.name}
+                h={h}
+                api={p.api}
+                now={p.now}
+                part={d?.host ?? { name: h.name, label: h.name, online: h.online }}
+                d={readable ? d : undefined}
+                hasDeploy={!!p.api.autoDeploy}
+                focus={at.focus}
+                go={go}
+                jump={(focus) => (p.replace ?? go)({ page: "hosts", sub: h.name, focus })}
+                single={rows.length <= 1}
+                unpair={
+                  member && peerAct
+                    ? async () => {
+                        const r = await peerAct("remove", { id: member.id });
+                        if (r.ok) peers.reload();
+                        return r.ok ? null : String(r.error ?? "That did not work");
+                      }
+                    : undefined
+                }
+                setup={(h.id && ui.setupReps[h.id]) || null}
+                setupNeeds={ui.counts.tabs.setup[key] ?? 0}
+                shown={rows.length > 1 ? { on: !hostIsHidden(h, p.device.hidden), locked: lastShownHost(h, rows, p.device.hidden), set: (on) => p.device.setHidden(setHostShown(p.device.hidden, h, on)) } : undefined}
+              />
             </>
           ),
         };
@@ -456,10 +618,16 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       };
       return {
         title: "Hosts",
-        end: <HostsReorderButton ui={ui} n={rows.length} />,
+        lede: "A host is a machine that runs Fyr and its threads.",
+        end: (
+          <>
+            <HostsReorderButton ui={ui} n={rows.length} />
+            {p.api.peerState && p.api.peerAct && !ui.reordering && <AddHostButton />}
+          </>
+        ),
         body: (
           <>
-            <HostsPage rows={rows} now={p.now} go={go} ui={ui} run={runOrder} />
+            <HostsPage rows={rows} now={p.now} go={go} ui={ui} run={runOrder} viewOf={(h) => (s.grouped ? s.at(h.name) : s.all[0])?.updates ?? null} />
             {p.api.peerState && p.api.peerAct && <PeersPanel api={{ peerState: p.api.peerState, peerAct: p.api.peerAct }} st={peers} />}
           </>
         ),
@@ -467,15 +635,32 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
     }
     case "usage":
       return { title: "Usage", lede: "The tokens every host counted: each agent's turns and Fyr's own calls.", body: <UsagePage api={p.api} now={p.now} onOpenThread={p.onOpenThread} /> };
-    case "devices":
-      if (!p.api.authState || !p.api.authAct) return { title: "Devices", body: <Empty text="This host cannot list devices." /> };
-      return { title: "Devices", lede: "Who is signed in to this install, and how a new device gets in.", body: <DevicesPage api={{ authState: p.api.authState, authAct: p.api.authAct }} now={p.now} st={auth} /> };
+    case "devices": {
+      // V0.settings-ia: Sign-in also says how this device gets in and through which host.
+      const here = <HowIn user={p.user ?? ""} front={p.front} />;
+      // The page is the host's this device is connected to, and says which: it is not a page about the person.
+      const lede = `The devices signed in to ${p.front || "the host this device is connected to"}, and how a new one gets in.`;
+      if (!p.api.authState || !p.api.authAct)
+        return {
+          title: "Sign-in",
+          lede,
+          body: (
+            <>
+              <Group title="Signed in">
+                <Empty text="This host cannot list devices." />
+              </Group>
+              {here}
+            </>
+          ),
+        };
+      return { title: "Sign-in", lede, body: <DevicesPage api={{ authState: p.api.authState, authAct: p.api.authAct }} now={p.now} st={auth} bottom={here} /> };
+    }
     case "device":
-      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} front={p.front} hosts={p.hosts ?? []} projects={p.projects} /> };
+      return { title: "This device", lede: "Kept on this device only. Each device has its own.", body: <DevicePage d={p.device} hosts={p.hosts ?? []} projects={p.projects} /> };
     case "setup":
       return {
         title: "Setup",
-        lede: "Checked live from the host, never a stored done flag.",
+        lede: "What a host needs before it can run threads. The checks run on the host each time this page opens.",
         body: (
           <HostParts
             s={s}
@@ -483,6 +668,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
             picked={ui.hostPick}
             onPick={ui.setHostPick}
             onlineOnly
+            badge={(d) => ui.counts.tabs.setup[d.host.name] ?? 0}
             part={(d) => <SetupPage key={d.host.id ?? d.host.name} api={p.api} host={d.host.id} hostName={s.grouped ? d.host.name : undefined} go={go} onOpenThread={p.onOpenThread} />}
           />
         ),
@@ -498,12 +684,35 @@ function useToolDetailsPref(): boolean {
   return on;
 }
 
-/** V0.207: which hosts and projects this device shows. One list on the desktop and the phone. */
+/** V0.settings-ia: the per-device switch of one project, for its page: the same setting as its row in This device's
+ *  list. */
+export function shownHereFor(project: Project, hidden: Hidden, setHidden: (h: Hidden) => void): { on: boolean; set(on: boolean): void } {
+  return { on: !projectIsHidden(project, hidden), set: (on) => setHidden(setProjectShown(hidden, project, on)) };
+}
+
+/** V0.125, decision 0031 2.6 (1): how this device reaches this Fyr and through which host: the last group of Sign-in
+ *  (V0.settings-ia: state about the sign-in, not a preference of this device; last, because what waits for the owner
+ *  and what can be pressed come before a status block). */
+function HowIn({ user, front }: { user: string; front: string }) {
+  return (
+    // titled by what it says: "This device" is the nav page of what is kept on this device
+    <Group title="How this device gets in" label="How this device gets in">
+      <Row class="howin" desc={howIn(typeof location === "undefined" ? "" : location.hostname, user)} />
+      {front && <Row class="front" title="Connected through" desc={<span class="mono">{front}</span>} />}
+    </Group>
+  );
+}
+
+/** V0.207: which hosts and projects this device shows. One list on the desktop and the phone. V0.settings-ia: each
+ *  host's and project's own page has the same switch, so the list is the overview: folded while everything shows,
+ *  and open while something is hidden (a hidden thing shows nowhere else on this device, so the list that brings it
+ *  back is not behind a press). */
 function ShownHere({ d, hosts, projects }: { d: SettingsDevice; hosts: HostInfo[]; projects: Project[] }) {
   const list = settingsProjects(projects).filter((x) => x.id);
   if (hosts.length < 2 && !list.length) return null;
+  const n = hiddenCount(d.hidden);
   return (
-    <Group title="Shown on this device" foot="What you turn off leaves this device's inbox, filters, Changes, pickers and notifications. It keeps running, and your other devices still show it.">
+    <Group title="Shown on this device" label="Shown on this device" fold={{ id: "device:shown", open: n > 0, summary: n ? `${n} hidden` : "Everything shows" }} foot="What you turn off leaves this device's inbox, filters, Changes, pickers and notifications. It keeps running, and your other devices still show it. The same switch is on each host's and project's page.">
       {hosts.length > 1 &&
         hosts.map((h) => {
           const label = `Show host ${h.name}`;
@@ -516,9 +725,9 @@ function ShownHere({ d, hosts, projects }: { d: SettingsDevice; hosts: HostInfo[
   );
 }
 
-/** Notifications (V0.15), Theme, Show tool details, Install: kept in this browser. Never read-only: none of it goes to
- *  the host except the push subscription, which says so when it fails. */
-function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; user: string; front: string; hosts: HostInfo[]; projects: Project[] }) {
+/** Notifications (V0.15), Appearance (Theme, Show tool details, Install) and what this device shows: kept in this
+ *  browser. Never read-only: none of it goes to the host except the push subscription, which says so when it fails. */
+function DevicePage({ d, hosts, projects }: { d: SettingsDevice; hosts: HostInfo[]; projects: Project[] }) {
   const [tested, setTested] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -544,7 +753,7 @@ function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; us
   };
   return (
     <SetContext.Provider value={{ ...useSet(), readOnly: false }}>
-      <Group label="This device">
+      <Group title="Notifications" label="Notifications" foot="A project's Quiet hours (on its page) and what this device shows (below) also decide what notifies here.">
         <Row
           label={!row.disabled}
           title="Notifications"
@@ -567,10 +776,12 @@ function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; us
             </>
           }
         />
-        {/* V0.notification-polish: only while they are on; a device without them has nothing to choose */}
-        {row.on && <Row label class="push-finished" title="Finished threads" desc={FINISHED_DESC} end={<Switch on={d.pushPrefs.finished} label="Notify for finished threads" onChange={(on) => d.setPushPrefs({ ...d.pushPrefs, finished: on })} />} />}
+        {/* V0.notification-polish, V0.settings-ia: what this device is told about. They show while notifications are off too, disabled and saying why (hidden, nobody could see what a device would be told before turning them on); a device that cannot notify at all has nothing to choose. */}
+        {d.push !== "unsupported" && <Row label={row.on} class="push-finished" title="Finished threads" desc={row.on ? FINISHED_DESC : `${FINISHED_DESC} Applies once Notifications are on.`} end={<Switch on={d.pushPrefs.finished} label="Notify for finished threads" disabled={!row.on} onChange={(on) => d.setPushPrefs({ ...d.pushPrefs, finished: on })} />} />}
         {/* V0.quota-reset-wake: opt-in per device */}
-        {row.on && <Row label class="push-quota" title="Quota resets" desc={QUOTA_RESET_DESC} end={<Switch on={d.pushPrefs.quotaReset} label="Notify on quota resets" onChange={(on) => d.setPushPrefs({ ...d.pushPrefs, quotaReset: on })} />} />}
+        {d.push !== "unsupported" && <Row label={row.on} class="push-quota" title="Quota resets" desc={row.on ? QUOTA_RESET_DESC : `${QUOTA_RESET_DESC} Applies once Notifications are on.`} end={<Switch on={d.pushPrefs.quotaReset} label="Notify on quota resets" disabled={!row.on} onChange={(on) => d.setPushPrefs({ ...d.pushPrefs, quotaReset: on })} />} />}
+      </Group>
+      <Group title="Appearance" label="Appearance">
         <Row
           title="Theme"
           stack
@@ -588,14 +799,10 @@ function DevicePage({ d, user, front, hosts, projects }: { d: SettingsDevice; us
           }
         />
         <Row label title="Show tool details" desc="Every tool group open, every machine line in full." end={<Switch on={details} label="Show tool details" onChange={setToolDetails} />} />
-        {/* V0.125: how this browser reaches this Fyr; the device list replaces it in slice 5 of decision 0026 */}
-        <Row class="howin" title="How this browser gets in" desc={howIn(typeof location === "undefined" ? "" : location.hostname, user)} />
-        {/* Decision 0031 2.6 (1): the one place that says which front this browser is connected through */}
-        {front && <Row class="front" title="Connected through" desc={<span class="mono">{front}</span>} />}
         {d.canInstall && (
           <Row
-            title="Install Fyr"
-            desc="As an app with its own window."
+            title="Install as app"
+            desc="Fyr in its own window on this device."
             end={
               <button type="button" class="btn" onClick={d.onInstall}>
                 Install

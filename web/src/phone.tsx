@@ -64,6 +64,8 @@ import { type AnswerMove, arrive } from "./arrived.ts";
 import { HostMark } from "./host-mark-ui.tsx";
 import { hostTag, offlineLine, profilesOf, threadProvider, type HostProfiles } from "./hosts.ts";
 import { type ProjectPatch, ProjectEditor, archiveFor } from "./project-editor.tsx";
+import { shownHereFor } from "./settings-ui.tsx";
+import type { Hidden } from "./hidden.ts";
 import type { ArchiveInfo } from "./archived.ts";
 import { linkingFor } from "./project-linking.tsx";
 import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
@@ -173,6 +175,8 @@ export interface PhoneProps {
   device: PhoneDevice;
   /** V0.207: every project, also those this device hides (`store` leaves them out) */
   allProjects: Project[];
+  /** V0.207, V0.settings-ia: what this device hides, for the project screen's Show on this device (as the desktop's) */
+  shownHere?: { hidden: Hidden; set(h: Hidden): void };
   /** the project filter (V0.23), for the menu's Filter by project sheet */
   filter: { id: string | null; set(id: string | null): void };
   /** V0.134: the host and project chips and the empty state, as the desktop shows them */
@@ -250,7 +254,7 @@ export function PhoneApp(p: PhoneProps) {
           </div>
         </div>
       )}
-      {s.name === "settings" && <div class="m-screen m-settings">{p.settings?.(s.page ? { page: s.page, ...(s.sub ? { sub: s.sub } : {}), ...(s.host ? { host: s.host } : {}) } : null, (title, end) => <MHeader onBack={p.nav.back} title={title} right={end} />)}</div>}
+      {s.name === "settings" && <div class="m-screen m-settings">{p.settings?.(s.page ? { page: s.page, ...(s.sub ? { sub: s.sub } : {}), ...(s.host ? { host: s.host } : {}), ...(s.focus ? { focus: s.focus } : {}) } : null, (title, end) => <MHeader onBack={p.nav.back} title={title} right={end} />)}</div>}
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
       {p.nav.at.sheet && <MSheets {...p} sheet={p.nav.at.sheet} t={sheetThread} />}
@@ -840,6 +844,7 @@ function MProject(p: PhoneProps & { id: string }) {
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
             onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
             archive={archiveFor(pr.id!, p.projectActions, (id) => p.nav.go({ screen: { name: "thread", id }, sheet: null }))}
+            shownHere={p.shownHere && shownHereFor(group ?? pr, p.shownHere.hidden, p.shownHere.set)}
             onDelete={async () => {
               const e = await p.projectActions.delete(pr.id!);
               if (!e) p.nav.back();

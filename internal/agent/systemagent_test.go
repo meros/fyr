@@ -81,7 +81,7 @@ func TestSystemAgentFailsVisibly(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Fatalf("%s: %+v %v", c.name, a, err)
 		}
-		if c.name == "no haiku" && !strings.Contains(err.Error(), "Settings → System agents") {
+		if c.name == "no haiku" && !strings.Contains(err.Error(), "Settings → Providers → Fyr's own calls") {
 			t.Fatalf("the reason does not say where to fix it: %v", err)
 		}
 	}

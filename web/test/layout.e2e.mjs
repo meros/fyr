@@ -272,23 +272,28 @@ const SCREENS = [
   // sub-pages. On every one: no control under 44 px, nothing past the right edge, the last control above the bottom
   // inset; with the keyboard up a focused field and its button stay in view.
   { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 8 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
-  { name: "settings providers", url: "?mock=rail&settings=providers", ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section[aria-label=\"System agents\"] select').length === 5" },
+  // V0.settings-ia: the per-job rows are a folded group (Per job); the screen opens it, as the owner's device would remember.
+  { name: "settings providers", url: "?mock=rail&settings=providers", storage: { "fyr.settingsFold": '{":sajobs":true,":found":true}' }, ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section.sacalls select, section.sajobs select').length === 5" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings select[aria-label=Kind]')" },
-  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", storage: { "fyr.settingsFold": '{":updates":true,":jobs":true}' }, ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 4 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sg-c button').length === 3", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('section[aria-label=\"Auto-update\"] [aria-label=\"Auto-update Fyr\"]') && !!document.querySelector('section[aria-label=\"Auto-merge\"] [role=switch]') && !!document.querySelector('section[aria-label=\"Per project\"]')", field: ".m-settings .fieldrow .inl input" },
+  // V0.settings-ia: a host's page holds its own: Updates (the row that asks for a press, and a line that leads to the
+  // Auto-update switch on Automation), Load, Diagnostics. Its field for the keyboard pass is the Mark's emoji field
+  // (the page had named a field that is on Automation).
+  { name: "settings host page (V0.settings-ia)", url: "?mock=rail&settings=hosts/desk/updates", storage: { "fyr.settingsFold": '{":updates":true,":jobs":true}' }, ready: "!!document.querySelector('section[aria-label=\"Updates\"] .autoline') && !document.querySelector('section[aria-label=\"Updates\"] [role=switch]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Measured jobs\"] .sr').length === 4 && document.querySelectorAll('section[aria-label=\"Measured jobs\"] .sg-c button').length === 3 && !!document.querySelector('.m-settings .pemoji .inl input')", field: ".m-settings .pemoji .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.setup-wizard: the Setup page, the wizard's steps on the phone.
   { name: "settings setup (V0.setup-wizard)", url: "?mock=rail&settings=setup", ready: "document.querySelectorAll('.m-settings .setup-step').length === 6" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
-  { name: "settings signed-in devices (V0.157)", url: "?mock=rail&settings=devices", ready: "document.querySelectorAll('.m-settings .dev').length === 4 && !!document.querySelector('.m-settings input[aria-label=\"Approval code\"]')" },
+  { name: "settings signed-in devices (V0.157)", url: "?mock=rail&settings=devices", ready: "document.querySelectorAll('.m-settings .dev').length === 4 && !!document.querySelector('.m-settings input[aria-label=\"Code of the device to allow\"]')" },
   { name: "settings hosts (V0.125)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .sr.host').length === 4" },
   // V0.usage-page: two hosts' tokens by model, the week's day bars and Fyr's own calls
   { name: "settings usage (V0.usage-page)", url: "?mock=rail&hosts=2&settings=usage", ready: "document.querySelectorAll('.m-settings .ug-day').length === 7 && document.querySelectorAll('.m-settings .ug-r').length >= 4" },
-  { name: "settings paired installs (V0.159)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .peers .peerrow').length >= 3 && !!document.querySelector('.m-settings .peers input[aria-label=\"Invite from another install\"]')" },
-  { name: "settings found installs (#259)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .peers .peercand.lan').length === 3 && !!document.querySelector('.m-settings .peers .peercand.lan.bad .cwarn')" },
+  { name: "settings paired installs (V0.159)", url: "?mock=rail&hosts=2&settings=hosts", storage: { "fyr.settingsFold": '{"hosts:pairing":true,"hosts:found":true}' } /* V0.settings-ia: Pairing and Found, not paired are folded; the screens measure them open */, ready: "document.querySelectorAll('.m-settings .peers .peerrow').length >= 3 && !!document.querySelector('.m-settings .peers input[aria-label=\"Invite from another host\"]')" },
+  { name: "settings found installs (#259)", url: "?mock=rail&hosts=2&settings=hosts", storage: { "fyr.settingsFold": '{"hosts:pairing":true,"hosts:found":true}' }, ready: "document.querySelectorAll('.m-settings .peers .peercand.lan').length === 3 && !!document.querySelector('.m-settings .peers .peercand.lan.bad .cwarn')" },
   { name: "settings host changed (V0.125)", url: "?mock=rail&hosts=2&settings=hosts/lab", ready: "!!document.querySelector('.m-settings .note.bad')" },
   { name: "board of changes", url: "?mock=1&changes" },
   // V0.116: a project with an image icon the setup agent set: Set by agent, the image buttons 44 px.
@@ -419,11 +424,11 @@ const MEASURE = `(() => {
       const right = Math.max(0, ...[...el.querySelectorAll('*')].filter((e) => vis(e) && !inScroller(e)).map((e) => e.getBoundingClientRect().right));
       const lg = el.querySelector('.login');
       const login = lg ? { link: lg.querySelector('a.loginlink')?.getAttribute('href') ?? '', code: !!lg.querySelector('input'), cancel: [...lg.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel') } : null;
-      const adb = el.querySelector('section[aria-label="Auto-update"] [role=switch]');
+      const adb = el.querySelector('section[aria-label="Auto-update"] [role=switch], section[aria-label="Updates"] [role=switch]');
       const upb = el.querySelector('section[aria-label="Updates"] .sr .btn');
       const autoDeploy = adb ? { role: adb.getAttribute('role'), checked: adb.getAttribute('aria-checked'), label: adb.getAttribute('aria-label'), rowH: adb.closest('.sr').getBoundingClientRect().height } : null;
-      const sas = el.querySelector('section[aria-label="System agents"]');
-      const systemAgents = sas ? { selects: [...sas.querySelectorAll('select')].map((x) => x.getAttribute('aria-label')), lines: [...sas.querySelectorAll('.sajob .sr-d')].map(e => e.textContent), same: [...sas.querySelectorAll('select[aria-label="Thread titles"] option')].map((o) => o.textContent)[0] ?? '' } : null;
+      const sas = el.querySelector('section.sacalls');
+      const systemAgents = sas ? { selects: [...el.querySelectorAll('section.sacalls select, section.sajobs select')].map((x) => x.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .sr-d')].map(e => e.textContent), same: [...el.querySelectorAll('select[aria-label="Thread titles"] option')].map((o) => o.textContent)[0] ?? '' } : null;
       const nav = [...el.querySelectorAll('.stn-i')].map((b) => ({ t: b.querySelector('.stn-t').textContent, s: b.querySelector('.stn-s').textContent, h: b.getBoundingClientRect().height }));
       const device = { push: !!el.querySelector('[role=switch][aria-label="Notifications"]'), theme: el.querySelectorAll('[role=radiogroup][aria-label="Theme"] [role=radio]').length };
       const last = targets[targets.length - 1];
@@ -551,7 +556,7 @@ const LONG_FIT = `(() => {
       const b = a.getBoundingClientRect();
       // The project chips, the header's chips (V0.phone-chips-scroll), the PR switcher (V0.multi-pr), the host tab strip
       // (V0.host-tabs: many hosts scroll sideways on one line) and a message's table are sideways scrollers by design.
-      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, .m-chips, .m-chipsd, .prv-sw, .htabs, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
+      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, .m-chips, .m-chipsd, .prv-sw, .htabs, .hjump, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
       break;
     }
   }
@@ -613,7 +618,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   }
   if (ctx.startsWith("settings nav")) {
     const n = m.settings?.nav ?? [];
-    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Usage|Devices|This device|Setup" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
+    check(n.map((x) => x.t).join("|") === "This device|Sign-in|Providers|Projects|Automation|Hosts|Usage|Setup" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
   }
   if (ctx.startsWith("settings providers")) {
     const st = m.settings;
@@ -624,14 +629,18 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   // SPEC 0.5 V0.53, V0.119: a running login shows on the provider's page: the sign-in link, the code field and Cancel, all 44 px.
   if (ctx.startsWith("settings provider login")) check(!!m.settings?.login && /^https:\/\/claude\.com\//.test(m.settings.login.link) && m.settings.login.code && m.settings.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(m.settings?.login)}`);
   // SPEC V0.111, V0.119, V0.126: the Auto-update switch, on by default, its row 44 px or more; Update now a 44 px target.
-  if (ctx.startsWith("settings automation")) {
+  // V0.settings-ia: the switch exists once, on Automation; the host's Updates has no switch (a line leads to
+  // Automation) and holds the one press (Update now, or Try again for a held-back release).
+  if (ctx.startsWith("settings automation") || ctx.startsWith("settings host page")) {
     const a = m.settings?.autoDeploy;
-    check(!!a && a.role === "switch" && a.checked === "true" && a.label === "Auto-update Fyr" && a.rowH >= 43.5, `${ctx}: no Auto-update switch ${JSON.stringify(a)}`);
+    if (ctx.startsWith("settings automation")) check(!!a && a.role === "switch" && a.checked === "true" && a.label === "Auto-update Fyr" && a.rowH >= 43.5, `${ctx}: no Auto-update switch ${JSON.stringify(a)}`);
+    else check(!a, `${ctx}: the host's page has a second Auto-update switch ${JSON.stringify(a)}`);
     const u = m.settings?.updateNow;
-    check(!!u && /^Update now( · retry)?$/.test(u.text) /* V0.host-updates: a held-back release is retried */ && u.h >= 43.5, `${ctx}: no 44 px Update now button ${JSON.stringify(u)}`);
+    if (ctx.startsWith("settings host page")) check(!!u && /^(Update now|Try again)$/.test(u.text) /* V0.host-updates: a held-back release is retried */ && u.h >= 43.5, `${ctx}: no 44 px Update now button ${JSON.stringify(u)}`);
+    else check(!u, `${ctx}: Automation has an Updates group of its own (${JSON.stringify(u)})`);
   }
   if (ctx.startsWith("settings device")) check(!!m.settings && m.settings.device.push && m.settings.device.theme === 3, `${ctx}: This device is wrong ${JSON.stringify(m.settings?.device)}`);
-  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours|Archive" /* V0.project-archive */, `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
+  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|New threads|Without asking|Priority|Quiet hours|Show on this device|Archive|Delete" /* V0.project-archive, V0.settings-ia */, `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
   if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && m.stepFolder === "~/src/lasso-app", `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, folder "${m.stepFolder}")`);
   if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Garden in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
@@ -649,7 +658,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     const q = m.quietRow;
     // Decision 0014 addendum: two windows (the mock's daily one and a weekend one), each with its 24-hour times and
     // seven days, "+ Add quiet hours" and both presets, and one line for all of them.
-    check(!!q && q.rows === 2 && q.days === 14 && q.times === 8 && q.add.join("|") === "Add quiet hours|Weeknights 17:00–06:00|All weekend Sat–Sun"
+    check(!!q && q.rows === 2 && q.days === 14 && q.times === 8 && q.add.join("|") === "Add quiet hours|+ Weeknights 17:00–06:00|+ All weekend Sat–Sun" /* V0.settings-ia: a preset is marked as a thing to add */
       && /^Threads hide and send no notifications daily \d\d:\d\d–\d\d:\d\d and weekends \d\d:\d\d–\d\d:\d\d\.$/.test(q.line) && /^Quiet (now, until|until) \d\d:\d\d/.test(q.note), `${ctx}: the Quiet hours rows are wrong ${JSON.stringify(q)}`);
     if (q) {
       for (const [i, p] of q.parts.entries())
@@ -976,7 +985,7 @@ async function phonePass(t, w, h, screens = SCREENS) {
       if (process.env.FYR_SHOTS && s.name.endsWith("(V0.101)") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, s.name.startsWith("inbox") ? "inbox-phone.png" : "changes-tab-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.name.startsWith("board of changes") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "board-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.name.startsWith("settings providers") && w === 390) { // V0.111
-        await evaluate(`document.querySelector('section[aria-label="System agents"]')?.scrollIntoView({ block: 'center' })`); // V0.115
+        await evaluate(`document.querySelector('section.sacalls')?.scrollIntoView({ block: 'center' })`); // V0.115
         await settle();
         writeFileSync(join(process.env.FYR_SHOTS, "systemagents-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       }
@@ -1927,12 +1936,14 @@ try {
   await waitFor(`document.querySelectorAll('.dlg .prow').length === 3`, { soft: true });
   await settle();
   const RECT = `(() => { const r = document.querySelector('.dlg.settings')?.getBoundingClientRect(); return r ? [Math.round(r.width), Math.round(r.height)].join('x') : ''; })()`;
-  const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', nav: [...document.querySelectorAll('.dlg .stn-i .stn-t')].map(e => e.textContent), on: document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? '', rows: document.querySelectorAll('.dlg .prow').length, size: ${RECT} })`);
-  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|Hosts|Usage|Devices|This device|Setup" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', nav: [...document.querySelectorAll('.dlg .stn-i .stn-t')].map(e => e.textContent), caps: [...document.querySelectorAll('.dlg .stn-cap')].map(e => e.textContent).join('|'), on: document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? '', rows: document.querySelectorAll('.dlg .prow').length, size: ${RECT} })`);
+  check(d.title === "Settings" && d.nav.join("|") === "This device|Sign-in|Providers|Projects|Automation|Hosts|Usage|Setup" && d.on === "providers" && d.rows === 3 && d.caps === "Only on this device|On your hosts" /* V0.settings-ia: by where a setting is kept; Sign-in is a host's */, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
   // SPEC V0.115: System agents: a provider and a model for all jobs, a choice per job ("Same as default"), and what each job runs on.
-  await waitFor(`document.querySelectorAll('.dlg section[aria-label="System agents"] select').length >= 4`, { soft: true });
-  const sa = await evaluate(`(() => { const el = document.querySelector('.dlg section[aria-label="System agents"]'); if (!el) return null;
-    return { selects: [...el.querySelectorAll('select')].map(s => s.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .sr-d')].map(e => e.textContent),
+  await waitFor(`!!document.querySelector('.dlg section.sajobs')`, { soft: true });
+  await evaluate(unfold("Per job")); // V0.settings-ia: the jobs follow the default, so their rows are folded ("3 jobs · all on the default")
+  await waitFor(`document.querySelectorAll('.dlg section.sacalls select, .dlg section.sajobs select').length >= 4`, { soft: true });
+  const sa = await evaluate(`(() => { const el = document.querySelector('.dlg .stp'); if (!el?.querySelector('section.sacalls')) return null;
+    return { selects: [...el.querySelectorAll('section.sacalls select, section.sajobs select')].map(s => s.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .sr-d')].map(e => e.textContent),
       model: el.querySelector('select[aria-label="Model"]')?.selectedOptions[0]?.textContent ?? '', same: el.querySelector('select[aria-label="Thread titles"]')?.selectedOptions[0]?.textContent ?? '' }; })()`);
   check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup|Questions in text" && sa.model === "Haiku (claude-haiku-5-5)" && sa.same === "Same as default" && sa.lines.length === 3 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
     `V0.115 desktop: the System agents section is wrong (${JSON.stringify(sa)})`);
@@ -1951,7 +1962,7 @@ try {
   await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers]').focus()`);
   await key("ArrowDown");
   const kn = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, focus: document.activeElement?.dataset?.page })`);
-  check(kn.page === "automation" && kn.focus === "automation", `V0.119 desktop: ↓ in the nav does not move to Automation (${JSON.stringify(kn)})`);
+  check(kn.page === "projects" && kn.focus === "projects", `V0.119 desktop: ↓ in the nav does not move to Projects (${JSON.stringify(kn)})`);
   // A provider is a sub-page; its models are rows, not a text box; no key is in the page.
   await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers]').click()`);
   await waitFor(`document.querySelectorAll('.dlg .prow').length === 3`, { soft: true });
@@ -1999,9 +2010,20 @@ try {
   // through the DOM works even when the strip is invisible, so the strip is measured, not just its tabs.
   const stripOf = () => evaluate(`(() => { const b = document.querySelector('.stp .htabs, .m-settings .htabs'); if (!b) return null; const r = b.getBoundingClientRect(), on = b.querySelector('.htab.on') ?? b.querySelector('.htab'); const o = on?.getBoundingClientRect(); return { h: Math.round(r.height), w: Math.round(r.width), top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, onH: o ? Math.round(o.height) : 0 }; })()`);
   const stripShown = async () => { const s = await stripOf(); return !!s && s.h >= 30 && s.onH >= 30 && s.bottom > s.top && s.bottom <= s.vh && s.w > 0; };
+  // V0.settings-ia: the list that threw on "updates": null (the code is `v.updates.slice`) is Update history on the
+  // host's page now; Automation shows only one line of state. So this test opens that group, on the host whose list is
+  // null (lab) and on the one that has a list (desk): the link lands on it and opens it, and there is no crash card.
+  const history = async () => {
+    for (const [host, want] of [["lab", "empty"], ["desk", "rows"]]) {
+      await navigate(`${origin}/?mock=rail&hosts=2&${phone ? "settings" : "dialog=settings&page"}=hosts/${host}/updates`, `!!document.querySelector('section[aria-label="Update history"] .sg-c') || !!document.querySelector('.crash')`);
+      const r = await evaluate(`({ crash: [...document.querySelectorAll('.crash')].map((e) => e.textContent), rows: document.querySelectorAll('section[aria-label="Update history"] .sg-c .sr').length, empty: /No updates yet on this host/.test(document.querySelector('section[aria-label="Update history"]')?.textContent ?? ''), host: document.querySelector('.stp')?.dataset.page })`);
+      check(!r.crash.length && r.host === `hosts/${host}` && (want === "empty" ? r.empty && r.rows === 0 : r.rows >= 2 && !r.empty), `${ctx}: ${host}'s Update history does not show without a crash (${JSON.stringify(r)})`);
+    }
+  };
   if (phone) {
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: true });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await history();
     await navigate(`${origin}/?mock=rail&hosts=2&settings=automation`, "!!document.querySelector('.m-settings .stp')");
     await waitFor(UPD, { soft: true });
     check(await evaluate(UPD), `${ctx}: Automation does not show desk's Updates without a crash (${await evaluate("[...document.querySelectorAll('.crash')].map((e) => e.textContent).join(' | ')")})`);
@@ -2020,6 +2042,7 @@ try {
     return;
   }
   await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+  await history();
   await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .rgear')");
   // A page that throws can leave the app re-rendering without end, so a step never returns: the closes have 60 s.
   await Promise.race([closes(), sleep(60_000).then(() => { throw new Error("Settings did not close within 60 s (the page stopped answering)"); })]);
@@ -2074,7 +2097,7 @@ try {
   await navigate(`${origin}/?mock=rail&dialog=settings&page=projects/p_web`, "!!document.querySelector('.dlg .pedit .sw')");
   await settle();
   const pg = await evaluate(`({ save: [...document.querySelectorAll('.dlg .pedit button')].some(b => b.textContent.trim() === 'Save'), groups: [...document.querySelectorAll('.dlg .pedit > .sg > .sg-h .sg-t')].map(e => e.textContent), title: document.querySelector('.dlg .stp-h h2')?.textContent })`);
-  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours|Archive" /* V0.project-archive */ && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
+  check(!pg.save && pg.groups.join("|") === "Identity|New threads|Without asking|Priority|Quiet hours|Show on this device|Archive|Delete" /* V0.project-archive, V0.settings-ia: the same groups as the phone's project screen; no Other hosts on a front with one host (nothing to link to) */ && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
   await shot("settings-project-desktop.png");
   await evaluate(`document.querySelector('.dlg .pedit .sw:not(.on)').click()`);
   await waitFor(`${COMMANDS("project.update")}.length >= 1 && !!document.querySelector('.dlg .stp-h .saved')`, { soft: true });
@@ -2142,9 +2165,9 @@ try {
 
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih [aria-label=More]')");
   await tapCenter(".m-ih [aria-label=More]", "!!document.querySelector('.m-sheet .m-mi')");
-  await waitFor(`/needs a login/.test([...document.querySelectorAll('.m-sheet .m-mi')].find((b) => b.textContent.startsWith('Settings'))?.textContent ?? '')`, { soft: true });
-  const more = await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].map((b) => ({ label: b.querySelector('.ell')?.firstChild?.textContent ?? '', right: b.querySelector('.w')?.textContent ?? '' }))`);
-  check(more.map((x) => x.label).join("|") === "Select threads|Status|Changes|Settings|Filter by project…|Show tool details" && more.find((x) => x.label === "Settings")?.right === "1 needs a login", `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
+  await waitFor(`/need you/.test([...document.querySelectorAll('.m-sheet .m-mi')].find((b) => b.textContent.startsWith('Settings'))?.textContent ?? '')`, { soft: true });
+  const more = await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].map((b) => ({ label: b.querySelector('.ell')?.firstChild?.textContent ?? '', right: b.querySelector('.w')?.textContent ?? '', sub: b.querySelector('small')?.textContent ?? '' }))`);
+  check(more.map((x) => x.label).join("|") === "Select threads|Status|Changes|Settings|Filter by project…|Show tool details" && more.find((x) => x.label === "Settings")?.right === "2 need you" && more.find((x) => x.label === "Settings")?.sub === "Sign-in 1 · Providers 1" /* V0.settings-ia: the one count (a device that waits, a provider that needs a login) and the pages that hold it */, `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
 } catch (e) {
   failures.push(`V0.119 phone: ${e.message}`);
 } finally {
@@ -2177,7 +2200,7 @@ try {
   await waitFor(`document.querySelectorAll('.dlg .model').length === 4`, { soft: true });
   const on = await evaluate(`({ cmds: ${COMMANDS("provider.update")}.map(c => c.args.models), last: [...document.querySelectorAll('.dlg .model')].pop()?.dataset.model })`);
   check(on.cmds.length === 1 && JSON.stringify(on.cmds[0]) === JSON.stringify(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"]) && on.last === "claude-fable-5-2", `V0.120 desktop: a switch does not turn the model on at the end (${JSON.stringify(on)})`);
-  await evaluate(`[...document.querySelectorAll('.dlg .models .sg-h .lnk')].find(b => b.textContent === 'Refresh')?.click()`);
+  await evaluate(`[...document.querySelectorAll('.dlg .models .sg-h .lnk')].find(b => b.textContent === 'Check now')?.click()`);
   await waitFor(`${COMMANDS("provider.refreshModels")}.length === 1`, { soft: true });
   const rf = await evaluate(`({ cmds: ${COMMANDS("provider.refreshModels")}.map(c => c.args.id), line: document.querySelector('.dlg .models .mchk')?.textContent ?? '' })`);
   check(rf.cmds.join() === "claude" && rf.line === "Checked just now", `V0.120 desktop: Refresh (${JSON.stringify(rf)})`);
@@ -2228,7 +2251,7 @@ for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) section(`liv
     const c = await evaluate(`({ off: document.querySelectorAll('${at} .omodel').length, foot: document.querySelector('${at} .models .sg-f')?.textContent ?? '' })`);
     check(c.off === 1 && /Fyr's known list/.test(c.foot), `live ${w}: a Claude login on the known list (${JSON.stringify(c)})`);
     await navigate(url("providers/claudeDeepseek"), `document.querySelectorAll('${at} .omodel').length > 0`);
-    const o = await evaluate(`({ on: document.querySelectorAll('${at} .model').length, off: document.querySelectorAll('${at} .omodel').length, sub: [...document.querySelectorAll('${at} .models .sg-sub')].map(e => e.textContent), more: document.querySelector('${at} .models .more')?.textContent ?? '', refresh: [...document.querySelectorAll('${at} .models .lnk')].some(b => b.textContent === 'Refresh'), search: document.querySelector('${at} .models input[type=search]')?.placeholder ?? '' })`);
+    const o = await evaluate(`({ on: document.querySelectorAll('${at} .model').length, off: document.querySelectorAll('${at} .omodel').length, sub: [...document.querySelectorAll('${at} .models .sg-sub')].map(e => e.textContent), more: document.querySelector('${at} .models .more')?.textContent ?? '', refresh: [...document.querySelectorAll('${at} .models .lnk')].some(b => b.textContent === 'Check now'), search: document.querySelector('${at} .models input[type=search]')?.placeholder ?? '' })`);
     check(o.on === 1 && o.off === 8 && o.sub[1] === "Off · 379" && o.more === "Show 371 more" && o.refresh && o.search === "Search 380 models", `live ${w}: OpenRouter's 380 models (${JSON.stringify(o)})`);
     await evaluate(`document.querySelector('${at} .models input[type=search]').focus()`);
     await send("Input.insertText", { text: "anthropic" });
@@ -2319,7 +2342,7 @@ try {
   await shot("chips-after-phone.png");
   // The provider page on the phone: both parts, the switch 44 px wide at least as a row target.
   await navigate(`${origin}/?mock=rail&settings=providers/claude`, "document.querySelectorAll('.m-settings .model').length === 3 && document.querySelectorAll('.m-settings .omodel').length === 3");
-  const pm = await evaluate(`({ subs: document.querySelectorAll('.m-settings .models .sg-sub').length, reo: !!document.querySelector('.m-settings .models .btn.reo'), refresh: [...document.querySelectorAll('.m-settings .models .lnk')].some(b => b.textContent === 'Refresh') })`);
+  const pm = await evaluate(`({ subs: document.querySelectorAll('.m-settings .models .sg-sub').length, reo: !!document.querySelector('.m-settings .models .btn.reo'), refresh: [...document.querySelectorAll('.m-settings .models .lnk')].some(b => b.textContent === 'Check now') })`);
   check(pm.subs === 2 && pm.reo && pm.refresh, `V0.120 phone: the Models group (${JSON.stringify(pm)})`);
   await shot("models-phone.png");
   await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.m-app')");
@@ -2499,16 +2522,24 @@ section('V0.188 guard', async (h) => {
     check(r && r.alt.startsWith("Memory was short 2 times") && r.h > 40, `V0.188 ${who}: the chart's text alternative or height is wrong (${JSON.stringify(r)})`);
   };
   try {
+    // While all is well (no guard history in the mock) Diagnostics is folded, and its header says the state in one line.
+    await navigate(`${origin}/?mock=rail&dialog=settings&page=hosts/desk`, `!!document.querySelector('section[aria-label="Diagnostics"]')`);
+    const q = await evaluate(`(() => { const s = document.querySelector('section[aria-label="Diagnostics"]'); return { shut: !s.querySelector('section'), sum: s.querySelector('.sg-sum')?.textContent ?? '', bad: !!s.querySelector('.sg-sum.bad') }; })()`);
+    check(q.shut && q.sum.length > 0 && !q.bad, `V0.automation-folds desktop: a quiet host's Diagnostics is not folded with a summary (${JSON.stringify(q)})`);
     // The desktop opens Settings as a dialog: the rail's button, then the Automation page.
-    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused`, "[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Settings')");
-    await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Settings').click()`);
-    await waitFor("[...document.querySelectorAll('button')].some((b) => b.textContent.startsWith('Automation'))", { what: "Settings' pages" });
-    await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('Automation')).click()`);
-    await waitFor(`!!document.querySelector('section[aria-label="Memory guard"]')`, { what: "the guard group" });
-    // V0.automation-folds: the guard starts folded, its header says what it did.
-    const g = await evaluate(`(() => { const s = document.querySelector('section[aria-label="Memory guard"]'); return { shut: !s.querySelector('.sg-c'), sum: s.querySelector('.sg-sum')?.textContent ?? '' }; })()`);
-    check(g.shut && g.sum.length > 0, `V0.automation-folds desktop: the guard is not folded with a summary (${JSON.stringify(g)})`);
-    await evaluate(unfold("Memory guard"));
+    // V0.settings-ia: the rail's gear, then Hosts, then the host: the guard is in its Diagnostics section.
+    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused`, "!!document.querySelector('.rail .rgear')");
+    await evaluate(`document.querySelector('.rail .rgear').click()`);
+    await waitFor("!!document.querySelector('.dlg .stn-i[data-page=hosts]')", { what: "Settings' pages" });
+    await evaluate(`document.querySelector('.dlg .stn-i[data-page=hosts]').click()`);
+    await waitFor("!!document.querySelector('.dlg .sr.host')", { what: "the Hosts page" });
+    await evaluate(`document.querySelector('.dlg .sr.host').click()`);
+    await waitFor(`!!document.querySelector('section[aria-label="Diagnostics"]')`, { what: "the Diagnostics section" });
+    // V0.automation-folds, V0.settings-ia: Diagnostics is folded to one line while all is well, and open by itself, its
+    // groups whole, while it reports something wrong: here memory is short and a thread is frozen.
+    const g = await evaluate(`(() => { const s = document.querySelector('section[aria-label="Diagnostics"]'); return { open: !!s.querySelector('section'), expanded: s.querySelector('.sg-fb')?.getAttribute('aria-expanded') }; })()`);
+    check(g.open && g.expanded === "true", `V0.automation-folds desktop: Diagnostics reports memory short and is not open (${JSON.stringify(g)})`);
+    await evaluate(unfold("Diagnostics"));
     await waitFor("!!document.querySelector('[data-guard-chart]')", { what: "the guard chart" });
     await settle();
     ok(await evaluate(read), "desktop");
@@ -2518,8 +2549,7 @@ section('V0.188 guard', async (h) => {
   try {
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused&settings=automation`, `!!document.querySelector('section[aria-label="Memory guard"]')`);
-    await evaluate(unfold("Memory guard"));
+    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused&settings=hosts/desk/diagnostics`, `!!document.querySelector('section[aria-label="Memory guard"]')`); // the link opens the section
     await waitFor("!!document.querySelector('[data-guard-chart]')", { what: "the guard chart" });
     await settle();
     ok(await evaluate(read), "phone");
@@ -2622,33 +2652,37 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
       harbour: (() => { const p = document.createElement('i'); p.style.color = 'var(--harbour)'; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; })(), row: document.querySelector('.one[data-id="t_mapperf"] .tund')?.textContent ?? '', h: Math.round(e.getBoundingClientRect().height) }; })()`);
     check(p.text === "Paused by Fyr: memory is short on laptop (6 % free). Frozen, not killed; it resumes when memory has recovered for 30 s, or after 10 min unless memory stalls. node test/layout.e2e.mjs · 2.8 GB · undeclared" && p.btns === 0 && p.head === p.harbour && p.row === "undeclared · paused: memory" && p.h <= 72, `${ctx}: the paused strip or row is wrong (${JSON.stringify(p)})`);
     await shot(`undeclared-thread-strip-paused-${tag}-desktop.png`);
-    // Settings → Automation: what runs, what Fyr learned, the thresholds; nothing asks for a decision.
-    await navigate(`${origin}/?mock=rail&undeclared=1&dialog=settings&page=automation`, `!!document.querySelector('.dlg section[aria-label="Undeclared now"]')`);
-    await evaluate(unfold("Learned heavy jobs", "When a thread counts as heavy"));
+    // Settings → Hosts → the host → Load: what runs, what Fyr learned, the thresholds; nothing asks for a decision.
+    await navigate(`${origin}/?mock=rail&undeclared=1&dialog=settings&page=hosts/desk/load`, `!!document.querySelector('.dlg section[aria-label="Heavy work Fyr did not expect"]')`);
+    await evaluate(unfold("Heavy work Fyr did not expect", "Learned commands", "What counts as heavy"));
     await settle();
     const st = await evaluate(`(() => { const d = document.querySelector('.dlg'); const sec = (l) => d.querySelector('section[aria-label="' + l + '"]');
       const rows = (l) => [...(sec(l)?.querySelectorAll('.sr') ?? [])];
       return { page: d.querySelector('.stp').dataset.page, groups: [...d.querySelectorAll('section.sg')].map((s) => s.getAttribute('aria-label')).filter(Boolean),
-        now: rows('When a thread counts as heavy').map((e) => e.querySelector('.sr-d').textContent), vals: rows('When a thread counts as heavy').map((e) => e.querySelector('input').value),
-        und: rows('Undeclared now').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()), added: rows('Learned heavy jobs').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()),
-        noSlot: !/slot|reservation/i.test([...d.querySelectorAll('section.sg')].filter((s) => /Undeclared|Learned|counts as heavy/.test(s.getAttribute('aria-label') || '')).map((s) => s.innerText).join(' ')) }; })()`);
-    check(st.page.startsWith("automation") && st.groups.join("|").includes("Undeclared now|Learned heavy jobs|Services|Kill and rerun|When a thread counts as heavy|Heavy jobs"), `${ctx}: the groups are ${st.groups.join("|")}`);
+        now: rows('What counts as heavy').map((e) => e.querySelector('.sr-d').textContent), vals: rows('What counts as heavy').map((e) => e.querySelector('input').value),
+        und: rows('Heavy work Fyr did not expect').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()), added: rows('Learned commands').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()),
+        noSlot: !/slot|reservation/i.test([...d.querySelectorAll('section.sg')].filter((s) => /did not expect|Learned|counts as heavy/.test(s.getAttribute('aria-label') || '')).map((s) => s.innerText).join(' ')) }; })()`);
+    check(st.page.startsWith("hosts") && st.groups.join("|").includes("Heavy work Fyr did not expect|What counts as heavy|Kill and rerun|Service commands|Learned commands|Measured jobs") /* V0.settings-ia: Running now, then Rules */, `${ctx}: the groups are ${st.groups.join("|")}`);
     check(st.now.join("|") === "Now 1.0 of laptop's 4 cores|Now 1.1 GB of laptop's 14 GB|Shorter bursts (a typecheck, one test file) never count" && st.vals.join() === "25,8,45", `${ctx}: the thresholds are wrong (${JSON.stringify([st.now, st.vals])})`);
     check(st.und.length === 1 && /^Map perf acme\/web · node test\/layout\.e2e\.mjs · 2\.8 GB \(20 %\) · 2\.1 cores \(52 %\) · \d+ min ?Open$/.test(st.und[0]), `${ctx}: Undeclared now is ${JSON.stringify(st.und)}`);
     check(st.added.length === 1 && /build · learned /.test(st.added[0]) && st.noSlot, `${ctx}: the learned commands are ${JSON.stringify([st.added, st.noSlot])}`);
     await shot(`undeclared-settings-${tag}-desktop.png`);
-    await evaluate(`document.querySelector('.dlg section[aria-label="Undeclared now"]').scrollIntoView({ block: 'start' })`);
+    await evaluate(`document.querySelector('.dlg section[aria-label="Heavy work Fyr did not expect"]').scrollIntoView({ block: 'start' })`);
     await shot(`undeclared-settings-now-${tag}-desktop.png`);
-    await evaluate(`document.querySelector('.dlg section[aria-label="When a thread counts as heavy"]').scrollIntoView({ block: 'start' })`);
+    await evaluate(`document.querySelector('.dlg section[aria-label="What counts as heavy"]').scrollIntoView({ block: 'start' })`);
     await shot(`undeclared-settings-thresholds-${tag}-desktop.png`);
     // A threshold saves; Remove.
-    await evaluate(`(() => { const i = document.querySelector('.dlg section[aria-label="When a thread counts as heavy"] input'); i.focus(); i.value = '30'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await evaluate(`(() => { const i = document.querySelector('.dlg section[aria-label="What counts as heavy"] input'); i.focus(); i.value = '30'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await key("Enter");
     await waitFor(`${UND_COMMANDS("host.undeclaredSettings")}.length === 1`, { what: "the threshold to be sent" });
     const set = await evaluate(UND_COMMANDS("host.undeclaredSettings"));
     check(set[0].cpu === 0.3 && !("memory" in set[0]), `${ctx}: the threshold sent ${JSON.stringify(set)}`);
-    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Learned heavy jobs"] .btn')].find((b) => b.textContent === 'Remove').click()`);
-    await waitFor(`!document.querySelector('.dlg section[aria-label="Learned heavy jobs"]')`, { what: "Remove to take a pattern out" });
+    // V0.settings-ia: nothing adds a learned command back, so Remove… asks in place: the second press sends it.
+    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Learned commands"] .btn')].find((b) => b.textContent === 'Remove…').click()`);
+    await waitFor(`!!document.querySelector('.dlg section[aria-label="Learned commands"] .cfmb .btn.danger')`, { what: "Remove… to ask in place" });
+    check((await evaluate(`${UND_COMMANDS("host.heavyRemove")}.length`)) === 0, `${ctx}: the first press of Remove… sent the command`);
+    await evaluate(`document.querySelector('.dlg section[aria-label="Learned commands"] .cfmb .btn.danger').click()`);
+    await waitFor(`!document.querySelector('.dlg section[aria-label="Learned commands"]')`, { what: "Remove to take a pattern out" });
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }
@@ -2687,19 +2721,19 @@ for (const dark of [false, true]) section(`V0.164 phone${dark ? " dark" : ""}`, 
     check(pp.btns === 0 && !pp.wide && pp.head === "Paused by Fyr: memory is short on laptop (6 % free).", `${ctx}: the paused strip (${JSON.stringify(pp)})`);
     await shot(`undeclared-thread-strip-paused-${tag}-phone.png`);
     // Settings: every button and field of the new groups is 44 px high; nothing is wider than the screen.
-    await openScreen({ url: "?mock=rail&undeclared=2&settings=automation", ready: "!!document.querySelector('.set.phone section[aria-label=\"Undeclared now\"]')" }, W, 844);
-    const g = await evaluate(`(() => { const labels = ['Undeclared now', 'Learned heavy jobs', 'Services', 'When a thread counts as heavy'];
+    await openScreen({ url: "?mock=rail&undeclared=2&settings=hosts/desk/load", ready: "!!document.querySelector('.set.phone section[aria-label=\"Heavy work Fyr did not expect\"]')" }, W, 844);
+    const g = await evaluate(`(() => { const labels = ['Heavy work Fyr did not expect', 'Learned commands', 'Service commands', 'What counts as heavy'];
       const secs = labels.map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
       const ctl = secs.flatMap((s) => s ? [...s.querySelectorAll('button, input, select')] : []).filter((e) => e.getBoundingClientRect().height > 0);
       return { have: secs.map((s) => !!s), n: ctl.length, minH: Math.min(...ctl.map((e) => e.getBoundingClientRect().height)), small: ctl.filter((e) => e.getBoundingClientRect().height < 44).map((e) => e.getAttribute('aria-label') || e.textContent),
         off: secs.filter(Boolean).flatMap((s) => [...s.querySelectorAll('*')]).filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.right > innerWidth + 0.5 || b.left < -0.5); }).map((e) => e.className || e.tagName),
         wide: document.documentElement.scrollWidth > innerWidth }; })()`);
     check(g.have.every(Boolean) && g.minH >= 44 && g.off.length === 0 && !g.wide, `${ctx}: Settings' new groups on the phone (${JSON.stringify(g)})`);
-    await evaluate(`document.querySelector('.set.phone section[aria-label="Undeclared now"]').scrollIntoView({ block: 'start' })`);
+    await evaluate(`document.querySelector('.set.phone section[aria-label="Heavy work Fyr did not expect"]').scrollIntoView({ block: 'start' })`);
     await shot(`undeclared-settings-${tag}-phone.png`);
-    await evaluate(`document.querySelector('.set.phone section[aria-label="Learned heavy jobs"]').scrollIntoView({ block: 'start' })`);
+    await evaluate(`document.querySelector('.set.phone section[aria-label="Learned commands"]').scrollIntoView({ block: 'start' })`);
     await shot(`undeclared-settings-learned-${tag}-phone.png`);
-    await evaluate(`document.querySelector('.set.phone section[aria-label="When a thread counts as heavy"]').scrollIntoView({ block: 'start' })`);
+    await evaluate(`document.querySelector('.set.phone section[aria-label="What counts as heavy"]').scrollIntoView({ block: 'start' })`);
     await shot(`undeclared-settings-thresholds-${tag}-phone.png`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
@@ -2807,7 +2841,7 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
 });
 
 // SPEC V0.176: leftover processes. ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a
-// port-forward under timeout, Babysit PR #4170 a dev server its agent kept, a test binary is in no thread's cgroup, and two
+// port-forward under timeout, Babysit PR #4170 a dev server its agent kept, a test binary belongs to no thread, and two
 // settled threads' worktrees are listed. Desktop at 1280 × 800, light and dark: the rail shows "5 left" under the host's
 // meters (the rail does not scroll at 1000 px) and a press opens Settings → Automation at "Leftover processes"; the open
 // thread has one strip under the header with Keep and End; End sends host.leftoverEnd for each and the strip goes.
@@ -2828,23 +2862,23 @@ for (const dark of [false, true]) section(`V0.176 desktop${dark ? " dark" : ""}`
     await waitFor(`!!document.querySelector('.lcpop')`, { what: "the leftovers card" });
     const lc = await evaluate(`(() => { const p = document.querySelector('.lcpop'), b = p.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
       return { text: p.innerText, rows: [...p.querySelectorAll('.lclist li')].map((x) => x.textContent), beside: b.left >= rail.right, inside: b.bottom <= innerHeight && b.top >= 0 }; })()`);
-    check(/^Still running after their thread/.test(lc.text) && /5 processes that threads started and left behind, 2\.2 GB in all\./.test(lc.text) && /^chromium/.test(lc.rows[0]) && lc.rows[0].includes("1.9 GB") && lc.rows.length === 5 && /End or keep them in Settings → Automation\./.test(lc.text) && lc.beside && lc.inside, `${ctx}: the leftovers card is wrong (${JSON.stringify(lc)})`);
+    check(/^Still running after their thread/.test(lc.text) && /5 processes that threads started and left behind, 2\.2 GB in all\./.test(lc.text) && /^chromium/.test(lc.rows[0]) && lc.rows[0].includes("1.9 GB") && lc.rows.length === 5 && /End or keep them in Settings → Hosts( → [^.]+)?\./.test(lc.text) && lc.beside && lc.inside, `${ctx}: the leftovers card is wrong (${JSON.stringify(lc)})`);
     await shot(`leftovers-rail-${tag}-desktop.png`);
     await evaluate(`document.querySelector('.rail .rlft').dispatchEvent(new MouseEvent('mouseleave'))`);
     await evaluate(`document.querySelector('.rail .rlft').click()`);
     await waitFor(`!!document.querySelector('.dlg section[aria-label="Leftover processes"]')`, { what: "Settings at the leftovers" });
-    await evaluate(unfold("Worktrees nobody works in"));
+    await evaluate(unfold("Unused worktrees"));
     await settle();
-    const st = await evaluate(`(() => { const d = document.querySelector('.dlg'), sec = d.querySelector('section[aria-label="Leftover processes"]'), wt = d.querySelector('section[aria-label="Worktrees nobody works in"]');
+    const st = await evaluate(`(() => { const d = document.querySelector('.dlg'), sec = d.querySelector('section[aria-label="Leftover processes"]'), wt = d.querySelector('section[aria-label="Unused worktrees"]');
       const r = sec.getBoundingClientRect(), dr = d.querySelector('.stp').getBoundingClientRect();
       return { rows: [...sec.querySelectorAll('.sr')].map((e) => e.innerText.replace(/\\s+/g, ' ').trim()), visible: r.top >= dr.top - 1 && r.top <= dr.bottom,
         wt: [...wt.querySelectorAll('.sr')].map((e) => [e.querySelector('.sr-d').textContent, e.querySelectorAll('button').length]) }; })()`);
-    check(st.rows.length === 5 && /^chromium · 9 processes · 1\.9 GB Map perf · acme\/web · ends in \d+ min ?Open ?Keep ?End$/.test(st.rows[0]) && st.visible, `${ctx}: Settings' leftovers are wrong (${JSON.stringify(st)})`);
-    check(st.rows.some((x) => /^vite · 3 processes · 180 MB .* kept for \d+ h by the agent: the dev server the owner asked for ?Open ?End$/.test(x)) && st.rows.some((x) => /^engine\.test · 8 MB in no thread's cgroup · ends in 1 min ?Keep ?End$/.test(x)), `${ctx}: a kept or an orphan row is wrong (${JSON.stringify(st.rows)})`);
+    check(st.rows.length === 5 && /^chromium · 9 processes · 1\.9 GB Map perf · acme\/web · ends in \d+ min ?Open ?Keep ?End…$/.test(st.rows[0]) && st.visible, `${ctx}: Settings' leftovers are wrong (${JSON.stringify(st)})`);
+    check(st.rows.some((x) => /^vite · 3 processes · 180 MB .* kept for \d+ h by the agent: the dev server the owner asked for ?Open ?End…$/.test(x)) && st.rows.some((x) => /^engine\.test · 8 MB of no thread · ends in 1 min ?Keep ?End…$/.test(x)), `${ctx}: a kept or an orphan row is wrong (${JSON.stringify(st.rows)})`);
     check(st.wt.length === 2 && st.wt[0][1] === 1 && st.wt[1][1] === 0 && /pushed and clean · Fyr removes it in \d+ h$/.test(st.wt[0][0]) && /kept: 2 commits not pushed$/.test(st.wt[1][0]), `${ctx}: the worktrees are wrong (${JSON.stringify(st.wt)})`);
     await shot(`leftovers-settings-${tag}-desktop.png`);
-    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Worktrees nobody works in"] .btn')].find((b) => b.textContent === 'Remove').click()`);
-    await waitFor(`document.querySelectorAll('.dlg section[aria-label="Worktrees nobody works in"] .sr').length === 1`, { what: "Remove to take the worktree out" });
+    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Unused worktrees"] .btn')].find((b) => b.textContent === 'Remove').click()`);
+    await waitFor(`document.querySelectorAll('.dlg section[aria-label="Unused worktrees"] .sr').length === 1`, { what: "Remove to take the worktree out" });
     // The thread's strip.
     await navigate(`${origin}/?mock=rail&leftovers=1&open=t_mapperf`, "!!document.querySelector('.th .lftb')");
     await settle();
@@ -2895,8 +2929,8 @@ for (const dark of [false, true]) section(`V0.176 phone${dark ? " dark" : ""}`, 
     await evaluate(`history.back()`);
     await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
     // Settings: 44 px controls, nothing past the screen's edge.
-    await openScreen({ url: "?mock=rail&leftovers=1&settings=automation", ready: "!!document.querySelector('.set.phone section[aria-label=\"Leftover processes\"]')" }, W, 844);
-    const g = await evaluate(`(() => { const secs = ['Leftover processes', 'Worktrees nobody works in'].map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
+    await openScreen({ url: "?mock=rail&leftovers=1&settings=automation/leftovers" /* the link from before V0.settings-ia still lands on the host's page */, ready: "!!document.querySelector('.set.phone section[aria-label=\"Leftover processes\"]')" }, W, 844);
+    const g = await evaluate(`(() => { const secs = ['Leftover processes', 'Unused worktrees'].map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
       const ctl = secs.flatMap((s) => s ? [...s.querySelectorAll('button')] : []).filter((e) => e.getBoundingClientRect().height > 0);
       return { have: secs.map((s) => !!s), n: ctl.length, minH: Math.min(...ctl.map((e) => e.getBoundingClientRect().height)),
         off: secs.filter(Boolean).flatMap((s) => [...s.querySelectorAll('*')]).filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.right > innerWidth + 0.5 || b.left < -0.5); }).map((e) => e.className || e.tagName),
@@ -3126,7 +3160,9 @@ for (const [label, w, ht] of [
     await open(phone ? "" : "projects", ready);
     const n = await evaluate(NAV);
     const hosts = n.find((x) => x.t === "Hosts"), projects = n.find((x) => x.t === "Projects");
-    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Usage|Devices|This device|Setup", `${ctx}: the nav ${JSON.stringify(n)}`);
+    check(n.map((x) => x.t).join("|") === "This device|Sign-in|Providers|Projects|Automation|Hosts|Usage|Setup", `${ctx}: the nav ${JSON.stringify(n)}`);
+    // V0.settings-ia: the one count: lab's changed id. The release host-b holds back is not counted while host-b is
+    // offline (no press reaches it); its row says so in a grey chip.
     check(hosts?.s === "4 hosts · 1 needs you" && hosts?.badge === "1", `${ctx}: the Hosts nav row ${JSON.stringify(hosts)}`);
     check(/^\d+ projects$/.test(projects?.s ?? ""), `${ctx}: the Projects summary still counts hosts ${JSON.stringify(projects)}`);
     if (!phone) {
@@ -3141,18 +3177,22 @@ for (const [label, w, ht] of [
   // 2. The Hosts page.
   await step("list", async () => {
     await open("hosts", `document.querySelectorAll('${root} .sr.host').length === 4`);
-    const rows = await evaluate(`[...document.querySelectorAll('${root} .sr.host')].map(r => ({ tag: r.tagName, name: r.dataset.host, id: r.dataset.id ?? '', line: r.querySelector('.sr-d')?.textContent ?? '', bad: r.classList.contains('bad'), badge: r.querySelector('.pst')?.textContent ?? '', btns: r.querySelectorAll('button').length, dot: r.querySelector('.hmark')?.className ?? '', h: r.getBoundingClientRect().height, self: r.querySelector('.tag')?.textContent ?? '' }))`);
+    const rows = await evaluate(`[...document.querySelectorAll('${root} .sr.host')].map(r => ({ tag: r.tagName, name: r.dataset.host, id: r.dataset.id ?? '', line: r.querySelector('.sr-d')?.textContent ?? '', bad: r.classList.contains('bad'), badge: r.querySelector('.pst')?.textContent ?? '', amber: r.querySelector('.pst.needs-login')?.textContent ?? '', btns: r.querySelectorAll('button').length, dot: r.querySelector('.hmark')?.className ?? '', h: r.getBoundingClientRect().height, self: r.querySelector('.tag')?.textContent ?? '' }))`);
     const by = Object.fromEntries(rows.map((r) => [r.name, r]));
     check(rows.map((r) => r.name).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the order ${JSON.stringify(rows.map((r) => r.name))}`);
     check(rows.every((r) => r.tag === "BUTTON" && r.btns === 0), `${ctx}: a row is not one button or holds a button ${JSON.stringify(rows)}`);
-    check(/^online since \d\d:\d\d · up to date · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
-    check(/^offline since \d\d:\d\d · 3 commits behind · holds back c705ef5 · tailnet · id M3RS$/.test(by["host-b"]?.line) && by["host-b"]?.bad /* V0.host-updates: it holds a release back */ && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
-    check(/ · LAN · needs an update$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
-    check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /^hmark/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`); // V0.170: the mark; the line and the pill say the id changed
+    check(/^online since \d\d:\d\d · up to date · this host · id F7QK$/.test(by.desk?.line) && by.desk?.self === "" && by.desk?.badge === "" && !by.desk?.bad && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
+    check(/^offline since \d\d:\d\d · 3 commits behind · holds back c705ef5 · tailnet · id M3RS$/.test(by["host-b"]?.line) && !by["host-b"]?.bad && by["host-b"]?.badge === "Update held back · offline" && by["host-b"]?.amber === "" /* V0.host-updates: it holds a release back; V0.settings-ia: offline, so it is state (grey), not a counted row (amber, red) */ && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
+    check(/ · LAN · needs an update$/.test(by["old-nuc"]?.line) && by["old-nuc"]?.badge === "Update needed" && by["old-nuc"]?.amber === "" && !by["old-nuc"]?.bad /* not counted: its update is a command on that machine */, `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
+    check(by.lab?.line === "Another host answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && by.lab?.amber === "Needs you" && /^hmark/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`); // V0.170: the mark; the line and the pill say the id changed
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
     const foot = await evaluate(`[...document.querySelectorAll('${root} section[aria-label="Hosts"] .sg-f')].map(e => e.textContent).join(' ')`); // V0.159: the installs panel has its own groups
     // V0.132 adds the order's sentence before it.
-    check(foot === "The first host is the default for New project, New thread and the folder picker. This order is kept on your hosts, so every device shows it. Your other installs join this list once they are paired; installs of your Tailscale login pair by themselves. A host that is not paired goes in fyrd's config (hosts).", `${ctx}: the foot "${foot}"`);
+    check(foot === "The first host is the default for New project, New thread and the folder picker. The order is kept on your hosts, so every device shows it.", `${ctx}: the foot "${foot}"`);
+    // V0.settings-ia: the one visible way to add a host, and under the list one Add a host group with both ways, then
+    // the two status groups, folded.
+    const add = await evaluate(`({ btn: [...document.querySelectorAll('${root} .btn.addh')].map((b) => b.textContent.trim()).join('|'), groups: [...document.querySelectorAll('${root} .peers section.sg')].map((g) => g.getAttribute('aria-label')).join('|'), acts: [...document.querySelectorAll('${root} .peers .pinvite .btn, ${root} .peers .pjoin .btn')].map((b) => b.textContent.trim()).join('|') })`);
+    check(add.btn === "Add a host" && add.groups === "Add a host|Found, not paired|Pairing" && add.acts === "Create invite|Join", `${ctx}: adding a host ${JSON.stringify(add)}`);
     await shot(`hosts-${label}.png`);
     if (!phone) {
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
@@ -3171,9 +3211,9 @@ for (const [label, w, ht] of [
   // 3. lab's page: the changed id and Trust.
   await step("changed", async () => {
     await open("hosts/lab", `!!document.querySelector('${root} .note.bad')`);
-    const pg = await evaluate(`(() => { const ids = [...document.querySelectorAll('${root} .idf')].map(e => e.getAttribute('aria-label')); const b = [...document.querySelectorAll('${root} .btn')].find(x => x.textContent.trim() === 'Trust B7LA'); const r = b?.getBoundingClientRect();
+    const pg = await evaluate(`(() => { const ids = [...document.querySelectorAll('${root} .idf')].map(e => e.getAttribute('aria-label')); const b = [...document.querySelectorAll('${root} .btn')].find(x => x.textContent.trim() === 'Trust B7LA…'); const r = b?.getBoundingClientRect();
       return { note: document.querySelector('${root} .note.bad')?.textContent ?? '', ids, trust: r ? { l: r.left, r: r.right, t: r.top, b: r.bottom, h: r.height } : null, vw: innerWidth, vh: innerHeight, pill: document.querySelector('${root} .stp .pst')?.textContent ?? '', titles: [...document.querySelectorAll('${root} .sr .sr-t')].map(e => e.textContent) }; })()`);
-    check(pg.note.startsWith("Another install answers as lab.") && pg.ids.includes("id AX2C-7RTM-8PLQ-6VYD") && pg.ids.includes("id B7LA-4QZE-9KDF-3HXW") && pg.pill === "Needs you", `${ctx}: lab's page ${JSON.stringify(pg)}`);
+    check(pg.note.startsWith("Another host answers as lab.") && pg.ids.includes("id AX2C-7RTM-8PLQ-6VYD") && pg.ids.includes("id B7LA-4QZE-9KDF-3HXW") && pg.pill === "Needs you", `${ctx}: lab's page ${JSON.stringify(pg)}`);
     check(!pg.titles.includes("Trust"), `${ctx}: the ordinary Trust row shows beside a changed id ${JSON.stringify(pg.titles)}`);
     check(!!pg.trust && pg.trust.l >= 0 && pg.trust.r <= pg.vw && pg.trust.b <= pg.vh, `${ctx}: Trust B7LA outside the screen ${JSON.stringify(pg)}`);
     if (phone) check((pg.trust?.h ?? 0) >= 44, `${ctx}: Trust is ${pg.trust?.h} px high`);
@@ -3184,8 +3224,15 @@ for (const [label, w, ht] of [
       await shot(`host-changed-${label}-dark.png`);
       await send("Emulation.setEmulatedMedia", { features: [] });
     }
-    await evaluate(`[...document.querySelectorAll('${root} .btn')].find(x => x.textContent.trim() === 'Trust B7LA')?.click()`);
+    // V0.settings-ia: Trust is a security decision with no way back on the page: the first press only asks.
+    await evaluate(`[...document.querySelectorAll('${root} .btn')].find(x => x.textContent.trim() === 'Trust B7LA…')?.click()`);
+    await waitFor(`!!document.querySelector('${root} .trust .cfmb .btn.danger')`, { soft: true });
+    const asked = await evaluate(`({ sent: ${COMMANDS("front.hostId")}.length, btns: [...document.querySelectorAll('${root} .trust .cfmb .btn')].map((b) => b.textContent.trim()).join('|'), focus: document.activeElement?.textContent?.trim() ?? '' })`);
+    check(asked.sent === 0 && asked.btns === "Trust B7LA|Cancel" && asked.focus === "Cancel", `${ctx}: Trust… does not ask in place ${JSON.stringify(asked)}`);
+    await evaluate(`document.querySelector('${root} .trust .cfmb .btn.danger')?.click()`);
     await waitFor(`!document.querySelector('${root} .note.bad')`, { soft: true });
+    await evaluate(unfold("About")); // V0.settings-ia: the ordinary id is in About, folded
+    await waitFor(`!!document.querySelector('${root} .idf')`, { soft: true });
     const after = await evaluate(`({ note: !!document.querySelector('${root} .note.bad'), id: [...document.querySelectorAll('${root} .idf')].map(e => e.getAttribute('aria-label')), cmds: ${COMMANDS("front.hostId")}.map(c => c.args.host) })`);
     check(!after.note && after.id.join() === "id B7LA-4QZE-9KDF-3HXW" && after.cmds.join() === "B7LA-4QZE-9KDF-3HXW" /* the host's id, not its name */, `${ctx}: after Trust ${JSON.stringify(after)}`);
     // The phone goes back up (a reload would forget the mock's trust): the list, then the nav.
@@ -3199,11 +3246,11 @@ for (const [label, w, ht] of [
     }
     const n = await evaluate(NAV);
     const hosts = n.find((x) => x.t === "Hosts");
-    check(hosts?.badge === "" && hosts?.s === "4 hosts · 1 offline", `${ctx}: the badge after Trust ${JSON.stringify(hosts)}`);
+    check(!hosts?.badge && hosts?.s === "4 hosts · 1 offline" /* host-b still holds a release back, but it is offline: nothing there can be pressed, so nothing is counted */, `${ctx}: the badge after Trust ${JSON.stringify(hosts)}`);
   });
   // 4. A plain host's page, and back to the list.
   await step("host", async () => {
-    await open("hosts/host-b", `!!document.querySelector('${root} .idf.big')`);
+    await open("hosts/host-b/about", `!!document.querySelector('${root} .idf.big')`); // V0.settings-ia: the id and the connection are in About, folded; the link opens it
     const pg = await evaluate(`({ id: document.querySelector('${root} .idf.big')?.getAttribute('aria-label'), copy: [...document.querySelectorAll('${root} .btn')].map(b => b.textContent.trim()), rows: [...document.querySelectorAll('${root} .sr')].map(r => [r.querySelector('.sr-t')?.textContent ?? '', r.querySelector('.sr-d')?.textContent ?? '']), pill: document.querySelector('${root} .stp .pst')?.textContent ?? '' })`);
     const row = (t) => pg.rows.find((r) => r[0] === t);
     check(pg.id === "id M3RS-QX7P-5LKA-2WNE" && pg.pill === "Offline", `${ctx}: host-b's id ${JSON.stringify(pg)}`);
@@ -3230,17 +3277,18 @@ for (const [label, w, ht] of [
       check(await evaluate(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts'`), `${ctx}: the crumb does not go back to Hosts`);
     } else {
       await open("hosts", `document.querySelectorAll('.m-settings .sr.host').length === 4`);
-      await tapCenter(".m-settings .sr.host[data-host=host-b]", `!!document.querySelector('.m-settings .idf.big')`);
+      await tapCenter(".m-settings .sr.host[data-host=host-b]", `document.querySelector('.m-settings .stp')?.dataset.page === 'hosts/host-b'`);
       await evaluate(`history.back()`);
       await waitFor(`document.querySelectorAll('.m-settings .sr.host').length === 4`, { soft: true });
       check(await evaluate(`document.querySelectorAll('.m-settings .sr.host').length === 4`), `${ctx}: Back does not return to the Hosts page`);
     }
   });
-  // 5. This device.
+  // 5. Sign-in says how this device gets in (V0.settings-ia), as its last group: what waits for the owner is first.
   await step("device", async () => {
-    await open("device", `!!document.querySelector('${root} .sr.howin')`);
-    const d = await evaluate(`({ t: document.querySelector('${root} .sr.howin .sr-t')?.textContent, d: document.querySelector('${root} .sr.howin .sr-d')?.textContent, before: document.querySelector('${root} .sr.howin')?.previousElementSibling?.querySelector('.sr-t')?.textContent })`);
-    check(d.t === "How this browser gets in" && /^On this machine itself \(localhost\)\.|^At .+, as owner\./.test(d.d ?? "") && d.before === "Show tool details", `${ctx}: This device ${JSON.stringify(d)}`);
+    await open("devices", `!!document.querySelector('${root} .sr.howin')`);
+    await waitFor(`!!document.querySelector('${root} section[aria-label="Devices"]')`, { soft: true });
+    const d = await evaluate(`({ t: document.querySelector('${root} .sr.howin .sr-t')?.textContent, d: document.querySelector('${root} .sr.howin .sr-d')?.textContent, groups: [...document.querySelectorAll('${root} .stp section.sg')].map((g) => g.getAttribute('aria-label')).join('|') })`);
+    check(d.t === undefined /* the group's title says it; "This device" is the nav page of what is kept here */ && /^This device is the host itself \(localhost\)|^At .+, as owner\./.test(d.d ?? "") && d.groups === "Waiting|Devices|Add a device|Allow by code|Require sign-in|How this device gets in", `${ctx}: Sign-in ${JSON.stringify(d)}`);
     await shot(`device-${label}.png`);
     if (!phone) {
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
@@ -3282,7 +3330,7 @@ for (const [label, w, ht] of [
   const pickHost = (name) =>
     evaluate(`(() => { const b = [...document.querySelectorAll('${root} .htabs .htab')].find((x) => x.dataset.host === ${JSON.stringify(name)}); b?.click(); return !!b; })()`);
   const waitHost = (name, ready) => waitFor(`document.querySelector('${root} .hpart[data-host=${JSON.stringify(name)}]') && (${ready})`);
-  const PART = `(() => { const p = document.querySelector('${root} .hpart'); return p && { host: p.dataset.host, line: p.querySelector('.hpart-s')?.textContent ?? '', note: p.querySelector('.hnote')?.textContent ?? '', rows: [...p.querySelectorAll('.prow .sr-t')].map(e => e.textContent), add: p.querySelector('.addp')?.disabled ?? null, selects: [...p.querySelectorAll('select')].map(x => x.disabled) }; })()`;
+  const PART = `(() => { const p = document.querySelector('${root} .hpart'); return p && { host: p.dataset.host, line: p.querySelector('.hpart-s')?.textContent ?? '', note: p.querySelector('.hnote')?.textContent ?? '', rows: [...p.querySelectorAll('.prow .sr-t')].map(e => e.textContent), add: document.querySelector('${root} .addp')?.disabled ?? null /* V0.settings-ia: Add provider is in the page's title line and adds on the host whose tab is open */, selects: [...p.querySelectorAll('select')].map(x => x.disabled) }; })()`;
   // 1. The Providers page: a tab per host, and each host's panel behind its tab.
   await step("providers", async () => {
     await open("providers", `document.querySelectorAll('${root} .htabs .htab').length === 4 && document.querySelectorAll('${root} .hpart').length === 1`);
@@ -3304,18 +3352,18 @@ for (const [label, w, ht] of [
     await waitHost("old-nuc", "true");
     await settle();
     const nuc = await evaluate(PART);
-    check(nuc?.line === "Needs an update" && /^old-nuc runs a Fyr from before install ids, so its settings cannot be read or changed from here\./.test(nuc.note) && nuc.rows.length === 0 && nuc.add === null, `${ctx}: the host with no id ${JSON.stringify(nuc)}`);
+    check(nuc?.line === "Needs an update" && /^old-nuc runs a Fyr too old to have an id, so its settings cannot be read or changed from here\./.test(nuc.note) && nuc.rows.length === 0 && nuc.add === true /* disabled: nothing can be added on a host that cannot be read */, `${ctx}: the host with no id ${JSON.stringify(nuc)}`);
     await pickHost("host-b");
     await waitHost("host-b", "true");
     await settle();
     const off = await evaluate(PART);
     check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^host-b is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
     // The old Host picker is gone: the one panel shows that host's own System agents.
-    const sa = await evaluate(`document.querySelectorAll('${root} section[aria-label="System agents"]').length`);
+    const sa = await evaluate(`document.querySelectorAll('${root} section.sacalls').length`);
     check(sa <= 1 && !(await evaluate(`!!document.querySelector('${root} select[aria-label="Host"]')`)), `${ctx}: System agents in the panel (${sa})`);
     if (!phone) {
       const nav = await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers] .stn-s')?.textContent`);
-      check(nav === "6 · 1 needs a login", `${ctx}: the Providers line counts every host "${nav}"`);
+      check(nav === "6 providers · 1 needs a login", `${ctx}: the Providers line counts every host "${nav}"`);
     }
     if (phone) {
       const small = await evaluate(`[...document.querySelectorAll('.m-settings .hpart button:not(:disabled), .m-settings .hpart select:not(:disabled), .m-settings .htabs .htab')].map(b => b.getBoundingClientRect()).filter(r => r.height > 0 && r.height < 44).length`);
@@ -3355,7 +3403,9 @@ for (const [label, w, ht] of [
   await step("commands", async () => {
     await open("providers", `document.querySelectorAll('${root} .htabs .htab').length === 4 && !!document.querySelector('${root} .hpart')`);
     await pickHost("lab");
-    await waitHost("lab", `!!document.querySelector('${root} .hpart[data-host="lab"] select[aria-label="Thread titles"]')`);
+    await waitHost("lab", `!!document.querySelector('${root} .hpart[data-host="lab"] section.sajobs')`);
+    await evaluate(unfold("Per job")); // V0.settings-ia: the per-job rows are folded while every job follows the default
+    await waitFor(`!!document.querySelector('${root} .hpart[data-host="lab"] select[aria-label="Thread titles"]')`);
     await settle();
     await evaluate(`(() => { const s = document.querySelector('${root} .hpart[data-host="lab"] select[aria-label="Thread titles"]'); s.value = s.options[1].value; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     await waitFor(`${COMMANDS("host.systemAgents")}.length === 1`, { soft: true });
@@ -3695,7 +3745,7 @@ for (const [label, w, ht] of [
   await step("offline project", async () => {
     const ed = phone ? ".m-app" : ".dlg";
     await open(phone ? "?mock=rail&hosts=2&project=p_srv" : "?mock=rail&hosts=2&dialog=settings&page=projects/p_srv", `!!document.querySelector('${ed} .hostrow')`);
-    const s = await evaluate(`({ line: document.querySelector('${ed} .hostrow')?.textContent ?? '', name: document.querySelector('${ed} .pname input')?.disabled ?? document.querySelector('${ed} .pname input')?.readOnly, change: [...document.querySelectorAll('${ed} .pedit button')].find(b => b.textContent.trim().startsWith('Change'))?.disabled })`);
+    const s = await evaluate(`({ line: [...document.querySelectorAll('${ed} .hostrow')].map((e) => e.textContent).join(' '), name: document.querySelector('${ed} .pname input')?.disabled ?? document.querySelector('${ed} .pname input')?.readOnly, change: [...document.querySelectorAll('${ed} .pedit button')].find(b => b.textContent.trim().startsWith('Change'))?.disabled })`);
     check(/host-b.*offline since \d\d:\d\d/.test(s.line) && /cannot be changed until it is back/.test(s.line) && s.name === true && s.change === true, `${ctx}: an offline host's project ${JSON.stringify(s)}`);
     await shot(`hostaware-offline-${label}.png`);
   });
@@ -5757,7 +5807,13 @@ try {
   const before = await evaluate(INBOX);
   check(before.hostRow && before.projects.includes("acme/ops"), `${ctx}: the start (${JSON.stringify(before)})`);
   // 1. The host's switch in Settings.
-  await go(SETTINGS, `!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`);
+  // V0.settings-ia: the list is a folded overview while everything shows ("Everything shows"); the owner opens it.
+  // (It opens by itself while something is hidden, and the device remembers the press.)
+  await go(SETTINGS, `!!document.querySelector('section[aria-label="Shown on this device"] .sg-fb')`, { "fyr.settingsFold": null });
+  const fold = await evaluate(`({ shut: document.querySelector('section[aria-label="Shown on this device"] .sg-fb')?.getAttribute('aria-expanded'), sum: document.querySelector('section[aria-label="Shown on this device"] .sg-sum')?.textContent ?? '' })`);
+  check(fold.shut === "false" && fold.sum === "Everything shows", `${ctx}: the list of what this device shows is not folded with its state (${JSON.stringify(fold)})`);
+  await evaluate(unfold("Shown on this device"));
+  await waitFor(`!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`);
   await evaluate(`document.querySelector(${JSON.stringify(sw("Show host host-b"))}).click()`);
   await waitFor(`!!localStorage.getItem('fyr.hidden')`, { soft: true });
   await settle();
@@ -5777,7 +5833,7 @@ try {
   check(!gone.hostRow && !gone.projects.includes("acme/ops") && !!gone.stored, `${ctx}: a hidden host still shows (${JSON.stringify(gone)})`);
   // 3. A hidden project: gone from the row, the others stay.
   const pick = before.projects.find((n) => n !== "acme/ops");
-  await go(SETTINGS, `!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`, { "fyr.hidden": null });
+  await go(SETTINGS, `!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`, { "fyr.hidden": null, "fyr.settingsFold": JSON.stringify({ "device:shown": true }) });
   await evaluate(`document.querySelector(${JSON.stringify(sw(`Show project ${pick}`))}).click()`);
   await waitFor(`!!localStorage.getItem('fyr.hidden')`, { soft: true });
   await go("?mock=rail&hosts=2", LIST);
@@ -5912,7 +5968,12 @@ try {
   await shot(`host-mark-rows-${phone ? "phone" : "desktop"}.png`);
   // V0.208: what an agent set shows "Set by agent" on that field until the owner changes it; a run starts from the page.
   const byAgent = encodeURIComponent(JSON.stringify({ [ID]: { icon: "cloud", color: "rose", by: { icon: "agent", color: "agent" } } }));
-  await go(`${page("host-b")}&hostMarks=${byAgent}`, "!!document.querySelector('.hmprev .hmark')");
+  // V0.settings-ia: a mark that is set folds its group; the header shows the mark and who set it, and the owner opens it.
+  await go(`${page("host-b")}&hostMarks=${byAgent}`, `!!document.querySelector('section[aria-label="Mark"] .sg-fb')`);
+  const folded = await evaluate(`({ shut: document.querySelector('section[aria-label="Mark"] .sg-fb')?.getAttribute('aria-expanded'), sum: document.querySelector('section[aria-label="Mark"] .sg-sum')?.textContent.trim() ?? '', mark: !!document.querySelector('section[aria-label="Mark"] .sg-sum .hmark') })`);
+  check(folded.shut === "false" && folded.sum === "Set by an agent" && folded.mark, `${ctx}: a set mark's group is not folded with the mark and who set it (${JSON.stringify(folded)})`);
+  await evaluate(unfold("Mark"));
+  await waitFor("!!document.querySelector('.hmprev .hmark')");
   const TAGS = `[...document.querySelectorAll('.setby')].map((e) => e.parentElement.textContent)`;
   const d = await evaluate(PREV);
   check(d?.glyph === "cloud" && d.desc === "Set by an agent." && JSON.stringify(await evaluate(TAGS)) === JSON.stringify(["IconSet by agent", "ColourSet by agent"]), `${ctx}: the agent's mark (${JSON.stringify({ d, tags: await evaluate(TAGS) })})`);
@@ -5931,7 +5992,7 @@ try {
   if (phone) check(await evaluate(`document.querySelector('.psetup .btn').getBoundingClientRect().height >= 44`), `${ctx}: the setup button under 44 px on the phone`);
   // 4. old-nuc has no install id.
   await go(page("old-nuc"), "!!document.querySelector('.hmprev, .sr .hmark')");
-  const n = await evaluate(`({ grid: !!document.querySelector('.hmicon'), text: [...document.querySelectorAll('.sr-d')].map((e) => e.textContent).find((t) => t.includes('no install id')) ?? '' })`);
+  const n = await evaluate(`({ grid: !!document.querySelector('.hmicon'), text: [...document.querySelectorAll('.sr-d')].map((e) => e.textContent).find((t) => t.includes('has no id') /* V0.settings-ia: "id", as the page calls it */) ?? '' })`);
   check(!n.grid && /cannot be set until its next update/.test(n.text), `${ctx}: a host without an id (${JSON.stringify(n)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
@@ -6203,9 +6264,9 @@ try {
   await go("?mock=rail", `!!document.querySelector('${L} [data-id]')`);
   const one = await evaluate(`({ conn: document.querySelector(${JSON.stringify(phone ? ".m-conn .ell" : ".rail .foot .hn")})?.textContent ?? null, marks: document.querySelectorAll('${L} [data-id] .hmark').length })`);
   check(one.conn === "Connected" && one.marks === 0, `${ctx}: one host (${JSON.stringify(one)})`);
-  await go(phone ? "?mock=rail&settings=device" : "?mock=rail&dialog=settings&page=device", "!!document.querySelector('.sr.front')");
+  await go(phone ? "?mock=rail&settings=devices" : "?mock=rail&dialog=settings&page=devices", "!!document.querySelector('.sr.front')"); // V0.settings-ia: on Sign-in
   const front = await evaluate(`document.querySelector('.sr.front')?.textContent ?? ''`);
-  check(/Connected through\s*desk/.test(front), `${ctx}: This device (${JSON.stringify(front)})`);
+  check(/Connected through\s*desk/.test(front), `${ctx}: Sign-in (${JSON.stringify(front)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }
@@ -6994,12 +7055,12 @@ for (const phone of [false, true]) section(`V0.load-invariants ${phone ? "phone"
     const sent = await evaluate(`${COMMANDS(action)}.map((c) => c.args.id)`);
     check(sent.join("|") === "thread-phantom-running", `${ctx}: ${label} sent ${JSON.stringify(sent)}`);
     check(after && after[0].head === "Load invariant broken: thaw-into-critical", `${ctx}: ${label} did not close the card (${JSON.stringify(after)})`);
-    // Settings → Automation lists each invariant, the load ones and the thread ones apart.
+    // Settings → Hosts → the host → Diagnostics lists each invariant, the load ones and the thread ones apart.
     const groups = `[...document.querySelectorAll('section[aria-label$=" invariants"]')].map((g) => g.getAttribute('aria-label'))`;
-    if (phone) await openScreen({ url: "?mock=rail&invariants=1&settings=automation", ready: `${groups}.length === 2` }, 390, 844);
-    else await navigate(`${origin}/?mock=rail&invariants=1&dialog=settings&page=automation`, `${groups}.length === 2`);
+    if (phone) await openScreen({ url: "?mock=rail&invariants=1&settings=hosts/desk/diagnostics", ready: `${groups}.length === 2` }, 390, 844);
+    else await navigate(`${origin}/?mock=rail&invariants=1&dialog=settings&page=hosts/desk/diagnostics`, `${groups}.length === 2`);
     const gs = await evaluate(groups);
-    check(gs.join("|") === "Load invariants|Thread invariants", `${ctx}: Settings → Automation lists ${JSON.stringify(gs)}`);
+    check(gs.join("|") === "Load invariants|Thread invariants", `${ctx}: the host's Diagnostics list ${JSON.stringify(gs)}`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }

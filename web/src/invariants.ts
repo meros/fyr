@@ -1,6 +1,6 @@
 // V0.load-invariants, V0.thread-invariants: the load guard's and thread state machine's invariants as words.
 // A violation is a card in Needs you (the evidence, Fix it, Dismiss) until the owner presses one;
-// Settings → Automation lists each invariant with its last violation and count.
+// Settings → Hosts → a host lists each invariant with its last violation and count.
 // Pure: invariants-ui.tsx prints them, on the desktop and the phone alike.
 import type { HostId } from "./hostid.ts";
 import type { InvariantCard, Invariants } from "./guard.ts";
@@ -56,7 +56,7 @@ export function linesLabel(c: InvariantCard): string {
   return `${n} guard ${n === 1 ? "line" : "lines"} from the 10 minutes before`;
 }
 
-/** Settings → Automation: one row per invariant, its sentence and when it last broke. */
+/** Settings → Hosts → a host: one row per invariant, its sentence and when it last broke. */
 export function invariantRows(h: HostLoad, now: number, kind?: "load" | "thread"): { id: string; kind: "load" | "thread"; text: string; desc: string; open: boolean }[] {
   const inv = invOf(h);
   if (!inv) return [];

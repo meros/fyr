@@ -2,10 +2,8 @@
 // Automation, Setup, Hosts, linked projects, the phone Host load sheet, and HostField pickers). Pure.
 
 import type { HostInfo } from "./hosts.ts";
-import type { HostLoad } from "./host-load.ts";
 import type { Quota } from "./quota.ts";
 import type { Project } from "./types.ts";
-import { githubState, type UpdatesView } from "./updates.ts";
 
 export interface HostTabItem {
   /** stable key for selection (host name, host install id, or project member id) */
@@ -40,17 +38,6 @@ export function stepTabIndex(len: number, cur: number, key: string): number | nu
   if (key === "Home") return 0;
   if (key === "End") return len - 1;
   return null;
-}
-
-/** Count of actionable items on one host's Automation tab: leftovers, undeclared heavy work, a held-back release, or a
- *  low GitHub API limit. Zero when nothing needs attention. */
-export function automationBadge(updates: UpdatesView | null | undefined, load: HostLoad | undefined): number {
-  let n = 0;
-  if (updates?.bad?.commit) n += 1;
-  if (updates?.github && githubState(updates.github).low) n += 1;
-  n += load?.leftovers?.length ?? 0;
-  n += load?.slots?.undeclared?.length ?? 0;
-  return n;
 }
 
 /** Order a linked project's members in the owner's host order (as `hosts` lists them), so tabs stay in the same order as

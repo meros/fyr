@@ -1,14 +1,13 @@
-// V0.host-tabs: unit tests for the shared tabbed host switcher helpers, Settings URL parsing with host on Automation,
-// linked project member ordering, per-host quota filtering, and Automation badge counts.
+// V0.host-tabs: unit tests for the shared tabbed host switcher helpers, Settings URL parsing of a host's section,
+// linked project member ordering and per-host quota filtering. (The host tabs' badges are settingsCounts: V0.settings-ia,
+// settings-nav.test.ts.)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeTabId, automationBadge, orderedMembers, quotasForHost, stepTabIndex } from "../src/host-tabs.ts";
+import { activeTabId, orderedMembers, quotasForHost, stepTabIndex } from "../src/host-tabs.ts";
 import { pageUrl, parsePage } from "../src/settings-nav.ts";
 import type { HostInfo } from "../src/hosts.ts";
-import type { HostLoad } from "../src/host-load.ts";
 import type { Quota } from "../src/quota.ts";
 import type { Project } from "../src/types.ts";
-import type { UpdatesView } from "../src/updates.ts";
 import { hid } from "./helpers.ts";
 
 test("activeTabId keeps the picked host while present and falls back to the first in order", () => {
@@ -28,16 +27,6 @@ test("stepTabIndex navigates horizontally with wrap-around and Home/End", () => 
   assert.equal(stepTabIndex(3, 1, "End"), 2);
   assert.equal(stepTabIndex(3, 1, "Enter"), null);
   assert.equal(stepTabIndex(1, 0, "ArrowRight"), null);
-});
-
-test("automationBadge counts actionable items per host", () => {
-  assert.equal(automationBadge(null, undefined), 0);
-  const badUpd = { current: "a", updates: [], bad: { commit: "1234567", why: "failed" } } as unknown as UpdatesView;
-  assert.equal(automationBadge(badUpd, undefined), 1);
-  const lowGh = { current: "a", updates: [], github: { rate: { limit: 5000, remaining: 100, reset: "2026-11-21T12:00:00Z", graphqlRemaining: 5000, at: "2026-11-21T11:00:00Z" }, since: "2026-11-21T11:00:00Z", uses: null, calls: 0 } } as unknown as UpdatesView;
-  assert.equal(automationBadge(lowGh, undefined), 1);
-  const busyLoad = { host: "lab", cores: 4, load: [1, 1, 1], threads: [], leftovers: [{ id: "1" }, { id: "2" }], slots: { undeclared: [{ thread: "t1" }] } } as unknown as HostLoad;
-  assert.equal(automationBadge(badUpd, busyLoad), 4);
 });
 
 test("orderedMembers keeps a linked project's host tabs in the owner's host order even when a host is offline", () => {
@@ -75,9 +64,10 @@ test("quotasForHost filters to one host when named and keeps unstamped quotas fr
   );
 });
 
-test("parsePage and pageUrl round-trip Automation deep-links that name a host", () => {
-  const r = { page: "automation" as const, host: "lab", sub: "leftovers" };
-  assert.equal(pageUrl(r), "automation/lab/leftovers");
+test("V0.settings-ia: parsePage and pageUrl round-trip a deep link to a section of a host's page; the Automation form still lands", () => {
+  const r = { page: "hosts" as const, sub: "lab", focus: "leftovers" };
+  assert.equal(pageUrl(r), "hosts/lab/leftovers");
+  assert.deepEqual(parsePage("hosts/lab/leftovers"), r);
   assert.deepEqual(parsePage("automation/lab/leftovers"), r);
-  assert.deepEqual(parsePage("automation/leftovers"), { page: "automation", sub: "leftovers" });
+  assert.deepEqual(parsePage("automation/leftovers"), { page: "hosts", focus: "leftovers" });
 });

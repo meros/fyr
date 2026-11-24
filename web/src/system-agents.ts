@@ -87,6 +87,17 @@ export function jobShowsModel(j: SystemJob): boolean {
   return !!j.override && j.choice.profile !== PROFILE_SYSTEM_DEFAULT;
 }
 
+/** V0.settings-ia: the jobs in one line, for the folded Per job group: "3 jobs · all on the default", "3 jobs · 1 with
+ *  its own", "3 jobs · 1 cannot run" (which opens the group: it is counted, and fixed on its row). */
+export function jobsSummary(v: Pick<SystemAgentsView, "jobs">): { text: string; bad: boolean } {
+  const n = v.jobs.length;
+  const head = `${n} ${n === 1 ? "job" : "jobs"}`;
+  const broken = v.jobs.filter((j) => j.error).length;
+  if (broken) return { text: `${head} · ${broken} cannot run`, bad: true };
+  const own = v.jobs.filter((j) => j.override).length;
+  return { text: `${head} · ${own ? `${own} with ${own === 1 ? "its" : "their"} own` : "all on the default"}`, bad: false };
+}
+
 /** What a job runs on now, or why it cannot run. */
 export function jobLine(v: SystemAgentsView, j: SystemJob): { text: string; error: boolean } {
   if (j.error) return { text: j.error, error: true };

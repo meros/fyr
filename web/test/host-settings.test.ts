@@ -81,13 +81,13 @@ test("V0.126 (4): a provider's page names its host in the URL, so two hosts' 'cl
 test("V0.126 (4): the Automation line over several hosts", () => {
   const fyr = { repo: "meros/fyr", on: true };
   const web = { repo: "acme/web", on: false };
-  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }]), "Deploys on · merges in 1 repo");
-  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }, { deploy: true, repos: [web] }]), "Deploys on · merges in 1 repo");
-  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }, { deploy: false, repos: [{ ...fyr }] }]), "Deploys on 1 of 2 hosts · merges in 2 repos");
-  assert.equal(automationSummaryHosts([{ deploy: false, repos: [] }, { deploy: false, repos: [web] }]), "Deploys off · merges off");
+  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }]), "Auto-update on · auto-merge in 1 repo");
+  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }, { deploy: true, repos: [web] }]), "Auto-update on · auto-merge in 1 repo");
+  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }, { deploy: false, repos: [{ ...fyr }] }]), "Auto-update on 1 of 2 hosts · auto-merge in 2 repos");
+  assert.equal(automationSummaryHosts([{ deploy: false, repos: [] }, { deploy: false, repos: [web] }]), "Auto-update off · auto-merge off");
   // A host not read yet leaves the line empty; an offline host never read is left out.
   assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }, { deploy: null, repos: null }]), "");
-  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }, { deploy: null, repos: null, skip: true }]), "Deploys on · merges in 1 repo");
+  assert.equal(automationSummaryHosts([{ deploy: true, repos: [fyr] }, { deploy: null, repos: null, skip: true }]), "Auto-update on · auto-merge in 1 repo");
 });
 
 test("V0.126 (4): a provider's quota is its host's; without a host the first host's, as before", () => {
@@ -109,6 +109,7 @@ test("V0.host-ids: a host with no install id is listed, needs an update, and say
   ]);
   assert.equal(nuc.noId, true);
   assert.equal(groupLine(nuc, now), "Needs an update");
-  assert.match(readOnlyNote(nuc, null, now), /^old-nuc runs a Fyr from before install ids/);
+  assert.match(readOnlyNote(nuc, null, now), /^old-nuc runs a Fyr too old to have an id, so/);
+  assert.match(readOnlyNote(nuc, null, now), /Update Fyr on old-nuc itself \(run its install script there again, or update its package\)/, "V0.settings-ia: the note says how, not only that it is needed");
   assert.equal(settingsHosts([{ name: "desk", online: true }])[0].noId, undefined, "one host is one part, as before");
 });

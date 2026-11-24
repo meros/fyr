@@ -218,7 +218,7 @@ export function guardLog(g: Guard | undefined, titleOf: (thread: string) => stri
   return rows.slice(0, limit);
 }
 
-/** V0.rerun-classes (Settings → Automation, desktop and phone): one row per class the owner marked rerunnable, with what
+/** V0.rerun-classes (Settings → Hosts → a host, desktop and phone): one row per class the owner marked rerunnable, with what
  *  the guard did to it in the last hour. */
 export function rerunRows(h: HostLoad, clock: (iso: string) => string): { class: string; line: string }[] {
   const kills = h.slots?.guard?.rerun ?? [];

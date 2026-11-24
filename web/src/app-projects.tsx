@@ -176,7 +176,7 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
     );
   // V0.132: the hosts a new project or thread can live on (HostField, NewProjectStep).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed once a minute (the minute of now), not on each tick of now
-  const hostsCtx = useMemo(() => ({ hosts: store.hostList, now }), [store.hostList, Math.floor(now / 60_000)]);
+  const hostsCtx = useMemo(() => ({ hosts: store.hostList, all: fullStore.hostList, now, offline: store.conn === "offline" }), [store.hostList, fullStore.hostList, Math.floor(now / 60_000), store.conn === "offline"]);
   const allHostsCtx = useMemo(() => ({ ...hostsCtx, hosts: fullStore.hostList }), [hostsCtx, fullStore.hostList]); // V0.207: Settings
   const folderPickView = folderPick
     ? phone ? (
