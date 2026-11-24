@@ -96,6 +96,11 @@ func ChangeNeedWith(t *Thread, c *Change, on func(repo string) bool) *Need {
 		}
 		return &Need{Cause: CauseFixing, Text: text, Head: changeHead(c), Muted: true}
 	}
+	if c.OpenPR() && c.PR.CIRunning() {
+		// V0.ci-failed-still-running: a red check with others still running
+		// is not settled; the thread waits (muted), it is not Stopped.
+		return &Need{Cause: CauseWaiting, Text: "Waiting for CI: " + why, Head: changeHead(c), Muted: true}
+	}
 	if !t.Stopped || c.ParkHolds() {
 		return nil // the agent may still pick it up; or the owner said Not now
 	}
@@ -165,7 +170,7 @@ func stopCheck(t *Thread) *time.Time {
 	failing := false
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if !c.IsDone() && c.blocks() != "" {
+		if !c.IsDone() && c.blocks() != "" && !(c.OpenPR() && c.PR.CIRunning()) {
 			failing = true
 			break
 		}

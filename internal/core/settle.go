@@ -66,7 +66,14 @@ func (c *Change) OpenPR() bool {
 // A PR never read waits on nothing: a repo with no CI, or one Fyr cannot
 // read, must not wait for ever (V0.one-predicate (1)).
 func (c *Change) PRWaitsOnCI() bool {
-	return c.OpenPR() && c.PR.Checks == ChecksPending && c.PR.CheckedAt != nil
+	return c.OpenPR() && c.PR.CIRunning() && c.PR.CheckedAt != nil
+}
+
+// CIRunning reports checks still going on the PR's head: pending, or failed
+// while others still run (V0.ci-failed-still-running). A red check does not
+// end the head's CI: a fix job, or a slower check, may still change it.
+func (p *PR) CIRunning() bool {
+	return p.Checks == ChecksPending || (p.Checks == ChecksFail && p.ChecksDone < p.ChecksTotal)
 }
 
 // settleWhenWorkDone fires the thread's Rules that read workDone (the
