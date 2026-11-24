@@ -305,6 +305,7 @@ func register(a *Action) {
 				}
 				if ef.Kind == EffectAnswered && ef.Asked != nil { // V0.ask-tool
 					answered(&res, *ef.Asked, ef.Answers, ef.Skipped)
+					stageAnswered(r.T, *ef.Asked, ef.Answers) // V0.playbook-moments
 					continue
 				}
 				if ef.Kind == EffectCancelled && ef.Asked != nil { // V0.ask-cancel

@@ -46,7 +46,7 @@ func TestProjectLearnTool(t *testing.T) {
 	if r := h.cmd(core.KindProjectLearn, "", core.Args{"id": pid, "slot": "verify", "how": "the owner checks on dev"}); !r.OK {
 		t.Fatalf("%+v", r)
 	}
-	if out, isErr := callAs(t, h.e, th, "project_learn", map[string]any{"slot": "verify", "how": "the agent checks"}); !isErr || !strings.Contains(out, "the owner wrote the verify entry") {
+	if out, isErr := callAs(t, h.e, th, "project_learn", map[string]any{"slot": "verify", "how": "the agent checks"}); isErr || !strings.Contains(out, "so it stands") {
 		t.Fatalf("the owner's entry was replaced: %q", out)
 	}
 	if out, isErr := callAs(t, h.e, th, "project_learn", map[string]any{"slot": "stage", "name": "prod", "how": "a release tag", "probe": "rel {sha}", "live": true, "ownerAsked": true}); !isErr {
@@ -175,5 +175,105 @@ func TestPlaybookRun(t *testing.T) {
 	}
 	if r := h.cmd(core.KindProjectPlaybookRun, "", core.Args{"id": newProject(t, h, core.Args{"name": "No folder"})}); r.OK {
 		t.Fatal("a project without a folder started a run")
+	}
+}
+
+// V0.playbook-moments: with no model asked, a change that reaches a stage
+// the owner checks puts its thread in Your move with a question; "Looks
+// good" brings the Run card of the next stage's deploy command; an agent's
+// finding on the owner's entry is a suggestion.
+func TestStageMomentsOnTheHost(t *testing.T) {
+	h, pid, th := playbookProject(t)
+	for _, a := range []core.Args{
+		{"slot": "stage", "name": "dev", "probe": "dev {sha}", "url": "https://dev.example.com", "ownerChecks": true},
+		{"slot": "stage", "name": "prod", "deployCmd": "release {sha}", "how": "a release, by hand"},
+		{"slot": "stage", "name": "dev", "allow": true},
+	} {
+		a["id"] = pid
+		if r := h.cmd(core.KindProjectLearn, "", a); !r.OK {
+			t.Fatalf("%+v", r)
+		}
+	}
+	if out, isErr := callAs(t, h.e, th, "project_learn", map[string]any{"slot": "stage", "name": "prod", "how": "automatic"}); isErr || !strings.Contains(out, "suggestion") {
+		t.Fatalf("%q", out)
+	}
+	if p := projectByID(h, pid); p.Stages()[1].Suggest == nil || p.Stages()[1].How != "a release, by hand" {
+		t.Fatalf("%+v", p.Playbook)
+	}
+	url := "https://github.com/acme/app/pull/9"
+	coretest.Patch(h.e, th, func(x *core.Thread, now time.Time) []core.Event {
+		core.PRObserved(x, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Head: "h1"}, now)
+		core.PRObserved(x, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "MERGED", Checks: "pass", MergeSHA: probeSHA, MergedAt: &now}, now)
+		return nil
+	})
+	h.e.RunProbe = func(context.Context, string, string) (int, error) { return 0, nil }
+	h.e.ProbeOnce(context.Background())
+	x, _ := h.e.Thread(th)
+	if len(x.Decisions) != 1 || core.PendingRequest(&x) != nil {
+		t.Fatalf("decisions %+v", x.Decisions)
+	}
+	if d := dtoOf(h.e, th); d.Attention.Section != core.NeedsYou {
+		t.Fatalf("section %s", d.Attention.Section)
+	}
+	q := x.Decisions[0].Questions[0].Question
+	if r := h.cmd("thread.answer", th, core.Args{"decisionId": x.Decisions[0].ID, "answers": map[string]any{q: core.StageLooksGood}}); !r.OK {
+		t.Fatalf("answer: %+v", r)
+	}
+	h.e.ProbeOnce(context.Background())
+	x, _ = h.e.Thread(th)
+	a := core.PendingRequest(&x)
+	if a == nil || a.Command != "release "+probeSHA || !strings.HasSuffix(a.Cwd, "acme") {
+		t.Fatalf("run card: %+v", a)
+	}
+	h.e.ProbeOnce(context.Background())
+	if x, _ := h.e.Thread(th); len(x.Decisions) != 0 || len(x.Offers) != 1 {
+		t.Fatalf("a moment opened twice: %d decisions, %d offers", len(x.Decisions), len(x.Offers))
+	}
+}
+
+// V0.playbook-moments: a merge whose watch ends with the probe never having
+// seen it counts on the stage; the next merge the probe sees clears it.
+func TestProbeMissCountsAndClears(t *testing.T) {
+	h, pid, th := playbookProject(t)
+	for _, a := range []core.Args{{"slot": "stage", "name": "dev", "probe": "dev {sha}"}, {"slot": "stage", "name": "dev", "allow": true}} {
+		a["id"] = pid
+		if r := h.cmd(core.KindProjectLearn, "", a); !r.OK {
+			t.Fatalf("%+v", r)
+		}
+	}
+	merge := func(n int, sha string) {
+		url := "https://github.com/acme/app/pull/" + string(rune('0'+n))
+		coretest.Patch(h.e, th, func(x *core.Thread, now time.Time) []core.Event {
+			core.PRObserved(x, core.PR{URL: url, Repo: "acme/app", Number: n, State: "OPEN", Checks: "pass", Head: "h1"}, now)
+			core.PRObserved(x, core.PR{URL: url, Repo: "acme/app", Number: n, State: "MERGED", Checks: "pass", MergeSHA: sha, MergedAt: &now}, now)
+			return nil
+		})
+	}
+	ok := false
+	h.e.RunProbe = func(context.Context, string, string) (int, error) {
+		if ok {
+			return 0, nil
+		}
+		return 1, nil
+	}
+	missed := func() int { p := projectByID(h, pid); return p.Stages()[0].Missed }
+	merge(1, probeSHA)
+	h.e.ProbeOnce(context.Background())
+	if missed() != 0 {
+		t.Fatal("a probe that has not succeeded yet is a miss")
+	}
+	h.e.Now = func() time.Time { return time.Now().Add(25 * time.Hour) }
+	h.e.ProbeOnce(context.Background())
+	for i := 0; i < 200 && missed() != 1; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if missed() != 1 {
+		t.Fatalf("missed %d", missed())
+	}
+	ok = true
+	merge(2, "fedcba9876543210fedcba9876543210fedcba98")
+	h.e.ProbeOnce(context.Background())
+	if missed() != 0 {
+		t.Fatalf("a merge the probe saw did not clear the count: %d", missed())
 	}
 }

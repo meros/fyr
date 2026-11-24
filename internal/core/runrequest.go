@@ -99,10 +99,15 @@ func reduceRunRequest(r Rec, in Input, now time.Time) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	return openRunRequest(r.T, a, now)
+}
+
+// openRunRequest puts a's Run card on the thread: the agent's run_request,
+// or Fyr's own for a stage's deploy command (V0.playbook-moments).
+func openRunRequest(t *Thread, a RunRequestArgs, now time.Time) (Result, error) {
 	if err := checkRequest(a); err != nil {
 		return Result{}, err
 	}
-	t := r.T
 	h, _ := HolderOf(t, OnThread)
 	// V0.run-cards-new-card: a request is always a new card. The agent's id names it, but one already taken (a card
 	// that stands, or one that ran) gets a number, so asking again never updates the card the owner already sees.

@@ -71,6 +71,10 @@ type Change struct {
 	// recorded before it is history and no longer blocks; one reported in
 	// the same call as the landing, or later, blocks.
 	LandedAt *time.Time `json:"landedAt,omitempty"`
+	// Staged are the stage moments Fyr already acted on for this change
+	// (V0.playbook-moments): "ask:<stage>" for the owner's check,
+	// "run:<stage>" for a deploy command's Run card. Each happens once.
+	Staged []string `json:"staged,omitempty"`
 	// Aliases are other keys that name this change: an agent's key for a
 	// code change it joined by repo and branch (V0.70 (2)).
 	Aliases []string `json:"aliases,omitempty"`

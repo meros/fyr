@@ -43,8 +43,9 @@ export function entryTitle(e: PlaybookEntry): string {
 }
 
 /** What Fyr does with a stage's probe, in the words under it. */
-export function probeLine(e: Pick<PlaybookEntry, "probe" | "probeOk">): string {
+export function probeLine(e: Pick<PlaybookEntry, "probe" | "probeOk" | "missed">): string {
   if (!e.probe) return "No probe: Fyr cannot tell when a change is here.";
+  if (e.probeOk && doubted(e)) return `In doubt: it did not see the last ${e.missed} merges here within a day. Check the command.`;
   return e.probeOk ? "Fyr runs this after each merge, until the stage holds the commit." : "Not run yet: it waits for your yes.";
 }
 
@@ -54,13 +55,51 @@ export function playbookSummary(p: Pick<Project, "playbook"> | undefined): strin
   if (!all.length) return "Nothing learned yet";
   const stages = all.filter((e) => e.slot === "stage");
   const waits = stages.filter((e) => e.probe && !e.probeOk).length;
+  const sug = all.filter((e) => e.suggest).length;
+  const doubt = stages.filter(doubted).length;
   const notes = all.length - stages.length;
   const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
-  return [waits ? `${n(waits, "probe")} ${waits === 1 ? "waits" : "wait"} for you` : "", stages.length ? n(stages.length, "stage") : "", notes ? n(notes, "note") : ""].filter(Boolean).join(" · ");
+  return [waits ? `${n(waits, "probe")} ${waits === 1 ? "waits" : "wait"} for you` : "", sug ? n(sug, "suggestion") : "", doubt ? `${n(doubt, "probe")} in doubt` : "", stages.length ? n(stages.length, "stage") : "", notes ? n(notes, "note") : ""]
+    .filter(Boolean)
+    .join(" · ");
 }
 
-/** The number of probes that wait for the owner's yes. */
-export const probesWaiting = (p: Pick<Project, "playbook"> | undefined) => (p?.playbook ?? []).filter((e) => e.slot === "stage" && e.probe && !e.probeOk).length;
+/** What on the playbook waits for the owner (V0.playbook-moments): a probe to allow, a suggestion to answer, a probe
+ *  that missed the last merges. The group opens by itself while this is not 0. */
+export function playbookWaiting(p: Pick<Project, "playbook"> | undefined): number {
+  return (p?.playbook ?? []).filter((e) => (e.slot === "stage" && e.probe && !e.probeOk) || e.suggest || doubted(e)).length;
+}
+
+/** V0.playbook-moments: a stage whose probe did not see the last two merges within a day (the host's DoubtAfter). */
+export const doubted = (e: Pick<PlaybookEntry, "missed">) => (e.missed ?? 0) >= 2;
+
+/** V0.playbook-moments: the slots the owner can still add by hand: a stage always (up to six), each note once. */
+export function addableSlots(p: Pick<Project, "playbook"> | undefined): PlaybookEntry["slot"][] {
+  const all = p?.playbook ?? [];
+  return PLAYBOOK_SLOTS.filter((s) => (s === "stage" ? all.filter((e) => e.slot === "stage").length < 6 : !all.some((e) => e.slot === s)));
+}
+
+/** A slot's name in the Add menu. */
+export const slotTitle = (s: string) => (s === "stage" ? "Stage" : (SLOT_TITLE[s] ?? s));
+
+/** A stage's name as the host takes it, or why not. */
+export function stageNameError(name: string): string | null {
+  return /^[a-z0-9][a-z0-9._-]{0,23}$/.test(name.trim().toLowerCase()) ? null : "Name the environment in lower case, such as dev or prod";
+}
+
+/** What differs in an agent's suggestion, one line per field, for the page. */
+export function suggestionLines(e: PlaybookEntry): string[] {
+  const s = e.suggest;
+  if (!s) return [];
+  const out: string[] = [];
+  if ((s.how ?? "") !== (e.how ?? "")) out.push(s.how ? s.how : "No text");
+  if ((s.url ?? "") !== (e.url ?? "")) out.push(s.url ? `Address: ${s.url}` : "No address");
+  if ((s.probe ?? "") !== (e.probe ?? "")) out.push(s.probe ? `Probe: ${s.probe}` : "No probe");
+  if ((s.deployCmd ?? "") !== (e.deployCmd ?? "")) out.push(s.deployCmd ? `Deploy command: ${s.deployCmd}` : "No deploy command");
+  if (!!s.ownerChecks !== !!e.ownerChecks) out.push(s.ownerChecks ? "You check each change here" : "Nobody is asked to check here");
+  if (!!s.live !== !!e.live) out.push(s.live ? "This stage is live" : "This stage is not live");
+  return out.length ? out : ["The same as yours"];
+}
 
 export interface StageStep {
   name: string;
@@ -90,7 +129,7 @@ export function stageText(steps: StageStep[]): string {
 }
 
 /** The arguments of project.learn that write entry `e` again with `patch` (the host replaces the whole entry). */
-export function learnArgs(id: string, e: PlaybookEntry, patch: Partial<Pick<PlaybookEntry, "how" | "probe" | "url">> = {}): Record<string, unknown> {
+export function learnArgs(id: string, e: Pick<PlaybookEntry, "slot"> & Partial<PlaybookEntry>, patch: Partial<Pick<PlaybookEntry, "how" | "probe" | "url" | "deployCmd" | "ownerChecks">> = {}): Record<string, unknown> {
   const x = { ...e, ...patch };
-  return { id, slot: x.slot, ...(x.name ? { name: x.name } : {}), ...(x.how ? { how: x.how } : {}), ...(x.url ? { url: x.url } : {}), ...(x.probe ? { probe: x.probe } : {}), ...(x.live ? { live: true } : {}), ...(x.evidence ? { evidence: x.evidence } : {}) };
+  return { id, slot: x.slot, ...(x.name ? { name: x.name } : {}), ...(x.how ? { how: x.how } : {}), ...(x.url ? { url: x.url } : {}), ...(x.probe ? { probe: x.probe } : {}), ...(x.deployCmd ? { deployCmd: x.deployCmd } : {}), ...(x.live ? { live: true } : {}), ...(x.ownerChecks ? { ownerChecks: true } : {}), ...(x.evidence ? { evidence: x.evidence } : {}) };
 }

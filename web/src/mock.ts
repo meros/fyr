@@ -1115,8 +1115,10 @@ function mockProjects(now: number): Project[] {
       // V0.project-playbook
       playbookAt: ago(30),
       playbook: [
-        { slot: "stage", name: "staging", how: "Automatic on merge, about 6 minutes.", url: "https://staging.example.com", probe: 'git merge-base --is-ancestor {sha} "$(curl -fsS https://staging.example.com/version)"', probeOk: true, by: "agent", thread: "t_setup", evidence: ".github/workflows/deploy.yml", at: ago(30) },
-        { slot: "stage", name: "production", how: "A release tag, cut by hand on weekdays.", url: "https://example.com", by: "owner", at: ago(30) },
+        { slot: "stage", name: "staging", how: "Automatic on merge, about 6 minutes.", url: "https://staging.example.com", probe: 'git merge-base --is-ancestor {sha} "$(curl -fsS https://staging.example.com/version)"', probeOk: true, ownerChecks: true, by: "agent", thread: "t_setup", evidence: ".github/workflows/deploy.yml", at: ago(30) },
+        { slot: "stage", name: "production", how: "A release tag, cut by hand on weekdays.", url: "https://example.com", deployCmd: "gh workflow run release.yml -f sha={sha}", by: "owner", at: ago(30),
+          // V0.playbook-moments
+          suggest: { how: "The release workflow, started by hand.", url: "https://example.com", deployCmd: "gh workflow run release.yml -f sha={sha}", probe: 'test "$(curl -fsS https://example.com/version)" = {sha}', evidence: ".github/workflows/release.yml", thread: "t_setup", at: ago(2) } },
         { slot: "verify", how: "The owner looks at staging with the demo login; the agent runs the smoke test first.", by: "agent", thread: "t_setup", at: ago(30) },
         { slot: "issue", how: "GitHub issues in acme/web, with the Bug or Feature form.", by: "agent", thread: "t_setup", evidence: ".github/ISSUE_TEMPLATE", at: ago(30) },
       ] },
