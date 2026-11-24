@@ -12,27 +12,28 @@ def w(path, text):
 
 # ---------------------------------------------------------------- tokens
 C = [
- ("surface",        "#f6f7f8", "#0f1419", "Page and inbox background."),
- ("surface-raised", "#ffffff", "#161d24", "Cards, the thread pane, the Decision card."),
- ("surface-sunken", "#edeff2", "#0b0f13", "Section headers, code blocks, the composer well."),
- ("surface-select", "#e6ecf3", "#1c2733", "The selected row. Never a state colour."),
- ("line",           "#dde1e6", "#26303a", "Hairlines between rows and around cards."),
- ("line-strong",    "#b4bcc6", "#3d4957", "Input borders and control outlines (3:1 on surface)."),
- ("ink",            "#111820", "#e8ecf0", "Primary text on every surface."),
- ("ink-muted",      "#56616d", "#9aa6b2", "Metadata, row summaries, timestamps. 4.5:1 on surface and surface-raised in both themes."),
- ("ink-faint",      "#7d8894", "#6f7b87", "Icons and dividers only, never body text (3:1 on surface)."),
- ("night",          "#14212d", "#24323f", "Primary buttons and the brand slab. Text on it uses on-night."),
- ("on-night",       "#f6f7f8", "#f6f7f8", "Text and icons on night."),
- ("beam",           "#e8960f", "#f5a524", "THE accent: the lamp. Fills only things that need the user (asking, the attention count). Never decorative."),
- ("beam-mark",      "#b86e00", "#f5a524", "The asking icon fill. 4:1 on surface-raised in light, 9:1 in dark."),
- ("beam-ink",       "#8f5300", "#f5b54a", "Beam as text or icon on surface (asking reason, attention counts). 5:1 light, 10:1 dark."),
+ ("surface",        "#f9f6f1", "#161412", "The page: warm paper in light, warm charcoal in dark."),
+ ("surface-raised", "#fffefc", "#211e1b", "Cards, the list pane, the thread header, the Decision card."),
+ ("surface-sunken", "#f3eee7", "#100f0d", "Wells: the rail, the search field, code blocks."),
+ ("surface-select", "#f8f1e7", "#2d2823", "The selected row: a warm tint, with a faint beam edge in light."),
+ ("line",           "#ece7df", "#322e29", "Hairlines between panes and inside cards."),
+ ("line-strong",    "#d6cdc0", "#4a443d", "Input borders and control outlines."),
+ ("ink",            "#1e1b18", "#efeae4", "Primary text on every surface."),
+ ("ink-muted",      "#645e57", "#aaa39a", "Metadata, row summaries, timestamps. 4.5:1 on every surface in both themes."),
+ ("ink-faint",      "#6e6760", "#8e877e", "Quiet labels, icons and dividers. 4.5:1 on surface and surface-raised."),
+ ("night",          "#292420", "#f1ebe3", "The primary button: espresso in light, cream in dark. Text on it uses on-night."),
+ ("on-night",       "#fcfaf7", "#1f1b16", "Text and icons on night."),
+ ("beam",           "#ee9512", "#f5a524", "THE accent: the lamp. Fills only things that need the user (asking, the attention count). Never decorative."),
+ ("beam-mark",      "#c06a00", "#f5a524", "A beam mark on a raised surface."),
+ ("beam-icon",      "#c47100", "#f5a524", "The asking icon. 3:1 on surface-raised in light."),
+ ("beam-ink",       "#a05800", "#f5b54a", "Beam as text on a surface (asking reason, attention counts). 5:1 light, 9:1 dark."),
  ("on-beam",        "#1a1204", "#1a1204", "Text on a beam fill."),
- ("beam-wash",      "#fdf1dc", "#2a2112", "Background of the Decision card header and a focused asking row."),
+ ("beam-wash",      "#fff5e6", "#2e251b", "The Decision card header and the tile of an asking row."),
  ("signal",         "#d93a2b", "#ff6b5b", "Failed state fill (small marks only)."),
- ("signal-ink",     "#b42318", "#ff8a7d", "Failed state text and icon on surface. 6:1 light, 8:1 dark."),
- ("harbour",        "#2f6fb0", "#6fa8e8", "Review state, links and the focus ring. 4.9:1 light, 7.4:1 dark on surface."),
- ("harbour-wash",   "#e7f0fa", "#15253a", "Review highlight, link hover ground."),
- ("calm",           "#2e7d5b", "#5cc49a", "Settled state and passing checks. Used with a check icon, never by hue alone."),
+ ("signal-ink",     "#b23a2a", "#ff8f7f", "Failed state text and icon on surface."),
+ ("harbour",        "#3b6c9e", "#7eaee0", "Blocked state, links and the focus ring."),
+ ("harbour-wash",   "#eaf0f6", "#1d2631", "The tile of a blocked row, a chosen option, link hover ground."),
+ ("calm",           "#3b7a58", "#6cc39a", "Settled state and passing checks. Used with a check icon, never by hue alone."),
 ]
 tokens = {
   "name": "Fyr", "version": 1,
@@ -43,8 +44,8 @@ tokens = {
   "type": {
     "fonts": [],
     "families": {
-      "sans": "\"IBM Plex Sans\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif",
-      "mono": "\"IBM Plex Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace",
+      "sans": "\"Geist\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif",
+      "mono": "\"Geist Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace",
     },
     "groups": [
       {"name": "Interface", "family": "sans", "styles": [
@@ -68,12 +69,18 @@ tokens = {
     {"name": "space-8", "value": "32px", "usage": "Between page regions."},
   ]},
   "radius": {"tokens": [
-    {"name": "radius-sm", "value": "3px", "usage": "Badges, chips, kbd keys."},
-    {"name": "radius-md", "value": "6px", "usage": "Buttons, inputs, menu items."},
-    {"name": "radius-lg", "value": "10px", "usage": "Cards, the palette, toasts."},
+    {"name": "radius-sm", "value": "5px", "usage": "Kbd keys and small marks. Badges and chips are pills."},
+    {"name": "radius-md", "value": "10px", "usage": "Buttons, inputs, menu items."},
+    {"name": "radius-lg", "value": "12px", "usage": "Rows, cards, option cards, the palette, toasts."},
+    {"name": "radius-xl", "value": "16px", "usage": "The Decision card, the composer, dialogs."},
   ]},
   "shadow": {"tokens": [
-    {"name": "shadow-overlay", "value": {"light": "0 12px 32px rgba(17,24,32,0.14), 0 1px 3px rgba(17,24,32,0.10)", "dark": "0 12px 32px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.40)"}, "usage": "Palette, menus and toasts only. Rows and cards have no shadow."},
+    {"name": "shadow-overlay", "value": {"light": "0 0 0 1px rgba(70,45,15,0.08), 0 8px 16px -4px rgba(70,45,15,0.08), 0 28px 64px -12px rgba(70,45,15,0.32)", "dark": "inset 0 1px 0 rgba(255,255,255,0.07), 0 0 0 1px rgba(0,0,0,0.5), 0 28px 72px rgba(0,0,0,0.65)"}, "usage": "Dialogs, the palette, menus and toasts (the client's --lift-3)."},
+    {"name": "lift-1", "value": {"light": "0 0 0 1px rgba(70,45,15,0.07), 0 1px 2px rgba(70,45,15,0.06), 0 3px 8px -3px rgba(70,45,15,0.10)", "dark": "inset 0 1px 0 rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.4)"}, "usage": "Cards, tiles and bubbles on the page: a ring, a contact shadow and an ambient one. The ring is the frame, so the card has no border."},
+    {"name": "lift-2", "value": {"light": "0 0 0 1px rgba(70,45,15,0.05), 0 2px 4px rgba(70,45,15,0.05), 0 8px 18px -6px rgba(70,45,15,0.10), 0 22px 44px -14px rgba(70,45,15,0.14)", "dark": "inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3), 0 12px 28px -6px rgba(0,0,0,0.5)"}, "usage": "The Decision card, the composer, a hovered card."},
+    {"name": "edge-control", "value": {"light": "inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 1px rgba(70,45,15,0.06)", "dark": "inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.4)"}, "usage": "A secondary button: a top highlight and a contact shadow."},
+    {"name": "edge-primary", "value": {"light": "inset 0 1px 0 rgba(252,250,247,0.18), 0 1px 2px rgba(70,45,15,0.3), 0 4px 10px -3px rgba(70,45,15,0.28)", "dark": "inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(0,0,0,0.6)"}, "usage": "The primary button: a lit top and a deeper shadow."},
+    {"name": "well", "value": {"light": "inset 0 1px 2px rgba(70,45,15,0.09)", "dark": "inset 0 1px 2px rgba(0,0,0,0.5)"}, "usage": "Fields that sit in: search, a disabled primary."},
   ]},
 }
 w("tokens.json", json.dumps(tokens, indent=2))
@@ -81,10 +88,11 @@ w("tokens.json", json.dumps(tokens, indent=2))
 # tokens.css as compiled
 def css_colors(theme):
     return "\n".join(f"  --{n}: {l if theme=='light' else d};" for n, l, d, _ in C)
-sh = tokens["shadow"]["tokens"][0]["value"]
+def css_shadows(theme):
+    return "\n".join(f"  --{s['name']}: {s['value'][theme]};" for s in tokens["shadow"]["tokens"])
 lines = ["/* Fyr — generated from tokens.json */",
-         ":root, [data-theme=\"light\"] {", css_colors("light"), f"  --shadow-overlay: {sh['light']};", "}",
-         "[data-theme=\"dark\"] {", css_colors("dark"), f"  --shadow-overlay: {sh['dark']};", "}",
+         ":root, [data-theme=\"light\"] {", css_colors("light"), css_shadows("light"), "}",
+         "[data-theme=\"dark\"] {", css_colors("dark"), css_shadows("dark"), "}",
          ":root {"]
 for fam in ("spacing", "radius"):
     for t in tokens[fam]["tokens"]:
@@ -99,7 +107,7 @@ for g in tokens["type"]["groups"]:
 w("tokens.css", "\n".join(lines) + "\n")
 
 # ---------------------------------------------------------------- bundle.css
-bundle_css = r"""@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+bundle_css = r"""@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap");
 body { margin: 0; background: var(--surface); color: var(--ink); font-family: var(--font-sans); font-size: 13px; line-height: 18px; -webkit-font-smoothing: antialiased; }
 .fy-pad { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 .fy-hstack { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
@@ -107,19 +115,19 @@ body { margin: 0; background: var(--surface); color: var(--ink); font-family: va
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 /* Button */
-.fy-btn { font: 500 13px/18px var(--font-sans); display: inline-flex; align-items: center; gap: var(--space-2); height: 30px; padding: 0 var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--ink); cursor: pointer; }
-.fy-btn:hover { background: var(--surface-sunken); }
-.fy-btn-primary { background: var(--night); border-color: var(--night); color: var(--on-night); }
+.fy-btn { font: 500 13px/18px var(--font-sans); display: inline-flex; align-items: center; gap: var(--space-2); height: 30px; padding: 0 var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: linear-gradient(to bottom, var(--surface-raised), color-mix(in srgb, var(--surface) 60%, var(--surface-raised))); box-shadow: var(--edge-control); color: var(--ink); cursor: pointer; }
+.fy-btn:hover { border-color: var(--ink-faint); }
+.fy-btn-primary { background: linear-gradient(to bottom, color-mix(in srgb, var(--on-night) 12%, var(--night)), var(--night)); border-color: var(--night); box-shadow: var(--edge-primary); color: var(--on-night); }
 .fy-btn-primary:hover { background: var(--night); filter: brightness(1.15); }
-.fy-btn-ghost { border-color: transparent; background: transparent; color: var(--ink-muted); }
+.fy-btn-ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--ink-muted); }
 .fy-btn-ghost:hover { color: var(--ink); background: var(--surface-sunken); }
 .fy-btn-danger { color: var(--signal-ink); }
-.fy-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.fy-btn[disabled] { background: var(--surface-sunken); border-color: transparent; box-shadow: var(--well); color: var(--ink-faint); cursor: not-allowed; }
 .fy-btn .fy-kbd { margin-left: var(--space-1); }
-.fy-btn-primary .fy-kbd { background: transparent; color: var(--on-night); border-color: rgba(246,247,248,.35); }
+.fy-btn-primary .fy-kbd { background: transparent; color: var(--on-night); border-color: color-mix(in srgb, var(--on-night) 30%, transparent); }
 
 /* Kbd */
-.fy-kbd { font: 500 11px/16px var(--font-mono); min-width: 16px; padding: 0 4px; text-align: center; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--radius-sm); color: var(--ink-muted); background: var(--surface-raised); display: inline-block; }
+.fy-kbd { font: 500 11px/16px var(--font-mono); min-width: 16px; padding: 0 4px; text-align: center; border: 1px solid var(--line); box-shadow: 0 1px 0 var(--line); border-radius: var(--radius-sm); color: var(--ink-muted); background: var(--surface-raised); display: inline-block; }
 
 /* Status */
 .fy-status { display: inline-flex; align-items: center; gap: var(--space-1); font: 500 12px/16px var(--font-sans); color: var(--ink-muted); }
@@ -133,11 +141,10 @@ body { margin: 0; background: var(--surface); color: var(--ink); font-family: va
 .fy-s-asking .fy-icon { color: var(--beam-mark); }
 
 /* PR badge */
-.fy-pr { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border-radius: var(--radius-sm); border: 1px solid var(--line); font: 500 11px/16px var(--font-mono); color: var(--ink-muted); background: var(--surface-raised); white-space: nowrap; }
+.fy-pr { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font: 500 11px/16px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-muted); background: var(--surface-raised); white-space: nowrap; }
 .fy-pr b { font-weight: 500; color: var(--ink); }
-.fy-pr-failed { border-color: var(--signal-ink); color: var(--signal-ink); }
-.fy-pr-passing { color: var(--calm); }
-.fy-pr-merged { background: var(--surface-sunken); }
+.fy-pr-failed { border-color: var(--signal-ink); color: var(--signal-ink); background: color-mix(in srgb, var(--signal-ink) 7%, var(--surface-raised)); }
+.fy-pr-passing, .fy-pr-merged { color: var(--calm); background: color-mix(in srgb, var(--calm) 10%, var(--surface-raised)); border-color: color-mix(in srgb, var(--calm) 22%, transparent); }
 .fy-pr-merged b, .fy-pr-closed b { color: var(--ink-muted); }
 
 /* Host chip */
@@ -147,18 +154,18 @@ body { margin: 0; background: var(--surface); color: var(--ink); font-family: va
 .fy-host-off { color: var(--ink-faint); }
 
 /* Section header */
-.fy-section { display: flex; align-items: center; gap: var(--space-2); height: 30px; padding: 0 var(--space-4); background: var(--surface-sunken); border-block: 1px solid var(--line); color: var(--ink-muted); cursor: pointer; user-select: none; }
+.fy-section { display: flex; align-items: center; gap: var(--space-2); height: 30px; padding: 0 var(--space-4); background: transparent; color: var(--ink-muted); cursor: pointer; user-select: none; }
 .fy-section .label { color: var(--ink-muted); text-transform: uppercase; }
-.fy-section .fy-count { font: 500 12px/16px var(--font-mono); color: var(--ink-muted); }
-.fy-section-attention .fy-count { color: var(--on-beam); background: var(--beam); border-radius: var(--radius-sm); padding: 0 5px; }
+.fy-section .fy-count { font: 500 12px/16px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink); background: var(--surface-sunken); border-radius: 8px; padding: 0 5px; }
+.fy-section-attention .fy-count { color: var(--on-beam); background: var(--beam); }
 .fy-section .fy-hint { margin-left: auto; font: 400 12px/16px var(--font-sans); color: var(--ink-faint); }
 .fy-chev { width: 10px; height: 10px; color: var(--ink-faint); transition: transform .15s; }
 .fy-section[aria-expanded="false"] .fy-chev { transform: rotate(-90deg); }
 
 /* Thread row */
-.fy-row { display: grid; grid-template-columns: 14px minmax(0,1fr) auto; column-gap: var(--space-3); row-gap: 2px; align-items: start; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); background: var(--surface-raised); cursor: pointer; }
+.fy-row { display: grid; grid-template-columns: 14px minmax(0,1fr) auto; column-gap: var(--space-3); row-gap: 2px; align-items: start; padding: var(--space-3) var(--space-4); background: var(--surface-raised); cursor: pointer; }
 .fy-row:hover { background: var(--surface-sunken); }
-.fy-row[aria-selected="true"] { background: var(--surface-select); }
+.fy-row[aria-selected="true"] { background: var(--surface-select); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--beam) 16%, transparent); }
 .fy-row > .fy-icon { margin-top: 2px; grid-row: span 2; }
 .fy-row-title { font: 500 13px/18px var(--font-sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fy-row-done .fy-row-title { font-weight: 600; }
@@ -170,15 +177,15 @@ body { margin: 0; background: var(--surface); color: var(--ink); font-family: va
 .fy-reason.fy-s-asking { color: var(--beam-ink); }
 
 /* Decision card */
-.fy-decision { background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; max-width: 640px; }
-.fy-decision-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--beam-wash); border-bottom: 1px solid var(--line); font: 400 12px/16px var(--font-sans); color: var(--ink-muted); flex-wrap: wrap; }
+.fy-decision { background: var(--surface-raised); border-radius: var(--radius-xl); box-shadow: var(--lift-2); overflow: hidden; max-width: 640px; }
+.fy-decision-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--beam-wash); border-bottom: 1px solid color-mix(in srgb, var(--beam) 26%, transparent); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); font: 400 12px/16px var(--font-sans); color: var(--ink-muted); flex-wrap: wrap; }
 .fy-decision-head strong { color: var(--beam-ink); font-weight: 600; }
 .fy-decision-body { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-6); }
 .fy-q { display: flex; flex-direction: column; gap: var(--space-2); }
 .fy-q-text { font: 500 15px/24px var(--font-sans); color: var(--ink); }
-.fy-opt { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: var(--space-3); align-items: start; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); cursor: pointer; background: var(--surface-raised); text-align: left; font: inherit; color: inherit; }
-.fy-opt:hover { border-color: var(--line-strong); }
-.fy-opt[aria-checked="true"] { border-color: var(--harbour); background: var(--harbour-wash); }
+.fy-opt { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: var(--space-3); align-items: start; padding: var(--space-2) var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: 0 1px 0 var(--line); cursor: pointer; background: var(--surface-raised); text-align: left; font: inherit; color: inherit; }
+.fy-opt:hover { box-shadow: var(--lift-1); }
+.fy-opt[aria-checked="true"] { border-color: var(--harbour); background: var(--harbour-wash); box-shadow: 0 0 0 1px var(--harbour); }
 .fy-opt .fy-kbd { margin-top: 1px; }
 .fy-opt-label { font: 500 13px/18px var(--font-sans); color: var(--ink); }
 .fy-opt-desc { font: 400 12px/16px var(--font-sans); color: var(--ink-muted); }
@@ -189,11 +196,11 @@ body { margin: 0; background: var(--surface); color: var(--ink); font-family: va
 /* Toast */
 .fy-toast { display: inline-flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); background: var(--night); color: var(--on-night); border-radius: var(--radius-lg); box-shadow: var(--shadow-overlay); font: 500 13px/18px var(--font-sans); position: relative; overflow: hidden; }
 .fy-toast span { color: var(--on-night); opacity: .7; font-weight: 400; }
-.fy-toast .fy-btn { height: 26px; background: transparent; border-color: rgba(246,247,248,.3); color: var(--on-night); }
+.fy-toast .fy-btn { height: 26px; background: transparent; border-color: color-mix(in srgb, var(--on-night) 30%, transparent); box-shadow: none; color: var(--on-night); }
 .fy-toast-timer { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--on-night); opacity: .4; }
 
 /* Palette */
-.fy-palette { width: 100%; max-width: 560px; background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-overlay); overflow: hidden; }
+.fy-palette { width: 100%; max-width: 560px; background: var(--surface-raised); border-radius: var(--radius-xl); box-shadow: var(--shadow-overlay); overflow: hidden; }
 .fy-palette input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid var(--line); padding: var(--space-3) var(--space-4); font: 400 15px/24px var(--font-sans); background: transparent; color: var(--ink); outline: none; }
 .fy-palette-group { padding: var(--space-2) var(--space-4) 2px; font: 600 11px/16px var(--font-sans); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
 .fy-palette-item { display: flex; align-items: center; gap: var(--space-3); padding: 7px var(--space-4); font: 500 13px/18px var(--font-sans); color: var(--ink); cursor: pointer; }
@@ -432,7 +439,7 @@ for name, (group, height, script, summary, rules) in comps.items():
     w(f"components/{name}/README.md", f"# {name}\n\n{summary}\n\n" + "\n".join(f"- {r}" for r in rules) + "\n")
 
 # ---------------------------------------------------------------- README
-readme = """Fyr is a calm control room for coding agents. Like a lighthouse, it watches everything and shines only when someone must act. The interface stays quiet, neutral and dense; one warm light, `beam`, marks what needs the user. Everything else is slate.
+readme = """Fyr is a calm control room for coding agents. Like a lighthouse, it watches everything and shines only when someone must act. The interface stays quiet, neutral and dense; one clear light, `beam`, marks what needs the user. Everything else is warm paper and espresso ink in light, warm charcoal and cream in dark: warm without a yellow cast.
 
 ## Voice
 
@@ -444,7 +451,7 @@ readme = """Fyr is a calm control room for coding agents. Like a lighthouse, it 
 
 ## Colour
 
-- `surface` is the page; `surface-raised` holds cards, rows and the thread pane; `surface-sunken` holds section headers and code. No other backgrounds.
+- `surface` is the page; `surface-raised` holds cards, the list pane and the thread header; `surface-sunken` is for wells (the rail, search, code). A row's tile takes the wash of its state (`beam-wash`, `harbour-wash`, a red wash).
 - `ink` for text, `ink-muted` for metadata, `ink-faint` for icons and dividers only.
 - `beam` is reserved. It fills the asking icon and the Needs you count, and `beam-wash` marks the Decision card header. Never use beam for buttons, links, brand decoration or charts.
 - State colours carry meaning only with their icon: `signal-ink` (failed), `harbour` (blocked, links, focus), `calm` (settled, passing). Working, waiting, seen and snoozed are `ink-muted` on purpose.
@@ -453,7 +460,7 @@ readme = """Fyr is a calm control room for coding agents. Like a lighthouse, it 
 
 ## Type
 
-- IBM Plex Sans for the interface, IBM Plex Mono for commands, paths, hashes, PR numbers and host names.
+- Geist for the interface, numbers included (tabular figures); Geist Mono for commands, paths, branches, code and output.
 - Four sizes only: `meta` and `label` 12px, `row` 13px, `body` 15px, `title` 20px. `code` is 12px mono.
 - One `title` per view. Row titles are `row` (500); done rows go to 600, nothing else changes weight.
 - Use `font-variant-numeric: tabular-nums` for times and counts.
@@ -461,8 +468,10 @@ readme = """Fyr is a calm control room for coding agents. Like a lighthouse, it 
 ## Space and shape
 
 - A 4px grid: `space-1` to `space-8`. Rows use `space-3` vertical and `space-4` horizontal padding.
-- `radius-sm` for badges and keys, `radius-md` for controls, `radius-lg` for cards, the palette and toasts.
-- Rows and cards have hairlines (`line`), not shadows. `shadow-overlay` is only for the palette, menus and toasts.
+- `radius-sm` for keys, `radius-md` for controls, `radius-lg` for rows, cards, the palette and toasts, `radius-xl` for the Decision card, the composer and dialogs. Chips and badges are pills.
+- Surfaces have an order: the rail lies under the list, the list over the page, cards over both. A card shows it with `lift-1` (a ring, a contact shadow, an ambient one) and no border; the Decision card and the composer with `lift-2`; dialogs, menus and toasts with `shadow-overlay`.
+- Controls have an edge: a secondary button has `edge-control`, the primary `edge-primary`. What sits in (search, a disabled primary) has `well`. Rows in the list stay flat; only the selected one is tinted.
+- Shadows are warm brown in light and black, with a faint light on the top edge, in dark. Never grey.
 
 ## Motion and calm
 
@@ -480,7 +489,7 @@ readme = """Fyr is a calm control room for coding agents. Like a lighthouse, it 
 ## Icons
 
 - The nine state icons are part of the bundle (`StatusBadge`); they are geometric so they read at 14px: disc (asking), diamond (failed), ring with centre (blocked), dot (done), quarter arc (working), dashed ring (waiting), open ring (seen), crescent (snoozed), check (settled).
-- There is no logo yet; set the name in IBM Plex Sans 600.
+- The logo is an isometric lighthouse rendered with Blender: `design/logo/lighthouse.py` builds the scene, `design/logo/lighthouse-512.png` is the master, `web/assets/logo.png` (128 px) is what the desktop rail shows at 32 px. Render again with `nix shell nixpkgs#blender --command blender -b -P design/logo/lighthouse.py -- OUT 128 256`. The app icons are cut from the same render by `design/logo/icons.sh` (V0.110). Where the name is set as text, use Geist 600.
 """
 w("README.md", readme)
 
