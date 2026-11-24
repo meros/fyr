@@ -1721,6 +1721,9 @@ try {
   await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b')");
   await evaluate(`document.querySelector('.thh .tmenu-b')?.focus()`);
   await key("Enter");
+  // The menu opens a render after the key and moves the focus into itself in an effect after that: wait for the
+  // focus, not just the menu, or a slow page is read between the two (V0.layout-flakes).
+  await waitFor(`!!document.querySelector('.thh [role=menu]') && !!document.activeElement?.closest('.thh [role=menu]')`, { soft: true });
   const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '' })`);
   check(m.menu, "V0.26 desktop: the thread ⋯ menu does not open from the keyboard");
   // V0.dialogs-review amends V0.26: the ⋯ menu has the action list's one order, so its focus starts on its first
@@ -1730,7 +1733,8 @@ try {
   check(await evaluate(`[...document.querySelectorAll('.thh [role=menu] [role=menuitem]')].some((b) => /^Project…/.test(b.textContent) && b.querySelector('kbd')?.textContent === 'p')`), "V0.26 desktop: the ⋯ menu has no Project… with its key");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "p", code: "KeyP", text: "p", windowsVirtualKeyCode: 80 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "p", code: "KeyP" });
-  await waitFor(`!!document.querySelector('.dlg .plist')`, { soft: true });
+  // The picker's search takes the focus in an effect after the dialog is drawn: wait for both (V0.layout-flakes).
+  await waitFor(`!!document.querySelector('.dlg .plist') && !!document.activeElement?.classList.contains('pq')`, { soft: true });
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
   check(d.dlg && d.focus, "V0.26 desktop: Project… does not open the project picker with the search focused");
   await send("Input.insertText", { text: "garden" }); // V0.61: Enter picks a project by its exact name (any case)
