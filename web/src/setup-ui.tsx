@@ -9,6 +9,7 @@ import type { HostInfo } from "./hosts.ts";
 import type { PageRef } from "./settings-nav.ts";
 import { Empty, Group } from "./settings-rows.tsx";
 import { noteSetup } from "./settings-count.ts";
+import { setupErrorHint } from "./setup-hint.ts";
 import { setupCardLabel, setupNeedsCard, stepPill, type GHAuthState, type GHRepoItem, ghAuthOf, ghReposOf, type SetupRepo, type SetupReport, type SetupStep } from "./setup.ts";
 
 /** Reads the first online addressable host's setup report (for the inbox card). */
@@ -199,7 +200,17 @@ export function SetupPage({
           Check now
         </button>
       </div>
-      {note && <div class="note">{note}</div>}
+      {note && (
+        <div class="note">
+          {note}
+          {setupErrorHint(note) && (
+            <>
+              {" "}
+              Run this on the host, then press Check now: <code>{setupErrorHint(note)}</code>
+            </>
+          )}
+        </div>
+      )}
       {report.steps.map((s) => (
         <StepCard
           key={s.id}
