@@ -19,7 +19,7 @@ import { type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { deskThreadMenu, type ThreadAction } from "./actions.ts";
 import { entryForKey, menuEntries } from "./menu.ts";
-import { MenuRows } from "./menu-ui.tsx";
+import { MenuRows, useKeepMenuFocus } from "./menu-ui.tsx";
 import { hostChip, offlineLine, profilesOf, threadProvider, type HostProfiles } from "./hosts.ts";
 import { ThreadQuotaChip } from "./quota-ui.tsx";
 import { useHosts } from "./host-pick-ui.tsx";
@@ -357,6 +357,7 @@ function ThreadMenu({ items, onPick }: { items: ThreadAction[]; onPick(a: Thread
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const entries = menuEntries(items);
+  useKeepMenuFocus(ref);
   useEffect(() => {
     if (!open) return;
     ref.current?.querySelector<HTMLElement>("[role=menuitem]:not([aria-disabled=true])")?.focus();

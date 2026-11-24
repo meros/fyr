@@ -1724,12 +1724,12 @@ try {
   // The menu opens a render after the key and moves the focus into itself in an effect after that: wait for the
   // focus, not just the menu, or a slow page is read between the two (V0.layout-flakes).
   await waitFor(`!!document.querySelector('.thh [role=menu]') && !!document.activeElement?.closest('.thh [role=menu]')`, { soft: true });
-  const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '' })`);
+  // One read: the first entry can change between two (Mark seen becomes Mark unseen 1.5 s after the thread opens).
+  const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '', first: document.querySelector('.thh [role=menu] [role=menuitem]:not([aria-disabled=true])')?.textContent ?? '' })`);
   check(m.menu, "V0.26 desktop: the thread ⋯ menu does not open from the keyboard");
   // V0.dialogs-review amends V0.26: the ⋯ menu has the action list's one order, so its focus starts on its first
   // entry that is on, not on Project…; Project… is one key away (`p` acts while the menu is open).
-  const first = await evaluate(`document.querySelector('.thh [role=menu] [role=menuitem]:not([aria-disabled=true])')?.textContent ?? ''`);
-  check(m.focused !== "" && m.focused === first, `V0.26 desktop: the ⋯ menu does not focus its first entry ("${m.focused}", first "${first}")`);
+  check(m.focused !== "" && m.focused === m.first, `V0.26 desktop: the ⋯ menu does not focus its first entry ("${m.focused.slice(0, 80)}", first "${m.first}")`);
   check(await evaluate(`[...document.querySelectorAll('.thh [role=menu] [role=menuitem]')].some((b) => /^Project…/.test(b.textContent) && b.querySelector('kbd')?.textContent === 'p')`), "V0.26 desktop: the ⋯ menu has no Project… with its key");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "p", code: "KeyP", text: "p", windowsVirtualKeyCode: 80 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "p", code: "KeyP" });
@@ -1745,6 +1745,35 @@ try {
   check(!r.dlg && /Garden/.test(r.chip), `V0.26, V0.61 desktop: Enter on an exact project name does not move the thread there (chip "${r.chip}")`);
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
+}
+});
+
+// V0.menu-keeps-focus: the ⋯ menu keeps the keyboard's place when the thread changes under it. Its own section:
+// the hook that changes the thread (__fyrThread) outranks the mock's later answers for that thread.
+section('V0.menu-keeps-focus', async (h) => {
+  const { evaluate, waitFor, navigate, key } = h;
+try {
+  await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b') && typeof window.__fyrThread === 'function'");
+  await evaluate(`document.querySelector('.thh .tmenu-b')?.focus()`);
+  await key("Enter");
+  await waitFor(`!!document.activeElement?.closest('.thh [role=menu]')`, { what: "the focus inside the ⋯ menu" });
+  // V0.menu-keeps-focus: an entry that is swapped for another while it has the focus (the thread was marked seen
+  // under the open menu) hands the focus to the entry in its place, so the menu's keys still reach the menu.
+  const seenEntry = `[...document.querySelectorAll('.thh [role=menu] [role=menuitem]')].find((b) => /^Mark (un)?seen/.test(b.textContent))`;
+  const was = await evaluate(`(() => { const b = ${seenEntry}; b?.focus(); return document.activeElement === b ? b.textContent : ''; })()`);
+  check(/^Mark (un)?seen/.test(was), `V0.menu-keeps-focus desktop: the ⋯ menu has no seen entry to focus ("${was}")`);
+  await evaluate(`window.__fyrThread('t_triage', { attention: { state: ${JSON.stringify(/^Mark seen/.test(was) ? "seen" : "done")}, section: "seen", reason: "" } })`);
+  await waitFor(`(() => { const b = ${seenEntry}; return !!b && b.textContent !== ${JSON.stringify(was)} && document.activeElement === b; })()`, { soft: true });
+  const kept = await evaluate(`({ entry: (${seenEntry})?.textContent ?? '', inMenu: !!document.activeElement?.closest('.thh [role=menu]'), focused: (document.activeElement?.textContent ?? '').slice(0, 80) })`);
+  check(kept.entry !== was && kept.inMenu && kept.focused === kept.entry, `V0.menu-keeps-focus desktop: the swapped entry lost the focus (was "${was}", now ${JSON.stringify(kept)})`);
+  // The menu's keys still reach it: an arrow moves on from the entry, and Esc closes the menu.
+  await key("ArrowDown");
+  const moved = await evaluate(`({ inMenu: !!document.activeElement?.closest('.thh [role=menu]'), focused: (document.activeElement?.textContent ?? '').slice(0, 80) })`);
+  check(moved.inMenu && moved.focused !== kept.entry, `V0.menu-keeps-focus desktop: ArrowDown does not move on from the swapped entry (${JSON.stringify(moved)})`);
+  await key("Escape");
+  check(await evaluate(`!document.querySelector('.thh [role=menu]') && document.activeElement?.classList.contains('tmenu-b')`), "V0.menu-keeps-focus desktop: Esc does not close the menu and return the focus to ⋯");
+} catch (e) {
+  failures.push(`V0.menu-keeps-focus desktop: ${e.message}`);
 }
 });
 

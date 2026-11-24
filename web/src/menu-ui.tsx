@@ -1,15 +1,52 @@
 // SPEC 0.5 V0.31: Fyr's right-click menu. Opens at the pointer, stays inside the
 // window, works from the keyboard, closes on a click outside, a scroll that moves what it was
 // opened on, or Escape.
+import type { RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { anchorMoved, entryForKey, type MenuEntry, type MenuItem } from "./menu.ts";
 import { useEnterExit } from "./motion-ui.tsx";
+
+const ENTRY = "[role=menuitem]:not([aria-disabled=true])";
+
+/** V0.menu-keeps-focus: an open menu keeps the keyboard's place when its entries change under it. An entry is drawn
+ *  by its id, and a thread that changes while the menu is open swaps one for another (Mark seen becomes Mark unseen
+ *  1.5 s after the thread opens, Stop run goes when the run ends): the focused button leaves the page, the focus
+ *  falls to the body, and the menu's keys stop reaching it. So the menu remembers which entry had the focus and, after
+ *  a render that left the focus on nothing, gives it to the entry now in that place. `ref` is the element that holds
+ *  the entries; it may be empty while the menu is closed. Desktop only: the phone shows these actions in a sheet that
+ *  is tapped, with no keyboard and so no focus to keep. */
+export function useKeepMenuFocus(ref: RefObject<HTMLElement | null>) {
+  const at = useRef(-1);
+  useLayoutEffect(() => {
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>(ENTRY) ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    if (i >= 0) at.current = i;
+    else if (!items.length) at.current = -1;
+    else if (at.current >= 0 && (!document.activeElement || document.activeElement === document.body)) items[Math.min(at.current, items.length - 1)].focus();
+  });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // The arrows move the focus without a render, and a focus that goes elsewhere on purpose is not taken back.
+    const on = (e: FocusEvent) => (at.current = [...el.querySelectorAll<HTMLElement>(ENTRY)].indexOf(e.target as HTMLElement));
+    const off = (e: FocusEvent) => {
+      if (e.relatedTarget && !el.contains(e.relatedTarget as Node)) at.current = -1;
+    };
+    el.addEventListener("focusin", on);
+    el.addEventListener("focusout", off);
+    return () => {
+      el.removeEventListener("focusin", on);
+      el.removeEventListener("focusout", off);
+    };
+  }, [ref]);
+}
 
 /** anchor: the element the menu was opened on; a scroll closes the menu only when it moves that element. */
 export function ContextMenu({ x, y, items, anchor, onPick, onClose }: { x: number; y: number; items: MenuEntry[]; anchor?: Element | null; onPick(it: MenuItem): void; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   useEnterExit(ref, "menu");
+  useKeepMenuFocus(ref);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
