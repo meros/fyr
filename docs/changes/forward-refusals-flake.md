@@ -1,0 +1,8 @@
+# V0.forward-refusals-flake: TestForwardRefusals stops the thread's server for real, so the forward's kept-alive connection ends with it
+
+→ V0.forwarded-ports. `TestForwardRefusals` failed in a full run of the Go tests ("after the server stopped: 200") and 2 times in 50 under load (`go test -count=50 -run TestForwardRefusals ./internal/front` beside one busy loop per core); alone it passed.
+
+1. **The cause.** The test did not stop the server. It took the port off the thread's list, so the host would refuse the next connection, and closed the idle connections of the forward's transport so that the next request needed a new one. But the request before it had just been answered over a kept-alive connection, and the test reads that answer's status as soon as the proxy sends it, which is before the transport has put the connection back among the idle ones. Under load the close came first and found nothing idle; the connection became idle afterwards, the next request went over it to the server that was still running, and the answer was 200. Nothing in the code is wrong: the host checks the port on every connection (V0.forwarded-ports), and a connection that is already open lives as long as its server, which here never ended.
+2. **The fix.** The test stops the server (the rig's `stop` closes it and its connections) and takes its port off the thread's list, as when the process ends. The kept-alive connection ends with the server, so whichever of the two the request meets first, the transport dials again and the host refuses. The test no longer reaches into the forward's transport.
+
+Tests: `internal/front/forward_test.go` (TestForwardRefusals), 0 failures in 300 runs under the same load.
