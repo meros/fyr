@@ -34,7 +34,7 @@ import {
 import { enterAction, matchProjects, matchRank } from "../src/projects.ts";
 import { customProblem, customStart, customUntil, fieldTime } from "../src/snooze.ts";
 import { snoozePresets } from "../src/store.ts";
-import { firstFocus, openTraps, pushTrap, dropTrap } from "../src/focus-trap.ts";
+import { firstFocus, isTopTrap, openTraps, pushTrap, dropTrap } from "../src/focus-trap.ts";
 import { MERGE_METHOD_KEY, mergeConfirm, mergeMethod, mergeMethodLine, mergeTitle, notMerged, rememberedMergeMethod, rememberMergeMethod } from "../src/pr.ts";
 import { confirmFocus } from "../src/confirm.ts";
 import { barOffers, stripMerge } from "../src/offers.ts";
@@ -270,6 +270,19 @@ test("V0.dialogs-review (1): the open panels are counted, so the app's keys know
   assert.equal(openTraps(), before + 2);
   dropTrap(b);
   dropTrap(a);
+  assert.equal(openTraps(), before);
+});
+
+test("V0.trap-gone-with-panel: a panel that left the page is not open, before its cleanup has run", () => {
+  const before = openTraps();
+  const gone = { el: { isConnected: false } as HTMLElement };
+  const up = { el: { isConnected: true } as HTMLElement };
+  pushTrap(up);
+  pushTrap(gone);
+  assert.equal(openTraps(), before + 1, "only the panel still in the page counts");
+  assert.equal(isTopTrap(up), true, "the newest panel in the page is the top one");
+  dropTrap(gone);
+  dropTrap(up);
   assert.equal(openTraps(), before);
 });
 

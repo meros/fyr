@@ -19,18 +19,22 @@ export function tabTarget<T>(list: readonly T[], active: T | null, back: boolean
 }
 
 /** The open traps, newest last: only the newest acts, so a confirmation over a dialog keeps Tab to itself. */
-const stack: object[] = [];
-export function pushTrap(t: object): void {
+const stack: Trap[] = [];
+/** A trap knows its panel: a panel that left the page no longer counts as open, whether or not its component's cleanup
+ *  has run yet (V0.trap-gone-with-panel: the cleanup of an unmounted effect comes a moment after the DOM is gone). */
+type Trap = { el?: HTMLElement };
+const live = (t: Trap) => !t.el || t.el.isConnected;
+export function pushTrap(t: Trap): void {
   stack.push(t);
 }
-export function dropTrap(t: object): void {
+export function dropTrap(t: Trap): void {
   const i = stack.lastIndexOf(t);
   if (i >= 0) stack.splice(i, 1);
 }
-export const isTopTrap = (t: object): boolean => stack[stack.length - 1] === t;
+export const isTopTrap = (t: Trap): boolean => stack.findLast(live) === t;
 /** V0.dialogs-review (1): how many modal panels are open. The desktop's key handler reads it: while a panel is open
  *  that the app's `dialog` state does not know (the Merge dialog, a confirmation), no app key acts under it. */
-export const openTraps = (): number => stack.length;
+export const openTraps = (): number => stack.filter(live).length;
 
 /** V0.dialogs-review (10): where the focus starts in a panel: its first control that is not the header's × (marked
  *  `data-close`), so Enter or Space right after opening takes the first choice instead of closing; the × only when
@@ -56,7 +60,7 @@ export function useFocusTrap(panel: RefObject<HTMLElement | null>, initial: "fir
   useEffect(() => {
     const el = panel.current;
     if (!el) return;
-    const me = {};
+    const me: Trap = { el };
     pushTrap(me);
     if (!el.contains(document.activeElement)) {
       const first = initial === "first" ? firstFocus(focusables(el), (x) => x.hasAttribute("data-close")) : undefined;
