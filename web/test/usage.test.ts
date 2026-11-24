@@ -30,7 +30,7 @@ test("the chip says the total and its title each kind", () => {
 });
 
 // ---- V0.usage-page ----
-import { decodeUsage, mergeUsage, modelLabel, overheadRows, perDay, rangeDays, usageSearch, type HostUsage } from "../src/usage.ts";
+import { decodeUsage, mergeUsage, modelLabel, overheadRows, ownCallsFoot, perDay, rangeDays, usageSearch, type HostUsage } from "../src/usage.ts";
 
 const desk: HostUsage = {
   hostId: "h1",
@@ -130,4 +130,10 @@ test("V0.usage-overhead: the hosts' overhead adds up by part, and says what wait
   assert.equal(overheadKinds(lines[0]), "cache read 150 · cache write 10");
   assert.equal(overheadKinds({ ...lines[0], kinds: {} }), "none");
   assert.deepEqual(decodeOverhead(null, "h", "x"), { hostId: "h", host: "x", parts: {}, uncalibrated: 0 });
+});
+
+test("V0.usage-no-turns-note: a range of Fyr's own calls only says it has no agent turns", () => {
+  assert.match(ownCallsFoot(268, 268), /100 % of the range's tokens\. No agent turns in this range\.$/);
+  assert.match(ownCallsFoot(268, 536), /50 % of the range's tokens\.$/);
+  assert.doesNotMatch(ownCallsFoot(0, 0), /No agent turns/);
 });

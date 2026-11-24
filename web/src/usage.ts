@@ -375,3 +375,11 @@ export function overheadKinds(l: OverheadLine): string {
     .map(([k, n]) => `${KIND_WORDS[k] ?? k} ${tokens(n)}`);
   return parts.join(" · ") || "none";
 }
+
+/** V0.usage-no-turns-note: the footer of Fyr's own calls, with their share of the range; when the range holds no agent
+ *  turn (they are all of it) it says so, so that 100 % does not read as a fault. */
+export function ownCallsFoot(own: number, total: number): string {
+  const share = total ? Math.round((own / total) * 1000) / 10 : 0;
+  const base = `Titles, search, the question check, the approval judge and project setup: ${share} % of the range's tokens.`;
+  return own > 0 && own >= total ? `${base} No agent turns in this range.` : base;
+}
