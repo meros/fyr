@@ -480,7 +480,8 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .arrived button{border:1px solid var(--line-strong);background:var(--raised);color:var(--ink);border-radius:6px;padding:3px 10px;font:inherit;cursor:pointer;flex:none}
 .arrived .arr-x{border-color:transparent;background:none;color:var(--ink-muted);padding:3px 6px}
 .arrived.m{padding:6px 12px}
-.arrived.m .arr-tx{flex-direction:column;gap:0}
+.arrived.m .arr-tx{flex-direction:column;gap:0;align-items:stretch}
+.arrived.m .arr-tx>*{min-width:0}
 .arrived.m button{min-height:44px;min-width:44px}
 @keyframes arr-in{from{transform:translateY(-100%);opacity:0}to{transform:none;opacity:1}}
 @keyframes arr-wash{from{box-shadow:inset 0 0 0 999px var(--beam-wash)}to{box-shadow:inset 0 0 0 999px transparent}}
