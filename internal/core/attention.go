@@ -138,6 +138,12 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if n := t.RunningTasks(); n > 0 {
 		return Attention{State: Waiting, Section: WorkingSec, Reason: waitReason(t, n)}
 	}
+	// V0.slot-queued-waits: the host holds a heavy job of this thread until
+	// it has room; the thread moves without the owner, so a ready PR's Merge
+	// ask does not pull it into Your move meanwhile.
+	if t.SlotQueued {
+		return Attention{State: Waiting, Section: WorkingSec, Reason: QueuedText}
+	}
 	// V0.101: Needs you is computed: Ready or Stopped on a failure (asks
 	// are decisions, above). A finished run whose result the owner has not
 	// seen is unread in Seen, not in Needs you.
@@ -254,3 +260,8 @@ func needGroup(t *Thread, on func(repo string) bool) Group {
 	}
 	return GroupApprove
 }
+
+// QueuedText is the one line of a thread queued for a heavy job
+// (V0.slot-queued-waits), worded like "Waiting for CI: 2 of 5 checks done":
+// the state before the colon, what it waits for after it.
+const QueuedText = "Queued for a heavy job: waiting for room on the host"
