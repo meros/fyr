@@ -35,7 +35,7 @@
 .m-list .ais-x{min-height:44px;font-size:14px}
 .m-brand{display:flex;align-items:center;flex:none}
 .m-brand img{display:block;width:28px;height:28px}
-.m-conn{display:flex;min-width:0;align-items:center;gap:6px;margin-left:10px;font:400 13px/16px var(--mono);color:var(--ink-muted);flex:0 1 auto}
+.m-conn{display:flex;min-width:0;align-items:center;gap:6px;margin-left:10px;font:400 13px/16px var(--ui);color:var(--ink-muted);flex:0 1 auto;font-variant-numeric:tabular-nums}
 .m-conn i{width:8px;height:8px;border-radius:50%;background:var(--calm);flex:none}
 .m-conn.connecting i{background:transparent;border:1.5px dashed var(--ink-muted)}
 .m-conn.offline i{background:transparent;border:1.5px solid var(--ink-muted)}
@@ -48,7 +48,7 @@
 /* V0.137: Waiting for a slot adds a sixth segment while threads wait; every segment stays one column of the strip. */
 .m-seg{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:56px;border-radius:12px;color:var(--ink-muted);min-width:0}
 .m-seg .c{display:flex;align-items:center;gap:4px;max-width:100%}
-.m-seg .n{font:500 15px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.m-seg .n{font:500 15px/20px var(--ui);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
 .m-seg.att .n{background:var(--beam);color:var(--on-beam);border-radius:10px;padding:0 5px}
 .m-seg .l{font:500 12px/14px var(--ui)}
 .m-seg.on{color:var(--ink);--knock:var(--raised)}
@@ -63,7 +63,7 @@
 .m-sec{position:relative;isolation:isolate;display:flex;align-items:center;gap:8px;height:44px;padding:10px 10px 0;font:500 13px/16px var(--ui);color:var(--ink-muted);min-width:0}
 .m-sec::before{content:"";position:absolute;z-index:-1;inset:10px 0 0;border-radius:10px;background:var(--sunken)}
 .m-sec:has(>.sti.none)::before{background:var(--surface)}
-.m-sec .n{font:400 13px/16px var(--mono);font-variant-numeric:tabular-nums;flex:none}
+.m-sec .n{font:400 13px/16px var(--ui);font-variant-numeric:tabular-nums;flex:none}
 .m-sec .h{margin-left:auto;font-size:12px;max-width:62%}
 .m-sec.hasbtn{height:56px}
 .m-sbtn{margin-left:auto;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;font:500 13px/16px var(--ui);color:var(--ink)}
@@ -125,7 +125,7 @@
 .m-bn{flex:none;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;height:calc(60px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--raised);border-top:1px solid var(--line)}
 .m-bi{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:56px;font:500 12px/14px var(--ui);color:var(--ink-muted);position:relative}
 .m-bi.on{color:var(--ink)}
-.m-bdg{position:absolute;top:3px;left:calc(50% + 8px);font:500 12px/18px var(--mono);font-style:normal;background:var(--beam);color:var(--on-beam);border-radius:9px;padding:0 5px}
+.m-bdg{position:absolute;top:3px;left:calc(50% + 8px);font:500 12px/18px var(--ui);font-style:normal;background:var(--beam);color:var(--on-beam);border-radius:9px;padding:0 5px;font-variant-numeric:tabular-nums}
 .m-bnew{justify-self:center;display:flex;align-items:center;gap:6px;height:44px;padding:0 18px 0 14px;border-radius:22px;background:var(--night);color:var(--on-night);font:600 15px/20px var(--ui)}
 .m-selbar,.m-abar{flex:none;display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + env(safe-area-inset-bottom));background:var(--raised);border-top:1px solid var(--line)}
 .m-selbar .m-bt.p,.m-abar .m-bt.p{flex:1}
@@ -147,7 +147,7 @@
 .m-shh{padding:2px 20px 4px;font:600 17px/24px var(--ui);flex:none}
 .m-mi{display:grid;grid-template-columns:24px minmax(0,1fr) minmax(0,max-content);gap:14px;align-items:center;min-height:52px;padding:4px 20px;font:500 16px/22px var(--ui);color:var(--ink);flex:none;width:100%}
 .m-mi>span:first-child{display:grid;place-items:center;color:var(--ink-muted)}
-.m-mi .w{font:400 13px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:40vw;overflow:hidden;text-overflow:ellipsis}
+.m-mi .w{font:400 13px/16px var(--ui);color:var(--ink-muted);white-space:nowrap;max-width:40vw;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .m-mi.dis{color:var(--ink-muted)}
 .m-mi small{display:block;font:400 13px/18px var(--ui);color:var(--ink-muted)}
 .m-shf{display:flex;padding:8px 16px 0}.m-shf .m-bt{flex:1}
@@ -165,7 +165,7 @@
 .m-kvrow .k{color:var(--ink-muted);font-size:13px}
 .m-kvrow a{color:var(--harbour)}
 /* V0.quota-in-thread: the provider quota's one figure in the thread's title bar: quiet, never shortened, 44 px high */
-.m-tr1 .qfig{flex:none;height:44px;padding:0 4px;font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-muted);white-space:nowrap}
+.m-tr1 .qfig{flex:none;height:44px;padding:0 4px;font:400 12px/16px var(--ui);font-variant-numeric:tabular-nums;color:var(--ink-muted);white-space:nowrap}
 .m-tr1 .qfig.stale{opacity:.7}
 /* the quota lines in Details, one under the other */
 .m-qrow{align-items:start;padding:12px 0}
@@ -185,7 +185,7 @@
 .m-chip.st{flex:none;background:transparent;border:1px solid var(--line-strong);color:var(--ink);--knock:var(--raised)}
 .m-chip.st span{color:var(--ink)}
 .m-chip .icw{display:inline-flex;flex:none;overflow:visible}
-.m-chip.m{font-family:var(--mono);font-weight:400;font-size:12px}
+.m-chip.m{font-family:var(--ui);font-weight:400;font-size:12px;font-variant-numeric:tabular-nums}
 .m-pjb{flex:none;max-width:180px;min-width:0;height:44px;display:flex;align-items:center;padding:0}
 .m-pjb .m-chip{max-width:100%}
 .m-chip.nopj{background:transparent;border:1px dashed var(--line-strong);color:var(--ink-muted)}
@@ -195,7 +195,7 @@
 .m-chip.fldc{flex:none;max-width:max-content} /* V0.folder-chip: keeps its width; the row scrolls (V0.phone-chips-scroll) */
 .m-fldbtn[aria-expanded="true"] .m-chip{box-shadow:inset 0 0 0 1px var(--line-strong)}
 .m-chip.pvc{flex:none;max-width:max-content} /* V0.filmstrip-fold: the hidden filmstrip's chip, beside the folder chip */
-.m-chip.prc{flex:none;min-width:0;overflow:hidden;text-overflow:ellipsis;font:500 12px/16px var(--mono)} /* #84: a long change chip ends in … inside the row */
+.m-chip.prc{flex:none;min-width:0;overflow:hidden;text-overflow:ellipsis;font:500 12px/16px var(--ui);font-variant-numeric:tabular-nums} /* #84: a long change chip ends in … inside the row */
 .m-chip.prc.ok{color:var(--calm)}.m-chip.prc.fail{color:var(--signal-ink)}.m-chip.prc.on{box-shadow:inset 0 0 0 1px var(--line-strong)}
 .m-prb{max-width:none}
 .m-kvprs{display:flex;flex-direction:column;gap:6px}
