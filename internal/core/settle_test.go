@@ -154,3 +154,31 @@ func TestSettleWhenDoneNeedsSomethingToWaitFor(t *testing.T) {
 		t.Fatalf("failed thread: %q", r)
 	}
 }
+
+// V0.settle-waits-unread-message: a message the process took but the agent has
+// not read yet is a run about to start; a settle condition that holds in that
+// gap waits, so the run is not born on a settled thread
+// (thread-settled-run-started).
+func TestSettleWaitsForAnUnreadMessage(t *testing.T) {
+	th := &Thread{}
+	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: KindHost, Title: "Rebuild"}, ByAgent, ct0)
+	SettleWhenReached(th, c.ID, PhaseLanded, ByAgent, ct0)
+	SetOutbox(th, "m1", "sent")
+	UpdateChange(th, c, ChangeUpdate{Phase: PhaseLanded}, ByAgent, ct0)
+	rules(th, ct0)
+	if th.Settle.At != nil {
+		t.Fatal("the change landing settled a thread with an unread message")
+	}
+	before := *th
+	RunStarted(th, ct0.Add(time.Second))
+	if vs := CheckTransition(&before, nil, th, nil, Input{Kind: KindMessageSent}, Result{}, ct0, nil); hasViolation(vs, InvThreadSettledRunStarted) {
+		t.Fatalf("run started on a settled thread: %+v", vs)
+	}
+	rules(th, ct0.Add(time.Second))
+	RunEnded(th, nil, ct0.Add(time.Minute))
+	SetOutbox(th, "m1", "read")
+	rules(th, ct0.Add(time.Minute))
+	if th.Settle.At == nil {
+		t.Fatal("the settle never fired once the message was read and the run ended")
+	}
+}
