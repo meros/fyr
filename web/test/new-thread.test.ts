@@ -1,7 +1,7 @@
 // #41: one New thread model for desktop and phone, with one remembered-defaults record.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chooseHost, chooseProject, createArgs, initialForm, loadRemembered, NEW_THREAD_KEY, pickProfile, saveRemembered, settleForm, type FormCtx } from "../src/new-thread.ts";
+import { chooseHost, chooseProject, createArgs, forProject, initialForm, loadRemembered, NEW_THREAD_KEY, pickProfile, saveRemembered, settleForm, type FormCtx } from "../src/new-thread.ts";
 import type { Profile, Project } from "../src/types.ts";
 import { hid, TH } from "./helpers.ts";
 
@@ -93,4 +93,15 @@ test("#41: the command's arguments: a picked folder wins, a project being made s
   const making = { ...f, creating: "new", draft: { name: "new", folder: "/n" } };
   assert.equal(createArgs(making, ctx, { text: "go" }, "p_new").cwd, "/n");
   assert.equal(createArgs({ ...making, draft: { name: "new", folder: "" } }, ctx, { text: "go" }, "p_new").cwd, undefined, "no folder: a scratch folder");
+});
+
+// V0.provider-projects: a provider limited to projects is offered to those only.
+test("forProject offers a limited provider only to its projects", () => {
+  const ps: Profile[] = [
+    { id: "a", name: "A", color: "", models: [] },
+    { id: "b", name: "B", color: "", models: [], projects: ["p1"] },
+  ];
+  assert.deepEqual(forProject(ps, { id: "ref", rid: "p1" }).map((p) => p.id), ["a", "b"]);
+  assert.deepEqual(forProject(ps, { id: "ref", rid: "p2" }).map((p) => p.id), ["a"]);
+  assert.deepEqual(forProject(ps, undefined).map((p) => p.id), ["a"]);
 });

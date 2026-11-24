@@ -308,6 +308,7 @@ type DTO struct {
 	KeyFrom       string            `json:"keyFrom,omitempty"`
 	Imported      string            `json:"imported,omitempty"`
 	TokenLogin    bool              `json:"tokenLogin,omitempty"`
+	Projects      []string          `json:"projects,omitempty"`
 	Threads       int               `json:"threads"`
 	// V0.53: the account can log in through Fyr; Login is its current or
 	// recent login (the link and state only).
@@ -330,7 +331,7 @@ func (r *Registry) List() []DTO {
 		ad := AdapterFor(p.CLI)
 		d := DTO{ID: p.ID, Name: p.Name, Kind: p.Kind(), CLI: p.CLI, Color: p.Color, Auth: string(p.Auth.Kind), ConfigDir: p.Auth.ConfigDir,
 			BaseURL: p.Endpoint.BaseURL, ModelEnv: p.Endpoint.ModelEnv, Models: p.Models, DefaultModel: p.DefaultModel,
-			DefaultEffort: p.DefaultEffort, Efforts: ad.Caps().Efforts, Quota: p.quotaSpec().Kind, Imported: p.Imported, TokenLogin: p.TokenLogin}
+			DefaultEffort: p.DefaultEffort, Efforts: ad.Caps().Efforts, Quota: p.quotaSpec().Kind, Imported: p.Imported, TokenLogin: p.TokenLogin, Projects: p.Projects}
 		// The login first: a status read after it sees what a finished login left.
 		d.Login = r.login(p.ID)
 		d.Status, d.Need = r.status(p)
@@ -622,6 +623,14 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 	}
 	if v, ok := str("color"); ok {
 		p.Color = v
+	}
+	if raw, ok := a["projects"].([]any); ok {
+		p.Projects = nil
+		for _, x := range raw {
+			if s, _ := x.(string); strings.TrimSpace(s) != "" && !contains(p.Projects, s) {
+				p.Projects = append(p.Projects, strings.TrimSpace(s))
+			}
+		}
 	}
 	return p, nil
 }

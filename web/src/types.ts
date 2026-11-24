@@ -249,6 +249,8 @@ export interface Profile {
   cli?: string;
   /** V0.50: why it cannot run now (no token or key yet); not offered in pickers */
   unavailable?: string;
+  /** the project ids (on its host) it is limited to; none or empty is every project */
+  projects?: string[];
 }
 
 /** What "New project from this thread" starts with (V0.55): a name and the thread's folder. */
