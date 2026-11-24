@@ -1,6 +1,6 @@
 // SPEC 0.5 V0.31: what Fyr's right-click menu holds. Pure: the target in, the
 // entries out. The menu component and the app wire the ids to actions.
-import { actionsFor, type ThreadAction } from "./actions.ts";
+import { actionGroups, actionsFor, menuKey, type ThreadAction } from "./actions.ts";
 import type { Thread } from "./types.ts";
 
 export { SETTLE_DONE_HINT, SETTLE_DONE_TOAST, seenToggle, settleDoneEntry } from "./actions.ts";
@@ -18,14 +18,24 @@ export type MenuTarget =
 
 const SEP: MenuEntry = { sep: true };
 
-/** Actions as menu entries, a line between groups. */
-function menuEntries(acts: ThreadAction[]): MenuEntry[] {
+/** Actions as menu entries, a line between groups (actions.ts `actionGroups`). The key beside an entry is one the
+ *  menu acts on while it is open (`menuKey`); the desktop's two menus, the row's and the header's ⋯, both come from
+ *  here, so they have one order, one look and the same keys. */
+export function menuEntries(acts: ThreadAction[]): MenuEntry[] {
   const out: MenuEntry[] = [];
-  acts.forEach((a, i) => {
-    if (i && acts[i - 1].group !== a.group) out.push(SEP);
-    out.push({ id: a.id, label: a.label, ...(a.key ? { key: a.key } : {}), ...(a.hint ? { hint: a.hint } : {}), ...(a.disabled ? { disabled: a.disabled } : {}) });
-  });
+  for (const g of actionGroups(acts)) {
+    if (out.length) out.push(SEP);
+    for (const a of g) {
+      const key = menuKey(a);
+      out.push({ id: a.id, label: a.label, ...(key ? { key } : {}), ...(a.hint ? { hint: a.hint } : {}), ...(a.disabled ? { disabled: a.disabled } : {}) });
+    }
+  }
   return out;
+}
+
+/** The entry a key typed in an open menu runs: the one that shows the key and is not off. */
+export function entryForKey(items: MenuEntry[], key: string): MenuItem | undefined {
+  return items.find((it): it is MenuItem => !("sep" in it) && !it.disabled && it.key === key);
 }
 
 /** V0.one-action-list: a row's right-click menu is the desktop's list of the thread's actions (actions.ts). */

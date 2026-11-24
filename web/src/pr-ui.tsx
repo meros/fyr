@@ -5,14 +5,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import type { PullRequest, Thread } from "./types.ts";
-import { MERGE_METHODS, rememberedMergeMethod, rememberMergeMethod, hasMultipleRepos, headLabel, prChip, shortHead, shortRepo, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
+import { hasMultipleRepos, prChip, shortRepo, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { relTime } from "./format.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { StateIcon } from "./icons.tsx";
-import { Modal } from "./dialogs.tsx";
-import { sensitiveLine } from "./sensitive.ts";
-import { browserStorage } from "./prefs.ts";
+import { useMerge } from "./merge-ui.tsx";
 
 
 interface PrViewProps {
@@ -42,7 +40,7 @@ export function PrView(p: PrViewProps) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; fail?: boolean } | null>(null);
-  const [merging, setMerging] = useState(false);
+  const askMerge = useMerge();
   const gen = useRef(0);
   const later = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -188,8 +186,8 @@ export function PrView(p: PrViewProps) {
 
       <div class="prv-acts">
         {open && (
-          <button class="btn p prv-merge" disabled={!!mergeReason} title={mergeReason ?? "Choose how to merge"} onClick={() => setMerging(true)}>
-            {headLabel("Merge", head)}…
+          <button class="btn p prv-merge" disabled={!!mergeReason} title={mergeReason ?? "Choose how to merge"} onClick={() => void askMerge({ number: d?.number ?? pr.number, title, repo: d?.repo ?? pr.repo ?? "", head: d?.head, base: d?.base, sha: head, sensitive, choose: true, run: (m) => merge(m ?? "squash", d?.number ?? pr.number) })}>
+            Merge…
           </button>
         )}
         {open && groups.failed.length > 0 && (
@@ -251,8 +249,6 @@ export function PrView(p: PrViewProps) {
           <Description body={d.body ?? ""} />
         </>
       )}
-      {merging && d && <MergeDialog d={d} sha={head} sensitive={sensitive} phone={p.phone} onClose={() => setMerging(false)} onMerge={(m) => merge(m, d.number)} />}
-      {merging && !d && <MergeDialog d={{ url: pr.url, repo: pr.repo ?? "", number: pr.number, title, state: "OPEN", checks: [], threads: [] }} sha={head} sensitive={sensitive} phone={p.phone} onClose={() => setMerging(false)} onMerge={(m) => merge(m, pr.number)} />}
     </div>
   );
 }
@@ -421,103 +417,5 @@ function Description({ body }: { body: string }) {
         <div class="prv-sub">No description.</div>
       )}
     </section>
-  );
-}
-
-/** The Merge dialog. V0.dialogs-review (1): while it is open no key of the app acts under it (app-keyboard.tsx reads
- *  the open panels), and Esc and Enter are its own. (27): it starts on the method this repository was merged with
- *  last on this device, stays open with the host's error when the merge does not start, and names its keys in the
- *  foot like the confirmation (not on the phone, which has no keyboard). */
-function MergeDialog({ d, sha, sensitive, phone, onClose, onMerge }: { d: PrDetail; sha?: string; sensitive?: string; phone?: boolean; onClose(): void; /** resolves to the host's error, or null when the merge started */ onMerge(m: MergeMethod): Promise<string | null> }) {
-  const [method, setMethod] = useState<MergeMethod>(() => rememberedMergeMethod(browserStorage(), d.repo));
-  const [sending, setSending] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const btn = useRef<HTMLButtonElement>(null);
-  const goRef = useRef<() => void>(() => {});
-  /* eslint-disable react-hooks/exhaustive-deps -- the focus and the Escape handler are set once, when the dialog opens; onClose is the parent's callback */
-  useEffect(() => {
-    btn.current?.focus();
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      } else if (e.key === "Enter" && !e.isComposing) {
-        // Enter merges with the method shown, from a method's radio too; a focused Cancel or × takes Enter itself.
-        const el = document.activeElement as HTMLElement | null;
-        if (el?.tagName === "BUTTON" && el !== btn.current) return;
-        e.preventDefault();
-        e.stopPropagation();
-        goRef.current();
-      }
-    };
-    document.addEventListener("keydown", key, true);
-    return () => document.removeEventListener("keydown", key, true);
-  }, []);
-  /* eslint-enable react-hooks/exhaustive-deps */
-  const go = async () => {
-    if (sending) return;
-    setSending(true);
-    setErr(null);
-    const e = await onMerge(method);
-    if (!e) {
-      rememberMergeMethod(browserStorage(), d.repo, method);
-      return onClose();
-    }
-    setSending(false);
-    setErr(e);
-  };
-  goRef.current = () => void go();
-  return (
-    <Modal title={`Merge #${d.number}`} onClose={onClose}>
-      <div class="db prv-dlg" onKeyDown={(e) => e.stopPropagation()}>
-        {sensitive && (
-          <p class="chsens" role="note">
-            {sensitiveLine(sensitive)}
-          </p>
-        )}
-        <p class="lede">
-          {d.head && d.base ? (
-            <>
-              Merges <code>{d.head}</code> into <code>{d.base}</code> on GitHub.
-            </>
-          ) : (
-            "Merges this PR on GitHub."
-          )}{" "}
-          {sha && (
-            <>
-              Only commit <code>{shortHead(sha)}</code>: if the branch moves first, Fyr refuses.{" "}
-            </>
-          )}
-          The result shows in the conversation.
-        </p>
-        <div class="prv-methods" role="radiogroup" aria-label="Merge method">
-          {MERGE_METHODS.map((m) => (
-            <label class={`prv-m${method === m.id ? " on" : ""}`} key={m.id}>
-              <input type="radio" name="merge-method" value={m.id} checked={method === m.id} onChange={() => setMethod(m.id)} />
-              <span>
-                <b>{m.label}</b>
-                <span class="prv-mh">{m.hint}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </div>
-      <div class="df prv-df">
-        {err && (
-          <div class="dfn">
-            <span class="err" role="alert">
-              {err}
-            </span>
-          </div>
-        )}
-        <button class="btn" onClick={onClose}>
-          Cancel{!phone && <kbd>Esc</kbd>}
-        </button>
-        <button ref={btn} class={`btn p${sensitive ? " danger" : ""}`} disabled={sending} onClick={() => void go()}>
-          {sending ? "Merging…" : mergeButton(method, d.number)}
-          {!phone && !sending && <kbd>⏎</kbd>}
-        </button>
-      </div>
-    </Modal>
   );
 }

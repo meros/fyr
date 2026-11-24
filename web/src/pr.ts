@@ -316,6 +316,46 @@ export function mergeButton(method: MergeMethod, n: number): string {
   return method === "squash" ? `Squash and merge #${n}` : method === "rebase" ? `Rebase and merge #${n}` : `Merge #${n}`;
 }
 
+/** V0.dialogs-review: one merge, as the Merge dialog asks about it, wherever it starts (the PR tab, a change's card,
+ *  the agent's merge ask). */
+export interface MergeAsk {
+  /** what is merged: the PR's number, title and repository (the method remembered per repository) */
+  number?: number;
+  title?: string;
+  repo?: string;
+  /** the branches, when known */
+  head?: string;
+  base?: string;
+  /** V0.97: the commit the merge is bound to */
+  sha?: string;
+  /** V0.sensitive-pr: why this merge needs a deliberate press; the dialog is then red and starts on Cancel */
+  sensitive?: string;
+  /** The host takes the method on this path (the PR tab's `pr.merge`): the dialog offers the choice. Without it the
+   *  merge runs with the method its change or ask names (`action.run` and `thread.answer` take none), and the dialog
+   *  says so instead of offering a choice it could not keep. */
+  choose?: boolean;
+  /** Start the merge; resolves to the host's error, or null when it started. */
+  run(method: MergeMethod | undefined): Promise<string | null>;
+}
+
+/** The Merge dialog's title: it names what is merged. */
+export function mergeTitle(a: Pick<MergeAsk, "number" | "sensitive">): string {
+  const what = a.number ? `#${a.number}` : "this PR";
+  return a.sensitive ? `Merge ${what}, a sensitive PR` : `Merge ${what}`;
+}
+
+/** The Merge dialog's primary button: the method when one is chosen there, else what it merges. */
+export function mergeConfirm(a: Pick<MergeAsk, "number" | "choose" | "sha">, method: MergeMethod): string {
+  if (a.choose && a.number) return mergeButton(method, a.number);
+  return a.number ? `Merge #${a.number}` : headLabel("Merge", a.sha);
+}
+
+/** What the dialog says in place of the method choice when the host takes none on this path. */
+export const MERGE_OWN_METHOD = "With the method this change asks for (squash unless the agent named another). The PR tab lets you pick one.";
+
+/** The host's refusal, as the dialog prints it on a line of its own. */
+export const notMerged = (err: string) => `Not merged: ${err}`;
+
 /** The threads grouped per file, in the order they came. */
 export function threadsByFile(threads: PrThread[]): { path: string; threads: PrThread[] }[] {
   const m = new Map<string, PrThread[]>();

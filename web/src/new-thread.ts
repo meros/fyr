@@ -10,6 +10,7 @@ import { asObject, parseJson } from "./decode.ts";
 import { asHostId, type HostId } from "./hostid.ts";
 import { findProject, localProject, memberOn, newThreadFolder, projectDefaults, projectRecords, recordOf, startProject } from "./projects.ts";
 import type { Profile, Project } from "./types.ts";
+import type { Chip } from "./attach.ts";
 import { baseName } from "./paths.ts";
 
 /** What thread.create gets. */
@@ -133,6 +134,9 @@ export interface NewThreadForm {
   hand?: { host?: boolean; project?: boolean; agent?: boolean };
   /** V0.dialogs-review (12): what a change of host reset, said once under the Host field; "" or missing otherwise */
   reset?: string;
+  /** V0.dialogs-review: the project and folder the owner picked by hand on a host, kept while the form is open, so a
+   *  look at another host and back does not lose them (by install id) */
+  byHost?: Record<string, { project?: { id: string | undefined }; picked: string }>;
 }
 
 export function initialForm(): NewThreadForm {
@@ -178,18 +182,32 @@ export function formHost(f: NewThreadForm, ctx: FormCtx): HostId | undefined {
 /** V0.132, V0.139: pick the host first: its projects follow (the remembered one when it is there, else its first; No
  *  project stays No project), a folder picked on another host is dropped, and the provider moves to one it has. */
 export function chooseHost(f: NewThreadForm, host: HostId, ctx: FormCtx, last: Remembered = {}): NewThreadForm {
-  if (host === formHost(f, ctx)) return f;
+  const from = formHost(f, ctx);
+  if (host === from) return f;
+  // V0.dialogs-review: what the owner picked by hand on the host that is left waits there for the way back.
+  const byHost = { ...f.byHost };
+  if (from) {
+    const project = f.hand?.project && f.projectId !== null ? { id: f.projectId } : undefined;
+    if (project || f.picked) byHost[from] = { ...(project ? { project } : {}), picked: f.picked };
+    else delete byHost[from];
+  }
+  const list = hostProjects(ctx, host);
+  const mine = byHost[host];
+  const back = mine?.project && (mine.project.id === undefined || list.some((x) => x.id === mine.project!.id)) ? mine.project : undefined;
   // V0.dialogs-review (12): the New project step stays open with its name; only its folder, a path on the other
   // host, goes. `reset` says what went.
-  let next: NewThreadForm = { ...f, host, picked: "", draft: f.draft ? { name: f.draft.name, folder: "" } : null, picking: false };
-  if (f.projectId !== undefined) {
-    const list = hostProjects(ctx, host);
+  let next: NewThreadForm = { ...f, host, byHost, picked: mine?.picked ?? "", draft: f.draft ? { name: f.draft.name, folder: "" } : null, picking: false };
+  let own = !!back;
+  if (back) next = { ...next, projectId: back.id };
+  else if (f.projectId !== undefined) {
     // Decision 0034: a linked project stays picked when the new host has it too.
     const same = memberOn(findProject(ctx.projects, f.projectId), host);
     const pr = same ?? list.find((x) => x.id === startProject(list, null, last.projectId));
     next = { ...next, projectId: pr?.id };
-  }
-  next = { ...next, reset: hostResetNote(f, next, ctx) };
+    own = !!same && !!f.hand?.project;
+  } else own = !!f.hand?.project; // No project stays No project
+  // A project the change of host assigned is not the owner's pick: the way back must not blame them for it.
+  next = { ...next, hand: { ...f.hand, project: own }, reset: mine ? "" : hostResetNote(f, next, ctx) };
   const there = profilesOn(ctx, host);
   if (!there.length) return next;
   return { ...next, ...profileFor(currentProject(next, ctx), there, f, last) };
@@ -351,13 +369,21 @@ export function startBlock(plan: string | null, hostNote: string): string {
 export const NEW_DRAFT_KEY = "fyr.newThreadDraft";
 
 /** What a closed form keeps: the typed text, and the picks the owner made by hand (the rest follows the defaults
- *  again). Attached files are not kept: an upload belongs to the form that made it. */
+ *  again). The attached files themselves are not in it (an upload is the host's, and its chip lives in the page:
+ *  new-thread-form.ts keeps the chips of a closed form while the page lives); `files` is how many there were, so a
+ *  form that cannot put them back says so. */
 export interface NewThreadDraft {
   text: string;
   title: string;
   liveView?: boolean;
+  /** when the owner last changed it (this browser's clock, ms) */
+  at?: number;
+  /** how many files were attached */
+  files?: number;
   /** the host the picks below are on; a draft whose host is gone keeps its text only */
   host?: HostId;
+  /** the owner picked that host by hand */
+  handHost?: boolean;
   /** "" is No project */
   project?: string;
   /** the folder picked for the thread */
@@ -365,19 +391,22 @@ export interface NewThreadDraft {
   profile?: string;
   model?: string;
   effort?: string;
-  /** the New project step: what was typed, and whether it was open */
-  newProject?: { name: string; folder: string; open: boolean };
+  /** the New project step: what was typed in it */
+  newProject?: { name: string; folder: string };
 }
 
-/** The draft of a form, or null when nothing was typed (a prompt, a title or a new project's name): picks alone are
- *  not a draft, the form opens on its defaults again. */
-export function draftOf(f: NewThreadForm, ctx: FormCtx): NewThreadDraft | null {
-  const np = f.draft && (f.draft.name.trim() || f.draft.folder) ? { name: f.draft.name, folder: f.draft.folder, open: f.creating !== null } : undefined;
-  if (!f.text.trim() && !f.title.trim() && !np?.name.trim()) return null;
+/** The draft of a form, or null when the form holds nothing of the owner's (a prompt, a title, a new project's
+ *  name, an attached file): picks alone are not a draft, the form opens on its defaults again. */
+export function draftOf(f: NewThreadForm, ctx: FormCtx, o: { at?: number; files?: number } = {}): NewThreadDraft | null {
+  const np = f.draft && (f.draft.name.trim() || f.draft.folder) ? { name: f.draft.name, folder: f.draft.folder } : undefined;
+  if (!f.text.trim() && !f.title.trim() && !np?.name.trim() && !o.files) return null;
   const d: NewThreadDraft = { text: f.text, title: f.title };
   if (f.liveView) d.liveView = true;
+  if (o.at) d.at = o.at;
+  if (o.files) d.files = o.files;
   const host = formHost(f, ctx);
   if (host && (f.hand?.host || f.hand?.project || f.hand?.agent || f.picked || np?.folder)) d.host = host;
+  if (d.host && f.hand?.host) d.handHost = true;
   if (f.hand?.project && f.projectId !== null) d.project = f.projectId ?? "";
   if (f.picked) d.folder = f.picked;
   if (f.hand?.agent && f.profile) {
@@ -397,14 +426,17 @@ export function loadDraft(kv: KeyValue | null): NewThreadDraft | null {
     if (text === undefined || title === undefined) return null;
     const d: NewThreadDraft = { text, title };
     if (j.liveView === true) d.liveView = true;
+    if (typeof j.at === "number" && j.at > 0) d.at = j.at;
+    if (typeof j.files === "number" && j.files > 0) d.files = Math.floor(j.files);
     const host = asHostId(str(j.host));
     if (host) d.host = host;
+    if (host && j.handHost === true) d.handHost = true;
     for (const k of ["project", "folder", "profile", "model", "effort"] as const) {
       const v = str(j[k]);
       if (v !== undefined) d[k] = v;
     }
     const np = asObject(j.newProject);
-    if (np && str(np.name) !== undefined) d.newProject = { name: str(np.name)!, folder: str(np.folder) ?? "", open: np.open === true };
+    if (np && str(np.name) !== undefined) d.newProject = { name: str(np.name)!, folder: str(np.folder) ?? "" };
     return d;
   } catch {
     return null;
@@ -431,21 +463,29 @@ export function draftReady(d: NewThreadDraft, ctx: FormCtx): boolean {
 /** A settled form with the draft put back. The typed text always comes back; a pick comes back only when it still
  *  exists (its host, its project, its provider and model), else the form's default stays. `part`: "words" puts back
  *  the texts and the new project's name only (the host's state has not arrived, `draftReady`); "picks" then adds the
- *  picks and leaves the texts as they are (the owner may have typed on). */
-export function restoreDraft(f: NewThreadForm, d: NewThreadDraft, ctx: FormCtx, last: Remembered = {}, part: "all" | "words" | "picks" = "all"): NewThreadForm {
+ *  picks and leaves the texts as they are (the owner may have typed on).
+ *
+ *  The form was opened somewhere (`filtered`: on the project the inbox is filtered to), and the draft does not move
+ *  it silently: the form goes to the draft's host only for a project picked by hand in the draft (the line above the
+ *  prompt then says so, `draftLine`), or for a host picked by hand when no filter chose the project. A provider or a
+ *  folder picked on another host than the form's is simply dropped.
+ *
+ *  The New project step comes back closed: its name and folder wait in the project list (the search carries the
+ *  name), so no restored form has a primary button that makes a project. */
+export function restoreDraft(f: NewThreadForm, d: NewThreadDraft, ctx: FormCtx, last: Remembered = {}, part: "all" | "words" | "picks" = "all", filtered = false): NewThreadForm {
   const np = d.newProject;
-  const step = (x: NewThreadForm, folder: boolean): NewThreadForm => (np ? { ...x, draft: { name: np.name, folder: folder ? np.folder : "" }, creating: np.open ? np.name : null } : x);
+  const step = (x: NewThreadForm, folder: boolean): NewThreadForm => (np ? { ...x, draft: { name: np.name, folder: folder ? np.folder : "" } } : x);
   let out: NewThreadForm = part === "picks" ? f : { ...f, text: d.text, title: d.title, liveView: !!d.liveView };
   if (part === "words") return step(out, true);
   const hand: NonNullable<NewThreadForm["hand"]> = { ...out.hand };
   // The picks are one host's: with that host gone (or another install's id after a rotation) only the texts return.
   let bound = !d.host || d.host === formHost(out, ctx);
-  if (!bound && ctx.hosts?.some((h) => h.id === d.host)) {
+  if (!bound && ctx.hosts?.some((h) => h.id === d.host) && (d.project !== undefined || (d.handHost && !filtered))) {
     out = { ...chooseHost(out, d.host!, ctx, last), reset: "" };
     bound = true;
   }
   if (bound) {
-    if (d.host && multiHost(ctx.hosts)) hand.host = true;
+    if (d.handHost && multiHost(ctx.hosts)) hand.host = true;
     if (d.project !== undefined) {
       const pr = d.project ? formProjects(out, ctx).find((x) => x.id === d.project) : null;
       if (pr !== undefined) {
@@ -464,8 +504,64 @@ export function restoreDraft(f: NewThreadForm, d: NewThreadDraft, ctx: FormCtx, 
   // the owner has it now; a folder on a host that is gone does not stay in it.
   if (part === "picks") out = { ...out, picking: f.picking, creating: f.creating, draft: f.draft && !bound ? { name: f.draft.name, folder: "" } : f.draft };
   else out = step(out, bound);
-  return { ...out, hand };
+  return { ...out, hand: { ...out.hand, ...hand } };
 }
+
+/** When a draft was last changed, in the owner's words: "today 16:40", "yesterday 16:40", "Mon 16:40" within a
+ *  week, else the date ("12 Nov", with the year when it is another one). This browser's time zone. */
+export function draftWhen(at: number, now: number): string {
+  const d = new Date(at);
+  const n = new Date(now);
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day(n) - day(d)) / 86_400_000);
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (days <= 0) return `today ${time}`;
+  if (days === 1) return `yesterday ${time}`;
+  if (days < 7) return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()]} ${time}`;
+  const date = `${d.getDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()]}`;
+  return d.getFullYear() === n.getFullYear() ? date : `${date} ${d.getFullYear()}`;
+}
+
+/** The line above the prompt of a form that opened with a draft: what it is, where it will start, and what did not
+ *  come back. `f` is the form now; `pending`: the draft's picks still wait for the host's state; `lost`: attached
+ *  files that could not be put back. */
+export function draftLine(d: NewThreadDraft, f: NewThreadForm, ctx: FormCtx, now: number, o: { pending?: boolean; lost?: number } = {}): string {
+  const parts = [d.at ? `Draft from ${draftWhen(d.at, now)}` : "Draft"];
+  const name = currentProject(f, ctx)?.name;
+  const here = name ? `in ${name}` : "no project";
+  if (d.project === undefined || o.pending) parts.push(here);
+  else if ((f.projectId ?? "") === d.project && f.hand?.project) parts.push(name ? `${here}, the project picked in the draft` : "no project, as picked in the draft");
+  else parts.push(`${here} (the project picked in the draft is not offered here)`);
+  const lost = o.lost ?? 0;
+  if (lost > 0) parts.push(lost === 1 ? "1 file was not kept" : `${lost} files were not kept`);
+  return parts.join(" · ");
+}
+
+/** The chips of a closing form that can be put back honestly while the page lives: the ones whose upload is on the
+ *  host. One still on its way stops with the form, and a failed one has nothing to keep. */
+export function keptFiles(chips: Chip[]): Chip[] {
+  return chips.filter((c) => c.status === "done" && !!c.id);
+}
+
+/** The files of a draft as its form opens: `held` are the chips the closed form kept, uploaded to its host. They come
+ *  back only on that same host (an upload is one host's); `lost` is how many of the draft's files did not, which the
+ *  line above the prompt says. */
+export function filesBack(held: { host: HostId | undefined; chips: Chip[] } | null, host: HostId | undefined, d: NewThreadDraft | null): { chips: Chip[]; lost: number } {
+  const chips = d && held && held.host && held.host === host ? held.chips : [];
+  return { chips, lost: Math.max(0, (d?.files ?? 0) - chips.length) };
+}
+
+/** What closing the form would throw away for good, as the question to ask first; null when closing loses nothing.
+ *  Only a form of files alone asks: with words the draft comes back and says what did not. */
+export function closeQuestion(text: string, chips: Chip[]): string | null {
+  if (text.trim()) return null;
+  const n = chips.filter((c) => c.status === "uploading").length;
+  if (!n) return null;
+  return n === 1 ? "A file is still uploading. It is not kept when you close now." : `${n} files are still uploading. They are not kept when you close now.`;
+}
+
+/** What the foot says when Enter is pressed on a restored draft nobody touched: the first Enter does not start it. */
+export const DRAFT_ENTER_NOTE = "This is the draft, unchanged. Press Enter again to start it.";
 
 // ---- V0.dialogs-review: the form's words, one spelling for the desktop dialog and the phone screen ----
 
@@ -482,4 +578,21 @@ export const LIVE_VIEW_HELP = "The agent keeps a page of its state pinned above 
 export function folderNote(cur: Project | undefined, folder: { cwd?: string; label?: string; scratch: boolean }, making?: { name: string; folder: string } | null): string {
   if (!making && cur?.folder && cur.folder === folder.cwd) return "";
   return folderHint(cur, folder, making);
+}
+
+/** The Folder row's value. V0.dialogs-review: when the thread simply starts in the picked project's own folder, the
+ *  row says so in words instead of printing the path a third time (the Project row above already shows it);
+ *  `plain` marks a value that is words, not a path. */
+export function folderValue(cur: Project | undefined, folder: { cwd?: string; label: string; scratch: boolean }): { label: string; plain: boolean } {
+  if (folder.scratch) return { label: folder.label, plain: true };
+  if (cur?.folder && cur.folder === folder.cwd) return { label: "The project's folder", plain: true };
+  return { label: folder.label, plain: false };
+}
+
+/** The summary of the More fold, on both fronts: what is inside while nothing in it is set, else what is set, so a
+ *  closed fold never hides a value. `extra` names what one front holds there besides (the phone: every provider's
+ *  quota). */
+export function moreSummary(f: Pick<NewThreadForm, "title" | "liveView">, extra: string[] = []): string {
+  const set = [f.title.trim() ? "a title" : "", f.liveView ? "Live view on" : ""].filter(Boolean);
+  return `More: ${set.length ? set.join(", ") : ["title", "live view", ...extra].join(", ")}`;
 }

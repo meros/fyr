@@ -18,6 +18,8 @@ import { HandoverLinkBar } from "./handover-ui.tsx";
 import { type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { deskThreadMenu, type ThreadAction } from "./actions.ts";
+import { entryForKey, menuEntries } from "./menu.ts";
+import { MenuRows } from "./menu-ui.tsx";
 import { hostChip, offlineLine, profilesOf, threadProvider, type HostProfiles } from "./hosts.ts";
 import { ThreadQuotaChip } from "./quota-ui.tsx";
 import { useHosts } from "./host-pick-ui.tsx";
@@ -347,29 +349,33 @@ export function ThreadTabBody({ t, tab, setTab, prs, activePr, onSelectPr, event
   );
 }
 
-/** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
+/** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. V0.dialogs-review:
+ *  its rows are the row menu's (menu-ui.tsx `MenuRows`, menu.ts `menuEntries`): one order, one look, a reason under
+ *  an entry that is off, and a key shown beside an entry runs it while the menu is open. */
 function ThreadMenu({ items, onPick }: { items: ThreadAction[]; onPick(a: ThreadAction): void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
+  const entries = menuEntries(items);
   useEffect(() => {
     if (!open) return;
-    ref.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    ref.current?.querySelector<HTMLElement>("[role=menuitem]:not([aria-disabled=true])")?.focus();
     const away = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
-  const run = (a: ThreadAction) => () => {
+  const run = (id: string) => {
+    const a = items.find((x) => x.id === id);
     setOpen(false);
-    onPick(a);
+    if (a) onPick(a);
   };
   const onKey = (e: KeyboardEvent) => {
     // The menu owns its keys: the inbox shortcuts must not act while it has focus.
     e.stopPropagation();
     if (!open) return;
-    const els = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
+    const els = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]:not([aria-disabled=true])") ?? [])];
     const i = els.indexOf(document.activeElement as HTMLElement);
     if (e.key === "Escape") {
       e.preventDefault();
@@ -380,6 +386,10 @@ function ThreadMenu({ items, onPick }: { items: ThreadAction[]; onPick(a: Thread
       const n = els.length;
       els[(i + (e.key === "ArrowDown" ? 1 : n - 1) + n) % n]?.focus();
     } else if (e.key === "Tab") setOpen(false);
+    else if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+      const it = entryForKey(entries, e.key);
+      if (it) (e.preventDefault(), run(it.id));
+    }
   };
   return (
     <div class="tmenu" ref={ref} onKeyDown={onKey}>
@@ -388,13 +398,7 @@ function ThreadMenu({ items, onPick }: { items: ThreadAction[]; onPick(a: Thread
       </button>
       {open && (
         <div class="tmenu-l" role="menu" aria-label="Thread actions">
-          {items.map((a) => (
-            <button key={a.id} class="mi" role="menuitem" disabled={!!a.disabled} title={a.disabled ?? a.hint} onClick={run(a)}>
-              {a.key ? <kbd>{a.key}</kbd> : <span />}
-              <span class="ell">{a.label}</span>
-              <span />
-            </button>
-          ))}
+          <MenuRows items={entries} onPick={(it) => run(it.id)} />
         </div>
       )}
     </div>

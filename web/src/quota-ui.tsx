@@ -37,6 +37,7 @@ export function useQuotas(): Quota[] {
   const [q, setQ] = useState(current);
   useEffect(() => {
     subs.add(setQ);
+    setQ(current); // a poll that landed between this render and now reached the earlier subscribers only
     if (subs.size === 1) {
       source = api;
       if (Date.now() - lastAt > POLL_MS / 2) void poll();

@@ -5,8 +5,7 @@ import type { ComponentChildren } from "preact";
 import { useContext, useMemo } from "preact/hooks";
 import type { Change, ChangeNeed, Thread } from "./types.ts";
 import { useApi } from "./api-context.ts";
-import { useAsk } from "./confirm-ui.tsx";
-import { press } from "./confirm.ts";
+import { useMerge } from "./merge-ui.tsx";
 import { ThreadCPU, ThreadJob, ThreadService, ThreadSlot, useRowLoad } from "./load-ui.tsx";
 import { RowUndeclared, useRowUndeclared } from "./undeclared-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
@@ -18,7 +17,7 @@ import { rowDetail, rowState, stateNamesPr } from "./rows.ts";
 import { relTime, whenLabel } from "./format.ts";
 import { snoozeLine } from "./snooze.ts";
 import { rowPrChip } from "./pr.ts";
-import { changeChip, headerPrs, needLook, rowNeed, threadPrs } from "./offers.ts";
+import { changeChip, headerPrs, needLook, pressArgs, rowNeed, threadPrs } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
 import { WakeChip } from "./wake-ui.tsx";
 import { GUEST_TEXT, type GuestWhy } from "./selection.ts";
@@ -279,7 +278,7 @@ function needButton(change: Change, need: ChangeNeed): string {
 
 function NeedButton({ t, change, need }: { t: Thread; change: Change; need: ChangeNeed }) {
   const api = useApi();
-  const ask = useAsk();
+  const askMerge = useMerge();
   const look = needLook(need);
   const merge = (change.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
   const canMerge = need.cause === "ready" && !!merge && !!need.head;
@@ -293,7 +292,19 @@ function NeedButton({ t, change, need }: { t: Thread; change: Change; need: Chan
         onClick={(e) => {
           if (!canMerge) return; // Answer: the row's own click opens the thread
           e.stopPropagation();
-          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(t.hostId, action, t.id, args), need.head, change.sensitive);
+          // V0.dialogs-review: the row's Merge asks first, as it did, now in the Merge dialog every merge asks in.
+          const args = pressArgs(change.id, merge!, need.head);
+          void askMerge({
+            number: change.pr?.number,
+            title: change.pr?.title ?? change.title,
+            repo: change.pr?.repo,
+            sha: need.head,
+            sensitive: change.sensitive || undefined,
+            run: async () => {
+              const r = await api.command(t.hostId, "action.run", t.id, args);
+              return r.ok ? null : (r.error ?? "The merge did not start.");
+            },
+          });
         }}
       >
         {look.button}

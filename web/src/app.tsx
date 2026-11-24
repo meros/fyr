@@ -42,6 +42,7 @@ import { snoozeKeyCount } from "./snooze.ts";
 import { isStandalone, promptInstall } from "./pwa.ts";
 import { PhoneApp } from "./phone.tsx";
 import { ConfirmProvider } from "./confirm-ui.tsx";
+import { MergeProvider } from "./merge-ui.tsx";
 import { DirectoryContext } from "./project-ui.tsx";
 import { recordOf } from "./projects.ts";
 import { FolderPickContext } from "./folder-picker.tsx";
@@ -79,9 +80,9 @@ function App() {
   useKeyboard({ ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G });
   const I = useHostActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
   const J = usePhoneNav({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G, ...I });
-  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, onCard, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, runDeskAction, ctxMenu, submitAsk, answerField, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
+  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, onCard, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, runDeskAction, ctxMenu, submitAsk, answerField, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, mergeHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
 
-  const providers: Omit<AppProvidersProps, "children"> = { directory, folderPicker, undNav, hostsCtx, hostMarks: store.hostMarks, confirm: confirmHost.ask, profiles: byHost };
+  const providers: Omit<AppProvidersProps, "children"> = { directory, folderPicker, undNav, hostsCtx, hostMarks: store.hostMarks, confirm: confirmHost.ask, merge: mergeHost.ask, profiles: byHost };
 
   if (phone) {
     return (
@@ -135,6 +136,7 @@ function App() {
             <>
               {folderPickView}
               {confirmHost.view}
+              {mergeHost.view}
             </>
           }
         />
@@ -291,6 +293,7 @@ function App() {
       {dialog === "new" && <NewThreadDialog onAddProject={projectActions.add} profiles={byHost} hosts={store.hostList} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
       {dialog === "picker" && (
         <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
+          {pickIds.length === 1 && store.threads[pickIds[0]]?.title && <div class="dsub ell">{store.threads[pickIds[0]].title}</div>}
           <div class="db">
             <ProjectPicker
               projects={store.projects}
@@ -345,8 +348,9 @@ function App() {
           {settingsFor(settingsAt, (r) => setSettingsAt(r ?? { page: "providers" }))}
         </Modal>
       )}
-      {dialog === "snooze" && <SnoozeMenu presets={snoozeList()} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
+      {dialog === "snooze" && <SnoozeMenu presets={snoozeList()} count={snoozeTargets.length} title={snoozeTargets.length === 1 ? store.threads[snoozeTargets[0]]?.title : undefined} onPick={snooze} onClose={() => setDialog(null)} />}
       {folderPickView}
+      {mergeHost.view}
       {confirmHost.view}
       </AppProviders>
     </div>
@@ -360,6 +364,7 @@ type AppProvidersProps = {
   hostsCtx: ComponentProps<typeof HostsContext.Provider>["value"];
   hostMarks: ComponentProps<typeof HostMarksContext.Provider>["value"];
   confirm: ComponentProps<typeof ConfirmProvider>["value"];
+  merge: ComponentProps<typeof MergeProvider>["value"];
   profiles: ComponentProps<typeof ProfilesContext.Provider>["value"];
   children: ComponentChildren;
 };
@@ -374,7 +379,9 @@ function AppProviders(p: AppProvidersProps) {
           <HostsContext.Provider value={p.hostsCtx}>
             <HostMarksContext.Provider value={p.hostMarks}>
               <ConfirmProvider value={p.confirm}>
-                <ProfilesContext.Provider value={p.profiles}>{p.children}</ProfilesContext.Provider>
+                <MergeProvider value={p.merge}>
+                  <ProfilesContext.Provider value={p.profiles}>{p.children}</ProfilesContext.Provider>
+                </MergeProvider>
               </ConfirmProvider>
             </HostMarksContext.Provider>
           </HostsContext.Provider>

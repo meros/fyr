@@ -23,6 +23,7 @@ import { hostChoices, hostOfflineNote, profilesOf } from "./hosts.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { useDirectory } from "./project-ui.tsx";
 import { SCRATCH_LABEL } from "./projects.ts";
+import { startBlock } from "./new-thread.ts";
 import { tildePath } from "./paths.ts";
 import { ref } from "./hostfeed.ts";
 import type { HostId } from "./hostid.ts";
@@ -209,7 +210,7 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
           From <b>{from}</b>
           {fromModel && <span class="ho-model"> · {fromModel}</span>}
           {fromHostName && canPickHost && <span class="ho-model"> on {fromHostName}</span>}.{" "}
-          {crossHost ? (
+          {hostDown ? null : crossHost ? (
             <>
               Creates a linked thread on {toHostName || "the target host"} with this conversation copied over, <span class="ho-settle">and settles this thread</span>.
             </>
@@ -220,11 +221,14 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
         {canPickHost && (
           <HostField
             value={targetHost}
+            here={p.t.hostId}
             onPick={(h) => setTargetHost(h)}
             what={crossHost ? "The thread continues on this host with its providers and folders." : "Keep on this host to switch provider only, or pick another host to move it."}
           />
         )}
-        {!targets.length ? (
+        {/* A host that is down takes nothing: no provider to pick, no mapping and no plan are shown for it; the
+            reason stands under Host and, short, beside the button. */}
+        {hostDown ? null : !targets.length ? (
           <div class="err prose">{crossHost ? `No providers are configured on ${toHostName || "that host"}.` : "There is no other provider on this host."}</div>
         ) : (
           <>
@@ -288,19 +292,26 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
       </div>
       {/* V0.dialogs-review (16): how the context goes over stands between the form and the buttons, outside the part
           that scrolls, so it is in view when the button is pressed. */}
-      <div class={`ho-plan${p.phone ? " ho-ph" : ""}`}>
-        <div class="ho-rung" aria-live="polite">
-          {shownPlan ? (
-            <>
-              <b>{rungText(shownPlan.rung)}</b>
-              {shownPlan.note && <small>{shownPlan.note}</small>}
-            </>
-          ) : (
-            <span class="ho-wait">Checking how the context goes over…</span>
-          )}
+      {!hostDown && (
+        <div class={`ho-plan${p.phone ? " ho-ph" : ""}`}>
+          {/* plain text with its label: it is what will happen, not a control */}
+          <div class="ho-rung" aria-live="polite">
+            {shownPlan ? (
+              <>
+                <span>
+                  <span class="ho-rl">Context: </span>
+                  <b>{rungText(shownPlan.rung)}</b>
+                </span>
+                {shownPlan.note && <small>{shownPlan.note}</small>}
+              </>
+            ) : (
+              <span class="ho-wait">Checking how the context goes over…</span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div class={`df${p.phone ? " ho-ph" : ""}`}>
+        {hostDown && <div class="dfn">{startBlock(null, hostDown)}</div>}
         <button class="btn" onClick={p.onClose}>
           Cancel{!p.phone && <kbd>Esc</kbd>}
         </button>

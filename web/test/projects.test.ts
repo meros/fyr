@@ -132,7 +132,7 @@ test("SPEC 0.5 V0.30, V0.61: the picker's first row names what it makes", async 
 test("SPEC 0.5 V0.61 as amended by V0.dialogs-review (2): Enter takes the first row; it makes a project only when nothing matches", async () => {
   const { enterAction, matchProjects } = await import("../src/projects.ts");
   const list = [{ id: "p1", name: "fyr", folder: "/home/me/git/fyr" }, { id: "p2", name: "Garden" }] as Project[];
-  const enter = (q: string, canCreate = true) => enterAction(list, matchProjects(list, q), q, canCreate);
+  const enter = (q: string, canCreate = true) => enterAction(matchProjects(list, q), q, canCreate);
   assert.deepEqual(enter("fyr2"), { create: "fyr2" });
   assert.equal((enter("fy") as { pick: Project }).pick.id, "p1", "a partial match is picked (V0.61 made a project named fy)");
   assert.equal((enter("git") as { pick: Project }).pick.id, "p1", "a folder match is picked");

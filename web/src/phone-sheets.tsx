@@ -16,7 +16,7 @@ import { rowDetail, rowState, stateLabel } from "./rows.ts";
 import { SNOOZE_CUSTOM_LABEL, snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
 import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { headerPrs, threadPrs } from "./offers.ts";
-import { actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
+import { actionGroups, actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
 import { prChip, rowPrChip } from "./pr.ts";
 import { needsCount } from "./board.ts";
 import { HandoverForm } from "./handover-ui.tsx";
@@ -124,6 +124,7 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
     return (
       <MSheet onClose={close} label="Project">
         <div class="m-shh">{ids.length > 1 ? `Project for ${ids.length} threads` : "Project"}</div>
+        {ids.length === 1 && p.store.threads[ids[0]]?.title && <div class="dsub ell">{p.store.threads[ids[0]].title}</div>}
         <div class="m-pform">
           <ProjectPicker
             phone
@@ -145,10 +146,19 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
     );
   }
   if (sheet.kind === "actions" && ids.length > 1) {
+    // V0.dialogs-review (31): what the desktop's selection bar offers, for the phone's selection: settle, snooze,
+    // file in a project, archive (last, apart, as in a thread's own sheet). Snooze and Project open their sheets
+    // over this one, with the picked threads.
+    const done = () => (p.list.setSelecting(false), p.list.setPicked(new Set()));
     return (
       <MSheet onClose={close} label="Selected threads">
         <div class="m-shh">{ids.length} selected</div>
-        <Item label={`Archive ${ids.length}`} icon={I.close} onClick={after(() => (p.actions.archive(ids), p.list.setSelecting(false), p.list.setPicked(new Set())))} />
+        <Item label={`Settle ${ids.length}`} icon={<StateIcon state="settled" size={16} />} onClick={after(() => (p.actions.settle(ids, true), done()))} />
+        <Item label="Snooze…" icon={<StateIcon state="snoozed" size={16} />} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "snooze", ids } })} />
+        <Item label="Project…" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "project", ids } })} />
+        <div class="m-mig rule" role="group">
+          <Item label={`Archive ${ids.length}`} icon={I.close} onClick={after(() => (p.actions.archive(ids), done()))} />
+        </div>
       </MSheet>
     );
   }
@@ -237,11 +247,17 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
           </div>
         )}
         {!peek && <div class="m-shh ell">{t.title}</div>}
-        {actionsFor("phone", t, peek ? "row" : "thread").map((a) => {
-          const l = look(a);
-          // A row that is off names no swipe: the swipe does nothing then either.
-          return <Item key={a.id} label={a.label} icon={l.icon} sub={a.disabled ?? a.hint} disabled={!!a.disabled} right={a.disabled ? undefined : l.right} onClick={pick(a)} />;
-        })}
+        {/* V0.dialogs-review: the one order and the groups of the action list (actions.ts), a rule between groups,
+            as the desktop's two menus draw a line; Archive is last. */}
+        {actionGroups(actionsFor("phone", t, peek ? "row" : "thread")).map((g, k) => (
+          <div key={g[0].group} class={`m-mig${k ? " rule" : ""}`} role="group">
+            {g.map((a) => {
+              const l = look(a);
+              // A row that is off names no swipe: the swipe does nothing then either.
+              return <Item key={a.id} label={a.label} icon={l.icon} sub={a.disabled ?? a.hint} disabled={!!a.disabled} right={a.disabled ? undefined : l.right} onClick={pick(a)} />;
+            })}
+          </div>
+        ))}
       </MSheet>
     );
   }
@@ -338,18 +354,16 @@ function SnoozeSheet({ ids, title, threads, onClose, onPick }: { ids: string[]; 
   const [custom, setCustom] = useState(false);
   return (
     <MSheet onClose={onClose} label="Snooze">
-      <div class="m-shh ell">{ids.length > 1 ? `Snooze ${ids.length} threads` : `Snooze “${title ?? ""}”`}</div>
+      {/* the dialog's own title, and the one thread's under it, as on the desktop (a long title is not the heading) */}
+      <div class="m-shh">{ids.length > 1 ? `Snooze ${ids.length} threads` : "Snooze"}</div>
+      {ids.length === 1 && title && <div class="dsub ell">{title}</div>}
+      {/* no icon per row: seven moons said nothing, and the desktop's rows have none (its keys are the keyboard's) */}
       {presets.map((s) => (
-        <Item label={s.label} sub={s.off} disabled={!!s.off} icon={<StateIcon state="snoozed" size={16} />} right={s.off ? undefined : s.when} onClick={() => onPick(s)} />
+        <Item label={s.label} sub={s.off} disabled={!!s.off} right={s.off ? undefined : s.when} onClick={() => onPick(s)} />
       ))}
-      {/* V0.dialogs-review (15): the same last choice and the same field as the desktop's snooze dialog (dialogs.tsx) */}
-      {custom ? <SnoozeCustom phone onPick={onPick} /> : <Item label={SNOOZE_CUSTOM_LABEL} onClick={() => setCustom(true)} />}
-      <div class="m-shf">
-        <button class="m-bt" onClick={onClose}>
-          Cancel
-        </button>
-      </div>
+      {/* V0.dialogs-review (15): the same last choice and the same field as the desktop's snooze dialog (dialogs.tsx).
+          No Cancel row: a list sheet closes by its scrim, a drag down or Back, as the Project and Filter sheets do. */}
+      {custom ? <SnoozeCustom phone onPick={onPick} onFold={() => setCustom(false)} /> : <Item label={SNOOZE_CUSTOM_LABEL} onClick={() => setCustom(true)} />}
     </MSheet>
   );
 }
-

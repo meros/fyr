@@ -4,11 +4,22 @@
 // the screen under it stays. The entry carries the screen's own state and URL, so the navigation listener (nav.ts
 // `listenPopState`) sees the same screen and changes nothing.
 //
-// The layers form a stack. A layer the owner closes on the page (a button, a pick) takes its entry out again with
-// history.go; that traversal is asynchronous, so a navigation asked for meanwhile waits for it (`settled`), else its
-// pushState would land before the traversal and be undone by it.
+// One rule holds it together: an entry of a layer says how many layers lie over the screen at that entry (`backLayer`
+// in its state), and the stack of open layers says how many should. Whenever the browser lands on an entry, the two
+// are compared, whoever moved it:
+// - fewer in the history than open: the owner went Back over layers, and those close;
+// - more in the history than open: entries are left over (a layer closed on the page, Forward onto an entry whose
+//   layer is gone, a reload over a layer), and the stack goes back by that many;
+// - the same: nothing to do.
+// So no popstate is taken for something it is not, and no flag has to guess who caused it.
+//
+// A navigation never lands on a layer's entry, and never under a traversal that is on its way (its pushState would be
+// undone by it): it closes the open layers first and waits until the history is where the stack says (`settled`).
+// What waits runs after the popstate event, in a turn of its own, so it does not depend on which popstate listener
+// the browser calls first.
 
 import { useLayoutEffect, useRef } from "preact/hooks";
+import { seedHistory, type Nav } from "./nav.ts";
 
 interface HistoryLike {
   readonly state: unknown;
@@ -23,85 +34,121 @@ interface Layer {
 }
 
 /** A traversal the stack asked for that never ends in a popstate (nothing to go back to) is given up after this. */
-const TRAVERSE_MS = 600;
+export const TRAVERSE_MS = 600;
+
+const MARK = "backLayer";
+
+/** How many layers lie over the screen at a history entry with this state. */
+export function layerDepth(state: unknown): number {
+  const n = state && typeof state === "object" ? (state as Record<string, unknown>)[MARK] : undefined;
+  return typeof n === "number" && n > 0 ? n : 0;
+}
 
 export function createLayers(h: HistoryLike, later: (fn: () => void, ms: number) => unknown = setTimeout) {
   const stack: Layer[] = [];
-  /** entries to take out, gathered in one turn so two layers that close together are one traversal */
+  /** entries to take out: more layers in the history than are open */
   let owed = 0;
-  /** a traversal of ours is on its way: its popstate is not the owner's Back */
-  let moving = false;
-  let flushing = false;
-  let waiting: (() => void)[] = [];
+  /** the traversals of ours that are on their way, oldest first; each is given up by its own timer */
+  const flights: object[] = [];
+  let starting = false;
+  /** what waits for the history to be where the stack says: a new layer's entry, a navigation */
+  const queue: (() => void)[] = [];
 
-  const done = () => {
-    moving = false;
-    if (owed) return flush();
-    const run = waiting;
-    waiting = [];
-    for (const fn of run) fn();
-  };
-  const flush = () => {
-    flushing = false;
-    if (moving || !owed) return;
-    const n = owed;
-    owed = 0;
-    moving = true;
+  const pushed = () => stack.filter((x) => x.pushed).length;
+  const idle = () => !flights.length && !owed;
+  const go = (n: number) => {
+    const mine = {};
+    flights.push(mine);
     h.go(-n);
-    later(() => moving && done(), TRAVERSE_MS);
+    later(() => {
+      const i = flights.indexOf(mine);
+      if (i < 0) return; // it landed
+      flights.splice(i, 1);
+      settle();
+    }, TRAVERSE_MS);
   };
+  /** Bring the history to the stack, then run what waits. */
+  const settle = () => {
+    if (flights.length) return; // its landing settles
+    if (owed) {
+      const n = owed;
+      owed = 0;
+      return go(n);
+    }
+    while (queue.length && idle()) queue.shift()!();
+  };
+  /** `n` entries are left over. Gathered for a turn, so two layers that close together are one traversal. */
   const take = (n: number) => {
+    if (!n) return;
     owed += n;
-    if (flushing || moving) return;
-    flushing = true;
-    void Promise.resolve().then(flush);
+    if (starting) return;
+    starting = true;
+    void Promise.resolve().then(() => {
+      starting = false;
+      settle();
+    });
+  };
+  const whenIdle = (fn: () => void) => {
+    if (idle() && !queue.length) fn();
+    else queue.push(fn);
+  };
+  /** Close every open layer on the page (top-most first); their entries are left over. */
+  const closeAll = () => {
+    const open = stack.splice(0);
+    take(open.filter((x) => x.pushed).length);
+    for (const l of open.reverse()) l.onBack();
   };
 
   return {
-    /** A layer came up: one entry for it. Returns its handle for `close`. */
+    /** A layer came up: one entry for it, at once unless the history is still on its way. Returns its handle for
+     *  `close`. */
     open(onBack: () => void): Layer {
       const l: Layer = { onBack, pushed: false };
       stack.push(l);
-      const push = () => {
+      whenIdle(() => {
         if (!stack.includes(l)) return; // closed while it waited
         l.pushed = true;
-        h.pushState({ ...(h.state && typeof h.state === "object" ? h.state : {}), layer: stack.indexOf(l) + 1 }, "");
-      };
-      // A layer that opens while another one's entry is on its way out waits for that traversal.
-      if (moving || owed) waiting.push(push);
-      else push();
+        h.pushState({ ...(h.state && typeof h.state === "object" ? h.state : {}), [MARK]: pushed() }, "");
+      });
       return l;
     },
     /** The page closed the layer (and with it every layer above it): their entries go. A layer Back already closed
      *  has none left, and nothing happens. */
     close(l: Layer): void {
       const i = stack.indexOf(l);
-      if (i < 0) return;
-      take(stack.splice(i).filter((x) => x.pushed).length);
+      if (i >= 0) take(stack.splice(i).filter((x) => x.pushed).length);
     },
-    /** The browser went to another entry. True when it was a traversal of ours; otherwise it was the owner's Back, and
-     *  the top-most layer closes. */
-    popped(): boolean {
-      if (moving) {
-        done();
-        return true;
+    /** The browser landed on the entry with `state`. Layers the owner went Back over close; entries left over are
+     *  taken out. True when a traversal of ours was on its way. */
+    popped(state: unknown): boolean {
+      const ours = flights.shift() !== undefined; // traversals land in the order they were asked for
+      const depth = layerDepth(state);
+      const gone: Layer[] = [];
+      for (let over = pushed() - depth; over > 0; ) {
+        const l = stack.pop()!;
+        if (l.pushed) over--;
+        gone.push(l);
       }
-      stack.pop()?.onBack();
-      return false;
+      owed = Math.max(0, depth - pushed());
+      for (const l of gone) l.onBack();
+      // After the event: the other popstate listeners (the navigation's) have had this entry first.
+      later(settle, 0);
+      return ours;
     },
-    /** Leave every layer without telling it (the screen under them is being left): how many entries to step over. */
-    drop(): number {
-      const n = stack.filter((x) => x.pushed).length + owed;
-      stack.length = 0;
+    /** A Back control of the page (the header's arrow or ×, a sheet's close) leaves the screen: one step back, over
+     *  the entries of every layer above it, which close. */
+    leave(): void {
+      const n = pushed() + owed + 1;
       owed = 0;
-      return n;
+      const open = stack.splice(0);
+      go(n);
+      for (const l of open.reverse()) l.onBack();
     },
-    /** Run a navigation once no traversal of ours is on its way, the open layers' entries taken out first (a new
-     *  entry must not sit on top of a layer's). */
+    /** Run a navigation once the history is where the stack says. The open layers close first: a new entry must not
+     *  sit on top of a layer's, and a layer must not stay on the screen without one. */
     settled(fn: () => void): void {
-      if (stack.length) take(stack.splice(0).filter((x) => x.pushed).length);
-      if (moving || owed) waiting.push(fn);
-      else fn();
+      closeAll();
+      whenIdle(fn);
     },
     depth: (): number => stack.length,
   };
@@ -119,9 +166,18 @@ export function layers(): ReturnType<typeof createLayers> | null {
     pushState: (s, t) => history.pushState(s, t),
     go: (n) => history.go(n),
   });
-  window.addEventListener("popstate", () => void l.popped());
+  window.addEventListener("popstate", (e) => void l.popped((e as PopStateEvent).state));
   shared = l;
   return l;
+}
+
+let seeded: Nav | null = null;
+
+/** The phone's history, built once per page (nav.ts `seedHistory`), and the entry the page is on. Whoever needs the
+ *  history first builds it: the navigation (app-nav.tsx), or a layer that is up in the first render (a layer's entry
+ *  pushed before the seed would end up under the seeded entries). */
+export function seedPhoneHistory(): Nav {
+  return (seeded ??= seedHistory(history, location.search, history.state));
 }
 
 /** While `on`, the layer is a history entry: Back calls `onBack` (which closes it). Phone only: the caller passes
@@ -133,6 +189,7 @@ export function useBackLayer(on: boolean, onBack: () => void): void {
   useLayoutEffect(() => {
     const ls = on ? layers() : null;
     if (!ls) return;
+    seedPhoneHistory();
     const l = ls.open(() => back.current());
     return () => ls.close(l);
   }, [on]);

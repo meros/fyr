@@ -344,7 +344,7 @@ const MEASURE = `(() => {
     chend: [...document.querySelectorAll('.chend')].map((b) => { const r = b.getBoundingClientRect(); return { h: r.height, right: r.right }; }),
     // V0.84: Not now, inside its card (left, right and bottom within the card's box).
     chpark: [...document.querySelectorAll('.chpark')].map((b) => { const r = b.getBoundingClientRect(), c = b.closest('.chc')?.getBoundingClientRect(); return { h: r.height, w: r.width, inside: !!c && r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5, right: r.right }; }),
-    cfm: (() => { const s = document.querySelector('.m-sheet.cfm'); if (!s) return null; const r = s.getBoundingClientRect(); const bs = [...s.querySelectorAll('.cfm-f .m-bt, .cfm-copy')].map((b) => b.getBoundingClientRect()); const p = s.querySelector('.cfm-f .m-bt.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, minBtn: Math.min(...bs.map((b) => b.height)), btnBottom: Math.max(...bs.map((b) => b.bottom)), title: s.querySelector('.cfm-t')?.textContent ?? '', code: s.querySelector('.cfm-code code')?.textContent ?? '', folder: s.querySelector('.cfm-in')?.textContent ?? '', primary: p?.textContent ?? '', danger: !!p?.classList.contains('danger'), focused: document.activeElement === p, codeOverflow: s.querySelector('.cfm-code') ? s.querySelector('.cfm-code').scrollWidth - s.querySelector('.cfm-code').clientWidth : 0 }; })(),
+    cfm: (() => { const s = document.querySelector('.m-sheet.cfm'); if (!s) return null; const r = s.getBoundingClientRect(); const bs = [...s.querySelectorAll('.cfm-f .m-bt, .cfm-copy')].map((b) => b.getBoundingClientRect()); const p = s.querySelector('.cfm-f .m-bt.p'); return { danger: !!p?.classList.contains('danger'), onCancel: document.activeElement === s.querySelector('.cfm-f .m-bt:not(.p)'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, minBtn: Math.min(...bs.map((b) => b.height)), btnBottom: Math.max(...bs.map((b) => b.bottom)), title: s.querySelector('.cfm-t')?.textContent ?? '', code: s.querySelector('.cfm-code code')?.textContent ?? '', folder: s.querySelector('.cfm-in')?.textContent ?? '', primary: p?.textContent ?? '', danger: !!p?.classList.contains('danger'), focused: document.activeElement === p, codeOverflow: s.querySelector('.cfm-code') ? s.querySelector('.cfm-code').scrollWidth - s.querySelector('.cfm-code').clientWidth : 0 }; })(),
     sheetItem: lastSheetItem,
     chips: rect('.m-cmpw .att-strip'),
     camera: rect('.m-cmp .cam'),
@@ -753,7 +753,10 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(c.top >= visTop + insetTop - 0.5 && c.left >= -0.5 && c.right <= c.vw + 0.5, `${ctx}: the sheet does not fit (${JSON.stringify(c)})`);
       check(c.minBtn >= 43.5, `${ctx}: a button is ${c.minBtn.toFixed(1)} px tall`);
       check(c.btnBottom <= visBottom - insetBottom + 0.5, `${ctx}: the buttons end at ${c.btnBottom.toFixed(1)}, below ${visBottom - insetBottom}`);
-      check(c.focused, `${ctx}: focus is not on the primary button`);
+      // V0.dialogs-review: a red confirmation (Delete project) starts on Cancel, so an Enter on its way elsewhere
+      // does not destroy; any other starts on its primary button.
+      if (c.danger) check(c.onCancel, `${ctx}: focus of a red confirmation is not on Cancel`);
+      else check(c.focused, `${ctx}: focus is not on the primary button`);
       check(c.codeOverflow <= 0.5, `${ctx}: the command runs ${c.codeOverflow} px past its box`);
       if (ctx.startsWith("confirm sheet for a script")) check(c.title === "Set the Acme token" && c.primary === "Run" && !c.danger && c.code === "bash …/20261115-130828-find-the-acme-claude-long-term-token/set-acme-token.sh" && c.folder === "in ~/…/scratch/20261115-130828-find-the-acme-claude-long-term-token", `${ctx}: words ${JSON.stringify(c)}`);
       else check(c.title === "Delete acme/web?" && c.primary === "Delete project" && c.danger, `${ctx}: words ${JSON.stringify(c)}`);
@@ -1709,8 +1712,14 @@ try {
   await key("Enter");
   const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '' })`);
   check(m.menu, "V0.26 desktop: the thread ⋯ menu does not open from the keyboard");
-  check(/Project…/.test(m.focused), `V0.26 desktop: the ⋯ menu does not focus "Project…" ("${m.focused}")`);
-  await key("Enter");
+  // V0.dialogs-review amends V0.26: the ⋯ menu has the action list's one order, so its focus starts on its first
+  // entry that is on, not on Project…; Project… is one key away (`p` acts while the menu is open).
+  const first = await evaluate(`document.querySelector('.thh [role=menu] [role=menuitem]:not([aria-disabled=true])')?.textContent ?? ''`);
+  check(m.focused !== "" && m.focused === first, `V0.26 desktop: the ⋯ menu does not focus its first entry ("${m.focused}", first "${first}")`);
+  check(await evaluate(`[...document.querySelectorAll('.thh [role=menu] [role=menuitem]')].some((b) => /^Project…/.test(b.textContent) && b.querySelector('kbd')?.textContent === 'p')`), "V0.26 desktop: the ⋯ menu has no Project… with its key");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "p", code: "KeyP", text: "p", windowsVirtualKeyCode: 80 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "p", code: "KeyP" });
+  await waitFor(`!!document.querySelector('.dlg .plist')`, { soft: true });
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
   check(d.dlg && d.focus, "V0.26 desktop: Project… does not open the project picker with the search focused");
   await send("Input.insertText", { text: "garden" }); // V0.61: Enter picks a project by its exact name (any case)
@@ -1765,8 +1774,10 @@ try {
   await navigate(`${origin}/?mock=rail`);
   await evaluate(`localStorage.setItem("fyr.lastProject", "p_web"); localStorage.setItem("fyr.projectFilter", ""); true`);
   await navigate(`${origin}/?mock=rail&dialog=new`, "!!document.querySelector('.dlg .fline .ell')");
-  const before = await evaluate(`document.querySelector('.dlg .fline .ell')?.textContent ?? ''`);
-  check(before === "~/src/acme/web", `V0.42 desktop: a new thread in acme/web does not start in its folder ("${before}")`);
+  // V0.dialogs-review round 2 (17): the row says "The project's folder" (the Project row above shows the path); the
+  // path itself is the row's tooltip and what the thread starts in.
+  const before = await evaluate(`(() => { const e = document.querySelector('.dlg .fline .ell'); return e ? e.textContent + ' | ' + e.title : ''; })()`);
+  check(/^The project's folder \| .*\/src\/acme\/web$/.test(before), `V0.42 desktop: a new thread in acme/web does not start in its folder ("${before}")`);
   await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change…')?.focus()`);
   await key("Enter");
   await waitFor(`!!document.querySelector('.fpick .fsec h4')`, { soft: true });
@@ -3874,7 +3885,7 @@ try {
     const ask = await center(`document.querySelector('.ib [data-id="t_lasso"]')`);
     await mouse(ask.x, ask.y, "right");
     await settle();
-    const dis = await evaluate(`(() => { const b = [...document.querySelectorAll('.ctxm .ctxm-i')].find((b) => b.textContent.startsWith('Settle')); return b ? { disabled: b.getAttribute('aria-disabled'), title: b.title } : null; })()`);
+    const dis = await evaluate(`(() => { const b = [...document.querySelectorAll('.ctxm .ctxm-i')].find((b) => b.textContent.startsWith('Settle')); return b ? { disabled: b.getAttribute('aria-disabled'), title: b.querySelector('small')?.textContent ?? '' } : null; })()`); // V0.dialogs-review: the reason is the entry's second line, not a tooltip
     check(dis?.disabled === "true" && /question/i.test(dis.title), `${ctx}: an asking thread's Settle is not disabled with its reason (${JSON.stringify(dis)})`);
   } else {
     await openScreen({ url: "?mock=rail" }, w, hh);
@@ -4234,6 +4245,70 @@ section('V0.162', async (h) => {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 });
 
+// V0.dialogs-review, round 2: what its review found by looking, kept from coming back. The Merge dialog's refusal is a
+// line of its own, as wide as the dialog, on both fronts (it was one letter wide beside the buttons on the desktop);
+// the line about a draft stands above the prompt and inside the form; why Snooze's date and time cannot be used is
+// text in view under the field.
+section('V0.dialogs-review round 2', async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, tapCenter, openScreen } = h;
+  const errBox = `(() => { const e = document.querySelector('.dlg .df .err'), d = document.querySelector('.dlg'), b = document.querySelector('.dlg .df .btn.p'); if (!e || !d || !b) return null; const r = e.getBoundingClientRect(), dr = d.getBoundingClientRect(), br = b.getBoundingClientRect(); return { text: e.textContent, w: r.width, h: r.height, dw: dr.width, above: r.bottom <= br.top + 0.5, inside: r.left >= dr.left - 0.5 && r.right <= dr.right + 0.5 && r.bottom <= innerHeight + 0.5 }; })()`;
+  const checkErr = (m, ctx) => {
+    check(!!m, `${ctx}: the Merge dialog shows no error after the host refused`);
+    if (!m) return;
+    check(/^Not merged: /.test(m.text), `${ctx}: the refusal does not say what it is: ${JSON.stringify(m.text)}`);
+    check(m.w >= m.dw * 0.6, `${ctx}: the refusal is ${m.w} px wide in a ${m.dw} px dialog`);
+    check(m.h <= 60, `${ctx}: the refusal of ${m.text.length} letters is ${m.h} px tall`);
+    check(m.above && m.inside, `${ctx}: the refusal is not on its own line above the buttons, inside the dialog ${JSON.stringify(m)}`);
+  };
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=1&conn=offline&open=t_effect&tab=pr`, "!!document.querySelector('.prv-merge')");
+    await evaluate(`document.querySelector('.prv-merge').click()`);
+    await waitFor(`!!document.querySelector('.dlg .df .btn.p')`, { what: "the Merge dialog" });
+    await evaluate(`document.querySelector('.dlg .df .btn.p').click()`);
+    await waitFor(`!!document.querySelector('.dlg .df .err')`, { what: "the Merge dialog's error", soft: true });
+    checkErr(await evaluate(errBox), "round 2 merge error desktop");
+
+    // The draft's line: above the prompt, inside the dialog's body, with Discard in it.
+    await navigate(`${origin}/?mock=1&dialog=new`, "!!document.querySelector('.dlg textarea')");
+    await evaluate(`(() => { const ta = document.querySelector('.dlg textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'a prompt worth keeping'); ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await evaluate(`document.querySelector('.dlg .dh .x').click()`);
+    await waitFor(`!document.querySelector('.dlg')`, { what: "New thread closed" });
+    await evaluate(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))`);
+    await waitFor(`!!document.querySelector('.dlg .ntdraft')`, { what: "the draft's line", soft: true });
+    const line = await evaluate(`(() => { const l = document.querySelector('.dlg .ntdraft'), ta = document.querySelector('.dlg textarea'), b = document.querySelector('.dlg .db'); if (!l || !ta || !b) return null; const r = l.getBoundingClientRect(), tr = ta.getBoundingClientRect(), br = b.getBoundingClientRect(); return { text: l.textContent, above: r.bottom <= tr.top + 0.5, inside: r.left >= br.left - 0.5 && r.right <= br.right + 0.5, value: ta.value, discard: [...l.querySelectorAll('button')].some((x) => x.textContent.trim() === 'Discard') }; })()`);
+    check(!!line, "round 2 draft desktop: a reopened New thread shows no line about its draft");
+    if (line) {
+      check(/^Draft from today \d\d:\d\d · /.test(line.text), `round 2 draft desktop: the line does not say what it is and when: ${JSON.stringify(line.text)}`);
+      check(line.above && line.inside && line.discard, `round 2 draft desktop: the line is not above the prompt with Discard ${JSON.stringify(line)}`);
+      check(line.value === "a prompt worth keeping", `round 2 draft desktop: the prompt did not come back: ${JSON.stringify(line.value)}`);
+    }
+
+    // Snooze: a time before now says why its button is off, as text in view.
+    await navigate(`${origin}/?mock=1&open=t_effect&dialog=snooze`, "!!document.querySelector('.menu .mi')");
+    await evaluate(`[...document.querySelectorAll('.menu .mi')].at(-1).click()`);
+    await waitFor(`!!document.querySelector('.snzc input')`, { what: "the snooze date and time" });
+    await evaluate(`(() => { const i = document.querySelector('.snzc input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '2020-01-01T09:00'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await settle();
+    const why = await evaluate(`(() => { const y = document.querySelector('.snzy'), d = document.querySelector('.dlg'); if (!y || !d) return null; const r = y.getBoundingClientRect(), dr = d.getBoundingClientRect(); return { text: y.textContent, inside: r.top >= dr.top && r.bottom <= dr.bottom + 0.5 && r.bottom <= innerHeight, off: document.querySelector('.snzc .btn').disabled }; })()`);
+    check(!!why && why.text === "Pick a time after now." && why.inside && why.off, `round 2 snooze desktop: a past time shows no reason in view ${JSON.stringify(why)}`);
+  } catch (e) {
+    failures.push(`round 2 desktop: ${e.message}`);
+  }
+  try {
+    await openScreen({ url: `?mock=1&conn=offline&open=t_s2&tab=pr` }, 390, 844);
+    await evaluate(`document.querySelector('.prv-merge')?.scrollIntoView({ block: 'center' })`);
+    await tapCenter(".prv-merge", "!!document.querySelector('.dlg .df .btn.p')");
+    await settle();
+    await tapCenter(".dlg .df .btn.p", "!!document.querySelector('.dlg .df .err')");
+    await settle();
+    checkErr(await evaluate(errBox), "round 2 merge error phone");
+  } catch (e) {
+    failures.push(`round 2 phone: ${e.message}`);
+  }
+});
+
 // V0.108: Regenerate title is in the thread's ⋯ menu on the desktop and in the thread's ⋯ sheet on the phone, the same
 // control on both; a press names the thread from its conversation (the mock answers at once).
 section('V0.108', async (h) => {
@@ -4247,11 +4322,11 @@ try {
   regenId = await evaluate(`document.querySelector('#sec-working [data-id]').dataset.id`);
   await navigate(`${origin}/?mock=rail&open=${regenId}`, "!!document.querySelector('.th .tmenu-b')");
   await evaluate(`document.querySelector('.th .tmenu-b').click()`);
-  await waitFor(`!!document.querySelector('.tmenu-l .mi')`);
-  const has = await evaluate(`[...document.querySelectorAll('.tmenu-l .mi .ell')].some(x => x.textContent === 'Regenerate title')`);
+  await waitFor(`!!document.querySelector('.tmenu-l [role=menuitem]')`);
+  const has = await evaluate(`[...document.querySelectorAll('.tmenu-l [role=menuitem] .ell')].some(x => x.textContent === 'Regenerate title')`);
   check(has, "V0.108 title: the thread's ⋯ menu has no Regenerate title");
   if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "regen-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
-  await evaluate(`[...document.querySelectorAll('.tmenu-l .mi')].find(b => b.querySelector('.ell')?.textContent === 'Regenerate title')?.click()`);
+  await evaluate(`[...document.querySelectorAll('.tmenu-l [role=menuitem]')].find(b => b.querySelector('.ell')?.textContent === 'Regenerate title')?.click()`);
   await waitFor(`document.querySelector('.th .tt')?.textContent === ${JSON.stringify(REGEN)}`, { soft: true });
   check(await evaluate(`document.querySelector('.th .tt')?.textContent === ${JSON.stringify(REGEN)}`), "V0.108 title: the desktop press did not rename the thread");
 } catch (e) {

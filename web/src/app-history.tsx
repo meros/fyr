@@ -8,8 +8,8 @@ import { navTransition } from "./native.ts";
 import type { useAppState } from "./app-state.tsx";
 import { layers } from "./back-layer.ts";
 
-/** V0.dialogs-review (4): a navigation waits for a layer's entry that is on its way out, and takes the open layers'
- *  entries out first (back-layer.ts). With no layer it runs at once, as before. */
+/** V0.dialogs-review (4): a navigation closes the open layers and waits until their entries are out
+ *  (back-layer.ts). With no layer it runs at once, as before. */
 const settled = (fn: () => void) => {
   const ls = layers();
   if (ls) ls.settled(fn);
@@ -48,9 +48,11 @@ export function useNavHistory(c: Pick<ReturnType<typeof useAppState>, "threadsRe
    *  the layers over it (V0.dialogs-review (4): the project list in New thread) go in the same step. The system's
    *  Back is the browser's own and closes one layer at a time (back-layer.ts). */
   const navBack = () => {
-    const over = layers()?.drop() ?? 0;
-    if (history.state && typeof history.state === "object" && "screen" in history.state && history.length > 1) history.go(-1 - over);
-    else {
+    if (history.state && typeof history.state === "object" && "screen" in history.state && history.length > 1) {
+      const ls = layers();
+      if (ls) ls.leave();
+      else history.go(-1);
+    } else {
       const t = backTarget(nav);
       if (t) navReplace(t);
     }

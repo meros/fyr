@@ -1,14 +1,20 @@
 // SPEC 0.5 V0.31: Fyr's own right-click menu, chosen by where the click lands.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { anchorMoved, menuFor, settleDoneEntry, threadMenu, type MenuEntry } from "../src/menu.ts";
+import { anchorMoved, entryForKey, menuFor, settleDoneEntry, threadMenu, type MenuEntry } from "../src/menu.ts";
 import { thread } from "./helpers.ts";
 
 const labels = (m: MenuEntry[]) => m.map((x) => ("sep" in x ? "—" : x.label));
 
 test("a thread row gets the thread's actions in a fixed order", () => {
   const t = thread("t1", "seen", "seen");
-  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Pin", "Settle", "Settle when done", "Snooze…", "Mark unseen", "Archive", "—", "Project…", "Turn on live view", "Hand over…", "Regenerate title", "—", "Copy link"]); // V0.37 adds the live view, V0.45 the handover, V0.108 the title
+  // V0.dialogs-review round 2 (12): Archive is last, in a group of its own (it stood between Mark unseen and Project…).
+  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Pin", "Settle", "Settle when done", "Snooze…", "Mark unseen", "—", "Project…", "Turn on live view", "Hand over…", "Regenerate title", "—", "Copy link", "—", "Archive"]); // V0.37 adds the live view, V0.45 the handover, V0.108 the title
+  // The keys shown are the ones the open menu acts on.
+  const keys = threadMenu(t).flatMap((e) => ("sep" in e || !e.key ? [] : [e.key]));
+  assert.deepEqual(keys, ["e", "s", "u", "p", "#"]);
+  assert.equal(entryForKey(threadMenu(t), "#")?.id, "archive");
+  assert.equal(entryForKey(threadMenu(t), "x"), undefined);
 });
 
 test("the menu follows the thread's state", () => {

@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { greenMerges, type BoardItem } from "../src/board.ts";
 import { press } from "../src/confirm.ts";
 import { describeEffect } from "../src/effects.ts";
-import { confirmSensitive, decisionSensitive, sensitiveLine, sensitiveMergeAsk } from "../src/sensitive.ts";
-import type { Ask } from "../src/confirm.ts";
+import { decisionSensitive, mergeAfterAsk, sensitiveLine } from "../src/sensitive.ts";
+import { mergeConfirm, mergeTitle, shortHead, type MergeAsk } from "../src/pr.ts";
 import type { Change, Decision, Offer } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -31,26 +31,38 @@ test("V0.sensitive-pr: the reason comes from the ask, else from its change", () 
 });
 
 test("V0.sensitive-pr: a sensitive merge asks first, in red, and goes only on yes", async () => {
-  const asked: Ask[] = [];
-  const no = async (a: Ask) => (asked.push(a), false);
-  assert.equal(await confirmSensitive("promotes to production", no, "abcdef1234"), false);
-  assert.equal(await confirmSensitive("", no), true, "a plain merge does not ask here");
+  // V0.dialogs-review: it asks in the Merge dialog (pr.ts `MergeAsk`), which is red for a sensitive merge.
+  const asked: MergeAsk[] = [];
+  const no = async (a: MergeAsk) => (asked.push(a), false);
+  let plain = 0;
+  const go = () => (plain++, true);
+  const m = (sensitive?: string): MergeAsk => ({ number: 212, sha: "abcdef1234", sensitive, run: async () => null });
+  assert.equal(await mergeAfterAsk(m("promotes to production"), no, go), false);
+  assert.equal(plain, 0, "nothing goes on a no");
+  assert.equal(await mergeAfterAsk(m(), no, go), true, "a plain merge does not ask here");
+  assert.equal(plain, 1);
   assert.equal(asked.length, 1);
-  assert.equal(asked[0].danger, true);
-  assert.match(asked[0].text ?? "", /promotes to production/);
-  assert.match(asked[0].text ?? "", /abcdef1/);
-  assert.deepEqual(sensitiveMergeAsk("x").confirm, "Merge");
+  assert.match(asked[0].sensitive ?? "", /promotes to production/);
+  assert.match(shortHead(asked[0].sha), /abcdef1/);
+  assert.equal(mergeTitle(asked[0]), "Merge #212, a sensitive PR", "the title names what is merged");
+  assert.equal(mergeConfirm(asked[0], "squash"), "Merge #212");
+  assert.equal(await mergeAfterAsk(m("x"), async () => true, go), true, "and goes on yes");
   assert.equal(sensitiveLine("promotes to production"), "Sensitive: promotes to production. Fyr never merges it by itself.");
 });
 
 test("V0.sensitive-pr: a sensitive Merge button confirms with the reason; cancel sends nothing", async () => {
+  // The button's merge is the Merge dialog's `run`: it is called only when the owner confirms there.
   const sent: string[] = [];
-  let seen: Ask | null = null;
-  const ok = await press("c1", merge, undefined, async (a) => ((seen = a), false), (action) => sent.push(action), "h1aaaaaaaa", "promotes to production");
+  let seen = null as MergeAsk | null;
+  const ask: MergeAsk = { number: 7, sha: "h1aaaaaaaa", sensitive: "promotes to production", run: async () => (sent.push("action.run"), null) };
+  const ok = await mergeAfterAsk(ask, async (a) => ((seen = a), false), () => (sent.push("plain"), true));
   assert.equal(ok, false);
   assert.deepEqual(sent, []);
-  assert.equal(seen!.danger, true);
-  assert.match(seen!.text ?? "", /promotes to production/);
+  assert.match(seen!.sensitive ?? "", /promotes to production/);
+  // A press that is not a merge still confirms through the confirmation, and a cancel sends nothing.
+  const ran: string[] = [];
+  assert.equal(await press("c1", { ...merge, effect: "pr.rerunFailed" }, undefined, async () => false, (action) => void ran.push(action)), false);
+  assert.equal(ran.length, 0);
 });
 
 test("V0.sensitive-pr: the merge ask's card carries the agent's reason", () => {

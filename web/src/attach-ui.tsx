@@ -9,18 +9,25 @@ import { DownloadLink, openImages, type ViewerImage } from "./preview-ui.tsx";
 let keySeq = 0;
 
 /** Chips for one composer: add files (picked, pasted, dropped), each uploads at once, to `host` (V0.54: the
- *  thread's host, or the one a new thread starts on; the front routes by it). */
-export function useAttachments(host?: HostId) {
+ *  thread's host, or the one a new thread starts on; the front routes by it). V0.dialogs-review: `o.initial` are chips
+ *  put back from a form that was closed (their uploads are on the host already); `o.onClose` gets the chips as the
+ *  composer goes and returns the ones it keeps, whose thumbnails then stay valid. */
+export function useAttachments(host?: HostId, o: { initial?: Chip[]; onClose?(chips: Chip[]): Chip[] } = {}) {
   const api = useApi();
-  const [chips, setChips] = useState<Chip[]>([]);
+  const [chips, setChips] = useState<Chip[]>(() => o.initial ?? []);
+  const chipsRef = useRef(chips);
+  chipsRef.current = chips;
   const hostRef = useRef(host);
   hostRef.current = host;
+  const closeRef = useRef(o.onClose);
+  closeRef.current = o.onClose;
   const aborts = useRef(new Map<string, AbortController>());
-  const previews = useRef(new Set<string>());
+  const previews = useRef(new Set<string>((o.initial ?? []).flatMap((c) => c.preview ?? [])));
   useEffect(
     () => () => {
       aborts.current.forEach((a) => a.abort());
-      previews.current.forEach((u) => URL.revokeObjectURL(u));
+      const kept = new Set((closeRef.current?.(chipsRef.current) ?? []).map((c) => c.preview));
+      previews.current.forEach((u) => !kept.has(u) && URL.revokeObjectURL(u));
     },
     [],
   );
@@ -58,6 +65,13 @@ export function useAttachments(host?: HostId) {
     setChips((c) => removeChip(c, key));
   };
   const clear = () => setChips([]);
+  /** V0.dialogs-review: replace the chips (Discard and its Undo in New thread). Uploads still on their way stop. */
+  const put = (next: Chip[]) => {
+    aborts.current.forEach((a) => a.abort());
+    aborts.current.clear();
+    for (const c of next) if (c.preview) previews.current.add(c.preview);
+    setChips(next);
+  };
 
   const onPaste = (e: ClipboardEvent) => {
     const files = Array.from(e.clipboardData?.files ?? []);
@@ -76,7 +90,7 @@ export function useAttachments(host?: HostId) {
   const onDragOver = (e: DragEvent) => {
     if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
   };
-  return { chips, add, remove, clear, onPaste, onDrop, onDragOver };
+  return { chips, add, remove, clear, put, onPaste, onDrop, onDragOver };
 }
 
 export function ChipStrip({ chips, onRemove }: { chips: Chip[]; onRemove(key: string): void }) {

@@ -3,8 +3,7 @@
 // the reason as the change's `sensitive`. Fyr never auto-merges it, Merge all green leaves it out, its card shows the
 // reason in red, and every Merge of it asks first, on the desktop and the phone alike.
 
-import type { Ask } from "./confirm.ts";
-import { shortHead } from "./pr.ts";
+import type { MergeAsk } from "./pr.ts";
 import type { Change, Decision, Thread } from "./types.ts";
 
 /** Why the merge decision d of thread t is sensitive, or "": the ask's own reason, else its change's. */
@@ -19,19 +18,11 @@ export function decisionSensitive(t: Pick<Thread, "changes"> | null | undefined,
 /** The red line on a sensitive change's card. */
 export const sensitiveLine = (why: string) => `Sensitive: ${why}. Fyr never merges it by itself.`;
 
-/** The confirmation before a sensitive merge. */
-export function sensitiveMergeAsk(why: string, head?: string): Ask {
-  return {
-    title: "Merge a sensitive PR?",
-    text: `Sensitive: ${why}. Fyr merges ${head ? `commit ${shortHead(head)}` : "it"} on GitHub when you confirm.`,
-    confirm: "Merge",
-    danger: true,
-  };
-}
-
-/** Confirms a sensitive merge first; true when it may go on (always for a merge that is not sensitive). */
-export async function confirmSensitive(why: string, ask: (a: Ask) => Promise<boolean>, head?: string): Promise<boolean> {
-  return !why || ask(sensitiveMergeAsk(why, head));
+/** V0.dialogs-review: a sensitive merge asks first, in the Merge dialog (pr.ts `MergeAsk`: red, the reason on top,
+ *  the focus on Cancel); a plain merge from a card or an ask goes at once, as before. `ask` resolves true when the
+ *  merge started; `plain` runs the merge that does not ask. True when it went. */
+export async function mergeAfterAsk(m: MergeAsk, ask: (a: MergeAsk) => Promise<boolean>, plain: () => Promise<boolean> | boolean): Promise<boolean> {
+  return m.sensitive ? ask(m) : plain();
 }
 
 /** The change's reason, for the callers that hold a change. */

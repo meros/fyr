@@ -290,13 +290,37 @@ export function exactProject(projects: Project[], q: string): Project | undefine
   return t ? projects.find((p) => p.name.trim().toLowerCase() === t) : undefined;
 }
 
-/** What Enter in the picker's search does. V0.dialogs-review (2), amending V0.61: it takes the first row shown under
- *  typed text, which is the project named exactly like the text, else the first match; a project is made by Enter
- *  only when nothing matches (the New project row is then the only row), and otherwise by its own row, which stands
- *  after the matches. Typing a part of a name and pressing Enter therefore picks that project and never makes one. */
-export function enterAction(projects: Project[], matches: Project[], q: string, canCreate: boolean): { pick: Project } | { create: string } | null {
+/** How well a project's name answers typed text, best first: 0 the name exactly, 1 the name starts with it, 2 a word
+ *  of the name is it ("infra" in "acme/infra"), 3 a word of the name starts with it ("infra" in
+ *  "acme-infrastructure"), 4 the name contains it, 5 only its second line does (the folder); -1 no match. Case does
+ *  not count. */
+export function matchRank(p: Project, query: string): number {
+  const q = query.trim().toLowerCase();
+  const name = p.name.trim().toLowerCase();
+  if (!q) return -1;
+  if (name === q) return 0;
+  if (name.startsWith(q)) return 1;
+  const words = name.split(/[^\p{L}\p{N}]+/u);
+  if (words.includes(q)) return 2;
+  if (words.some((w) => w.startsWith(q))) return 3;
+  if (name.includes(q)) return 4;
+  return `${p.name} ${projectSubtitle(p)}`.toLowerCase().includes(q) ? 5 : -1;
+}
+
+/** What Enter in the picker's search does. V0.dialogs-review (2), amending V0.61: it takes a project of the list
+ *  shown, the one whose name answers the typed text best (`matchRank`: the exact name, else a name that starts with
+ *  it, else a word of the name (the whole word before the start of one), else a name that contains it), the earlier one in the owner's order when
+ *  two answer alike. The list keeps its order (V0.121); the row Enter takes is marked in it. A project is made by
+ *  Enter only when nothing matches (the New project row is then the only row), and otherwise by its own row, which
+ *  stands after the matches. Enter never takes a project that is not in the list (another host's). */
+export function enterAction(matches: Project[], q: string, canCreate: boolean): { pick: Project } | { create: string } | null {
   if (!q.trim()) return null;
-  const hit = exactProject(projects, q) ?? matches[0];
+  let hit: Project | undefined;
+  let best = Infinity;
+  for (const p of matches) {
+    const r = matchRank(p, q);
+    if (r >= 0 && r < best) [hit, best] = [p, r];
+  }
   if (hit) return { pick: hit };
   return canCreate ? { create: q.trim() } : null;
 }

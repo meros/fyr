@@ -1,13 +1,20 @@
 // V0.dialogs-review: the rules of the dialogs that are pure: New thread's draft and New project step, the project
-// search's Enter, the snooze date and time, the first focus of a dialog, the Merge dialog's remembered method, and
-// the phone's Back layers.
+// search's Enter, the snooze date and time, the first focus of a dialog and the Merge dialog's remembered method.
+// The phone's Back layers are in back-layer.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   chooseHost,
   chooseProject,
+  closeQuestion,
+  draftLine,
   draftOf,
   draftReady,
+  draftWhen,
+  filesBack,
+  folderValue,
+  keptFiles,
+  moreSummary,
   folderHint,
   folderNote,
   formHost,
@@ -24,13 +31,17 @@ import {
   type FormCtx,
   type NewThreadForm,
 } from "../src/new-thread.ts";
-import { enterAction, matchProjects } from "../src/projects.ts";
-import { customStart, customUntil, fieldTime } from "../src/snooze.ts";
+import { enterAction, matchProjects, matchRank } from "../src/projects.ts";
+import { customProblem, customStart, customUntil, fieldTime } from "../src/snooze.ts";
+import { snoozePresets } from "../src/store.ts";
 import { firstFocus, openTraps, pushTrap, dropTrap } from "../src/focus-trap.ts";
-import { MERGE_METHOD_KEY, rememberedMergeMethod, rememberMergeMethod } from "../src/pr.ts";
-import { createLayers } from "../src/back-layer.ts";
+import { MERGE_METHOD_KEY, MERGE_OWN_METHOD, mergeConfirm, mergeTitle, notMerged, rememberedMergeMethod, rememberMergeMethod } from "../src/pr.ts";
+import { confirmFocus } from "../src/confirm.ts";
+import { barOffers, stripMerge } from "../src/offers.ts";
+import { arrowRow } from "../src/snooze.ts";
+import { mappingLine } from "../src/model-choice.ts";
 import { keyHints } from "../src/keys.ts";
-import type { Profile, Project } from "../src/types.ts";
+import type { ChangeNeed, Offer, Profile, Project } from "../src/types.ts";
 import { hid } from "./helpers.ts";
 
 function memory(init: Record<string, string> = {}) {
@@ -69,7 +80,7 @@ test("V0.dialogs-review (3): the draft keeps the picks made by hand and puts the
   f = hand({ ...f, profile: "zai", model: "glm-5", effortPick: "" }, "agent");
   f = { ...f, text: "Map the arm", title: "Arm", liveView: true, picked: "/home/o/experiments" };
   const d = draftOf(f, ctx)!;
-  assert.deepEqual(d, { text: "Map the arm", title: "Arm", liveView: true, host: hid("lab"), folder: "/home/o/experiments", profile: "zai", model: "glm-5" });
+  assert.deepEqual(d, { text: "Map the arm", title: "Arm", liveView: true, host: hid("lab"), handHost: true, folder: "/home/o/experiments", profile: "zai", model: "glm-5" });
 
   const kv = memory();
   saveDraft(kv, d);
@@ -103,14 +114,14 @@ test("V0.dialogs-review (3): a project picked by hand comes back, No project too
 });
 
 test("V0.dialogs-review (3): a draft whose host is gone keeps its words and drops that host's picks", () => {
-  const d = { text: "Map the arm", title: "", host: hid("old"), folder: "/home/o/x", profile: "zai", model: "glm-5", newProject: { name: "Zebra", folder: "/home/o/z", open: true } };
+  const d = { text: "Map the arm", title: "", host: hid("old"), folder: "/home/o/x", profile: "zai", model: "glm-5", newProject: { name: "Zebra", folder: "/home/o/z" } };
   const f = restoreDraft(fresh(), d, ctx);
   assert.equal(f.text, "Map the arm");
   assert.equal(formHost(f, ctx), hid("desk"));
   assert.equal(f.picked, "");
   assert.equal(f.profile, "claude");
   assert.deepEqual(f.draft, { name: "Zebra", folder: "" }, "the new project's name stays, its folder was on the other host");
-  assert.equal(f.creating, "Zebra");
+  assert.equal(f.creating, null, "round 2 (11): the step comes back closed, so no restored form has a primary button that makes a project");
 });
 
 test("V0.dialogs-review (3): picks wait for the projects and providers they name; the words do not", () => {
@@ -141,7 +152,7 @@ test("V0.dialogs-review (12): the New project step keeps its name and folder unt
   f = chooseProject(f, projects[1], ctx);
   assert.deepEqual(f.draft, { name: "Zebra", folder: "/home/o/zebra" });
   // The draft has it, with the step closed.
-  assert.deepEqual(draftOf(f, ctx)!.newProject, { name: "Zebra", folder: "/home/o/zebra", open: false });
+  assert.deepEqual(draftOf(f, ctx)!.newProject, { name: "Zebra", folder: "/home/o/zebra" });
   // Made: gone.
   f = madeProject({ ...f, creating: "Zebra" }, "p_z", "Zebra", "/home/o/zebra", ctx);
   assert.equal(f.draft, null);
@@ -198,7 +209,7 @@ test("V0.dialogs-review (26): the prompt says the agent, never a provider's name
 
 test("V0.dialogs-review (2): Enter in the project search takes the first row: a match, and New project only when none", () => {
   const list = [{ id: "p1", name: "acme/api", folder: "/home/o/src/api" }, { id: "p2", name: "acme/web" }, { id: "p3", name: "api" }] as Project[];
-  const enter = (q: string, canCreate = true) => enterAction(list, matchProjects(list, q), q, canCreate);
+  const enter = (q: string, canCreate = true) => enterAction(matchProjects(list, q), q, canCreate);
   assert.deepEqual(enter("acme"), { pick: list[0] }, "a part of a name picks the first match, never a new project");
   assert.deepEqual(enter("web"), { pick: list[1] });
   assert.deepEqual(enter("api"), { pick: list[2] }, "the project named exactly so, before an earlier partial match");
@@ -209,11 +220,17 @@ test("V0.dialogs-review (2): Enter in the project search takes the first row: a 
 
 // ---- (15) snooze: a date and time ----
 
-test("V0.dialogs-review (15): the snooze date and time starts on tomorrow 09:00 and takes no time before now", () => {
+test("V0.dialogs-review (15): the snooze date and time starts on tomorrow morning and takes no time before now", () => {
   const now = new Date(2026, 10, 24, 22, 15);
   assert.equal(fieldTime(now), "2026-11-24T22:15");
-  assert.equal(fieldTime(customStart(now)), "2026-11-25T09:00");
-  assert.equal(fieldTime(customStart(new Date(2026, 11, 31, 8, 0))), "2027-01-01T09:00", "over the year's end");
+  // Round 2 (22): the hour is the "Tomorrow morning" preset's, one idea of morning in the dialog (it was 09:00).
+  const morning = snoozePresets(now).find((x) => x.label === "Tomorrow morning")!.until;
+  assert.equal(customStart(now).getTime(), morning.getTime());
+  assert.equal(fieldTime(customStart(now)), "2026-11-25T06:00");
+  assert.equal(fieldTime(customStart(new Date(2026, 11, 31, 8, 0))), "2027-01-01T06:00", "over the year's end");
+  assert.equal(customProblem("2026-11-25T09:00", now), "");
+  assert.equal(customProblem("2026-11-24T09:00", now), "Pick a time after now.", "why the button is off, as text");
+  assert.equal(customProblem("", now), "Pick a date and time.");
   assert.equal(customUntil("2026-11-25T09:00", now)?.getTime(), new Date(2026, 10, 25, 9, 0).getTime());
   assert.equal(customUntil("2026-11-24T22:15", now), null, "now is not later");
   assert.equal(customUntil("2026-11-24T09:00", now), null, "earlier today");
@@ -258,131 +275,198 @@ test("V0.dialogs-review (27): the Merge dialog starts on the method the reposito
   assert.equal(rememberedMergeMethod(null, "acme/web"), "squash");
 });
 
-// ---- (4) the phone's Back layers ----
+// ---- round 2: the draft says what it is, and does not move the form ----
 
-/** A history whose traversals land later, as a browser's do: go() queues, `land` delivers the popstate. */
-function fakeHistory() {
-  const entries: unknown[] = [{ screen: { name: "new" }, sheet: null }];
-  let at = 0;
-  const queued: number[] = [];
-  return {
-    h: {
-      get state() {
-        return entries[at];
-      },
-      pushState(s: unknown) {
-        entries.splice(at + 1);
-        entries.push(s);
-        at = entries.length - 1;
-      },
-      go(n: number) {
-        queued.push(n);
-      },
-    },
-    /** the queued traversals happen; returns how many did */
-    land(onPop: () => void): number {
-      const n = queued.length;
-      for (const d of queued.splice(0)) {
-        at = Math.max(0, at + d);
-        onPop();
-      }
-      return n;
-    },
-    /** the owner's Back */
-    back(onPop: () => void) {
-      at = Math.max(0, at - 1);
-      onPop();
-    },
-    depth: () => at,
-    length: () => entries.length,
-  };
-}
-const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+test("V0.dialogs-review round 2: the draft has a time, and its line says when, where and what was not kept", () => {
+  const now = new Date(2026, 10, 24, 10, 0).getTime();
+  const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m).getTime();
+  assert.equal(draftWhen(at(24, 9, 5), now), "today 09:05");
+  assert.equal(draftWhen(at(23, 16, 40), now), "yesterday 16:40");
+  assert.equal(draftWhen(at(20, 8), now), "Fri 08:00");
+  assert.equal(draftWhen(at(12, 8), now), "12 Nov");
+  assert.equal(draftWhen(new Date(2025, 11, 30, 8).getTime(), now), "30 Dec 2025");
 
-test("V0.dialogs-review (4): Back closes the top-most layer, and the screen under it stays", () => {
-  const f = fakeHistory();
-  const ls = createLayers(f.h, () => {});
-  const closed: string[] = [];
-  ls.open(() => closed.push("list"));
-  ls.open(() => closed.push("folder picker"));
-  assert.equal(f.depth(), 2, "one entry per layer");
-  assert.deepEqual((f.h.state as { screen: unknown }).screen, { name: "new" }, "a layer's entry is the screen's own state");
-  f.back(() => ls.popped());
-  assert.deepEqual(closed, ["folder picker"]);
-  f.back(() => ls.popped());
-  assert.deepEqual(closed, ["folder picker", "list"]);
-  assert.equal(f.depth(), 0, "still on the screen");
-  assert.equal(ls.depth(), 0);
-  f.back(() => ls.popped()); // nothing left: the navigation's own Back
-  assert.equal(closed.length, 2);
+  const f = { ...fresh(), text: "rewrite the module" };
+  const d = draftOf(f, ctx, { at: at(23, 16, 40), files: 2 })!;
+  assert.equal(d.at, at(23, 16, 40));
+  assert.equal(d.files, 2);
+  const kv = memory();
+  saveDraft(kv, d);
+  assert.deepEqual(loadDraft(kv), d, "the time and the file count survive storage");
+  const back = restoreDraft(fresh(), d, ctx);
+  assert.equal(draftLine(d, back, ctx, now), "Draft from yesterday 16:40 · in acme/web");
+  assert.equal(draftLine(d, back, ctx, now, { lost: 2 }), "Draft from yesterday 16:40 · in acme/web · 2 files were not kept");
+  assert.equal(draftLine(d, back, ctx, now, { lost: 1 }), "Draft from yesterday 16:40 · in acme/web · 1 file was not kept");
+  assert.equal(draftLine({ text: "x", title: "" }, back, ctx, now), "Draft · in acme/web", "a draft stored before it had a time");
 });
 
-test("V0.dialogs-review (4): a layer closed on the page takes its entry out, and that traversal is not a Back", async () => {
-  const f = fakeHistory();
-  const ls = createLayers(f.h, () => {});
-  const closed: string[] = [];
-  const list = ls.open(() => closed.push("list"));
-  const step = ls.open(() => closed.push("step"));
-  // A project was made: the step and the list close in one turn, in either order.
-  ls.close(list);
-  ls.close(step);
-  await tick();
-  assert.equal(f.land(() => ls.popped()), 1, "one traversal for both entries");
-  assert.equal(f.depth(), 0);
-  assert.deepEqual(closed, [], "no layer was told to close again");
+test("V0.dialogs-review round 2: a form of files alone is a draft; files come back on their host only, and the rest is counted", () => {
+  assert.equal(draftOf(fresh(), ctx, { files: 0 }), null);
+  const d = draftOf(fresh(), ctx, { files: 1, at: 5 })!;
+  assert.deepEqual(d, { text: "", title: "", at: 5, files: 1 });
+  const chip = (key: string, status: "done" | "uploading" | "error", id?: string) => ({ key, name: `${key}.png`, size: 1, mediaType: "image/png", status, progress: 1, ...(id ? { id } : {}) });
+  const chips = [chip("a", "done", "att_1"), chip("b", "uploading"), chip("c", "error"), chip("d", "done")];
+  assert.deepEqual(keptFiles(chips).map((c) => c.key), ["a"], "only an upload the host has can be put back");
+  const held = { host: hid("desk"), chips: keptFiles(chips) };
+  const three = { text: "look", title: "", files: 3 };
+  assert.deepEqual(filesBack(held, hid("desk"), three), { chips: held.chips, lost: 2 });
+  assert.deepEqual(filesBack(held, hid("lab"), three), { chips: [], lost: 3 }, "another host: an upload is one host's");
+  assert.deepEqual(filesBack(null, hid("desk"), three), { chips: [], lost: 3 }, "after a reload the page holds none");
+  assert.deepEqual(filesBack(held, hid("desk"), null), { chips: [], lost: 0 }, "no draft, no files");
+  assert.deepEqual(filesBack({ host: undefined, chips: held.chips }, undefined, three), { chips: [], lost: 3 });
+  // Closing asks only when it would lose something for good: a file still uploading in a form without words.
+  assert.equal(closeQuestion("", [chip("b", "uploading")]), "A file is still uploading. It is not kept when you close now.");
+  assert.equal(closeQuestion("", [chip("b", "uploading"), chip("e", "uploading")]), "2 files are still uploading. They are not kept when you close now.");
+  assert.equal(closeQuestion("words", [chip("b", "uploading")]), null, "with words the draft comes back and says what did not");
+  assert.equal(closeQuestion("", [chip("a", "done", "att_1")]), null, "an uploaded file is kept");
+  assert.equal(closeQuestion("", []), null);
 });
 
-test("V0.dialogs-review (4): a navigation waits for a layer's entry on its way out, and never lands on top of a layer", async () => {
-  const f = fakeHistory();
-  const ls = createLayers(f.h, () => {});
-  const order: string[] = [];
-  const confirm = ls.open(() => order.push("cancelled"));
-  ls.close(confirm); // the owner pressed the confirmation's button
-  ls.settled(() => order.push(`navigate at ${f.depth()}`)); // what it confirmed navigates at once
-  assert.equal(order.length, 0, "not before the entry is out");
-  await tick();
-  f.land(() => ls.popped());
-  assert.deepEqual(order, ["navigate at 0"]);
+test("V0.dialogs-review round 2 (3): a draft does not move the form from the project it was opened on", () => {
+  const now = Date.now();
+  // A provider picked by hand on lab, no project picked. New thread opens from the inbox filtered on acme/api (desk).
+  let made = hand({ ...chooseHost(fresh(), hid("lab"), ctx), profile: "zai", model: "glm-5" }, "agent");
+  made = { ...made, text: "x" };
+  const d = draftOf(made, ctx)!;
+  assert.equal(d.host, hid("lab"));
+  assert.equal(d.handHost, undefined, "the host followed nothing the owner picked");
+  const opened = settleForm(initialForm(), ctx, "p_api", {});
+  const back = restoreDraft(opened, d, ctx, {}, "all", true);
+  assert.equal(formHost(back, ctx), hid("desk"), "the form stays on the filter's host");
+  assert.equal(back.projectId, "p_api", "and on the filter's project");
+  assert.equal(back.profile, "claude", "the provider picked on another host is dropped");
+  assert.equal(back.text, "x");
+  assert.equal(draftLine(d, back, ctx, now), "Draft · in acme/api");
 
-  // Start with the project list open: the list's entry goes first, then the thread replaces the screen's entry.
-  ls.open(() => order.push("list closed"));
-  assert.equal(f.depth(), 1);
-  ls.settled(() => order.push(`replace at ${f.depth()}`));
-  await tick();
-  f.land(() => ls.popped());
-  assert.deepEqual(order, ["navigate at 0", "replace at 0"]);
-  // With nothing open a navigation runs at once.
-  ls.settled(() => order.push("now"));
-  assert.equal(order.at(-1), "now");
+  // A host picked by hand moves the form only when no filter chose the project.
+  const handHost = draftOf({ ...hand(chooseHost(fresh(), hid("lab"), ctx), "host"), text: "x" }, ctx)!;
+  assert.equal(handHost.handHost, true);
+  assert.equal(formHost(restoreDraft(opened, handHost, ctx, {}, "all", true), ctx), hid("desk"));
+  assert.equal(formHost(restoreDraft(fresh(), handHost, ctx, {}, "all", false), ctx), hid("lab"));
+
+  // A project picked by hand in the draft is the one exception, and the line says so.
+  const picked = draftOf({ ...hand(chooseProject(fresh(), projects[2], ctx), "project"), text: "x" }, ctx)!;
+  const moved = restoreDraft(opened, picked, ctx, {}, "all", true);
+  assert.equal(moved.projectId, "p_arm");
+  assert.equal(formHost(moved, ctx), hid("lab"));
+  assert.equal(draftLine(picked, moved, ctx, now), "Draft · in Robot arm, the project picked in the draft");
+  const none = draftOf({ ...hand(chooseProject(fresh(), null, ctx), "project"), text: "x" }, ctx)!;
+  assert.equal(draftLine(none, restoreDraft(opened, none, ctx, {}, "all", true), ctx, now), "Draft · no project, as picked in the draft");
+  // One that is gone: the form's own project stays, and the line says the draft's is not offered.
+  const gone = { text: "x", title: "", host: hid("desk"), project: "p_deleted" };
+  assert.equal(draftLine(gone, restoreDraft(opened, gone, ctx, {}, "all", true), ctx, now), "Draft · in acme/api (the project picked in the draft is not offered here)");
+  assert.equal(draftLine(gone, opened, ctx, now, { pending: true }), "Draft · in acme/api", "not said while the picks still wait for the host's state");
 });
 
-test("V0.dialogs-review (4): a layer that opens while another's entry leaves waits for it; the header's × steps over all", async () => {
-  const f = fakeHistory();
-  const ls = createLayers(f.h, () => {});
-  const closed: string[] = [];
-  const list = ls.open(() => closed.push("list"));
-  ls.close(list);
-  ls.open(() => closed.push("step")); // the list became the New project step in the same turn
-  assert.equal(f.depth(), 1, "no entry pushed under a traversal that is on its way");
-  await tick();
-  f.land(() => ls.popped());
-  assert.equal(f.depth(), 1, "the list's entry left, the step's came");
-  assert.equal(ls.depth(), 1);
-  assert.equal(ls.drop(), 1, "leaving the screen steps over the step's entry too");
-  assert.equal(ls.depth(), 0);
-  assert.deepEqual(closed, []);
+test("V0.dialogs-review round 2 (8): a look at another host and back keeps the project and folder picked by hand", () => {
+  const picked = { ...hand(chooseProject(fresh(), projects[1], ctx), "project"), picked: "/home/o/other" };
+  const lab = chooseHost(picked, hid("lab"), ctx);
+  assert.equal(lab.projectId, "p_arm");
+  assert.equal(lab.hand?.project, false, "the project lab assigned is not the owner's pick");
+  assert.equal(lab.reset, "Not on this host: the project you picked and the folder you picked (they are on desk).");
+  const desk = chooseHost(lab, hid("desk"), ctx);
+  assert.equal(desk.projectId, "p_api", "the pick is back");
+  assert.equal(desk.picked, "/home/o/other");
+  assert.equal(desk.hand?.project, true);
+  assert.equal(desk.reset, "", "and nothing is blamed on a pick the owner never made");
+  // Without a pick by hand nothing is kept or said.
+  const plain = chooseHost(chooseHost(fresh(), hid("lab"), ctx), hid("desk"), ctx);
+  assert.equal(plain.reset, "");
+  assert.equal(plain.hand?.project, false);
+  // A pick made on the second host is kept for it too.
+  const onLab = hand(chooseProject(lab, null, ctx), "project");
+  const again = chooseHost(chooseHost(onLab, hid("desk"), ctx), hid("lab"), ctx);
+  assert.equal(again.projectId, undefined, "No project, picked by hand on lab, is back on lab");
+  assert.equal(again.hand?.project, true);
 });
 
-test("V0.dialogs-review (4): a traversal that never lands does not hold navigation for ever", async () => {
-  const f = fakeHistory();
-  let give: () => void = () => {};
-  const ls = createLayers(f.h, (fn) => (give = fn));
-  const l = ls.open(() => {});
-  ls.close(l);
-  let ran = false;
-  ls.settled(() => (ran = true));
-  await tick();
-  assert.equal(ran, false);
-  give(); // the timeout
-  assert.equal(ran, true);
+test("V0.dialogs-review round 2: the Folder row and the More fold say what they hold", () => {
+  const own = { cwd: "/home/o/web", label: "~/web", scratch: false };
+  assert.deepEqual(folderValue(projects[0], own), { label: "The project's folder", plain: true }, "not the same path a third time");
+  assert.deepEqual(folderValue(projects[0], { cwd: "/home/o/x", label: "~/x", scratch: false }), { label: "~/x", plain: false });
+  assert.deepEqual(folderValue(undefined, { label: "A fresh scratch folder", scratch: true }), { label: "A fresh scratch folder", plain: true });
+  assert.equal(moreSummary({ title: "", liveView: false }), "More: title, live view");
+  assert.equal(moreSummary({ title: "", liveView: false }, ["every provider's quota"]), "More: title, live view, every provider's quota");
+  assert.equal(moreSummary({ title: "", liveView: true }), "More: Live view on", "a closed fold never hides a value");
+  assert.equal(moreSummary({ title: " Arm ", liveView: true }, ["every provider's quota"]), "More: a title, Live view on");
+});
+
+// ---- round 2 (7): Enter in the project search takes the best match of the list ----
+
+test("V0.dialogs-review round 2 (7): Enter takes the name that answers best, never the first substring", () => {
+  const long: Project = { id: "p_long", name: "acme-platform-infrastructure-terraform", folder: "/home/o/long", host: "desk", hostId: hid("desk") };
+  const infra: Project = { id: "p_infra", name: "acme/infra", folder: "/home/o/infra", host: "desk", hostId: hid("desk") };
+  const list = [long, infra, ...projects];
+  const enter = (q: string, canCreate = true) => enterAction(matchProjects(list, q), q, canCreate);
+  assert.deepEqual(matchProjects(list, "infra").map((p) => p.id), ["p_long", "p_infra"], "the list keeps the owner's order (V0.121)");
+  assert.deepEqual(enter("infra"), { pick: infra }, "a word of the name is it: before a name in which a longer word only starts with it");
+  assert.deepEqual(enter("plat"), { pick: long }, "the start of a word");
+  assert.deepEqual(enter("acme"), { pick: long }, "two names start with it: the earlier in the owner's order");
+  assert.deepEqual(enter("acme/infra"), { pick: infra }, "the exact name");
+  assert.deepEqual(enter("ACME/WEB"), { pick: projects[0] });
+  assert.deepEqual(enter("structure"), { pick: long }, "only a part of a name: the substring match");
+  assert.deepEqual([long, infra].map((p) => matchRank(p, "infra")), [3, 2]);
+  assert.equal(matchRank(infra, "acme/infra"), 0);
+  assert.equal(matchRank(infra, "acme"), 1);
+  assert.equal(matchRank(long, "form"), 4, "inside a word");
+  assert.equal(matchRank({ ...infra, name: "x" }, "infra"), 5, "only its folder line");
+  assert.equal(matchRank(infra, "zzz"), -1);
+  assert.deepEqual(enter("zzz"), { create: "zzz" });
+  assert.equal(enter("zzz", false), null);
+  // Never a project that is not in the list shown (another host's): the list is the form's host's.
+  const desk = list.filter((p) => p.hostId === hid("desk"));
+  assert.deepEqual(enterAction(matchProjects(desk, "Robot arm"), "Robot arm", true), { create: "Robot arm" });
+});
+
+// ---- round 2: confirmations, the Merge dialog, the snooze arrows ----
+
+test("V0.dialogs-review round 2 (10): a red confirmation starts on Cancel; any other on its primary button", () => {
+  assert.equal(confirmFocus({ danger: true }), "cancel");
+  assert.equal(confirmFocus({}), "confirm");
+});
+
+test("V0.dialogs-review round 2 (1, 13): the Merge dialog names what it merges, and says its refusal on a line of its own", () => {
+  const run = async () => null;
+  assert.equal(mergeTitle({ number: 4170 }), "Merge #4170");
+  assert.equal(mergeTitle({}), "Merge this PR");
+  assert.equal(mergeTitle({ number: 212, sensitive: "promotes to production" }), "Merge #212, a sensitive PR");
+  assert.equal(mergeConfirm({ number: 4170, choose: true }, "squash"), "Squash and merge #4170");
+  assert.equal(mergeConfirm({ number: 4170, choose: true }, "rebase"), "Rebase and merge #4170");
+  assert.equal(mergeConfirm({ number: 4170 }, "rebase"), "Merge #4170", "no method is named where the host takes none");
+  assert.equal(mergeConfirm({ sha: "e5f6071aaaa" }, "squash"), "Merge e5f6071");
+  assert.equal(notMerged("no connection to the host"), "Not merged: no connection to the host");
+  assert.match(MERGE_OWN_METHOD, /squash/);
+  void run;
+});
+
+test("V0.dialogs-review round 2 (13): a change card has one Merge: the strip's, and the action bar leaves its offer out", () => {
+  const merge = { id: "fyr.merge", label: "Merge", run: "fyr", effect: "pr.merge", by: "observed", digest: "d" } as Offer;
+  const rerun = { id: "fyr.rerun", label: "Re-run failed checks", run: "fyr", effect: "pr.rerunFailed", by: "observed", digest: "d" } as Offer;
+  const c = (need?: Partial<ChangeNeed>) => ({ phase: "review" as const, offers: [merge, rerun], ...(need ? { need: { text: "", ...need } as ChangeNeed } : {}) });
+  assert.equal(stripMerge(c({ cause: "ready", head: "e5f6071" }))?.id, "fyr.merge");
+  assert.deepEqual(barOffers(c({ cause: "ready", head: "e5f6071" }), [merge, rerun]).map((o) => o.id), ["fyr.rerun"]);
+  assert.equal(stripMerge(c({ cause: "ask", action: "pr.merge", head: "e5f6071" }))?.id, "fyr.merge", "the agent's merge ask is that merge too");
+  assert.equal(stripMerge(c({ cause: "ready" })), null, "no head, no Merge on the strip");
+  assert.equal(stripMerge(c({ cause: "ask", action: "fyr.deploy" })), null);
+  assert.equal(stripMerge(c({ cause: "failure" })), null);
+  assert.equal(stripMerge(c({ cause: "waiting", action: "pr.merge", muted: true })), null, "a muted need has no button");
+  assert.deepEqual(barOffers(c(), [merge, rerun]).map((o) => o.id), ["fyr.merge", "fyr.rerun"], "without the strip the bar has it");
+  assert.deepEqual(barOffers(undefined, [merge]).map((o) => o.id), ["fyr.merge"]);
+});
+
+test("V0.dialogs-review round 2 (12, review A12): the snooze arrows from outside the rows", () => {
+  assert.equal(arrowRow(-1, 7, true), 0, "Down from the ×: the first choice");
+  assert.equal(arrowRow(-1, 7, false), 6, "Up from the ×: the last, not the one before it");
+  assert.equal(arrowRow(6, 7, true), 0);
+  assert.equal(arrowRow(0, 7, false), 6);
+  assert.equal(arrowRow(2, 7, true), 3);
+  assert.equal(arrowRow(-1, 0, true), -1);
+});
+
+test("V0.dialogs-review round 2 (14): Hand over to the same model keeps it, and names the effort only", () => {
+  const a: Profile = { id: "claude", name: "Claude", color: "#000", models: ["opus"], defaultModel: "opus" };
+  const b: Profile = { ...a, id: "claude-b", name: "Claude (b)" };
+  assert.equal(mappingLine({ model: "opus" }, a, b, { model: "opus", effort: "high" }), "Keeps opus · effort high.", "not “opus → opus · high: the nearest…”");
+  assert.equal(mappingLine({ model: "opus", effort: "low" }, a, b, { model: "opus", effort: "high" }), "Keeps opus; effort low → high.");
+  assert.equal(mappingLine({ model: "opus", effort: "high" }, a, b, { model: "opus", effort: "high" }), "Keeps opus · high.");
 });

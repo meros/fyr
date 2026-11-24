@@ -178,21 +178,24 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
   /* eslint-enable react-hooks/exhaustive-deps */
   const list = matchProjects(projects, q);
   const typed = !!q.trim();
+  // The row Enter takes is marked (⏎), so the owner sees which project a typed part of a name means.
+  const act = enterAction(list, q, !!newRow);
+  const takes = (p: Project) => !!act && "pick" in act && act.pick === p;
   const newItem = newRow && (
-    <button class="pli new" role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
+    <button class={`pli new${act && "create" in act ? " ent" : ""}`} role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
       <span class="pi all">+</span>
       <span class="plt">
         <span class="ell pln">{newRowLabel(q, !!exactProject(projects, q), newRow.fromThread)}</span>
         <span class="ell pls2">{newRow.sub}</span>
       </span>
+      {act && "create" in act && <kbd class="plk">⏎</kbd>}
     </button>
   );
   // Keyboard: Enter in the search takes the first row under typed text (a match, else New project); arrows walk the
   // rows and back to the search.
   const options = () => [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
   const onSearchKey = (e: KeyboardEvent) => {
-    const act = e.key === "Enter" ? enterAction(projects, list, q, !!newRow) : null;
-    if (act) {
+    if (e.key === "Enter" && act) {
       e.preventDefault();
       if ("pick" in act) onPick(act.pick);
       else newRow?.onNew(act.create);
@@ -224,13 +227,14 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
           </button>
         )}
         {list.map((p) => (
-          <button class={`pli${selectedId && p.id === selectedId ? " on" : ""}`} role="option" aria-selected={!!selectedId && p.id === selectedId} style={{ "--pc": colorVar(p.color, p.name) }} onClick={() => onPick(p)}>
+          <button class={`pli${selectedId && p.id === selectedId ? " on" : ""}${takes(p) ? " ent" : ""}`} role="option" aria-selected={!!selectedId && p.id === selectedId} style={{ "--pc": colorVar(p.color, p.name) }} onClick={() => onPick(p)}>
             <ProjectIcon project={p} name={p.name} size={28} />
             <span class="plt">
               <span class="ell pln">{p.name}</span>
               <span class="ell pls2">{projectSubtitle(p)}</span>
             </span>
-            {selectedId && p.id === selectedId ? <span class="plc">✓</span> : p.threads ? <span class="plc">{p.threads}</span> : null}
+            {/* the count says what it counts (a bare number beside a keyboard-driven list reads as a key) */}
+            {takes(p) ? <kbd class="plk">⏎</kbd> : selectedId && p.id === selectedId ? <span class="plc">✓</span> : p.threads ? <span class="plc" title={`${p.threads} thread${p.threads === 1 ? "" : "s"}`} aria-label={`${p.threads} thread${p.threads === 1 ? "" : "s"}`}>{p.threads}</span> : null}
           </button>
         ))}
         {typed && newItem}

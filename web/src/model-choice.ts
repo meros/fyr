@@ -107,6 +107,10 @@ export function mappingLine(t: { model?: string; effort?: string }, from: Profil
   const was = withEffort(t.model ? modelName(from, t.model) : "the default model", t.effort ?? "");
   const now = withEffort(pick.model ? modelName(to, pick.model) : "its default model", pick.effort);
   if (was === now) return `Keeps ${now}.`;
+  // V0.dialogs-review: the same model is not a change: only the effort is named, and only when the thread had one
+  // (a thread without an asked effort gets the model's default, which is no arrow from nothing).
+  const model = pick.model ? modelName(to, pick.model) : "";
+  if (model && t.model && modelName(from, t.model) === model) return t.effort ? `Keeps ${model}; effort ${t.effort} → ${pick.effort || "the default"}.` : `Keeps ${model} · effort ${pick.effort}.`;
   const near = handoverPick(t, from, to);
   const nearest = near.model === pick.model && near.effort === pick.effort;
   return nearest ? `${was} → ${now}: the nearest ${to.name} has.` : `${was} → ${now}.`;
