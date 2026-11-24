@@ -21,14 +21,19 @@ export function FolderChip({ t, phone }: { t: Pick<Thread, "cwd" | "branch" | "c
       if (chipRef.current?.contains(target) || popRef.current?.contains(target)) return;
       setOpenAt(null);
     };
+    // V0.dialogs-review (21): Esc closes the popover and nothing else. Heard first (capture) and stopped, so the
+    // app's Esc under it (interrupt the run, close the thread) does not act on the same key.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenAt(null);
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      e.preventDefault();
+      setOpenAt(null);
     };
     document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
     };
   }, [openAt]);
   useEffect(() => {

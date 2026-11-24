@@ -275,6 +275,34 @@ export const MERGE_METHODS = [
 
 export type MergeMethod = (typeof MERGE_METHODS)[number]["id"];
 
+/** V0.dialogs-review (27): the method each repository was merged with last on this device, so the Merge dialog starts
+ *  on it instead of always on Squash. */
+export const MERGE_METHOD_KEY = "fyr.mergeMethod";
+
+function mergeMethods(kv: Pick<Storage, "getItem"> | null): Record<string, unknown> {
+  try {
+    const j: unknown = JSON.parse(kv?.getItem(MERGE_METHOD_KEY) ?? "{}");
+    return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The method to start on for `repo`: the one used last there, else squash. */
+export function rememberedMergeMethod(kv: Pick<Storage, "getItem"> | null, repo: string): MergeMethod {
+  const m = mergeMethods(kv)[repo];
+  return MERGE_METHODS.find((x) => x.id === m)?.id ?? "squash";
+}
+
+export function rememberMergeMethod(kv: Pick<Storage, "getItem" | "setItem"> | null, repo: string, method: MergeMethod): void {
+  if (!repo) return;
+  try {
+    kv?.setItem(MERGE_METHOD_KEY, JSON.stringify({ ...mergeMethods(kv), [repo]: method }));
+  } catch {
+    /* storage blocked: the dialog starts on squash again */
+  }
+}
+
 /** The dialog's confirm button names the result. */
 /** V0.97: the short form of a head commit, as the owner sees it on a Merge button. */
 export const shortHead = (sha?: string) => (sha ?? "").slice(0, 7);

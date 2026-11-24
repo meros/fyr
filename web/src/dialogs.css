@@ -1,0 +1,65 @@
+/* V0.dialogs-review: the dialogs, sheets and the New thread form of both fronts. Imported last, so these rules stand. */
+
+/* (22) A dialog starts higher and may be taller: 6vh above it, 88vh at most (it was 12vh and 76vh, which cut New
+   thread at the prompt on a 720 px window). Settings keeps its own size and place: its pages are not this change's. */
+.scrim{padding-top:6vh}
+.dlg{max-height:88vh}
+@media (min-width:761px){.scrim:has(>.dlg.settings){padding-top:12vh}}
+@media (max-width:760px){.scrim{padding-top:0}}
+
+/* New thread, desktop. The prompt grows with its text (grow-ui.ts) up to 40vh, then scrolls. */
+.fld .ntta{resize:none;min-height:114px;max-height:40vh;overflow-y:auto}
+.nt .att-row{align-items:center;margin-top:-6px;min-height:30px}
+.nt .att-row .att-strip{padding-bottom:0}
+.att-row .atth{margin-left:auto;white-space:nowrap}
+.fld>.pform{margin-top:8px}
+.ntmore{min-width:0}
+.ntmore>summary{display:flex;align-items:center;gap:6px;width:fit-content;min-height:24px;cursor:pointer;list-style:none;font:500 12px/16px var(--ui);color:var(--ink-muted);border-radius:6px}
+.ntmore>summary::-webkit-details-marker{display:none}
+.ntmore>summary::before{content:"▸"}
+.ntmore[open]>summary::before{content:"▾"}
+.ntmore[open]>summary{margin-bottom:8px}
+.ntmore>.fld{margin-bottom:10px}
+.ntmore .lvc{margin-left:0;height:auto;align-items:flex-start;white-space:normal}
+.ntmore .lvc input{margin-top:3px;flex:none}
+.ntmore .lvc .srcl{display:block}
+/* The foot's left side: the error of the last try, why Start is off, that a draft came back. Always in view. */
+.df{align-items:center}
+.dfn{margin-right:auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.dfn .err{font:500 12.5px/17px var(--ui)}
+.dfl{font:inherit;color:var(--harbour);text-decoration:underline;text-underline-offset:2px}
+.df kbd{margin-left:2px}
+
+/* Snooze, desktop: the date and time row, and the focus that starts on the first choice. */
+.menu .mi{text-align:left}
+.menu .mi:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.snzc{display:flex;gap:8px;align-items:center;padding:6px 10px 4px}
+.snzc input{flex:1;min-width:0;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink);font:400 14px/20px var(--ui)}
+.snzc input:focus{outline:0;border-color:var(--harbour);box-shadow:0 0 0 3px color-mix(in srgb,var(--harbour) 16%,transparent)}
+
+/* Hand over: the plan line stays in view above the foot while the form scrolls; the phone's buttons centre their
+   words like every other sheet's (30). */
+.ho-plan{flex:none;padding:0 16px 12px}
+.ho-plan.ho-ph{padding:8px 16px 0}
+.ho-dir .ell{flex:1;min-width:0}
+.df.ho-ph .btn{justify-content:center}
+.ho-b .ho-settle{color:var(--ink);font-weight:500}
+
+/* New thread, phone. One row of four small attach buttons under the prompt; the bottom bar holds the note above the
+   one button. */
+.m-new .m-ta{max-height:40vh;overflow-y:auto}
+.m-new .m-capr{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.m-new .m-capb{flex-direction:column;gap:2px;height:52px;border-radius:12px;border-width:1px;font:500 12px/16px var(--ui);min-width:0}
+.m-new .m-abar{flex-direction:column;align-items:stretch;gap:6px}
+.m-new .m-abar .m-bt.p{flex:none}
+.m-new .dfn{margin:0;padding:0 4px;font-size:13px;line-height:18px}
+.m-new .dfn:empty{display:none}
+.m-new .dfn .err{font:500 13px/18px var(--ui)}
+.m-new .ntmore>summary{min-height:44px;font:500 13px/18px var(--ui)} /* a finger's height */
+.m-new .ntmore>*{margin-bottom:8px}
+.m-new .ntmore>.m-dl{margin-bottom:6px}
+.m-new input.m-title{width:100%;font:400 16px/22px var(--ui)}
+.m-new .m-lvc{height:auto;min-height:48px;padding:10px 14px;align-items:flex-start}
+.m-new .m-lvc input{margin-top:2px;flex:none}
+.m-new .m-lvc .srcl{display:block;font:400 13px/18px var(--ui)}
+.ho-form{display:contents}

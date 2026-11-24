@@ -238,7 +238,7 @@ const SCREENS = [
   // project has no folder here (the folder field shows and is required).
   { name: "project picker", url: "?mock=1&open=t_s4", sheet: "project", field: ".m-sheet .pq" },
   { name: "new project step", url: "?mock=1&open=t_s4", sheet: "newproject", field: ".m-sheet .pform input" },
-  // SPEC 0.5 V0.42: a project without a folder starts in a fresh scratch folder; "Change" opens the folder picker
+  // SPEC 0.5 V0.42: a project without a folder starts in a fresh scratch folder; "Change…" opens the folder picker
   // sheet. SPEC 0.5 V0.55: the project screen shows its one folder with Change….
   { name: "new thread, project without a folder", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_home", "fyr.projectFilter": "" }, field: ".m-ta" },
   { name: "folder picker sheet", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_web", "fyr.projectFilter": "" }, sheet: "folder", field: ".fsheet .pq" },
@@ -1767,7 +1767,7 @@ try {
   await navigate(`${origin}/?mock=rail&dialog=new`, "!!document.querySelector('.dlg .fline .ell')");
   const before = await evaluate(`document.querySelector('.dlg .fline .ell')?.textContent ?? ''`);
   check(before === "~/src/acme/web", `V0.42 desktop: a new thread in acme/web does not start in its folder ("${before}")`);
-  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
+  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change…')?.focus()`);
   await key("Enter");
   await waitFor(`!!document.querySelector('.fpick .fsec h4')`, { soft: true });
   const o = await evaluate(`({ picker: !!document.querySelector('.fpick'), focus: document.activeElement?.classList.contains('pq') && !!document.activeElement.closest('.fpick'), first: document.querySelector('.fpick .fsec h4')?.textContent ?? '' })`);
@@ -1796,7 +1796,7 @@ try {
   await waitFor(`!document.querySelector('.fpick')`, { soft: true });
   const r = await evaluate(`({ picker: !!document.querySelector('.fpick'), dlg: !!document.querySelector('.dlg'), folder: document.querySelector('.dlg .fline .ell')?.textContent ?? '' })`);
   check(!r.picker && r.dlg && r.folder === "~/src/acme/ops", `V0.42 desktop: Enter does not pick the typed folder (${JSON.stringify(r)})`);
-  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
+  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change…')?.focus()`);
   await key("Enter");
   await waitFor(`!!document.querySelector('.fpick .fpr')`, { soft: true });
   await key("ArrowDown");
@@ -1891,7 +1891,7 @@ try {
   check(d.dlg && /Full history|reads the old conversation|writes a handover/.test(d.rung) && d.to !== "", `V0.45 desktop: the dialog does not show the target and the rung (${JSON.stringify(d)})`);
   const hw = await evaluate(PROFILE_WORDS);
   check(hw.length === 0, `V0.50 desktop: the handover dialog says profile (${JSON.stringify(hw)})`);
-  await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim() === 'Hand over')?.click()`);
+  await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim().startsWith('Hand over'))?.click()`);
   await waitFor(`!document.querySelector('.dlg') && !!document.querySelector('.th .hodiv')`, { soft: true });
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), div: document.querySelector('.th .hodiv')?.textContent ?? '' })`);
   check(!r.dlg && r.div.startsWith("Handed over from ") && r.div.includes(` to ${d.to.replace(/ · [^·]*$/, "")}`), `V0.45 desktop: no divider after the handover (${JSON.stringify(r)})`);
@@ -3467,8 +3467,9 @@ for (const [label, w, ht] of [
   // 3. New thread: the host follows the project; with no project the owner picks it.
   await step("new thread", async () => {
     await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf .htabs')`);
-    const locked = await evaluate(`({ n: document.querySelectorAll('${root} .hostf .htab').length, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
-    // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project).
+    const locked = await evaluate(`({ n: document.querySelectorAll('${root} .hostf .htab').length, line: document.querySelector('${root} .hostf > span')?.title ?? '' })`);
+    // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project). V0.dialogs-review: its
+    // help is the label's tooltip in New thread, not a standing line.
     check(locked.n === 3 && /^The thread runs there\./.test(locked.line), `${ctx}: the Host field is the owner's pick ${JSON.stringify(locked)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
     await settle();

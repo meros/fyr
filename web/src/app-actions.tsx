@@ -123,7 +123,7 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
 
   const snoozeList = () => snoozeChoices(new Date(), snoozeTargets.flatMap((id) => store.threads[id] ?? []));
 
-  const snooze = (p: SnoozeChoice) => {
+  const snooze = (p: Pick<SnoozeChoice, "until" | "done" | "ids">) => {
     const c = snoozeCommand(p, snoozeTargets);
     setDialog(null);
     setPicked(new Set());

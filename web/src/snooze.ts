@@ -28,6 +28,33 @@ export function snoozeChoices(now: Date, threads: Thread[]): SnoozeChoice[] {
   return [...snoozePresets(now), doneChoice(now, threads)];
 }
 
+// ---- V0.dialogs-review (15): a date and time of the owner's own, one field on both fronts ----
+
+/** The last row of the list on both fronts, and the desktop's key for it. */
+export const SNOOZE_CUSTOM_LABEL = "Pick a date and time…";
+export const SNOOZE_CUSTOM_KEY = "t";
+
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** A local time as the value of a datetime-local field: "2026-11-25T09:00". */
+export function fieldTime(d: Date): string {
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/** What the field starts on: tomorrow 09:00, so Snooze works at once and only the part that differs is changed. */
+export function customStart(now: Date): Date {
+  const d = new Date(now);
+  d.setDate(now.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  return d;
+}
+
+/** The field's time, or null when it is empty, not a time, or not after now. */
+export function customUntil(value: string, now: Date): Date | null {
+  const d = value ? new Date(value) : null;
+  return d && !Number.isNaN(d.getTime()) && d.getTime() > now.getTime() ? d : null;
+}
+
 /** The desktop key's choice; a choice that is off has none. */
 export function snoozeChoiceForKey(list: SnoozeChoice[], key: string): SnoozeChoice | null {
   const c = presetForKey(list, key) as SnoozeChoice | null;

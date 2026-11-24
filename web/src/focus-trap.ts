@@ -28,6 +28,16 @@ export function dropTrap(t: object): void {
   if (i >= 0) stack.splice(i, 1);
 }
 export const isTopTrap = (t: object): boolean => stack[stack.length - 1] === t;
+/** V0.dialogs-review (1): how many modal panels are open. The desktop's key handler reads it: while a panel is open
+ *  that the app's `dialog` state does not know (the Merge dialog, a confirmation), no app key acts under it. */
+export const openTraps = (): number => stack.length;
+
+/** V0.dialogs-review (10): where the focus starts in a panel: its first control that is not the header's × (marked
+ *  `data-close`), so Enter or Space right after opening takes the first choice instead of closing; the × only when
+ *  the panel has nothing else. */
+export function firstFocus<T>(list: readonly T[], isClose: (x: T) => boolean): T | undefined {
+  return list.find((x) => !isClose(x)) ?? list[0];
+}
 
 const shown = (el: HTMLElement) => el.getClientRects().length > 0;
 const focusables = (panel: HTMLElement) => [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(shown);
@@ -35,7 +45,7 @@ const focusables = (panel: HTMLElement) => [...panel.querySelectorAll<HTMLElemen
 /**
  * Traps the focus in `panel` while the component is mounted.
  * - open: unless a child already took the focus (an autofocused field, the confirmation's primary button), the focus
- *   goes to the first control, or with `initial: "panel"` to the panel itself;
+ *   goes to the first control that is not the header's × (`firstFocus`), or with `initial: "panel"` to the panel itself;
  * - Tab, ⇧Tab: wrap inside the panel;
  * - close: the focus goes back to the element that had it before the panel opened, if it is still in the page.
  */
@@ -49,7 +59,7 @@ export function useFocusTrap(panel: RefObject<HTMLElement | null>, initial: "fir
     const me = {};
     pushTrap(me);
     if (!el.contains(document.activeElement)) {
-      const first = initial === "first" ? focusables(el)[0] : undefined;
+      const first = initial === "first" ? firstFocus(focusables(el), (x) => x.hasAttribute("data-close")) : undefined;
       if (first) first.focus();
       else {
         if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1");

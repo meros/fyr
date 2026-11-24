@@ -19,8 +19,8 @@ interface HintContext {
 type Hint = [key: string, label: string];
 
 export function keyHints(c: HintContext): Hint[] {
-  if (c.dialog === "snooze") return [[`1–${c.snoozeCount ?? 5}`, "snooze"], ["Esc", "close"]];
-  if (c.dialog === "new") return [["⏎", "create"], ["⇧⏎", "new line"], ["Esc", "close"]];
+  if (c.dialog === "snooze") return [[`1–${c.snoozeCount ?? 5}`, "snooze"], ["t", "date and time"], ["Esc", "close"]];
+  if (c.dialog === "new") return [["⏎", "start"], ["⇧⏎", "new line"], ["Esc", "back, then close"]]; // V0.dialogs-review (26): the button says Start
   if (c.dialog) return [["Esc", "close"]];
   if (c.inText && c.card === "ask" && c.view === "open") return [["⏎", "answer"], ["⌘⏎", "queue as message"], ["Tab", "next question"], ["Esc", "leave field"]];
   if (c.inText) {

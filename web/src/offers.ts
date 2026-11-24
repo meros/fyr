@@ -125,6 +125,7 @@ export function endChangeAsk(c: Pick<Change, "evidence">): Ask & { choice: NonNu
     choice: { label: "Ended as", options: [{ value: "abandoned", label: "Abandoned" }, { value: "reverted", label: "Reverted" }], value: "abandoned" },
     reason: { label: "Reason (optional)", value: "", max: 200 },
     confirm: "End change",
+    danger: true, // V0.dialogs-review (28): it cannot be taken back (more work becomes a new change), so it is red like Delete project
   };
 }
 

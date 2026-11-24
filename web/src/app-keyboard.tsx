@@ -15,6 +15,7 @@ import { escapeTarget } from "./settings-nav.ts";
 import { snoozeChoiceForKey } from "./snooze.ts";
 import { takeOpen } from "./push.ts";
 import { JUMP_EVENT, type JumpAsk } from "./jumps.ts";
+import { openTraps } from "./focus-trap.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useAnswers, useDecisionCards } from "./app-cards.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
@@ -40,6 +41,10 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
       }
       return;
     }
+    // V0.dialogs-review (1): a modal panel the `dialog` state does not know (the Merge dialog, a confirmation, any
+    // later one) is open, or one is open over the dialog: no app key acts under it, and Esc is the panel's own. The
+    // rule reads the focus trap's stack, which every DialogScrim joins, so a new dialog cannot forget it.
+    if (openTraps() > (dialog ? 1 : 0)) return;
     if (dialog) {
       if (k === "Escape") {
         e.preventDefault();
@@ -49,7 +54,8 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
         else setDialog(null);
         return;
       }
-      if (dialog === "snooze") {
+      // A digit typed in the snooze dialog's own date and time field is text, not a choice.
+      if (dialog === "snooze" && !isTextTarget(e.target)) {
         // SPEC 0.5 V0.67: the keys in the order shown; V0.185: a choice that is off has no key.
         const p = snoozeChoiceForKey(snoozeList(), k);
         if (p) {

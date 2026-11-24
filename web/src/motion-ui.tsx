@@ -8,6 +8,7 @@
 import type { ComponentChildren, RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { useFocusTrap } from "./focus-trap.ts";
+import { useBackLayer } from "./back-layer.ts";
 import { addSample, DRAG_START_PX, EXIT_SPRING, frameMs, pathUntil, releaseVelocity, rubberBand, type Sample, SHEET_SPRING, sheetCloses, SNAP_SPRING, type Spring, springPath } from "./motion.ts";
 
 type ElRef<T extends HTMLElement = HTMLElement> = RefObject<T | null>;
@@ -238,13 +239,14 @@ function useSheetMotion(root: ElRef, back: ElRef, panel: ElRef, kind: SheetKind,
 
 /** The phone's bottom sheet: every sheet of the app. `dismiss` is the scrim's tap and the drag; a long press opens a sheet
  *  under the finger, so the scrim ignores taps for the first 500 ms. */
-export function BottomSheet({ onClose, label, cls, scrimCls, role = "dialog", panelRef, children }: { onClose(): void; label: string; cls?: string; scrimCls?: string; role?: "dialog" | "alertdialog"; panelRef?: ElRef<HTMLDivElement>; children: ComponentChildren }) {
+export function BottomSheet({ onClose, label, cls, scrimCls, role = "dialog", panelRef, layer, children }: { onClose(): void; label: string; cls?: string; scrimCls?: string; role?: "dialog" | "alertdialog"; panelRef?: ElRef<HTMLDivElement>; /** V0.dialogs-review (4): the sheet is not a navigation entry (the folder picker, a confirmation): it gets a history entry of its own while it is up, so Back closes it and not the screen under it */ layer?: boolean; children: ComponentChildren }) {
   const root = useRef<HTMLDivElement>(null);
   const back = useRef<HTMLDivElement>(null);
   const own = useRef<HTMLDivElement>(null);
   const panel = panelRef ?? own;
   const opened = useRef(Date.now());
   useSheetMotion(root, back, panel, "sheet", onClose);
+  useBackLayer(!!layer, onClose);
   // V0.composer-focus-reach (2): the sheet itself takes the focus, not its first control: a field focused on open would raise the
   // phone's keyboard over the sheet before the owner touched it.
   useFocusTrap(panel, "panel");
@@ -261,20 +263,23 @@ export function BottomSheet({ onClose, label, cls, scrimCls, role = "dialog", pa
 
 /** The dialog of both fronts. At phone width with `onClose` it is a bottom sheet and drags like one (V0.32's reused
  *  dialogs); on the desktop it fades and settles, and the mouse has nothing to drag. */
-export function DialogScrim({ onClose, onBack, label, cls, scrimCls, role = "dialog", panelRef, children }: { onClose?: () => void; onBack?: () => void; label: string; cls?: string; scrimCls?: string; role?: "dialog" | "alertdialog"; panelRef?: ElRef<HTMLDivElement>; children: ComponentChildren }) {
+export function DialogScrim({ onClose, onBack, label, cls, scrimCls, role = "dialog", panelRef, onKeyDown, children }: { onClose?: () => void; onBack?: () => void; label: string; cls?: string; scrimCls?: string; role?: "dialog" | "alertdialog"; panelRef?: ElRef<HTMLDivElement>; /** the panel's own keys (V0.dialogs-review: Esc one level up in New thread, Enter in Hand over) */ onKeyDown?: (e: KeyboardEvent) => void; children: ComponentChildren }) {
   const root = useRef<HTMLDivElement>(null);
   const back = useRef<HTMLDivElement>(null);
   const own = useRef<HTMLDivElement>(null);
   const panel = panelRef ?? own;
   const asSheet = useRef(matches(PHONE_QUERY)).current;
   useSheetMotion(root, back, panel, asSheet ? "sheet" : "dialog", onClose);
+  // V0.dialogs-review (4): a dialog shown as a sheet on the phone (the Merge dialog) is no navigation entry, so it is a
+  // Back layer: Back closes it and the thread under it stays. Not on the desktop: there Esc closes it.
+  useBackLayer(asSheet && !!onClose, () => onClose?.());
   // V0.composer-focus-reach (2): focus in, Tab kept inside, focus back on close. As a sheet the panel takes the focus, as
   // BottomSheet's does (no keyboard raised on open); on the desktop its first control does.
   useFocusTrap(panel, asSheet ? "panel" : "first");
   return (
     <div class={`scrim${scrimCls ? ` ${scrimCls}` : ""}`} ref={root}>
       <div class="sheet-back" ref={back} onMouseDown={onBack} />
-      <div class={`dlg${cls ? ` ${cls}` : ""}`} ref={panel} role={role} aria-modal="true" aria-label={label}>
+      <div class={`dlg${cls ? ` ${cls}` : ""}`} ref={panel} role={role} aria-modal="true" aria-label={label} onKeyDown={onKeyDown}>
         {children}
       </div>
     </div>

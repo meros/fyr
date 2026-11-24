@@ -274,10 +274,10 @@ export const FOLDER_LINE = "Threads started in this folder or below land here.";
 /** The new thread's folder (V0.42): the picked one, else the project's folder, else a fresh scratch folder. */
 export function newThreadFolder(picked: string, project: Pick<Project, "folder"> | undefined): { cwd?: string; label: string; scratch: boolean } {
   const cwd = picked.trim() || project?.folder || "";
-  return cwd ? { cwd, label: tildePath(cwd), scratch: false } : { label: "A fresh scratch folder", scratch: true };
+  return cwd ? { cwd, label: tildePath(cwd), scratch: false } : { label: SCRATCH_LABEL, scratch: true };
 }
 
-/** The picker's first row: from a thread "New project from this thread"; typed text that matches nothing names it. */
+/** The picker's New project row: from a thread "New project from this thread"; typed text names it. */
 export function newRowLabel(q: string, exact: boolean, fromThread: boolean): string {
   const t = q.trim();
   if (t && !exact) return `New project “${t}”`; // V0.61: typed text names the new project, matches or not
@@ -290,14 +290,19 @@ export function exactProject(projects: Project[], q: string): Project | undefine
   return t ? projects.find((p) => p.name.trim().toLowerCase() === t) : undefined;
 }
 
-/** What Enter in the picker's search does (V0.61): with a New project row, it picks only a project named exactly
- *  like the text, else it starts New project with the text; without one (the filter), the first match. */
+/** What Enter in the picker's search does. V0.dialogs-review (2), amending V0.61: it takes the first row shown under
+ *  typed text, which is the project named exactly like the text, else the first match; a project is made by Enter
+ *  only when nothing matches (the New project row is then the only row), and otherwise by its own row, which stands
+ *  after the matches. Typing a part of a name and pressing Enter therefore picks that project and never makes one. */
 export function enterAction(projects: Project[], matches: Project[], q: string, canCreate: boolean): { pick: Project } | { create: string } | null {
   if (!q.trim()) return null;
-  if (!canCreate) return matches.length ? { pick: matches[0] } : null;
-  const exact = exactProject(projects, q);
-  return exact ? { pick: exact } : { create: q.trim() };
+  const hit = exactProject(projects, q) ?? matches[0];
+  if (hit) return { pick: hit };
+  return canCreate ? { create: q.trim() } : null;
 }
+
+/** The words for a thread that starts in no folder of the owner's, one spelling for New thread and Hand over. */
+export const SCRATCH_LABEL = "A fresh scratch folder";
 
 /** The project a new thread starts on: the inbox filter, else the last one used on this device, else the first in
  *  the owner's order (V0.121). */

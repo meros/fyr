@@ -1,12 +1,13 @@
 // #41: the New thread form's model, one for the desktop dialog and the phone screen (SPEC 0.5 V0.23, V0.30,
-// V0.42, V0.50, V0.54, V0.63). Project first; the folder follows from the project's folder, else a fresh scratch
-// folder; the profile and model from the project's defaults, else what this device used last. Pure: storage
-// comes in as an argument.
+// V0.42, V0.50, V0.54, V0.63). The project decides the rest: the folder follows from the project's folder, else a
+// fresh scratch folder; the profile and model from the project's defaults, else what this device used last.
+// V0.dialogs-review: what was typed is a draft that survives closing the form (`draftOf`, `restoreDraft`), and the
+// New project step keeps its name and folder while the form is open. Pure: storage comes in as an argument.
 
 import type { PickOptions } from "./folder-picker.tsx";
 import { multiHost, pickerStart, type HostInfo, type HostProfiles } from "./hosts.ts";
 import { asObject, parseJson } from "./decode.ts";
-import type { HostId } from "./hostid.ts";
+import { asHostId, type HostId } from "./hostid.ts";
 import { findProject, localProject, memberOn, newThreadFolder, projectDefaults, projectRecords, recordOf, startProject } from "./projects.ts";
 import type { Profile, Project } from "./types.ts";
 import { baseName } from "./paths.ts";
@@ -110,7 +111,8 @@ export interface NewThreadForm {
   picking: boolean;
   /** V0.63: the New project step is open with this name */
   creating: string | null;
-  /** V0.63: the project being made, as it is typed */
+  /** V0.63: the project being made, as it is typed. V0.dialogs-review (12): kept when the step closes (Back, the
+   *  project button, another project picked), so opening it again shows what was typed; gone once it is made. */
   draft: { name: string; folder: string } | null;
   /** V0.42: a folder picked for this thread; "" follows the project */
   picked: string;
@@ -126,6 +128,11 @@ export interface NewThreadForm {
   /** V0.132: the host the thread starts on, by install id: set when the form settles (the filter's project's host, else
    *  the picker's start, shown in it), then by the owner. None until a host can be named. */
   host?: HostId;
+  /** V0.dialogs-review (3): what the owner picked by hand here. The draft keeps these picks; the rest follows the
+   *  defaults again when the form opens. */
+  hand?: { host?: boolean; project?: boolean; agent?: boolean };
+  /** V0.dialogs-review (12): what a change of host reset, said once under the Host field; "" or missing otherwise */
+  reset?: string;
 }
 
 export function initialForm(): NewThreadForm {
@@ -172,7 +179,9 @@ export function formHost(f: NewThreadForm, ctx: FormCtx): HostId | undefined {
  *  project stays No project), a folder picked on another host is dropped, and the provider moves to one it has. */
 export function chooseHost(f: NewThreadForm, host: HostId, ctx: FormCtx, last: Remembered = {}): NewThreadForm {
   if (host === formHost(f, ctx)) return f;
-  let next: NewThreadForm = { ...f, host, picked: "", creating: null, draft: null, picking: false };
+  // V0.dialogs-review (12): the New project step stays open with its name; only its folder, a path on the other
+  // host, goes. `reset` says what went.
+  let next: NewThreadForm = { ...f, host, picked: "", draft: f.draft ? { name: f.draft.name, folder: "" } : null, picking: false };
   if (f.projectId !== undefined) {
     const list = hostProjects(ctx, host);
     // Decision 0034: a linked project stays picked when the new host has it too.
@@ -180,9 +189,22 @@ export function chooseHost(f: NewThreadForm, host: HostId, ctx: FormCtx, last: R
     const pr = same ?? list.find((x) => x.id === startProject(list, null, last.projectId));
     next = { ...next, projectId: pr?.id };
   }
+  next = { ...next, reset: hostResetNote(f, next, ctx) };
   const there = profilesOn(ctx, host);
   if (!there.length) return next;
   return { ...next, ...profileFor(currentProject(next, ctx), there, f, last) };
+}
+
+/** V0.dialogs-review (12): what the move from `f` to `next` (another host) dropped of the owner's own picks, in one
+ *  line; "" when nothing of theirs went. */
+export function hostResetNote(f: NewThreadForm, next: NewThreadForm, ctx: FormCtx): string {
+  const gone: string[] = [];
+  if (f.hand?.project && f.projectId && next.projectId !== f.projectId && f.creating === null) gone.push("the project you picked");
+  if (f.picked) gone.push("the folder you picked");
+  if (f.creating !== null && f.draft?.folder) gone.push("the new project's folder");
+  if (!gone.length) return "";
+  const from = ctx.hosts?.find((h) => h.id === formHost(f, ctx))?.name;
+  return `Not on this host: ${gone.join(" and ")}${from ? ` (${gone.length > 1 ? "they are" : "it is"} on ${from})` : ""}.`;
 }
 
 /** The profiles of that host. */
@@ -256,7 +278,7 @@ export function settleForm(f: NewThreadForm, ctx: FormCtx, filterId: string | nu
 export function chooseProject(f: NewThreadForm, pr: Project | null, ctx: FormCtx, last: Remembered = {}): NewThreadForm {
   // V0.139: a project of another host (a filter, a deep link) moves the thread's host to it.
   const host = pr?.hostId ?? f.host;
-  const next: NewThreadForm = { ...f, picking: false, creating: null, draft: null, projectId: pr?.id, picked: "", ...(host ? { host } : {}) };
+  const next: NewThreadForm = { ...f, picking: false, creating: null, projectId: pr?.id, picked: "", reset: "", ...(host ? { host } : {}) };
   const there = profilesOn(ctx, host);
   if (!there.length) return next;
   return { ...next, ...profileFor(pr ?? undefined, there, f, last) };
@@ -276,7 +298,7 @@ export function pickModel(f: NewThreadForm, profile: string, model: string): New
 export function madeProject(f: NewThreadForm, id: string, name: string, folder: string, ctx: FormCtx): NewThreadForm {
   const on = formHost(f, ctx);
   const np: Project = { ...localProject(id, name, folder), ...(on ? { hostId: on, host: ctx.hosts?.find((h) => h.id === on)?.name } : {}) }; // V0.132: made on the form's host
-  return chooseProject({ ...f, made: np }, np, { ...ctx, projects: [...ctx.projects.filter((x) => x.id !== id), np] });
+  return chooseProject({ ...f, made: np, draft: null }, np, { ...ctx, projects: [...ctx.projects.filter((x) => x.id !== id), np] });
 }
 
 /** What thread.create gets; `pid` is the project (made just now when the New project step was open). */
@@ -303,9 +325,160 @@ export function changeOptions(pr: Project | undefined, current: string, host?: H
   return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folder`, dirs } : undefined, ...(host ? { host } : {}) }; // V0.132: the thread's host
 }
 
-/** One line under the folder: how the folder and the project relate (V0.42, V0.55). */
-export function folderHint(cur: Project | undefined, folder: { cwd?: string; scratch: boolean }): string {
+/** One line under the folder: how the folder and the project relate (V0.42, V0.55). V0.dialogs-review (6): while
+ *  the New project step is open (`making`) the line is about the project being made, never the one picked before. */
+export function folderHint(cur: Project | undefined, folder: { cwd?: string; label?: string; scratch: boolean }, making?: { name: string; folder: string } | null): string {
+  if (making) {
+    const name = making.name.trim() || "The new project";
+    return folder.scratch ? `${name} is new and has no folder: the thread starts in a fresh scratch folder.` : `${name} is new: the thread starts in ${folder.label ?? folder.cwd}.`;
+  }
   if (folder.scratch) return cur ? `${cur.name} has no folder; the thread is filed in it anyway.` : "No project: a new folder just for this thread.";
   if (!cur) return "No project.";
   return cur.folder && cur.folder === folder.cwd ? `${cur.name}'s folder.` : `Filed in ${cur.name}.`;
+}
+
+/** V0.dialogs-review (5, 23): why Start is off, in one short line for the form's foot: nothing to send (or what the
+ *  attachments wait for), else what the host's note says first ("lab is offline since 19:40."); "" when the thread
+ *  can start. `plan` is the send plan's reason when it is not ok; `hostNote` is hosts.ts `hostOfflineNote`. */
+export function startBlock(plan: string | null, hostNote: string): string {
+  if (plan) return plan === "Nothing to send" ? "Write a prompt or attach a file." : `${plan}.`;
+  return /^.*?[.!?](?=\s|$)/.exec(hostNote)?.[0] ?? hostNote;
+}
+
+// ---- V0.dialogs-review (3): the draft ----
+
+export const NEW_DRAFT_KEY = "fyr.newThreadDraft";
+
+/** What a closed form keeps: the typed text, and the picks the owner made by hand (the rest follows the defaults
+ *  again). Attached files are not kept: an upload belongs to the form that made it. */
+export interface NewThreadDraft {
+  text: string;
+  title: string;
+  liveView?: boolean;
+  /** the host the picks below are on; a draft whose host is gone keeps its text only */
+  host?: HostId;
+  /** "" is No project */
+  project?: string;
+  /** the folder picked for the thread */
+  folder?: string;
+  profile?: string;
+  model?: string;
+  effort?: string;
+  /** the New project step: what was typed, and whether it was open */
+  newProject?: { name: string; folder: string; open: boolean };
+}
+
+/** The draft of a form, or null when nothing was typed (a prompt, a title or a new project's name): picks alone are
+ *  not a draft, the form opens on its defaults again. */
+export function draftOf(f: NewThreadForm, ctx: FormCtx): NewThreadDraft | null {
+  const np = f.draft && (f.draft.name.trim() || f.draft.folder) ? { name: f.draft.name, folder: f.draft.folder, open: f.creating !== null } : undefined;
+  if (!f.text.trim() && !f.title.trim() && !np?.name.trim()) return null;
+  const d: NewThreadDraft = { text: f.text, title: f.title };
+  if (f.liveView) d.liveView = true;
+  const host = formHost(f, ctx);
+  if (host && (f.hand?.host || f.hand?.project || f.hand?.agent || f.picked || np?.folder)) d.host = host;
+  if (f.hand?.project && f.projectId !== null) d.project = f.projectId ?? "";
+  if (f.picked) d.folder = f.picked;
+  if (f.hand?.agent && f.profile) {
+    d.profile = f.profile;
+    d.model = f.model;
+    if (f.effortPick) d.effort = f.effortPick;
+  }
+  if (np) d.newProject = np;
+  return d;
+}
+
+export function loadDraft(kv: KeyValue | null): NewThreadDraft | null {
+  try {
+    const j = parse(kv?.getItem(NEW_DRAFT_KEY) ?? null);
+    const text = str(j.text);
+    const title = str(j.title);
+    if (text === undefined || title === undefined) return null;
+    const d: NewThreadDraft = { text, title };
+    if (j.liveView === true) d.liveView = true;
+    const host = asHostId(str(j.host));
+    if (host) d.host = host;
+    for (const k of ["project", "folder", "profile", "model", "effort"] as const) {
+      const v = str(j[k]);
+      if (v !== undefined) d[k] = v;
+    }
+    const np = asObject(j.newProject);
+    if (np && str(np.name) !== undefined) d.newProject = { name: str(np.name)!, folder: str(np.folder) ?? "", open: np.open === true };
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep the draft, or remove it (null: nothing typed, or the thread was started). */
+export function saveDraft(kv: KeyValue | null, d: NewThreadDraft | null): void {
+  try {
+    if (d) kv?.setItem(NEW_DRAFT_KEY, JSON.stringify(d));
+    else kv?.removeItem(NEW_DRAFT_KEY);
+  } catch {
+    /* storage blocked: the draft lives as long as the form */
+  }
+}
+
+/** True when the picks of `d` can be applied now: its project and provider have arrived (a phone deep link opens the
+ *  form before the host's state). */
+export function draftReady(d: NewThreadDraft, ctx: FormCtx): boolean {
+  if (!d.host) return true; // words alone: nothing to wait for
+  return Object.values(ctx.profiles).some((ps) => ps.length > 0) && (!d.project || ctx.projects.length > 0);
+}
+
+/** A settled form with the draft put back. The typed text always comes back; a pick comes back only when it still
+ *  exists (its host, its project, its provider and model), else the form's default stays. `part`: "words" puts back
+ *  the texts and the new project's name only (the host's state has not arrived, `draftReady`); "picks" then adds the
+ *  picks and leaves the texts as they are (the owner may have typed on). */
+export function restoreDraft(f: NewThreadForm, d: NewThreadDraft, ctx: FormCtx, last: Remembered = {}, part: "all" | "words" | "picks" = "all"): NewThreadForm {
+  const np = d.newProject;
+  const step = (x: NewThreadForm, folder: boolean): NewThreadForm => (np ? { ...x, draft: { name: np.name, folder: folder ? np.folder : "" }, creating: np.open ? np.name : null } : x);
+  let out: NewThreadForm = part === "picks" ? f : { ...f, text: d.text, title: d.title, liveView: !!d.liveView };
+  if (part === "words") return step(out, true);
+  const hand: NonNullable<NewThreadForm["hand"]> = { ...out.hand };
+  // The picks are one host's: with that host gone (or another install's id after a rotation) only the texts return.
+  let bound = !d.host || d.host === formHost(out, ctx);
+  if (!bound && ctx.hosts?.some((h) => h.id === d.host)) {
+    out = { ...chooseHost(out, d.host!, ctx, last), reset: "" };
+    bound = true;
+  }
+  if (bound) {
+    if (d.host && multiHost(ctx.hosts)) hand.host = true;
+    if (d.project !== undefined) {
+      const pr = d.project ? formProjects(out, ctx).find((x) => x.id === d.project) : null;
+      if (pr !== undefined) {
+        out = chooseProject(out, pr, ctx, last);
+        hand.project = true;
+      }
+    }
+    if (d.folder) out = { ...out, picked: d.folder };
+    const prof = d.profile ? formProfiles(out, ctx).find((x) => x.id === d.profile && !x.unavailable) : undefined;
+    if (prof && d.model && prof.models.includes(d.model)) {
+      out = { ...pickModel(out, prof.id, d.model), effortPick: d.effort ?? "" };
+      hand.agent = true;
+    }
+  }
+  // The New project step last: picking a host or a project above closes it. Arriving late ("picks"), the step is as
+  // the owner has it now; a folder on a host that is gone does not stay in it.
+  if (part === "picks") out = { ...out, picking: f.picking, creating: f.creating, draft: f.draft && !bound ? { name: f.draft.name, folder: "" } : f.draft };
+  else out = step(out, bound);
+  return { ...out, hand };
+}
+
+// ---- V0.dialogs-review: the form's words, one spelling for the desktop dialog and the phone screen ----
+
+/** The prompt's placeholder; "the agent", never a provider's name (the provider is a choice of this form). */
+export function promptPlaceholder(hasFiles: boolean): string {
+  return hasFiles ? "Add a note (optional)" : "What should the agent do?";
+}
+
+/** What Live view does, as text beside the box on both fronts (a tooltip does not exist on a phone). */
+export const LIVE_VIEW_HELP = "The agent keeps a page of its state pinned above the conversation.";
+
+/** The line under the thread's folder, only when it says something the Project field does not: "" when the folder is
+ *  simply the picked project's own. */
+export function folderNote(cur: Project | undefined, folder: { cwd?: string; label?: string; scratch: boolean }, making?: { name: string; folder: string } | null): string {
+  if (!making && cur?.folder && cur.folder === folder.cwd) return "";
+  return folderHint(cur, folder, making);
 }

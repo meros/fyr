@@ -8,9 +8,12 @@ import { HostField, useHosts } from "./host-pick-ui.tsx";
 import { hostOfflineNote, multiHost, pickerStart } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
 import { ProjectList } from "./project-ui.tsx";
+import { useBackLayer } from "./back-layer.ts";
 
 /** A project's one folder (V0.55): the short path and what it does with "Change…" through the host folder picker, or
- *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given. */
+ *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given.
+ *  V0.dialogs-review (13): its label is "Project folder", so it is never a second "Folder" beside the thread's own in
+ *  New thread; the picker it opens has the same title. */
 function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: HostId; onPick(path: string): void; onClear?(): void }) {
   const picker = useFolderPick();
   const pick = async () => {
@@ -19,7 +22,7 @@ function FolderField({ folder, title, host, onPick, onClear }: { folder: string;
   };
   return (
     <div class="fld">
-      <span>Folder</span>
+      <span>Project folder</span>
       {folder ? (
         <div class="src pfolder">
           <span class="srcb">
@@ -47,8 +50,9 @@ function FolderField({ folder, title, host, onPick, onClear }: { folder: string;
 /** New project, one step (V0.30, V0.55): a name (required) and the one folder, prefilled from the thread. The rest is
  *  on the project screen. V0.132: with several hosts, the host it lives on comes first: picked here (Settings), or set
  *  by the caller (`host`: the New thread form's host, or the threads' host when it is made from them); the folder is
- *  that host's, and a new host drops a folder picked on another. */
-export function NewProjectStep({ initialName, initialFolder, fromThread, host: fixed, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; host?: HostId; onCreate(name: string, folder: string, host: HostId): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
+ *  that host's, and a new host drops a folder picked on another. `plain` (V0.dialogs-review (11)): the form around it
+ *  has the primary button (New thread's "Create project and start"), so this step's own is a plain one. */
+export function NewProjectStep({ initialName, initialFolder, fromThread, host: fixed, onCreate, onCancel, onDraft, plain }: { initialName: string; initialFolder: string; fromThread: boolean; host?: HostId; onCreate(name: string, folder: string, host: HostId): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void; plain?: boolean }) {
   const hs = useHosts();
   // Slice 2b: the picker starts on the first host in the owner's order (shown in it), the only one with one host.
   const [own, setOwn] = useState<HostId | undefined>(() => pickerStart(hs.hosts));
@@ -58,6 +62,13 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
   const [folder, setFolder] = useState(initialFolder);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reports the draft when the name or folder changes; onDraft is the parent's callback, new on each of its renders
   useEffect(() => onDraft?.(name, folder), [name, folder]);
+  // V0.dialogs-review (12): the caller's host changed under the open step (New thread's Host field): the name stays,
+  // the folder is a path on the other host and goes (the form says so under Host).
+  const was = useRef(fixed);
+  useEffect(() => {
+    if (was.current !== fixed) setFolder("");
+    was.current = fixed;
+  }, [fixed]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -107,12 +118,16 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
       )}
       <FolderField folder={folder} title="Project folder" host={host} onPick={setFolder} onClear={() => setFolder("")} />
       <p class="lede">Icon, colour and defaults are on the project screen, later.</p>
-      {err && <div class="err prose">{err}</div>}
+      {err && (
+        <div class="err prose" role="alert">
+          {err}
+        </div>
+      )}
       <div class="pformb">
         <button class="btn" onClick={onCancel}>
           Back
         </button>
-        <button class="btn p" disabled={busy} onClick={() => void submit()}>
+        <button class={plain ? "btn" : "btn p"} disabled={busy} onClick={() => void submit()}>
           {fromThread ? "Create and file this thread" : "Create project"}
         </button>
       </div>
@@ -120,23 +135,35 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
   );
 }
 
-/** The one project picker (V0.30): file a thread, unfile it, or make a project from it in one step. */
-export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: { projects: Project[]; threads: Thread[]; onPick(p: Project | null): void; onCreate(name: string, folder: string): Promise<string | null>; onEdit?(p: Project): void }) {
+/** The one project picker (V0.30): file a thread, unfile it, or make a project from it in one step. `phone`: the
+ *  front it is on (the sheet of the phone, the dialog of the desktop). */
+export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit, phone }: { projects: Project[]; threads: Thread[]; onPick(p: Project | null): void; onCreate(name: string, folder: string): Promise<string | null>; onEdit?(p: Project): void; phone?: boolean }) {
   const one = threads.length === 1 ? threads[0] : undefined;
   const base = one ? newProjectDraft(one) : { name: "", folder: "" };
-  const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
+  // V0.dialogs-review (12): what was typed in the New project step stays while the picker is open: Back shows the
+  // list again with the name in its search, and the step opens again as it was left.
+  const [open, setOpen] = useState(false);
+  const [kept, setKept] = useState<{ name: string; folder: string } | null>(null);
+  const [first, setFirst] = useState("");
   const cur = one ? projectOf(one, projects) : undefined;
+  const back = () => setOpen(false);
+  // V0.dialogs-review (4): on the phone the step is a layer over the Project sheet, so Back returns to the list and
+  // the sheet (a navigation entry) stays. Not on the desktop: there Esc closes the dialog and Back walks the threads.
+  useBackLayer(!!phone && open, back);
   // V0.132: a project made from threads lives on their host.
-  if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} host={threads[0]?.hostId} onCreate={onCreate} onCancel={() => setDraft(null)} />;
+  if (open) return <NewProjectStep initialName={first || kept?.name || base.name} initialFolder={kept ? kept.folder : base.folder} fromThread={threads.length > 0} host={threads[0]?.hostId} onCreate={onCreate} onCancel={back} onDraft={(name, folder) => setKept({ name, folder })} />;
   const sub = base.folder ? `${base.name} · threads in ${tildePath(base.folder)} land there` : "Just a name; file threads here by hand";
   return (
     <>
       <ProjectList
         projects={projects}
         selectedId={one ? (cur?.id ?? null) : undefined}
-        autoFocus
+        // V0.dialogs-review (14): the search takes the focus on the desktop only. On the phone a focused field raises
+        // the keyboard over the list, whose usual use is one tap on a project (the rule of every sheet, motion-ui.tsx).
+        autoFocus={!phone}
         allLabel="No project"
-        newRow={{ fromThread: !!one, sub, onNew: (q) => setDraft({ name: q.trim() || base.name, folder: base.folder }) }}
+        initialQuery={kept && kept.name.trim() !== base.name ? kept.name.trim() : ""}
+        newRow={{ fromThread: !!one, sub, onNew: (q) => (setFirst(q.trim()), setOpen(true)) }}
         onPick={onPick}
       />
       {cur && onEdit && (

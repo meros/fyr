@@ -122,9 +122,13 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
   );
   const primary = `${a.danger ? " danger" : ""}`;
 
+  // V0.dialogs-review (28): outside the panel the two fronts differ, each by its own convention. Phone: a tap on the
+  // dimmed area, a drag down and Back cancel, as on every sheet (a sheet with no way out by touch but its buttons
+  // would be the only one). Desktop: a click beside the dialog does nothing, because a stray click must not answer a
+  // confirmation; Esc and Cancel do.
   if (phone) {
     return (
-      <BottomSheet onClose={() => onDone(false)} label={a.title} cls="cfm" scrimCls="cfm-scrim" role="alertdialog" panelRef={box}>
+      <BottomSheet onClose={() => onDone(false)} label={a.title} cls="cfm" scrimCls="cfm-scrim" role="alertdialog" panelRef={box} layer>
         <div class="m-shh cfm-t">{a.title}</div>
         {body}
         <div class="cfm-f">

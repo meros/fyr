@@ -80,6 +80,7 @@ test("V0.72: End this change on every change that has not ended, with Fyr's conf
   const a = endChangeAsk(pr);
   assert.equal(a.title, "End this change?");
   assert.equal(a.confirm, "End change");
+  assert.equal(a.danger, true, "V0.dialogs-review (28): ending cannot be taken back, so the button is red");
   assert.equal(a.text, "Fyr stops watching its PR and removes its actions. The agent is told; more work on it becomes a new change.");
   assert.deepEqual(a.choice?.options.map((o) => o.value), ["abandoned", "reverted"]);
   assert.equal(a.choice?.value, "abandoned", "abandoned is the default");

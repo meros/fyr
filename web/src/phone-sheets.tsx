@@ -1,11 +1,11 @@
-// The phone's bottom sheets and the New thread screen (split from phone.tsx).
+// The phone's bottom sheets (split from phone.tsx). The New thread screen is phone-new.tsx.
 
-import { type PhoneProps, ThreadQuotaRow, MHeader } from "./phone.tsx";
+import { type PhoneProps, ThreadQuotaRow } from "./phone.tsx";
 import { I } from "./phone-icons.tsx";
 import { BottomSheet } from "./motion-ui.tsx";
 import { useApi } from "./api-context.ts";
 import { type ComponentChildren } from "preact";
-import { useRef, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import type { Thread } from "./types.ts";
 import { LoadSheetBody, useLoad } from "./load-ui.tsx";
 import { stripHosts } from "./host-load.ts";
@@ -13,145 +13,25 @@ import { unavailableReason } from "./store.ts";
 import { currentDecision } from "./decode.ts";
 import { StateIcon } from "./icons.tsx";
 import { rowDetail, rowState, stateLabel } from "./rows.ts";
-import { snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
-import { AgentPill, newThreadAgent, threadAgent } from "./agent-ui.tsx";
-import { ChipStrip, PhonePickers } from "./attach-ui.tsx";
-import { SlashList, useSlash } from "./slash-ui.tsx";
+import { SNOOZE_CUSTOM_LABEL, snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
+import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { headerPrs, threadPrs } from "./offers.ts";
 import { actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
 import { prChip, rowPrChip } from "./pr.ts";
 import { needsCount } from "./board.ts";
 import { HandoverForm } from "./handover-ui.tsx";
 import { ProjectIcon, ProjectList, ProjectTag } from "./project-ui.tsx";
-import { colorVar, projectName, projectOf } from "./projects.ts";
-import { folderHint } from "./new-thread.ts";
-import { useNewThreadForm } from "./new-thread-form.ts";
+import { projectName, projectOf } from "./projects.ts";
+import { tildePath } from "./paths.ts";
+import { SnoozeCustom } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import type { Sheet } from "./nav.ts";
 import { hostsNeed, settingsNeed } from "./settings-nav.ts";
-import { HostField } from "./host-pick-ui.tsx";
 import { PIN_ICON } from "./row-ui.tsx";
 import { QuotaList } from "./quota-ui.tsx";
 import { profilesOf, threadProvider, type HostInfo, type HostProfiles } from "./hosts.ts";
-import { ProjectPicker, NewProjectStep } from "./project-picker.tsx";
-import { QuietHold } from "./quiet-ui.tsx";
+import { ProjectPicker } from "./project-picker.tsx";
 import { useProvidersNeed } from "./settings-load.ts";
-
-// ---- new thread ----
-
-/** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked.
- *  #41: the state is useNewThreadForm's, shared with the desktop dialog. */
-export function MNew(p: PhoneProps) {
-  const n = useNewThreadForm({ onAddProject: p.projectActions.add, projects: p.store.projects, profiles: p.profiles, hosts: p.store.hostList, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder, host) => p.projectActions.create(name, folder, [], host) });
-  const { form: f, cur, chip, folder, profiles, att } = n;
-  const ta = useRef<HTMLTextAreaElement>(null);
-  const ready = n.plan.ok;
-  // V0.79: `/` at the start lists the commands seen for this provider and folder.
-  const slash = useSlash(n.commandSource, f.text, (text) => n.set({ text }), ta);
-
-  const paste = async () => {
-    n.setErr(null);
-    try {
-      const items = await navigator.clipboard.read();
-      const files: File[] = [];
-      for (const it of items) {
-        const type = it.types.find((x) => x.startsWith("image/"));
-        if (type) files.push(new File([await it.getType(type)], "pasted", { type }));
-      }
-      if (!files.length) return n.setErr("The clipboard has no image.");
-      att.add(files);
-    } catch {
-      ta.current?.focus();
-      n.setErr("Paste into the text field: press and hold it, then Paste.");
-    }
-  };
-
-  return (
-    <div class="m-screen m-new">
-      <MHeader onBack={p.nav.back} title="New thread" close />
-      <div class="m-nbody" onDrop={att.onDrop} onDragOver={att.onDragOver}>
-        <div class="m-defs">
-          {/* V0.139: host first, as on the desktop */}
-          <HostField value={n.host} onPick={n.chooseHost} what="The thread runs there. The projects, folders and providers below are that host's." />
-          <div class="m-dl">Project</div>
-          <button class="m-dchip m-ppick" onClick={n.togglePicking} aria-expanded={f.picking} style={cur && !chip.isNew ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
-            {chip.isNew ? <span class="pi all">+</span> : cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
-            <span class="plt">
-              <span class="ell pln">{chip.name}</span>
-              <span class="ell pls2">{chip.sub}</span>
-            </span>
-            {f.picking ? I.up : I.down}
-          </button>
-          {f.picking && f.creating === null && (
-            <div class="m-pickpanel">
-              <ProjectList
-                projects={n.projects}
-                selectedId={f.projectId ?? null}
-                allLabel="No project"
-                newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: n.startCreating }}
-                onPick={n.choose}
-                extra={<QuietHold {...n.quiet} />}
-              />
-            </div>
-          )}
-          {n.missing && (
-            <button class="btn" onClick={() => void n.addHere()}>
-              Add {n.missing.name} on {n.host}…
-            </button>
-          )}
-          {f.creating !== null && (
-            <div class="m-pickpanel">
-              <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} host={n.host} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />
-            </div>
-          )}
-          <div class="m-dl">Folder</div>
-          <div class={`m-dchip m-fline${folder.scratch ? " scratch" : ""}`}>
-            <span class="ell">{folder.label}</span>
-            <button class="m-fchg" onClick={() => void n.changeFolder()}>
-              Change
-            </button>
-          </div>
-          <div class="m-fhint">{folderHint(cur, folder)}</div>
-        </div>
-        <div class="m-capr">
-          <button class="m-capb" onClick={() => void paste()}>
-            {I.paste}
-            Paste
-          </button>
-          <PhonePickers onFiles={att.add} big />
-        </div>
-        <ChipStrip chips={att.chips} onRemove={att.remove} />
-        <SlashList s={slash} phone />
-        <textarea
-          ref={ta}
-          class="m-ta"
-          rows={3}
-          value={f.text}
-          placeholder={att.chips.length ? "Add a note (optional)" : "What should Claude do? Optional with a screenshot."}
-          onInput={(e) => n.set({ text: (e.target as HTMLTextAreaElement).value })}
-          onKeyDown={(e) => void slash.onKeyDown(e)}
-          onPaste={att.onPaste}
-        />
-        <div class="m-defs">
-          {/* V0.agent-pill on V0.model-choice: the desktop dialog's pill, at a finger's size */}
-          <AgentPill size="field" phone segs={newThreadAgent({ ...f, effort: n.effort, efforts: n.efforts }, profiles, n.pickModel, (x) => n.set({ effortPick: x }))} />
-          <label class="m-dchip m-lvc">
-            <input type="checkbox" checked={f.liveView} onChange={(e) => n.set({ liveView: (e.target as HTMLInputElement).checked })} />
-            <span class="ell">Live view</span>
-          </label>
-          {n.note && <div class="m-mnote" role="status">{n.note}</div>}
-          <QuotaList profiles={p.profiles} host={p.store.hostList.length > 1 ? p.store.hostList.find((h) => h.id === n.host)?.name : undefined} />
-        </div>
-        {n.err && <div class="err prose">{n.err}</div>}
-      </div>
-      <div class="m-abar">
-        <button class="m-bt p" disabled={!ready || n.busy} onClick={() => void n.submit()}>
-          Start
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ---- sheets ----
 
@@ -246,6 +126,7 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
         <div class="m-shh">{ids.length > 1 ? `Project for ${ids.length} threads` : "Project"}</div>
         <div class="m-pform">
           <ProjectPicker
+            phone
             projects={p.store.projects}
             threads={ids.map((id) => p.store.threads[id]).filter(Boolean)}
             onPick={async (pr) => {
@@ -341,7 +222,11 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
                 return [t.project, t.branch, chip?.text ?? null].filter(Boolean).join(" · ");
               })()}
             </div>
-            {t.summary && <div class="m-pkb prose">Claude: {t.summary}</div>}
+            {t.summary && (
+              <div class="m-pkb prose">
+                {threadProvider(t, p.profiles).name}: {t.summary}
+              </div>
+            )}
             {d && (
               <div class="m-pkq">
                 <b class="s-ask">{rowState(t)}</b>
@@ -354,7 +239,8 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
         {!peek && <div class="m-shh ell">{t.title}</div>}
         {actionsFor("phone", t, peek ? "row" : "thread").map((a) => {
           const l = look(a);
-          return <Item key={a.id} label={a.label} icon={l.icon} sub={a.disabled ?? a.hint} disabled={!!a.disabled} right={l.right} onClick={pick(a)} />;
+          // A row that is off names no swipe: the swipe does nothing then either.
+          return <Item key={a.id} label={a.label} icon={l.icon} sub={a.disabled ?? a.hint} disabled={!!a.disabled} right={a.disabled ? undefined : l.right} onClick={pick(a)} />;
         })}
       </MSheet>
     );
@@ -416,7 +302,9 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
             onWake={(window) => void p.commands.run("thread.wakeOnQuota", [t.id], { window })}
             onCancelWake={(rule) => void p.commands.run("thread.cancelWake", [t.id], { rule })}
           />
-          {row("Folder", t.cwd)}
+          {/* V0.dialogs-review (29): the host with several, and the folder short ("~/…"), as every other surface */}
+          {p.store.hostList.length > 1 && t.host && row("Host", t.host)}
+          {row("Folder", <span title={t.cwd}>{tildePath(t.cwd)}</span>)}
           {t.branch && row("Branch", t.branch)}
           {/* V0.agent-pill: the desktop header's pill, at a finger's size; full width in Details so provider, model and effort never squeeze */}
           <div class="m-kvrow m-agrow">
@@ -448,23 +336,14 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
 function SnoozeSheet({ ids, title, threads, onClose, onPick }: { ids: string[]; title?: string; threads: Thread[]; onClose(): void; onPick(c: Pick<SnoozeChoice, "until" | "done" | "ids">): void }) {
   const presets = snoozeChoices(new Date(), threads);
   const [custom, setCustom] = useState(false);
-  const [val, setVal] = useState("");
   return (
     <MSheet onClose={onClose} label="Snooze">
       <div class="m-shh ell">{ids.length > 1 ? `Snooze ${ids.length} threads` : `Snooze “${title ?? ""}”`}</div>
       {presets.map((s) => (
         <Item label={s.label} sub={s.off} disabled={!!s.off} icon={<StateIcon state="snoozed" size={16} />} right={s.off ? undefined : s.when} onClick={() => onPick(s)} />
       ))}
-      {custom ? (
-        <div class="m-custom">
-          <input type="datetime-local" value={val} onInput={(e) => setVal((e.target as HTMLInputElement).value)} aria-label="Snooze until" />
-          <button class="m-bt p" disabled={!val || new Date(val).getTime() <= Date.now()} onClick={() => onPick({ until: new Date(val) })}>
-            Snooze
-          </button>
-        </div>
-      ) : (
-        <Item label="Pick a date and time…" onClick={() => setCustom(true)} />
-      )}
+      {/* V0.dialogs-review (15): the same last choice and the same field as the desktop's snooze dialog (dialogs.tsx) */}
+      {custom ? <SnoozeCustom phone onPick={onPick} /> : <Item label={SNOOZE_CUSTOM_LABEL} onClick={() => setCustom(true)} />}
       <div class="m-shf">
         <button class="m-bt" onClick={onClose}>
           Cancel

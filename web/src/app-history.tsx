@@ -6,19 +6,30 @@ import { useRef } from "preact/hooks";
 import { backTarget, leavesThread, urlFor, type Nav } from "./nav.ts";
 import { navTransition } from "./native.ts";
 import type { useAppState } from "./app-state.tsx";
+import { layers } from "./back-layer.ts";
+
+/** V0.dialogs-review (4): a navigation waits for a layer's entry that is on its way out, and takes the open layers'
+ *  entries out first (back-layer.ts). With no layer it runs at once, as before. */
+const settled = (fn: () => void) => {
+  const ls = layers();
+  if (ls) ls.settled(fn);
+  else fn();
+};
 
 export function useNavHistory(c: Pick<ReturnType<typeof useAppState>, "threadsRef" | "reopenRef" | "navGoRef" | "nav" | "setNav">) {
   const { threadsRef, reopenRef, navGoRef, nav, setNav } = c;
   // ---- phone navigation ----
-  const navGo = (n: Nav) => {
-    history.pushState(n, "", urlFor(n, location.search));
-    // A sheet opens over the screen; only a new screen slides (V0.32).
-    if (n.screen !== nav.screen && JSON.stringify(n.screen) !== JSON.stringify(nav.screen)) navTransition("fwd", () => setNav(n));
-    else setNav(n);
-  };
-  navGoRef.current = navGo;
   const navRef = useRef(nav);
   navRef.current = nav;
+  const navGo = (n: Nav) =>
+    settled(() => {
+      history.pushState(n, "", urlFor(n, location.search));
+      const at = navRef.current;
+      // A sheet opens over the screen; only a new screen slides (V0.32).
+      if (n.screen !== at.screen && JSON.stringify(n.screen) !== JSON.stringify(at.screen)) navTransition("fwd", () => setNav(n));
+      else setNav(n);
+    });
+  navGoRef.current = navGo;
   /** U8, V0.app-shell-tidy: after the host took a settle, archive or snooze of the open thread on a phone, go back to
    *  the inbox (pop, not push). */
   const leaveOpenThread = (ids: string[]) => {
@@ -28,12 +39,17 @@ export function useNavHistory(c: Pick<ReturnType<typeof useAppState>, "threadsRe
     reopenRef.current = s.id;
     navBack();
   };
-  const navReplace = (n: Nav) => {
-    history.replaceState(n, "", urlFor(n, location.search));
-    setNav(n);
-  };
+  const navReplace = (n: Nav) =>
+    settled(() => {
+      history.replaceState(n, "", urlFor(n, location.search));
+      setNav(n);
+    });
+  /** Back from a control of the page (the header's arrow or ×, a sheet's close): it leaves the screen or the sheet, so
+   *  the layers over it (V0.dialogs-review (4): the project list in New thread) go in the same step. The system's
+   *  Back is the browser's own and closes one layer at a time (back-layer.ts). */
   const navBack = () => {
-    if (history.state && typeof history.state === "object" && "screen" in history.state && history.length > 1) history.back();
+    const over = layers()?.drop() ?? 0;
+    if (history.state && typeof history.state === "object" && "screen" in history.state && history.length > 1) history.go(-1 - over);
     else {
       const t = backTarget(nav);
       if (t) navReplace(t);

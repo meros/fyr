@@ -105,7 +105,7 @@ export function suggestTargetFolder(t: Pick<Thread, "projectId" | "hostId">, tar
       return { cwd: matched.folder, projectId: matched.rid ?? matched.id ?? "", reason: `Matches repo ${repo}` };
     }
   }
-  return { cwd: "", projectId: "", reason: "No matching folder on this host — pick one or start a scratch folder" };
+  return { cwd: "", projectId: "", reason: "No matching folder on this host: pick one, or start in a fresh scratch folder." };
 }
 
 function flattenProjects(projects: readonly Project[]): Project[] {
@@ -126,7 +126,7 @@ export function gitLimitationNote(git: HandoverGit | undefined, fromHost: string
     if (git.dirty && git.dirty > 0) stayed.push(git.dirty === 1 ? "1 uncommitted file" : `${git.dirty} uncommitted files`);
     if (git.unpushed && git.unpushed > 0) stayed.push(git.unpushed === 1 ? "1 unpushed commit" : `${git.unpushed} unpushed commits`);
     if (stayed.length) {
-      return `${stayed.join(" and ")} on ${from} (${git.branch}) will stay there — Fyr will not commit or push them. Local files and running processes do not move; the agent on ${to} will be told about the host move.`;
+      return `${stayed.join(" and ")} on ${from} (${git.branch}) will stay there: Fyr will not commit or push them. Local files and running processes do not move; the agent on ${to} will be told about the host move.`;
     }
     return `Branch ${git.branch} is clean and pushed. Local files outside git and running processes stay on ${from}; the agent on ${to} will be told about the host move.`;
   }

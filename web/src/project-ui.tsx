@@ -157,19 +157,37 @@ interface NewRow {
   onNew(query: string): void;
 }
 
-/** A searchable project list: the picker (Project…), the new-thread picker and the filter. Rows: New project, the
- *  null row (No project, All projects), the projects by last use, then any extra rows. */
-export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus, newRow, extra }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; allLabel?: string; autoFocus?: boolean; newRow?: NewRow; extra?: ComponentChildren }) {
-  const [q, setQ] = useState("");
+/** A searchable project list: the picker (Project…), the new-thread picker and the filter. Rows with an empty search:
+ *  New project, the null row (No project, All projects), the projects in the owner's order, then any extra rows.
+ *  V0.dialogs-review (2): under typed text the matches come first and New project “text” after them, so the first row
+ *  is what Enter takes (projects.ts `enterAction`). `initialQuery` is the search's text when the list opens (the name
+ *  typed in the New project step, after Back from it). */
+export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus, newRow, extra, initialQuery = "" }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; allLabel?: string; autoFocus?: boolean; newRow?: NewRow; extra?: ComponentChildren; initialQuery?: string }) {
+  const [q, setQ] = useState(initialQuery);
   const ref = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   /* eslint-disable react-hooks/exhaustive-deps -- focus on mount only */
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
+    // V0.dialogs-review (22): the picked project is in view when the list opens, not below its fold.
+    // Only the list's own box scrolls for it (scrollIntoView would move the dialog or the sheet around it too).
+    const on = box.current?.querySelector<HTMLElement>(".pli.on");
+    const under = on && box.current ? on.getBoundingClientRect().bottom - box.current.getBoundingClientRect().bottom : 0;
+    if (under > 0) box.current!.scrollTop += under;
   }, []);
   /* eslint-enable react-hooks/exhaustive-deps */
   const list = matchProjects(projects, q);
-  // Keyboard: Enter in the search picks the first match, or names a new project when nothing matches; arrows walk the
+  const typed = !!q.trim();
+  const newItem = newRow && (
+    <button class="pli new" role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
+      <span class="pi all">+</span>
+      <span class="plt">
+        <span class="ell pln">{newRowLabel(q, !!exactProject(projects, q), newRow.fromThread)}</span>
+        <span class="ell pls2">{newRow.sub}</span>
+      </span>
+    </button>
+  );
+  // Keyboard: Enter in the search takes the first row under typed text (a match, else New project); arrows walk the
   // rows and back to the search.
   const options = () => [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
   const onSearchKey = (e: KeyboardEvent) => {
@@ -195,15 +213,7 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
     <div class="plist">
       <input ref={ref} class="pq" type="search" placeholder={newRow ? "Search, or name a new project" : "Search projects"} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={onSearchKey} aria-label="Search projects" autocapitalize="off" />
       <div class="pls" role="listbox" ref={box} onKeyDown={onListKey}>
-        {newRow && (
-          <button class="pli new" role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
-            <span class="pi all">+</span>
-            <span class="plt">
-              <span class="ell pln">{newRowLabel(q, !!exactProject(projects, q), newRow.fromThread)}</span>
-              <span class="ell pls2">{newRow.sub}</span>
-            </span>
-          </button>
-        )}
+        {!typed && newItem}
         {allLabel && !q && (
           <button class={`pli none${!selectedId ? " on" : ""}`} role="option" aria-selected={!selectedId} onClick={() => onPick(null)}>
             <span class="pi all" />
@@ -223,6 +233,7 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
             {selectedId && p.id === selectedId ? <span class="plc">✓</span> : p.threads ? <span class="plc">{p.threads}</span> : null}
           </button>
         ))}
+        {typed && newItem}
         {!list.length && !newRow && <div class="plempty">No project matches “{q}”.</div>}
         {extra}
       </div>
