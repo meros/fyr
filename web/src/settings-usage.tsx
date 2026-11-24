@@ -13,6 +13,7 @@ import {
   kindsLine,
   mergeUsage,
   overheadRows,
+  ownCallsFoot,
   perDay,
   perHostWhere,
   rangeDays,
