@@ -55,7 +55,7 @@ const (
 	// V0.message-links-files: what the client can turn into a link.
 	promptLinks = "The user may read this on a phone or another machine, so write what Fyr can open. A file: its path as inline code, absolute or relative to the working folder, with :line when a line matters (`internal/core/change.go:42`), never a bare file name that exists in several folders; Fyr links the paths inside this thread's folder, its worktrees and the temp folder, and opens the file from this host. A web page: the full URL with its scheme, in the text and not only inside a code block. A picture or a page you made: mcp__fyr__show, not its path. A server on this host (a dev server on localhost) is not reachable from the user's device: show a screenshot of it with mcp__fyr__show {url}."
 
-	promptZone ="The user's time zone is %s. Use local time in everything the user reads (messages, reminders, schedules, times in a watch note) and when you read a time they gave you, unless there is a reason not to: a protocol or an API that wants UTC or an explicit offset (RFC 3339 with its offset is fine), or a log or file that is already in UTC. Say which zone when a time could be read two ways."
+	promptZone = "The user's time zone is %s. Use local time in everything the user reads (messages, reminders, schedules, times in a watch note) and when you read a time they gave you, unless there is a reason not to: a protocol or an API that wants UTC or an explicit offset (RFC 3339 with its offset is fine), or a log or file that is already in UTC. Say which zone when a time could be read two ways."
 
 	promptRootPkexec   = "(Fyr runs it through pkexec)."
 	promptRootNoPkexec = "(this host has no pkexec, so the card shows the owner the script to run as root themselves)."
