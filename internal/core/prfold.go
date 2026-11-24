@@ -60,7 +60,7 @@ func joinPRWork(t *Thread, c *Change, now time.Time) *Change {
 	if c == nil {
 		return nil
 	}
-	id, url := c.ID, c.PRURL()
+	id, url, key := c.ID, c.PRURL(), c.Key
 	branch, targets, kind := c.Branch, c.Targets, c.Kind
 	foldPRChanges(t, id, now, func(x *Change) bool {
 		if url != "" && x.PRURL() == url {
@@ -68,7 +68,53 @@ func joinPRWork(t *Thread, c *Change, now time.Time) *Change {
 		}
 		return kind != KindCode && branch != "" && x.Branch == branch && x.Phase.InFlight() && url == "" && sameRepo(targets, x.Targets)
 	})
-	return findByID(t, id)
+	FoldSamePR(t, now)
+	if got := findByID(t, id); got != nil {
+		return got
+	}
+	// c itself folded into an older change that holds the same PR.
+	for i := range t.Changes {
+		if slices.Contains(t.Changes[i].Aliases, key) {
+			return &t.Changes[i]
+		}
+	}
+	return nil
+}
+
+// FoldSamePR is the repair for two changes that hold one PR when neither is
+// the change Fyr made for it (two agent keys on one PR, V0.thread-change-pr-twins):
+// the first change not made for the PR keeps it, the others fold into it as
+// aliases. It reports whether the thread changed.
+func FoldSamePR(t *Thread, now time.Time) bool {
+	changed := false
+	for {
+		keep, drop := "", -1
+		first := map[string]int{}
+		for i := range t.Changes {
+			u := t.Changes[i].PRURL()
+			if u == "" {
+				continue
+			}
+			j, ok := first[u]
+			if !ok {
+				first[u] = i
+				continue
+			}
+			k := j
+			if madeForPR(&t.Changes[j]) && !madeForPR(&t.Changes[i]) {
+				k = i
+			}
+			keep, drop = t.Changes[k].ID, i+j-k
+			break
+		}
+		if drop < 0 {
+			return changed
+		}
+		x := t.Changes[drop]
+		t.Changes = slices.Delete(t.Changes, drop, drop+1)
+		foldChange(t, findByID(t, keep), &x, now)
+		changed = true
+	}
 }
 
 // foldPRChanges folds every change Fyr made for a PR that match picks, other
