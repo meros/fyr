@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,7 +118,11 @@ type Checker struct {
 	Data        string
 	ToolsDir    string
 	ServeTarget string // "http://127.0.0.1:PORT" on macOS, "unix:<data>/serve.sock" on Linux
-	TLSOn       bool
+	// ForwardTargets: each forward port of this front and the socket Tailscale
+	// Serve proxies it to (V0.forwarded-ports); none where Serve cannot reach
+	// the front's sockets (macOS) or the front forwards nothing.
+	ForwardTargets map[int]string
+	TLSOn          bool
 
 	LookPath  func(file string) (string, error)
 	Exec      func(ctx context.Context, name string, args ...string) (stdout, stderr string, err error)
@@ -496,6 +501,19 @@ func (c *Checker) checkPhone(ctx context.Context) Step {
 	if ts.Available {
 		serveOn := c.tailscaleServeActive(ctx)
 		detail["serveOn"] = serveOn
+		if missing := c.serveMissing(ctx, c.forwardPorts()); serveOn && len(missing) > 0 {
+			// V0.forwarded-ports: Fyr is published, its forward ports are not.
+			detail["forwardMissing"] = missing
+			return Step{
+				ID:       "phone",
+				Title:    "Phone",
+				Status:   Fixable,
+				Optional: true,
+				Reason:   fmt.Sprintf("Fyr is on the tailnet, but not its forward ports (%s): a link to a thread's local server will not open from another device", portList(missing)),
+				Fixes:    []Fix{{ID: "tailscale.serve", Label: "Publish the forward ports"}},
+				Detail:   detail,
+			}
+		}
 		if serveOn {
 			reason := "Tailscale Serve is active on port 7443"
 			if ts.DNSName != "" {
@@ -556,15 +574,45 @@ func (c *Checker) tailscaleBinary() string {
 }
 
 func (c *Checker) tailscaleServeActive(ctx context.Context) bool {
+	return len(c.serveMissing(ctx, []int{7443})) == 0
+}
+
+// serveMissing is the ports among want that Tailscale Serve does not publish.
+func (c *Checker) serveMissing(ctx context.Context, want []int) []int {
 	ts := c.tailscaleBinary()
 	if ts == "" {
-		return false
+		return want
 	}
 	out, _, err := c.run(ctx, ts, "serve", "status", "--json")
 	if err != nil {
-		return false
+		return want
 	}
-	return strings.Contains(out, ":7443") || strings.Contains(out, `"7443"`)
+	var missing []int
+	for _, p := range want {
+		if n := strconv.Itoa(p); !strings.Contains(out, ":"+n) && !strings.Contains(out, `"`+n+`"`) {
+			missing = append(missing, p)
+		}
+	}
+	return missing
+}
+
+// forwardPorts is the forward ports Serve should publish, in order.
+func (c *Checker) forwardPorts() []int {
+	out := make([]int, 0, len(c.ForwardTargets))
+	for p := range c.ForwardTargets {
+		out = append(out, p)
+	}
+	sort.Ints(out)
+	return out
+}
+
+// portList is "7450, 7451".
+func portList(ports []int) string {
+	s := make([]string, len(ports))
+	for i, p := range ports {
+		s[i] = strconv.Itoa(p)
+	}
+	return strings.Join(s, ", ")
 }
 
 // Fix runs one setup fix action from host.setupFix.
@@ -624,15 +672,27 @@ func (c *Checker) Fix(ctx context.Context, action string, args map[string]any) (
 		if ts == "" {
 			return nil, errors.New("tailscale CLI not found")
 		}
-		_, errOut, err := c.run(ctx, ts, "serve", "--bg", "--https=7443", c.ServeTarget)
-		if err != nil {
-			msg := strings.TrimSpace(errOut)
-			if msg == "" {
-				msg = err.Error()
+		serve := func(port int, target string) error {
+			_, errOut, err := c.run(ctx, ts, "serve", "--bg", "--https="+strconv.Itoa(port), target)
+			if err != nil {
+				msg := strings.TrimSpace(errOut)
+				if msg == "" {
+					msg = err.Error()
+				}
+				return fmt.Errorf("tailscale serve (port %d): %s", port, msg)
 			}
-			return nil, fmt.Errorf("tailscale serve: %s", msg)
+			return nil
 		}
-		return map[string]any{"target": c.ServeTarget}, nil
+		if err := serve(7443, c.ServeTarget); err != nil {
+			return nil, err
+		}
+		// V0.forwarded-ports: each forward port has its own entry and socket.
+		for _, p := range c.forwardPorts() {
+			if err := serve(p, c.ForwardTargets[p]); err != nil {
+				return nil, err
+			}
+		}
+		return map[string]any{"target": c.ServeTarget, "forwardPorts": c.forwardPorts()}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown setup action %q", action)

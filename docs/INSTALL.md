@@ -29,6 +29,7 @@ The keys you are most likely to set in `config.json`:
 | `role` | `"both"` | `host` (runs agents), `front` (serves the app for `hosts`), or `both` |
 | `ownerLogin` | none | Optional: Tailscale login allowed to sign in through Tailscale Serve and auto-pair on a tailnet. Fyr never reads it from `tailscaled` automatically; set it here, with `-owner-login`, or once with `fyr auth owner <login>`. Not needed without Tailscale |
 | `peerListen` | none | Address for the mutual-TLS peer port (e.g. `"0.0.0.0:7779"`), so other installs can link over a LAN or an optional tailnet |
+| `forwardPorts` | `[7450, 7451, 7452, 7453]` | The ports a front opens a thread's local server on (a dev server on the host's loopback), for a browser on another machine or the phone. Each is a loopback port, a socket for Tailscale Serve (`serve-<port>.sock`, published by the setup's Phone step or the NixOS module) and, with `tls`, a port of the LAN listener. `[]` forwards nothing |
 | `tls` | none | `{cert, key, listen, name}` to serve the front over HTTPS on a LAN without Tailscale ([The phone](#the-phone)) |
 | `updateChannel` | `"main"` (a new install from the scripts: `"stable"`) | Which releases the host follows: `stable` (versions), `main` (every green commit) or a version such as `"v1.2.3"` to stay on it, read at start ([Channels and versions](#channels-and-versions)) |
 | `updateEveryMinutes` | `60` | How often the host checks for a new release |

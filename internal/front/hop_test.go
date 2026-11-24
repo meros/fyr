@@ -69,6 +69,9 @@ var routes = map[string]routeClass{
 	"/api/h/{id}/{rest...}": hops, "GET /api/front/state": local, "GET /api/front/stream": local, "POST /api/front/command": local,
 	"POST /api/front/presence": local, "GET /api/front/auth/state": local, "POST /api/front/auth/approve": local, "POST /api/front/auth/deny": local,
 	"POST /api/front/auth/revoke": local, "POST /api/front/auth/add": local, "POST /api/front/auth/mode": local, "/mcp": local, "/": local,
+	// V0.forwarded-ports: the front makes the forward itself; it asks the host for the thread's ports as the device,
+	// which the forward tests hold (a call that names no host reaches none).
+	"POST /api/front/forward": local, "GET /forward/open": local,
 }
 
 func TestHopCarriesThePrincipalOnEveryRoute(t *testing.T) {

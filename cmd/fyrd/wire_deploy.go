@@ -146,13 +146,14 @@ func (w *wiring) wireDeploy() {
 		}
 	}
 	setupChecker := &setup.Checker{
-		OS:          runtime.GOOS,
-		Arch:        runtime.GOARCH,
-		Host:        hostName,
-		Home:        home(),
-		Data:        data,
-		ServeTarget: serveTarget,
-		TLSOn:       cfg.TLS.Cert != "" && cfg.TLS.Key != "",
+		OS:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		Host:           hostName,
+		Home:           home(),
+		Data:           data,
+		ServeTarget:    serveTarget,
+		ForwardTargets: forwardTargets(cfg, data),
+		TLSOn:          cfg.TLS.Cert != "" && cfg.TLS.Key != "",
 		Providers: func() []setup.ProviderInfo {
 			views := reg.List()
 			out := make([]setup.ProviderInfo, len(views))

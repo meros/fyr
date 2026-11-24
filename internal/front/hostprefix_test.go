@@ -468,6 +468,7 @@ func TestNoDefaultHost(t *testing.T) {
 		case strings.HasPrefix(path, hostPrefix), strings.HasPrefix(path, frontPrefix):
 		case path == "/api/": // the 404 below
 		case path == "/", path == "/mcp", path == "/.well-known/fyr": // not the browser API
+		case path == "/forward/open": // V0.forwarded-ports: a link's address, opened as a page
 		default:
 			t.Errorf("route %q is neither a host's by id nor the front's", pat)
 		}

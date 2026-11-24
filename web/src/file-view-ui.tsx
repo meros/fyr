@@ -44,7 +44,17 @@ export function useFileLinks(box: { current: HTMLElement | null }, html: string,
   const api = useApi();
   useLayoutEffect(() => {
     const el = box.current;
-    if (!el || !host || !threadId || !html.includes("md-path")) return;
+    if (!el || !host || !threadId) return;
+    // V0.forwarded-ports: a link to a server on the thread's host opens through the front.
+    if (html.includes("md-local")) {
+      for (const a of el.querySelectorAll<HTMLAnchorElement>("a.md-local[data-port]")) {
+        const port = Number(a.dataset.port);
+        if (!port) continue;
+        a.href = api.forwardUrl(host, threadId, port, a.dataset.rest ?? "/");
+        a.title = `Opens port ${port} of the thread's host through Fyr`;
+      }
+    }
+    if (!html.includes("md-path")) return;
     const nodes = [...el.querySelectorAll<HTMLElement>(".md-path[data-path]")];
     if (!nodes.length) return;
     const mark = () => {

@@ -64,6 +64,9 @@ type Options struct {
 	// front only).
 	LegacyFronts func() int64
 	Name         string // this machine, shown in the rail
+	// ForwardPorts are the ports this front forwards a thread's servers on
+	// (V0.forwarded-ports); none: no forwarding.
+	ForwardPorts []int
 	BuildID      string // the client's build (V0.13 reload)
 	OwnerLogin   string // the browser guard's tailnet owner (V0.14)
 	// OwnerFn is the owner's login when OwnerLogin is empty: a tagged install has
@@ -117,6 +120,7 @@ type Options struct {
 
 type Front struct {
 	lanOrigin atomic.Pointer[string] // see SetLANOrigin
+	fwd       forwards               // V0.forwarded-ports
 	opt       Options
 	streams   streams
 	// authTicks counts rule 3's looks at the modes (a test waits for some).
@@ -462,6 +466,8 @@ func (f *Front) mux() *routeMux {
 	// V0.54, V0.85: device data lives on the front: presence (the shown
 	// thread's host raises its weight) and push.
 	mux.HandleFunc("POST /api/front/presence", f.presenceRoute2)
+	mux.HandleFunc("POST /api/front/forward", f.forwardGrant) // V0.forwarded-ports
+	mux.HandleFunc("GET /forward/open", f.forwardOpen)
 	mux.HandleFunc(hostPrefix+"{id}/{rest...}", f.hostRoute) // decision 0031: the one handler of a host's calls
 	if f.opt.Push != nil {
 		pushRoutes(mux, f.opt.Push, func(r *http.Request, endpoint string) {

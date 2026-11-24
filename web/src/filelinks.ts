@@ -47,6 +47,18 @@ export function pathRef(s: string): PathRef | null {
   return line ? { path: p, line } : { path: p };
 }
 
+/** A URL of a server on the machine the agent runs on (V0.forwarded-ports): `http://localhost:5173/x`, 127.0.0.1,
+ *  [::1] or 0.0.0.0. Its port, and the rest of the address (path, query and fragment, "/" when there is none). null
+ *  for any other URL. Plain http only: the forward speaks no TLS to the server. */
+export function localUrl(href: string): { port: number; rest: string } | null {
+  const m = /^http:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::(\d{1,5}))?(?=[/?#]|$)(.*)$/i.exec(href.trim());
+  if (!m) return null;
+  const port = m[1] ? Number(m[1]) : 80;
+  if (port < 1 || port > 65535) return null;
+  const rest = m[2] ?? "";
+  return { port, rest: rest.startsWith("/") ? rest : "/" + rest };
+}
+
 type Lookup = (paths: string[]) => Promise<{ ok: true; data: FileStat[] } | { ok: false; error: string }>;
 
 interface Known {

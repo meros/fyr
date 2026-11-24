@@ -1632,7 +1632,9 @@ try {
   await waitFor(`document.querySelectorAll('.md-path.on').length >= 4`, { soft: true });
   const links = await evaluate(`JSON.stringify([...document.querySelectorAll('.md-path')].map((e) => [e.dataset.path, e.dataset.line ?? '', e.classList.contains('on'), e.tabIndex]))`);
   check(links === JSON.stringify([["src/map/lasso.test.ts", "9", true, 0], ["vitest.config.ts", "", true, 0], ["public/marker.png", "", true, 0], ["dist/tiles.bin", "", true, 0], ["src/map/old.ts", "", false, -1]]), `V0.message-links-files ${front}: the paths ${links}`);
-  check(await evaluate(`!!document.querySelector('.md a[href^="http://localhost:51204"] code')`), `V0.message-links-files ${front}: a URL written as code is no link`);
+  // V0.forwarded-ports: the link to a server on the thread's host reads as written and opens through the front.
+  const local = await evaluate(`(() => { const a = document.querySelector('.md a.md-local[data-port="51204"]'); return { text: a?.querySelector('code')?.textContent ?? '', href: a?.getAttribute('href') ?? '', blank: a?.target ?? '' }; })()`);
+  check(local.text === "http://localhost:51204/__vitest__/" && /^https:\/\/forward\.invalid\/[^/]+\/51204\/__vitest__\/$/.test(local.href) && local.blank === "_blank", `V0.forwarded-ports ${front}: the link to the thread's server ${JSON.stringify(local)}`);
   await evaluate(`document.querySelector('.md-path.on[data-line]').click()`);
   await waitFor(`!!document.querySelector('.fv .fv-hit')`, { soft: true });
   const v = await evaluate(`(() => {

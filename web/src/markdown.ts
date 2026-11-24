@@ -5,7 +5,7 @@ import type { HostId } from "./hostid.ts";
 import { Marked, type Tokens } from "marked";
 import { inlineAttachmentId } from "./previews.ts";
 import { attachmentUrl } from "./attach.ts";
-import { pathRef } from "./filelinks.ts";
+import { localUrl, pathRef } from "./filelinks.ts";
 
 // V0.38: a message renders once; a new event does not parse the old ones again.
 const memo = new Map<string, string>();
@@ -50,6 +50,13 @@ function pathAttrs(s: string): string | null {
   return ` class="md-path" data-path="${escapeHtml(r.path)}"${r.line ? ` data-line="${r.line}"` : ""}`;
 }
 
+/** V0.forwarded-ports: the attributes of a link to a server on the thread's host. The conversation points such a
+ *  link at the front's forward (file-view-ui.tsx); as written it would open the reader's own machine. */
+function localAttrs(href: string): string {
+  const l = curHost ? localUrl(href) : null;
+  return l ? ` class="md-local" data-port="${l.port}" data-rest="${escapeHtml(l.rest)}"` : "";
+}
+
 const md = new Marked({
   gfm: true,
   breaks: false,
@@ -65,13 +72,13 @@ const md = new Marked({
         return file ? `<span${file}>${inner}</span>` : inner;
       }
       const t = title ? ` title="${escapeHtml(title)}"` : "";
-      return `<a href="${escapeHtml(h)}"${t} target="_blank" rel="noopener noreferrer">${inner}</a>`;
+      return `<a href="${escapeHtml(h)}"${t}${localAttrs(h)} target="_blank" rel="noopener noreferrer">${inner}</a>`;
     },
     codespan({ text }: Tokens.Codespan) {
       // V0.message-links-files: a URL written as code is still a link, and a file path is marked as one.
       const code = `<code>${escapeHtml(text)}</code>`;
       const url = /^https?:\/\/[^\s<>"'`]+$/i.test(text.trim()) ? text.trim() : null;
-      if (url) return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${code}</a>`;
+      if (url) return `<a href="${escapeHtml(url)}"${localAttrs(url)} target="_blank" rel="noopener noreferrer">${code}</a>`;
       const file = pathAttrs(text);
       return file ? `<code${file}>${escapeHtml(text)}</code>` : code;
     },

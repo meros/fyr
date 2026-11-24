@@ -221,6 +221,8 @@ func (s *Server) routes(mcp bool) http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
 	mux.HandleFunc("POST /api/threads/{id}/files/stat", s.filesStat) // V0.message-links-files
 	mux.HandleFunc("GET /api/threads/{id}/files", s.file)
+	mux.HandleFunc("GET /api/threads/{id}/ports", s.ports) // V0.forwarded-ports
+	mux.HandleFunc("POST /api/threads/{id}/forward/{port}", s.forward)
 	mux.HandleFunc("GET /api/threads/{id}/pr", s.prDetail)
 	mux.HandleFunc("GET /api/threads/{id}/handover", s.handoverPlan)
 	mux.HandleFunc("POST /api/threads/{id}/handover/export", s.handoverExport)

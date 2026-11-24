@@ -106,3 +106,24 @@ test("V0.message-links-files: the renderer marks a path in a thread's message an
   // A path cannot carry markup into its attribute.
   assert.ok(!renderMarkdown('[x](a"b/c.ts)', H).includes('data-path="a"'));
 });
+
+test("V0.forwarded-ports: a URL of a server on the agent's machine, and its mark in a thread's message", async () => {
+  const { localUrl } = await import("../src/filelinks.ts");
+  const { forwardOpenPath } = await import("../src/urls.ts");
+  assert.deepEqual(localUrl("http://localhost:5173/"), { port: 5173, rest: "/" });
+  assert.deepEqual(localUrl("http://localhost:5173"), { port: 5173, rest: "/" });
+  assert.deepEqual(localUrl("http://127.0.0.1:3000/docs/a?b=1#top"), { port: 3000, rest: "/docs/a?b=1#top" });
+  assert.deepEqual(localUrl("http://[::1]:8080?x=1"), { port: 8080, rest: "/?x=1" });
+  assert.deepEqual(localUrl("http://0.0.0.0:8000/x"), { port: 8000, rest: "/x" });
+  assert.deepEqual(localUrl("http://LOCALHOST/x"), { port: 80, rest: "/x" });
+  for (const no of ["https://localhost:5173/", "http://localhost.example.com:5173/", "http://localhost:99999/", "http://localhost:0/", "http://example.com/", "http://127.0.0.10:80/", "localhost:5173", "http://localhost:5173x/"])
+    assert.equal(localUrl(no), null, no);
+
+  const marked = ' class="md-local" data-port="5173" data-rest="/a?b=1&amp;c=2"';
+  assert.equal(renderMarkdown("see http://localhost:5173/a?b=1&c=2 now", H).trim(), `<p>see <a href="http://localhost:5173/a?b=1&amp;c=2"${marked} target="_blank" rel="noopener noreferrer">http://localhost:5173/a?b=1&amp;c=2</a> now</p>`);
+  assert.ok(renderMarkdown("[the app](http://localhost:5173/a?b=1&c=2)", H).includes(marked), "a markdown link");
+  assert.ok(renderMarkdown("`http://localhost:5173/a?b=1&c=2`", H).includes(marked), "a URL written as code");
+  assert.ok(!renderMarkdown("see http://localhost:5173/ now").includes("md-local"), "outside a thread there is no host to forward to");
+  assert.ok(!renderMarkdown("see https://example.com/ now", H).includes("md-local"));
+  assert.equal(forwardOpenPath(H, "t_1", 5173, "/a?b=1#c"), `/forward/open?host=${H}&thread=t_1&port=5173&path=%2Fa%3Fb%3D1%23c`);
+});

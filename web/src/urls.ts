@@ -18,6 +18,13 @@ export function hostUrl(host: HostId | undefined, path: string): string {
   return host ? hostPath(host, path) : "";
 }
 
+/** V0.forwarded-ports: where a link to a server on a thread's host points. The front makes the forward and sends the
+ *  browser to it (or, on the host's own machine, to the server itself). A page's address, not an API call: it opens in
+ *  a new tab and can be copied. `thread` is the host's own thread id. */
+export function forwardOpenPath(host: HostId, thread: string, port: number, rest: string): string {
+  return `/forward/open?host=${encodeURIComponent(host)}&thread=${encodeURIComponent(thread)}&port=${port}&path=${encodeURIComponent(rest)}`;
+}
+
 /** A call to the front itself: frontPath("/state"). */
 export function frontPath(path: string): string {
   return `/api/front${path}`;

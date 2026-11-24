@@ -46,7 +46,8 @@ const CACHE = `fyr-shell-${__BUILD_ID__}`;
 const SHELL = __PRECACHE__;
 
 const isImmutable = (path: string) => path.startsWith("/fonts/") || path.startsWith("/icons/");
-const isPrivate = (path: string) => path === "/api" || path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/");
+// /forward/ (V0.forwarded-ports) is the front's own redirect to a thread's server: never the cached shell.
+const isPrivate = (path: string) => path === "/api" || path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/") || path.startsWith("/forward/");
 
 sw.addEventListener("install", (e: ExtEvent) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));

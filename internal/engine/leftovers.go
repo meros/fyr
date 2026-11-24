@@ -156,3 +156,16 @@ func (e *Engine) leftoverTools(s *mcp.Server) {
 			return fmt.Sprintf("Kept for %g h, or until the thread settles. Stop it yourself when it is no longer needed.", h), nil
 		}})
 }
+
+// ThreadPorts is the TCP ports the thread's processes listen on
+// (V0.forwarded-ports): what a forward of the thread may reach. Empty when
+// the thread has none or the host cannot tell. It reads the process table, so
+// it is never called under e.mu.
+func (e *Engine) ThreadPorts(thread string) []int {
+	if f := e.LeftoverDeps.ThreadPorts; f != nil {
+		if p := f(thread); p != nil {
+			return p
+		}
+	}
+	return []int{}
+}

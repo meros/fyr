@@ -208,4 +208,7 @@ type LeftoverDeps struct {
 	LeftoverKeep    func(id string, d time.Duration) error
 	LeftoverDeclare func(thread string, pid int, match string, d time.Duration, why string) error
 	TempRemove      func(path string) error
+	// ThreadPorts is the TCP ports the thread's processes listen on
+	// (V0.forwarded-ports); nil when the host cannot tell.
+	ThreadPorts func(thread string) []int
 }

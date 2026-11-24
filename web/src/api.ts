@@ -23,7 +23,7 @@ import { attachmentUrl, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
 import type { FileStat } from "./filelinks.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
-import { frontPath, hostPath, hostUrl } from "./urls.ts";
+import { forwardOpenPath, frontPath, hostPath, hostUrl } from "./urls.ts";
 import { addressable, bare, decodeFront, hostOfFrame, reachabilityChanged, ref, snapshotOf, stampDeploy, stampEvent, stampLoad, stampPatch, stampProject, stampSlots, stampThread, unrefDeep, type FrontState, type HostResult, type Snapshot } from "./hostfeed.ts";
 import type { HostId } from "./hostid.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
@@ -121,6 +121,9 @@ export interface Api {
   fileText(host: HostId, threadId: string, path: string, signal?: AbortSignal): Promise<Result<string>>;
   /** Where one of those files is read from (an image's src, a download). */
   fileUrl(host: HostId | undefined, threadId: string, path: string): string;
+  /** V0.forwarded-ports: the address that opens a server on the thread's host (`http://localhost:<port><rest>` in a
+   *  message) from wherever the owner reads. */
+  forwardUrl(host: HostId, threadId: string, port: number, rest: string): string;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
   prDetail(host: HostId, threadId: string, fresh?: boolean, prUrl?: string): Promise<PrReply>;
   /** V0.ai-search: the host's threads among `ids` (its own ids) that fit the owner's words, best first. */
@@ -747,6 +750,7 @@ function createHttpApi(): Api {
         return failed(UNREACHABLE);
       }
     },
+    forwardUrl: (host, threadId, port, rest) => forwardOpenPath(host, bare(host, threadId), port, rest),
     fileUrl: (host, threadId, path) => (host ? hostUrl(host, `/threads/${encodeURIComponent(bare(host, threadId))}/files?path=${encodeURIComponent(path)}`) : ""),
     searchThreads: (host, query, ids, signal) => read(hostPath(host, "/search"), (j) => arr<SearchHit>(obj(j).hits), { method: "POST", body: { query, ids }, signal, timeoutMs: SEARCH_TIMEOUT_MS }),
     async prDetail(host, threadId, fresh, prUrl) {

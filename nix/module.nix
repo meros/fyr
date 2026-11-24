@@ -38,7 +38,8 @@ let
     // lib.optionalAttrs (cfg.hosts != [ ]) { hosts = cfg.hosts; }
     // lib.optionalAttrs (hostListen != null) { hostListen = hostListen; }
     // lib.optionalAttrs (cfg.peerPort != null) { peerListen = "0.0.0.0:${toString cfg.peerPort}"; }
-    // lib.optionalAttrs (cfg.ownerLogin != null) { ownerLogin = cfg.ownerLogin; });
+    // lib.optionalAttrs (cfg.ownerLogin != null) { ownerLogin = cfg.ownerLogin; }
+    // lib.optionalAttrs (cfg.forwardPorts != [ 7450 7451 7452 7453 ]) { forwardPorts = cfg.forwardPorts; });
   # V0.54: hostPort listens on this machine's tailnet address, which fyrd
   # reads from tailscaled at start; hostListen names an address by hand.
   hostListen = if cfg.hostListen != null then cfg.hostListen
@@ -247,6 +248,16 @@ in
         description = "HTTPS port on the tailnet. Only the owner's Tailscale login is served.";
       };
     };
+    forwardPorts = lib.mkOption {
+      type = lib.types.listOf lib.types.port;
+      default = [ 7450 7451 7452 7453 ];
+      description = ''
+        The ports a thread's local server (a dev server on the host's
+        loopback) is opened on from another device (V0.forwarded-ports). Each
+        is a loopback port of the front, and with `tailnet.enable` an HTTPS
+        port on the tailnet; `[ ]` forwards nothing.
+      '';
+    };
     # V0.agents-budget-share (#198): every memory default is a share of the
     # machine (systemd and fyrd read "40%" against the RAM, or the swap for
     # a swap limit), never a size that suits one machine.
@@ -429,8 +440,18 @@ in
         # V0.130 (decision 0028): Serve proxies to fyrd's own socket, the only
         # place fyrd believes the Tailscale-User-Login header; on the loopback
         # port any local process could send it.
-        ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString cfg.tailnet.port} unix:${home}/.local/share/fyr/serve.sock";
-        ExecStop = "${config.services.tailscale.package}/bin/tailscale serve --https=${toString cfg.tailnet.port} off";
+        # V0.forwarded-ports: each forward port has its own entry and its own
+        # socket (serve-<port>.sock), so its pages have an origin of their own.
+        ExecStart = [
+          "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString cfg.tailnet.port} unix:${home}/.local/share/fyr/serve.sock"
+        ] ++ lib.optionals (cfg.role != "host") (map
+          (p: "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString p} unix:${home}/.local/share/fyr/serve-${toString p}.sock")
+          cfg.forwardPorts);
+        ExecStop = [
+          "${config.services.tailscale.package}/bin/tailscale serve --https=${toString cfg.tailnet.port} off"
+        ] ++ lib.optionals (cfg.role != "host") (map
+          (p: "${config.services.tailscale.package}/bin/tailscale serve --https=${toString p} off")
+          cfg.forwardPorts);
       };
     };
 

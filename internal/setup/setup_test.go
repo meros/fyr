@@ -237,3 +237,55 @@ func TestInstallGHRefusesBadDownload(t *testing.T) {
 		t.Fatalf("a body at the cap: %d %v", len(b), err)
 	}
 }
+
+// V0.forwarded-ports: a front whose forward ports Tailscale Serve does not
+// publish says so on the Phone step, and the fix publishes each to its socket.
+func TestPhoneStepPublishesTheForwardPorts(t *testing.T) {
+	status := `{"Web":{"desk.tail.ts.net:7443":{}}}`
+	var ran []string
+	c := &Checker{
+		OS: "linux", Host: "desk", Home: t.TempDir(), ServeTarget: "unix:/data/serve.sock",
+		ForwardTargets: map[int]string{7451: "unix:/data/serve-7451.sock", 7450: "unix:/data/serve-7450.sock"},
+		LookPath:       func(file string) (string, error) { return "/usr/bin/" + file, nil },
+		FreeBytes:      func(string) (uint64, error) { return 50 << 30, nil },
+		Tailscale:      func() TailscaleInfo { return TailscaleInfo{Available: true, DNSName: "desk.tail.ts.net"} },
+		Exec: func(_ context.Context, name string, args ...string) (string, string, error) {
+			if strings.HasSuffix(name, "tailscale") {
+				if len(args) > 1 && args[1] == "status" {
+					return status, "", nil
+				}
+				ran = append(ran, strings.Join(args, " "))
+			}
+			return "", "", nil
+		},
+	}
+	phone := func() Step {
+		for _, s := range c.Check(context.Background()).Steps {
+			if s.ID == "phone" {
+				return s
+			}
+		}
+		t.Fatal("no phone step")
+		return Step{}
+	}
+	s := phone()
+	if s.Status != Fixable || len(s.Fixes) != 1 || s.Fixes[0].ID != "tailscale.serve" || !strings.Contains(s.Reason, "7450, 7451") {
+		t.Fatalf("with only 7443 published: %+v", s)
+	}
+	if _, err := c.Fix(context.Background(), "tailscale.serve", nil); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"serve --bg --https=7443 unix:/data/serve.sock", "serve --bg --https=7450 unix:/data/serve-7450.sock", "serve --bg --https=7451 unix:/data/serve-7451.sock"}
+	if strings.Join(ran, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("the fix ran %q", ran)
+	}
+	status = `{"Web":{"desk.tail.ts.net:7443":{},"desk.tail.ts.net:7450":{},"desk.tail.ts.net:7451":{}}}`
+	if s := phone(); s.Status != OK {
+		t.Fatalf("with every port published: %+v", s)
+	}
+	// A front that forwards nothing asks for nothing more.
+	c.ForwardTargets, status = nil, `{"Web":{"desk.tail.ts.net:7443":{}}}`
+	if s := phone(); s.Status != OK {
+		t.Fatalf("without forward ports: %+v", s)
+	}
+}

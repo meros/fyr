@@ -22,13 +22,25 @@ const (
 )
 
 // longLived are the routes with no deadline: the stream, the agents' MCP
-// calls, files and previews of any size.
+// calls, files and previews of any size, a forwarded connection.
 func longLived(r *http.Request) bool {
 	p := r.URL.Path
 	return p == "/api/stream" || p == "/mcp" || strings.HasPrefix(p, "/mcp/") ||
 		strings.HasPrefix(p, "/api/attachments") || strings.HasPrefix(p, "/api/previews/") ||
 		strings.HasPrefix(p, "/api/updates/") ||
-		strings.HasSuffix(p, "/handover/export") || p == "/api/threads/handover/import"
+		strings.HasSuffix(p, "/handover/export") || p == "/api/threads/handover/import" ||
+		forwardPath(p)
+}
+
+// forwardPath: a forwarded connection (V0.forwarded-ports) lives as long as
+// the browser keeps it.
+func forwardPath(p string) bool {
+	rest, ok := strings.CutPrefix(p, "/api/threads/")
+	if !ok {
+		return false
+	}
+	_, rest, ok = strings.Cut(rest, "/")
+	return ok && strings.HasPrefix(rest, "forward/")
 }
 
 // DeadlineBody is the 503's body past a deadline. Its code, host-stalled,
