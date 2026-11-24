@@ -19,6 +19,7 @@ import { FromThreadMessage, useDirectory } from "./project-ui.tsx";
 import { SentAttachments } from "./attach-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { PreviewCardView, openMarkdownImage } from "./preview-ui.tsx";
+import { openFileLink, useFileLinks } from "./file-view-ui.tsx";
 import type { PreviewCard } from "./previews.ts";
 import { NextSteps, ProseCommand, RunCardAt, RunCards } from "./runcard-ui.tsx";
 import { cardShows, cardsKey, placeCards, requests, splitProse, waitingRequests } from "./runcard.ts";
@@ -367,7 +368,6 @@ function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews
 
 function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]; process?: boolean }) {
   const host = useContext(HostContext);
-  const api = useApi();
   switch (it.kind) {
     case "runcard":
       return <RunCardAt id={it.action} />;
@@ -416,7 +416,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
         <div class={`msgw${process ? " proc" : ""}`}>
           {/* V0.149 (8): a command the message asks the owner to run is a card (Copy only), never a block that scrolls */}
           {splitProse(it.text).map((part, i) =>
-            part.kind === "cmd" ? <ProseCommand key={i} text={part.text} /> : <div key={i} class="cl prose md" onClick={openMarkdownImage} dangerouslySetInnerHTML={{ __html: renderMarkdown(part.text, host, api.attachmentUrl) }} />,
+            part.kind === "cmd" ? <ProseCommand key={i} text={part.text} /> : <Prose key={i} text={part.text} host={host} />,
           )}
           <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
         </div>
@@ -470,3 +470,26 @@ function HandoverDivider({ it }: { it: Extract<Item, { kind: "handover" }> }) {
   );
 }
 
+
+/** A message's prose: its markdown, an image that opens in the viewer, and the file paths its host has as links
+ *  (V0.message-links-files). */
+function Prose({ text, host }: { text: string; host: HostId | undefined }) {
+  const api = useApi();
+  const threadId = useContext(ThreadIdContext);
+  const box = useRef<HTMLDivElement>(null);
+  const html = renderMarkdown(text, host, api.attachmentUrl);
+  useFileLinks(box, html, host, threadId);
+  const openFile = (e: Event) => openFileLink(e, host, threadId, api.fileUrl);
+  return (
+    <div
+      ref={box}
+      class="cl prose md"
+      onClick={(e) => {
+        openMarkdownImage(e);
+        openFile(e);
+      }}
+      onKeyDown={openFile}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}

@@ -21,8 +21,9 @@ import type { Conn, ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
 import { attachmentUrl, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
+import type { FileStat } from "./filelinks.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
-import { frontPath, hostPath } from "./urls.ts";
+import { frontPath, hostPath, hostUrl } from "./urls.ts";
 import { addressable, bare, decodeFront, hostOfFrame, reachabilityChanged, ref, snapshotOf, stampDeploy, stampEvent, stampLoad, stampPatch, stampProject, stampSlots, stampThread, unrefDeep, type FrontState, type HostResult, type Snapshot } from "./hostfeed.ts";
 import type { HostId } from "./hostid.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
@@ -36,7 +37,7 @@ import type { SetupReport } from "./setup.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
 import { reloadIfSignedOut } from "./signout.ts";
-import { request, replyError, upload, type Reply, type RequestOptions } from "./http.ts";
+import { request, requestText, replyError, upload, type Reply, type RequestOptions } from "./http.ts";
 import { arr, obj, decodeThread } from "./decode.ts";
 import type { SystemAgentsView } from "./system-agents.ts";
 import { decodeChanges, decodeFilePatch, type ChangesDTO, type FilePatchDTO } from "./changes.ts";
@@ -113,6 +114,13 @@ export interface Api {
   changes(host: HostId, threadId: string): Promise<Result<ChangesDTO>>;
   /** One file's unified diff (V0.25). */
   filePatch(host: HostId, threadId: string, path: string, since?: string): Promise<Result<FilePatchDTO>>;
+  /** V0.message-links-files: which of `paths` (as a message writes them) are files of the thread's folders on its
+   *  host; a path that is not one is left out. At most 64 paths a call. */
+  fileStat(host: HostId, threadId: string, paths: string[]): Promise<Result<FileStat[]>>;
+  /** A text file's content, for the file viewer. */
+  fileText(host: HostId, threadId: string, path: string, signal?: AbortSignal): Promise<Result<string>>;
+  /** Where one of those files is read from (an image's src, a download). */
+  fileUrl(host: HostId | undefined, threadId: string, path: string): string;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
   prDetail(host: HostId, threadId: string, fresh?: boolean, prUrl?: string): Promise<PrReply>;
   /** V0.ai-search: the host's threads among `ids` (its own ids) that fit the owner's words, best first. */
@@ -729,6 +737,17 @@ function createHttpApi(): Api {
       );
       return seen.find((x) => x !== null) ?? null;
     },
+    fileStat: (host, threadId, paths) =>
+      read(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/files/stat`), (j) => arr<FileStat>(obj(j).files).filter((f) => isRecord(f) && typeof f.path === "string" && typeof f.abs === "string"), { method: "POST", body: { paths } }),
+    async fileText(host, threadId, path, signal) {
+      try {
+        const text = await requestText(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/files?path=${encodeURIComponent(path)}`), signal);
+        return text === null ? failed("no such file") : { ok: true, data: text };
+      } catch {
+        return failed(UNREACHABLE);
+      }
+    },
+    fileUrl: (host, threadId, path) => (host ? hostUrl(host, `/threads/${encodeURIComponent(bare(host, threadId))}/files?path=${encodeURIComponent(path)}`) : ""),
     searchThreads: (host, query, ids, signal) => read(hostPath(host, "/search"), (j) => arr<SearchHit>(obj(j).hits), { method: "POST", body: { query, ids }, signal, timeoutMs: SEARCH_TIMEOUT_MS }),
     async prDetail(host, threadId, fresh, prUrl) {
       try {

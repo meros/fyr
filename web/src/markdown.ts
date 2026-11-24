@@ -5,6 +5,7 @@ import type { HostId } from "./hostid.ts";
 import { Marked, type Tokens } from "marked";
 import { inlineAttachmentId } from "./previews.ts";
 import { attachmentUrl } from "./attach.ts";
+import { pathRef } from "./filelinks.ts";
 
 // V0.38: a message renders once; a new event does not parse the old ones again.
 const memo = new Map<string, string>();
@@ -30,7 +31,23 @@ function safeHref(href: string): string | null {
   const h = href.trim();
   if (/^(https?:|mailto:)/i.test(h)) return h;
   if (/^[a-z][a-z0-9+.-]*:/i.test(h)) return null; // javascript:, data:, file: ...
-  return null; // relative links mean nothing in the client
+  return null; // a relative link is a file path or nothing (pathAttrs)
+}
+
+/** V0.message-links-files: the attributes of a file path in a thread's message. The path is only a candidate here:
+ *  the conversation asks the thread's host which exist and turns those into links (file-view-ui.tsx). Without a host
+ *  (a PR's text) no path is marked. */
+function pathAttrs(s: string): string | null {
+  if (!curHost) return null;
+  let raw = s;
+  try {
+    raw = decodeURIComponent(s);
+  } catch {
+    /* not percent-encoded: as written */
+  }
+  const r = pathRef(raw);
+  if (!r) return null;
+  return ` class="md-path" data-path="${escapeHtml(r.path)}"${r.line ? ` data-line="${r.line}"` : ""}`;
 }
 
 const md = new Marked({
@@ -43,9 +60,20 @@ const md = new Marked({
     link({ href, title, tokens }: Tokens.Link) {
       const inner = this.parser.parseInline(tokens);
       const h = safeHref(href);
-      if (!h) return inner;
+      if (!h) {
+        const file = pathAttrs(href);
+        return file ? `<span${file}>${inner}</span>` : inner;
+      }
       const t = title ? ` title="${escapeHtml(title)}"` : "";
       return `<a href="${escapeHtml(h)}"${t} target="_blank" rel="noopener noreferrer">${inner}</a>`;
+    },
+    codespan({ text }: Tokens.Codespan) {
+      // V0.message-links-files: a URL written as code is still a link, and a file path is marked as one.
+      const code = `<code>${escapeHtml(text)}</code>`;
+      const url = /^https?:\/\/[^\s<>"'`]+$/i.test(text.trim()) ? text.trim() : null;
+      if (url) return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${code}</a>`;
+      const file = pathAttrs(text);
+      return file ? `<code${file}>${escapeHtml(text)}</code>` : code;
     },
     table(token: Tokens.Table) {
       // V0.35: every cell names its column, so a narrow screen shows each row as a card.

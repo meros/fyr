@@ -52,8 +52,10 @@ const (
 	promptCleanUp     = `Clean up what you start: stop servers, browsers and port-forwards when you are done with them, and prefer a timeout. Fyr ends what your thread leaves running (anything that is not your CLI or its children) 30 min after your run ends, and all of it when the thread settles; a process under timeout keeps its timeout. For one that must stay (a dev server or a tunnel the owner asked for), call mcp__fyr__keep_process {pid or match, hours, why}.`
 	promptThreads     = `To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).`
 	promptShow        = `To show the user something (a screenshot after UI work, a chart, a mockup, a page, a 3D model or scene), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone. Pages run real HTML in a sandbox: WebGL, WASM, ES modules, three.js or model-viewer from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com or ajax.googleapis.com, and their own files: give path a folder (index.html plus models, textures, scripts) or an HTML file next to its files.`
+	// V0.message-links-files: what the client can turn into a link.
+	promptLinks = "The user may read this on a phone or another machine, so write what Fyr can open. A file: its path as inline code, absolute or relative to the working folder, with :line when a line matters (`internal/core/change.go:42`), never a bare file name that exists in several folders; Fyr links the paths inside this thread's folder, its worktrees and the temp folder, and opens the file from this host. A web page: the full URL with its scheme, in the text and not only inside a code block. A picture or a page you made: mcp__fyr__show, not its path. A server on this host (a dev server on localhost) is not reachable from the user's device: show a screenshot of it with mcp__fyr__show {url}."
 
-	promptZone = "The user's time zone is %s. Use local time in everything the user reads (messages, reminders, schedules, times in a watch note) and when you read a time they gave you, unless there is a reason not to: a protocol or an API that wants UTC or an explicit offset (RFC 3339 with its offset is fine), or a log or file that is already in UTC. Say which zone when a time could be read two ways."
+	promptZone ="The user's time zone is %s. Use local time in everything the user reads (messages, reminders, schedules, times in a watch note) and when you read a time they gave you, unless there is a reason not to: a protocol or an API that wants UTC or an explicit offset (RFC 3339 with its offset is fine), or a log or file that is already in UTC. Say which zone when a time could be read two ways."
 
 	promptRootPkexec   = "(Fyr runs it through pkexec)."
 	promptRootNoPkexec = "(this host has no pkexec, so the card shows the owner the script to run as root themselves)."
@@ -94,7 +96,7 @@ func Prompt(s Setup) string {
 		line(promptGHLimit)
 		line(promptOpenPR)
 	}
-	for _, l := range []string{promptStartChange, promptSettle, promptFeed, promptWatch, promptWakeUp, promptHeavy, promptNotUser, promptLongBash, promptWait, promptCleanUp, promptThreads, promptShow} {
+	for _, l := range []string{promptStartChange, promptSettle, promptFeed, promptWatch, promptWakeUp, promptHeavy, promptNotUser, promptLongBash, promptWait, promptCleanUp, promptThreads, promptShow, promptLinks} {
 		line(l)
 	}
 	if s.Zone != "" {

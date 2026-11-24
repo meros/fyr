@@ -5,6 +5,7 @@ import { failed, newCommandId, type Api, type Result, type UploadResult } from "
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab } from "./mock.ts";
 import { mockChanges, mockFilePatch } from "./mock-changes.ts";
+import { mockFileStat, mockFileText, mockFileUrl } from "./mock-files.ts";
 import { mockInvariantCommand, mockLeftoverCommand, mockLoad, mockQueueLoad, mockQuota, mockRerunCommand, mockUndeclaredCommand } from "./mock-load.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { withLongValues } from "./mock-long.ts";
@@ -656,6 +657,13 @@ export function createMockApi(scenario: string): Api {
     async filePatch(_host, _threadId, path) {
       return answer(() => mockFilePatch(path));
     },
+    async fileStat(_host, _threadId, paths) {
+      return answer(() => mockFileStat(paths));
+    },
+    async fileText(_host, _threadId, path) {
+      return answer(() => mockFileText(path));
+    },
+    fileUrl: (_host, _threadId, path) => mockFileUrl(path),
     // V0.132: each host's own folders; desk's are the fixture tree, another host has a small one of its own, and an
     // offline host's cannot be read.
     async fsList(host, path) {

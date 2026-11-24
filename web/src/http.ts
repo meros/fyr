@@ -43,6 +43,14 @@ export async function request(url: string, o: RequestOptions = {}): Promise<Repl
   return { ok: r.ok, status: r.status, headers: r.headers, json: await r.json().catch(() => null) };
 }
 
+/** A GET whose reply is text (a file's content, V0.message-links-files): the text, or null when the host refused.
+ *  Rejects like request. */
+export async function requestText(url: string, signal?: AbortSignal): Promise<string | null> {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const r = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  return r.ok ? await r.text() : null;
+}
+
 /** The message a failed reply carries: the host's `error`, else the status. */
 export function replyError(r: Pick<Reply, "status" | "json">): string {
   const e = r.json && typeof r.json === "object" ? (r.json as { error?: unknown }).error : undefined;
