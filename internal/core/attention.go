@@ -135,6 +135,11 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 		// V0.153: Fyr waits for the host before it starts the agent.
 		return Attention{State: Waiting, Section: WorkingSec, Reason: MachineWaitText(t.MachineWait)}
 	}
+	if t.GateHold != nil {
+		// V0.gate-hold-visible: a heavy command the gate holds back is work
+		// still coming, not a finished turn: the thread waits, with the why.
+		return Attention{State: Waiting, Section: WorkingSec, Reason: GateHoldText(t.GateHold)}
+	}
 	if n := t.RunningTasks(); n > 0 {
 		return Attention{State: Waiting, Section: WorkingSec, Reason: waitReason(t, n)}
 	}
@@ -189,6 +194,11 @@ func UnresponsiveText(u *Unresponsive) string {
 // MachineWaitText is the one line of a wait for the machine (V0.153).
 func MachineWaitText(w *MachineWait) string {
 	return "Waiting for the machine (" + w.Why + ")"
+}
+
+// GateHoldText is the one line of a heavy command held at the gate.
+func GateHoldText(h *GateHold) string {
+	return "Held: " + h.Why
 }
 
 // ciWait is the reason a thread waits for CI (V0.ci-wait-moves), or "": a

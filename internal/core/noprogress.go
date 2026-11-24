@@ -71,6 +71,8 @@ func longWait(t *Thread, now time.Time) string {
 		return "a watch is armed"
 	case t.SlotQueued:
 		return "queued for a slot"
+	case t.GateHold != nil:
+		return "held at the gate"
 	case t.MachineWait != nil:
 		return "waiting for the machine"
 	case QuotaWaitText(t, now) != "":

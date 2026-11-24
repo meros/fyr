@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/guard"
 	"github.com/meros/fyr/internal/guard/resource"
 	"github.com/meros/fyr/internal/heavy"
@@ -35,6 +36,7 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 	if r := e.gateHold(c, soft); r != "" {
 		return r
 	}
+	e.setGateHold(c.Thread, "") // V0.gate-hold-visible: not held now
 	kind := heavy.KindOf(c.Class)
 	// The admission is taken outside heavyMu (a grant calls into the engine)
 	// and then checked under it: the thread's last call may just have ended.
@@ -175,6 +177,7 @@ func (e *Engine) gateHold(c HeavyCall, soft bool) string {
 	e.gateHeld[c.Thread] = true
 	e.mu.Unlock()
 	e.guardOnce(e.Now(), "gate:"+c.Thread, fmt.Sprintf("held at the gate thread=%s class=%q admitted=%t learned=%t: memory is short; a new heavy command waits before a running one is frozen", c.Thread, c.Class, holds, soft))
+	e.setGateHold(c.Thread, fmt.Sprintf("memory is short on %s; the %s command runs when it recovers", e.hostName(), c.Class))
 	head := fmt.Sprintf("Heavy job (%s): memory is short on %s, so Fyr holds new heavy commands until it recovers instead of pausing ones that run. It did not run. Do not work around this.", c.Class, e.hostName())
 	if c.Subagent {
 		return head + " You are a subagent: the message that memory has recovered goes to the main session, not to you. Do not run this command again; say in your report that it was held and did not run, and hand back when the rest is done."
@@ -254,4 +257,13 @@ func (e *Engine) HeavyDone(thread, toolUse string) {
 	e.Slots.Fill()
 	e.syncSlotQueue()
 	e.checkSlotQueueInvariant() // V0.thread-invariants
+}
+
+// setGateHold records on the thread that the gate holds its heavy command
+// back ("" ends it), so the list shows it as waiting and why
+// (V0.gate-hold-visible). The pool's queue does not hold such a thread.
+func (e *Engine) setGateHold(thread, why string) {
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindGateHold, Thread: thread, Args: core.GateHoldArgs{Why: why}}); err != nil {
+		log.Printf("gate hold %s: %v", thread, err)
+	}
 }

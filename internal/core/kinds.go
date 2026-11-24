@@ -47,6 +47,7 @@ const (
 	KindRestarted    = "agent.restarted"
 	// V0.153: Fyr waits for a thrashing host ("" Why: it no longer waits).
 	KindMachineWait      = "agent.machineWait"
+	KindGateHold         = "agent.gateHold" // V0.gate-hold-visible
 	KindTask             = "task"
 	KindTaskQuiet        = "task.quiet" // V0.195: a background command waits while the thread uses no CPU
 	KindSession          = "session"
@@ -142,6 +143,8 @@ type (
 	}
 	// MachineWaitArgs: why Fyr waits for the machine; "" ends the wait.
 	MachineWaitArgs struct{ Why string }
+	// GateHoldArgs: why the gate holds a heavy command back; "" ends the hold.
+	GateHoldArgs struct{ Why string }
 	// RestartedArgs: why Fyr restarted the process and the background
 	// tasks that ended with it (V0.143).
 	RestartedArgs struct {
@@ -456,6 +459,24 @@ func init() {
 			r.T.MachineWait = &MachineWait{Since: now, Why: a.Why}
 			return Result{Events: []Event{{"agent.machineWait", map[string]any{"why": a.Why}}}}, nil
 		}},
+		{Name: KindGateHold, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			a, err := argsOf[GateHoldArgs](in)
+			if err != nil {
+				return Result{}, err
+			}
+			if a.Why == "" {
+				if r.T.GateHold == nil {
+					return Result{}, nil
+				}
+				r.T.GateHold = nil
+				return Result{Events: []Event{{"agent.gateHold", map[string]any{"done": true}}}}, nil
+			}
+			if r.T.Asleep() || (r.T.GateHold != nil && r.T.GateHold.Why == a.Why) {
+				return Result{}, nil
+			}
+			r.T.GateHold = &GateHold{Since: now, Why: a.Why}
+			return Result{Events: []Event{{"agent.gateHold", map[string]any{"why": a.Why}}}}, nil
+		}},
 		{Name: KindRestarted, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[RestartedArgs](in)
 			if err != nil {
@@ -654,6 +675,7 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 			dropConditions(c, CondChecks, CondReview, CondConflict, CondMerge)
 		}
 	}
+	t.GateHold = nil // the hold lived in the last host
 	if t.MachineWait != nil {
 		t.MachineWait = nil
 		res.Events = append(res.Events, Event{"agent.machineWait", map[string]any{"done": true}})
