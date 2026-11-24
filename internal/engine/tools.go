@@ -18,6 +18,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 	e.viewTools(s)
 	e.threadTools(s)
 	e.setupTools(s)     // V0.116
+	e.playbookTools(s)  // V0.project-playbook
 	e.hostSetupTools(s) // V0.208
 
 	s.Add(e.settleRequestTool()) // V0.settle-request

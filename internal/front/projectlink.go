@@ -361,6 +361,53 @@ func (f *Front) syncLinksLocked() {
 		}
 	}
 	f.syncImagesLocked()
+	f.syncPlaybooksLocked()
+}
+
+func playbookAtOf(p map[string]any) time.Time {
+	s, _ := p["playbookAt"].(string)
+	at, _ := time.Parse(time.RFC3339Nano, s)
+	return at
+}
+
+// syncPlaybooksLocked gives each online member of a link the playbook that
+// was written last (V0.project-playbook): what an agent learned or the owner
+// corrected on one host is known on the others. The playbook has its own
+// stamp, playbookAt, as the image has; the member whose stamp is newest is
+// the source, and its record as this front last saw it is what is sent, so
+// its host need not be online. The caller holds f.mu.
+func (f *Front) syncPlaybooksLocked() {
+	for link, ms := range f.linksLocked() {
+		best := ms[0]
+		for _, m := range ms[1:] {
+			if playbookAtOf(m.p).After(playbookAtOf(best.p)) {
+				best = m
+			}
+		}
+		at := playbookAtOf(best.p)
+		if at.IsZero() {
+			continue
+		}
+		for _, m := range ms {
+			key := "playbook:" + link + ":" + at.UTC().Format(time.RFC3339Nano) + ":" + m.id
+			if !m.l.online || !at.After(playbookAtOf(m.p)) || f.linkSync[key] {
+				continue
+			}
+			if f.linkSync == nil || len(f.linkSync) > 1000 {
+				f.linkSync = map[string]bool{}
+			}
+			f.linkSync[key] = true
+			go func(m linkMember, playbook any) {
+				args := map[string]any{"id": m.id, "link": link, "at": at.UTC().Format(time.RFC3339Nano), "playbook": playbook}
+				if _, err := f.hostCommand(context.Background(), m.l, core.KindProjectSharedPlaybook, key, args); err != nil {
+					f.opt.Logf("front: playbook to %s: %v", m.l.name(), err)
+					f.mu.Lock()
+					delete(f.linkSync, key) // the next frame tries again
+					f.mu.Unlock()
+				}
+			}(m, best.p["playbook"])
+		}
+	}
 }
 
 func imageAtOf(p map[string]any) time.Time {

@@ -122,6 +122,10 @@ type (
 	DeployObservedArgs struct {
 		Change string
 		Obs    DeployObs
+		// Probes: the thread's project has stage probes Fyr runs
+		// (V0.project-playbook), so a repo without any GitHub deployment
+		// keeps its watch.
+		Probes bool
 	}
 	// SelfDeployedArgs are the changes of a thread whose merge commit is in
 	// the build a self-deploy made live (V0.82).
@@ -294,7 +298,7 @@ func init() {
 		{Name: KindDeployObserved, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[DeployObservedArgs](in)
 			if err == nil {
-				ChangeDeployObserved(r.T, a.Change, a.Obs, now)
+				ChangeDeployObserved(r.T, a.Change, a.Obs, a.Probes, now)
 			}
 			return Result{}, err
 		}},

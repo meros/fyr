@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/projicon"
 )
 
@@ -447,4 +448,49 @@ func TestProjectSharedImageReachesEveryHost(t *testing.T) {
 	}
 	b.setDown(false)
 	eventually(t, "b drops the image", func() bool { im, _ := projectRecord(b, onB); return im == "" })
+}
+
+// V0.project-playbook: what one host learned reaches every member of the
+// link, the owner's yes for a probe too; a member that was offline catches
+// up when it is back.
+func TestProjectPlaybookReachesEveryHost(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	f := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, f.URL, 2)
+	onA, onB := projectOn(t, f.URL, a, "TEST-A", "Fyr"), projectOn(t, f.URL, b, "TEST-B", "fyr-mac")
+	if code, rep := linkCmd(t, f.URL, "l", onA, onB); code != 200 {
+		t.Fatalf("link: %d %v", code, rep)
+	}
+	_, idA, _ := strings.Cut(onA, "/")
+	playbook := func(h *settingsHost, ref string) []core.PlaybookEntry {
+		for _, p := range h.eng.Projects() {
+			if strings.HasSuffix(ref, "/"+p.ID) {
+				return p.Playbook
+			}
+		}
+		return nil
+	}
+	learn := func(id, args string) {
+		t.Helper()
+		if code, rep := post(t, f.URL+"/api/h/TEST-A/command", fmt.Sprintf(`{"commandId":%q,"action":"project.learn","args":{"id":%q,%s}}`, id, idA, args)); code != 200 {
+			t.Fatalf("learn: %d %v", code, rep)
+		}
+	}
+	learn("s1", `"slot":"stage","name":"dev","how":"automatic on merge","probe":"check {sha}"`)
+	learn("s2", `"slot":"stage","name":"dev","allow":true`)
+	eventually(t, "b has a's playbook", func() bool {
+		pb := playbook(b, onB)
+		return len(pb) == 1 && pb[0].Name == "dev" && pb[0].Runs()
+	})
+	b.setDown(true)
+	eventually(t, "b offline", func() bool { return getState(t, f.URL).Hosts[1]["online"] == false })
+	learn("s3", `"slot":"issue","how":"GitHub issues"`)
+	if len(playbook(b, onB)) != 1 {
+		t.Fatal("an offline host changed")
+	}
+	b.setDown(false)
+	eventually(t, "b catches up", func() bool { return len(playbook(b, onB)) == 2 })
+	if len(playbook(a, onA)) != 2 {
+		t.Fatalf("a lost its playbook: %+v", playbook(a, onA))
+	}
 }

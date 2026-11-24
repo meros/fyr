@@ -322,6 +322,31 @@ export interface Project {
   by?: Partial<Record<SetupField, string>>;
   /** V0.116: the last project setup run: its thread, when, or why it could not start */
   setup?: { thread?: string; at: string; error?: string };
+  /** V0.project-playbook: what the project does around and after a pull request (playbook.ts) */
+  playbook?: PlaybookEntry[];
+  /** V0.project-playbook: when the playbook was last written; a linked project shows its newest member's */
+  playbookAt?: string;
+}
+
+/** V0.project-playbook: one entry of a project's playbook: a stage a merged change reaches, or one of the notes. */
+export interface PlaybookEntry {
+  slot: "stage" | "verify" | "promote" | "issue" | "run" | "rollback";
+  /** a stage's environment: dev, prod */
+  name?: string;
+  how?: string;
+  /** a stage: where it is looked at */
+  url?: string;
+  /** a stage: the shell command Fyr runs after a merge ({sha} is the merge commit; exit 0: the stage holds it) */
+  probe?: string;
+  /** the owner allowed the probe */
+  probeOk?: boolean;
+  /** a stage: reaching it makes a change live */
+  live?: boolean;
+  by: string;
+  /** the thread it was learned in */
+  thread?: string;
+  evidence?: string;
+  at?: string;
 }
 
 /** V0.116: the fields the setup agent fills. */

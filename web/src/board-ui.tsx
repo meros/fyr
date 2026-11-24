@@ -9,6 +9,7 @@ import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { shortHead } from "./pr.ts";
 import { ChangeCard } from "./offers-ui.tsx";
+import { stagesOf } from "./playbook.ts";
 import { doneArgs, doneText } from "./offers.ts";
 import { ProjectIcon } from "./project-ui.tsx";
 import { colorVar } from "./projects.ts";
@@ -194,7 +195,7 @@ function Card({ i, p, err }: { i: BoardItem; p: BoardProps; err?: string }) {
       <span aria-hidden="true">›</span>
     </button>
   );
-  const card = <ChangeCard c={i.change} cwd={i.thread.cwd} from={from} thread={i.thread} onRun={(a, args) => p.onRun(i.thread.id, a, args)} />;
+  const card = <ChangeCard c={i.change} cwd={i.thread.cwd} from={from} thread={i.thread} stages={stagesOf(i.project)} onRun={(a, args) => p.onRun(i.thread.id, a, args)} />;
   if (!err) return card;
   return (
     <div class="bdmerged">

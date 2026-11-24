@@ -38,7 +38,7 @@ func TestProductionSuccessIsLive(t *testing.T) {
 	ChangeDeployObserved(th, c.ID, DeployObs{Deployments: []Deployment{
 		{Env: "staging", State: "success", URL: "https://staging.example"},
 		{Env: "Production", State: "success", URL: "https://app.example", LogURL: "https://github.com/o/r/actions/runs/9"},
-	}}, at)
+	}}, false, at)
 	if c.Phase != PhaseLive || c.PhaseBy != ByObserved {
 		t.Fatalf("phase %s by %s", c.Phase, c.PhaseBy)
 	}
@@ -68,7 +68,7 @@ func TestProductionSuccessIsLive(t *testing.T) {
 func TestProductionFailureBlocks(t *testing.T) {
 	th, c := mergedThread(t)
 	at := ct0.Add(10 * time.Minute)
-	ChangeDeployObserved(th, c.ID, DeployObs{Deployments: []Deployment{{Env: "prod-eu", Production: true, State: "failure", LogURL: "https://github.com/o/r/actions/runs/9"}}}, at)
+	ChangeDeployObserved(th, c.ID, DeployObs{Deployments: []Deployment{{Env: "prod-eu", Production: true, State: "failure", LogURL: "https://github.com/o/r/actions/runs/9"}}}, false, at)
 	rules(th, at)
 	if c.Phase != PhaseLanded {
 		t.Fatalf("phase %s", c.Phase)
@@ -102,7 +102,7 @@ func TestPendingAndStaging(t *testing.T) {
 	ChangeDeployObserved(th, c.ID, DeployObs{Deployments: []Deployment{
 		{Env: "production", State: "in_progress"},
 		{Env: "staging", State: "error"},
-	}}, at)
+	}}, false, at)
 	if c.Phase != PhaseLanded {
 		t.Fatalf("phase %s", c.Phase)
 	}
@@ -127,13 +127,13 @@ func TestPendingAndStaging(t *testing.T) {
 func TestNoDeployments(t *testing.T) {
 	th, c := mergedThread(t)
 	before := len(c.Conditions)
-	ChangeDeployObserved(th, c.ID, DeployObs{None: true}, ct0.Add(5*time.Minute))
+	ChangeDeployObserved(th, c.ID, DeployObs{None: true}, false, ct0.Add(5*time.Minute))
 	if c.Phase != PhaseLanded || len(c.Conditions) != before || len(DeployWatches(th, ct0.Add(6*time.Minute))) != 0 {
 		t.Fatalf("no deployments: %+v", c)
 	}
 
 	th2, c2 := mergedThread(t)
-	ChangeDeployObserved(th2, c2.ID, DeployObs{}, ct0.Add(5*time.Minute)) // the repo has some, not this commit yet
+	ChangeDeployObserved(th2, c2.ID, DeployObs{}, false, ct0.Add(5*time.Minute)) // the repo has some, not this commit yet
 	if w := DeployWatches(th2, ct0.Add(23*time.Hour)); len(w) != 1 || w[0].First {
 		t.Fatalf("within 24 h: %+v", w)
 	}

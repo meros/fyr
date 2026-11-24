@@ -22,6 +22,7 @@ import { useApi } from "./api-context.ts";
 import { LinkRows, type ProjectLinking } from "./project-linking.tsx";
 import { SetBy, ProjectIcon } from "./project-ui.tsx";
 import { QuietGroup } from "./quiet-ui.tsx";
+import { PlaybookGroup } from "./playbook-ui.tsx";
 
 const ICON_GRID = Object.keys(LINE_ICONS);
 
@@ -140,7 +141,7 @@ function imageTarget(members: Project[], own: Project, hosts: readonly HostInfo[
 
 function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, archive, shownHere, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) and the offline note, under the header */ host?: ComponentChildren; /** V0.settings-ia: the folded Other hosts group */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** V0.linked-values-sync: the record an image goes to; the front copies it to the other members */ imageTargets: Project[] }) {
   // Decision 0034: name, colour, icon, quiet hours, priority, agentSettle and toolApproval are the link's; the rest of the page is this host's record.
-  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom };
+  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom, playbook: shown.playbook, playbookAt: shown.playbookAt };
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -447,6 +448,8 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
           }
         />
       </Group>
+      {/* V0.project-playbook: what agents learned about the project; a change goes to one record, as an image does */}
+      <PlaybookGroup project={project} target={imageTargets[0]} />
       <Group title="Priority" label="Priority">
         <Row
           title="When hosts are busy"

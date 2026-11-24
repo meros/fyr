@@ -63,6 +63,13 @@ type Project struct {
 	// (V0.project-archive, decision 0017): it leaves the pickers and the
 	// filter, and its threads leave the inbox. nil is an active project.
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	// Playbook is what the project does around and after a pull request
+	// (V0.project-playbook, playbook.go): its stages after a merge and how
+	// Fyr can tell, how a change is verified, where issues are filed.
+	Playbook []PlaybookEntry `json:"playbook,omitempty"`
+	// PlaybookAt stamps the playbook: a linked project's members take the
+	// newest (decision 0034).
+	PlaybookAt time.Time `json:"playbookAt,omitzero"`
 }
 
 // A project's priority (V0.project-priority); "" is normal.

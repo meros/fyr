@@ -119,6 +119,10 @@ type Observe struct {
 	SHA      string    `json:"sha,omitempty"`
 	Since    time.Time `json:"since"`
 	Read     bool      `json:"read,omitempty"`
+	// NoRemote: the repo has no GitHub deployment, and the watch stays for
+	// the project's stage probes (V0.project-playbook): GitHub is not read
+	// again.
+	NoRemote bool `json:"noRemote,omitempty"`
 }
 
 // When is a Condition (SPEC 7.2): one kind with its params, or any, all or

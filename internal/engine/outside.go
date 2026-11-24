@@ -92,7 +92,7 @@ func (w PRWatch) Deploys() []github.DeployThread {
 }
 
 func (w PRWatch) ObserveDeploy(id, change string, d core.DeployObs) {
-	w.E.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindDeployObserved, Thread: id, Args: core.DeployObservedArgs{Change: change, Obs: d}})
+	w.E.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindDeployObserved, Thread: id, Args: core.DeployObservedArgs{Change: change, Obs: d, Probes: w.E.hasProbes(id)}})
 }
 
 // SelfDeployed makes live, in every thread, the landed code changes of repo

@@ -1111,7 +1111,15 @@ function mockProjects(now: number): Project[] {
   const ago = (h: number) => iso(now - h * 3600_000);
   return [
     // V0.116: an image icon the setup agent set (name and colour too); the glyph stays the fallback.
-    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, image: "nb1", by: { name: "owner", color: "agent", image: "agent" }, setup: { at: ago(20), thread: "t_setup" }, folder: "/home/owner/src/acme/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1) },
+    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, image: "nb1", by: { name: "owner", color: "agent", image: "agent" }, setup: { at: ago(20), thread: "t_setup" }, folder: "/home/owner/src/acme/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1),
+      // V0.project-playbook
+      playbookAt: ago(30),
+      playbook: [
+        { slot: "stage", name: "staging", how: "Automatic on merge, about 6 minutes.", url: "https://staging.example.com", probe: 'git merge-base --is-ancestor {sha} "$(curl -fsS https://staging.example.com/version)"', probeOk: true, by: "agent", thread: "t_setup", evidence: ".github/workflows/deploy.yml", at: ago(30) },
+        { slot: "stage", name: "production", how: "A release tag, cut by hand on weekdays.", url: "https://example.com", by: "owner", at: ago(30) },
+        { slot: "verify", how: "The owner looks at staging with the demo login; the agent runs the smoke test first.", by: "agent", thread: "t_setup", at: ago(30) },
+        { slot: "issue", how: "GitHub issues in acme/web, with the Bug or Feature form.", by: "agent", thread: "t_setup", evidence: ".github/ISSUE_TEMPLATE", at: ago(30) },
+      ] },
     { id: "p_ops", name: "acme/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, folder: "/home/owner/src/acme/ops", threads: 2, lastUsed: ago(1) },
     { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, folder: "/home/owner/src/" + LONG_PROJECT, threads: 3, lastUsed: ago(5) },
     { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, folder: "/home/owner/dotfiles", threads: 1, lastUsed: ago(2) },

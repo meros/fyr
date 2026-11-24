@@ -472,6 +472,15 @@ func factNotices(r Reduced, blocks bool) []Notice {
 			if k.Status == CondFail {
 				state = failWord
 			}
+			// V0.project-playbook: a stage reached says where to look at it.
+			if env, ok := strings.CutPrefix(string(k.Type), condDeployPrefix); ok && k.Status == CondOK {
+				for _, ev := range c.Evidence {
+					if ev.Kind == "deployment" && ev.Title == env && ev.URL != "" {
+						subj += " (" + ev.URL + ")"
+						break
+					}
+				}
+			}
 			key := "cond:" + c.ID + ":" + string(k.Type)
 			out = append(out, Notice{About: about, Key: key, Subject: subj + " on " + changeName(c), States: []string{state}, said: key + "@" + changeHead(c), state: state})
 		}

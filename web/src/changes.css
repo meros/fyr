@@ -182,3 +182,11 @@
    needed") is left out: beside it the row's line wrapped to four lines, and the line says the same words. The amber
    chip of a counted row stays. */
 .set.phone .sr.host .sr-e .pst:not(.needs-login){display:none}
+
+/* V0.project-playbook: where a merged change is among its project's stages */
+.chstages{display:flex;flex-wrap:wrap;gap:4px 12px;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.chstages.in{display:inline-flex;margin-left:8px}
+.chst.reached{color:var(--calm)}
+.chst.reached::before{content:"✓ "}
+.chst.failed{color:var(--signal-ink)}
+.chst a{color:inherit;text-decoration:underline}
