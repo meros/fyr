@@ -62,6 +62,9 @@ func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sample
 	var started atomic.Bool
 	eng.LeftoverDeps = engine.LeftoverDeps{
 		LeftoverEnd: lt.End, LeftoverKeep: lt.Keep, TempRemove: tp.Remove,
+		ThreadPorts: func(thread string) []int {
+			return lt.ThreadPorts(thread, func() (string, error) { return cgroup.LsofListen(ctx) })
+		},
 		LeftoverDeclare: func(thread string, pid int, match string, d time.Duration, why string) error {
 			return lt.Declare(thread, pid, match, d, why, "agent")
 		},

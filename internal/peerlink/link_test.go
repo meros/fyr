@@ -177,3 +177,49 @@ func TestOnlyOneTunnelPerLink(t *testing.T) {
 		t.Errorf("a second tunnel: %d (want 409)", resp.StatusCode)
 	}
 }
+
+// V0.forwarded-ports: a request whose body and answer both stay open carries
+// a connection over the link, in either direction: each line sent is
+// answered before the next is sent.
+func TestALinkCarriesATwoWayStream(t *testing.T) {
+	echo := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc := http.NewResponseController(w)
+		rc.EnableFullDuplex()
+		w.WriteHeader(http.StatusOK)
+		rc.Flush()
+		sc := bufio.NewScanner(r.Body)
+		for sc.Scan() {
+			io.WriteString(w, "got "+sc.Text()+"\n")
+			rc.Flush()
+		}
+	})
+	dk, ak := key(t), key(t)
+	dl, al := linkBetween(t, dk, ak, echo, echo)
+	for name, l := range map[string]*Link{"dialer to acceptor": dl, "acceptor to dialer": al} {
+		pr, pw := io.Pipe()
+		req, _ := http.NewRequest("POST", "http://x/forward", pr)
+		resp, err := l.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		rd := bufio.NewReader(resp.Body)
+		for _, word := range []string{"one", "two", "three"} {
+			io.WriteString(pw, word+"\n")
+			line := make(chan string, 1)
+			go func() { s, _ := rd.ReadString('\n'); line <- s }()
+			select {
+			case s := <-line:
+				if s != "got "+word+"\n" {
+					t.Fatalf("%s: answer to %s: %q", name, word, s)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s: no answer to %s while the request is open", name, word)
+			}
+		}
+		pw.Close()
+		if rest, _ := io.ReadAll(rd); len(rest) != 0 {
+			t.Fatalf("%s: after the end: %q", name, rest)
+		}
+		resp.Body.Close()
+	}
+}

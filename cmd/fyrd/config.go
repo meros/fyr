@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -155,6 +156,11 @@ type config struct {
 	// reads /.well-known/fyr (the first one); empty is 7443, the NixOS
 	// module's.
 	PeerPorts []int `json:"peerPorts"`
+	// ForwardPorts: the ports a front forwards a thread's local servers on
+	// (V0.forwarded-ports): a loopback listener each, a socket for Tailscale
+	// Serve and, with `tls`, the LAN listener's address. Absent is 7450 to
+	// 7453; an empty list forwards nothing.
+	ForwardPorts *[]int `json:"forwardPorts"`
 	// Name: this install's name in the clients; empty is the machine's
 	// hostname. Two installs on one machine need two names (V0.123).
 	Name string `json:"name"`
@@ -228,6 +234,21 @@ func (c config) configEvery() time.Duration {
 }
 
 // tsSocket is the LocalAPI socket this install asks about the tailnet.
+// forwardPorts is ForwardPorts with its default; ports outside 1024 to 65535
+// are left out.
+func (c config) forwardPorts() []int {
+	if c.ForwardPorts == nil {
+		return []int{7450, 7451, 7452, 7453}
+	}
+	var out []int
+	for _, p := range *c.ForwardPorts {
+		if p >= 1024 && p <= 65535 && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func (c config) tsSocket() string {
 	if c.TailscaleSocket != "" {
 		return c.TailscaleSocket

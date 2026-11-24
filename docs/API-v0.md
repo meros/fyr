@@ -344,6 +344,17 @@ The patch is cut at 400 KB at a line end (`truncated: true`). A path without cha
 
 `GET /api/threads/{id}/files?path=<path>` returns that file: text as `text/plain; charset=utf-8` (an HTML file too), an image with its type, anything else as `application/octet-stream` with `Content-Disposition: attachment`. `&download=1` answers every kind as an attachment. Every reply has `Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. A path that is not served, and an unknown thread, is `404`.
 
+## A thread's local servers (V0.forwarded-ports)
+
+`GET /api/threads/{id}/ports` answers `{"ports": [5173, …]}`: the TCP ports that processes of the thread listen on at an address a loopback connection reaches (`127.0.0.0/8`, `0.0.0.0`, `::1`, `::`), sorted. The processes are the thread's cgroup's, or without cgroups its agent's descendants and the processes remembered as its own. `[]` when it has none or the host cannot tell.
+
+`POST /api/threads/{id}/forward/{port}` is one connection to such a port. The request's body is what the browser sends and the response's body (`200`, `application/octet-stream`) what the server answers, both streamed until either side ends; the front sends `Accept-Encoding: identity`. The port is checked on every connection: `404` when no process of the thread listens on it (any more), `502` when it does not answer. Only a front calls it, over its link to the host.
+
+On the front:
+
+- `POST /api/front/forward {"host", "threadId", "port"}` makes (or finds) the forward of that port and answers `{"port": <one of the front's forward ports>}`. `404` with `code: "not-thread-port"` and the thread's `ports` when the port is not the thread's, `409` with `code: "no-forward-ports"` on a front that forwards nothing, `400` for a call that names no host, thread or port.
+- `GET /forward/open?host=&thread=&port=&path=` is where a link in a message points: it makes the forward and redirects (`302`) to `<scheme>://<this front's name>:<forward port><path>`; a browser on the machine the server runs on (the front's own host, a loopback name) is redirected to `http://localhost:<port><path>`. A refusal is a small page that says why. `path` must start with one `/`, else `/`.
+
 ## PR detail (SPEC 0.5 V0.43)
 
 `GET /api/threads/{id}/pr` returns a PR of the thread, read with `gh` on the host and cached 30 s per PR. `?pr=<url>` or `?change=<id>` selects a specific PR linked to the thread (V0.multi-pr; defaults to the main PR or newest non-dismissed PR). `?fresh=1` skips the cache.

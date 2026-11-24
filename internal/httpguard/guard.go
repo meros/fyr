@@ -34,7 +34,15 @@ func ValidHost(s string) bool { return hostRe.MatchString(s) }
 // exception: tailscaled reaches it through a root-only file, sets the header
 // itself and does not pass the browser's Host on (the request arrives as
 // localhost), so a request on that socket needs no ts.net Host.
-func Guard(owner string, next http.Handler) http.Handler {
+func Guard(owner string, next http.Handler) http.Handler { return guard(owner, next, true) }
+
+// GuardHost is Guard without the X-Fyr rule, for a listener that serves
+// another program's pages (a forwarded port, V0.forwarded-ports): the Host
+// and the tailnet owner are checked the same way, and that program's own
+// forms post as they always do.
+func GuardHost(owner string, next http.Handler) http.Handler { return guard(owner, next, false) }
+
+func guard(owner string, next http.Handler, xfyr bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
 			if !IsViaServe(r) && !TailnetHost(r.Host) {
@@ -45,7 +53,7 @@ func Guard(owner string, next http.Handler) http.Handler {
 				http.Error(w, "this Fyr belongs to another tailnet user", http.StatusForbidden)
 				return
 			}
-			if r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
+			if xfyr && r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
 				http.Error(w, "missing X-Fyr header", http.StatusForbidden)
 				return
 			}
@@ -64,7 +72,7 @@ func Guard(owner string, next http.Handler) http.Handler {
 			http.Error(w, "Fyr v0 serves loopback only", http.StatusForbidden)
 			return
 		}
-		if r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
+		if xfyr && r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
 			http.Error(w, "missing X-Fyr header", http.StatusForbidden)
 			return
 		}

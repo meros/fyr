@@ -664,6 +664,8 @@ export function createMockApi(scenario: string): Api {
       return answer(() => mockFileText(path));
     },
     fileUrl: (_host, _threadId, path) => mockFileUrl(path),
+    // The mock has no front to forward through: the address a real one would answer, under a host name that goes nowhere.
+    forwardUrl: (host, _threadId, port, rest) => `https://forward.invalid/${host}/${port}${rest}`,
     // V0.132: each host's own folders; desk's are the fixture tree, another host has a small one of its own, and an
     // offline host's cannot be read.
     async fsList(host, path) {
