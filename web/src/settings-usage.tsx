@@ -13,6 +13,7 @@ import {
   kindsLine,
   mergeUsage,
   overheadRows,
+  ownCallsFoot,
   perDay,
   perHostWhere,
   rangeDays,
@@ -171,7 +172,7 @@ export function UsagePage({ api, now, onOpenThread }: { api: UsageApi; now: numb
         <Rows rows={mergeUsage(d.by, by)} empty="No tokens counted in this range." pick={pick(by)} action={by === "thread" ? "open the thread" : "show only this"} />
       </Group>
       <OverheadGroup hosts={d.overhead} total={total.total} />
-      <Group title="Fyr's own calls" foot={`Titles, search, the question check, the approval judge and project setup: ${total.total ? Math.round((fyrTotal / total.total) * 1000) / 10 : 0} % of the range's tokens.`}>
+      <Group title="Fyr's own calls" foot={ownCallsFoot(fyrTotal, total.total)}>
         <Rows rows={fyr} empty="Fyr made no calls of its own in this range." pick={filter?.key === "source" ? undefined : pick("source")} action="show only this" />
       </Group>
     </div>
