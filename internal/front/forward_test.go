@@ -34,8 +34,9 @@ type forwardRig struct {
 	fs     *httptest.Server // the front's own port
 	fwd    *httptest.Server // forward port 7450
 	thread string
-	port   int // the thread's server
-	other  int // a server of the host that is not the thread's
+	port   int    // the thread's server
+	other  int    // a server of the host that is not the thread's
+	stop   func() // stops the thread's server, as when its process ends
 }
 
 func newForwardRig(t *testing.T, authStore *auth.Store) *forwardRig {
@@ -86,6 +87,10 @@ func newForwardRig(t *testing.T, authStore *auth.Store) *forwardRig {
 	})
 	dev := httptest.NewServer(mux)
 	t.Cleanup(dev.Close)
+	rig.stop = func() {
+		dev.CloseClientConnections()
+		dev.Close()
+	}
 	rig.port = dev.Listener.Addr().(*net.TCPAddr).Port
 	otherLn, _ := net.Listen("tcp", "127.0.0.1:0")
 	t.Cleanup(func() { otherLn.Close() })
@@ -274,8 +279,9 @@ func TestForwardRefusals(t *testing.T) {
 	if resp := rig.get(t, "/seen", map[string]string{"Sec-Fetch-Site": "same-site"}); resp.StatusCode != 200 {
 		t.Errorf("the press on the link in Fyr (same site): %d", resp.StatusCode)
 	}
-	// The server stopped: the host refuses the next connection.
-	rig.f.fwd.slots[7450].tr.CloseIdleConnections()
+	// The server stopped: its kept-alive connection ends with it, and the
+	// host refuses the next one (the port is no longer the thread's).
+	rig.stop()
 	stopped := rig.port
 	rig.port = -1
 	if resp := rig.get(t, "/seen", nil); resp.StatusCode != 502 {
