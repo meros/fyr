@@ -114,12 +114,27 @@ export function whereText(p: { kind: string; cli?: string; configDir?: string; b
   return p.configDir || "~/.claude";
 }
 
-/** What the owner sees of a key: never the key. */
-export function keyLine(p: Pick<ProviderDTO, "kind" | "keySet" | "keyLast4" | "keyFrom">): string {
-  const what = p.kind === "endpoint" ? "Key" : "Login token";
-  if (!p.keySet) return p.kind === "endpoint" ? "Key not set" : "";
+/** The API key or login token row's line: "Set · ••••4f2a", "From OPENROUTER_API_KEY · ••••4f2a"; "" when none is set.
+ *  What the owner sees of a key: never the key. */
+export function keySetLine(p: Pick<ProviderDTO, "keySet" | "keyLast4" | "keyFrom">): string {
+  if (!p.keySet) return "";
   const tail = p.keyLast4 ? ` · ••••${p.keyLast4}` : "";
-  return p.keyFrom ? `${what} from ${p.keyFrom}${tail}` : `${what} set${tail}`;
+  return p.keyFrom ? `From ${p.keyFrom}${tail}` : `Set${tail}`;
+}
+
+/** V0.settings-ia: the Kind choice of Add provider says what the owner has in hand (an endpoint and a key), where the
+ *  list's kindLabel says what it runs on. */
+export function kindChoiceLabel(kind: string, cli?: string): string {
+  if (kind === "endpoint") return cli === "agy" ? "Gemini API with a key (Antigravity)" : "API endpoint with a key (Anthropic-compatible)";
+  return kindLabel(kind, cli);
+}
+
+/** V0.settings-ia: the provider Add provider just made, so the form lands on its page: the one id the list has now and
+ *  had not before; with several (another device added one meanwhile) the one of that name; none when it cannot tell. */
+export function newProviderId(before: string[], after: { id: string; name: string }[], name: string): string | undefined {
+  const fresh = after.filter((p) => !before.includes(p.id));
+  if (fresh.length === 1) return fresh[0].id;
+  return fresh.find((p) => p.name === name.trim())?.id;
 }
 
 /** One id per line or comma; blanks and repeats dropped, order kept. */
@@ -226,14 +241,16 @@ export function loginLine(l: LoginDTO, cli?: string): string {
 
 // ---- V0.119: the Providers page and a provider's page ----
 
-/** The list row's line: "Claude account · ~/.claude · 3 models". */
-export function listLine(p: { kind: string; cli?: string; configDir?: string; baseURL?: string; tokenLogin?: boolean; models: unknown[]; catalog?: CatalogModel[] }): string {
+/** The list row's line: "Claude account · ~/.claude · 3 models". V0.settings-ia: a provider that needs a login does not
+ *  say how it logs in ("token login" beside "Needs a login" contradicted the page, which offers the browser sign-in). */
+export function listLine(p: { kind: string; cli?: string; configDir?: string; baseURL?: string; tokenLogin?: boolean; models: unknown[]; catalog?: CatalogModel[]; status?: string }): string {
   const n = p.models.length;
   const fresh = newCount(p);
   // V0.120: once checked, how many of what the provider reports are on (found live 16 Nov: "3 models" hid it).
   const total = modelParts({ models: p.models as ProviderModel[], catalog: p.catalog }).total;
   const count = p.catalog?.length ? `${n} of ${total} models on` : n ? `${n} model${n === 1 ? "" : "s"}` : "no models";
-  return `${kindLabel(p.kind, p.cli)} · ${whereText(p)} · ${count}${fresh ? ` · ${fresh} new` : ""}`;
+  const where = p.status === "needs-login" && p.tokenLogin ? "" : ` · ${whereText(p)}`;
+  return `${kindLabel(p.kind, p.cli)}${where} · ${count}${fresh ? ` · ${fresh} new` : ""}`;
 }
 
 const USAGE: Record<string, string> = {
@@ -396,9 +413,14 @@ export function projectModelOff(pr: Pick<Project, "name" | "profile" | "model">,
 
 /** The Models group's foot: a failed check's reason (red), else the note that the list is only Fyr's known one, else
  *  what the group does. Never a quiet fallback (found live 16 Nov). */
+/** V0.settings-ia: what ★ does, as new-thread.ts profileFor picks: the project's default provider, else the provider
+ *  picked or last used on this device, else the first that can run; the model is the project's or the last pick's when
+ *  one is named and still offered, else this provider's ★. So ★ never chooses the provider. */
+export const STAR_LINE = "★ is the model a new thread starts on when it runs on this provider and neither its project nor your last pick on this device names another.";
+
 export function modelsFoot(p: Pick<ProviderDTO, "checkedAt" | "checkError" | "checkNote">, now: number): { text: string; error: boolean } {
   const failed = checkErrorLine(p, now);
   if (failed) return { text: failed, error: true };
   if (p.checkNote) return { text: p.checkNote, error: false };
-  return { text: "★ is the default for a new thread. Fyr asks the provider for its models when you open this page and once a day.", error: false };
+  return { text: `${STAR_LINE} Fyr asks the provider for its models when you open this page and once a day.`, error: false };
 }

@@ -1,11 +1,17 @@
-/* SPEC V0.119 (amends V0.50): Settings. One nav, four pages, and one set of rows and controls for the desktop and the
+/* SPEC V0.119 (amends V0.50), V0.settings-ia: Settings. One nav, eight pages, and one set of rows and controls for the desktop and the
    phone (design/settings/mock.css, part 3). Desktop: the dialog's nav column and a pane. Phone: the nav is the
    Settings screen and a page is the next screen; its sizes come from the one rule set under .set.phone below. */
-.dlg.settings{width:min(820px,100%);height:min(76vh,640px)} /* one size on every page: the pane scrolls, the nav does not */
+/* One size on every page: the pane scrolls, the nav does not. V0.settings-ia: the size follows the window (it was
+   820 x 640 on every screen, so a host's or a project's page scrolled three screens beside an empty monitor). */
+.dlg.settings{width:min(1100px,92vw);height:86vh;max-height:86vh}
 .set{min-width:0}
-.stx{display:grid;grid-template-columns:212px minmax(0,1fr);flex:1;min-height:0}
+.stx{display:grid;grid-template-columns:236px minmax(0,1fr);flex:1;min-height:0}
 .stn{display:flex;flex-direction:column;gap:2px;padding:10px 8px;background:var(--surface);border-right:1px solid var(--line);min-width:0;overflow:hidden}
 .stn-c{display:flex;flex-direction:column;gap:2px}
+/* V0.settings-ia: the nav's two groups, each under a small caption */
+.stn-g{display:flex;flex-direction:column;gap:2px;min-width:0}
+.stn-g+.stn-g{margin-top:10px}
+.stn-cap{font:600 11px/16px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);padding:2px 10px}
 .stn-i{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:8px;padding:6px 10px;border-radius:8px;min-height:40px;text-align:left;min-width:0}
 .stn-i:hover{background:var(--sunken)}
 .stn-i.on{background:var(--raised);box-shadow:0 0 0 1px var(--line)}
@@ -24,11 +30,31 @@
 .stp-h .end{margin-left:auto;display:flex;gap:8px;align-items:center}
 .stp-lede{margin:-8px 0 0;font:400 13px/19px var(--ui);color:var(--ink-muted);max-width:60ch}
 .stp-sub{margin:8px 0 -6px;font:600 14px/20px var(--ui)}
+/* V0.settings-ia: a section of a long page (a host's): a heading over its groups; with a fold, one summary line */
+.ssec{display:flex;flex-direction:column;gap:16px;min-width:0}
+.ssec.shut{gap:0}
+.ssec-h{display:flex;align-items:center;gap:8px;min-height:24px;margin-top:6px;padding:0 2px;border-top:1px solid var(--line);padding-top:12px}
+.ssec-t{margin:0;font:600 14px/20px var(--ui);color:var(--ink);white-space:nowrap;flex:none}
+.ssec-h .sg-fb{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.ssec-h .sg-chev{font-size:13px}
+/* the installs panel of Hosts: its groups keep the pane's gap (they touched) */
+.peers{display:flex;flex-direction:column;gap:16px;min-width:0}
+/* "How it works" in a group's foot: the long explanation, folded */
+.sg-how{margin-top:2px}
+.sg-how>summary{display:inline-block;cursor:pointer;color:var(--harbour);font-weight:500;list-style:none}
+.sg-how>summary::-webkit-details-marker{display:none}
+.sg-how[open]>summary{margin-bottom:2px}
+/* the question a press that cannot be taken back asks in place (ConfirmButton) */
+.cfmb{display:inline-flex;gap:8px;align-items:center} /* not .cfm: that is the confirmation dialog and sheet (confirm-ui.tsx) */
+.pst.thisdev,.pst.inl-p{display:inline-block;margin-left:8px;vertical-align:1px} /* a small pill beside a name ("this device", "Cannot run"). Its own class: .you is the chat bubble of the owner's message and .here the thread's "you are here" rule, and each made the pill a bar */
+a.lnk{text-decoration:none}
+a.lnk:hover{text-decoration:underline}
 /* V0.139: the read-only host of a project (its screen's first row); the same chip on the desktop and the phone */
 .hchip{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .hchip .hdot{flex:none}
 .hchip.off .hdot{background:none;box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
 .hchip-l{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.phost{display:flex;align-items:center;gap:8px;padding:0 2px;min-width:0}
 /* V0.140: the host a change card's thread runs on, and each load ring's host on the rail, with several hosts */
 .bdhost{flex:none;font:400 11px/16px var(--mono);color:var(--ink-muted);border:1px solid var(--line);border-radius:5px;padding:0 5px}
 /* V0.132: the Host field of New project and New thread; an offline host's note in the error colour */
@@ -214,6 +240,9 @@ label.sr{cursor:pointer}
 .pdot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);flex:none}
 .pst{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:10px;background:var(--sunken);color:var(--ink-muted);white-space:nowrap;flex:none}
 .pst.needs-login,.pst.needs-key{background:var(--beam-wash);color:var(--beam-ink)}
+/* No connection (.set.ro): nothing can be pressed, so nothing is counted (settings-nav.ts settingsCounts) and no chip
+   has the count's colour. */
+.set.ro .pst.needs-login,.set.ro .pst.needs-key{background:var(--sunken);color:var(--ink-muted)}
 .usage .sr-t{font-size:15px;line-height:20px}
 .setd{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .seterr{color:var(--signal-ink);font:400 12px/16px var(--ui);overflow-wrap:anywhere}
@@ -238,6 +267,7 @@ label.sr{cursor:pointer}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .pimg{display:flex;align-items:center;gap:10px;flex-wrap:wrap} /* the Image tab: the thumbnail, Upload or Replace, Remove (not .thumb: that is an attachment) */
 .pemoji .inl input{max-width:120px;font-size:20px;text-align:center}
+.pemoji .inl input::placeholder{font-size:13px} /* V0.settings-ia: the placeholder is words, not an emoji: at 20 px it was cut ("Or an emo") */
 .pfolder{min-width:0}
 .pfolder .ell{display:inline;white-space:normal;overflow-wrap:anywhere}
 .rail .rgear{margin-top:auto}
@@ -265,3 +295,33 @@ label.sr{cursor:pointer}
 .ug-ticks{position:relative;height:14px;margin-top:4px;font-size:11px;color:var(--ink-faint)}
 .ug-ticks span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
 .ug-ticks span:first-child{transform:none}
+
+/* V0.settings-ia: a host's page. The jump links under the tabs: the page's sections, each with a word only when it is
+   not fine; the word is in the count's colour only when this host's tab counts it (.hj.w), else muted. The same links
+   on the desktop and the phone. When they do not fit, the desktop wraps them to a second line, so none is cut; the
+   phone keeps one line that scrolls sideways under a fade (below), as its host tabs do: its links are 44 px high for
+   touch, and three lines of them would push the page down (flex:none for the reason given at .htabs). */
+.hjump{flex:none;display:flex;align-items:center;gap:2px 4px;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:none;margin:-6px 0 -4px}
+.hjump::-webkit-scrollbar{display:none}
+.stx .hjump{flex-wrap:wrap;overflow:visible}
+.hj{flex:none;height:28px;padding:0 8px;border-radius:7px;font:500 12px/16px var(--ui);color:var(--harbour);white-space:nowrap}
+.hj:hover{background:var(--sunken)}
+.hj:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.hj-w{font-weight:400;color:var(--ink-muted)}
+.hj.w .hj-w{color:var(--signal-ink)}
+.set.phone .hjump{margin:-4px 0 -4px}
+.set.phone .hj{height:44px;padding:0 10px;font-size:14px} /* touch */
+/* a caption inside a section, over the groups that belong together ("Running now", "Rules") */
+.ssec-cap{font:600 11px/16px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);padding:0 2px;margin-bottom:-8px}
+.set.phone .ssec-cap{font-size:12px}
+/* a folded header whose line reports something wrong now */
+.sg-sum.bad{color:var(--signal-ink)}
+.hmsum{display:inline-flex;align-items:center;gap:6px;vertical-align:middle}
+.sr-e .pst{flex:none}
+/* The nav's line of state is one line on the desktop (the column is 236 px; a long line wrapped and made its row
+   taller than the others); the whole line is the row's tooltip. The phone has the width and wraps. */
+.stx .stn-s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+/* The phone's host tabs and jump links scroll sideways: a fade at the right edge says there is more (the last tab was
+   cut with no sign). Phone only: on the desktop the strip fits or shows its neighbours whole. */
+.set.phone .htabs:not(.compact),.set.phone .hjump{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);padding-right:24px}
+.ug{display:flex;flex-direction:column;gap:16px;min-width:0} /* V0.settings-ia: its groups keep the pane's gap (their labels touched the box above) */

@@ -8,7 +8,7 @@ import { quietList, quietNote, quietSaver } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, toolApprovalLine, toolApprovalOf, type ToolApproval, setByAgent, setupLine, colorName, colorVar, monogram, projectDefaults, resolveIcon } from "./projects.ts";
 import { tildePath } from "./paths.ts";
-import { Group, Row, SaveField, Seg, SetContext, useSet } from "./settings-rows.tsx";
+import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { useFolderPick } from "./folder-picker.tsx";
 import { HostChip, useHosts } from "./host-pick-ui.tsx";
 import { orderedMembers, type HostTabItem } from "./host-tabs.ts";
@@ -41,10 +41,12 @@ export interface ProjectPatch {
 
 type IconTab = "image" | "monogram" | "emoji" | "line";
 
-/** A project's page (V0.55, V0.58, V0.116; V0.119 amends the Save button away): Identity, Threads, Quiet hours, Delete.
+/** A project's page (V0.55, V0.58, V0.116; V0.119 amends the Save button away). V0.settings-ia: in this order, from what
+ *  is changed often to what is set once: the header; Identity; New threads (Folder, defaults); Without asking (Agent
+ *  says done, Tool approvals); Priority; Quiet hours; Show on this device; Other hosts (folded); Archive; Delete.
  *  Each change saves at once with only its own field (V0.116 (2)); quiet hours 600 ms after the last change and at
  *  once when the page closes. The same page in the desktop Settings and on the phone's project screen. */
-type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null>; /** V0.project-archive */ archive?: ProjectArchive };
+type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null>; /** V0.project-archive */ archive?: ProjectArchive; /** V0.207, V0.settings-ia: whether this device shows the project: the same setting as its row in Settings → This device */ shownHere?: { on: boolean; set(on: boolean): void } };
 
 /** V0.project-archive: the project's Archive group, the same on the desktop (Settings → Projects → a project) and the
  *  phone (the project screen). */
@@ -66,8 +68,9 @@ export interface ProjectArchive {
 }
 
 /** V0.139, V0.host-tabs: a project lives on one host, or on several when linked (decision 0034). Linked projects show
- *  HostTabs directly under the header to switch between host records in the owner's host order; unlinked projects on a
- *  multi-host front keep their read-only Host chip. While the shown host is offline the screen is read-only and says so.
+ *  HostTabs directly under the header to switch between host records in the owner's host order. V0.settings-ia: what
+ *  links a project to other hosts is one folded group, Other hosts, in the same place whether it is linked or not; it also names the host the
+ *  project lives on. While the shown host is offline the screen is read-only and says so under the header.
  *  The same on the desktop (Settings → Projects → a project) and the phone (the project screen). */
 export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
   const hs = useHosts();
@@ -97,32 +100,28 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
         // or its removal, to the other members, also to one that is offline now once it is back.
         imageTargets={imageTarget(linked ? rawMembers : [p.project], p.project, hs.hosts)}
         host={
-          linked && p.linking ? (
-            <>
-              <HostTabs items={memberTabs} active={p.project.id!} onPick={(id) => id !== p.project.id && p.linking!.open(id)} label="Project hosts" />
-              {chip?.offline && (
-                <div class="note hnote">
-                  {chip.name} is {chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.
-                </div>
-              )}
-            </>
-          ) : (
-            chip && (
-              <Group title="Host" label="Host">
-                <Row
-                  class="hostrow"
-                  title={<HostChip chip={chip} />}
-                  desc={chip.offline ? `${chip.name} is ${chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.` : "The project lives here: its folder, its threads and the providers below are this host's. A project does not move to another host."}
-                />
-                {p.linking && <LinkRows project={p.project} linking={p.linking} />}
-              </Group>
-            )
-          )
+          <>
+            {linked && p.linking && <HostTabs items={memberTabs} active={p.project.id!} onPick={(id) => id !== p.project.id && p.linking!.open(id)} label="Project hosts" />}
+            {/* V0.139: the host an unlinked project lives on stays under the header (a linked one's tabs say it). */}
+            {!linked && chip && (
+              <div class="hostrow phost">
+                {/* the word: a bare dot and a name did not say what the name is */}
+                <span class="hchip-l">On host</span>
+                <HostChip chip={chip} />
+              </div>
+            )}
+            {chip?.offline && (
+              <div class="note hnote hostrow">
+                {chip.name} is {chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.
+              </div>
+            )}
+          </>
         }
         hostManage={
-          linked && p.linking ? (
-            <Group title="Hosts" label="Hosts" fold={{ id: `project:${p.linking.group.id}:hosts`, open: false, summary: `${members.length} linked hosts` }}>
-              <LinkRows project={p.project} linking={p.linking} tabbed />
+          chip || (linked && p.linking) ? (
+            <Group title="Other hosts" label="Other hosts" fold={{ id: `project:${p.linking?.group.id ?? p.project.id}:hosts`, open: false, summary: linked ? `Linked on ${members.length} hosts` : chip ? `Only on ${chip.name}` : undefined }}>
+              {chip && !linked && <Row title={`Lives on ${chip.name}`} desc="Its folder, its threads and its providers are this host's. A project does not move to another host." />}
+              {p.linking && <LinkRows project={p.project} linking={p.linking} tabbed={linked} />}
             </Group>
           ) : undefined
         }
@@ -139,7 +138,7 @@ function imageTarget(members: Project[], own: Project, hosts: readonly HostInfo[
   return t ? [t] : [];
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, archive, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) or the Host group (single-host), under the header */ host?: ComponentChildren; /** V0.host-tabs: compact folded linking actions for a linked project */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** V0.linked-values-sync: the record an image goes to; the front copies it to the other members */ imageTargets: Project[] }) {
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, archive, shownHere, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) and the offline note, under the header */ host?: ComponentChildren; /** V0.settings-ia: the folded Other hosts group */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** V0.linked-values-sync: the record an image goes to; the front copies it to the other members */ imageTargets: Project[] }) {
   // Decision 0034: name, colour, icon, quiet hours, priority, agentSettle and toolApproval are the link's; the rest of the page is this host's record.
   if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
@@ -186,20 +185,20 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
     const bad = iconFileError(f);
     if (bad) return err("icon", bad);
     setBusy(true);
-    const rs = await Promise.all(imageTargets.map((m) => (m.hostId ? api.uploadProjectIcon(m.hostId, m.id!, f) : Promise.resolve({ ok: false, error: "This host reports no install id" }))));
+    const rs = await Promise.all(imageTargets.map((m) => (m.hostId ? api.uploadProjectIcon(m.hostId, m.id!, f) : Promise.resolve({ ok: false, error: "This host reports no id" }))));
     setBusy(false);
     const bad2 = rs.find((r) => !r.ok);
     err("icon", bad2 ? (bad2.error ?? "The upload did not work") : null);
     if (!bad2) env.saved();
   };
   const removeImage = async () => {
-    const rs = await Promise.all(imageTargets.map((m) => (m.hostId ? api.command(m.hostId, "project.update", undefined, { id: m.id, image: "" }) : Promise.resolve({ ok: false, error: "This host reports no install id" }))));
+    const rs = await Promise.all(imageTargets.map((m) => (m.hostId ? api.command(m.hostId, "project.update", undefined, { id: m.id, image: "" }) : Promise.resolve({ ok: false, error: "This host reports no id" }))));
     const bad2 = rs.find((r) => !r.ok);
     err("icon", bad2 ? (bad2.error ?? "That did not work") : null);
     if (!bad2) env.saved();
   };
   const setup = async () => {
-    if (!project.hostId) return err("setup", "This host reports no install id");
+    if (!project.hostId) return err("setup", "This host reports no id");
     setBusy(true);
     const r = await api.command(project.hostId, "project.setupRun", undefined, { id: project.id });
     setBusy(false);
@@ -318,7 +317,7 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
           )}
         </div>
         <Row
-          title="Set up automatically"
+          title="Fill in automatically"
           class="psetup"
           desc={
             !errs.setup && !setup0?.error ? (
@@ -331,12 +330,12 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
           error={errs.setup ?? (setup0?.error ? setup0.text : null)}
           end={
             <button type="button" class="btn" disabled={busy || !project.folder || env.readOnly} onClick={() => void setup()}>
-              {project.setup ? "Run again" : "Run setup"}
+              {project.setup ? "Run again" : "Run"}
             </button>
           }
         />
       </Group>
-      <Group title="Threads" label="Threads">
+      <Group title="New threads" label="New threads">
         <Row
           title="Folder"
           error={errs.folder}
@@ -402,28 +401,9 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
             </>
           }
         />
-        <Row
-          title="Priority"
-          desc={priorityLine(shownPrio)}
-          error={errs.priority}
-          stack
-          end={
-            <Seg
-              label="Priority"
-              value={shownPrio}
-              disabled={env.readOnly}
-              options={[
-                { value: "low", label: "Low" },
-                { value: "normal", label: "Normal" },
-                { value: "high", label: "High" },
-              ]}
-              onChange={async (v) => {
-                setPrio(v);
-                if (await save("priority", patchFor("priority", v))) setPrio(null);
-              }}
-            />
-          }
-        />
+      </Group>
+      {/* V0.settings-ia: the two things Fyr does here without asking, named as Settings → Automation names them */}
+      <Group title="Without asking" label="Without asking">
         <Row
           title="Agent says done"
           desc={agentSettleLine(shownAgs)}
@@ -467,6 +447,30 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
           }
         />
       </Group>
+      <Group title="Priority" label="Priority">
+        <Row
+          title="When hosts are busy"
+          desc={priorityLine(shownPrio)}
+          error={errs.priority}
+          stack
+          end={
+            <Seg
+              label="Priority"
+              value={shownPrio}
+              disabled={env.readOnly}
+              options={[
+                { value: "low", label: "Low" },
+                { value: "normal", label: "Normal" },
+                { value: "high", label: "High" },
+              ]}
+              onChange={async (v) => {
+                setPrio(v);
+                if (await save("priority", patchFor("priority", v))) setPrio(null);
+              }}
+            />
+          }
+        />
+      </Group>
       <QuietGroup
         value={quiet}
         note={quietNote(project, now)}
@@ -480,10 +484,18 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
           {errs.quiet}
         </div>
       )}
+      {shownHere && (
+        // V0.207, V0.settings-ia: kept in this browser, so it works with no connection and on an offline host's project
+        <SetContext.Provider value={{ ...env, readOnly: false }}>
+          <Group title="Show on this device" label="Show on this device" foot="Only on this device. A project you turn off leaves this device's inbox, filters, Changes, pickers and notifications; it keeps running, and your other devices still show it.">
+            <Row label title={`Show ${project.name}`} end={<Switch on={shownHere.on} label={`Show project ${project.name}`} onChange={shownHere.set} />} />
+          </Group>
+        </SetContext.Provider>
+      )}
       {hostManage}
       {archive && <ArchiveGroup a={archive} linked={!!linked} err={errs.archive} setErr={(e) => err("archive", e)} />}
       {onDelete && (
-        <Group danger class="pdel">
+        <Group danger class="pdel" title="Delete">
           <Row
             title={linked ? `Delete from ${project.host}` : "Delete project"}
             desc={`${n ? `Its ${n === 1 ? "thread stays" : `${n} threads stay`}, without a project.` : "It has no threads."}${linked ? " The other hosts keep theirs." : ""}`}

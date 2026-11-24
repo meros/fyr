@@ -77,7 +77,7 @@ Then `systemctl daemon-reload`, `enable` and `restart fyr.service`. These are th
 
 ## The Linux app
 
-On a Linux desktop Fyr can run as its own app instead of a browser tab (decision 0038): a window that stays signed in, a tray item (Open, Open in Browser, Pause or Resume, Show Log, Quit) and the desktop's own notifications, with the same settings as a phone's (Settings → Notifications in the window). On NixOS:
+On a Linux desktop Fyr can run as its own app instead of a browser tab (decision 0038): a window that stays signed in, a tray item (Open, Open in Browser, Pause or Resume, Show Log, Quit) and the desktop's own notifications, with the same settings as a phone's (Settings → This device in the window). On NixOS:
 
 ```nix
 services.fyr.desktop.enable = true;
@@ -91,7 +91,7 @@ The app is a PWA: open it in the phone's browser and add it to the home screen. 
 
 The phone needs a trusted HTTPS origin to reach your front (Fyr serves no plain HTTP and no self-signed browser page off loopback). Pick whichever route fits your setup:
 
-- **LAN without Tailscale:** configure `tls` (`cert`, `key`, `listen`, `name`) in `config.json` with a certificate your phone trusts (from your own CA or ACME DNS-01), then pair the phone: `fyr device add` prints a QR code and one-time link (valid for 10 minutes), or type the approval code shown on the phone into `fyr device approve CODE` / Settings → Devices.
+- **LAN without Tailscale:** configure `tls` (`cert`, `key`, `listen`, `name`) in `config.json` with a certificate your phone trusts (from your own CA or ACME DNS-01), then pair the phone: `fyr device add` prints a QR code and one-time link (valid for 10 minutes), or type the approval code shown on the phone into `fyr device approve CODE` / Settings → Sign-in.
 - **Tailscale (optional route, works at home and away):** set your Tailscale login once (`fyr auth owner you@example.com`, or `ownerLogin` in `config.json` / NixOS `services.fyr.ownerLogin`), and publish `serve.sock` with Tailscale Serve (`services.fyr.tailnet.enable = true` on NixOS, or `sudo tailscale serve --bg --https=7443 unix:$HOME/.local/share/fyr/serve.sock`). Fyr is then served on `https://<machine>.<tailnet>.ts.net:7443` to that login only.
 
 On macOS the Tailscale app cannot proxy to Fyr's socket, so the macOS install publishes only the address that other installs use to find it (see below), not the app.
@@ -113,11 +113,11 @@ Fyr updates itself only to CI-built releases ([decision 0027](decisions/0027-one
 2. Each host checks its channel every `updateEveryMinutes`: `deployable` on `main`, the newest version on `stable`. Once that has stayed put for 10 minutes, the host downloads the release, verifies its signature and checksums, and runs `fyrd selftest` on a copy of the database.
 3. It switches. The launcher checks `/healthz` and rolls back to `previous` if the build is unhealthy or crashes within 10 minutes.
 
-Settings → Auto-update turns this off. Settings → Updates shows the version and the channel, the release repo and the fingerprint of the key releases are verified with.
+Settings → Automation → Auto-update turns this off. Settings → Hosts → a host → Updates shows the version and the channel; the release repo and the fingerprint of the key releases are verified with are under that host's Diagnostics.
 
 ### Channels and versions
 
-A version is a release named `vX.Y.Z` (V0.versioned-releases); `vX.Y.Z-rc.N` is a prerelease of it. `fyrd --version` (and `fyr --version`, which also asks the running build) prints the version, or the build's commit on `main`; the status screen and Settings → Updates show it with the channel.
+A version is a release named `vX.Y.Z` (V0.versioned-releases); `vX.Y.Z-rc.N` is a prerelease of it. `fyrd --version` (and `fyr --version`, which also asks the running build) prints the version, or the build's commit on `main`; the status screen and Settings → Hosts → a host → Updates show it with the channel.
 
 | `updateChannel` | Follows |
 |---|---|
@@ -127,7 +127,7 @@ A version is a release named `vX.Y.Z` (V0.versioned-releases); `vX.Y.Z-rc.N` is 
 
 **Install a version:** `scripts/install-linux.sh --version v1.2.3` (or `install-macos.sh`). Without `--channel`, the install is then pinned to it; `--version v1.2.3 --channel stable` installs it and follows stable from there. Add `--print` to see what it would do. On a host that is already installed you can also set the key and press Update now.
 
-**Switch channels:** set `"updateChannel"` in `~/.config/fyr/config.json` and restart Fyr (`systemctl restart fyr`, or on a Mac `launchctl kickstart -k gui/$(id -u)/fyr.agent` for Fyr.app, `gui/$(id -u)/app.fyr.fyrd` for a script install), or run the install script again with `--channel stable` or `--channel main`. A host that moves from `main` to `stable` goes to the newest version at its next check, even though that is older than the main build it ran (as when `deployable` is moved back); the version's smoke test runs on a copy of your data first, and if it cannot open it the host stays where it is and says so in Settings → Updates. The NixOS module has no option for the key yet (#624): a NixOS host follows `main`.
+**Switch channels:** set `"updateChannel"` in `~/.config/fyr/config.json` and restart Fyr (`systemctl restart fyr`, or on a Mac `launchctl kickstart -k gui/$(id -u)/fyr.agent` for Fyr.app, `gui/$(id -u)/app.fyr.fyrd` for a script install), or run the install script again with `--channel stable` or `--channel main`. A host that moves from `main` to `stable` goes to the newest version at its next check, even though that is older than the main build it ran (as when `deployable` is moved back); the version's smoke test runs on a copy of your data first, and if it cannot open it the host stays where it is and says so in Settings → Hosts → that host → Updates. The NixOS module has no option for the key yet (#624): a NixOS host follows `main`.
 
 **Cut a version** (the repository's owner): tag a commit of `main` and push the tag, `git tag v1.2.3 <sha> && git push origin v1.2.3`, or run `gh workflow run test.yml -f version=v1.2.3 -f commit=<sha>`. CI runs the gate on that commit, builds it with the version in the binaries, signs it and publishes the release `v1.2.3` with the commits since the previous version as its notes; a `-rc.N` version is published as a prerelease.
 

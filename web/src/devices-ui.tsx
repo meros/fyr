@@ -1,14 +1,18 @@
-// SPEC V0.157, decision 0030 3.4: Settings → Devices, one page on the desktop and the phone. The devices that are
-// signed in, with Revoke; the ones that wait, with Allow and Deny; Approve a code; Add a device (a link and a QR
-// code, valid once for 10 minutes); and whether the browser way in is required. The width is the only difference.
+// SPEC V0.157, decision 0030 3.4: Settings → Sign-in (V0.settings-ia: was Devices), one page on the desktop and the
+// phone. In this order: the devices that wait, with Allow and Deny; the ones that are signed in, with Sign out; Add a
+// device (a link and a QR code, valid once for 10 minutes); Allow by code; whether signing in is required; and last,
+// how this device gets in. The width is the only difference.
+import { type ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
+import { useAsk } from "./confirm-ui.tsx";
 import { autoNotice, codeShow, deviceLine, devicesNeed, modeLine, splitDevices, typedCode, type AuthState, type DeviceRow } from "./devices.ts";
-import { Empty, Group, LoadError, Row, Skeleton, Switch, useSet } from "./settings-rows.tsx";
+import { requireSignInAsk } from "./settings-asks.ts";
+import { ConfirmButton, Empty, Group, LoadError, Row, Skeleton, Switch, useSet } from "./settings-rows.tsx";
 
 type DevicesApi = Pick<Api, "authState" | "authAct">;
 
-/** The state of Settings → Devices, read by the page and by the nav's line; it reloads every 5 s while shown. */
+/** The state of Settings → Sign-in, read by the page and by the nav's line; it reloads every 5 s while shown. */
 export function useAuthState(api: Partial<DevicesApi>, live: boolean): { s: AuthState | null; err: string | null; reload(): void } {
   const [s, setS] = useState<AuthState | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -33,18 +37,30 @@ interface Added {
   name: string;
 }
 
-export function DevicesPage({ api, now, st }: { api: DevicesApi; now: number; st: { s: AuthState | null; err: string | null; reload(): void } }) {
+export function DevicesPage({ api, now, st, bottom }: { api: DevicesApi; now: number; st: { s: AuthState | null; err: string | null; reload(): void }; /** the page's last group (how this device gets in), which shows whatever the list's read does */ bottom?: ComponentChildren }) {
   const env = useSet();
+  const ask = useAsk();
   const { s, err, reload } = st;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [added, setAdded] = useState<Added | null>(null);
-  const [confirm, setConfirm] = useState<string | null>(null);
   const [name, setName] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  if (err && !s) return <LoadError text={err} onRetry={reload} />;
-  if (!s) return <Skeleton rows={3} label="Devices" />;
+  if (err && !s)
+    return (
+      <>
+        <LoadError text={err} onRetry={reload} />
+        {bottom}
+      </>
+    );
+  if (!s)
+    return (
+      <>
+        <Skeleton rows={3} label="Devices" />
+        {bottom}
+      </>
+    );
 
   const act = async (action: Parameters<DevicesApi["authAct"]>[0], body: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
     setBusy(true);
@@ -73,6 +89,13 @@ export function DevicesPage({ api, now, st }: { api: DevicesApi; now: number; st
     if (r) setAdded({ url: String(r.url), svg: r.svg as string | undefined, name: name.trim() || "a new device" });
   };
 
+  const turnOn = async (on: boolean) => {
+    // Turning it on while requests without a session still arrive would refuse them: that asks first (settings-asks.ts).
+    const q = on && browser ? requireSignInAsk(browser) : null;
+    if (q && !(await ask(q))) return;
+    void act("mode", { way: "browser", mode: on ? "enforce" : "observe" });
+  };
+
   return (
     <>
       {notice && (
@@ -85,16 +108,20 @@ export function DevicesPage({ api, now, st }: { api: DevicesApi; now: number; st
           {msg}
         </div>
       )}
+      {/* What waits for the owner is first on the page. Each waiting device is counted (settings-nav.ts
+          settingsCounts), so its row carries the amber chip. */}
       {waiting.length > 0 && (
         <Group label="Waiting" title={`Waiting for you (${devicesNeed(s)})`} foot="Allow a device only if it is yours: the code on its screen is the same as here.">
           {waiting.map((d) => (
             <Row
               key={d.id}
               class="dev wait"
+              acts
               title={d.name}
               desc={<span class="mono">{codeShow(d.code)}</span>}
               end={
                 <>
+                  <span class="pst needs-login">Waiting</span>
                   <button type="button" class="btn" disabled={ro || !you} onClick={() => void act("approve", { id: d.id })}>
                     Allow
                   </button>
@@ -107,13 +134,13 @@ export function DevicesPage({ api, now, st }: { api: DevicesApi; now: number; st
           ))}
         </Group>
       )}
-      <Group label="Devices" title="Signed in" foot="A device is signed in on this install only. Revoke signs it out here, closes what it has open, and the devices it added go with it.">
+      <Group label="Devices" title="Signed in" foot="A device is signed in on this host only. Sign out ends its session here and closes what it has open; the devices it added go with it.">
         {signedIn.length === 0 && <Empty text="No device is signed in." />}
         {signedIn.map((d) => (
-          <DeviceItem key={d.id} d={d} now={now} you={you === d.id} confirming={confirm === d.id} disabled={ro || !you} onAsk={() => setConfirm(d.id)} onCancel={() => setConfirm(null)} onRevoke={() => (setConfirm(null), void act("revoke", { id: d.id }))} />
+          <DeviceItem key={d.id} d={d} now={now} you={you === d.id} disabled={ro || !you} onSignOut={() => void act("revoke", { id: d.id })} />
         ))}
       </Group>
-      <Group label="Add a device" title="Add a device" foot="Open the link or scan the code on the other device. It works once, for 10 minutes. A device you add is signed out when you revoke this one.">
+      <Group label="Add a device" title="Add a device" foot="Open the link or scan the code on the other device. It works once, for 10 minutes. A device you add is signed out when this one is.">
         <Row
           stack
           title="Name"
@@ -123,11 +150,13 @@ export function DevicesPage({ api, now, st }: { api: DevicesApi; now: number; st
             </span>
           }
         />
+        {/* V0.settings-ia: the group is "Add a device"; the row names what the press makes, and the button the press. */}
         <Row
-          title="New sign-in link"
+          title="Sign-in link"
+          desc="For the device named above."
           end={
             <button type="button" class="btn" disabled={ro || !you} onClick={() => void add()}>
-              Add a device
+              Create link
             </button>
           }
         />
@@ -140,64 +169,49 @@ export function DevicesPage({ api, now, st }: { api: DevicesApi; now: number; st
           </Row>
         )}
       </Group>
-      <Group label="Approve" title="Approve a code" foot="A browser that is not signed in shows a code. Type it here, or run fyr device approve on the machine that runs Fyr.">
+      {/* One word for the act: a waiting device is allowed by its row's Allow, or by typing its code here. */}
+      <Group label="Allow by code" title="Allow by code" foot="A device that is not signed in shows a code. Type it here, or run fyr device approve on the host.">
         <Row
           stack
           title="Code"
           end={
             <span class="codein">
               <span class="inl">
-                <input class="mono" type="text" aria-label="Approval code" autocomplete="off" autocapitalize="characters" spellcheck={false} placeholder="ABCD-1234" value={code} disabled={ro || !you} onInput={(e) => setCode(typedCode((e.target as HTMLInputElement).value))} />
+                <input class="mono" type="text" aria-label="Code of the device to allow" autocomplete="off" autocapitalize="characters" spellcheck={false} placeholder="ABCD-1234" value={code} disabled={ro || !you} onInput={(e) => setCode(typedCode((e.target as HTMLInputElement).value))} />
               </span>
               <button type="button" class="btn" disabled={ro || !you || code.length !== 8} onClick={() => void approve()}>
-                Approve
+                Allow
               </button>
             </span>
           }
         />
       </Group>
       {browser && (
-        <Group label="Sign-in" title="Sign-in" foot={modeLine(browser, now)}>
-          <Row
-            label
-            title="Require sign-in"
-            desc={browser.mode === "enforce" ? "On" : "Off: watching"}
-            end={<Switch on={browser.mode === "enforce"} label="Require sign-in" disabled={ro || !you} onChange={(on) => void act("mode", { way: "browser", mode: on ? "enforce" : "observe" })} />}
-          />
+        <Group label="Require sign-in" title="Require sign-in" foot={modeLine(browser, now)}>
+          <Row label title="A device must sign in" desc={browser.mode === "enforce" ? "On" : "Off: watching"} end={<Switch on={browser.mode === "enforce"} label="Require sign-in" disabled={ro || !you} onChange={(on) => void turnOn(on)} />} />
         </Group>
       )}
-      {!you && <div class="note">Sign in to change anything here: run <span class="mono">fyr open</span> on the machine that runs Fyr.</div>}
+      {bottom}
+      {!you && <div class="note">Sign in to change anything here: run <span class="mono">fyr open</span> on the host.</div>}
     </>
   );
 }
 
-function DeviceItem({ d, now, you, confirming, disabled, onAsk, onCancel, onRevoke }: { d: DeviceRow; now: number; you: boolean; confirming: boolean; disabled: boolean; onAsk(): void; onCancel(): void; onRevoke(): void }) {
+/** A signed-in device. Signing one out cannot be taken back from its row (it must sign in again), so the button asks
+ *  in place (settings-rows.tsx ConfirmButton). One word on every row, this device's and another's: "Sign out…".
+ *  "this device" is a small pill beside the name. */
+function DeviceItem({ d, now, you, disabled, onSignOut }: { d: DeviceRow; now: number; you: boolean; disabled: boolean; onSignOut(): void }) {
   return (
     <Row
       class="dev"
       title={
         <>
           {d.name}
-          {you && <span class="pill you"> this device</span>}
+          {you && <span class="pst thisdev">this device</span>}
         </>
       }
       desc={deviceLine(d, now)}
-      end={
-        confirming ? (
-          <>
-            <button type="button" class="btn danger" disabled={disabled} onClick={onRevoke}>
-              Revoke
-            </button>
-            <button type="button" class="btn" onClick={onCancel}>
-              Cancel
-            </button>
-          </>
-        ) : (
-          <button type="button" class="btn" disabled={disabled} onClick={onAsk}>
-            {you ? "Sign out" : "Revoke…"}
-          </button>
-        )
-      }
+      end={<ConfirmButton label="Sign out" disabled={disabled} onConfirm={onSignOut} />}
     />
   );
 }

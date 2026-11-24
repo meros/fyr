@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { jobLine, jobProviderOptions, jobShowsModel, modelOptions, PROFILE_SYSTEM_DEFAULT, providerOptions, type SystemAgentsView } from "../src/system-agents.ts";
+import { jobLine, jobProviderOptions, jobShowsModel, jobsSummary, modelOptions, PROFILE_SYSTEM_DEFAULT, providerOptions, type SystemAgentsView } from "../src/system-agents.ts";
 
 const view: SystemAgentsView = {
   default: {},
@@ -66,4 +66,14 @@ test("a thread-defaulting job defaults to each thread's provider and supports ov
     jobs: [],
   };
   assert.deepEqual(modelOptions(agyView, "agy")[0], { value: "", label: "Fast (gemini-4-hydrogen)" });
+});
+
+// V0.settings-ia: the per-job rows are folded; the header says what they are set to, and one that cannot run opens it.
+test("V0.settings-ia: the jobs in one line", () => {
+  const job = (o: object) => ({ id: "x", name: "X", choice: {}, ...o });
+  assert.deepEqual(jobsSummary({ jobs: [job({}), job({}), job({})] }), { text: "3 jobs · all on the default", bad: false });
+  assert.deepEqual(jobsSummary({ jobs: [job({ override: true }), job({})] }), { text: "2 jobs · 1 with its own", bad: false });
+  assert.deepEqual(jobsSummary({ jobs: [job({ override: true }), job({ override: true })] }), { text: "2 jobs · 2 with their own", bad: false });
+  assert.deepEqual(jobsSummary(view), { text: "2 jobs · 1 cannot run", bad: true }, "a job that cannot run is counted: the header says so and the group opens");
+  assert.deepEqual(jobsSummary({ jobs: [job({})] }), { text: "1 job · all on the default", bad: false });
 });

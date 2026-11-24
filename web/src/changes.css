@@ -1,5 +1,8 @@
 /* Phone: one rule set for touch (rows 56 px, every control at least 44 px, inputs 16 px so iOS does not zoom). */
 .set.phone .stn{background:none;border:0;padding:0;gap:0}
+.set.phone .stn-g{gap:6px}
+.set.phone .stn-g+.stn-g{margin-top:16px}
+.set.phone .stn-cap{font-size:12px;padding:0 4px}
 .set.phone .stn-c{background:var(--raised);border:1px solid var(--line);border-radius:10px;gap:0;overflow:hidden}
 .set.phone .stn-i{min-height:56px;padding:8px 12px;border-radius:0;border-bottom:1px solid var(--line)}
 .set.phone .stn-i:last-child{border-bottom:0}
@@ -35,6 +38,20 @@
 .set.phone .sr.stack .sr-e{max-width:none;flex:none}
 .set.phone .sr.stack .sr-e select{width:100%}
 .set.phone .sr.two .sr-e{grid-template-columns:minmax(0,1fr)}
+/* V0.settings-ia: stacked, the row is a column, so warm.css's 200 px basis of the text (a width beside the selects on
+   the desktop) became 200 px of height: a hole between the label and its two selects. */
+.set.phone .sr.stack.two .sr-b{flex:none}
+.set.phone .ssec-t{font-size:16px;line-height:22px}
+.set.phone .ssec-h .sg-fb{min-height:44px;font-size:13px;line-height:18px} /* touch: the fold header is a 44 px target */
+/* V0.settings-ia, phone only (width): a row that ends in several buttons puts them on a line of their own under its text
+   (three 44 px buttons beside it left the text a few characters a line), and while a button asks its question (Act,
+   Cancel) those two take the place of the row's other buttons. The desktop has the width for all of them in the row. */
+.set.phone .sr.sr-acts{flex-wrap:wrap}
+.set.phone .sr.sr-acts>.sr-b{flex:1 1 100%}
+.set.phone .sr.sr-acts>.sr-e{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap}
+.set.phone .sr-e:has(.cfmb)>:not(.cfmb){display:none}
+.set.phone .cfmb{flex-wrap:wrap;justify-content:flex-end}
+.set.phone .sg-how>summary{min-height:44px;line-height:44px} /* touch */
 .set.phone .sr-e{max-width:none}
 .set.phone .fieldrow .inl,.set.phone .keyf{flex-wrap:wrap}
 .set.phone .fieldrow .inl input{flex:1 1 160px}
@@ -127,8 +144,8 @@
 .bdrow .ok,.chdrow .ok,.chdonel{color:var(--calm);font:400 12px/16px var(--ui)}
 .board.phone .bdrow{grid-template-columns:minmax(0,1fr) auto}
 .board.phone .bdrow .bdfrom,.board.phone .bdrow .setd{grid-column:1}
-.rchg{position:relative}
-.rchg .rb{position:absolute;top:-2px;right:2px;min-width:16px;height:16px;border-radius:8px;background:var(--signal-ink);color:var(--bg,#fff);font:600 10px/16px var(--ui);text-align:center;padding:0 4px}
+.rchg,.rgear{position:relative} /* V0.settings-ia: the gear carries the one count as Changes carries its own */
+.rchg .rb,.rgear .rb{position:absolute;top:-2px;right:2px;min-width:16px;height:16px;border-radius:8px;background:var(--signal-ink);color:var(--bg,#fff);font:600 10px/16px var(--ui);text-align:center;padding:0 4px}
 
 /* V0.68: Fyr's own confirmation (confirm-ui.tsx); the phone's sheet is in phone.css. */
 .cfm-scrim{z-index:30}
@@ -161,3 +178,7 @@
 .btn.p.danger,.m-bt.p.danger{background:var(--signal-ink);border-color:var(--signal-ink);color:var(--raised)}
 .btn.p.danger kbd{color:var(--raised)}
 
+/* V0.settings-ia, phone only (width): a host row's grey state chip ("Update held back" on an offline host, "Update
+   needed") is left out: beside it the row's line wrapped to four lines, and the line says the same words. The amber
+   chip of a counted row stays. */
+.set.phone .sr.host .sr-e .pst:not(.needs-login){display:none}

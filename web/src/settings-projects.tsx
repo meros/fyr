@@ -5,12 +5,14 @@ import { Fragment } from "preact";
 import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
 import { ProjectIcon } from "./project-ui.tsx";
-import { Empty, Group, Row, useSet } from "./settings-rows.tsx";
+import { Empty, useSet } from "./settings-rows.tsx";
 import { Grip, MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
-import { NewProjectStep } from "./project-picker.tsx";
 import { archivedProjects, isArchived } from "./archived.ts";
 
 // ---- Projects ----
+
+/** V0.settings-ia: the number at the right of a project's row has its noun ("12 threads"); a bare number said nothing. */
+const threadsWord = (n: number | undefined) => `${n ?? 0} ${n === 1 ? "thread" : "threads"}`;
 
 /** V0.project-archive: the page lists the active projects; the archived ones follow under "Archived projects". */
 function activeProjects(projects: SettingsProps["projects"]) {
@@ -19,20 +21,20 @@ function activeProjects(projects: SettingsProps["projects"]) {
 
 export function projectsPage(p: SettingsProps, ui: PageUi): Omit<PageView, "title"> {
   return {
-    end: <NewProjectButton ui={ui} n={activeProjects(p.projects).length} />,
+    end: <NewProjectButton ui={ui} n={activeProjects(p.projects).length} onNew={() => p.go({ page: "projects", sub: "new" })} />,
     body: <ProjectsPage p={p} ui={ui} />,
   };
 }
 
-function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
+/** V0.settings-ia: New project opens the sub-page projects/new (settings-ui.tsx), as Add provider does. */
+function NewProjectButton({ ui, n, onNew }: { ui: PageUi; n: number; onNew(): void }) {
   const env = useSet();
-  if (ui.adding) return null;
   // The phone reorders in a mode (reorder-ui.tsx says why). The desktop drags the grip, so it has no button.
   if (env.phone && ui.reordering) return <ReorderButton on set={ui.setReordering} />;
   return (
     <>
       {env.phone && n > 1 && !ui.q.trim() && !env.readOnly && <ReorderButton on={false} set={ui.setReordering} />}
-      <button type="button" class={`btn addp${ui.empty ? " p" : ""}`} disabled={env.readOnly} onClick={() => ui.setAdding(true)}>
+      <button type="button" class={`btn addp${ui.empty ? " p" : ""}`} disabled={env.readOnly} data-sub="new" onClick={onNew}>
         New project
       </button>
     </>
@@ -40,7 +42,7 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
 }
 
 function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
-  const { adding, setAdding, q, setQ } = ui;
+  const { q, setQ } = ui;
   const env = useSet();
   const all = activeProjects(p.projects);
   const archived = archivedProjects(p.projects);
@@ -59,23 +61,7 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
   const grips = !env.phone && !q.trim() && ids.length > 1 && !env.readOnly; // while the search has text, reorder is off
   return (
     <>
-      {adding ? (
-        <Group title="New project">
-          <Row col>
-            <NewProjectStep
-              initialName=""
-              initialFolder=""
-              fromThread={false}
-              onCancel={() => setAdding(false)}
-              onCreate={async (name, folder, host) => {
-                const e = await p.projectActions.create(name, folder, host);
-                if (!e) setAdding(false);
-                return e;
-              }}
-            />
-          </Row>
-        </Group>
-      ) : (
+      {
         <section class="sg" aria-label="Projects">
           {all.length >= 9 && !mode && <input class="pq" type="search" placeholder={`Search ${all.length} projects`} aria-label="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
           {ro.err && (
@@ -118,7 +104,7 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
                   <button type="button" data-sub={x.id} class={grips ? "plb" : "pli"} style={grips ? undefined : style} onClick={go}>
                     {body}
                     <span class="plc" title={`${x.threads ?? 0} threads`}>
-                      {x.threads ?? 0}
+                      {threadsWord(x.threads)}
                     </span>
                   </button>
                 );
@@ -137,8 +123,8 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
           )}
           {q.trim() ? <div class="sg-f">{projectSearchLine(list.length, all.length)}</div> : all.length > 1 && <div class="sg-f">This order is used in New thread, the project chips and every list of projects, on all your devices.</div>}
         </section>
-      )}
-      {!adding && !mode && archived.length > 0 && <ArchivedList p={p} list={archived} />}
+      }
+      {!mode && archived.length > 0 && <ArchivedList p={p} list={archived} />}
     </>
   );
 }
@@ -161,7 +147,7 @@ function ArchivedList({ p, list }: { p: SettingsProps; list: SettingsProps["proj
               <span class="ell pls2">{projectSubtitle(x)}</span>
             </span>
             <span class="plc" title={`${x.threads ?? 0} threads`}>
-              {x.threads ?? 0}
+              {threadsWord(x.threads)}
             </span>
           </button>
         ))}

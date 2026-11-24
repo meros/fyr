@@ -60,8 +60,8 @@ export interface HostLink {
 const LINK_WHY: Record<string, string> = {
   timeout: "no answer in time (a firewall or an ACL drops silently)",
   refused: "its peer port refused the connection",
-  "key-mismatch": "another install answered than the one in the roster",
-  "not-a-member": "it does not have this install as a member yet",
+  "key-mismatch": "another host answered than the one that is paired",
+  "not-a-member": "it does not have this host as a member yet",
   removed: "it was removed from the roster",
   "older-version": "it runs an older Fyr: followed one way until it is updated",
   "no-address": "no address for it yet; it may open the link itself",
@@ -147,6 +147,36 @@ export function updateLine(h: Pick<HostInfo, "update">): { text: string; bad: bo
   return { text: bits.join(" · "), bad: !!u.bad || (!!lastBad && u.behind !== 0) };
 }
 
+/** V0.settings-ia: what is wrong with a host's update that the owner can press on, read ONE way by the count, the
+ *  Hosts list's chip, Automation and the host's page. The host's own summary says it when the host sends one (it is
+ *  live, with the state); a host that sends none is read from its settings (the updates view's `bad`). null: nothing. */
+export function updateTrouble(h: Pick<HostInfo, "update"> | undefined, view?: { bad?: { commit: string; why: string } } | null): { chip: "Update held back" | "Update failed"; held?: { commit: string; why: string; at?: string } } | null {
+  const u = h?.update;
+  if (u) {
+    if (u.bad) return { chip: "Update held back", held: u.bad };
+    const lastBad = u.last ? LAST_BAD[u.last.result] : undefined;
+    return lastBad && u.behind !== 0 ? { chip: "Update failed" } : null;
+  }
+  return view?.bad?.commit ? { chip: "Update held back", held: view.bad } : null;
+}
+
+/** V0.settings-ia: the one row of a host's Updates that asks for a press, first in the group: what is wrong or
+ *  waiting, why, and the button's word. null when there is nothing to install, retry or go back to. A host that sends
+ *  no summary cannot say how far behind it is, so the press is offered. `chip` is the amber word of a counted row
+ *  (updateTrouble); the caller shows it and the button only while the host is online. */
+export function updateAction(h: Pick<HostInfo, "update">, view: { bad?: { commit: string; why: string }; paused?: unknown } | null | undefined, now: number): { title: string; desc: string; button: "Try again" | "Update now" | "Back to release"; chip?: string } | null {
+  const u = h.update;
+  const t = updateTrouble(h, view);
+  if (t?.held) {
+    const at = t.held.at ? dayTime(t.held.at, now) : "";
+    return { title: `Release ${short7(t.held.commit)} is held back`, desc: `${t.held.why ? `Reason: ${t.held.why}${at ? ` (${at})` : ""}. ` : ""}Fyr skips it until a newer release; Try again installs it now.`, button: "Try again", chip: t.chip };
+  }
+  if (t) return { title: `The ${LAST_BAD[u!.last!.result]}`, desc: `${u!.last!.reason ? `Reason: ${u!.last!.reason}. ` : ""}This host is still behind the newest release.`, button: "Update now", chip: t.chip };
+  if (u ? u.paused : view?.paused) return { title: "A local build runs", desc: "Auto-update waits until a release contains it, or until you go back to the release.", button: "Back to release" };
+  if (u) return u.behind === 0 ? null : { title: u.behind > 0 ? `${u.behind} commit${u.behind === 1 ? "" : "s"} behind the newest release` : "A newer release may be ready", desc: "Fyr installs it by itself when Auto-update is on; Update now does not wait.", button: "Update now" };
+  return view ? { title: "Install the newest release now", desc: "This host does not say how far behind it is.", button: "Update now" } : null;
+}
+
 const RESULT_WORDS: Record<string, string> = { inProgress: "in progress", installed: "installed", failed: "failed", rolledBack: "rolled back", replaced: "replaced" };
 
 /** V0.host-updates: the rows of a host's Updates group on its page: what runs, the newest release, the last update. */
@@ -166,13 +196,6 @@ export function updateRows(u: HostUpdate, now: number): { title: string; desc: s
     rows.push({ title: "Last update", desc: [`${what} ${RESULT_WORDS[l.result] ?? l.result}`, at, bad ? l.reason : ""].filter(Boolean).join(" · "), bad });
   }
   return rows;
-}
-
-/** V0.host-updates: the line of a release held back: "Release 1a2b3c4 is held back here since 14:02: failed its smoke
- *  test. Fyr skips it until a newer release." */
-export function badLine(b: NonNullable<HostUpdate["bad"]>, now: number): string {
-  const at = b.at ? dayTime(b.at, now) : "";
-  return `Release ${short7(b.commit)} is held back here${at ? ` since ${at}` : ""}${b.why ? `: ${b.why}` : ""}. Fyr skips it until a newer release.`;
 }
 
 /** "host-a offline since 19:40 · read-only", or "" while the thread's host is reachable. */
@@ -213,7 +236,7 @@ export function hostState(h: HostInfo, now: number): string {
   return updating(h) ? `${s} · updating Fyr` : s;
 }
 
-type Route = "this machine" | "tailnet" | "LAN" | "by address" | "";
+type Route = "this machine" | "this host" | "tailnet" | "LAN" | "by address" | "";
 
 function ipv4(host: string): number[] | null {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
@@ -261,29 +284,32 @@ export function shortID(id: string | undefined): string {
  *  that says so, or "". What to do about it is on the host's page. */
 export function idChangedLine(h: HostInfo): string {
   if (!h.idWas || !h.id) return "";
-  return `Another install answers as ${h.name}: id ${shortID(h.id)}, it was ${shortID(h.idWas)}.`;
+  return `Another host answers as ${h.name}: id ${shortID(h.id)}, it was ${shortID(h.idWas)}.`;
 }
 
-/** V0.125: a host row's line in Settings → Hosts: "online since 08:12 · tailnet · id F7QK"; a changed id replaces it. */
-export function hostLine(h: HostInfo, now: number): string {
+/** V0.125: a host row's line in Settings → Hosts: "online since 08:12 · tailnet · id F7QK"; a changed id replaces it.
+ *  `stale`: this device has no connection, so the state is "as last read". */
+export function hostLine(h: HostInfo, now: number, stale = false): string {
   const changed = idChangedLine(h);
   if (changed) return changed;
   const route = hostRoute(h);
   // V0.host-ids: a host with no install id cannot be named by any call until it updates.
-  return [hostState(h, now), updateLine(h).text, route, h.id ? `id ${shortID(h.id)}` : "needs an update"].filter(Boolean).join(" · ");
+  return [stale ? "as last read" : hostState(h, now), updateLine(h).text, route, h.id ? `id ${shortID(h.id)}` : "needs an update"].filter(Boolean).join(" · ");
 }
 
 /** V0.125: the network a host's link runs over. Decision 0031 2.6: the host in the front's own process is the one whose
- *  link is the pipe, a fact about the link; no host is "this install". */
+ *  link is the pipe, a fact about the link; no host is "this install". V0.settings-ia: that host, and one dialled on
+ *  the loopback, is "this host" (the one this device is connected to); "this machine" read as the phone in the hand. */
 export function hostRoute(h: Pick<HostInfo, "url" | "found" | "link">): Route {
-  return h.link?.via === "pipe" ? "this machine" : routeOf(h.url, h.found);
+  const r = h.link?.via === "pipe" ? "this machine" : routeOf(h.url, h.found);
+  return r === "this machine" ? "this host" : r;
 }
 
 /** V0.125: how this browser reaches this Fyr, from the page's host name and the state's user (This device). */
 export function howIn(hostname: string, user: string): string {
   const h = hostname.toLowerCase();
-  if (h.endsWith(".ts.net")) return `Through Tailscale Serve, as ${user || "your login"}. Any browser signed in to your tailnet with that login can open this Fyr.`;
-  if (routeOf(`http://${h.includes(":") && !h.startsWith("[") ? `[${h}]` : h}/`) === "this machine") return "On this machine itself (localhost). A browser on this machine is always allowed.";
+  if (h.endsWith(".ts.net")) return `Through Tailscale Serve, as ${user || "your login"}. Any device signed in to your tailnet with that login can open this Fyr.`;
+  if (routeOf(`http://${h.includes(":") && !h.startsWith("[") ? `[${h}]` : h}/`) === "this machine") return "This device is the host itself (localhost): it is always allowed.";
   return `At ${hostname}${user ? `, as ${user}` : ""}. What stands in front of Fyr there decides who gets in.`;
 }
 

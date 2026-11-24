@@ -1,17 +1,9 @@
 // SPEC 0.5 V0.50: Settings → Providers helpers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createArgs, EMPTY_FORM, effortsFor, importable, keyLine, loginActive, loginButton, loginLine, parseModelIds, startEffort, whereText } from "../src/providers.ts";
+import { createArgs, EMPTY_FORM, effortsFor, importable, loginActive, loginButton, loginLine, parseModelIds, startEffort, whereText } from "../src/providers.ts";
 import type { LoginDTO } from "../src/providers.ts";
 import type { Profile } from "../src/types.ts";
-
-test("a key shows only as set, its source and last 4", () => {
-  assert.equal(keyLine({ kind: "endpoint", keySet: false }), "Key not set");
-  assert.equal(keyLine({ kind: "endpoint", keySet: true, keyLast4: "4f2a" }), "Key set · ••••4f2a");
-  assert.equal(keyLine({ kind: "endpoint", keySet: true, keyLast4: "4f2a", keyFrom: "OPENROUTER_API_KEY" }), "Key from OPENROUTER_API_KEY · ••••4f2a");
-  assert.equal(keyLine({ kind: "claude-account", keySet: false }), "");
-  assert.equal(keyLine({ kind: "claude-account", keySet: true }), "Login token set");
-});
 
 test("model ids from a text field", () => {
   assert.deepEqual(parseModelIds(" a/b \n\n c, a/b ,d"), ["a/b", "c", "d"]);
@@ -214,10 +206,36 @@ test("V0.120 (5): a model in use that is off shows as (off) in its picker, and n
 
 // Found live 16 Nov: a check that only has Fyr's known list says so in the foot (not as an error); a failed check's
 // reason wins; otherwise the group's own sentence.
-import { modelsFoot } from "../src/providers.ts";
+import { STAR_LINE, keySetLine, kindChoiceLabel, modelsFoot, newProviderId } from "../src/providers.ts";
 test("V0.120: the Models foot: a failed check, the known-list note, else what the group does", () => {
   const known = "Claude answered with its short names only (its own list was not ready), so this is Fyr's known list. Refresh in a minute.";
   assert.deepEqual(modelsFoot(dto({ checkNote: known }), T), { text: known, error: false });
   assert.deepEqual(modelsFoot(dto({ checkNote: known, checkError: "claude ended without listing its models" }), T), { text: "Could not list the models: claude ended without listing its models. The list below is the one from today; it still works.", error: true });
-  assert.deepEqual(modelsFoot(dto(), T), { text: "★ is the default for a new thread. Fyr asks the provider for its models when you open this page and once a day.", error: false });
+  assert.deepEqual(modelsFoot(dto(), T), { text: `${STAR_LINE} Fyr asks the provider for its models when you open this page and once a day.`, error: false });
+  // V0.settings-ia: the line used to say "★ is the default for a new thread", which is not what new-thread.ts does.
+  assert.match(STAR_LINE, /when it runs on this provider/);
+  assert.doesNotMatch(STAR_LINE, /default for a new thread/);
+});
+
+test("V0.settings-ia: the key row's line is built once (it showed \"Set · set · ••••4f2a\")", () => {
+  assert.equal(keySetLine({ keySet: true, keyLast4: "4f2a" }), "Set · ••••4f2a");
+  assert.equal(keySetLine({ keySet: true }), "Set");
+  assert.equal(keySetLine({ keySet: true, keyLast4: "4f2a", keyFrom: "OPENROUTER_API_KEY" }), "From OPENROUTER_API_KEY · ••••4f2a");
+  assert.equal(keySetLine({ keySet: false }), "");
+});
+
+test("V0.settings-ia: a provider that needs a login does not say how it logs in", () => {
+  const m = [{ id: "a" }];
+  assert.equal(listLine({ kind: "claude-account", tokenLogin: true, models: m, status: "needs-login" }), "Claude account · 1 model");
+  assert.equal(listLine({ kind: "claude-account", tokenLogin: true, models: m, status: "ready" }), "Claude account · token login · 1 model");
+  assert.equal(listLine({ kind: "claude-account", models: m, status: "needs-login" }), "Claude account · ~/.claude · 1 model", "its folder is not a way to log in");
+});
+
+test("V0.settings-ia: Add provider names an endpoint by what the owner has, and finds the provider it made", () => {
+  assert.equal(kindChoiceLabel("endpoint"), "API endpoint with a key (Anthropic-compatible)");
+  assert.equal(kindChoiceLabel("claude-account"), "Claude account");
+  const after = [{ id: "a", name: "A" }, { id: "b", name: "B" }, { id: "c", name: "B" }];
+  assert.equal(newProviderId(["a", "b"], after, "B"), "c", "the one id that is new");
+  assert.equal(newProviderId(["a"], after, "B "), "b", "two new: the first of that name");
+  assert.equal(newProviderId(["a", "b", "c"], after, "B"), undefined, "none new: the form goes to the list");
 });

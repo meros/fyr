@@ -38,7 +38,7 @@ test("the nav's line and count", () => {
 });
 
 test("the browser way in, as one line", () => {
-  assert.match(modeLine(mode({ mode: "enforce" }), NOW), /Every browser has to be signed in/);
+  assert.match(modeLine(mode({ mode: "enforce" }), NOW), /Every device has to be signed in/); // V0.settings-ia: "device", as the page says
   assert.match(modeLine(mode({ refused: 0 }), NOW), /In 2 days, nothing would have been refused/);
   assert.match(modeLine(mode({ refused: 3, why: "no sign-in seen yet by tailnet" }), NOW), /3 requests without a session would have been refused.*Not yet: no sign-in seen yet by tailnet/);
   assert.match(modeLine(mode({ ready: true }), NOW), /turns itself on at the next check/);

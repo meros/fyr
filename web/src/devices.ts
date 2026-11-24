@@ -1,4 +1,4 @@
-// SPEC V0.157, decision 0030 3.4: Settings → Devices. The signed-in devices of this install, the ones waiting for
+// SPEC V0.157, decision 0030 3.4: Settings → Sign-in. The signed-in devices of this install, the ones waiting for
 // approval, and the mode of the browser way in. Pure: the words and the counts; the page is devices-ui.tsx.
 import { relTime } from "./format.ts";
 
@@ -49,7 +49,7 @@ export interface AuthState {
 }
 
 const HOW: Record<string, string> = {
-  local: "Link from this machine",
+  local: "Link from the host",
   tailnet: "Tailscale",
   link: "One-time link",
   code: "Approval code",
@@ -85,7 +85,7 @@ export function devicesSummary(s: AuthState | null): string {
   return waiting.length ? `${base} · ${waiting.length} waiting` : base;
 }
 
-/** The amber count beside Devices: the devices that wait for the owner. */
+/** The amber count beside Sign-in: the devices that wait for the owner. */
 export function devicesNeed(s: AuthState | null): number {
   return splitDevices(s).waiting.length;
 }
@@ -93,17 +93,17 @@ export function devicesNeed(s: AuthState | null): number {
 /** The browser way in, as one line. */
 export function modeLine(m: ModeRow | undefined, now: number): string {
   if (!m) return "";
-  if (m.mode === "enforce") return "Every browser has to be signed in. Nothing else gets the API.";
+  if (m.mode === "enforce") return "Every device has to be signed in. Nothing else gets the API.";
   const days = Math.max(0, Math.floor((now - Date.parse(m.since)) / 86_400_000));
   const seen = m.refused === 0 ? "nothing would have been refused" : `${m.refused} request${m.refused === 1 ? "" : "s"} without a session would have been refused`;
   const tail = m.hand ? " Set back by hand: it stays until you turn it on." : m.ready ? " It turns itself on at the next check." : m.why ? ` Not yet: ${m.why}.` : "";
-  return `Browsers without a session still get in. In ${days === 1 ? "1 day" : `${days} days`}, ${seen}.${tail}`;
+  return `Devices without a session still get in. In ${days === 1 ? "1 day" : `${days} days`}, ${seen}.${tail}`;
 }
 
 /** The notice for the owner when the install enforced a way in by itself in the last 7 days; null otherwise. */
 export function autoNotice(audit: AuditRow[] | null, now: number): string | null {
   for (const a of [...(audit ?? [])].reverse()) {
-    if (a.event === "mode" && a.by === "auto" && now - Date.parse(a.at) < 7 * 86_400_000) return `Fyr now asks every browser to sign in. ${a.detail?.includes("fyr auth observe") ? "Run fyr auth observe on the machine that runs Fyr to go back." : ""}`.trim();
+    if (a.event === "mode" && a.by === "auto" && now - Date.parse(a.at) < 7 * 86_400_000) return `Fyr now asks every device to sign in. ${a.detail?.includes("fyr auth observe") ? "Run fyr auth observe on the host to go back." : ""}`.trim();
   }
   return null;
 }

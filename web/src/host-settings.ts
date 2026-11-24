@@ -1,5 +1,5 @@
 // SPEC V0.126 (decision 0016): from any front the owner configures every host it follows, with the controls they would
-// have connected to that host directly. Providers (with System agents) and Automation show one group per host, in the
+// have connected to that host directly. Providers (with Fyr's own calls), Automation, Setup and a host's page show one part per host, in the
 // owner's host order (decision 0031 2.6: the same through every front); every read and command of a group names its host, and the front sends it there. An offline host shows
 // what the front last read from it, read-only. One install (or a front with one host) is one part without a heading,
 // as before. Pure.
@@ -41,7 +41,7 @@ export function groupLine(h: SettingsHost, now: number): string {
 /** The note on an offline host's group: what is shown and that nothing changes; "" for a host that is online. readAt:
  *  when the front read what it shows (X-Fyr-Read-At), null when it has nothing. */
 export function readOnlyNote(h: SettingsHost, readAt: string | null, now: number): string {
-  if (h.noId) return `${h.label} runs a Fyr from before install ids, so its settings cannot be read or changed from here. They show once it has updated.`;
+  if (h.noId) return `${h.label} runs a Fyr too old to have an id, so its settings cannot be read or changed from here. Update Fyr on ${h.label} itself (run its install script there again, or update its package); its settings show here once it has.`;
   if (h.online) return "";
   if (!readAt) return `${h.label} is offline, and Fyr has not read its settings yet. They show when it is back.`;
   return `${h.label} is offline. These are its settings as Fyr last read them at ${dayTime(readAt, now)}; nothing here can be changed until it is back.`;
@@ -49,13 +49,14 @@ export function readOnlyNote(h: SettingsHost, readAt: string | null, now: number
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** The Automation page's line over every host: "Deploys on · merges in 2 repos", "Deploys on 1 of 2 hosts · …"; ""
+/** The Automation page's line over every host, in the names its switches have (V0.settings-ia): "Auto-update on ·
+ *  auto-merge in 2 repos", "Auto-update on 1 of 2 hosts · …"; ""
  *  until every host is read. A host to skip (offline, never read) is left out. */
 export function automationSummaryHosts(parts: { deploy: boolean | null; repos: AutoMergeRepo[] | null; skip?: boolean }[]): string {
   const read = parts.filter((p) => !p.skip);
   if (!read.length || read.some((p) => p.deploy === null || p.repos === null)) return "";
   const on = read.filter((p) => p.deploy).length;
-  const deploy = on === read.length ? "Deploys on" : on === 0 ? "Deploys off" : `Deploys on ${on} of ${plural(read.length, "host", "hosts")}`;
+  const deploy = on === read.length ? "Auto-update on" : on === 0 ? "Auto-update off" : `Auto-update on ${on} of ${plural(read.length, "host", "hosts")}`;
   const merges = read.reduce((n, p) => n + p.repos!.filter((r) => r.on).length, 0);
-  return `${deploy} · ${merges ? `merges in ${plural(merges, "repo", "repos")}` : "merges off"}`;
+  return `${deploy} · ${merges ? `auto-merge in ${plural(merges, "repo", "repos")}` : "auto-merge off"}`;
 }

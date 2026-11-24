@@ -95,6 +95,7 @@ function App() {
           store={store}
           profiles={byHost}
           allProjects={fullStore.projects}
+          shownHere={{ hidden: A.deviceHidden, set: A.setHidden }}
           inbox={{ sec, rows, guest, search: { query, setQuery, list: searchList, quietHits }, unlock }}
           now={now}
           commands={cmds}

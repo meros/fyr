@@ -110,7 +110,7 @@ export function hostLeftovers(h: HostLoad): { count: number; text: string; card:
       head: "Still running after their thread",
       summary: `${plural(ls.length)} that threads started and left behind, ${sizeText(mem)} in all.`,
       sections: [{ list: true, rows: [...ls].sort(byMemory).map((l) => ({ label: "", value: l.name, note: [l.procs > 1 ? `${l.procs} processes` : "", l.rss > 0 ? sizeText(l.rss) : ""].filter(Boolean).join(" · ") || undefined })) }],
-      source: "End or keep them in Settings → Automation.",
+      source: `End or keep them in Settings → Hosts${h.host ? ` → ${h.host}` : ""}.`, // V0.settings-ia: on the host's page
     },
   };
 }
@@ -130,9 +130,13 @@ export function leftoverRows(h: HostLoad, lookup: Lookup, now: number): Leftover
   return [...(h.leftovers ?? [])].sort(byMemory).map((l) => {
     const size = l.rss > 0 ? sizeText(l.rss) : "";
     const title = [l.name, l.procs > 1 ? `${l.procs} processes` : "", size].filter(Boolean).join(" · ");
-    const where = l.orphan ? ["in no thread's cgroup"] : [lookup(l.thread).title, lookup(l.thread).project ?? ""];
+    // V0.settings-ia: a thread this device cannot look up (it was deleted, or its host is not shown here) has no
+    // title (the lookup says `gone`; the row showed its raw id). The row says so, and offers no Open that leads nowhere.
+    const t = l.orphan ? null : lookup(l.thread);
+    const gone = !!t?.gone;
+    const where = !t ? ["of no thread"] : gone ? ["of a thread that is gone"] : [t.title, t.project ?? ""];
     const hold = holdText(l, now, true);
-    return { id: l.id, title, desc: [...where, hold].filter(Boolean).join(" · "), thread: l.orphan ? null : l.thread, canKeep: !l.kept };
+    return { id: l.id, title, desc: [...where, hold].filter(Boolean).join(" · "), thread: t && !gone ? l.thread : null, canKeep: !l.kept };
   });
 }
 

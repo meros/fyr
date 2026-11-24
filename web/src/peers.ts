@@ -62,7 +62,7 @@ export function configNote(s: Pick<PeerState, "configChanged"> | null): { title:
   const t = s.configChanged;
   return {
     title: t.charAt(0).toUpperCase() + t.slice(1),
-    how: "Fyr reads its config file at start. On NixOS, systemctl reload fyr restarts fyrd on the new file and the agents keep running.",
+    how: "Fyr reads its config file at start. On NixOS, systemctl reload fyr restarts Fyr on the new file and the agents keep running.",
   };
 }
 
@@ -73,7 +73,7 @@ export function memberLink(m: Pick<MemberRow, "self" | "link">, now: number): st
 
 /** How an install came into the roster, in a few words. */
 export function viaWords(m: Pick<MemberRow, "self" | "via" | "by">): string {
-  if (m.self) return "This install";
+  if (m.self) return "This host";
   return m.via === "vouched" ? `Vouched for by ${m.by ?? "a member"}` : "Paired";
 }
 
@@ -115,7 +115,7 @@ export function candidateWarn(c: Pick<CandidateRow, "spoof" | "dup" | "addrs">):
   const either = "Pair asks for its code either way.";
   if (how === "address") return `This address is ${name}'s (${(id ?? "").slice(0, 4)}). Pair it only if you reinstalled ${name}. ${either}`;
   if (how === "name") return `You already have a host named ${name} with another id (${(id ?? "").slice(0, 4)}). ${either}`;
-  if (c.dup) return `One id at ${c.addrs?.length ?? 2} addresses: one install on two networks, or two machines with one id. ${either}`;
+  if (c.dup) return `One id at ${c.addrs?.length ?? 2} addresses: one host on two networks, or two hosts with one id. ${either}`;
   return "";
 }
 

@@ -41,7 +41,7 @@ func (m *Manager) SystemAgent(job string) (SystemAgent, error) {
 	}
 	c := s.For(job)
 	if c.Profile != "" && m.cfg.ProfileExists != nil && !m.cfg.ProfileExists(c.Profile) {
-		return SystemAgent{}, fmt.Errorf("the system agents' provider %q is not on this host: pick one in Settings → System agents", c.Profile)
+		return SystemAgent{}, fmt.Errorf("the provider %q is not on this host: pick one in Settings → Providers → Fyr's own calls", c.Profile)
 	}
 	p := m.cfg.Profile(c.Profile)
 	if p.Unavailable != "" {
@@ -50,7 +50,7 @@ func (m *Manager) SystemAgent(job string) (SystemAgent, error) {
 	model := c.Model
 	if model == "" {
 		if model = HaikuModel(p); model == "" {
-			return SystemAgent{}, fmt.Errorf("%s has no Haiku model: pick a model in Settings → System agents", name(p))
+			return SystemAgent{}, fmt.Errorf("%s has no Haiku model: pick a model in Settings → Providers → Fyr's own calls", name(p))
 		}
 	}
 	return SystemAgent{Host: m.cfg.HostName, Profile: p, Model: model}, nil

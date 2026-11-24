@@ -13,6 +13,7 @@ import {
   rowUndeclared,
   stripView,
   thresholdRows,
+  thresholdSummary,
   undeclaredRows,
   undeclaredTip,
 } from "../src/undeclared.ts";
@@ -235,4 +236,10 @@ test("service patterns are added and removed", () => {
   assert.equal(mockUndeclaredCommand(h, "host.servicePatterns", { remove: "npm run dev" }).ok, true);
   assert.equal(mockUndeclaredCommand(h, "host.servicePatterns", { remove: "nope" }).ok, false);
   assert.deepEqual(h.servicePatterns, [{ pattern: "rails\\s+server" }]);
+});
+
+// V0.settings-ia: the thresholds were the only folded group whose header said nothing.
+test("V0.settings-ia: the folded thresholds say their values in one line", () => {
+  const h = host([map], { heavyAdded: [], undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 } });
+  assert.equal(thresholdSummary(thresholdRows(h)!), "CPU 25 % · memory 8 % · 45 s");
 });

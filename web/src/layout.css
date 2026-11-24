@@ -80,7 +80,7 @@
 .tund{color:var(--beam-ink);font-weight:500}
 .tund .und-ic{vertical-align:-2px;margin-right:3px}
 
-/* Decision 0032: the memory guard's chart (Settings → Automation). Short memory is a wash, a freeze is hatched in the beam
+/* Decision 0032: the memory guard's chart (Settings → Hosts → a host). Short memory is a wash, a freeze is hatched in the beam
    colour, the lane's line is the work running. Tokens only, so it follows the theme. */
 .gwrap{padding:4px 14px 10px}
 .gchart{margin:0;min-width:0}
@@ -141,12 +141,11 @@
 
 /* the rail's host: the meter and the button under it are one block; the button is outside the ring's role=img */
 .rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
-/* V0.157: Settings → Devices (decision 0030 3.4), desktop and phone from the same rows. */
+/* V0.157: Settings → Sign-in (decision 0030 3.4), desktop and phone from the same rows. */
 .set .qrimg { display: block; margin: 8px auto; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
 .set .linkout { width: 100%; box-sizing: border-box; }
 .set .codein { display: inline-flex; gap: 8px; align-items: center; }
 .set .codein input { width: 9.5em; letter-spacing: .08em; }
-.set .pill.you { margin-left: .4em; opacity: .7; font-size: .85em; }
 .set .addout { align-items: center; }
 
 /* SPEC V0.167 (amends V0.99, V0.141, V0.152, V0.166): each host's load and heavy jobs are two labelled meters

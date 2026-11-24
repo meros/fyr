@@ -110,7 +110,7 @@ export function stripView(h: HostLoad, u: UndeclaredUse): StripView | null {
   };
 }
 
-// ---- Settings → Automation → Heavy jobs ----
+// ---- Settings → Hosts → a host → Heavy jobs ----
 
 interface UndeclaredRow {
   thread: string;
@@ -169,6 +169,12 @@ export function thresholdRows(h: HostLoad): ThresholdRow[] | null {
     { key: "memory", title: "Memory above its idle level", now: c ? `Now ${((s.memory * c.memory) / 1e9).toFixed(1)} GB of ${h.host}'s ${cap(c.memory / 1e9)} GB` : "A share of what this host gives its agents", value: String(Math.round(s.memory * 100)), unit: "% of this host" },
     { key: "after", title: "For at least", now: "Shorter bursts (a typecheck, one test file) never count", value: String(Math.round(s.after)), unit: "seconds" },
   ];
+}
+
+/** V0.settings-ia: the thresholds in one line, for the folded group's header: "CPU 25 % · memory 8 % · 45 s". */
+export function thresholdSummary(rows: ThresholdRow[]): string {
+  const v = (k: ThresholdKey) => rows.find((r) => r.key === k)?.value ?? "";
+  return `CPU ${v("cpu")} % · memory ${v("memory")} % · ${v("after")} s`;
 }
 
 /** A threshold field's text as the setting host.undeclaredSettings takes it: whole percent to a share, seconds 30 to 120. */

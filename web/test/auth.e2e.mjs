@@ -225,22 +225,27 @@ try {
     if (!tabletIn) failures.push(`timed out waiting for ${size.name}: the tablet to go in once Allow was pressed`), console.log(`FAIL timed out waiting for ${size.name}: the tablet to go in once Allow was pressed`);
     else console.log(`ok   ${size.name}: the tablet went in once Allow was pressed`);
 
-    // Add a device on a signed-in device: a link and a QR image show.
-    const addBtn = `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Add a device' && !b.disabled)`;
-    await s2.waitFor(addBtn, `${size.name}: Add a device to be enabled`);
+    // Add a device on a signed-in device: Create link (V0.settings-ia: the button names what the press makes; "Add a
+    // device" is the group), and a link and a QR image show.
+    const addBtn = `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Create link' && !b.disabled)`;
+    await s2.waitFor(addBtn, `${size.name}: Create link (Add a device) to be enabled`);
     await s2.evaluate(`${addBtn}.click()`);
     await s2.waitFor(`document.querySelector('.qrimg') && document.querySelector('input[aria-label="Sign-in link"]').value.includes('/auth/once#')`, `${size.name}: Add a device to show a link and a QR code`);
 
-    // Settings → Hosts: the installs panel. Tailnet nodes that are not paired show with why; Pair opens an invite.
+    // Settings → Hosts: the pairing panel. V0.settings-ia: Add a host first, then Found, not paired and Pairing, both
+    // folded with their count: the test opens them. Tailnet nodes that are not paired show with why; Create invite
+    // (was Pair) opens an invite.
     const hostsUrl = (base) => (size.mobile ? `${base}/?settings=hosts` : `${base}/?dialog=settings&page=hosts`);
     await s2.navigate(hostsUrl(stackInfo.loopback));
-    await s2.waitFor(`document.querySelectorAll('.peers .peerrow').length >= 1`, `${size.name}: Hosts to list the installs`);
+    await s2.waitFor(`!!document.querySelector('.peers section[aria-label="Pairing"] .sg-fb') && !!document.querySelector('.peers section[aria-label="Found, not paired"] .sg-fb')`, `${size.name}: Hosts to show its pairing groups`);
+    await s2.evaluate(`(() => { for (const b of document.querySelectorAll('.peers .sg-fb[aria-expanded="false"]')) b.click(); return true; })()`);
+    await s2.waitFor(`document.querySelectorAll('.peers .peerrow').length >= 1`, `${size.name}: Hosts to list the paired hosts`);
     await s2.waitFor(`document.querySelectorAll('.peers .peercand').length >= 2`, `${size.name}: Hosts to list the nodes that are not paired`);
     check(/tagged node: pair it with an invite/.test(await s2.evaluate(`document.querySelector('.peers').innerText`)), `${size.name}: a tagged node says it needs an invite`);
-    const pairBtn = `[...document.querySelectorAll('.peers button')].find((b) => b.textContent.trim() === 'Pair' && !b.disabled)`;
-    await s2.waitFor(pairBtn, `${size.name}: Pair to be enabled`);
+    const pairBtn = `[...document.querySelectorAll('.peers button')].find((b) => b.textContent.trim() === 'Create invite' && !b.disabled)`;
+    await s2.waitFor(pairBtn, `${size.name}: Create invite to be enabled`);
     await s2.evaluate(`${pairBtn}.click()`);
-    await s2.waitFor(`document.querySelector('.peers .qrimg') && /^fyr1-/.test(document.querySelector('.peers input[aria-label="Invite"]').value)`, `${size.name}: Pair to show an invite and its QR code`);
+    await s2.waitFor(`document.querySelector('.peers .qrimg') && /^fyr1-/.test(document.querySelector('.peers input[aria-label="Invite"]').value)`, `${size.name}: Create invite to show an invite and its QR code`);
     check((await s2.evaluate(`document.documentElement.scrollWidth <= innerWidth`)) === true, `${size.name}: Hosts does not scroll sideways`);
 
     // Revoke: the device lands on the signed-out page, its stream closes, and its cookie is dead.

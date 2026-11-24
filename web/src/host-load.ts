@@ -172,7 +172,7 @@ export interface Slots {
 // ---- V0.164: undeclared heavy work, the words the rail's tooltip and undeclared.ts share ----
 
 /** The title and project of a thread, by id; "" project when it has none. */
-export type Lookup = (id: string) => { title: string; project?: string };
+export type Lookup = (id: string) => { title: string; project?: string; /** V0.settings-ia: this device knows no such thread (deleted, or on a host it does not show): the title is then its id */ gone?: boolean };
 
 /** "2.8 GB": bytes with one decimal, GB = 1e9. */
 export const gbText = (b: number) => `${(b / 1e9).toFixed(1)} GB`;
@@ -423,7 +423,7 @@ const duration = (sec: number) => {
   return m ? `${m} min ${r} s` : `${r} s`;
 };
 
-/** Decision 0029 S1: Settings → Automation's line per measured job class: its runs, the cores its newest run used
+/** Decision 0029 S1: Settings → Hosts → a host's line per measured job class: its runs, the cores its newest run used
  *  (and would have used when starved), its memory peak, and its typical wall time. */
 export function jobLines(h: HostLoad): { class: string; text: string; cost: string; learned: boolean }[] {
   return (h.jobs ?? []).map((j) => {

@@ -5,6 +5,7 @@
 import { useEffect, useRef } from "preact/hooks";
 import { HostMark } from "./host-mark-ui.tsx";
 import { stepTabIndex, type HostTabItem } from "./host-tabs.ts";
+import { needWords } from "./settings-nav.ts";
 import { SlideMark } from "./motion-ui.tsx";
 
 interface HostTabsProps {
@@ -61,7 +62,7 @@ export function HostTabs({ items, active, onPick, label = "Hosts", compact, clas
             <span class="htab-n mono">{it.label}</span>
             {it.meta && <span class={`htab-m mono${it.metaLevel && it.metaLevel !== "calm" ? ` ${it.metaLevel}` : ""}`}>{it.meta}</span>}
             {(it.badge ?? 0) > 0 && (
-              <span class="htab-b" aria-label={`${it.badge} need attention`}>
+              <span class="htab-b" aria-label={needWords(it.badge ?? 0)}>
                 {it.badge}
               </span>
             )}

@@ -1883,12 +1883,18 @@ export function mockHosts(now: number, labTrusted = mockLabTrusted) {
   const rank = (n: string) => (o.includes(n) ? o.indexOf(n) : o.length);
   return [...hs].sort((a, b) => rank(a.name) - rank(b.name));
 }
+/** V0.settings-ia: ?held=1: desk tried a newer release, rolled it back and holds it back (its row and its updates view agree). */
+export const MOCK_HELD = mockParam("held") === "1";
+export const HELD_COMMIT = "d41c9a7e2b3f6a5d4c3b2a1f0e9d8c7b6a5f4e3d";
 function mockHostsRaw(now: number, labTrusted: boolean) {
   const iso = (ms: number) => new Date(ms).toISOString();
   return [
     { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777", machine: "laptop", os: "linux", link: { state: "up", via: "pipe" },
-      // V0.host-updates: runs the newest release
-      update: { running: "c705ef5365660a8f", build: "c705ef5", version: "v1.0.0", channel: "stable", wanted: "c705ef5365660a8f", behind: 0, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "installed", startedAt: iso(now - 3 * 3600_000 - 120_000), endedAt: iso(now - 3 * 3600_000) } } },
+      // V0.host-updates: runs the newest release. V0.settings-ia: with ?held=1 a newer release was tried, rolled back
+      // and is held back; the row here and the updates view (mock-api.ts) say the same, as a real host's two do.
+      update: MOCK_HELD
+        ? { running: "c705ef5365660a8f", build: "c705ef5", version: "v1.0.0", channel: "stable", wanted: HELD_COMMIT, behind: 2, last: { build: HELD_COMMIT.slice(0, 7), commit: HELD_COMMIT, result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: iso(now - 12 * 60_000), endedAt: iso(now - 10 * 60_000) }, bad: { commit: HELD_COMMIT, why: "was not healthy", at: iso(now - 10 * 60_000) } }
+        : { running: "c705ef5365660a8f", build: "c705ef5", version: "v1.0.0", channel: "stable", wanted: "c705ef5365660a8f", behind: 0, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "installed", startedAt: iso(now - 3 * 3600_000 - 120_000), endedAt: iso(now - 3 * 3600_000) } } },
     { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778", machine: "server", os: "linux",
       // V0.host-updates: three commits behind; its last update rolled back and the release is held back
       update: { running: "9b1e04a77d2c", build: "9b1e04a", channel: "main", wanted: "c705ef5365660a8f", behind: 3, last: { build: "c705ef5", commit: "c705ef5365660a8f", result: "rolledBack", reason: "exited with code 1 after 2s", startedAt: iso(now - 50 * 60_000), endedAt: iso(now - 48 * 60_000) }, bad: { commit: "c705ef5365660a8f", why: "exited with code 1 after 2s", at: iso(now - 48 * 60_000) } } },

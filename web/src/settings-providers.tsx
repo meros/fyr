@@ -13,7 +13,7 @@ import { CARD_WORD, cardState } from "./quota.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { removeProviderAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
-import { jobLine, jobProviderOptions, jobShowsModel, modelOptions, providerOptions, type Option, type SystemAgentChoice } from "./system-agents.ts";
+import { jobLine, jobProviderOptions, jobShowsModel, jobsSummary, modelOptions, providerOptions, type Option, type SystemAgentChoice } from "./system-agents.ts";
 import { type PageRef } from "./settings-nav.ts";
 import { Empty, Group, LoadError, Row, SaveField, SetContext, Skeleton, Switch, useSet } from "./settings-rows.tsx";
 import { Grip, MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
@@ -21,7 +21,8 @@ import {
   createArgs,
   EMPTY_FORM,
   importable,
-  keyLine,
+  keySetLine,
+  kindChoiceLabel,
   kindLabel,
   listLine,
   loginActive,
@@ -69,6 +70,7 @@ export function HostParts({
   onlineOnly?: boolean;
   part(d: Data): ComponentChildren;
 }) {
+  const env = useSet();
   if (!s.grouped) return <>{part(s.all[0])}</>;
   const items: HostTabItem[] = s.all.map((d) => ({
     id: d.host.name,
@@ -87,7 +89,8 @@ export function HostParts({
       <HostTabs items={items} active={d.host.name} onPick={onPick} label="Hosts" />
       <section key={d.host.name} class={`hpart${d.host.online && !d.host.noId ? "" : " off"}`} role="tabpanel" data-host={d.host.name} aria-label={`Settings on ${d.host.label}`}>
         <div class="hpart-h">
-          <span class="hpart-s">{groupLine(d.host, now)}</span>
+          {/* V0.settings-ia: with no connection to Fyr the line cannot say "Online since": it is what was last read */}
+          <span class="hpart-s">{env.readOnly ? "As last read" : groupLine(d.host, now)}</span>
         </div>
         {note && <div class="note hnote">{note}</div>}
         {!nothing && <HostEnv d={d}>{part(d)}</HostEnv>}
@@ -104,12 +107,12 @@ export function HostEnv({ d, children }: { d: Data; children: ComponentChildren 
 
 /** The status badge: today's words; V0.77 (1), #65: it tells the truth about the account, so Ready never sits beside
  *  its own error. V0.127: the quota is its host's. */
-export function ProviderBadge({ p, host }: { p: ProviderDTO; host: string }) {
+export function ProviderBadge({ p, host, online }: { p: ProviderDTO; host: string; /** its host can be reached: only then is a provider that needs a login or a key counted, and only a counted one is amber (settings-nav.ts settingsCounts); an offline host's shows the same words in grey */ online: boolean }) {
   const quota = quotaFor(useQuotas(), p.id, host || undefined);
-  return <span class={`pst ${p.status}`}>{quota && p.status === "ready" ? CARD_WORD[cardState(quota)] : STATUS_TEXT[p.status]}</span>;
+  return <span class={`pst${online ? ` ${p.status}` : ""}`}>{quota && p.status === "ready" ? CARD_WORD[cardState(quota)] : STATUS_TEXT[p.status]}</span>;
 }
 
-export function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): void; grouped: boolean }) {
+export function ProvidersPage({ d, go }: { d: Data; go(r: PageRef): void }) {
   const quotas = useQuotas();
   const [more, setMore] = useState(false);
   const env = useSet();
@@ -123,11 +126,16 @@ export function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): voi
       ) : d.providers === null ? (
         <Skeleton rows={3} label="Loading the providers" />
       ) : none ? (
-        <Group>
-          <Empty title="No providers yet" text="A provider is a Claude or Antigravity login, or an API endpoint that threads run on." />
+        <Group label="Providers">
+          <Empty title="No providers yet" text="A provider is a Claude or Antigravity login, or an API endpoint that threads run on. Add provider makes one." />
         </Group>
       ) : (
-        <Group label="Providers">
+        // No title: the page's title says it. The foot says where the model of a new thread comes from, which three
+        // places decide (V0.settings-ia: the rule was told only under one provider's models).
+        <Group
+          label="Providers"
+          foot="A new thread starts on the provider and model of its project's defaults (Projects, a project, New threads), else on what you picked last on this device, else on the first provider here that is ready and its ★ model."
+        >
           {d.providers.map((x) => {
             const q = quotaFor(quotas, x.id, d.host.name || undefined);
             return (
@@ -146,7 +154,7 @@ export function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): voi
                 }
                 end={
                   <>
-                    <ProviderBadge p={x} host={d.host.name} />
+                    <ProviderBadge p={x} host={d.host.name} online={d.host.online} />
                     <span class="chev">›</span>
                   </>
                 }
@@ -156,7 +164,9 @@ export function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): voi
         </Group>
       )}
       {finds.length > 0 && (
-        <Group title="Found on this host" label="Found on this host" foot="Logins and keys Fyr found here. Import makes one a provider; nothing is copied off this host.">
+        // Open while there is no provider yet (importing one is then the first step); once there is one it is an offer
+        // on the side, folded with its count.
+        <Group title="Found on this host" label="Found on this host" fold={{ id: `${d.host.name}:found`, open: none, summary: `${finds.length} ${finds.length === 1 ? "login or key" : "logins and keys"} to import` }} foot="Logins and keys Fyr found here. Import makes one a provider; nothing is copied off this host.">
           {(more ? finds : finds.slice(0, 3)).map((f) => (
             <Row
               class="found"
@@ -190,15 +200,11 @@ export function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): voi
           )}
         </Group>
       )}
-      <div class="sbar">
-        <button type="button" class={`btn addp${none ? " p" : ""}`} disabled={env.readOnly} data-sub={subKey(d.ref("new"))} onClick={() => go(d.ref("new"))}>
-          Add provider
-        </button>
-      </div>
-      {grouped ? <h4 class="stp-sub">System agents</h4> : <h3 class="stp-sub">System agents</h3>}
+      {/* Add provider is in the page's title line (settings-ui.tsx), as Add a host and New project are.
+          V0.settings-ia: "Fyr's own calls" (the name Usage has for them), an ordinary group. */}
       {none ? (
-        <Group label="System agents">
-          <Empty text="Add a provider first. System agents run on one of them." />
+        <Group class="sacalls" title="Fyr's own calls" label="Fyr's own calls">
+          <Empty text="Add a provider first. Fyr's own calls run on one of them." />
         </Group>
       ) : (
         <SystemAgents d={d} />
@@ -232,13 +238,15 @@ function SystemAgents({ d }: { d: Data }) {
   };
   const rowErr = (row: string) => (err?.row === row ? err.text : null);
   if (!v && d.saErr) return <LoadError text={d.saErr} onRetry={() => void d.loadSa()} />;
-  if (!v) return <Skeleton rows={2} label="Loading the system agents" />;
+  if (!v) return <Skeleton rows={2} label="Loading Fyr's own calls" />;
   const def = v.default ?? {};
+  const sum = jobsSummary(v);
   return (
-    <Group label="System agents" foot="The model calls Fyr makes itself. A job that cannot run fails and says why; it never moves to a bigger model.">
+    <>
+    <Group class="sacalls" title="Fyr's own calls" label="Fyr's own calls" foot="The model calls Fyr makes itself: thread titles, project setup and the like. A job that cannot run fails and says why; it never moves to a bigger model.">
       <Row
-        title="Default"
-        desc="For every job that has no choice of its own."
+        title="Every job"
+        desc="Unless a job under Per job has its own."
         error={rowErr("")}
         stack
         class="two"
@@ -249,6 +257,10 @@ function SystemAgents({ d }: { d: Data }) {
           </>
         }
       />
+    </Group>
+    {/* The jobs follow the default unless one is given its own, so they are folded with that in the header; a job
+        with its own, and one that cannot run (it is counted, and fixed on its row), open the group. */}
+    <Group class="sajobs" title="Per job" label="Per job" fold={{ id: `${d.host.name}:sajobs`, open: v.jobs.some((j) => j.override), force: sum.bad, bad: sum.bad, summary: sum.text }}>
       {v.jobs.map((j) => {
         const line = jobLine(v, j);
         const own = j.choice.profile ?? def.profile ?? "";
@@ -256,7 +268,13 @@ function SystemAgents({ d }: { d: Data }) {
         return (
           <Row
             key={j.id}
-            title={j.name}
+            title={
+              <>
+                {j.name}
+                {/* the amber chip of a counted row (settings-nav.ts settingsCounts); an offline host's is not counted */}
+                {line.error && d.host.online && <span class="pst needs-login inl-p">Cannot run</span>}
+              </>
+            }
             desc={line.error ? undefined : line.text}
             error={rowErr(j.id) ?? (line.error ? line.text : null)}
             stack
@@ -271,6 +289,7 @@ function SystemAgents({ d }: { d: Data }) {
         );
       })}
     </Group>
+    </>
   );
 }
 
@@ -290,10 +309,10 @@ export function ProviderPage({ p, host, run, refresh, now, clockKnown, onRemoved
         <LoginGroup p={p} run={run} />
       )}
       <ModelsGroup p={p} run={run} refresh={refresh} now={now} clockKnown={clockKnown} />
-      <Group title="Usage" class="usage">
+      <Group title="Quota" class="usage">
         <Row title={quota ? <QuotaLine q={quota} name={p.name} bare /> : "No reading yet"} desc={usageLine(p)} />
       </Group>
-      <Group danger>
+      <Group danger title="Remove">
         <Row
           title="Remove provider"
           desc={removeLine(p.threads)}
@@ -329,9 +348,14 @@ function LoginGroup({ p, run }: { p: ProviderDTO; run: Run }) {
   return (
     <Group title="Login">
       {panel ? (
-        <Row col>
-          <LoginPanel p={p} l={p.login!} run={run} />
-        </Row>
+        <>
+          {/* V0.settings-ia: the state shows while the login panel is open too. Not the host's sentence: that one says
+              "Press Log in", and here the login is already open and there is no such button. */}
+          {p.status === "needs-login" && <Row class="need" title="Not logged in" desc="Sign in below: open the sign-in page and paste the code it shows." />}
+          <Row col>
+            <LoginPanel p={p} l={p.login!} run={run} />
+          </Row>
+        </>
       ) : p.status === "needs-login" ? (
         <Row title="Not logged in" desc={p.need} error={err} end={lb && <button type="button" class="btn p" disabled={env.readOnly} onClick={() => void start()}>{lb}</button>} />
       ) : (
@@ -396,11 +420,10 @@ function KeyRow({ p, run }: { p: ProviderDTO; run: Run }) {
         <span class="sr-d">Kept in a private file on this host. It is never shown again.</span>
       </Row>
     );
-  const kl = keyLine(p);
   return (
     <Row
       title={what}
-      desc={p.keySet ? `Set · ${kl.replace(/^(Key|Login token) /, "")}` : "Not set. Optional: a token is used instead of the browser sign-in."}
+      desc={p.keySet ? keySetLine(p) : p.kind === "endpoint" ? "Not set." : "Not set. Optional: with a token this account needs no browser sign-in."}
       end={
         <button type="button" class="btn" disabled={env.readOnly} onClick={() => setOpen(true)}>
           {p.keySet ? "Replace…" : "Set…"}
@@ -484,7 +507,7 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
           </span>
           {!reo && p.status === "ready" && (
             <button type="button" class="lnk" disabled={checking || p.checking || env.readOnly} onClick={() => void doRefresh()}>
-              Refresh
+              Check now
             </button>
           )}
           {
@@ -653,8 +676,12 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
 }
 
 /** Add provider (A5): today's fields and validation, as a page. */
-export function AddProvider(p: { /** slice 2b: the host the provider is added on, whose folders the picker reads */ host?: HostId; onCancel(): void; onCreate(args: Record<string, unknown>): Promise<string | null> }) {
-  const [f, setF] = useState<ProviderForm>(EMPTY_FORM);
+export function AddProvider(p: { /** slice 2b: the host the provider is added on, whose folders the picker reads */ host?: HostId; /** V0.settings-ia: what the form starts with, and each change of it: Settings keeps a form that was left by Esc or Back (in memory, while it is open), so the text is there on coming back */ draft?: ProviderForm; onDraft?(f: ProviderForm): void; onCancel(): void; onCreate(args: Record<string, unknown>): Promise<string | null> }) {
+  const [f, setForm] = useState<ProviderForm>(p.draft ?? EMPTY_FORM);
+  const setF = (next: ProviderForm) => {
+    setForm(next);
+    p.onDraft?.(next);
+  };
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const env = useSet();
@@ -676,16 +703,16 @@ export function AddProvider(p: { /** slice 2b: the host the provider is added on
   };
   return (
     <>
-      <Group>
+      <Group title="The provider">
         <Row
           title="Kind"
           stack
           end={
             <select aria-label="Kind" value={kindKey} disabled={env.readOnly} onChange={(e) => setKindKey((e.target as HTMLSelectElement).value)}>
-              <option value="claude-account">{kindLabel("claude-account")}</option>
-              <option value="agy-account">{kindLabel("agy-account")}</option>
-              <option value="agy-endpoint">{kindLabel("endpoint", "agy")}</option>
-              <option value="endpoint">{kindLabel("endpoint")}</option>
+              <option value="claude-account">{kindChoiceLabel("claude-account")}</option>
+              <option value="agy-account">{kindChoiceLabel("agy-account")}</option>
+              <option value="agy-endpoint">{kindChoiceLabel("endpoint", "agy")}</option>
+              <option value="endpoint">{kindChoiceLabel("endpoint")}</option>
             </select>
           }
         />
@@ -706,7 +733,7 @@ export function AddProvider(p: { /** slice 2b: the host the provider is added on
                 </button>
               </div>
             </label>
-            <span class="sr-d">After adding it, press Log in on its page: Fyr runs {f.kind === "agy-account" ? "agy" : "claude"}'s login in this folder and shows the sign-in link there.</span>
+            <span class="sr-d">Adding it opens its page; press Log in there: Fyr runs {f.kind === "agy-account" ? "agy" : "claude"}'s login in this folder and shows the sign-in link there.</span>
           </Row>
         ) : (
           <>

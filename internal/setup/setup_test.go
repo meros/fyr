@@ -52,6 +52,10 @@ func TestCheckAllReadyMac(t *testing.T) {
 	if !strings.Contains(r.Steps[2].Reason, "alice") {
 		t.Fatalf("github reason = %q", r.Steps[2].Reason)
 	}
+	// One word for the thing Settings calls a host: no step says "install" or "machine" for it.
+	if p := r.Steps[5]; p.Title != "Other hosts" || p.Reason != "Paired with 1 other host" {
+		t.Fatalf("peers step = %q %q", p.Title, p.Reason)
+	}
 }
 
 func TestCheckFreshMacReportsFixablesAndDiscoversRepos(t *testing.T) {

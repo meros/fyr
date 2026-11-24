@@ -192,7 +192,8 @@ export function QuietGroup({ value, onChange, note }: { value: QuietHours[]; onC
           </button>
           {presets.map((p) => (
             <button type="button" class="btn qpre" disabled={env.readOnly} onClick={() => onChange([...value, { ...p.window, days: p.window.days && [...p.window.days] }])}>
-              {p.label} <span>{p.hint}</span>
+              {/* "+": a preset is a window to add; as a bare chip it read as one already set */}
+              + {p.label} <span>{p.hint}</span>
             </button>
           ))}
         </div>
