@@ -18,7 +18,7 @@
 .chip span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .chip.st{flex:none;background:transparent;border:1px solid var(--line-strong);color:var(--ink);--knock:var(--raised)}
 .chip.st .icw,.chip.st .spin{display:inline-flex;flex:none;overflow:visible}
-.chip.m{font-family:var(--mono);font-weight:400}
+.chip.m{font-family:var(--ui);font-weight:400;font-variant-numeric:tabular-nums}
 .chip.pj{max-width:36%}
 .chip.fldc{flex:1 1 0;max-width:max-content;border:0;cursor:pointer} /* V0.folder-chip: shrinks first, as the branch chip it replaced, so the row stays one line */
 .chip.fldc:hover,.chip.fldc[aria-expanded="true"]{background:var(--select)}
@@ -43,7 +43,7 @@
 .tabs{position:relative;display:flex;gap:4px;margin-top:12px} /* #64: the header's blocks sit 12 px apart: title, chips, tabs (V0.header-one-block: nothing else) */
 .tabs button{padding:6px 10px 8px;font:500 13px/18px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
 .tabs button.on{color:var(--ink)}
-.tabs em{font:400 11px/16px var(--mono);font-style:normal;margin-left:6px}
+.tabs em{font:400 11px/16px var(--ui);font-style:normal;margin-left:6px;font-variant-numeric:tabular-nums}
 .pane-note{flex:1;min-height:0;overflow:auto;padding:16px 24px;font:400 14px/21px var(--ui);color:var(--ink-muted)}
 .pane-note p{margin:0 0 8px}
 .pane-note a{color:var(--harbour)}
@@ -276,7 +276,7 @@
 }
 .act{max-width:680px;border:1px solid var(--line);border-radius:12px;background:var(--raised);padding:4px 0;min-width:0;--knock:var(--raised);flex:none}
 .act.nested{margin:2px 12px 4px 38px;max-width:none}
-.al{display:grid;grid-template-columns:16px var(--nmw,44px) minmax(0,1fr) 60px;column-gap:10px;align-items:center;height:26px;padding:0 12px;font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.al{display:grid;grid-template-columns:16px var(--nmw,44px) minmax(0,1fr) 60px;column-gap:10px;align-items:center;height:26px;padding:0 12px;font:400 12px/16px var(--ui);color:var(--ink-muted);font-variant-numeric:tabular-nums}
 .al.click{cursor:pointer}
 .al.click:hover{background:var(--surface)}
 .al .nm{color:var(--ink);font-weight:500;font-family:var(--ui)}

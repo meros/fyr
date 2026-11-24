@@ -1,0 +1,109 @@
+/* V0.warm-polish: the calm, warm finish over every component, on the desktop and the phone. Last in app.css, so it
+   reads as one layer: softer shapes, shadows rather than hard lines, no coloured side stripes (the state is in the
+   words), the agent's replies in bubbles. The colours themselves are the tokens in base.css. */
+
+/* Shadows in the dark: the warm light-theme lifts would vanish, so they are plain and deeper. */
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--lift-1:0 1px 2px rgba(0,0,0,.3);--lift-2:0 4px 16px rgba(0,0,0,.35);--lift-3:0 24px 64px rgba(0,0,0,.5)}}
+:root[data-theme="dark"]{--lift-1:0 1px 2px rgba(0,0,0,.3);--lift-2:0 4px 16px rgba(0,0,0,.35);--lift-3:0 24px 64px rgba(0,0,0,.5)}
+
+/* Rail and list */
+.ri{border-radius:var(--r-m)}
+.ri.on{box-shadow:var(--lift-1)}
+.ri .n{font-weight:600}
+.search{border-radius:10px}
+.rw{border-radius:var(--r-m);padding:9px 10px}
+.tile{border-radius:10px;background:color-mix(in srgb,var(--ink) 6%,var(--raised))} /* a soft wash: --sunken is a black hole in the dark */
+.rw.sel .tile{background:color-mix(in srgb,var(--ink) 6%,var(--select))}
+.pr{border-radius:999px}
+/* Section heads (V0.section-bands): the band is gone on both fronts; the title and its count carry the section */
+.sec{background:transparent;padding:0 10px}
+.sec:has(>.sti.none){background:transparent}
+.sec.tog:hover{background:var(--sunken)}
+.m-sec::before,.m-sec:has(>.sti.none)::before{background:transparent}
+:is(.sec,.m-sec) .sti:not(.att):not(.none) .n{background:var(--sunken)}
+
+/* Buttons and fields */
+.btn{border-radius:10px;border-color:var(--line);box-shadow:var(--lift-1)}
+.btn.p kbd{border-color:color-mix(in srgb,var(--on-night) 25%,transparent)}
+/* one disabled look: waiting, not a grey slab */
+.btn[disabled]{color:var(--ink-faint);box-shadow:none;background:transparent}
+.btn[disabled] kbd{opacity:.7}
+.m-bt.p:disabled,.btn.p[disabled],.m-send:disabled{opacity:1;background:color-mix(in srgb,var(--ink) 6%,var(--raised));border-color:var(--line);color:var(--ink-faint);box-shadow:none}
+.btn.p[disabled] kbd{color:var(--ink-faint);border-color:var(--line)}
+.fld input,.fld select,.fld textarea{border-color:var(--line);border-radius:10px}
+.fld :is(input,select,textarea):focus{outline:0;border-color:var(--harbour);box-shadow:0 0 0 4px color-mix(in srgb,var(--harbour) 14%,transparent)}
+.agp.field{border-radius:10px;border-color:var(--line);height:36px}
+.agp.field .ags.agm{font-size:14px}
+.ags .agmn{font-family:var(--ui);font-weight:500;font-size:inherit}
+.sr select{border-color:var(--line);border-radius:10px;height:34px}
+
+/* Dialogs */
+.dlg{border-color:var(--line);border-radius:18px}
+.dh{height:52px;padding:0 10px 0 20px;font-size:15px}
+.dh .x{border-radius:8px}
+.dh .x:focus-visible{outline:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--harbour) 22%,transparent)}
+.dlg :focus-visible{outline-color:color-mix(in srgb,var(--harbour) 55%,transparent);outline-offset:2px}
+
+/* Thread header: chips are outlines; only the state and the PR keep a fill (desktop and phone alike) */
+.tt{letter-spacing:-.02em}
+.chip{border-radius:999px}
+.chip.st,.m-chip.st{border-color:var(--line)}
+.thh .chip:not(.st):not(.pr):not(.peek),.m-chip:not(.st):not(.prc){background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.agp.ph.chip{background:transparent;box-shadow:inset 0 0 0 1px var(--line);--knock:var(--raised)}
+.m-strip{background:color-mix(in srgb,var(--ink) 4%,var(--surface));border-block-color:transparent}
+
+/* Conversation: the owner's messages on the right, the agent's replies on the left, one bubble per reply. Its
+   process notes, tool lines and run summaries stay plain: they are the agent working, not talking. */
+.you{border-radius:18px 18px 6px 18px;padding:10px 14px;background:color-mix(in srgb,var(--beam) 9%,var(--raised));border:1px solid color-mix(in srgb,var(--beam) 14%,var(--line))}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .you{background:color-mix(in srgb,var(--ink) 7%,var(--raised));border-color:var(--line)}}
+:root[data-theme="dark"] .you{background:color-mix(in srgb,var(--ink) 7%,var(--raised));border-color:var(--line)}
+.msgw:not(.proc){width:fit-content;max-width:min(720px,82%);padding:11px 16px;border-radius:18px 18px 18px 6px;background:var(--raised);border:1px solid var(--line);box-shadow:var(--lift-1);--knock:var(--raised)}
+.msgw:not(.proc)>*+.cl{margin-top:8px}
+.msgw:not(.proc)>.msgcp{right:-1px;bottom:-23px} /* V0.187: under the bubble, past its 1 px border */
+.msgw:not(.proc) .runc.prose{border:0;box-shadow:none;padding:0;margin:10px 0;background:transparent}
+.m-app .msgw:not(.proc){max-width:88%;padding:11px 15px;border-radius:20px 20px 20px 6px}
+/* touch: Copy is a quiet foot inside the bubble (outside it, it would paint past the entry's clipped box) */
+@media (hover:none){.msgw:not(.proc)>.msgcp{margin:2px -8px -6px auto;border:0;background:none;color:var(--ink-faint)}}
+.fromthread{border-left-width:1px;border-left-color:var(--line);border-radius:18px 18px 18px 6px;box-shadow:var(--lift-1)}
+/* code wells are a step from the card, never darker than the page */
+.msgw:not(.proc) .md pre,.runc-cmd,.runc-out,.appr pre.appr-cmd{background:color-mix(in srgb,var(--ink) 5%,var(--raised))}
+.act{border-radius:var(--r-m)}
+.nstep{border-color:var(--line);box-shadow:var(--lift-1)}
+.nstep.run>span[aria-hidden]{margin-right:4px;color:var(--ink-faint)}
+
+/* Cards: the question, the Run card. No coloured left edge: the header and the result line say the state. */
+.ask{border-color:var(--line);border-radius:var(--r-l);box-shadow:var(--lift-2)}
+.ah{padding:10px 16px}
+.ah,.m-ah{border-bottom:1px solid color-mix(in srgb,var(--beam) 20%,transparent)}
+.ab{padding:12px 16px 14px}
+.op{height:auto;min-height:58px;grid-template-rows:auto auto;row-gap:2px;align-content:center;padding:10px 12px;border-radius:var(--r-m);border-color:var(--line);background:var(--raised)}
+.op:hover:not(.on){box-shadow:var(--lift-1)}
+.op .d:empty{display:none}
+.m-ask{border-top-color:var(--line)}
+.runc,.runc.ok,.runc.failed,.runc.running{max-width:min(720px,82%);border:1px solid var(--line);border-radius:var(--r-m);box-shadow:var(--lift-1)}
+.runc.prose{border:1px solid var(--line);box-shadow:none}
+.invc{border-left-width:1px;border-color:color-mix(in srgb,var(--signal-ink) 30%,var(--line))}
+.dl.pk{box-shadow:none}
+.cmp{border-color:var(--line);border-radius:18px;box-shadow:var(--lift-2)}
+
+/* Home: one primary action (the first card's), the rest outlined; tiles and numbers lift instead of framing */
+.st-mv,.st-mv:hover{border:1px solid var(--line);border-radius:var(--r-m);box-shadow:var(--lift-1)}
+.st-mv:hover{border-color:var(--line-strong)}
+.st-mvt small b{color:var(--beam-ink)}
+.st-mv .btn.p{background:var(--raised);color:var(--ink);border-color:var(--line-strong)}
+.st-bh+.st-mv .btn.p{background:var(--night);color:var(--on-night);border-color:var(--night)}
+.st-tile,.st-num,.st-chart{border-color:transparent;border-radius:var(--r-m);box-shadow:var(--lift-1)}
+.st-tile:hover{border-color:var(--line)}
+.st-num{padding:12px 14px;gap:2px}
+.st-area{opacity:.10}.st-ln{stroke-width:1.5}.st-grid{stroke-dasharray:2 4}
+.st-tip{border-color:var(--line);border-radius:8px;box-shadow:var(--lift-2)}
+
+/* Settings */
+.sr.two{flex-wrap:wrap;row-gap:8px}
+.sr.two .sr-b{flex:1 1 200px}.sr.two .sr-e{max-width:none;flex:1 1 300px}
+.sg-c{border-radius:var(--r-m)}
+.sr.bad{box-shadow:none;background:color-mix(in srgb,var(--signal-ink) 6%,transparent)}
+
+/* Phone */
+.m-mv{border-radius:14px}
+.m-seg .n{font-weight:600}
