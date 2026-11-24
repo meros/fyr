@@ -61,6 +61,11 @@ var the *app
 
 func main() {
 	log.SetFlags(log.LstdFlags)
+	// V0.desktop-no-dmabuf: WebKitGTK's DMABUF renderer flickers the page while the owner types (Wayland, Intel
+	// graphics). Off, the page still composes on the GPU. An owner who sets the variable keeps their value.
+	if _, set := os.LookupEnv("WEBKIT_DISABLE_DMABUF_RENDERER"); !set {
+		os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+	}
 	home, _ := os.UserHomeDir()
 	data := flag.String("data", filepath.Join(home, ".local", "share", "fyr"), "Fyr's data directory")
 	unit := flag.String("unit", "fyr.service", "fyrd's systemd unit")
