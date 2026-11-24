@@ -73,9 +73,9 @@ func StageMoments(t *Thread, c *Change, stages []PlaybookEntry, now time.Time) [
 	if c == nil || c.Kind != KindCode || c.Phase.Ended() || !c.Phase.Reached(PhaseLanded) || t.ArchivedAt != nil {
 		return nil
 	}
-	sha := ""
+	sha, repo := "", ""
 	if c.PR != nil {
-		sha = c.PR.MergeSHA
+		sha, repo = c.PR.MergeSHA, c.PR.Repo
 	}
 	fresh := func(at time.Time, e PlaybookEntry) bool { return !at.Before(e.At) && now.Sub(at) < MomentFresh }
 	reachedAt := func(e PlaybookEntry) (time.Time, bool) {
@@ -102,7 +102,7 @@ func StageMoments(t *Thread, c *Change, stages []PlaybookEntry, now time.Time) [
 		// looks good there.
 		held := prevAsk != "" && !slices.Contains(c.Staged, MomentOK(prevAsk))
 		if !ok && e.Deploy != "" && prevOK && !held && fresh(prevAt, e) && !slices.Contains(c.Staged, MomentRun(e.Name)) {
-			if cmd := ProbeScript(e.Deploy, sha); cmd != "" {
+			if cmd := ProbeScript(e.Deploy, sha, repo); cmd != "" {
 				out = append(out, StageMomentArgs{Change: c.ID, Stage: e.Name, Command: cmd})
 			}
 		}

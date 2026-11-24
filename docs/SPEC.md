@@ -897,11 +897,12 @@ type PlaybookEntry = { slot: "stage" | "verify" | "promote" | "issue" | "run" | 
   name?: string;                   // a stage's environment (dev, prod); every other slot holds one entry
   how?: string; evidence?: string; // a sentence or two, and what it rests on
   url?: string;                    // a stage: where it is looked at
-  probe?: string; probeOk?: boolean; // a stage: a shell command ({sha} is the merge commit, exit 0: the stage holds it), run once the owner allowed it
+  probe?: string; probeOk?: boolean; // a stage: a shell command ({sha} is the merge commit, {repo} the PR's owner/name, exit 0: the stage holds it), run once the owner allowed it
   live?: boolean;                  // a stage: reaching it makes a change live (a stage named prod or production is live without it)
   ownerChecks?: boolean;           // a stage: Fyr asks the owner to look at each change that gets there (V0.playbook-moments)
   deployCmd?: string;              // a stage: the command that puts a change there by hand; Fyr shows it on a Run card
   missed?: number;                 // the merges in a row the probe did not see there within a day; 2 is in doubt
+  last?: { state: "reached" | "waiting" | "timeout" | "error"; exit?: number; note?: string; at: Time };  // the probe's last answer on its host; timeout and error are a broken probe (V0.playbook-probe-health)
   suggest?: { how?, url?, probe?, deployCmd?, live?, ownerChecks?, evidence?, thread?, at };  // an agent's finding beside the owner's entry
   by: "owner" | "agent"; thread?: string; at: Time };
 ```

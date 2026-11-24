@@ -42,11 +42,37 @@ export function entryTitle(e: PlaybookEntry): string {
   return `Stage ${e.name}${isLiveStage(e) ? " · live" : ""}`;
 }
 
-/** What Fyr does with a stage's probe, in the words under it. */
-export function probeLine(e: Pick<PlaybookEntry, "probe" | "probeOk" | "missed">): string {
+/** V0.playbook-probe-health: a probe Fyr runs that cannot answer: it was stopped at the limit or could not run the
+ *  last time (the host's Broken). No change reaches the stage while it is so. */
+export const broken = (e: Pick<PlaybookEntry, "probe" | "probeOk" | "last">) => !!e.probe && !!e.probeOk && (e.last?.state === "timeout" || e.last?.state === "error");
+
+/** What Fyr does with a stage's probe, in the words under it. `since` is when it began to answer so ("14:20"), from
+ *  the page's clock; without it the line names no time. */
+export function probeLine(e: Pick<PlaybookEntry, "probe" | "probeOk" | "missed" | "last">, since = ""): string {
   if (!e.probe) return "No probe: Fyr cannot tell when a change is here.";
-  if (e.probeOk && doubted(e)) return `In doubt: it did not see the last ${e.missed} merges here within a day. Check the command.`;
-  return e.probeOk ? "Fyr runs this after each merge, until the stage holds the commit." : "Not run yet: it waits for your yes.";
+  if (!e.probeOk) return "Not run yet: it waits for your yes.";
+  const at = since ? ` since ${since}` : "";
+  if (e.last?.state === "timeout") return `Stopped at the 30 s limit${at}, so no change is seen here. A probe answers at once: it must not wait for the deploy.`;
+  if (e.last?.state === "error") return `Cannot run (exit ${e.last.exit ?? -1})${at}, so no change is seen here.`;
+  if (doubted(e)) return `In doubt: it did not see the last ${e.missed} merges here within a day. Check the command.`;
+  if (e.last?.state === "reached") return `Works: it last saw a change here${since ? ` ${since}` : ""}.`;
+  if (e.last?.state === "waiting") return `Runs after each merge. Last answer${at}: not here yet (exit ${e.last.exit ?? 1}).`;
+  return "Fyr runs this after each merge, until the stage holds the commit.";
+}
+
+/** V0.playbook-probe-health: how Fyr follows a stage, for the pipeline over the entries: its probe runs (ok), waits
+ *  for the owner's yes (ask), fails or is in doubt (bad), or there is none (blind: only GitHub Deployments can say). */
+export function stageHealth(e: Pick<PlaybookEntry, "probe" | "probeOk" | "missed" | "last">): { state: "ok" | "ask" | "bad" | "blind"; word: string } {
+  if (!e.probe) return { state: "blind", word: "no probe" };
+  if (!e.probeOk) return { state: "ask", word: "waits for your yes" };
+  if (broken(e)) return { state: "bad", word: "probe fails" };
+  if (doubted(e)) return { state: "bad", word: "probe in doubt" };
+  return { state: "ok", word: "probe runs" };
+}
+
+/** The one question before an entry is removed. */
+export function removeEntryAsk(e: PlaybookEntry): { title: string; text: string; confirm: string; danger: true } {
+  return { title: `Remove ${entryTitle(e)}?`, text: e.slot === "stage" ? "Fyr no longer follows merged changes to this stage, and its probe and commands are gone." : "Agents here are no longer told this.", confirm: "Remove entry", danger: true };
 }
 
 /** The folded group's summary: "2 stages · 3 notes", with the probes that wait first. */
@@ -56,18 +82,20 @@ export function playbookSummary(p: Pick<Project, "playbook"> | undefined): strin
   const stages = all.filter((e) => e.slot === "stage");
   const waits = stages.filter((e) => e.probe && !e.probeOk).length;
   const sug = all.filter((e) => e.suggest).length;
-  const doubt = stages.filter(doubted).length;
+  const fails = stages.filter(broken).length;
+  const doubt = stages.filter((e) => doubted(e) && !broken(e)).length;
   const notes = all.length - stages.length;
   const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
-  return [waits ? `${n(waits, "probe")} ${waits === 1 ? "waits" : "wait"} for you` : "", sug ? n(sug, "suggestion") : "", doubt ? `${n(doubt, "probe")} in doubt` : "", stages.length ? n(stages.length, "stage") : "", notes ? n(notes, "note") : ""]
+  return [waits ? `${n(waits, "probe")} ${waits === 1 ? "waits" : "wait"} for you` : "", sug ? n(sug, "suggestion") : "", fails ? `${n(fails, "probe")} ${fails === 1 ? "fails" : "fail"}` : "", doubt ? `${n(doubt, "probe")} in doubt` : "", stages.length ? n(stages.length, "stage") : "", notes ? n(notes, "note") : ""]
     .filter(Boolean)
     .join(" · ");
 }
 
 /** What on the playbook waits for the owner (V0.playbook-moments): a probe to allow, a suggestion to answer, a probe
- *  that missed the last merges. The group opens by itself while this is not 0. */
+ *  that missed the last merges or cannot answer (V0.playbook-probe-health). The group opens by itself while this is
+ *  not 0. */
 export function playbookWaiting(p: Pick<Project, "playbook"> | undefined): number {
-  return (p?.playbook ?? []).filter((e) => (e.slot === "stage" && e.probe && !e.probeOk) || e.suggest || doubted(e)).length;
+  return (p?.playbook ?? []).filter((e) => (e.slot === "stage" && e.probe && !e.probeOk) || e.suggest || doubted(e) || broken(e)).length;
 }
 
 /** V0.playbook-moments: a stage whose probe did not see the last two merges within a day (the host's DoubtAfter). */

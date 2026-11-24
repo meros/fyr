@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -107,19 +109,22 @@ func TestProbesMoveAMergedChange(t *testing.T) {
 	holds := map[string]bool{}
 	off := time.Duration(0)
 	step := func() { off += 2 * time.Minute; d := off; h.e.Now = func() time.Time { return time.Now().Add(d) } }
-	h.e.RunProbe = func(_ context.Context, dir, script string) (int, error) {
+	var mu sync.Mutex // probes run several at a time
+	h.e.RunProbe = func(_ context.Context, dir, script string) (string, int, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		ran = append(ran, script)
 		if !strings.HasSuffix(dir, "acme") {
 			t.Errorf("probe ran in %s", dir)
 		}
 		if holds[strings.Fields(script)[0]] {
-			return 0, nil
+			return "", 0, nil
 		}
-		return 1, nil
+		return "not yet", 1, nil
 	}
 	// GitHub has no deployment for this repo: the watch stays for the probes.
 	PRWatch{E: h.e}.ObserveDeploy(th, firstChange(h, th).ID, core.DeployObs{None: true})
-	if n := h.e.ProbeOnce(context.Background()); n != 2 || len(ran) != 2 || ran[0] != "dev "+probeSHA {
+	if n := h.e.ProbeOnce(context.Background()); n != 2 || len(ran) != 2 || !slices.Contains(ran, "dev "+probeSHA) {
 		t.Fatalf("ran %d: %v", n, ran)
 	}
 	if c := firstChange(h, th); c.Phase != core.PhaseLanded || len(c.Conditions) != 0 && core.StageReached(&c, core.PlaybookEntry{Slot: core.SlotStage, Name: "dev"}) {
@@ -206,7 +211,7 @@ func TestStageMomentsOnTheHost(t *testing.T) {
 		core.PRObserved(x, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "MERGED", Checks: "pass", MergeSHA: probeSHA, MergedAt: &now}, now)
 		return nil
 	})
-	h.e.RunProbe = func(context.Context, string, string) (int, error) { return 0, nil }
+	h.e.RunProbe = func(context.Context, string, string) (string, int, error) { return "", 0, nil }
 	h.e.ProbeOnce(context.Background())
 	x, _ := h.e.Thread(th)
 	if len(x.Decisions) != 1 || core.PendingRequest(&x) != nil {
@@ -250,11 +255,11 @@ func TestProbeMissCountsAndClears(t *testing.T) {
 		})
 	}
 	ok := false
-	h.e.RunProbe = func(context.Context, string, string) (int, error) {
+	h.e.RunProbe = func(context.Context, string, string) (string, int, error) {
 		if ok {
-			return 0, nil
+			return "", 0, nil
 		}
-		return 1, nil
+		return "", 1, nil
 	}
 	missed := func() int { p := projectByID(h, pid); return p.Stages()[0].Missed }
 	merge(1, probeSHA)
@@ -275,5 +280,99 @@ func TestProbeMissCountsAndClears(t *testing.T) {
 	h.e.ProbeOnce(context.Background())
 	if missed() != 0 {
 		t.Fatalf("a merge the probe saw did not clear the count: %d", missed())
+	}
+}
+
+// V0.playbook-probe-health: a stage keeps what its probe last said, written
+// when the answer changes; a probe stopped at the limit or one that cannot
+// run is broken, and one stuck probe does not hold the others back.
+func TestProbeAnswersAreKeptAndRunTogether(t *testing.T) {
+	h, pid, th := playbookProject(t)
+	for _, a := range []core.Args{
+		{"slot": "stage", "name": "dev", "probe": "dev {sha} {repo}"}, {"slot": "stage", "name": "dev", "allow": true},
+		{"slot": "stage", "name": "prod", "probe": "prod {sha}"}, {"slot": "stage", "name": "prod", "allow": true},
+	} {
+		a["id"] = pid
+		if r := h.cmd(core.KindProjectLearn, "", a); !r.OK {
+			t.Fatalf("%+v", r)
+		}
+	}
+	url := "https://github.com/acme/app/pull/9"
+	coretest.Patch(h.e, th, func(x *core.Thread, now time.Time) []core.Event {
+		core.PRObserved(x, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Head: "h1"}, now)
+		core.PRObserved(x, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "MERGED", Checks: "pass", MergeSHA: probeSHA, MergedAt: &now}, now)
+		return nil
+	})
+	old := probeTimeout
+	probeTimeout = 2 * time.Second
+	t.Cleanup(func() { probeTimeout = old })
+	off := time.Duration(0)
+	step := func() { off += 2 * time.Minute; d := off; h.e.Now = func() time.Time { return time.Now().Add(d) } }
+	last := func(name string) *core.ProbeResult {
+		p := projectByID(h, pid)
+		for _, e := range p.Stages() {
+			if e.Name == name {
+				return e.Last
+			}
+		}
+		return nil
+	}
+	// dev sits until its limit; prod answers while it sits.
+	prodRan := make(chan struct{}, 1)
+	h.e.RunProbe = func(ctx context.Context, _, script string) (string, int, error) {
+		if strings.HasPrefix(script, "dev ") {
+			if script != "dev "+probeSHA+" acme/app" {
+				t.Errorf("script %q", script)
+			}
+			select {
+			case <-prodRan:
+			case <-time.After(5 * time.Second):
+				t.Error("prod's probe waited for dev's")
+			}
+			<-ctx.Done()
+			return "applied: 899b950\nstopped after the time limit", -1, ctx.Err()
+		}
+		prodRan <- struct{}{}
+		return "TIMEOUT after 0s: not applied on production.\n", 1, nil
+	}
+	h.e.ProbeOnce(context.Background())
+	if l := last("dev"); l == nil || l.State != core.ProbeTimeout || l.Note != "applied: 899b950" {
+		t.Fatalf("dev: %+v", l)
+	}
+	if l := last("prod"); l == nil || l.State != core.ProbeWaiting || l.Exit != 1 || !strings.HasPrefix(l.Note, "TIMEOUT after 0s") {
+		t.Fatalf("prod: %+v", l)
+	}
+	p := projectByID(h, pid)
+	if !p.Stages()[0].Broken() || p.Stages()[1].Broken() || !strings.Contains(core.PlaybookPrompt(&p), "30 s limit") {
+		t.Fatalf("broken: %s", core.PlaybookPrompt(&p))
+	}
+	// The same answer writes nothing; another one does.
+	at := last("prod").At
+	h.e.RunProbe = func(_ context.Context, _, script string) (string, int, error) {
+		if strings.HasPrefix(script, "dev ") {
+			return "sh: 1: dev: not found", 127, nil
+		}
+		return "", 1, nil
+	}
+	step()
+	h.e.ProbeOnce(context.Background())
+	if l := last("prod"); !l.At.Equal(at) {
+		t.Fatalf("the same answer was written again: %+v", l)
+	}
+	if l := last("dev"); l.State != core.ProbeError || l.Exit != 127 {
+		t.Fatalf("dev: %+v", l)
+	}
+	h.e.RunProbe = func(context.Context, string, string) (string, int, error) { return "", 0, nil }
+	step()
+	h.e.ProbeOnce(context.Background())
+	if l := last("dev"); l.State != core.ProbeReached {
+		t.Fatalf("dev: %+v", l)
+	}
+	if c := firstChange(h, th); c.Phase != core.PhaseLive {
+		t.Fatalf("phase %s", c.Phase)
+	}
+	// Another command starts without the old one's answer.
+	if r := h.cmd(core.KindProjectLearn, "", core.Args{"id": pid, "slot": "stage", "name": "dev", "probe": "dev2 {sha}"}); !r.OK || last("dev") != nil {
+		t.Fatalf("%+v %+v", r, last("dev"))
 	}
 }

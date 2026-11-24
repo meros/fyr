@@ -134,9 +134,10 @@ type Engine struct {
 	// FolderEnv wraps a script so it runs in its folder's environment (the
 	// folder's direnv, V0.run-folder-env); nil runs it with fyrd's own.
 	FolderEnv func(dir string, argv []string) []string
-	// RunProbe runs a stage probe's script in dir and returns its exit code
-	// (V0.project-playbook); nil runs it with sh in the folder's environment.
-	RunProbe func(ctx context.Context, dir, script string) (int, error)
+	// RunProbe runs a stage probe's script in dir and returns what it printed
+	// and its exit code (V0.project-playbook); nil runs it with sh in the
+	// folder's environment. Probes run several at a time.
+	RunProbe func(ctx context.Context, dir, script string) (string, int, error)
 	probes   probes
 	// RootPrompt is why a root run request cannot ask for a password here,
 	// or ""; nil reads this host's processes (V0.149 (4)).

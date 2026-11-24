@@ -350,6 +350,9 @@ export interface PlaybookEntry {
   deployCmd?: string;
   /** V0.playbook-moments: the merges in a row the probe did not see here within a day */
   missed?: number;
+  /** V0.playbook-probe-health: what the probe last answered on its host, and since when: it holds the commit
+   *  (reached), not yet (waiting), it was stopped at the 30 s limit (timeout), or it cannot run (error) */
+  last?: { state: "reached" | "waiting" | "timeout" | "error"; exit?: number; note?: string; at?: string };
   /** V0.playbook-moments: what an agent found that differs from the owner's entry */
   suggest?: Pick<PlaybookEntry, "how" | "url" | "probe" | "deployCmd" | "live" | "ownerChecks" | "evidence" | "thread" | "at">;
   by: string;
