@@ -19,15 +19,16 @@ export function requests(t: Pick<Thread, "offers"> | { offers?: Offer[] }): Offe
 }
 
 /**
- * V0.run-cards-in-conversation: where the cards stand. A request's card takes the place of the newest time it was asked
- * (the same id again replaces the request); a closed request has no card. `loose` are the requests whose place is not
- * in the loaded log (asked before this version, or further back than what is loaded): they stand at the end, so a card
- * that waits for the owner is never out of reach.
+ * V0.run-cards-stay-put: where the cards stand. A request's card stands where it was first asked and never moves (the
+ * same id asked again keeps the card where it is); a closed request has no card. `loose` are the requests whose place
+ * is not in the loaded log (asked before this version, or further back than what is loaded): they stand before the
+ * loaded messages, where they were asked, never at the end under newer messages. What waits for the owner is in the
+ * dock, so no card needs the end to be in reach.
  */
 export function placeCards(items: Item[], ids: string[]): { items: Item[]; loose: string[] } {
   const open = new Set(ids);
   const place = new Map<string, string>();
-  for (const it of items) if (it.kind === "runcard" && open.has(it.action)) place.set(it.action, it.key);
+  for (const it of items) if (it.kind === "runcard" && open.has(it.action) && !place.has(it.action)) place.set(it.action, it.key);
   return { items: items.filter((it) => it.kind !== "runcard" || place.get(it.action) === it.key), loose: ids.filter((id) => !place.has(id)) };
 }
 

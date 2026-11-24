@@ -212,16 +212,16 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
           </Boundary>
         )}
         <DeliveryCtx.Provider value={delivery ?? null}>
-          {entries.map((en) => (
-            <Boundary key={en.key} name="This message">
-              <EntryView en={en} previews={previews} stop={stops.get(en.key)} hit={hit === en.key} />
-            </Boundary>
-          ))}
           {looseCards.map((id) => (
             <Boundary key={`card-${id}`} name="This command">
               <div class={`cv out${hit === looseKey(id) ? " cv-hit" : ""}`} {...stopAttrs(looseKey(id), stops.get(looseKey(id)))}>
                 <RunCardAt id={id} />
               </div>
+            </Boundary>
+          ))}
+          {entries.map((en) => (
+            <Boundary key={en.key} name="This message">
+              <EntryView en={en} previews={previews} stop={stops.get(en.key)} hit={hit === en.key} />
             </Boundary>
           ))}
           {/* V0.next-step-chips: the optional next steps, under the newest message */}

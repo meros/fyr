@@ -111,13 +111,13 @@ test("V0.149 (6): the conversation lines of a request: the press, its result, No
 const asked = (key: string, action: string): Item => ({ kind: "runcard", key, action });
 const said = (key: string): Item => ({ kind: "assistant", key, text: key });
 
-test("V0.run-cards-in-conversation: a card stands where it was asked; asked again, at the newest place", () => {
+test("V0.run-cards-stay-put: a card stands where it was first asked; asked again, it does not move", () => {
   const p = placeCards([asked("a", "run-1"), said("m"), asked("b", "run-2"), asked("c", "run-1")], ["run-1", "run-2"]);
-  assert.deepEqual(p.items.map((i) => i.key), ["m", "b", "c"]);
+  assert.deepEqual(p.items.map((i) => i.key), ["a", "m", "b"]);
   assert.deepEqual(p.loose, []);
 });
 
-test("V0.run-cards-in-conversation: a closed request has no place; one the log does not show stands at the end", () => {
+test("V0.run-cards-in-conversation: a closed request has no place; one the log does not show is loose (drawn before the loaded messages)", () => {
   const p = placeCards([asked("a", "closed"), said("m")], ["old"]);
   assert.deepEqual(p.items.map((i) => i.key), ["m"]);
   assert.deepEqual(p.loose, ["old"]);
