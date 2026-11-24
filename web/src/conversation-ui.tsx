@@ -26,6 +26,7 @@ import { JUMP_EVENT, LAND, leftAt, looseKey, newSince, pickStop, stopsOf, type J
 import { type SendArgs } from "./composer.tsx";
 import { TONE_ICON, HostContext, useToolDetails, RunMark, ToolCard, CopyButton, QuietLine, keyActivate, ThreadIdContext } from "./tool-calls-ui.tsx";
 import { TASK_ICON } from "./agents-strip.tsx";
+import { SentComments } from "./diff-comments-ui.tsx";
 
 
 /** SPEC 0.5 V0.33: what a message's Cancel and Send again do. */
@@ -396,7 +397,8 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
       return (
         <div class={`youw${cls}`}>
           <div class="you prose">
-            {it.text}
+            {/* V0.diff-line-comments: a message of diff comments shows each comment with its quoted lines folded */}
+            <SentComments text={it.text} />
             {it.attachments.length > 0 && <SentAttachments items={it.attachments} host={host} />}
             {it.images > 0 && !it.attachments.length && (
               <span class="imgchip">
