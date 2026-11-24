@@ -23,7 +23,7 @@ import {
   hostOfThread,
 } from "./store.ts";
 import { placeOf, steadyThreads, stillRows, trackArrivals, type FinishHold, type RowPlace } from "./still-list.ts";
-import { useListAnchor } from "./still-list-ui.ts";
+import { markListFilter, useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, guestOf, hiddenWhy, markedRow, decodeSectionOpen } from "./selection.ts";
 import { initialTracker, type SeenTracker } from "./seen.ts";
 import { type AnswerMove, arrivalOnOpen } from "./arrived.ts";
@@ -85,7 +85,9 @@ export function useAppState() {
   useEffect(() => {
     storedSet(SECTION_OPEN_KEY, JSON.stringify(sectionOpen)); // blocked storage: the folds last until the reload
   }, [sectionOpen]);
-  const [query, setQuery] = useState("");
+  const [query, setQueryState] = useState("");
+  // V0.list-motion (7): a search, a project or a host chip changes who is in the list; the list plays it as a filter.
+  const setQuery = (q: string) => (markListFilter(), setQueryState(q));
   const [help, setHelp] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState<Partial<Record<SectionKey, boolean>>>({});
@@ -133,12 +135,14 @@ export function useAppState() {
   // The project filter (V0.23), remembered per device.
   const [projectFilter, setProjectFilterState] = useState<string | null>(() => storedGet(FILTER_KEY));
   const setProjectFilter = (id: string | null) => {
+    markListFilter();
     setProjectFilterState(id);
     storedSet(FILTER_KEY, id || null);
   };
   // V0.169: the hosts turned off, remembered per device beside the project filter.
   const [hostsOff, setHostsOffState] = useState<string[]>(() => storedJson(HOSTS_OFF_KEY, strings, []));
   const setHostsOff = (keys: string[]) => {
+    markListFilter();
     setHostsOffState(keys);
     storedSet(HOSTS_OFF_KEY, keys.length ? JSON.stringify(keys) : null);
   };
@@ -285,7 +289,14 @@ export function useAppState() {
   // section draws no row for it either.
   const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen, phone), [rows, sel, hidden, sectionOpen, phone]);
   const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
-  useListAnchor(useMemo(() => flatOrder(rows, limits).join(" "), [rows, limits]), sel);
+  // V0.list-motion: what the list draws (its rows and the counts in its bands); a change of it plays as one layout.
+  const listSig = useMemo(() => `${flatOrder(rows, limits).join(" ")}|${SECTIONS.map((s) => sec[s.key].length).join(" ")}|${sec.pinned.length}`, [rows, limits, sec]);
+  const sectionOf = useMemo(() => {
+    const at = new Map<string, string>();
+    for (const s of SECTIONS) for (const t of rows[s.key]) at.set(t.id, s.key);
+    return (id: string) => at.get(id) ?? null;
+  }, [rows]);
+  useListAnchor(listSig, sel, sectionOf);
   const allRows = useMemo(() => flatOrder(rows), [rows]); // V0.186: with the rows not drawn, for the guest's place
   const walkRows = useMemo(() => (place ? flatOrder(stillRows(rows, place)) : allRows), [rows, place, allRows]);
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;

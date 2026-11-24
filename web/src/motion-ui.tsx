@@ -42,7 +42,7 @@ const fade = (el: HTMLElement, from: number, to: number, duration: number) => (r
 const translateY = (el: Element) => new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
 
 /** A copy that plays the leaving animation after the real element is gone. It cannot be used and is hidden from readers. */
-function ghostOf(el: HTMLElement): HTMLElement {
+export function ghostOf(el: HTMLElement): HTMLElement {
   const g = el.cloneNode(true) as HTMLElement;
   g.setAttribute("inert", "");
   g.setAttribute("aria-hidden", "true");

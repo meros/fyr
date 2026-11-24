@@ -9,6 +9,7 @@ import {
   type SectionKey,
 } from "./store.ts";
 import { placeOf } from "./still-list.ts";
+import { markListFilter } from "./still-list-ui.ts";
 import { cutSection } from "./selection.ts";
 import { isOpen } from "./inbox.tsx";
 import { listPref, listShown, setListPref } from "./prefs.ts";
@@ -60,12 +61,14 @@ export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | 
   /** A header's click or tap. */
   const toggleSection = (k: SectionKey) => {
     const opening = !isOpen(k, sectionOpen);
+    markListFilter(); // V0.list-motion (7): a fold changes what is shown, as a filter does
     if (AUTO_HIDE_SECTIONS.includes(k)) setHide(k, opening ? Date.now() + AUTO_HIDE_MS : null);
     setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }));
   };
   /** V0.186: the owner named this section in the rail or the strip: it opens and stays open (V0.48). */
   const nameSection = (k: SectionKey) => {
     setHide(k, null);
+    markListFilter();
     setSectionOpen((o) => ({ ...o, [k]: true }));
   };
   /** Using a section restarts its time (at most a few times a second). */
@@ -99,7 +102,7 @@ export function useThreadList(c: Pick<ReturnType<typeof useAppState>, "store" | 
   /* eslint-disable react-hooks/exhaustive-deps -- expands the open thread's section only when the open thread, the open section or whether it is listed changes; on every rows update it would re-expand a section the owner folded */
   useEffect(() => {
     const k = cutSection(rows, view?.id ?? null, limits);
-    if (k) setExpanded((x) => ({ ...x, [k]: true }));
+    if (k) (markListFilter(), setExpanded((x) => ({ ...x, [k]: true })));
   }, [view?.id, openSection, !!(view && listed[view.id]), limits]);
   /* eslint-enable react-hooks/exhaustive-deps */
 

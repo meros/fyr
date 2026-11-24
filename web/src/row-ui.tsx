@@ -68,7 +68,17 @@ export function HideClock({ at }: { at: number }) {
 /** V0.section-heads: what a section header shows, on both fronts: the fold chevron, the section's icon, its name and its
  *  count. `open` is left out for a header that cannot fold (Pinned), and a section with no rows has nothing
  *  to fold; the chevron's place stays, so the icons line up. The icon is decoration here: the name says the same. */
-export function SectionTitle(p: { label: string; icon: ComponentChildren; n: number; shown: string; open?: boolean; attention?: boolean }) {
+/** V0.list-motion: a band's count. `mk` is the section's key: the list's motion rolls the number when it changes (the
+ *  inner span is the number; still-list-ui.ts puts the old one beside it while they roll). */
+export function Count({ mk, shown }: { mk?: string; shown: string }) {
+  return (
+    <span class="n" data-mk={mk ? `n:${mk}` : undefined}>
+      <span>{shown}</span>
+    </span>
+  );
+}
+
+export function SectionTitle(p: { label: string; icon: ComponentChildren; n: number; shown: string; open?: boolean; attention?: boolean; /** V0.list-motion: the section's key */ mk?: string }) {
   const fold = p.open !== undefined && p.n > 0;
   return (
     <span class={`sti${p.n ? "" : " none"}${p.attention && p.n ? " att" : ""}`}>
@@ -83,7 +93,7 @@ export function SectionTitle(p: { label: string; icon: ComponentChildren; n: num
         {p.icon}
       </span>
       <span class="stl ell">{p.label}</span>
-      <span class="n">{p.shown}</span>
+      <Count mk={p.mk} shown={p.shown} />
     </span>
   );
 }
@@ -91,7 +101,11 @@ export function SectionTitle(p: { label: string; icon: ComponentChildren; n: num
 /** V0.186: a section header's toggle on both fronts, the only thing that folds a section from its header. */
 /** V0.your-move: the label over a group of Your move, on both fronts. */
 export function NeedsGroupHead({ label }: { label: string }) {
-  return <div class="ngh">{label}</div>;
+  return (
+    <div class="ngh" data-mk={`gh:${label}`}>
+      {label}
+    </div>
+  );
 }
 
 export function sectionHead(o: { n: number; open: boolean; toggle(): void }): Record<string, unknown> {

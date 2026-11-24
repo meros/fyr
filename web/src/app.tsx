@@ -53,6 +53,7 @@ import { Boundary } from "./boundary.tsx";
 import { HomeScreen } from "./home-ui.tsx";
 import { ProjectPicker } from "./project-picker.tsx";
 import { QuietGate } from "./quiet-ui.tsx";
+import { markListFilter } from "./still-list-ui.ts";
 
 /** V0.status-home: the keys the status screen names at its foot. */
 const HOME_KEYS: [string, string][] = [
@@ -108,7 +109,7 @@ function App() {
             arrival: arrivedHere,
             setArrival,
           }}
-          list={{ sectionOpen, toggleSection, nameSection, hideAt: hideShown, sectionUsed, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
+          list={{ sectionOpen, toggleSection, nameSection, hideAt: hideShown, sectionUsed, expanded, onExpand: (k) => (markListFilter(), setExpanded((x) => ({ ...x, [k]: true }))), picked, setPicked, selecting, setSelecting }}
           device={{
             push: pushSt,
             pushReason,
@@ -185,7 +186,7 @@ function App() {
           onSectionActivity={sectionUsed}
           onClick={(id) => openThread(id, "open")}
           onBackground={closeThread}
-          onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
+          onExpand={(k) => (markListFilter(), setExpanded((x) => ({ ...x, [k]: true })))}
           onNew={() => setDialog("new")}
           filter={filterView}
           unlock={unlock}

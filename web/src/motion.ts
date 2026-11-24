@@ -84,3 +84,20 @@ export function sheetCloses(y: number, v: number, height: number): boolean {
   if (height <= 0 || v < -60) return false;
   return y + v * 0.18 > height * 0.5;
 }
+
+/** V0.list-motion: every layout change of the inbox list, on both fronts, plays this one spring. Critically damped:
+ *  no overshoot, so a band and the rows under it land together and nothing bounces past its place. */
+export const LIST_SPRING: Spring = { stiffness: 900, damping: 60 };
+
+/** A spring from 1 to 0, as fractions: each element scales it by its own distance, so elements that move together
+ *  start and end together whatever their distance. */
+export function unitPath(s: Spring): number[] {
+  // as 1000 px, so the rest check of springPath (a third of a pixel) does not end it early
+  const p = springPath(1000, 0, 0, s).map((x) => x / 1000);
+  // at rest once within 0.2 % of the distance: under half a pixel for any move inside one screen
+  let end = p.length - 1;
+  while (end > 1 && Math.abs(p[end - 1]) < 0.002) end--;
+  const out = p.slice(0, end + 1);
+  out[out.length - 1] = 0;
+  return out;
+}
