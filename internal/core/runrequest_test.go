@@ -274,3 +274,21 @@ func TestActionEventsRecordActor(t *testing.T) {
 		t.Fatalf("unexpected actor: %+v", ev)
 	}
 }
+
+// V0.run-cards-new-card: asking with an id that is taken makes a new card; the card the owner sees is not updated.
+func TestRunRequestSameIDIsANewCard(t *testing.T) {
+	th, _, err := runReq(t, requestThread(), RunRequestArgs{ID: "mount", Command: "true", Why: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, res, err := runReq(t, th, RunRequestArgs{ID: "mount", Command: "false", Why: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Offers) != 2 || th.Offers[0].ID != "mount" || th.Offers[0].Why != "first" || th.Offers[1].ID != "mount-2" || th.Offers[1].Why != "second" {
+		t.Fatalf("offers: %+v", th.Offers)
+	}
+	if d := res.Events[0].Data.(map[string]any); d["action"] != "mount-2" {
+		t.Fatalf("data: %+v", d)
+	}
+}

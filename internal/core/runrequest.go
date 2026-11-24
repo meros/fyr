@@ -104,15 +104,22 @@ func reduceRunRequest(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	t := r.T
 	h, _ := HolderOf(t, OnThread)
-	id := strings.TrimSpace(a.ID)
-	if id == "" {
-		n := 1
-		for {
-			id = fmt.Sprintf("run-%d", n)
+	// V0.run-cards-new-card: a request is always a new card. The agent's id names it, but one already taken (a card
+	// that stands, or one that ran) gets a number, so asking again never updates the card the owner already sees.
+	base := strings.TrimSpace(a.ID)
+	if base == "" {
+		base = "run"
+	}
+	id := base
+	if a.ID == "" || h.Find(id) != nil || lastRunOf(h.Runs, id, OnThread) != nil {
+		for n := 1; ; n++ {
+			id = fmt.Sprintf("%s-%d", base, n)
+			if a.ID != "" {
+				id = fmt.Sprintf("%s-%d", base, n+1)
+			}
 			if h.Find(id) == nil && lastRunOf(h.Runs, id, OnThread) == nil {
 				break
 			}
-			n++
 		}
 	}
 	cwd := a.Cwd
