@@ -450,8 +450,8 @@ function MInbox(p: PhoneProps) {
         {p.inbox.rows.pinned.length > 0 && (
           // V0.104: the desktop's pinned block, above every section and always open.
           <section id="m-sec-pinned">
-            <div class="m-sec">
-              <SectionTitle label="Pinned" icon={PIN_ICON} n={p.inbox.sec.pinned.length} shown={stripCount(p.inbox.sec.pinned.length)} />
+            <div class="m-sec" data-mk="sec:pinned">
+              <SectionTitle label="Pinned" icon={PIN_ICON} n={p.inbox.sec.pinned.length} shown={stripCount(p.inbox.sec.pinned.length)} mk="pinned" />
             </div>
             {p.inbox.rows.pinned.map((t) => (
               <MRow key={t.id} t={t} p={p} needs={t.attention.section === "needs"} />
@@ -488,9 +488,10 @@ function MInbox(p: PhoneProps) {
             <section id={`m-sec-${s.key}`} {...hideUse(hideAt !== undefined, () => p.list.sectionUsed(s.key))}>
               <div
                 class={`m-sec${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}`}
+                data-mk={`sec:${s.key}`}
                 {...sectionHead({ n: list.length, open, toggle: () => p.list.toggleSection(s.key) })}
               >
-                <SectionTitle label={s.label} icon={<StateIcon state={s.state} size={16} />} n={list.length} shown={stripCount(list.length)} open={open} attention={s.key === "needs"} />
+                <SectionTitle label={s.label} icon={<StateIcon state={s.state} size={16} />} n={list.length} shown={stripCount(list.length)} open={open} attention={s.key === "needs"} mk={s.key} />
                 {hideAt !== undefined && <HideClock at={hideAt} />}
                 {s.key === "seen" && canSettleMerged && !p.list.selecting ? (
                   <button
@@ -514,7 +515,7 @@ function MInbox(p: PhoneProps) {
                 </Fragment>
               ))}
               {open && rows.length > shown.length && (
-                <button class="m-more" onClick={() => p.list.onExpand(s.key)}>
+                <button class="m-more" data-mk={`more:${s.key}`} onClick={() => p.list.onExpand(s.key)}>
                   Show all {rows.length.toLocaleString()}
                 </button>
               )}

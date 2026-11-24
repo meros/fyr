@@ -62,8 +62,8 @@ export function SlotQueueSection(p: Props) {
   if (p.phone)
     return (
       <section id="m-sec-slots" class="sq">
-        <div class={`m-sec${movable ? " hasbtn" : ""}`} {...head}>
-          <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={16} />} n={n} shown={count(n)} open={open} />
+        <div class={`m-sec${movable ? " hasbtn" : ""}`} data-mk="sec:slots" {...head}>
+          <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={16} />} n={n} shown={count(n)} open={open} mk="slots" />
           {movable && (
             // Phone: a row here swipes, so the order changes in the one Reorder mode (reorder-ui.tsx), as in Settings.
             // The class is the inbox header's small button, not Settings' 44 px .btn: this header is 44 px itself.
@@ -75,8 +75,8 @@ export function SlotQueueSection(p: Props) {
     );
   return (
     <div id="sec-slots" class="sq">
-      <div class={`sec${n ? " tog" : ""}`} title={HINT} {...head}>
-        <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={14} />} n={n} shown={count(n)} open={open} />
+      <div class={`sec${n ? " tog" : ""}`} data-mk="sec:slots" title={HINT} {...head}>
+        <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={14} />} n={n} shown={count(n)} open={open} mk="slots" />
         {movable && <span class="h ell">drag to reorder</span>}
       </div>
       {body}

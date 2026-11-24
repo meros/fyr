@@ -119,7 +119,8 @@ interface RowProps {
 }
 
 function rowAttrs({ t, sel, onClick }: RowProps) {
-  return { "data-id": t.id, onClick, role: "option", "aria-selected": sel };
+  // V0.list-motion: the row's key and the section it is drawn in, for the list's motion (still-list-ui.ts)
+  return { "data-id": t.id, "data-mk": `row:${t.id}`, "data-sec": t.attention.section, onClick, role: "option", "aria-selected": sel };
 }
 
 function NeedsRow(p: RowProps) {
@@ -227,8 +228,8 @@ export function Inbox(p: InboxProps) {
         {p.rows.pinned.length > 0 && (
           // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.
           <div id="sec-pinned">
-            <div class="sec">
-              <SectionTitle label="Pinned" icon={PIN_ICON} n={p.sec.pinned.length} shown={count(p.sec.pinned.length)} />
+            <div class="sec" data-mk="sec:pinned">
+              <SectionTitle label="Pinned" icon={PIN_ICON} n={p.sec.pinned.length} shown={count(p.sec.pinned.length)} mk="pinned" />
             </div>
             {p.rows.pinned.map((t) =>
               t.attention.section === "needs" ? (
@@ -266,8 +267,8 @@ export function Inbox(p: InboxProps) {
           const hideAt = open ? p.autoHideAt?.[s.key] : undefined;
           return (
             <div id={`sec-${s.key}`} {...hideUse(hideAt !== undefined, () => p.onSectionActivity?.(s.key))}>
-              <div class={`sec${list.length ? " tog" : ""}`} {...sectionHead({ n: list.length, open, toggle: () => p.onToggle(s.key) })} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
-                <SectionTitle label={s.label} icon={<StateIcon state={s.state} size={14} />} n={list.length} shown={count(list.length)} open={open} attention={s.key === "needs"} />
+              <div class={`sec${list.length ? " tog" : ""}`} data-mk={`sec:${s.key}`} {...sectionHead({ n: list.length, open, toggle: () => p.onToggle(s.key) })} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
+                <SectionTitle label={s.label} icon={<StateIcon state={s.state} size={14} />} n={list.length} shown={count(list.length)} open={open} attention={s.key === "needs"} mk={s.key} />
                 {hideAt !== undefined && <HideClock at={hideAt} />}
                 {hint && <span class="h ell">{hint}</span>}
                 {s.key === "seen" && settleMerged.any && p.onSettleMerged && (
@@ -295,7 +296,7 @@ export function Inbox(p: InboxProps) {
                 ),
               )}
               {open && rows.length > shown.length && (
-                <button class="more" onClick={() => p.onExpand(s.key)}>
+                <button class="more" data-mk={`more:${s.key}`} onClick={() => p.onExpand(s.key)}>
                   Show all {rows.length.toLocaleString()}
                 </button>
               )}
@@ -387,7 +388,7 @@ export function FilterEmpty({ f, cls }: { f: FilterView; cls: string }) {
   const off = f.hosts.filter((h) => !h.on).map((h) => h.short);
   const what = [project ? `for ${project}` : "", off.length ? `with ${off.join(", ")} hidden` : ""].filter(Boolean).join(" ");
   return (
-    <div class={cls} role="status">
+    <div class={cls} role="status" data-mk="empty">
       <span class="fe1">No threads in view {what || "for this filter"}.</span>
       {f.empty && <span class="fe2">{f.empty}</span>}
       <button class="btn fe3" onClick={f.clear}>

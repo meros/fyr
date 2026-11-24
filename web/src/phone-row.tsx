@@ -38,7 +38,7 @@ export function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; nee
   const rowRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const samples = useRef<Sample[]>([]);
-  const leaving = useRef<{ gone: Animation; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const leaving = useRef<{ timer: ReturnType<typeof setTimeout> } | null>(null);
   const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; x: number; y: number; fired: boolean }>({ timer: null, x: 0, y: 0, fired: false });
   const suppressClick = useRef(false);
 
@@ -70,7 +70,6 @@ export function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; nee
     if (!l) return;
     leaving.current = null;
     clearTimeout(l.timer);
-    l.gone.cancel();
     if (rowRef.current) rowRef.current.style.transform = "";
     setUnder(null);
   };
@@ -120,25 +119,23 @@ export function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; nee
     if (a) a.finished.then(done, done);
     else done();
   };
-  /** The row flies off in its direction, the gap closes, and only then the thread settles, so nothing jumps. */
+  /** The row flies off in its direction and the thread settles. V0.list-motion (5): the list then lets the row leave
+   *  as every row leaves: it tucks into the Settled band when that is in view, else fades, while the rows under it close
+   *  the gap on the list spring. Its height is never animated. */
   const flyOff = (from: number, v: number, then: () => void) => {
     const el = rowRef.current;
-    const box = boxRef.current;
     const fly = el && springAway(el, from, el.offsetWidth + 24, Math.max(v, 0), x3d);
-    if (!el || !box || !fly) {
+    if (!el || !fly) {
       then();
       if (el) el.style.transform = "";
       setUnder(null);
       return;
     }
-    const collapse = () => {
-      const h = box.offsetHeight;
-      const cs = getComputedStyle(box);
-      const gone = box.animate([{ height: `${h}px`, marginTop: cs.marginTop, marginBottom: cs.marginBottom, opacity: 1 }, { height: "0px", marginTop: "0px", marginBottom: "0px", opacity: 0 }], { duration: 200, easing: "cubic-bezier(.32,.72,0,1)", fill: "forwards" });
-      leaving.current = { gone, timer: setTimeout(comeBack, 4000) };
-      gone.finished.then(then, () => {});
+    const go = () => {
+      leaving.current = { timer: setTimeout(comeBack, 4000) };
+      then();
     };
-    fly.finished.then(collapse, collapse);
+    fly.finished.then(go, go);
   };
   const onUp = (e: PointerEvent) => {
     clearLp();
@@ -195,7 +192,7 @@ export function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; nee
   const guest = p.inbox.guest?.id === t.id ? p.inbox.guest.why : undefined; // V0.192: as on the desktop
   const body = needs ? <NeedsRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} guest={guest} /> : <OneRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} guest={guest} />;
   return (
-    <div ref={boxRef} class={`m-swp${picked ? " picked" : ""}${moving ? " moving" : ""}`}>
+    <div ref={boxRef} class={`m-swp${picked ? " picked" : ""}${moving ? " moving" : ""}`} data-mk={`row:${t.id}`} data-sec={t.attention.section}>
       {under && side && (
         <div class={`m-under ${under.dir > 0 ? "l" : "r"} ${!side.ok ? "no" : under.dir > 0 ? "set" : "snz"}${under.armed ? " armed" : ""}`}>
           {side.ok && under.dir > 0 && <StateIcon state="settled" size={16} />}
