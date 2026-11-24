@@ -239,6 +239,7 @@ func (w *wiring) wireBackground() {
 	}
 	eng.OutsideDeps = engine.OutsideDeps{Effects: engine.Outside{Gh: gh, PR: prDetails, Deploy: dep.Deploy}, OnPR: poller.Kick, RefreshPR: poller.Refresh, CreatePR: createPR}
 	go poller.Run(ctx)
+	go eng.ProbeLoop(ctx)      // V0.project-playbook: the stage probes after a merge
 	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
 	go sampler.Run(ctx)
 	if cfg.Leftovers != "off" {

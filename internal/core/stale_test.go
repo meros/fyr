@@ -71,7 +71,7 @@ func TestV082MergedPRPolledUntilChecksSettle(t *testing.T) {
 	if FindRule(th, deployRuleID(id)) == nil {
 		t.Fatal("setup: no deploy watch")
 	}
-	ChangeDeployObserved(th, id, DeployObs{None: true}, ct0.Add(2*time.Minute))
+	ChangeDeployObserved(th, id, DeployObs{None: true}, false, ct0.Add(2*time.Minute))
 	ChangePRObserved(th, pr("MERGED", ChecksPending), ct0.Add(4*time.Minute))
 	if FindRule(th, deployRuleID(id)) != nil {
 		t.Fatal("the deploy watch was armed again")

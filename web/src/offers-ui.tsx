@@ -3,7 +3,10 @@
 
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import type { Change, Offer, OfferRun, Thread } from "./types.ts";
+import type { Change, Offer, OfferRun, PlaybookEntry, Thread } from "./types.ts";
+import { stageText, stageTrail, stagesOf, type StageStep } from "./playbook.ts";
+import { projectOf } from "./projects.ts";
+import { useDirectory } from "./project-ui.tsx";
 import { allowArgs, askYes, barOffers, stripMerge, canDone, canEnd, canPark, canRefresh, checkedText, declineArgs, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, needLook, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
 import { headLabel, type MergeAsk } from "./pr.ts";
@@ -126,17 +129,49 @@ export function useViewAction(onRun: Run, cwd?: string) {
   return (o: Offer) => press("view", o, cwd, ask, onRun);
 }
 
+/** V0.project-playbook: where a merged change is among its project's stages: each one reached, failed or ahead, and
+ *  a reached stage with an address is a link to it. `inline` is the done row's form, after why the change finished.
+ *  The same on the desktop and the phone. */
+function StageTrail({ steps, inline }: { steps: StageStep[]; inline?: boolean }) {
+  if (!steps.length) return null;
+  const items = steps.map((s) => {
+    const word = s.state === "reached" ? `on ${s.name}` : s.state === "failed" ? `${s.name} failed` : `${s.name} next`;
+    return (
+      <span key={s.name} class={`chst ${s.state}`}>
+        {s.url && s.state === "reached" ? (
+          <a href={s.url} target="_blank" rel="noreferrer">
+            {word}
+          </a>
+        ) : (
+          word
+        )}
+      </span>
+    );
+  });
+  return inline ? (
+    <span class="chstages in" title={stageText(steps)}>
+      {items}
+    </span>
+  ) : (
+    <div class="chstages" role="note" aria-label={`Stages: ${stageText(steps)}`}>
+      {items}
+    </div>
+  );
+}
+
 const KIND: Record<string, string> = { code: "⌥", infra: "☁", host: "▣", data: "⛁", doc: "▤", design: "◇", other: "•" };
 
 /** The Changes tab's list (V0.59 (8)): the open changes, newest first, above the branch diff; V0.98 (3): then the
  *  done ones, folded under "Done here", each with why it finished. */
 export function ChangeList({ t, onRun }: { t: Thread; onRun: Run }) {
   const { open, done } = openAndDone(t);
+  // V0.project-playbook: where a merged change is among the project's stages.
+  const stages = stagesOf(projectOf(t, useDirectory().projects));
   if (!open.length && !done.length) return null;
   return (
     <section class="chl" aria-label="Changes">
       {open.map((c) => (
-        <ChangeCard key={c.id} c={c} cwd={t.cwd} onRun={onRun} thread={t} />
+        <ChangeCard key={c.id} c={c} cwd={t.cwd} onRun={onRun} thread={t} stages={stages} />
       ))}
       {done.length > 0 && (
         <details class="chdone">
@@ -146,7 +181,10 @@ export function ChangeList({ t, onRun }: { t: Thread; onRun: Run }) {
           {done.map((c) => (
             <div key={c.id} class="chdrow" title={c.key}>
               <span class="ell">{c.title}</span>
-              <span class="ok">{doneText(c, hhmm)}</span>
+              <span class="ok">
+                {doneText(c, hhmm)}
+                <StageTrail steps={stageTrail(c, stages)} inline />
+              </span>
             </div>
           ))}
         </details>
@@ -157,7 +195,7 @@ export function ChangeList({ t, onRun }: { t: Thread; onRun: Run }) {
 
 /** One change: rail, conditions, targets, proof and its actions. `from` is a line above the title (the board names
  *  the thread there). */
-export function ChangeCard({ c, cwd, onRun, from, thread }: { c: Change; cwd?: string; onRun: Run; from?: ComponentChildren; /** the thread the change is of: its merge then reports the host's refusal in the Merge dialog */ thread?: Pick<Thread, "id" | "hostId"> }) {
+export function ChangeCard({ c, cwd, onRun, from, thread, stages }: { c: Change; cwd?: string; onRun: Run; from?: ComponentChildren; /** the thread the change is of: its merge then reports the host's refusal in the Merge dialog */ thread?: Pick<Thread, "id" | "hostId">; /** V0.project-playbook: the stages of the change's project */ stages?: PlaybookEntry[] }) {
   const api = useApi();
   const send: Send = async (action, args) => {
     if (!thread) return (onRun(action, args), null);
@@ -195,6 +233,7 @@ export function ChangeCard({ c, cwd, onRun, from, thread }: { c: Change; cwd?: s
           ))}
         </ol>
       )}
+      <StageTrail steps={stageTrail(c, stages ?? [])} />
       {conds.length > 0 && (
         <ul class="chcond">
           {conds.map((k) => (

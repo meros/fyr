@@ -9,6 +9,7 @@ import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import type { HostInfo } from "./hosts.ts";
 import { graphemes } from "./format.ts";
+import { newestPlaybook } from "./playbook.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
 export const PALETTE: Record<string, { light: string; dark: string }> = {
@@ -143,6 +144,7 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
         priority: newest.priority,
         agentSettle: newest.agentSettle, // V0.linked-agent-settle
         toolApproval: newest.toolApproval, // V0.tool-approval-judge
+        ...newestPlaybook(members), // V0.project-playbook
         image: pic?.image,
         ...(pic ? { imageFrom: { id: pic.id!, hostId: pic.hostId! } } : {}),
         members,

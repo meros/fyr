@@ -89,6 +89,9 @@ type Config struct {
 	Prompt string
 	// Setup reads that setup for a folder; nil is HostSetup.
 	Setup func(dir string) Setup
+	// ProjectPrompt is what the prompt says about a thread's project
+	// (V0.project-playbook): one or more lines, "" for none; optional.
+	ProjectPrompt func(thread string) string
 	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
 	Attachments func(id string) (attach.Meta, error)
 	// Meter records each result's token usage (V0.usage-ledger); nil keeps
@@ -749,6 +752,11 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		prompt = Prompt(st)
 		if st.GitHub && st.GH != "" {
 			ghNotice = GHNotice(st.GH)
+		}
+		if m.cfg.ProjectPrompt != nil {
+			if pp := m.cfg.ProjectPrompt(threadID); pp != "" {
+				prompt += "\n- " + pp
+			}
 		}
 	}
 	s.changeTools = m.cfg.MCPURL != "" // V0.62

@@ -292,6 +292,7 @@ func ReduceProject(ps map[string]*Project, fresh *Project, in Input, now time.Ti
 	p := *cur
 	p.Quiet = slices.Clone(cur.Quiet)
 	p.By = maps.Clone(cur.By)
+	p.Playbook = slices.Clone(cur.Playbook)
 	res, err = k.Reduce(Rec{P: &p}, in, now)
 	if err != nil {
 		return nil, nil, Result{}, asRejection(err)

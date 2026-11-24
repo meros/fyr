@@ -889,11 +889,26 @@ type Project = { id: string; name: string; color: string; icon: Icon;
   imageAt?: Time;                  // when image was set: a linked project shows its newest member's
   sharedAt?: Time;                 // stamps the values a link shares; the newest wins (decision 0034)
   archivedAt?: Time;               // the owner archived the finished project (V0.project-archive)
+  playbook?: PlaybookEntry[];      // what the project does around and after a pull request (V0.project-playbook)
+  playbookAt?: Time;               // stamps the playbook: a linked project's members take the newest
   edited?: boolean; createdAt: Time };
+
+type PlaybookEntry = { slot: "stage" | "verify" | "promote" | "issue" | "run" | "rollback";
+  name?: string;                   // a stage's environment (dev, prod); every other slot holds one entry
+  how?: string; evidence?: string; // a sentence or two, and what it rests on
+  url?: string;                    // a stage: where it is looked at
+  probe?: string; probeOk?: boolean; // a stage: a shell command ({sha} is the merge commit, exit 0: the stage holds it), run once the owner allowed it
+  live?: boolean;                  // a stage: reaching it makes a change live (a stage named prod or production is live without it)
+  by: "owner" | "agent"; thread?: string; at: Time };
 ```
 
 - **Matching.** A thread not filed by hand lands in the project whose folder is the thread's folder or contains it; the longest folder wins, ties by project id. Matching runs when a thread is made, at start, and after every project Input. It never takes a project away, except from a thread whose project was deleted, which also loses its filed-by-hand mark (V0.58). A thread filed by hand keeps its project. Each thread that matching moves gets the Input `project.matched` (source `observer:host`), which keeps its `updatedAt`.
 - **Commands.** `project.create {name, folder?, threadId?, link?}`, `project.update {id, name?, color?, icon?, image?, folder?, profile?, model?, effort?, priority?, agentSettle?, toolApproval?, quiet?}` (`image: ""` removes the image icon, V0.116), `project.link {id, link}`, `project.shared {id, link, at, ...}`, `project.delete {id}` (V0.58), `project.archive {id}` and `project.unarchive {id}` (V0.project-archive), `project.setupRun {id}` (V0.116); the agent's `project.setup {id, name?, color?, image?}` through the tool `project_setup` (V0.116). They are Input kinds of the project record on the one path (5.1): the engine checks the folder on the host, reduces the project, then reduces the thread Inputs it causes (the thread `project.create` files, as `thread.setProject`; the threads matching moves) and stores all of it with the receipt in one transaction (#48).
+- **Playbook (V0.project-playbook).** The playbook is what a thread cannot read from the pull request: the stages a merged change reaches, how a change is verified, promoted and rolled back, where issues are filed, how the app is run. It has at most six stages and one entry in each other slot.
+  - **Writing.** `project.learn {id, slot, name?, how?, url?, probe?, live?, evidence?, thread?}` writes one entry whole (the tool `project_learn`, 5.12), `{…, remove: true}` removes it, and the owner's `{…, allow: bool}` allows or stops its probe. An entry the owner wrote is kept against an agent (the rights row `project.playbook`). The owner's yes is for one command: an entry written again with another probe waits again.
+  - **Learning.** `project.playbookRun {id}` starts a thread in the project's folder that reads the repository and records what it can back with evidence. Every agent of a project is told to record what the owner tells it or what it had to work out, and gets the playbook in its prompt.
+  - **Stages.** While a merged change's deploy watch is armed (7.6), the host runs each allowed probe for the merge commit in the project's folder, each poll in the watch's first hour, then every 10 and 30 minutes as GitHub's deployments are read. A probe that exits 0 is an observation of the deploy observer: the condition `deploy:<stage>` is ok, the stage's url is evidence, and a live stage moves the change to `live`. A repo without any GitHub deployment keeps its watch for the probes and is not read again. The agent hears a stage reached as a fact notice with the stage's address (5.14) and may arm a watch on the condition; no model is asked where a change is.
+  - **Links.** A linked project's members take the playbook with the newest `playbookAt`, the owner's yes for a probe included (`project.sharedPlaybook {id, link, at, playbook}`, sent by the front as it sends the image).
 - **Setup (V0.116).** An agent run fills the fields the owner has not set (`by`): the image icon, the colour from it, the name. The owner's value is kept (the rights rows `project.name`, `project.color`, `project.image`).
 - **Quiet hours.** While a window holds, the thread DTO carries `quietUntil`; the front sends no push for the thread and the client hides it from the inbox (V0.46). Quiet hours are computed, not a Rule (7.6, decision 0020).
 
@@ -1228,6 +1243,7 @@ Each session gets Fyr's MCP server (V0.12, 16.2). A tool call becomes an Input w
 | `view_publish {html? \| path?, state?}` | `view.publish` | Publishes the thread's live view and its state (V0.37). |
 | `view_state {patch}` | `view.state` | Merges a patch into the live view's state (V0.37). |
 | `view_unchanged {reason}` | `view.unchanged` | Says the live view is still current after a turn (V0.37). |
+| `project_learn {project?, slot?, name?, how?, url?, probe?, live?, evidence?, remove?, ownerAsked?}` | `project.learn`; none without `slot` | Reads or writes the project's playbook (3.15): a stage a merged change reaches or one of the notes. The owner's entry is kept unless `ownerAsked`; a probe runs only once the owner allowed it (V0.project-playbook). |
 | `project_setup {project?, name?, color?, icon?, ownerAsked?}` | `project.setup`; `project.update` with `ownerAsked` | Sets a project's name, colour and icon; owner-set fields are kept unless `ownerAsked` (V0.116, V0.project-icons-on-demand). |
 | `host_setup {icon?, color?}` | none (host setting, 3) | Sets this host's icon and colour where the owner has not set them (V0.208). |
 | `thread_rename {title? \| regenerate?, id?}` | `thread.retitle` | Renames this thread or one it started; `regenerate` writes the title from the conversation with a small model; a name the owner gave is kept (V0.69, V0.title-goal). |

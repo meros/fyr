@@ -36,6 +36,9 @@ type Deployment struct {
 type DeployObs struct {
 	None        bool
 	Deployments []Deployment
+	// Probe: the read is a stage probe's (V0.project-playbook), not
+	// GitHub's.
+	Probe bool
 }
 
 // DeployRef is one watched merge commit for the poller. First: read the
@@ -105,10 +108,20 @@ func deploySeen(c *Change) bool {
 
 // DeployWatches are the merge commits of the thread to read deployments of:
 // its armed deploy Rules that do not end at now.
-func DeployWatches(t *Thread, now time.Time) []DeployRef {
+func DeployWatches(t *Thread, now time.Time) []DeployRef { return deployWatches(t, now, false) }
+
+// ProbeWatches are the merge commits a project's stage probes are run for
+// (V0.project-playbook): every armed deploy Rule, also one whose repo has no
+// GitHub deployment.
+func ProbeWatches(t *Thread, now time.Time) []DeployRef { return deployWatches(t, now, true) }
+
+func deployWatches(t *Thread, now time.Time, probes bool) []DeployRef {
 	var out []DeployRef
 	for _, r := range RulesOf(t, PurposeDeploy) {
 		if r.Status != RuleArmed || r.Observe == nil || r.When.eval(t, r.Armed, now) == yes {
+			continue
+		}
+		if r.Observe.NoRemote && !probes {
 			continue
 		}
 		out = append(out, DeployRef{Change: r.About, Repo: r.Observe.Repo, SHA: r.Observe.SHA, First: !r.Observe.Read, Since: r.Observe.Since})
@@ -124,16 +137,25 @@ func IsProduction(env string, flag bool) bool {
 }
 
 // ChangeDeployObserved writes one read of deployments into the change.
-func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time) {
+// probes: the project has stage probes, so a repo without any deployment
+// keeps the watch for them and is not read again (V0.project-playbook).
+func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, probes bool, now time.Time) {
 	c := FindChange(t, changeID)
 	r := FindRule(t, deployRuleID(changeID))
 	if c == nil || r == nil || r.Observe == nil || c.Phase != PhaseLanded {
 		return
 	}
-	r.Observe.Read = true
 	if d.None {
+		r.Observe.Read = true
+		if probes {
+			r.Observe.NoRemote = true
+			return
+		}
 		DropRules(t, func(x Rule) bool { return x.ID == r.ID })
 		return
+	}
+	if !d.Probe {
+		r.Observe.Read = true
 	}
 	if len(d.Deployments) > 0 && !deploySeen(c) { // seen: the limit is 7 days
 		r.When = deployWhen(c, r.Observe.Since, true)
@@ -147,10 +169,12 @@ func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time
 		switch x.State {
 		case "success", "inactive":
 			setCondition(c, typ, CondOK, "", ByObserved, now)
+			// V0.project-playbook: every stage's address is kept, so the
+			// change says where it can be looked at.
+			if u := firstOf(x.URL, x.LogURL); u != "" && (prod || x.URL != "") {
+				addEvidence(c, Evidence{Kind: "deployment", URL: u, Title: x.Env})
+			}
 			if prod {
-				if u := firstOf(x.URL, x.LogURL); u != "" {
-					addEvidence(c, Evidence{Kind: "deployment", URL: u, Title: x.Env})
-				}
 				setPhase(t, c, PhaseLive, ByObserved, now)
 			}
 		case "failure", "error":

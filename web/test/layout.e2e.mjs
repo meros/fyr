@@ -640,7 +640,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     else check(!u, `${ctx}: Automation has an Updates group of its own (${JSON.stringify(u)})`);
   }
   if (ctx.startsWith("settings device")) check(!!m.settings && m.settings.device.push && m.settings.device.theme === 3, `${ctx}: This device is wrong ${JSON.stringify(m.settings?.device)}`);
-  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|New threads|Without asking|Priority|Quiet hours|Show on this device|Archive|Delete" /* V0.project-archive, V0.settings-ia */, `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
+  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|New threads|Without asking|Playbook|Priority|Quiet hours|Show on this device|Archive|Delete" /* V0.project-archive, V0.settings-ia */, `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
   if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && m.stepFolder === "~/src/lasso-app", `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, folder "${m.stepFolder}")`);
   if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Garden in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
@@ -2097,7 +2097,7 @@ try {
   await navigate(`${origin}/?mock=rail&dialog=settings&page=projects/p_web`, "!!document.querySelector('.dlg .pedit .sw')");
   await settle();
   const pg = await evaluate(`({ save: [...document.querySelectorAll('.dlg .pedit button')].some(b => b.textContent.trim() === 'Save'), groups: [...document.querySelectorAll('.dlg .pedit > .sg > .sg-h .sg-t')].map(e => e.textContent), title: document.querySelector('.dlg .stp-h h2')?.textContent })`);
-  check(!pg.save && pg.groups.join("|") === "Identity|New threads|Without asking|Priority|Quiet hours|Show on this device|Archive|Delete" /* V0.project-archive, V0.settings-ia: the same groups as the phone's project screen; no Other hosts on a front with one host (nothing to link to) */ && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
+  check(!pg.save && pg.groups.join("|") === "Identity|New threads|Without asking|Playbook|Priority|Quiet hours|Show on this device|Archive|Delete" /* V0.project-archive, V0.settings-ia: the same groups as the phone's project screen; no Other hosts on a front with one host (nothing to link to) */ && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
   await shot("settings-project-desktop.png");
   await evaluate(`document.querySelector('.dlg .pedit .sw:not(.on)').click()`);
   await waitFor(`${COMMANDS("project.update")}.length >= 1 && !!document.querySelector('.dlg .stp-h .saved')`, { soft: true });
