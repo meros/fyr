@@ -4270,18 +4270,20 @@ section('V0.dialogs-review round 2', async (h) => {
     await waitFor(`!!document.querySelector('.dlg .df .err')`, { what: "the Merge dialog's error", soft: true });
     checkErr(await evaluate(errBox), "round 2 merge error desktop");
 
-    // The draft's line: above the prompt, inside the dialog's body, with Discard in it.
+    // The draft's line: above the prompt, inside the dialog's body. Round 3: its one control is × (hide the line);
+    // Discard has one place, the foot, so it does not move when the line goes.
     await navigate(`${origin}/?mock=1&dialog=new`, "!!document.querySelector('.dlg textarea')");
     await evaluate(`(() => { const ta = document.querySelector('.dlg textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'a prompt worth keeping'); ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await evaluate(`document.querySelector('.dlg .dh .x').click()`);
     await waitFor(`!document.querySelector('.dlg')`, { what: "New thread closed" });
     await evaluate(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))`);
     await waitFor(`!!document.querySelector('.dlg .ntdraft')`, { what: "the draft's line", soft: true });
-    const line = await evaluate(`(() => { const l = document.querySelector('.dlg .ntdraft'), ta = document.querySelector('.dlg textarea'), b = document.querySelector('.dlg .db'); if (!l || !ta || !b) return null; const r = l.getBoundingClientRect(), tr = ta.getBoundingClientRect(), br = b.getBoundingClientRect(); return { text: l.textContent, above: r.bottom <= tr.top + 0.5, inside: r.left >= br.left - 0.5 && r.right <= br.right + 0.5, value: ta.value, discard: [...l.querySelectorAll('button')].some((x) => x.textContent.trim() === 'Discard') }; })()`);
+    const line = await evaluate(`(() => { const l = document.querySelector('.dlg .ntdraft'), ta = document.querySelector('.dlg textarea'), b = document.querySelector('.dlg .db'); if (!l || !ta || !b) return null; const r = l.getBoundingClientRect(), tr = ta.getBoundingClientRect(), br = b.getBoundingClientRect(); const named = (root) => [...root.querySelectorAll('button')].map((x) => x.textContent.trim() || x.getAttribute('aria-label')); return { text: l.textContent, above: r.bottom <= tr.top + 0.5, inside: r.left >= br.left - 0.5 && r.right <= br.right + 0.5, value: ta.value, lineButtons: named(l), discard: named(document.querySelector('.dlg .df')).includes('Discard') }; })()`);
     check(!!line, "round 2 draft desktop: a reopened New thread shows no line about its draft");
     if (line) {
       check(/^Draft from today \d\d:\d\d · /.test(line.text), `round 2 draft desktop: the line does not say what it is and when: ${JSON.stringify(line.text)}`);
-      check(line.above && line.inside && line.discard, `round 2 draft desktop: the line is not above the prompt with Discard ${JSON.stringify(line)}`);
+      check(line.above && line.inside, `round 2 draft desktop: the line is not above the prompt ${JSON.stringify(line)}`);
+      check(line.discard && JSON.stringify(line.lineButtons) === '["×"]', `round 3 draft desktop: Discard is not in the foot alone, with × as the line's one control ${JSON.stringify(line)}`);
       check(line.value === "a prompt worth keeping", `round 2 draft desktop: the prompt did not come back: ${JSON.stringify(line.value)}`);
     }
 
@@ -4307,6 +4309,71 @@ section('V0.dialogs-review round 2', async (h) => {
   } catch (e) {
     failures.push(`round 2 phone: ${e.message}`);
   }
+});
+
+// V0.dialogs-review, round 3: what its review found by running, kept from coming back. A held Enter that opened the
+// Merge dialog does not merge (real key events: the repeat is the browser's); a phone page reloaded over a layer has
+// no history entry that a Back spends on nothing; the New project step's own buttons are in view above the phone's
+// bottom bar; Hand over to an offline host says why once.
+section('V0.dialogs-review round 3', async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, tapCenter, openScreen } = h;
+  const merges = `(window.__fyrCommands || []).filter((c) => c.action === 'pr.merge').length`;
+  const enterDown = (autoRepeat) => send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13, autoRepeat });
+  try {
+    await navigate(`${origin}/?mock=1&open=t_effect&tab=pr`, "!!document.querySelector('.prv-merge')");
+    await evaluate(`document.querySelector('.prv-merge').focus()`);
+    await enterDown(false);
+    await waitFor(`!!document.querySelector('.dlg .df .btn.p')`, { what: "the Merge dialog after Enter on Merge…" });
+    await settle();
+    check(await evaluate(`document.activeElement === document.querySelector('.dlg .df .btn.p')`), "round 3 held Enter: the plain Merge dialog does not start on its primary button");
+    for (let i = 0; i < 3; i++) await enterDown(true); // the key is still down: the browser repeats it
+    await settle();
+    const held = await evaluate(`({ merges: ${merges}, open: !!document.querySelector('.dlg .df .btn.p') })`);
+    check(held.merges === 0 && held.open, `round 3 held Enter: the Enter that opened the Merge dialog merged, or closed it ${JSON.stringify(held)}`);
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    // A new press is an answer.
+    await enterDown(false);
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await waitFor(`${merges} > 0`, { what: "the merge after a new Enter", soft: true });
+    check((await evaluate(merges)) === 1, `round 3 held Enter: a new Enter in the Merge dialog sent ${await evaluate(merges)} merges, not one`);
+  } catch (e) {
+    failures.push(`round 3 desktop: ${e.message}`);
+  }
+  try {
+    // New thread with its project list open is on the list's history entry; a reload there must leave one Back to
+    // the inbox, not one that changes nothing first.
+    await openScreen({ url: `?mock=1&new`, ready: "!!document.querySelector('.m-new .m-ppick')" }, 390, 844);
+    await tapCenter(".m-new .m-ppick", "!!document.querySelector('.m-new .m-pickpanel') && history.state?.backLayer === 1");
+    await evaluate(`window.__beforeReload = true`);
+    await send("Page.reload", {});
+    await waitFor(`!window.__beforeReload && document.readyState === 'complete' && !!document.querySelector('.m-new .m-ppick') && !document.querySelector('.m-new .m-pickpanel')`, { what: "New thread after the reload, its list closed" });
+    await waitFor(`!history.state?.backLayer`, { what: "the reloaded page off the layer's entry" });
+    await settle();
+    await evaluate(`history.back()`);
+    await waitFor(`!document.querySelector('.m-new')`, { what: "the inbox after one Back", soft: true, timeout: 3000 });
+    const after = await evaluate(`({ newThread: !!document.querySelector('.m-new'), search: location.search })`);
+    check(!after.newThread && !/[?&]new\b/.test(after.search), `round 3 reload over a layer: the first Back did not leave New thread ${JSON.stringify(after)}`);
+
+    // The New project step: its Back and Create project are in view, above the bottom bar.
+    await openScreen({ url: `?mock=1&hosts=2&new`, ready: "!!document.querySelector('.m-new .m-ppick')" }, 390, 844);
+    await tapCenter(".m-new .m-ppick", "!!document.querySelector('.m-new .pli.new')");
+    await tapCenter(".m-new .pli.new", "!!document.querySelector('.m-new .pform input')");
+    await settle();
+    const step = await evaluate(`(() => { const bar = document.querySelector('.m-new .m-abar').getBoundingClientRect(), body = document.querySelector('.m-nbody').getBoundingClientRect(); return [...document.querySelectorAll('.m-new .pform button')].filter((b) => /^(Back|Create project)$/.test(b.textContent.trim())).map((b) => { const r = b.getBoundingClientRect(); return { text: b.textContent.trim(), top: Math.round(r.top), bottom: Math.round(r.bottom), bar: Math.round(bar.top), seen: r.top >= body.top - 0.5 && r.bottom <= Math.min(bar.top, body.bottom) + 0.5 }; }); })()`);
+    check(step.length === 2 && step.every((b) => b.seen), `round 3 New project step phone: its own buttons are not whole above the bottom bar ${JSON.stringify(step)}`);
+
+    // Hand over to an offline host: the reason once (under Host), and the buttons as wide as the sheet.
+    await openScreen({ url: `?mock=1&hosts=2&open=t_effect`, sheet: "handover" }, 390, 844);
+    await evaluate(`[...document.querySelectorAll('.m-sheet .hostf .htab')].find((b) => /host-b/.test(b.textContent)).click()`);
+    await waitFor(`/offline/.test(document.querySelector('.m-sheet .ho-b')?.textContent ?? '')`, { what: "the offline host's note" });
+    await settle();
+    const ho = await evaluate(`(() => { const sh = document.querySelector('.m-sheet'), df = sh.querySelector('.df'); const r = df.getBoundingClientRect(); return { times: sh.textContent.split('is offline').length - 1, foot: [...df.children].map((x) => x.textContent.trim()), off: df.querySelector('.btn.p').disabled, inView: r.bottom <= innerHeight + 0.5 }; })()`);
+    check(ho.times === 1 && JSON.stringify(ho.foot) === '["Cancel","Hand over"]' && ho.off && ho.inView, `round 3 Hand over phone: an offline host's reason does not stand once above two buttons ${JSON.stringify(ho)}`);
+  } catch (e) {
+    failures.push(`round 3 phone: ${e.message}`);
+  }
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 });
 
 // V0.108: Regenerate title is in the thread's ⋯ menu on the desktop and in the thread's ⋯ sheet on the phone, the same

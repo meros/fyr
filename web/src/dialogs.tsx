@@ -101,6 +101,7 @@ export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddP
   const enter = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing) {
       e.preventDefault();
+      if (e.repeat) return; // a held Enter is one Enter: it must not answer "Press Enter again" by itself
       void start("enter");
     }
   };

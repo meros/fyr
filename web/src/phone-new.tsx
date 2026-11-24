@@ -50,6 +50,7 @@ export function MNew(p: PhoneProps) {
   const enter = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.isComposing) {
       e.preventDefault();
+      if (e.repeat) return; // a held Enter is one Enter, as on the desktop
       void n.submit("enter");
     }
   };

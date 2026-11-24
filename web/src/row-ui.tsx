@@ -292,7 +292,7 @@ function NeedButton({ t, change, need }: { t: Thread; change: Change; need: Chan
         onClick={(e) => {
           if (!canMerge) return; // Answer: the row's own click opens the thread
           e.stopPropagation();
-          // V0.dialogs-review: the row's Merge asks first, as it did, now in the Merge dialog every merge asks in.
+          // V0.dialogs-review: the row's Merge always asks first (a press in a list is easy to make by mistake), in the Merge dialog every merge asks in.
           const args = pressArgs(change.id, merge!, need.head);
           void askMerge({
             number: change.pr?.number,

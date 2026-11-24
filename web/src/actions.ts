@@ -157,22 +157,16 @@ export function actionsFor(front: Front, t: Thread, where: Where): ThreadAction[
 export const DESK_HEADER_BUTTONS: readonly ActionId[] = ["retry", "pin", "unpin", "snooze", "settle"];
 
 /** The desktop header's ⋯ menu: the open thread's actions that are not header buttons. V0.dialogs-review: in the
- *  one order of this list, with its groups, as the row menu and the phone's sheet show it (V0.26 put Project… first
- *  here; three orders for one list was the cost). */
+ *  one order of this list, with its groups, as the row menu and the phone's sheet show it: one list has one order. */
 export function deskThreadMenu(t: Thread): ThreadAction[] {
   return actionsFor("desktop", t, "thread").filter((a) => !DESK_HEADER_BUTTONS.includes(a.id));
 }
 
-/** The key a menu shows beside an entry: only one the menu itself acts on while it is open (`actionForKey`). Enter
+/** The key a menu shows beside an entry: only one the menu itself acts on while it is open (menu.ts `entryForKey`). Enter
  *  and Esc are the menu's own keys there (Enter takes the focused entry, Esc closes the menu), so "↵" and "Esc" are
  *  not shown: a hint for a key that does something else would lie. */
 export function menuKey(a: Pick<ThreadAction, "key" | "disabled">): string | undefined {
   return a.key && a.key.length === 1 && a.key !== "↵" && !a.disabled ? a.key : undefined;
-}
-
-/** The entry a key typed in an open menu runs, or undefined. */
-export function actionForKey<T extends Pick<ThreadAction, "key" | "disabled">>(items: readonly T[], key: string): T | undefined {
-  return items.find((a) => menuKey(a) === key);
 }
 
 /** The list as its groups, in order: what a surface draws a line between (a menu's separator, the phone sheet's rule). */

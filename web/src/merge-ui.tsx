@@ -5,7 +5,7 @@
 
 import { createContext, type VNode } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import { MERGE_METHODS, MERGE_OWN_METHOD, mergeConfirm, mergeTitle, notMerged, rememberedMergeMethod, rememberMergeMethod, shortHead, type MergeAsk, type MergeMethod } from "./pr.ts";
+import { MERGE_METHODS, mergeConfirm, mergeMethodLine, mergeTitle, notMerged, rememberedMergeMethod, rememberMergeMethod, shortHead, type MergeAsk, type MergeMethod } from "./pr.ts";
 import { sensitiveLine } from "./sensitive.ts";
 import { browserStorage } from "./prefs.ts";
 import { Modal } from "./dialogs.tsx";
@@ -36,7 +36,8 @@ export function useMergeHost(phone: boolean): { ask: MergeFn; view: VNode | null
 /** V0.dialogs-review (1): while it is open no key of the app acts under it (app-keyboard.tsx reads the open panels),
  *  and Esc and Enter are its own. (27): it starts on the method this repository was merged with last on this device,
  *  and stays open with the host's error, on a line of its own, when the merge does not start. A sensitive merge is
- *  red and starts with the focus on Cancel, so an Enter on its way elsewhere does not merge. The foot names the keys
+ *  red and starts with the focus on Cancel, so an Enter on its way elsewhere does not merge; a held Enter that repeats
+ *  into the dialog is no answer at all. The foot names the keys
  *  like the confirmation; not on the phone, which has no keyboard. */
 function MergeDialog({ a, phone, onDone }: { a: MergeAsk; phone: boolean; onDone(ok: boolean): void }) {
   const [method, setMethod] = useState<MergeMethod>(() => rememberedMergeMethod(browserStorage(), a.repo ?? ""));
@@ -55,6 +56,9 @@ function MergeDialog({ a, phone, onDone }: { a: MergeAsk; phone: boolean; onDone
         e.stopPropagation();
         doneRef.current(false);
       } else if (e.key === "Enter" && !e.isComposing) {
+        // A key held since before the dialog opened is not an answer to it (confirm-ui.tsx has the same guard): the
+        // Enter that pressed "Merge…" repeats into the dialog, whose focus is on the button that merges.
+        if (e.repeat) return (e.preventDefault(), e.stopPropagation());
         // Enter merges with the method shown, from a method's radio too; a focused Cancel or × takes Enter itself.
         const el = document.activeElement as HTMLElement | null;
         if (el?.tagName === "BUTTON" && el !== btn.current) return;
@@ -117,11 +121,11 @@ function MergeDialog({ a, phone, onDone }: { a: MergeAsk; phone: boolean; onDone
             ))}
           </div>
         ) : (
-          <p class="lede">{MERGE_OWN_METHOD}</p>
+          <p class="lede">{mergeMethodLine(a)}</p>
         )}
       </div>
-      {/* The host's refusal has a line of its own above the buttons on both fronts: beside them it had the width
-          the two buttons left, which on the desktop's narrow dialog was one letter. */}
+      {/* The host's refusal has a line of its own above the buttons on both fronts: beside them it has only the width
+          the two buttons leave, which in the desktop's narrow dialog is one letter. */}
       <div class="df prv-df">
         {err && (
           <div class="dfn">

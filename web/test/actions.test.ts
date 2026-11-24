@@ -2,7 +2,7 @@
 // ⋯ menu) and the phone's sheets. An action reachable on one front is reachable on the other, unless it says why not.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESK_HEADER_BUTTONS, actionForKey, actionGroups, actionsFor, deskThreadMenu, menuKey, runAction, settleRun, settleToast, threadActions, type ActionHandlers, type ActionId, type Front, type ThreadAction, type Where } from "../src/actions.ts";
+import { DESK_HEADER_BUTTONS, actionGroups, actionsFor, deskThreadMenu, menuKey, runAction, settleRun, settleToast, threadActions, type ActionHandlers, type ActionId, type Front, type ThreadAction, type Where } from "../src/actions.ts";
 import { thread } from "./helpers.ts";
 
 const states = [
@@ -125,10 +125,7 @@ test("V0.dialogs-review: a menu shows a key only when the key acts while the men
   const stop = row.find((a) => a.id === "interrupt");
   if (stop) assert.equal(menuKey(stop), undefined, "Esc closes the menu");
   assert.equal(menuKey(row.find((a) => a.id === "archive")!), "#");
-  assert.equal(actionForKey(row, "#")?.id, "archive");
-  assert.equal(actionForKey(row, "p")?.id, "project");
-  assert.equal(actionForKey(row, "Escape"), undefined);
-  assert.equal(actionForKey([{ key: "s", disabled: "Nothing to snooze" }], "s"), undefined, "an entry that is off has no key");
+  assert.equal(menuKey({ key: "s", disabled: "Nothing to snooze" }), undefined, "an entry that is off has no key");
 });
 
 test("settleRun: the one run option both fronts pass to thread.settle", () => {

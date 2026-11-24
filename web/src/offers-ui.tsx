@@ -41,14 +41,15 @@ function NeedLine({ c, onRun, send }: { c: Change; onRun: Run; send: Send }) {
     const args = pressArgs(c.id, merge, n.head);
     const st = offerLook(merge, c.runs, hhmm);
     const off = unavailable(merge, c.runs, c) ?? undefined;
-    yes = { label: `${look.button}${st.word}`, cls: st.cls, busy: st.state === "running", off, run: () => void mergeAfterAsk(changeMerge(c, n.head, () => send("action.run", args)), askMerge, () => (onRun("action.run", args), true)) };
+    // the mark says what the time after the label is: the merge ran then (✓), or failed (✕)
+    yes = { label: `${st.mark}${look.button}${st.word}`, cls: st.cls, busy: st.state === "running", off, run: () => void mergeAfterAsk(changeMerge(c, n.head, () => send("action.run", args)), askMerge, () => (onRun("action.run", args), true)) };
   }
   return (
     <div class={`chneed ${n.cause}${n.muted ? " muted" : ""}`} role={n.muted ? undefined : "status"}>
       {look.beam && <span class="beamdot" aria-hidden="true" />}
       <span class="chnq">{look.line}</span>
       {yes && (
-        <button class={`btn p sm${yes.cls ?? ""}`} title={yes.off ?? yes.title} disabled={!!yes.off} aria-busy={yes.busy || undefined} onClick={yes.run}>
+        <button class={`btn p sm${yes.cls && yes.cls !== " p" ? yes.cls : ""}`} title={yes.off ?? yes.title} disabled={!!yes.off} aria-busy={yes.busy || undefined} onClick={yes.run}>
           {yes.label}
         </button>
       )}

@@ -19,7 +19,7 @@ export function decisionSensitive(t: Pick<Thread, "changes"> | null | undefined,
 export const sensitiveLine = (why: string) => `Sensitive: ${why}. Fyr never merges it by itself.`;
 
 /** V0.dialogs-review: a sensitive merge asks first, in the Merge dialog (pr.ts `MergeAsk`: red, the reason on top,
- *  the focus on Cancel); a plain merge from a card or an ask goes at once, as before. `ask` resolves true when the
+ *  the focus on Cancel); a plain merge from a card's need strip or the agent's ask goes at once. `ask` resolves true when the
  *  merge started; `plain` runs the merge that does not ask. True when it went. */
 export async function mergeAfterAsk(m: MergeAsk, ask: (a: MergeAsk) => Promise<boolean>, plain: () => Promise<boolean> | boolean): Promise<boolean> {
   return m.sensitive ? ask(m) : plain();

@@ -254,7 +254,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     if (!plan.ok) return (setErr(block), "prompt");
     // V0.132: nothing is made on an offline host, and nothing falls back to another.
     const on = formHost(f, ctx);
-    if (block || !on) return void setErr(block);
+    if (block || !on) return void setErr(block || "There is no host to start the thread on.");
     if (by === "enter" && line === "draft" && !enterNote) return void setEnterNote(true);
     busyRef.current = true;
     setBusy(true);
@@ -426,7 +426,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
       if (r.error) return r.error;
       const id = r.id;
       touch();
-      if (id) setF((x) => byHand(madeProject(x, id, name, folder, ctxRef.current), "project"));
+      if (id) setF((x) => madeProject(x, id, name, folder, ctxRef.current));
       return null;
     },
     missing,

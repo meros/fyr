@@ -334,24 +334,35 @@ export interface MergeAsk {
    *  merge runs with the method its change or ask names (`action.run` and `thread.answer` take none), and the dialog
    *  says so instead of offering a choice it could not keep. */
   choose?: boolean;
+  /** the method this merge runs with, when the path that takes no choice knows it (the agent's merge ask names it) */
+  method?: MergeMethod;
   /** Start the merge; resolves to the host's error, or null when it started. */
   run(method: MergeMethod | undefined): Promise<string | null>;
 }
 
 /** The Merge dialog's title: it names what is merged. */
 export function mergeTitle(a: Pick<MergeAsk, "number" | "sensitive">): string {
-  const what = a.number ? `#${a.number}` : "this PR";
-  return a.sensitive ? `Merge ${what}, a sensitive PR` : `Merge ${what}`;
+  if (!a.number) return a.sensitive ? "Merge this sensitive PR" : "Merge this PR";
+  return a.sensitive ? `Merge #${a.number}, a sensitive PR` : `Merge #${a.number}`;
 }
 
-/** The Merge dialog's primary button: the method when one is chosen there, else what it merges. */
-export function mergeConfirm(a: Pick<MergeAsk, "number" | "choose" | "sha">, method: MergeMethod): string {
-  if (a.choose && a.number) return mergeButton(method, a.number);
+/** The Merge dialog's primary button: the method when one is chosen there or known, else what it merges. */
+export function mergeConfirm(a: Pick<MergeAsk, "number" | "choose" | "sha" | "method">, method: MergeMethod): string {
+  const m = a.choose ? method : a.method;
+  if (m && a.number) return mergeButton(m, a.number);
   return a.number ? `Merge #${a.number}` : headLabel("Merge", a.sha);
 }
 
-/** What the dialog says in place of the method choice when the host takes none on this path. */
-export const MERGE_OWN_METHOD = "With the method this change asks for (squash unless the agent named another). The PR tab lets you pick one.";
+/** A merge method by its id as a command carries it (an ask's `args.method`), or undefined. */
+export const mergeMethod = (id: unknown): MergeMethod | undefined => MERGE_METHODS.find((m) => m.id === id)?.id;
+
+/** What the dialog says in place of the method choice when the host takes none on this path: the method, when the
+ *  ask names it, and where another can be picked. */
+export function mergeMethodLine(a: Pick<MergeAsk, "method">): string {
+  const m = MERGE_METHODS.find((x) => x.id === a.method);
+  const how = m ? `Method: ${m.label}, as the agent asked.` : "The merge uses the method its change asks for: squash unless the agent named another.";
+  return `${how} To pick another, merge from the thread's PR tab.`;
+}
 
 /** The host's refusal, as the dialog prints it on a line of its own. */
 export const notMerged = (err: string) => `Not merged: ${err}`;

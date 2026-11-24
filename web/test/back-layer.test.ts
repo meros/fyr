@@ -2,14 +2,14 @@
 // the stack of open layers whoever moved it, and a navigation waits until it does.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createLayers, layerDepth, TRAVERSE_MS } from "../src/back-layer.ts";
+import { createLayers, layerDepth, leftOnLoad, TRAVERSE_MS } from "../src/back-layer.ts";
 import { navFromHistory, seedHistory, type Nav } from "../src/nav.ts";
 
 /** A history whose traversals land later, as a browser's do: go() queues, `land` delivers the popstate. Timers are
  *  the test's to run: `after(0)` is the turn after an event, `after(TRAVERSE_MS)` the give-up timers. */
-function fake() {
-  const entries: unknown[] = [{ screen: { name: "new" }, sheet: null }];
-  let at = 0;
+function fake(start: unknown[] = [{ screen: { name: "new" }, sheet: null }]) {
+  const entries: unknown[] = [...start];
+  let at = entries.length - 1;
   const queued: number[] = [];
   const timers: { fn: () => void; ms: number }[] = [];
   const h = {
@@ -20,6 +20,9 @@ function fake() {
       entries.splice(at + 1);
       entries.push(s);
       at = entries.length - 1;
+    },
+    replaceState(s: unknown) {
+      entries[at] = s;
     },
     go(n: number) {
       queued.push(n);
@@ -243,6 +246,35 @@ test("V0.dialogs-review (4): two layers closed one after the other, the second w
   assert.equal(f.asked(), 1);
   assert.equal(await f.run(), 2, "one after the other, never two at once");
   assert.equal(f.at(), 0);
+});
+
+test("V0.dialogs-review (4): a page loaded on a layer's entry steps back to the screen's own, so the first Back leaves the screen", async () => {
+  // New thread with its project list open, then a reload: the page is on the list's entry and no list is open.
+  const NEW = { screen: { name: "new" }, sheet: null };
+  const f = fake([{ screen: { name: "inbox" }, sheet: null }, NEW, { ...NEW, backLayer: 1 }]);
+  const over = leftOnLoad(f.h.state);
+  assert.equal(over, 1);
+  seedHistory(f.h, "?new", f.h.state);
+  assert.equal(layerDepth(f.h.state), 0, "the entry no longer speaks of a layer");
+  f.ls.leftOver(over);
+  // A layer that is up in the first render waits for the step back: its entry must not land on the one that goes.
+  const closed: string[] = [];
+  f.ls.open(() => closed.push("list"));
+  assert.equal(await f.run(), 1);
+  assert.equal(f.at(), 2, "New thread's own entry (1), and the layer's on it");
+  assert.equal(layerDepth(f.h.state), 1);
+  f.back();
+  assert.deepEqual(closed, ["list"]);
+  assert.equal(f.at(), 1);
+  f.back();
+  assert.equal(f.at(), 0, "the next Back is the inbox: no entry is left that does nothing");
+  assert.equal(f.asked(), 0);
+
+  // A layer over a sheet of the navigation (the New project step in the Project sheet): the sheet's entry lies under
+  // the layer's, and the reloaded page shows no sheet, so that entry goes too.
+  assert.equal(leftOnLoad({ screen: { name: "thread", id: "t1" }, sheet: { kind: "project", ids: ["t1"] }, backLayer: 2 }), 3);
+  assert.equal(leftOnLoad({ screen: { name: "thread", id: "t1" }, sheet: { kind: "project" } }), 0, "a sheet's own entry is the navigation's");
+  assert.equal(leftOnLoad(null), 0);
 });
 
 test("V0.dialogs-review (4): a page loaded on a layer's entry keeps the entries under it and pushes none", () => {

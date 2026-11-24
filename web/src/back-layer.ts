@@ -9,9 +9,11 @@
 // are compared, whoever moved it:
 // - fewer in the history than open: the owner went Back over layers, and those close;
 // - more in the history than open: entries are left over (a layer closed on the page, Forward onto an entry whose
-//   layer is gone, a reload over a layer), and the stack goes back by that many;
+//   layer is gone), and the stack goes back by that many;
 // - the same: nothing to do.
 // So no popstate is taken for something it is not, and no flag has to guess who caused it.
+// A page that loads on a layer's entry (a reload over a layer) has no popstate to compare at: `leftOnLoad` says how
+// many entries are left over there, and the stack steps back by that many before anything else (`leftOver`).
 //
 // A navigation never lands on a layer's entry, and never under a traversal that is on its way (its pushState would be
 // undone by it): it closes the open layers first and waits until the history is where the stack says (`settled`).
@@ -42,6 +44,14 @@ const MARK = "backLayer";
 export function layerDepth(state: unknown): number {
   const n = state && typeof state === "object" ? (state as Record<string, unknown>)[MARK] : undefined;
   return typeof n === "number" && n > 0 ? n : 0;
+}
+
+/** How many entries are left over when the page loads on an entry with this state (a reload over a layer): the
+ *  entries of the layers that were up, none of which is open now, and under them the entry of the navigation's sheet
+ *  they stood over (nav.ts: a sheet is an entry of its own; the loaded page shows the screen without it). */
+export function leftOnLoad(state: unknown): number {
+  const depth = layerDepth(state);
+  return depth && (state as { sheet?: unknown }).sheet ? depth + 1 : depth;
 }
 
 export function createLayers(h: HistoryLike, later: (fn: () => void, ms: number) => unknown = setTimeout) {
@@ -135,6 +145,9 @@ export function createLayers(h: HistoryLike, later: (fn: () => void, ms: number)
       later(settle, 0);
       return ours;
     },
+    /** `n` entries are left over from before the page loaded (`leftOnLoad`): the history steps back by that many,
+     *  and a layer that comes up meanwhile gets its entry after that. */
+    leftOver: (n: number): void => take(n),
     /** A Back control of the page (the header's arrow or ×, a sheet's close) leaves the screen: one step back, over
      *  the entries of every layer above it, which close. */
     leave(): void {
@@ -177,7 +190,13 @@ let seeded: Nav | null = null;
  *  history first builds it: the navigation (app-nav.tsx), or a layer that is up in the first render (a layer's entry
  *  pushed before the seed would end up under the seeded entries). */
 export function seedPhoneHistory(): Nav {
-  return (seeded ??= seedHistory(history, location.search, history.state));
+  if (seeded) return seeded;
+  // A reload over a layer: seedHistory makes that entry the screen's, which leaves a second entry of the screen that
+  // a Back would spend without anything changing. The stack takes it out.
+  const over = leftOnLoad(history.state);
+  seeded = seedHistory(history, location.search, history.state);
+  if (over) layers()?.leftOver(over);
+  return seeded;
 }
 
 /** While `on`, the layer is a history entry: Back calls `onBack` (which closes it). Phone only: the caller passes

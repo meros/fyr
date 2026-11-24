@@ -23,7 +23,6 @@ import { hostChoices, hostOfflineNote, profilesOf } from "./hosts.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { useDirectory } from "./project-ui.tsx";
 import { SCRATCH_LABEL } from "./projects.ts";
-import { startBlock } from "./new-thread.ts";
 import { tildePath } from "./paths.ts";
 import { ref } from "./hostfeed.ts";
 import type { HostId } from "./hostid.ts";
@@ -200,8 +199,9 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
     void confirm();
   };
   const listShut = () => (listOpen.current = false);
-  // Across hosts the button says what happens to this thread; the sentence above the form says it too.
-  const label = crossHost && toHostName ? `Move to ${toHostName} and settle here` : "Hand over";
+  // Across hosts the button says what happens to this thread; the sentence above the form says it too. Not for a
+  // host that is down: nothing moves, and the sentence that explains "settle here" is not shown.
+  const label = crossHost && toHostName && !hostDown ? `Move to ${toHostName} and settle here` : "Hand over";
 
   return (
     <div class="ho-form" ref={root} onKeyDown={onKey} onMouseDown={(e) => (listOpen.current = (e.target as HTMLElement | null)?.tagName === "SELECT")} onChange={listShut} onFocusOut={listShut}>
@@ -226,8 +226,8 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
             what={crossHost ? "The thread continues on this host with its providers and folders." : "Keep on this host to switch provider only, or pick another host to move it."}
           />
         )}
-        {/* A host that is down takes nothing: no provider to pick, no mapping and no plan are shown for it; the
-            reason stands under Host and, short, beside the button. */}
+        {/* A host that is down takes nothing: no provider to pick, no mapping and no plan are shown for it. The
+            reason stands once, under Host (HostField's note), right above the buttons of the form that is left. */}
         {hostDown ? null : !targets.length ? (
           <div class="err prose">{crossHost ? `No providers are configured on ${toHostName || "that host"}.` : "There is no other provider on this host."}</div>
         ) : (
@@ -311,7 +311,6 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
         </div>
       )}
       <div class={`df${p.phone ? " ho-ph" : ""}`}>
-        {hostDown && <div class="dfn">{startBlock(null, hostDown)}</div>}
         <button class="btn" onClick={p.onClose}>
           Cancel{!p.phone && <kbd>Esc</kbd>}
         </button>

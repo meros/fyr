@@ -12,6 +12,7 @@ import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
 import { decisionSensitive } from "./sensitive.ts";
 import { threadPrs } from "./offers.ts";
+import { mergeMethod } from "./pr.ts";
 
 export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" | "threadsRef" | "tracker" | "setTracker" | "cards" | "setCards" | "setInText" | "sec" | "gatedRef" | "viewThread">) {
   const { api, threadsRef, tracker, setTracker, cards, setCards, setInText, sec, gatedRef, viewThread } = c;
@@ -98,11 +99,15 @@ export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "api" | "cmds
     if (!why) return plain();
     const args = (d.effect?.args ?? {}) as Record<string, unknown>;
     const pr = t ? threadPrs(t).find((x) => x.url === args.pr) : undefined;
+    // The ask's change, for the PR's title where the thread's PR list does not have it: the dialog says the same
+    // about one merge wherever it starts.
+    const change = t?.changes.find((c) => c.id === args.change || (!!c.pr?.url && c.pr.url === args.pr));
     const num = Number(/\/pull\/(\d+)/.exec(String(args.pr ?? ""))?.[1] ?? pr?.number ?? 0);
     return mergeHost.ask({
       number: num || undefined,
-      title: pr?.title,
-      repo: pr?.repo,
+      title: pr?.title ?? change?.pr?.title ?? change?.title,
+      repo: pr?.repo ?? change?.pr?.repo,
+      method: mergeMethod(args.method),
       sha: typeof args.head === "string" ? args.head : undefined,
       sensitive: why,
       run: async () => {

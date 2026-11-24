@@ -9,7 +9,7 @@ import type { useAppState } from "./app-state.tsx";
 import { layers } from "./back-layer.ts";
 
 /** V0.dialogs-review (4): a navigation closes the open layers and waits until their entries are out
- *  (back-layer.ts). With no layer it runs at once, as before. */
+ *  (back-layer.ts). With no layer it runs at once. */
 const settled = (fn: () => void) => {
   const ls = layers();
   if (ls) ls.settled(fn);

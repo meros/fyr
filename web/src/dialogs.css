@@ -1,7 +1,7 @@
 /* V0.dialogs-review: the dialogs, sheets and the New thread form of both fronts. Imported last, so these rules stand. */
 
-/* (22) A dialog starts higher and may be taller: 6vh above it, 88vh at most (it was 12vh and 76vh, which cut New
-   thread at the prompt on a 720 px window). Settings keeps its own size and place: its pages are not this change's. */
+/* (22) A dialog starts 6vh from the top and is 88vh tall at most, so New thread shows its prompt and its foot on a
+   720 px window. Settings keeps its own size and place. */
 .scrim{padding-top:6vh}
 .dlg{max-height:88vh}
 @media (min-width:761px){.scrim:has(>.dlg.settings){padding-top:12vh}}
@@ -71,7 +71,7 @@
 .ho-form{display:contents}
 .m-new .dfn .dfl,.m-new .ntdraft .dfl{display:inline-flex;align-items:center;min-height:44px;padding:0 6px} /* a finger's height for Discard and Undo */
 
-/* Round 2. The line about a draft, above the prompt on both fronts: what it is, Discard (or Undo), and × to hide it. */
+/* The line about a draft, above the prompt on both fronts: what it is and × to hide it; after a Discard, Undo. */
 .ntdraft{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;min-width:0;padding:5px 6px 5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:400 12px/16px var(--ui);color:var(--ink)}
 .ntdraft .ntdt{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
 .ntdraft .ntdx{flex:none;width:24px;height:24px;border-radius:6px;color:var(--ink-muted);font:400 16px/1 var(--ui)}
@@ -81,6 +81,8 @@
 .dfn .dfe{font:500 12.5px/17px var(--ui);color:var(--ink)}
 .m-new .dfn .dfe{font:500 13px/18px var(--ui)}
 .df>.dfl{flex:none}
+/* The New project step scrolls itself into view as it opens (project-picker.tsx): its buttons keep this much air from the edge of what scrolls. */
+.pform{scroll-margin-block:12px}
 .ppick .chev{display:grid;place-items:center;color:var(--ink-muted)}
 .ppstep{display:contents}
 .pform .pnote{margin:0}
@@ -93,7 +95,7 @@
 .m-sheet .dsub{padding:0 20px 6px;font-size:13px;line-height:18px}
 
 /* The Merge dialog on both fronts: what is merged, and the host's refusal on a line of its own above the buttons
-   (beside them it had the width they left: one letter on the desktop's narrow dialog). */
+   (beside them it has only the width they leave: one letter in the desktop's narrow dialog). */
 .prv-dlg .prv-what{margin:0;font:600 13px/18px var(--ui);color:var(--ink);overflow-wrap:anywhere}
 .df.prv-df{flex-wrap:wrap}
 .df.prv-df .dfn{flex:1 0 100%;margin:0 0 2px}

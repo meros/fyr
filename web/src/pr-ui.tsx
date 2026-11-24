@@ -93,7 +93,7 @@ export function PrView(p: PrViewProps) {
     return r.ok;
   };
   /** V0.dialogs-review (27): the merge's own error goes back to the Merge dialog, which stays open with it; a merge
-   *  that started is the tab's note, as before. */
+   *  that started is the tab's note. */
   const merge = async (m: MergeMethod, n: number): Promise<string | null> => {
     const r = await source.command(t.hostId, "pr.merge", t.id, { pr: pr.url, method: m, head });
     if (!r.ok) return r.error ?? "The merge did not start.";

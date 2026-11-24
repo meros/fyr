@@ -75,9 +75,13 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, many, h
   const err = onError ? null : ownErr;
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     nameRef.current?.focus();
     nameRef.current?.select();
+    // The step opens under the control that opened it, often at the lower edge of what scrolls (the phone's New
+    // thread, above its bottom bar): its own buttons are its end and must be in view, not cut by that edge.
+    root.current?.scrollIntoView({ block: "nearest" });
   }, []);
   const submit = async () => {
     if (busy) return;
@@ -94,7 +98,7 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, many, h
     if (e) setErr(e);
   };
   return (
-    <div class="pform">
+    <div class="pform" ref={root}>
       <label class="fld">
         <span>Name</span>
         <input

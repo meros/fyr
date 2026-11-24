@@ -312,11 +312,14 @@ export function pickModel(f: NewThreadForm, profile: string, model: string): New
   return { ...f, profile, model, note: "" };
 }
 
-/** V0.63: a project made in the form is picked at once. */
+/** V0.63: a project made in the form is picked at once. V0.dialogs-review: it is the owner's pick by hand, whichever
+ *  button made it (the step's own, or Start with the step open), so the draft keeps it (`draftOf`): a thread that
+ *  then fails to start is not filed in the default project the next time. */
 export function madeProject(f: NewThreadForm, id: string, name: string, folder: string, ctx: FormCtx): NewThreadForm {
   const on = formHost(f, ctx);
   const np: Project = { ...localProject(id, name, folder), ...(on ? { hostId: on, host: ctx.hosts?.find((h) => h.id === on)?.name } : {}) }; // V0.132: made on the form's host
-  return chooseProject({ ...f, made: np, draft: null }, np, { ...ctx, projects: [...ctx.projects.filter((x) => x.id !== id), np] });
+  const next = chooseProject({ ...f, made: np, draft: null }, np, { ...ctx, projects: [...ctx.projects.filter((x) => x.id !== id), np] });
+  return { ...next, hand: { ...next.hand, project: true } };
 }
 
 /** What thread.create gets; `pid` is the project (made just now when the New project step was open). */
@@ -531,7 +534,7 @@ export function draftLine(d: NewThreadDraft, f: NewThreadForm, ctx: FormCtx, now
   const here = name ? `in ${name}` : "no project";
   if (d.project === undefined || o.pending) parts.push(here);
   else if ((f.projectId ?? "") === d.project && f.hand?.project) parts.push(name ? `${here}, the project picked in the draft` : "no project, as picked in the draft");
-  else parts.push(`${here} (the project picked in the draft is not offered here)`);
+  else parts.push(here, "the draft's project is not offered here"); // a part of its own: it is not about the project the form is on
   const lost = o.lost ?? 0;
   if (lost > 0) parts.push(lost === 1 ? "1 file was not kept" : `${lost} files were not kept`);
   return parts.join(" · ");

@@ -35,7 +35,7 @@ import { enterAction, matchProjects, matchRank } from "../src/projects.ts";
 import { customProblem, customStart, customUntil, fieldTime } from "../src/snooze.ts";
 import { snoozePresets } from "../src/store.ts";
 import { firstFocus, openTraps, pushTrap, dropTrap } from "../src/focus-trap.ts";
-import { MERGE_METHOD_KEY, MERGE_OWN_METHOD, mergeConfirm, mergeTitle, notMerged, rememberedMergeMethod, rememberMergeMethod } from "../src/pr.ts";
+import { MERGE_METHOD_KEY, mergeConfirm, mergeMethod, mergeMethodLine, mergeTitle, notMerged, rememberedMergeMethod, rememberMergeMethod } from "../src/pr.ts";
 import { confirmFocus } from "../src/confirm.ts";
 import { barOffers, stripMerge } from "../src/offers.ts";
 import { arrowRow } from "../src/snooze.ts";
@@ -157,6 +157,19 @@ test("V0.dialogs-review (12): the New project step keeps its name and folder unt
   f = madeProject({ ...f, creating: "Zebra" }, "p_z", "Zebra", "/home/o/zebra", ctx);
   assert.equal(f.draft, null);
   assert.equal(f.projectId, "p_z");
+});
+
+test("V0.dialogs-review (3): a thread that fails to start after its project was made keeps that project in the draft", () => {
+  // "Create project and start": the project is made, then thread.create fails. The draft written then must name the
+  // project, or the next New thread opens on the default project and Start files the thread there.
+  const step: NewThreadForm = { ...fresh(), text: "Fix the login redirect", picking: true, creating: "Zebra", draft: { name: "Zebra", folder: "" } };
+  const f = madeProject(step, "p_z", "Zebra", "", ctx);
+  const d = draftOf(f, ctx)!;
+  assert.equal(d.project, "p_z", "the made project is the owner's pick");
+  assert.equal(d.newProject, undefined, "and is not made a second time");
+  const made = { ...ctx, projects: [...ctx.projects, f.made!] };
+  const back = restoreDraft(settleForm(initialForm(), made, null, {}), d, made);
+  assert.equal(back.projectId, "p_z", "the next New thread opens on it");
 });
 
 test("V0.dialogs-review (12): another host keeps the step open with its name, drops what was on the old host, and says so", () => {
@@ -354,7 +367,7 @@ test("V0.dialogs-review round 2 (3): a draft does not move the form from the pro
   assert.equal(draftLine(none, restoreDraft(opened, none, ctx, {}, "all", true), ctx, now), "Draft · no project, as picked in the draft");
   // One that is gone: the form's own project stays, and the line says the draft's is not offered.
   const gone = { text: "x", title: "", host: hid("desk"), project: "p_deleted" };
-  assert.equal(draftLine(gone, restoreDraft(opened, gone, ctx, {}, "all", true), ctx, now), "Draft · in acme/api (the project picked in the draft is not offered here)");
+  assert.equal(draftLine(gone, restoreDraft(opened, gone, ctx, {}, "all", true), ctx, now), "Draft · in acme/api · the draft's project is not offered here");
   assert.equal(draftLine(gone, opened, ctx, now, { pending: true }), "Draft · in acme/api", "not said while the picks still wait for the host's state");
 });
 
@@ -435,7 +448,13 @@ test("V0.dialogs-review round 2 (1, 13): the Merge dialog names what it merges, 
   assert.equal(mergeConfirm({ number: 4170 }, "rebase"), "Merge #4170", "no method is named where the host takes none");
   assert.equal(mergeConfirm({ sha: "e5f6071aaaa" }, "squash"), "Merge e5f6071");
   assert.equal(notMerged("no connection to the host"), "Not merged: no connection to the host");
-  assert.match(MERGE_OWN_METHOD, /squash/);
+  assert.equal(mergeTitle({ sensitive: "promotes to production" }), "Merge this sensitive PR");
+  // Round 3 (P2-4): where the host takes no choice the dialog names the method the ask carries, on the button too.
+  assert.equal(mergeMethod("squash"), "squash");
+  assert.equal(mergeMethod("fast-forward"), undefined);
+  assert.equal(mergeConfirm({ number: 212, method: "squash" }, "rebase"), "Squash and merge #212", "the ask's method, not the dialog's remembered one");
+  assert.equal(mergeMethodLine({ method: "squash" }), "Method: Squash and merge, as the agent asked. To pick another, merge from the thread's PR tab.");
+  assert.equal(mergeMethodLine({}), "The merge uses the method its change asks for: squash unless the agent named another. To pick another, merge from the thread's PR tab.");
   void run;
 });
 

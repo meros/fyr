@@ -116,7 +116,8 @@ interface HistoryLike {
 /** Build the history once: the entries of a deep link (a push) get the inbox under it, so Back never leaves the
  *  app. Returns the entry the page is on. `state` is the entry's state as the page loads: a reload over a layer
  *  (V0.dialogs-review (4), back-layer.ts: the folder picker, a confirmation) is on that layer's entry, whose screen
- *  already has its entries under it, so only the layer's mark goes and nothing is pushed on top of them. */
+ *  already has its entries under it, so only the layer's mark goes and nothing is pushed on top of them. The caller
+ *  then steps back off that entry, which is now a second one of the screen (back-layer.ts `seedPhoneHistory`). */
 export function seedHistory(h: HistoryLike, search: string, state?: unknown): Nav {
   const entries = initialEntries(search);
   const last = entries[entries.length - 1];
