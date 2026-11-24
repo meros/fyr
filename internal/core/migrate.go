@@ -95,7 +95,7 @@ func endCodeOnly(c *Change, now time.Time) bool {
 // a deploy watch armed), every ended one too; an open change without touchedAt is
 // touched when it last moved. It reports whether the thread changed.
 func migrateDone(t *Thread, now time.Time) bool {
-	changed := false
+	changed := FoldSamePR(t, now)
 	for {
 		i := slices.IndexFunc(t.Changes, func(c Change) bool {
 			return madeForPR(&c) && c.Branch != "" && changeOnPRBranch(t, c.Branch, c.PR.Repo, c.ID) != nil
