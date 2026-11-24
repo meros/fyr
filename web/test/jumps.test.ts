@@ -43,7 +43,7 @@ test("V0.conversation-jumps: the owner's messages and the waiting Run cards are 
     return it?.kind === "user" ? it.text : it?.kind === "runcard" ? `card ${it.action}` : k;
   };
   // A message from another thread is not the owner's; a card already run ("ran") waits for nobody.
-  assert.deepEqual(stops.map((s) => `${s.kind}:${text(s.key)}`), ["own:first", "own:second", "needs:card mount", "own:Pressed", "needs:card-loose"]);
+  assert.deepEqual(stops.map((s) => `${s.kind}:${text(s.key)}`), ["needs:card-loose", "own:first", "own:second", "needs:card mount", "own:Pressed"]);
 });
 
 test("V0.conversation-jumps: the messages the agent has not read are stops after the rest", () => {

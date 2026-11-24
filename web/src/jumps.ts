@@ -29,12 +29,13 @@ export const looseKey = (id: string) => `card-${id}`;
  */
 export function stopsOf(entries: Entry[], pending: Item[], loose: string[], waiting: ReadonlySet<string>): Stop[] {
   const out: Stop[] = [];
+  // V0.run-cards-stay-put: a loose card stands before the loaded messages, so it is the first stop.
+  for (const id of loose) if (waiting.has(id)) out.push({ key: looseKey(id), kind: "needs" });
   for (const en of entries) {
     if (en.kind !== "item") continue;
     const kind = stopOf(en.item, waiting);
     if (kind) out.push({ key: en.key, kind });
   }
-  for (const id of loose) if (waiting.has(id)) out.push({ key: looseKey(id), kind: "needs" });
   for (const it of pending) {
     const kind = stopOf(it, waiting);
     if (kind) out.push({ key: it.key, kind });
