@@ -17,7 +17,7 @@ export const ProfilesContext = createContext<HostProfiles>({});
 
 /** The Host field, where the host is a choice (New project, New thread, Hand over: host first, V0.139; tabbed
  *  with each host's mark in V0.host-tabs): nothing with one host; an offline host's note says why nothing can be made there. */
-export function HostField({ value, onPick, what = "It lives there: its folders and providers are that host's." }: { value: HostId | undefined; onPick(h: HostId): void; what?: string }) {
+export function HostField({ value, onPick, what = "It lives there: its folders and providers are that host's.", quiet, here }: { /** V0.dialogs-review: the host the thing is on now (Hand over's thread): its tab says "(now)" */ here?: HostId; value: HostId | undefined; onPick(h: HostId): void; what?: string; /** V0.dialogs-review: no standing help line (New thread, where the field is one of several under the prompt): `what` is the label's tooltip, and the offline note still shows */ quiet?: boolean }) {
   const { hosts, now } = useHosts();
   const choices = hostChoices(hosts);
   if (!choices.length) return null;
@@ -25,13 +25,13 @@ export function HostField({ value, onPick, what = "It lives there: its folders a
   const items: HostTabItem[] = choices.map((c) => ({
     id: c.id,
     name: c.name,
-    label: c.name,
+    label: here && c.id === here ? `${c.name} (now)` : c.name,
     offline: !c.online,
     title: c.label,
   }));
   return (
     <div class="fld hostf">
-      <span>Host</span>
+      <span title={quiet ? what : undefined}>Host</span>
       <HostTabs
         items={items}
         active={value ?? ""}
@@ -47,7 +47,7 @@ export function HostField({ value, onPick, what = "It lives there: its folders a
           {note}
         </span>
       ) : (
-        <span class="srcl">{what}</span>
+        !quiet && <span class="srcl">{what}</span>
       )}
     </div>
   );

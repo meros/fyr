@@ -614,6 +614,9 @@ function hm(d: Date): string {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/** The hour "morning" means in the snooze list: the presets' and the date and time field's start (snooze.ts). */
+export const SNOOZE_MORNING_H = 6;
+
 /** In 1 hour, in 3 hours, this evening (only before 17:00), tomorrow morning, Monday morning (a week ahead on a Monday). */
 export function snoozePresets(now: Date): SnoozePreset[] {
   const out: SnoozePreset[] = [];
@@ -628,11 +631,11 @@ export function snoozePresets(now: Date): SnoozePreset[] {
   }
   const tm = new Date(now);
   tm.setDate(now.getDate() + 1);
-  tm.setHours(6, 0, 0, 0);
+  tm.setHours(SNOOZE_MORNING_H, 0, 0, 0);
   out.push({ label: "Tomorrow morning", until: tm, when: `${DAYS[tm.getDay()]} 06:00` });
   const mon = new Date(now);
   mon.setDate(now.getDate() + (((8 - now.getDay()) % 7) || 7));
-  mon.setHours(6, 0, 0, 0);
+  mon.setHours(SNOOZE_MORNING_H, 0, 0, 0);
   out.push({ label: "Monday morning", until: mon, when: `${DAYS[mon.getDay()]} 06:00` });
   return out;
 }

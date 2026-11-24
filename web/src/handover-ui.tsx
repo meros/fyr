@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.45, decision 0013; V0.trans-host-handover, decision 0039: the handover dialog.
 // Pick host (when several exist), provider, model, effort, and (across hosts) target folder & worktree option;
 // see git limitations and which rung runs; confirm. Shared between desktop modal and phone sheet.
-import { useContext, useEffect, useState } from "preact/hooks";
+import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, Thread } from "./types.ts";
 import {
   effectivePlan,
@@ -22,6 +22,8 @@ import { HostField, ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { hostChoices, hostOfflineNote, profilesOf } from "./hosts.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { useDirectory } from "./project-ui.tsx";
+import { SCRATCH_LABEL } from "./projects.ts";
+import { tildePath } from "./paths.ts";
 import { ref } from "./hostfeed.ts";
 import type { HostId } from "./hostid.ts";
 
@@ -72,6 +74,16 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   const [useWorktree, setUseWorktree] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  /** a select's list may be open (see onKey) */
+  const listOpen = useRef(false);
+  // V0.dialogs-review (10): on the desktop the focus starts on the target ("To"), the choice this dialog is for, not
+  // on the header's ×. Not on the phone: its sheet takes the focus itself (motion-ui.tsx), with no field focused.
+  /* eslint-disable react-hooks/exhaustive-deps -- the first focus, once, when the form opens */
+  useEffect(() => {
+    if (!p.phone) root.current?.querySelector<HTMLElement>('select[aria-label="To"]')?.focus();
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // When target host changes, pick the best default provider/model on that host and suggest its folder.
   /* eslint-disable react-hooks/exhaustive-deps -- resets the targets only when the target host changes; the thread, the profiles and fromProf are read at that moment */
@@ -134,7 +146,7 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   };
 
   const pickFolder = async () => {
-    const picked = await folderPicker.pick({ host: targetHost, title: toHostName ? `Folder on ${toHostName}` : "Pick a folder" });
+    const picked = await folderPicker.pick({ host: targetHost, title: toHostName ? `Folder on ${toHostName}` : "Folder for this thread" });
     if (picked) {
       setFolder(picked);
       setProjectId("");
@@ -146,7 +158,7 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   const useScratch = () => {
     setFolder("");
     setProjectId("");
-    setFolderReason("Fresh scratch folder on " + (toHostName || "target host"));
+    setFolderReason(`${SCRATCH_LABEL} on ${toHostName || "the target host"}.`);
     setFolderManual(true);
   };
 
@@ -172,25 +184,51 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
 
   if (!canPickHost && !targets.length) return <div class="db ho-b">There is no other provider to hand this thread over to.</div>;
 
+  // V0.dialogs-review (16): Enter confirms, as in the confirmation and New thread, unless a control that uses Enter
+  // itself has the focus. Desktop only: the phone has no keyboard, so its buttons carry no key hints either.
+  const onKey = (e: KeyboardEvent) => {
+    if (p.phone || e.isComposing || e.defaultPrevented) return;
+    const el = e.target as HTMLElement | null;
+    // A select whose list the owner opened (Space, F4, Alt+arrow, a click) uses Enter to take a choice, and some
+    // browsers report that key to the page: that Enter must never hand the thread over.
+    if (el?.tagName === "SELECT" && (e.key === " " || e.key === "F4" || (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")))) listOpen.current = true;
+    if (e.key !== "Enter") return;
+    if (el && ["BUTTON", "A", "TEXTAREA"].includes(el.tagName)) return;
+    if (listOpen.current) return void (listOpen.current = false);
+    e.preventDefault();
+    void confirm();
+  };
+  const listShut = () => (listOpen.current = false);
+  // Across hosts the button says what happens to this thread; the sentence above the form says it too. Not for a
+  // host that is down: nothing moves, and the sentence that explains "settle here" is not shown.
+  const label = crossHost && toHostName && !hostDown ? `Move to ${toHostName} and settle here` : "Hand over";
+
   return (
-    <>
+    <div class="ho-form" ref={root} onKeyDown={onKey} onMouseDown={(e) => (listOpen.current = (e.target as HTMLElement | null)?.tagName === "SELECT")} onChange={listShut} onFocusOut={listShut}>
       <div class={`db ho-b${p.phone ? " ho-ph" : ""}`}>
         <div class="ho-from">
           From <b>{from}</b>
           {fromModel && <span class="ho-model"> · {fromModel}</span>}
           {fromHostName && canPickHost && <span class="ho-model"> on {fromHostName}</span>}.{" "}
-          {crossHost
-            ? "Creates a linked thread on the target host with this conversation copied over, and settles this thread."
-            : "The thread keeps its conversation, project and folder; later runs use the new provider."}
+          {hostDown ? null : crossHost ? (
+            <>
+              Creates a linked thread on {toHostName || "the target host"} with this conversation copied over, <span class="ho-settle">and settles this thread</span>.
+            </>
+          ) : (
+            "The thread keeps its conversation, project and folder; later runs use the new provider."
+          )}
         </div>
         {canPickHost && (
           <HostField
             value={targetHost}
+            here={p.t.hostId}
             onPick={(h) => setTargetHost(h)}
             what={crossHost ? "The thread continues on this host with its providers and folders." : "Keep on this host to switch provider only, or pick another host to move it."}
           />
         )}
-        {!targets.length ? (
+        {/* A host that is down takes nothing: no provider to pick, no mapping and no plan are shown for it. The
+            reason stands once, under Host (HostField's note), right above the buttons of the form that is left. */}
+        {hostDown ? null : !targets.length ? (
           <div class="err prose">{crossHost ? `No providers are configured on ${toHostName || "that host"}.` : "There is no other provider on this host."}</div>
         ) : (
           <>
@@ -214,15 +252,15 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
             <div class="fld">
               <span>Folder on {toHostName || "target"}</span>
               <div class="ho-dir">
-                <span class="mono ell" title={folder || "Fresh scratch folder"}>
-                  {folder || "Fresh scratch folder"}
+                <span class={folder ? "mono ell" : "ell"} title={folder || undefined}>
+                  {folder ? tildePath(folder) : SCRATCH_LABEL}
                 </span>
                 <button type="button" class="btn sm" onClick={() => void pickFolder()}>
                   Change…
                 </button>
                 {folder && (
                   <button type="button" class="btn sm" onClick={useScratch}>
-                    Scratch
+                    Scratch folder
                   </button>
                 )}
               </div>
@@ -241,34 +279,53 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
             </div>
           </>
         )}
-        <div class="ho-rung" aria-live="polite">
-          {shownPlan ? (
-            <>
-              <b>{rungText(shownPlan.rung)}</b>
-              {shownPlan.note && <small>{shownPlan.note}</small>}
-            </>
-          ) : (
-            <span class="ho-wait">Checking how the context goes over…</span>
-          )}
-        </div>
-        {blocked && <div class="err prose">{blocked}</div>}
-        {err && <div class="err prose">{err}</div>}
+        {blocked && (
+          <div class="err prose" role="alert">
+            {blocked}
+          </div>
+        )}
+        {err && (
+          <div class="err prose" role="alert">
+            {err}
+          </div>
+        )}
       </div>
+      {/* V0.dialogs-review (16): how the context goes over stands between the form and the buttons, outside the part
+          that scrolls, so it is in view when the button is pressed. */}
+      {!hostDown && (
+        <div class={`ho-plan${p.phone ? " ho-ph" : ""}`}>
+          {/* plain text with its label: it is what will happen, not a control */}
+          <div class="ho-rung" aria-live="polite">
+            {shownPlan ? (
+              <>
+                <span>
+                  <span class="ho-rl">Context: </span>
+                  <b>{rungText(shownPlan.rung)}</b>
+                </span>
+                {shownPlan.note && <small>{shownPlan.note}</small>}
+              </>
+            ) : (
+              <span class="ho-wait">Checking how the context goes over…</span>
+            )}
+          </div>
+        </div>
+      )}
       <div class={`df${p.phone ? " ho-ph" : ""}`}>
         <button class="btn" onClick={p.onClose}>
-          Cancel
+          Cancel{!p.phone && <kbd>Esc</kbd>}
         </button>
         <button class="btn p" disabled={busy || !!blocked || !!hostDown || !profile} onClick={() => void confirm()}>
-          {busy ? "Handing over…" : crossHost && toHostName ? `Hand over to ${toHostName}` : "Hand over"}
+          {busy ? "Handing over…" : label}
+          {!p.phone && !busy && <kbd>⏎</kbd>}
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
 export function HandoverDialog(p: HandoverProps) {
   return (
-    <Modal title="Hand over" onClose={p.onClose}>
+    <Modal title="Hand over" onClose={p.onClose} wide>
       <HandoverForm {...p} />
     </Modal>
   );

@@ -4,34 +4,52 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { allowArgs, askYes, canDone, canEnd, canPark, canRefresh, checkedText, declineArgs, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, needLook, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
+import { allowArgs, askYes, barOffers, stripMerge, canDone, canEnd, canPark, canRefresh, checkedText, declineArgs, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, needLook, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
-import { headLabel } from "./pr.ts";
+import { headLabel, type MergeAsk } from "./pr.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { autoMergeLine } from "./automerge.ts";
-import { changeSensitive, confirmSensitive, sensitiveLine } from "./sensitive.ts";
+import { changeSensitive, mergeAfterAsk, sensitiveLine } from "./sensitive.ts";
+import { useMerge } from "./merge-ui.tsx";
+import { useApi } from "./api-context.ts";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
+/** A command whose refusal the Merge dialog shows: resolves to the host's error, or null when the host took it. */
+type Send = (action: string, args?: Record<string, unknown>) => Promise<string | null>;
+
+/** V0.dialogs-review: what the Merge dialog asks about a change's merge. The method is the change's own here
+ *  (`action.run` and `thread.answer` take none), so the dialog offers no choice of it. */
+const changeMerge = (c: Change | undefined, sha: string | undefined, run: () => Promise<string | null>): MergeAsk => ({ number: c?.pr?.number, title: c?.pr?.title ?? c?.title, repo: c?.pr?.repo, sha, sensitive: changeSensitive(c) || undefined, run });
 
 /** V0.101 (decision 0024 sections 5 and 9): why the change waits on the owner, inline on its card. An ask shows its
  *  answer (a merge ask bound to its head) and Not now, which declines it; Ready shows Merge bound to the head and Not
- *  now; a failure the agent stopped on shows Not now; a failure while the agent runs is muted, without the beam. */
-function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
+ *  now; a failure the agent stopped on shows Not now; a failure while the agent runs is muted, without the beam.
+ *  V0.dialogs-review: its Merge is the card's one Merge button (offers.ts `stripMerge`): it carries the state of the
+ *  merge it runs (running, failed), and a sensitive one asks in the Merge dialog, as every merge that asks. */
+function NeedLine({ c, onRun, send }: { c: Change; onRun: Run; send: Send }) {
   const n = c.need!;
   const look = needLook(n);
-  const merge = (c.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
-  const ask = useAsk();
-  // V0.sensitive-pr: a sensitive merge asks first, with its reason.
-  const sure = () => confirmSensitive(n.cause === "ready" || n.action === "pr.merge" ? changeSensitive(c) : "", ask, n.head);
-  let yes: { label: string; title?: string; run: () => void } | null = null;
-  if (n.cause === "ask") yes = { ...askYes(n), run: () => void sure().then((ok) => ok && onRun("thread.answer", allowArgs(n))) };
-  else if (n.cause === "ready" && merge && n.head) yes = { label: look.button, run: () => void sure().then((ok) => ok && onRun("action.run", pressArgs(c.id, merge, n.head))) };
+  const merge = stripMerge(c);
+  const askMerge = useMerge();
+  let yes: { label: string; title?: string; cls?: string; busy?: boolean; off?: string; run: () => void } | null = null;
+  if (n.cause === "ask") {
+    const args = allowArgs(n);
+    // V0.sensitive-pr: a sensitive merge asks first, with its reason.
+    const run = n.action === "pr.merge" ? () => void mergeAfterAsk(changeMerge(c, n.head, () => send("thread.answer", args)), askMerge, () => (onRun("thread.answer", args), true)) : () => onRun("thread.answer", args);
+    yes = { ...askYes(n), run };
+  } else if (n.cause === "ready" && merge && n.head) {
+    const args = pressArgs(c.id, merge, n.head);
+    const st = offerLook(merge, c.runs, hhmm);
+    const off = unavailable(merge, c.runs, c) ?? undefined;
+    // the mark says what the time after the label is: the merge ran then (✓), or failed (✕)
+    yes = { label: `${st.mark}${look.button}${st.word}`, cls: st.cls, busy: st.state === "running", off, run: () => void mergeAfterAsk(changeMerge(c, n.head, () => send("action.run", args)), askMerge, () => (onRun("action.run", args), true)) };
+  }
   return (
     <div class={`chneed ${n.cause}${n.muted ? " muted" : ""}`} role={n.muted ? undefined : "status"}>
       {look.beam && <span class="beamdot" aria-hidden="true" />}
       <span class="chnq">{look.line}</span>
       {yes && (
-        <button class="btn p sm" title={yes.title} onClick={yes.run}>
+        <button class={`btn p sm${yes.cls && yes.cls !== " p" ? yes.cls : ""}`} title={yes.off ?? yes.title} disabled={!!yes.off} aria-busy={yes.busy || undefined} onClick={yes.run}>
           {yes.label}
         </button>
       )}
@@ -56,14 +74,23 @@ const hhmm = (iso: string) => {
   return Number.isNaN(d.getTime()) ? "" : d.toTimeString().slice(0, 5);
 };
 
-function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string; offers?: Offer[]; runs?: OfferRun[]; change?: Change; cwd?: string; onRun: Run }) {
-  const list = shownOffers(offers, change);
+function OfferBar({ on, offers, runs, change, cwd, onRun, send }: { on: string; offers?: Offer[]; runs?: OfferRun[]; change?: Change; cwd?: string; onRun: Run; send?: Send }) {
+  // V0.dialogs-review: a merge the need strip already offers has no second button here; its newest output stays one
+  // press away (the ▤ reads every shown offer's runs).
+  const list = barOffers(change, offers);
   const [open, setOpen] = useState<string | null>(null);
   const ask = useAsk();
-  if (!list.length) return null;
+  const askMerge = useMerge();
+  const withOut = [...shownOffers(offers, change)].reverse().find((o) => lastRun(runs, o.id)?.output);
+  if (!list.length && !withOut) return null;
   // V0.97: Merge names and sends the head this card shows.
   const headOf = (o: Offer) => (o.run === "fyr" && o.effect === "pr.merge" ? change?.pr?.head : undefined);
-  const onPress = (o: Offer) => press(on, o, cwd, ask, onRun, headOf(o), changeSensitive(change));
+  const onPress = (o: Offer) => {
+    if (o.run !== "fyr" || o.effect !== "pr.merge") return press(on, o, cwd, ask, onRun, headOf(o));
+    const args = pressArgs(on, o, headOf(o));
+    // A merge asks in the Merge dialog, like every merge that asks.
+    return askMerge(changeMerge(change, headOf(o), send ? () => send("action.run", args) : async () => (onRun("action.run", args), null)));
+  };
   return (
     <div class="offers">
       <div class="offb">
@@ -81,15 +108,11 @@ function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string; offers
           );
         })}
         {/* the newest run's output, one press away, on a control of its own: a button cannot hold a button */}
-        {(() => {
-          const withOut = [...list].reverse().find((o) => lastRun(runs, o.id)?.output);
-          if (!withOut) return null;
-          return (
-            <button class={`offout-b${open === withOut.id ? " on" : ""}`} title={`${withOut.label}: the last run's output`} aria-expanded={open === withOut.id} onClick={() => setOpen(open === withOut.id ? null : withOut.id)}>
-              ▤
-            </button>
-          );
-        })()}
+        {withOut && (
+          <button class={`offout-b${open === withOut.id ? " on" : ""}`} title={`${withOut.label}: the last run's output`} aria-expanded={open === withOut.id} onClick={() => setOpen(open === withOut.id ? null : withOut.id)}>
+            ▤
+          </button>
+        )}
       </div>
       {open !== null && <pre class="offout">{lastRun(runs, open)?.output}</pre>}
     </div>
@@ -113,7 +136,7 @@ export function ChangeList({ t, onRun }: { t: Thread; onRun: Run }) {
   return (
     <section class="chl" aria-label="Changes">
       {open.map((c) => (
-        <ChangeCard key={c.id} c={c} cwd={t.cwd} onRun={onRun} />
+        <ChangeCard key={c.id} c={c} cwd={t.cwd} onRun={onRun} thread={t} />
       ))}
       {done.length > 0 && (
         <details class="chdone">
@@ -134,7 +157,13 @@ export function ChangeList({ t, onRun }: { t: Thread; onRun: Run }) {
 
 /** One change: rail, conditions, targets, proof and its actions. `from` is a line above the title (the board names
  *  the thread there). */
-export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; onRun: Run; from?: ComponentChildren }) {
+export function ChangeCard({ c, cwd, onRun, from, thread }: { c: Change; cwd?: string; onRun: Run; from?: ComponentChildren; /** the thread the change is of: its merge then reports the host's refusal in the Merge dialog */ thread?: Pick<Thread, "id" | "hostId"> }) {
+  const api = useApi();
+  const send: Send = async (action, args) => {
+    if (!thread) return (onRun(action, args), null);
+    const r = await api.command(thread.hostId, action, thread.id, args);
+    return r.ok ? null : (r.error ?? "The merge did not start.");
+  };
   const r = rail(c);
   const conds = openConditions(c);
   const rev = c.revisions?.at(-1);
@@ -181,7 +210,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
           {sensitiveLine(c.sensitive)}
         </div>
       )}
-      {c.need && <NeedLine c={c} onRun={onRun} />}
+      {c.need && <NeedLine c={c} onRun={onRun} send={send} />}
       {autoMergeLine(c) && <div class="chauto setd">{autoMergeLine(c)}</div>}
       {parked && (
         <div class="chparked setd" title="It comes back to Needs you when something on it changes">
@@ -207,7 +236,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
           )}
         </div>
       )}
-      <OfferBar on={c.id} offers={c.offers} runs={c.runs} change={c} cwd={cwd} onRun={onRun} />
+      <OfferBar on={c.id} offers={c.offers} runs={c.runs} change={c} cwd={cwd} onRun={onRun} send={send} />
       {c.done && <div class="chdonel setd">{doneText(c, hhmm)}</div>}
       {(canEnd(c) || canDone(c) || canRefresh(c)) && (
         <div class="chfoot">
@@ -226,7 +255,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
           )}
           {canEnd(c) && (
             <button class="chend" onClick={() => void end()}>
-              End this change
+              End change…
             </button>
           )}
         </div>

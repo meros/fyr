@@ -37,6 +37,7 @@ export function useQuotas(): Quota[] {
   const [q, setQ] = useState(current);
   useEffect(() => {
     subs.add(setQ);
+    setQ(current); // a poll that landed between this render and now reached the earlier subscribers only
     if (subs.size === 1) {
       source = api;
       if (Date.now() - lastAt > POLL_MS / 2) void poll();
@@ -205,14 +206,19 @@ export function ThreadQuotaChip(p: {
       if (chipRef.current?.contains(target) || popRef.current?.contains(target)) return;
       setOpenAt(null);
     };
+    // V0.dialogs-review (21): Esc closes the popover and nothing else. Heard first (capture) and stopped, so the
+    // app's Esc under it (interrupt the run, close the thread) does not act on the same key.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenAt(null);
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      e.preventDefault();
+      setOpenAt(null);
     };
     document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
     };
   }, [openAt]);
   if (!q || !(hasData(q) || q.error)) return null;

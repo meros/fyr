@@ -10,7 +10,9 @@ import { arrive } from "./arrived.ts";
 import { allowArgs, answerArgs, answerThenNext, cardKey, initCard, setOther, submitOf, updateCard, type CardState } from "./question.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useThreadActions } from "./app-actions.tsx";
-import { confirmSensitive, decisionSensitive } from "./sensitive.ts";
+import { decisionSensitive } from "./sensitive.ts";
+import { threadPrs } from "./offers.ts";
+import { mergeMethod } from "./pr.ts";
 
 export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" | "threadsRef" | "tracker" | "setTracker" | "cards" | "setCards" | "setInText" | "sec" | "gatedRef" | "viewThread">) {
   const { api, threadsRef, tracker, setTracker, cards, setCards, setInText, sec, gatedRef, viewThread } = c;
@@ -76,8 +78,8 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
  *  `answers` is what the phone calls: it stays on the thread it answered, which its own screen leaves. `submitAsk`,
  *  `nextNeeding` and `answerField` are the desktop's: it walks on once the host took the answer and says so in an
  *  arrival bar, and its composer is the answer field of an open question (the phone's card has its own field). */
-export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "view" | "cards" | "setCards" | "store" | "sel" | "sec" | "setArrival" | "confirmHost" | "threadsRef"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
-  const { cmds, view, cards, setCards, store, sel, sec, setArrival, confirmHost, threadsRef, decision, card, openThread } = c;
+export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "api" | "cmds" | "view" | "cards" | "setCards" | "store" | "sel" | "sec" | "setArrival" | "mergeHost" | "threadsRef"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
+  const { api, cmds, view, cards, setCards, store, sel, sec, setArrival, mergeHost, threadsRef, decision, card, openThread } = c;
   const submit = async (d: Decision): Promise<boolean> => {
     const cs = cards[d.id];
     const send = cs ? submitOf(cs, d) : null;
@@ -88,10 +90,32 @@ export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "cmds" | "vie
   const cancel = async (d: Decision): Promise<boolean> => (view ? (await cmds.run("thread.cancelAsk", [view.id], { decisionId: d.id })) > 0 : false);
   const allow = async (d: Decision, ok: boolean): Promise<boolean> => {
     if (!view) return false;
-    // V0.sensitive-pr: the yes to a sensitive merge asks first, with its reason.
-    const head = typeof d.effect?.args?.head === "string" ? d.effect.args.head : undefined;
-    if (ok && !(await confirmSensitive(decisionSensitive(threadsRef.current[view.id], d), confirmHost.ask, head))) return false;
-    return (await cmds.run("thread.answer", [view.id], allowArgs(d, ok))) > 0;
+    // V0.sensitive-pr: the yes to a sensitive merge asks first, with its reason, in the Merge dialog (V0.dialogs-review:
+    // the one every merge asks in).
+    const id = view.id;
+    const t = threadsRef.current[id];
+    const why = ok ? decisionSensitive(t, d) : "";
+    const plain = async () => (await cmds.run("thread.answer", [id], allowArgs(d, ok))) > 0;
+    if (!why) return plain();
+    const args = (d.effect?.args ?? {}) as Record<string, unknown>;
+    const pr = t ? threadPrs(t).find((x) => x.url === args.pr) : undefined;
+    // The ask's change, for the PR's title where the thread's PR list does not have it: the dialog says the same
+    // about one merge wherever it starts.
+    const change = t?.changes.find((c) => c.id === args.change || (!!c.pr?.url && c.pr.url === args.pr));
+    const num = Number(/\/pull\/(\d+)/.exec(String(args.pr ?? ""))?.[1] ?? pr?.number ?? 0);
+    return mergeHost.ask({
+      number: num || undefined,
+      title: pr?.title ?? change?.pr?.title ?? change?.title,
+      repo: pr?.repo ?? change?.pr?.repo,
+      method: mergeMethod(args.method),
+      sha: typeof args.head === "string" ? args.head : undefined,
+      sensitive: why,
+      run: async () => {
+        if (!t) return "The thread is gone.";
+        const r = await api.command(t.hostId, "thread.answer", id, allowArgs(d, ok));
+        return r.ok ? null : (r.error ?? "The merge did not start.");
+      },
+    });
   };
 
   /** The one way both fronts change the open card: an updater on the card as it is now. */

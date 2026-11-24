@@ -6,7 +6,8 @@ import { useEffect, useRef } from "preact/hooks";
 import { type PageRef } from "./settings-nav.ts";
 import { type UndNav } from "./undeclared-ctx.tsx";
 import { type PhoneActions } from "./phone.tsx";
-import { backTarget, listenPopState, seedHistory, type Nav } from "./nav.ts";
+import { backTarget, listenPopState, type Nav } from "./nav.ts";
+import { seedPhoneHistory } from "./back-layer.ts";
 import { navTransition } from "./native.ts";
 import { settleRun } from "./actions.ts";
 import { leaveAfterHost } from "./leave.ts";
@@ -18,14 +19,15 @@ import type { useNavHistory } from "./app-history.tsx";
 
 export function usePhoneNav(c: Pick<ReturnType<typeof useAppState>, "store" | "threadsRef" | "view" | "setDialog" | "phone" | "phoneRef" | "cmds" | "nav" | "setNav" | "openSettings"> & Pick<ReturnType<typeof useThreadActions>, "deskAtRef" | "openThread" | "closePeek" | "settleWhenDone" | "settleBulk" | "markUnseen"> & Pick<ReturnType<typeof useProjectActions>, "directory" | "create"> & Pick<ReturnType<typeof useNavHistory>, "navGo" | "navRef" | "leaveOpenThread" | "navReplace" | "navBack">) {
   const { store, threadsRef, view, setDialog, phone, phoneRef, cmds, nav, setNav, openSettings, deskAtRef, openThread, closePeek, settleWhenDone, settleBulk, markUnseen, directory, create, navGo, navRef, leaveOpenThread, navReplace, navBack } = c;
-  // Build the history once (navInit); the listener is added whenever the phone layout is on, and removed when it goes
-  // (a window resized to the desktop and back must have it again).
+  // Build the history once (navInit; a layer that is up in the first render has built it already, back-layer.ts
+  // `seedPhoneHistory`); the listener is added whenever the phone layout is on, and removed when it goes (a window
+  // resized to the desktop and back must have it again).
   const navInit = useRef(false);
   useEffect(() => {
     if (!phone) return;
     if (!navInit.current) {
       navInit.current = true;
-      setNav(seedHistory(history, location.search));
+      setNav(seedPhoneHistory());
     }
     return listenPopState(window, { search: () => location.search, current: () => navRef.current, set: setNav, slide: (apply) => navTransition("back", apply) });
   }, [phone, navRef, setNav]);

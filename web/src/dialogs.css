@@ -1,0 +1,122 @@
+/* V0.dialogs-review: the dialogs, sheets and the New thread form of both fronts. Imported last, so these rules stand. */
+
+/* (22) A dialog starts 6vh from the top and is 88vh tall at most, so New thread shows its prompt and its foot on a
+   720 px window. Settings keeps its own size and place. */
+.scrim{padding-top:6vh}
+.dlg{max-height:88vh}
+@media (min-width:761px){.scrim:has(>.dlg.settings){padding-top:12vh}}
+@media (max-width:760px){.scrim{padding-top:0}}
+
+/* New thread, desktop. The prompt grows with its text (grow-ui.ts) up to 40vh, then scrolls. */
+.fld .ntta{resize:none;min-height:114px;max-height:40vh;overflow-y:auto}
+.nt .att-row{align-items:center;margin-top:-6px;min-height:30px}
+.nt .att-row .att-strip{padding-bottom:0}
+.att-row .atth{margin-left:auto;white-space:nowrap}
+.fld>.pform{margin-top:8px}
+.ntmore{min-width:0}
+.ntmore>summary{display:flex;align-items:center;gap:6px;width:fit-content;min-height:24px;cursor:pointer;list-style:none;font:500 12px/16px var(--ui);color:var(--ink-muted);border-radius:6px}
+.ntmore>summary::-webkit-details-marker{display:none}
+.ntmore>summary::before{content:"▸"}
+.ntmore[open]>summary::before{content:"▾"}
+.ntmore[open]>summary{margin-bottom:8px}
+.ntmore>.fld{margin-bottom:10px}
+.ntmore .lvc{margin-left:0;height:auto;align-items:flex-start;white-space:normal}
+.ntmore .lvc input{margin-top:3px;flex:none}
+.ntmore .lvc .srcl{display:block}
+/* The foot's left side: the error of the last try, why Start is off, that a draft came back. Always in view. */
+.df{align-items:center}
+.dfn{margin-right:auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.dfn .err{font:500 12.5px/17px var(--ui)}
+.dfl{font:inherit;color:var(--harbour);text-decoration:underline;text-underline-offset:2px}
+.df kbd{margin-left:2px}
+
+/* Snooze, desktop: the date and time row, and the focus that starts on the first choice. */
+.menu .mi{text-align:left}
+.menu .mi:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.snzw{display:flex;flex-direction:column;gap:4px;padding:6px 10px 4px}
+.snzc{display:flex;gap:8px;align-items:center}
+.snzl{font:500 12px/16px var(--ui);color:var(--ink-muted)}
+.snzy{margin:0;font:500 12.5px/17px var(--ui);color:var(--signal-ink)}
+.m-customw{display:flex;flex-direction:column;gap:4px;padding:6px 16px}
+.m-customw .m-custom{padding:0}
+.m-customw .snzl,.m-customw .snzy{font-size:13px;line-height:18px;padding:0 4px}
+.snzc input{flex:1;min-width:0;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink);font:400 14px/20px var(--ui)}
+.snzc input:focus{outline:0;border-color:var(--harbour);box-shadow:0 0 0 3px color-mix(in srgb,var(--harbour) 16%,transparent)}
+
+/* Hand over: the plan line stays in view above the foot while the form scrolls; the phone's buttons centre their
+   words like every other sheet's (30). */
+.ho-plan{flex:none;padding:0 16px 12px}
+.ho-plan.ho-ph{padding:8px 16px 0}
+.ho-dir .ell{flex:1;min-width:0}
+.df.ho-ph .btn{justify-content:center}
+.ho-b .ho-settle{color:var(--ink);font-weight:500}
+
+/* New thread, phone. One row of four small attach buttons under the prompt; the bottom bar holds the note above the
+   one button. */
+.m-new .m-ta{max-height:40vh;overflow-y:auto}
+.m-new .m-capr{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.m-new .m-capb{flex-direction:column;gap:2px;height:52px;border-radius:12px;border-width:1px;font:500 12px/16px var(--ui);min-width:0}
+.m-new .m-abar{flex-direction:column;align-items:stretch;gap:6px}
+.m-new .m-abar .m-bt.p{flex:none}
+.m-new .dfn{margin:0;padding:0 4px;font-size:13px;line-height:18px}
+.m-new .dfn:empty{display:none}
+.m-new .dfn .err{font:500 13px/18px var(--ui)}
+.m-new .ntmore>summary{min-height:44px;font:500 13px/18px var(--ui)} /* a finger's height */
+.m-new .ntmore>*{margin-bottom:8px}
+.m-new .ntmore>.m-dl{margin-bottom:6px}
+.m-new input.m-title{width:100%;font:400 16px/22px var(--ui)}
+.m-new .m-lvc{height:auto;min-height:48px;padding:10px 14px;align-items:flex-start}
+.m-new .m-lvc input{margin-top:2px;flex:none}
+.m-new .m-lvc .srcl{display:block;font:400 13px/18px var(--ui)}
+.ho-form{display:contents}
+.m-new .dfn .dfl,.m-new .ntdraft .dfl{display:inline-flex;align-items:center;min-height:44px;padding:0 6px} /* a finger's height for Discard and Undo */
+
+/* The line about a draft, above the prompt on both fronts: what it is and × to hide it; after a Discard, Undo. */
+.ntdraft{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;min-width:0;padding:5px 6px 5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:400 12px/16px var(--ui);color:var(--ink)}
+.ntdraft .ntdt{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
+.ntdraft .ntdx{flex:none;width:24px;height:24px;border-radius:6px;color:var(--ink-muted);font:400 16px/1 var(--ui)}
+.ntdraft .ntdx:hover{background:var(--select)}
+.m-new .ntdraft{flex:none;font-size:13px;line-height:18px;border-radius:12px;padding:2px 2px 2px 12px}
+.m-new .ntdraft .ntdx{width:44px;height:44px} /* a finger's size */
+.dfn .dfe{font:500 12.5px/17px var(--ui);color:var(--ink)}
+.m-new .dfn .dfe{font:500 13px/18px var(--ui)}
+.df>.dfl{flex:none}
+/* The New project step scrolls itself into view as it opens (project-picker.tsx): its buttons keep this much air from the edge of what scrolls. */
+.pform{scroll-margin-block:12px}
+.ppick .chev{display:grid;place-items:center;color:var(--ink-muted)}
+.ppstep{display:contents}
+.pform .pnote{margin:0}
+.pform input[aria-invalid=true]{border-color:var(--signal-ink)}
+/* the More fold's summary names what is inside; it can be long on a phone */
+.ntmore>summary{max-width:100%}
+
+/* A dialog's or a sheet's second line: the thread it is about (Snooze, Project). */
+.dsub{flex:none;padding:8px 16px 2px;font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0}
+.m-sheet .dsub{padding:0 20px 6px;font-size:13px;line-height:18px}
+
+/* The Merge dialog on both fronts: what is merged, and the host's refusal on a line of its own above the buttons
+   (beside them it has only the width they leave: one letter in the desktop's narrow dialog). */
+.prv-dlg .prv-what{margin:0;font:600 13px/18px var(--ui);color:var(--ink);overflow-wrap:anywhere}
+.df.prv-df{flex-wrap:wrap}
+.df.prv-df .dfn{flex:1 0 100%;margin:0 0 2px}
+.df.prv-df .dfn .err{white-space:pre-wrap}
+/* a foot note beside the buttons never gets narrower than a few words */
+.df>.dfn{flex:1 1 8em}
+
+/* The two desktop menus share their rows (menu-ui.tsx `MenuRows`). */
+.ctxm-i .ctxm-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.ctxm-i .ctxm-t small{font:400 11px/14px var(--ui);color:var(--ink-faint)}
+.ctxm-i:has(small){padding-block:4px}
+.tmenu-l{min-width:240px;max-width:320px}
+
+/* The phone's sheets: a rule between the groups of a list of actions. */
+.m-mig{display:flex;flex-direction:column;flex:none}
+.m-mig.rule{border-top:1px solid var(--line);margin-top:4px;padding-top:4px}
+
+/* The project list: the row Enter takes is marked. */
+.pli .plk{flex:none;font:400 11px/16px var(--mono);color:var(--ink-muted);border:1px solid var(--line);border-radius:4px;padding:0 4px;background:none}
+.pli.ent{background:var(--select)}
+
+/* Hand over: how the context goes over is text with its label, not a box that looks like a control. */
+.ho-rung{padding:0;border:0;border-radius:0;font-weight:400}
+.ho-rung .ho-rl{color:var(--ink-muted)}

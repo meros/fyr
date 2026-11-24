@@ -78,8 +78,10 @@ test("V0.72: End this change on every change that has not ended, with Fyr's conf
   assert.equal(canEnd(change({ phase: "landed" })), true);
   assert.equal(canEnd(change({ threads: ["t1"] })), true, "V0.101: Abandon on a host record too; the host routes it");
   const a = endChangeAsk(pr);
-  assert.equal(a.title, "End this change?");
+  assert.equal(a.title, "End “acme/app#88”?", "V0.dialogs-review round 2 (10): the title names the change it ends");
+  assert.equal(endChangeAsk(change({ title: "" })).title, "End this change?", "a change without a title");
   assert.equal(a.confirm, "End change");
+  assert.equal(a.danger, true, "V0.dialogs-review (28): ending cannot be taken back, so the button is red");
   assert.equal(a.text, "Fyr stops watching its PR and removes its actions. The agent is told; more work on it becomes a new change.");
   assert.deepEqual(a.choice?.options.map((o) => o.value), ["abandoned", "reverted"]);
   assert.equal(a.choice?.value, "abandoned", "abandoned is the default");

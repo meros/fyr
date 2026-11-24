@@ -3,7 +3,7 @@
 
 import { createContext, type VNode } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { Ask } from "./confirm.ts";
+import { confirmFocus, type Ask } from "./confirm.ts";
 import { copyToClipboard } from "./copy.ts";
 import { BottomSheet, DialogScrim } from "./motion-ui.tsx";
 
@@ -33,6 +33,7 @@ export function useConfirmHost(phone: boolean): { ask: AskFn; view: VNode | null
 function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: boolean): void }) {
   const box = useRef<HTMLDivElement>(null);
   const ok = useRef<HTMLButtonElement>(null);
+  const no = useRef<HTMLButtonElement>(null);
   const [full, setFull] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pick, setPick] = useState(a.choice?.value ?? "");
@@ -42,7 +43,8 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
 
   /* eslint-disable react-hooks/exhaustive-deps -- the key handler is set once, when the confirmation opens; doneRef holds the newest callback, and the front it opened on (phone) decides what Enter does */
   useEffect(() => {
-    ok.current?.focus();
+    // A red confirmation starts on Cancel (confirm.ts `confirmFocus`): Enter then cancels, as on any focused Cancel.
+    (confirmFocus(a) === "cancel" ? no : ok).current?.focus();
     const onKey = (e: KeyboardEvent) => {
       // The inbox keys must not act under the confirmation. Tab goes on to the panel, whose focus trap takes it and
       // stops it there (focus-trap.ts).
@@ -52,6 +54,7 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
         e.preventDefault();
         doneRef.current(false);
       } else if (k === "Enter" && !phone && !e.isComposing) {
+        if (e.repeat) return e.preventDefault(); // a key held since before the dialog opened is not an answer to it
         const el = document.activeElement as HTMLElement | null;
         if (el?.tagName === "BUTTON" && el !== ok.current && box.current?.contains(el)) return; // a focused Cancel or Copy takes Enter itself
         e.preventDefault();
@@ -122,13 +125,17 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
   );
   const primary = `${a.danger ? " danger" : ""}`;
 
+  // V0.dialogs-review (28): outside the panel the two fronts differ, each by its own convention. Phone: a tap on the
+  // dimmed area, a drag down and Back cancel, as on every sheet (a sheet with no way out by touch but its buttons
+  // would be the only one). Desktop: a click beside the dialog does nothing, because a stray click must not answer a
+  // confirmation; Esc and Cancel do.
   if (phone) {
     return (
-      <BottomSheet onClose={() => onDone(false)} label={a.title} cls="cfm" scrimCls="cfm-scrim" role="alertdialog" panelRef={box}>
+      <BottomSheet onClose={() => onDone(false)} label={a.title} cls="cfm" scrimCls="cfm-scrim" role="alertdialog" panelRef={box} layer>
         <div class="m-shh cfm-t">{a.title}</div>
         {body}
         <div class="cfm-f">
-          <button class="m-bt" onClick={() => onDone(false)}>
+          <button class="m-bt" ref={no} onClick={() => onDone(false)}>
             Cancel
           </button>
           <button class={`m-bt p${primary}`} ref={ok} onClick={() => onDone(true)}>
@@ -145,11 +152,13 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
       </div>
       {body}
       <div class="df">
-        <button class="btn" onClick={() => onDone(false)}>
+        <button class="btn" ref={no} onClick={() => onDone(false)}>
           Cancel <kbd>Esc</kbd>
         </button>
         <button class={`btn p${primary}`} ref={ok} onClick={() => onDone(true)}>
-          {a.confirm} <kbd>⏎</kbd>
+          {a.confirm}
+          {/* the key hint only where Enter confirms: a red one starts on Cancel, and Enter there cancels */}
+          {confirmFocus(a) === "confirm" && <kbd>⏎</kbd>}
         </button>
       </div>
     </DialogScrim>

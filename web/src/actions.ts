@@ -48,8 +48,9 @@ export type ThreadAction = {
   key?: string;
   /** the host's reason it cannot be used now */
   disabled?: string;
-  /** entries of one group sit together; a menu draws a line between groups */
-  group: "open" | "state" | "thread" | "link";
+  /** entries of one group sit together; a menu draws a line between groups. `end` is last on every surface: what
+   *  takes the thread away (Archive) stands apart from Mark seen and the rest, at the bottom. */
+  group: "open" | "state" | "thread" | "link" | "end";
   /** Offered on one front only, and why (CLAUDE.md: a difference between the fronts says its reason). */
   only?: { front: Front; why: string };
 } & (
@@ -124,7 +125,6 @@ export function threadActions(t: Thread, where: Where): ThreadAction[] {
     out.push({ id: "snooze", kind: "sheet", sheet: "snooze", command: "thread.snooze", label: "Snooze…", key: "s", group: "state", ...(d ? { disabled: d } : {}) });
   }
   out.push(cmd(mark.id, mark.action, mark.label, "state", mark.key ? { key: mark.key } : {}));
-  out.push(archived ? cmd("unarchive", "thread.unarchive", "Unarchive", "state") : cmd("archive", "thread.archive", "Archive", "state", { key: "#" }));
   out.push({ id: "project", kind: "sheet", sheet: "project", command: "thread.setProject", label: "Project…", key: "p", group: "thread", ...(why("thread.setProject") ? { disabled: why("thread.setProject") } : {}) });
   out.push(cmd("liveView", "thread.setView", t.liveView ? "Turn off live view" : "Turn on live view", "thread", { args: { on: !t.liveView }, hint: "The agent keeps its state pinned on top" }));
   {
@@ -144,6 +144,7 @@ export function threadActions(t: Thread, where: Where): ThreadAction[] {
   if (where === "row")
     out.push({ id: "select", kind: "select", label: "Select", group: "thread", only: { front: "phone", why: "the desktop picks rows with x or a ⌘/⇧-click; the phone has no keyboard or modifier keys, so its sheet starts a selection" } });
   out.push({ id: "copyLink", kind: "copy", label: "Copy link", group: "link" });
+  out.push(archived ? cmd("unarchive", "thread.unarchive", "Unarchive", "end") : cmd("archive", "thread.archive", "Archive", "end", { key: "#" }));
   return out;
 }
 
@@ -155,11 +156,27 @@ export function actionsFor(front: Front, t: Thread, where: Where): ThreadAction[
 /** The desktop thread header shows these as buttons beside its ⋯ menu (thread.tsx); the ⋯ menu leaves them out. */
 export const DESK_HEADER_BUTTONS: readonly ActionId[] = ["retry", "pin", "unpin", "snooze", "settle"];
 
-/** The desktop header's ⋯ menu: the open thread's actions that are not header buttons. The thread's own group comes
- *  first (Project… is the entry the menu opens on, V0.26): the state group's main entries are the buttons beside it. */
+/** The desktop header's ⋯ menu: the open thread's actions that are not header buttons. V0.dialogs-review: in the
+ *  one order of this list, with its groups, as the row menu and the phone's sheet show it: one list has one order. */
 export function deskThreadMenu(t: Thread): ThreadAction[] {
-  const rest = actionsFor("desktop", t, "thread").filter((a) => !DESK_HEADER_BUTTONS.includes(a.id));
-  return [...rest.filter((a) => a.group === "thread"), ...rest.filter((a) => a.group !== "thread")];
+  return actionsFor("desktop", t, "thread").filter((a) => !DESK_HEADER_BUTTONS.includes(a.id));
+}
+
+/** The key a menu shows beside an entry: only one the menu itself acts on while it is open (menu.ts `entryForKey`). Enter
+ *  and Esc are the menu's own keys there (Enter takes the focused entry, Esc closes the menu), so "↵" and "Esc" are
+ *  not shown: a hint for a key that does something else would lie. */
+export function menuKey(a: Pick<ThreadAction, "key" | "disabled">): string | undefined {
+  return a.key && a.key.length === 1 && a.key !== "↵" && !a.disabled ? a.key : undefined;
+}
+
+/** The list as its groups, in order: what a surface draws a line between (a menu's separator, the phone sheet's rule). */
+export function actionGroups<T extends Pick<ThreadAction, "group">>(items: readonly T[]): T[][] {
+  const out: T[][] = [];
+  items.forEach((a, i) => {
+    if (i && items[i - 1].group === a.group) out[out.length - 1].push(a);
+    else out.push([a]);
+  });
+  return out;
 }
 
 /** How a front carries out a pick. `own` takes the actions whose front does more than send the command (a settle

@@ -274,10 +274,10 @@ export const FOLDER_LINE = "Threads started in this folder or below land here.";
 /** The new thread's folder (V0.42): the picked one, else the project's folder, else a fresh scratch folder. */
 export function newThreadFolder(picked: string, project: Pick<Project, "folder"> | undefined): { cwd?: string; label: string; scratch: boolean } {
   const cwd = picked.trim() || project?.folder || "";
-  return cwd ? { cwd, label: tildePath(cwd), scratch: false } : { label: "A fresh scratch folder", scratch: true };
+  return cwd ? { cwd, label: tildePath(cwd), scratch: false } : { label: SCRATCH_LABEL, scratch: true };
 }
 
-/** The picker's first row: from a thread "New project from this thread"; typed text that matches nothing names it. */
+/** The picker's New project row: from a thread "New project from this thread"; typed text names it. */
 export function newRowLabel(q: string, exact: boolean, fromThread: boolean): string {
   const t = q.trim();
   if (t && !exact) return `New project “${t}”`; // V0.61: typed text names the new project, matches or not
@@ -290,14 +290,43 @@ export function exactProject(projects: Project[], q: string): Project | undefine
   return t ? projects.find((p) => p.name.trim().toLowerCase() === t) : undefined;
 }
 
-/** What Enter in the picker's search does (V0.61): with a New project row, it picks only a project named exactly
- *  like the text, else it starts New project with the text; without one (the filter), the first match. */
-export function enterAction(projects: Project[], matches: Project[], q: string, canCreate: boolean): { pick: Project } | { create: string } | null {
-  if (!q.trim()) return null;
-  if (!canCreate) return matches.length ? { pick: matches[0] } : null;
-  const exact = exactProject(projects, q);
-  return exact ? { pick: exact } : { create: q.trim() };
+/** How well a project's name answers typed text, best first: 0 the name exactly, 1 the name starts with it, 2 a word
+ *  of the name is it ("infra" in "acme/infra"), 3 a word of the name starts with it ("infra" in
+ *  "acme-infrastructure"), 4 the name contains it, 5 only its second line does (the folder); -1 no match. Case does
+ *  not count. */
+export function matchRank(p: Project, query: string): number {
+  const q = query.trim().toLowerCase();
+  const name = p.name.trim().toLowerCase();
+  if (!q) return -1;
+  if (name === q) return 0;
+  if (name.startsWith(q)) return 1;
+  const words = name.split(/[^\p{L}\p{N}]+/u);
+  if (words.includes(q)) return 2;
+  if (words.some((w) => w.startsWith(q))) return 3;
+  if (name.includes(q)) return 4;
+  return `${p.name} ${projectSubtitle(p)}`.toLowerCase().includes(q) ? 5 : -1;
 }
+
+/** What Enter in the picker's search does. V0.dialogs-review (2), amending V0.61: it takes a project of the list
+ *  shown, the one whose name answers the typed text best (`matchRank`: the exact name, else a name that starts with
+ *  it, else a word of the name (the whole word before the start of one), else a name that contains it), the earlier one in the owner's order when
+ *  two answer alike. The list keeps its order (V0.121); the row Enter takes is marked in it. A project is made by
+ *  Enter only when nothing matches (the New project row is then the only row), and otherwise by its own row, which
+ *  stands after the matches. Enter never takes a project that is not in the list (another host's). */
+export function enterAction(matches: Project[], q: string, canCreate: boolean): { pick: Project } | { create: string } | null {
+  if (!q.trim()) return null;
+  let hit: Project | undefined;
+  let best = Infinity;
+  for (const p of matches) {
+    const r = matchRank(p, q);
+    if (r >= 0 && r < best) [hit, best] = [p, r];
+  }
+  if (hit) return { pick: hit };
+  return canCreate ? { create: q.trim() } : null;
+}
+
+/** The words for a thread that starts in no folder of the owner's, one spelling for New thread and Hand over. */
+export const SCRATCH_LABEL = "A fresh scratch folder";
 
 /** The project a new thread starts on: the inbox filter, else the last one used on this device, else the first in
  *  the owner's order (V0.121). */

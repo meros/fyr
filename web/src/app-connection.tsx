@@ -40,8 +40,8 @@ import { workCount } from "./markdown.ts";
 import type { useAppState } from "./app-state.tsx";
 import type { useNavHistory } from "./app-history.tsx";
 
-export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "rawStore" | "setStore" | "fullStore" | "hostOfId" | "deviceHidden" | "store" | "setLastOpen" | "view" | "setView" | "setZone" | "setDialog" | "setSnoozeTargets" | "setTracker" | "theme" | "setTick" | "nav" | "pushSt" | "setPushSt" | "setCanInstall" | "setPendingOpen" | "setProjectFilterState" | "setHostsOffState" | "gate"> & Pick<ReturnType<typeof useNavHistory>, "navReplace">) {
-  const { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, store, setLastOpen, view, setView, setZone, setDialog, setSnoozeTargets, setTracker, theme, setTick, nav, pushSt, setPushSt, setCanInstall, setPendingOpen, setProjectFilterState, setHostsOffState, gate, navReplace } = c;
+export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "rawStore" | "setStore" | "fullStore" | "hostOfId" | "deviceHidden" | "store" | "setLastOpen" | "view" | "setView" | "setZone" | "setDialog" | "setSnoozeTargets" | "setHandoverId" | "openPicker" | "setTracker" | "theme" | "setTick" | "nav" | "pushSt" | "setPushSt" | "setCanInstall" | "setPendingOpen" | "setProjectFilterState" | "setHostsOffState" | "gate"> & Pick<ReturnType<typeof useNavHistory>, "navReplace">) {
+  const { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, store, setLastOpen, view, setView, setZone, setDialog, setSnoozeTargets, setHandoverId, openPicker, setTracker, theme, setTick, nav, pushSt, setPushSt, setCanInstall, setPendingOpen, setProjectFilterState, setHostsOffState, gate, navReplace } = c;
   // ---- connection ----
   useEffect(() => {
     applyTheme(theme);
@@ -186,6 +186,12 @@ export function useConnection(c: Pick<ReturnType<typeof useAppState>, "api" | "r
       setSnoozeTargets([first]);
       setDialog("snooze");
     }
+    // V0.dialogs-review (32): the dialogs of the open thread have a link too (screenshots, the layout test).
+    if (d === "handover" && first) {
+      setHandoverId(first);
+      setDialog("handover");
+    }
+    if (d === "picker" && first) openPicker([first]);
   }, [store.loaded]);
   /* eslint-enable react-hooks/exhaustive-deps */
 

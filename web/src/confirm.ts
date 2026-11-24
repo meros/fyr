@@ -4,7 +4,6 @@
 import type { Offer, Project } from "./types.ts";
 import { shortArg, shortFolder } from "./paths.ts";
 import { pressArgs, quote } from "./offers.ts";
-import { sensitiveMergeAsk } from "./sensitive.ts";
 
 interface AskCommand {
   /** the command with its paths shortened */
@@ -30,6 +29,13 @@ export interface Ask {
   choice?: { label: string; options: { value: string; label: string }[]; value: string };
   /** V0.72: an optional line of text; the sheet writes it back here */
   reason?: { label: string; value: string; max?: number };
+}
+
+/** V0.dialogs-review: where a confirmation's focus starts. A red one (it destroys something) starts on Cancel, so
+ *  an Enter that was on its way to something else cancels; the owner tabs once or clicks to confirm. Any other starts
+ *  on its primary button, and Enter confirms. */
+export function confirmFocus(a: Pick<Ask, "danger">): "cancel" | "confirm" {
+  return a.danger ? "cancel" : "confirm";
 }
 
 /** The argument shortened, quoted as the original would need. */
@@ -88,10 +94,9 @@ export async function press(
   run: (action: string, args?: Record<string, unknown>) => void,
   /** V0.97: a Merge is bound to the head the owner saw */
   head?: string,
-  /** V0.sensitive-pr: why the change's merge is sensitive; its Merge asks with the reason */
-  sensitive?: string,
 ): Promise<boolean> {
-  const a = sensitive && o.run === "fyr" && o.effect === "pr.merge" ? sensitiveMergeAsk(sensitive, head) : offerAsk(o, cwd);
+  // A merge does not come here: it asks in the Merge dialog (merge-ui.tsx), from every place that starts one.
+  const a = offerAsk(o, cwd);
   if (a && !(await ask(a))) return false;
   run("action.run", pressArgs(on, o, head));
   return true;

@@ -1,7 +1,7 @@
 // The snooze list of both fronts (SPEC 0.5 V0.67, V0.185): the timed presets, then "until work is done". The row's and
 // the section's words are here too, so desktop and phone say the same.
 import { untilLabel } from "./format.ts";
-import { presetForKey, snoozePresets, type SnoozePreset } from "./store.ts";
+import { presetForKey, SNOOZE_MORNING_H, snoozePresets, type SnoozePreset } from "./store.ts";
 import type { Thread } from "./types.ts";
 
 export const SNOOZE_DONE_ACTION = "thread.snoozeWhenDone";
@@ -26,6 +26,53 @@ function doneChoice(now: Date, threads: Thread[]): SnoozeChoice {
 /** The list, in the order shown. The new choice is last, so the keys of the timed ones stay. */
 export function snoozeChoices(now: Date, threads: Thread[]): SnoozeChoice[] {
   return [...snoozePresets(now), doneChoice(now, threads)];
+}
+
+// ---- V0.dialogs-review (15): a date and time of the owner's own, one field on both fronts ----
+
+/** The last row of the list on both fronts, and the desktop's key for it. */
+export const SNOOZE_CUSTOM_LABEL = "Pick a date and time…";
+export const SNOOZE_CUSTOM_KEY = "t";
+
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** A local time as the value of a datetime-local field: "2026-11-25T09:00". */
+export function fieldTime(d: Date): string {
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/** What the field starts on: tomorrow morning, at the hour the "Tomorrow morning" preset means (one idea of morning
+ *  in the dialog), so Snooze works at once and only the part that differs is changed. */
+export function customStart(now: Date): Date {
+  const d = new Date(now);
+  d.setDate(now.getDate() + 1);
+  d.setHours(SNOOZE_MORNING_H, 0, 0, 0);
+  return d;
+}
+
+/** The field's label, above it on both fronts. */
+export const SNOOZE_CUSTOM_FIELD = "Date and time";
+
+/** Why the field's Snooze button is off, as text under the field on both fronts (a disabled button's tooltip does
+ *  not exist on a phone, and is not read on the desktop); "" when the time can be used. */
+export function customProblem(value: string, now: Date): string {
+  if (customUntil(value, now)) return "";
+  const d = value ? new Date(value) : null;
+  return d && !Number.isNaN(d.getTime()) ? "Pick a time after now." : "Pick a date and time.";
+}
+
+/** The field's time, or null when it is empty, not a time, or not after now. */
+export function customUntil(value: string, now: Date): Date | null {
+  const d = value ? new Date(value) : null;
+  return d && !Number.isNaN(d.getTime()) && d.getTime() > now.getTime() ? d : null;
+}
+
+/** Where the arrows go from row `i` of `n` (-1: the focus is on no row, the × or the date field): Down to the first,
+ *  Up to the last, and around at the ends. */
+export function arrowRow(i: number, n: number, down: boolean): number {
+  if (n <= 0) return -1;
+  if (i < 0) return down ? 0 : n - 1;
+  return (i + (down ? 1 : -1) + n) % n;
 }
 
 /** The desktop key's choice; a choice that is off has none. */

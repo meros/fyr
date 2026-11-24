@@ -5,7 +5,8 @@
 // everything else here uses its own m- classes so the desktop CSS never applies.
 
 import { storedGet, storedSet } from "./prefs.ts";
-import { MNew, MSheets } from "./phone-sheets.tsx";
+import { MSheets } from "./phone-sheets.tsx";
+import { MNew } from "./phone-new.tsx";
 import { MAsk, MAllow } from "./phone-cards.tsx";
 import { I } from "./phone-icons.tsx";
 import { Pop, SlideMark } from "./motion-ui.tsx";

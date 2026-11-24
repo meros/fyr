@@ -238,7 +238,7 @@ const SCREENS = [
   // project has no folder here (the folder field shows and is required).
   { name: "project picker", url: "?mock=1&open=t_s4", sheet: "project", field: ".m-sheet .pq" },
   { name: "new project step", url: "?mock=1&open=t_s4", sheet: "newproject", field: ".m-sheet .pform input" },
-  // SPEC 0.5 V0.42: a project without a folder starts in a fresh scratch folder; "Change" opens the folder picker
+  // SPEC 0.5 V0.42: a project without a folder starts in a fresh scratch folder; "Change…" opens the folder picker
   // sheet. SPEC 0.5 V0.55: the project screen shows its one folder with Change….
   { name: "new thread, project without a folder", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_home", "fyr.projectFilter": "" }, field: ".m-ta" },
   { name: "folder picker sheet", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_web", "fyr.projectFilter": "" }, sheet: "folder", field: ".fsheet .pq" },
@@ -344,7 +344,7 @@ const MEASURE = `(() => {
     chend: [...document.querySelectorAll('.chend')].map((b) => { const r = b.getBoundingClientRect(); return { h: r.height, right: r.right }; }),
     // V0.84: Not now, inside its card (left, right and bottom within the card's box).
     chpark: [...document.querySelectorAll('.chpark')].map((b) => { const r = b.getBoundingClientRect(), c = b.closest('.chc')?.getBoundingClientRect(); return { h: r.height, w: r.width, inside: !!c && r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5, right: r.right }; }),
-    cfm: (() => { const s = document.querySelector('.m-sheet.cfm'); if (!s) return null; const r = s.getBoundingClientRect(); const bs = [...s.querySelectorAll('.cfm-f .m-bt, .cfm-copy')].map((b) => b.getBoundingClientRect()); const p = s.querySelector('.cfm-f .m-bt.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, minBtn: Math.min(...bs.map((b) => b.height)), btnBottom: Math.max(...bs.map((b) => b.bottom)), title: s.querySelector('.cfm-t')?.textContent ?? '', code: s.querySelector('.cfm-code code')?.textContent ?? '', folder: s.querySelector('.cfm-in')?.textContent ?? '', primary: p?.textContent ?? '', danger: !!p?.classList.contains('danger'), focused: document.activeElement === p, codeOverflow: s.querySelector('.cfm-code') ? s.querySelector('.cfm-code').scrollWidth - s.querySelector('.cfm-code').clientWidth : 0 }; })(),
+    cfm: (() => { const s = document.querySelector('.m-sheet.cfm'); if (!s) return null; const r = s.getBoundingClientRect(); const bs = [...s.querySelectorAll('.cfm-f .m-bt, .cfm-copy')].map((b) => b.getBoundingClientRect()); const p = s.querySelector('.cfm-f .m-bt.p'); return { danger: !!p?.classList.contains('danger'), onCancel: document.activeElement === s.querySelector('.cfm-f .m-bt:not(.p)'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, minBtn: Math.min(...bs.map((b) => b.height)), btnBottom: Math.max(...bs.map((b) => b.bottom)), title: s.querySelector('.cfm-t')?.textContent ?? '', code: s.querySelector('.cfm-code code')?.textContent ?? '', folder: s.querySelector('.cfm-in')?.textContent ?? '', primary: p?.textContent ?? '', danger: !!p?.classList.contains('danger'), focused: document.activeElement === p, codeOverflow: s.querySelector('.cfm-code') ? s.querySelector('.cfm-code').scrollWidth - s.querySelector('.cfm-code').clientWidth : 0 }; })(),
     sheetItem: lastSheetItem,
     chips: rect('.m-cmpw .att-strip'),
     camera: rect('.m-cmp .cam'),
@@ -753,7 +753,10 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(c.top >= visTop + insetTop - 0.5 && c.left >= -0.5 && c.right <= c.vw + 0.5, `${ctx}: the sheet does not fit (${JSON.stringify(c)})`);
       check(c.minBtn >= 43.5, `${ctx}: a button is ${c.minBtn.toFixed(1)} px tall`);
       check(c.btnBottom <= visBottom - insetBottom + 0.5, `${ctx}: the buttons end at ${c.btnBottom.toFixed(1)}, below ${visBottom - insetBottom}`);
-      check(c.focused, `${ctx}: focus is not on the primary button`);
+      // V0.dialogs-review: a red confirmation (Delete project) starts on Cancel, so an Enter on its way elsewhere
+      // does not destroy; any other starts on its primary button.
+      if (c.danger) check(c.onCancel, `${ctx}: focus of a red confirmation is not on Cancel`);
+      else check(c.focused, `${ctx}: focus is not on the primary button`);
       check(c.codeOverflow <= 0.5, `${ctx}: the command runs ${c.codeOverflow} px past its box`);
       if (ctx.startsWith("confirm sheet for a script")) check(c.title === "Set the Acme token" && c.primary === "Run" && !c.danger && c.code === "bash …/20261115-130828-find-the-acme-claude-long-term-token/set-acme-token.sh" && c.folder === "in ~/…/scratch/20261115-130828-find-the-acme-claude-long-term-token", `${ctx}: words ${JSON.stringify(c)}`);
       else check(c.title === "Delete acme/web?" && c.primary === "Delete project" && c.danger, `${ctx}: words ${JSON.stringify(c)}`);
@@ -1711,8 +1714,14 @@ try {
   await key("Enter");
   const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '' })`);
   check(m.menu, "V0.26 desktop: the thread ⋯ menu does not open from the keyboard");
-  check(/Project…/.test(m.focused), `V0.26 desktop: the ⋯ menu does not focus "Project…" ("${m.focused}")`);
-  await key("Enter");
+  // V0.dialogs-review amends V0.26: the ⋯ menu has the action list's one order, so its focus starts on its first
+  // entry that is on, not on Project…; Project… is one key away (`p` acts while the menu is open).
+  const first = await evaluate(`document.querySelector('.thh [role=menu] [role=menuitem]:not([aria-disabled=true])')?.textContent ?? ''`);
+  check(m.focused !== "" && m.focused === first, `V0.26 desktop: the ⋯ menu does not focus its first entry ("${m.focused}", first "${first}")`);
+  check(await evaluate(`[...document.querySelectorAll('.thh [role=menu] [role=menuitem]')].some((b) => /^Project…/.test(b.textContent) && b.querySelector('kbd')?.textContent === 'p')`), "V0.26 desktop: the ⋯ menu has no Project… with its key");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "p", code: "KeyP", text: "p", windowsVirtualKeyCode: 80 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "p", code: "KeyP" });
+  await waitFor(`!!document.querySelector('.dlg .plist')`, { soft: true });
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
   check(d.dlg && d.focus, "V0.26 desktop: Project… does not open the project picker with the search focused");
   await send("Input.insertText", { text: "garden" }); // V0.61: Enter picks a project by its exact name (any case)
@@ -1767,9 +1776,11 @@ try {
   await navigate(`${origin}/?mock=rail`);
   await evaluate(`localStorage.setItem("fyr.lastProject", "p_web"); localStorage.setItem("fyr.projectFilter", ""); true`);
   await navigate(`${origin}/?mock=rail&dialog=new`, "!!document.querySelector('.dlg .fline .ell')");
-  const before = await evaluate(`document.querySelector('.dlg .fline .ell')?.textContent ?? ''`);
-  check(before === "~/src/acme/web", `V0.42 desktop: a new thread in acme/web does not start in its folder ("${before}")`);
-  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
+  // V0.dialogs-review round 2 (17): the row says "The project's folder" (the Project row above shows the path); the
+  // path itself is the row's tooltip and what the thread starts in.
+  const before = await evaluate(`(() => { const e = document.querySelector('.dlg .fline .ell'); return e ? e.textContent + ' | ' + e.title : ''; })()`);
+  check(/^The project's folder \| .*\/src\/acme\/web$/.test(before), `V0.42 desktop: a new thread in acme/web does not start in its folder ("${before}")`);
+  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change…')?.focus()`);
   await key("Enter");
   await waitFor(`!!document.querySelector('.fpick .fsec h4')`, { soft: true });
   const o = await evaluate(`({ picker: !!document.querySelector('.fpick'), focus: document.activeElement?.classList.contains('pq') && !!document.activeElement.closest('.fpick'), first: document.querySelector('.fpick .fsec h4')?.textContent ?? '' })`);
@@ -1798,7 +1809,7 @@ try {
   await waitFor(`!document.querySelector('.fpick')`, { soft: true });
   const r = await evaluate(`({ picker: !!document.querySelector('.fpick'), dlg: !!document.querySelector('.dlg'), folder: document.querySelector('.dlg .fline .ell')?.textContent ?? '' })`);
   check(!r.picker && r.dlg && r.folder === "~/src/acme/ops", `V0.42 desktop: Enter does not pick the typed folder (${JSON.stringify(r)})`);
-  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
+  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change…')?.focus()`);
   await key("Enter");
   await waitFor(`!!document.querySelector('.fpick .fpr')`, { soft: true });
   await key("ArrowDown");
@@ -1893,7 +1904,7 @@ try {
   check(d.dlg && /Full history|reads the old conversation|writes a handover/.test(d.rung) && d.to !== "", `V0.45 desktop: the dialog does not show the target and the rung (${JSON.stringify(d)})`);
   const hw = await evaluate(PROFILE_WORDS);
   check(hw.length === 0, `V0.50 desktop: the handover dialog says profile (${JSON.stringify(hw)})`);
-  await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim() === 'Hand over')?.click()`);
+  await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim().startsWith('Hand over'))?.click()`);
   await waitFor(`!document.querySelector('.dlg') && !!document.querySelector('.th .hodiv')`, { soft: true });
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), div: document.querySelector('.th .hodiv')?.textContent ?? '' })`);
   check(!r.dlg && r.div.startsWith("Handed over from ") && r.div.includes(` to ${d.to.replace(/ · [^·]*$/, "")}`), `V0.45 desktop: no divider after the handover (${JSON.stringify(r)})`);
@@ -3469,8 +3480,9 @@ for (const [label, w, ht] of [
   // 3. New thread: the host follows the project; with no project the owner picks it.
   await step("new thread", async () => {
     await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf .htabs')`);
-    const locked = await evaluate(`({ n: document.querySelectorAll('${root} .hostf .htab').length, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
-    // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project).
+    const locked = await evaluate(`({ n: document.querySelectorAll('${root} .hostf .htab').length, line: document.querySelector('${root} .hostf > span')?.title ?? '' })`);
+    // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project). V0.dialogs-review: its
+    // help is the label's tooltip in New thread, not a standing line.
     check(locked.n === 3 && /^The thread runs there\./.test(locked.line), `${ctx}: the Host field is the owner's pick ${JSON.stringify(locked)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
     await settle();
@@ -3875,7 +3887,7 @@ try {
     const ask = await center(`document.querySelector('.ib [data-id="t_lasso"]')`);
     await mouse(ask.x, ask.y, "right");
     await settle();
-    const dis = await evaluate(`(() => { const b = [...document.querySelectorAll('.ctxm .ctxm-i')].find((b) => b.textContent.startsWith('Settle')); return b ? { disabled: b.getAttribute('aria-disabled'), title: b.title } : null; })()`);
+    const dis = await evaluate(`(() => { const b = [...document.querySelectorAll('.ctxm .ctxm-i')].find((b) => b.textContent.startsWith('Settle')); return b ? { disabled: b.getAttribute('aria-disabled'), title: b.querySelector('small')?.textContent ?? '' } : null; })()`); // V0.dialogs-review: the reason is the entry's second line, not a tooltip
     check(dis?.disabled === "true" && /question/i.test(dis.title), `${ctx}: an asking thread's Settle is not disabled with its reason (${JSON.stringify(dis)})`);
   } else {
     await openScreen({ url: "?mock=rail" }, w, hh);
@@ -4004,7 +4016,8 @@ try {
 section('V0.185', async (h) => {
   const { send, evaluate, waitFor, settle, navigate, tapCenter, key, openScreen } = h;
   const png = async (name) => process.env.FYR_SHOTS && writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
-  const last = (sel) => `(() => { const b = [...document.querySelectorAll('${sel}')].pop(); return b ? { text: b.textContent, off: b.disabled } : null; })()`;
+  // V0.dialogs-review (15): the list ends with "Pick a date and time…", so the choice is found by its words.
+  const last = (sel) => `(() => { const b = [...document.querySelectorAll('${sel}')].filter((b) => b.textContent.includes('Until work is done')).pop(); return b ? { text: b.textContent, off: b.disabled } : null; })()`;
   try {
     await send("Emulation.setTouchEmulationEnabled", { enabled: false });
     await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -4015,7 +4028,7 @@ section('V0.185', async (h) => {
     check(on?.text.includes("Until work is done") && on.text.includes("at most 24 h") && !on.off, `V0.185 desktop: the choice for a working thread: ${JSON.stringify(on)}`);
     await settle();
     await png("snooze-done-desktop.png");
-    await evaluate(`[...document.querySelectorAll('.menu .mi')].pop().click()`);
+    await evaluate(`[...document.querySelectorAll('.menu .mi')].find((b) => b.textContent.includes('Until work is done')).click()`);
     await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.snoozeWhenDone' && c.threadId === 't_mapperf')`, { what: "the snooze command" });
     // The header toggles, and the fold is remembered: open the section only when it is folded.
     await evaluate(`(() => { const s = document.querySelector('#sec-snoozed'); if (!s.querySelector('[data-id]')) s.querySelector('.sec').click(); })()`);
@@ -4234,6 +4247,137 @@ section('V0.162', async (h) => {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 });
 
+// V0.dialogs-review, round 2: what its review found by looking, kept from coming back. The Merge dialog's refusal is a
+// line of its own, as wide as the dialog, on both fronts (it was one letter wide beside the buttons on the desktop);
+// the line about a draft stands above the prompt and inside the form; why Snooze's date and time cannot be used is
+// text in view under the field.
+section('V0.dialogs-review round 2', async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, tapCenter, openScreen } = h;
+  const errBox = `(() => { const e = document.querySelector('.dlg .df .err'), d = document.querySelector('.dlg'), b = document.querySelector('.dlg .df .btn.p'); if (!e || !d || !b) return null; const r = e.getBoundingClientRect(), dr = d.getBoundingClientRect(), br = b.getBoundingClientRect(); return { text: e.textContent, w: r.width, h: r.height, dw: dr.width, above: r.bottom <= br.top + 0.5, inside: r.left >= dr.left - 0.5 && r.right <= dr.right + 0.5 && r.bottom <= innerHeight + 0.5 }; })()`;
+  const checkErr = (m, ctx) => {
+    check(!!m, `${ctx}: the Merge dialog shows no error after the host refused`);
+    if (!m) return;
+    check(/^Not merged: /.test(m.text), `${ctx}: the refusal does not say what it is: ${JSON.stringify(m.text)}`);
+    check(m.w >= m.dw * 0.6, `${ctx}: the refusal is ${m.w} px wide in a ${m.dw} px dialog`);
+    check(m.h <= 60, `${ctx}: the refusal of ${m.text.length} letters is ${m.h} px tall`);
+    check(m.above && m.inside, `${ctx}: the refusal is not on its own line above the buttons, inside the dialog ${JSON.stringify(m)}`);
+  };
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=1&conn=offline&open=t_effect&tab=pr`, "!!document.querySelector('.prv-merge')");
+    await evaluate(`document.querySelector('.prv-merge').click()`);
+    await waitFor(`!!document.querySelector('.dlg .df .btn.p')`, { what: "the Merge dialog" });
+    await evaluate(`document.querySelector('.dlg .df .btn.p').click()`);
+    await waitFor(`!!document.querySelector('.dlg .df .err')`, { what: "the Merge dialog's error", soft: true });
+    checkErr(await evaluate(errBox), "round 2 merge error desktop");
+
+    // The draft's line: above the prompt, inside the dialog's body. Round 3: its one control is × (hide the line);
+    // Discard has one place, the foot, so it does not move when the line goes.
+    await navigate(`${origin}/?mock=1&dialog=new`, "!!document.querySelector('.dlg textarea')");
+    await evaluate(`(() => { const ta = document.querySelector('.dlg textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'a prompt worth keeping'); ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await evaluate(`document.querySelector('.dlg .dh .x').click()`);
+    await waitFor(`!document.querySelector('.dlg')`, { what: "New thread closed" });
+    await evaluate(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))`);
+    await waitFor(`!!document.querySelector('.dlg .ntdraft')`, { what: "the draft's line", soft: true });
+    const line = await evaluate(`(() => { const l = document.querySelector('.dlg .ntdraft'), ta = document.querySelector('.dlg textarea'), b = document.querySelector('.dlg .db'); if (!l || !ta || !b) return null; const r = l.getBoundingClientRect(), tr = ta.getBoundingClientRect(), br = b.getBoundingClientRect(); const named = (root) => [...root.querySelectorAll('button')].map((x) => x.textContent.trim() || x.getAttribute('aria-label')); return { text: l.textContent, above: r.bottom <= tr.top + 0.5, inside: r.left >= br.left - 0.5 && r.right <= br.right + 0.5, value: ta.value, lineButtons: named(l), discard: named(document.querySelector('.dlg .df')).includes('Discard') }; })()`);
+    check(!!line, "round 2 draft desktop: a reopened New thread shows no line about its draft");
+    if (line) {
+      check(/^Draft from today \d\d:\d\d · /.test(line.text), `round 2 draft desktop: the line does not say what it is and when: ${JSON.stringify(line.text)}`);
+      check(line.above && line.inside, `round 2 draft desktop: the line is not above the prompt ${JSON.stringify(line)}`);
+      check(line.discard && JSON.stringify(line.lineButtons) === '["×"]', `round 3 draft desktop: Discard is not in the foot alone, with × as the line's one control ${JSON.stringify(line)}`);
+      check(line.value === "a prompt worth keeping", `round 2 draft desktop: the prompt did not come back: ${JSON.stringify(line.value)}`);
+    }
+
+    // Snooze: a time before now says why its button is off, as text in view.
+    await navigate(`${origin}/?mock=1&open=t_effect&dialog=snooze`, "!!document.querySelector('.menu .mi')");
+    await evaluate(`[...document.querySelectorAll('.menu .mi')].at(-1).click()`);
+    await waitFor(`!!document.querySelector('.snzc input')`, { what: "the snooze date and time" });
+    await evaluate(`(() => { const i = document.querySelector('.snzc input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '2020-01-01T09:00'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await settle();
+    const why = await evaluate(`(() => { const y = document.querySelector('.snzy'), d = document.querySelector('.dlg'); if (!y || !d) return null; const r = y.getBoundingClientRect(), dr = d.getBoundingClientRect(); return { text: y.textContent, inside: r.top >= dr.top && r.bottom <= dr.bottom + 0.5 && r.bottom <= innerHeight, off: document.querySelector('.snzc .btn').disabled }; })()`);
+    check(!!why && why.text === "Pick a time after now." && why.inside && why.off, `round 2 snooze desktop: a past time shows no reason in view ${JSON.stringify(why)}`);
+  } catch (e) {
+    failures.push(`round 2 desktop: ${e.message}`);
+  }
+  try {
+    await openScreen({ url: `?mock=1&conn=offline&open=t_s2&tab=pr` }, 390, 844);
+    await evaluate(`document.querySelector('.prv-merge')?.scrollIntoView({ block: 'center' })`);
+    await tapCenter(".prv-merge", "!!document.querySelector('.dlg .df .btn.p')");
+    await settle();
+    await tapCenter(".dlg .df .btn.p", "!!document.querySelector('.dlg .df .err')");
+    await settle();
+    checkErr(await evaluate(errBox), "round 2 merge error phone");
+  } catch (e) {
+    failures.push(`round 2 phone: ${e.message}`);
+  }
+});
+
+// V0.dialogs-review, round 3: what its review found by running, kept from coming back. A held Enter that opened the
+// Merge dialog does not merge (real key events: the repeat is the browser's); a phone page reloaded over a layer has
+// no history entry that a Back spends on nothing; the New project step's own buttons are in view above the phone's
+// bottom bar; Hand over to an offline host says why once.
+section('V0.dialogs-review round 3', async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, tapCenter, openScreen } = h;
+  const merges = `(window.__fyrCommands || []).filter((c) => c.action === 'pr.merge').length`;
+  const enterDown = (autoRepeat) => send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13, autoRepeat });
+  try {
+    await navigate(`${origin}/?mock=1&open=t_effect&tab=pr`, "!!document.querySelector('.prv-merge')");
+    await evaluate(`document.querySelector('.prv-merge').focus()`);
+    await enterDown(false);
+    await waitFor(`!!document.querySelector('.dlg .df .btn.p')`, { what: "the Merge dialog after Enter on Merge…" });
+    await settle();
+    check(await evaluate(`document.activeElement === document.querySelector('.dlg .df .btn.p')`), "round 3 held Enter: the plain Merge dialog does not start on its primary button");
+    for (let i = 0; i < 3; i++) await enterDown(true); // the key is still down: the browser repeats it
+    await settle();
+    const held = await evaluate(`({ merges: ${merges}, open: !!document.querySelector('.dlg .df .btn.p') })`);
+    check(held.merges === 0 && held.open, `round 3 held Enter: the Enter that opened the Merge dialog merged, or closed it ${JSON.stringify(held)}`);
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    // A new press is an answer.
+    await enterDown(false);
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await waitFor(`${merges} > 0`, { what: "the merge after a new Enter", soft: true });
+    check((await evaluate(merges)) === 1, `round 3 held Enter: a new Enter in the Merge dialog sent ${await evaluate(merges)} merges, not one`);
+  } catch (e) {
+    failures.push(`round 3 desktop: ${e.message}`);
+  }
+  try {
+    // New thread with its project list open is on the list's history entry; a reload there must leave one Back to
+    // the inbox, not one that changes nothing first.
+    await openScreen({ url: `?mock=1&new`, ready: "!!document.querySelector('.m-new .m-ppick')" }, 390, 844);
+    await tapCenter(".m-new .m-ppick", "!!document.querySelector('.m-new .m-pickpanel') && history.state?.backLayer === 1");
+    await evaluate(`window.__beforeReload = true`);
+    await send("Page.reload", {});
+    await waitFor(`!window.__beforeReload && document.readyState === 'complete' && !!document.querySelector('.m-new .m-ppick') && !document.querySelector('.m-new .m-pickpanel')`, { what: "New thread after the reload, its list closed" });
+    await waitFor(`!history.state?.backLayer`, { what: "the reloaded page off the layer's entry" });
+    await settle();
+    await evaluate(`history.back()`);
+    await waitFor(`!document.querySelector('.m-new')`, { what: "the inbox after one Back", soft: true, timeout: 3000 });
+    const after = await evaluate(`({ newThread: !!document.querySelector('.m-new'), search: location.search })`);
+    check(!after.newThread && !/[?&]new\b/.test(after.search), `round 3 reload over a layer: the first Back did not leave New thread ${JSON.stringify(after)}`);
+
+    // The New project step: its Back and Create project are in view, above the bottom bar.
+    await openScreen({ url: `?mock=1&hosts=2&new`, ready: "!!document.querySelector('.m-new .m-ppick')" }, 390, 844);
+    await tapCenter(".m-new .m-ppick", "!!document.querySelector('.m-new .pli.new')");
+    await tapCenter(".m-new .pli.new", "!!document.querySelector('.m-new .pform input')");
+    await settle();
+    const step = await evaluate(`(() => { const bar = document.querySelector('.m-new .m-abar').getBoundingClientRect(), body = document.querySelector('.m-nbody').getBoundingClientRect(); return [...document.querySelectorAll('.m-new .pform button')].filter((b) => /^(Back|Create project)$/.test(b.textContent.trim())).map((b) => { const r = b.getBoundingClientRect(); return { text: b.textContent.trim(), top: Math.round(r.top), bottom: Math.round(r.bottom), bar: Math.round(bar.top), seen: r.top >= body.top - 0.5 && r.bottom <= Math.min(bar.top, body.bottom) + 0.5 }; }); })()`);
+    check(step.length === 2 && step.every((b) => b.seen), `round 3 New project step phone: its own buttons are not whole above the bottom bar ${JSON.stringify(step)}`);
+
+    // Hand over to an offline host: the reason once (under Host), and the buttons as wide as the sheet.
+    await openScreen({ url: `?mock=1&hosts=2&open=t_effect`, sheet: "handover" }, 390, 844);
+    await evaluate(`[...document.querySelectorAll('.m-sheet .hostf .htab')].find((b) => /host-b/.test(b.textContent)).click()`);
+    await waitFor(`/offline/.test(document.querySelector('.m-sheet .ho-b')?.textContent ?? '')`, { what: "the offline host's note" });
+    await settle();
+    const ho = await evaluate(`(() => { const sh = document.querySelector('.m-sheet'), df = sh.querySelector('.df'); const r = df.getBoundingClientRect(); return { times: sh.textContent.split('is offline').length - 1, foot: [...df.children].map((x) => x.textContent.trim()), off: df.querySelector('.btn.p').disabled, inView: r.bottom <= innerHeight + 0.5 }; })()`);
+    check(ho.times === 1 && JSON.stringify(ho.foot) === '["Cancel","Hand over"]' && ho.off && ho.inView, `round 3 Hand over phone: an offline host's reason does not stand once above two buttons ${JSON.stringify(ho)}`);
+  } catch (e) {
+    failures.push(`round 3 phone: ${e.message}`);
+  }
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+});
+
 // V0.108: Regenerate title is in the thread's ⋯ menu on the desktop and in the thread's ⋯ sheet on the phone, the same
 // control on both; a press names the thread from its conversation (the mock answers at once).
 section('V0.108', async (h) => {
@@ -4247,11 +4391,11 @@ try {
   regenId = await evaluate(`document.querySelector('#sec-working [data-id]').dataset.id`);
   await navigate(`${origin}/?mock=rail&open=${regenId}`, "!!document.querySelector('.th .tmenu-b')");
   await evaluate(`document.querySelector('.th .tmenu-b').click()`);
-  await waitFor(`!!document.querySelector('.tmenu-l .mi')`);
-  const has = await evaluate(`[...document.querySelectorAll('.tmenu-l .mi .ell')].some(x => x.textContent === 'Regenerate title')`);
+  await waitFor(`!!document.querySelector('.tmenu-l [role=menuitem]')`);
+  const has = await evaluate(`[...document.querySelectorAll('.tmenu-l [role=menuitem] .ell')].some(x => x.textContent === 'Regenerate title')`);
   check(has, "V0.108 title: the thread's ⋯ menu has no Regenerate title");
   if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "regen-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
-  await evaluate(`[...document.querySelectorAll('.tmenu-l .mi')].find(b => b.querySelector('.ell')?.textContent === 'Regenerate title')?.click()`);
+  await evaluate(`[...document.querySelectorAll('.tmenu-l [role=menuitem]')].find(b => b.querySelector('.ell')?.textContent === 'Regenerate title')?.click()`);
   await waitFor(`document.querySelector('.th .tt')?.textContent === ${JSON.stringify(REGEN)}`, { soft: true });
   check(await evaluate(`document.querySelector('.th .tt')?.textContent === ${JSON.stringify(REGEN)}`), "V0.108 title: the desktop press did not rename the thread");
 } catch (e) {

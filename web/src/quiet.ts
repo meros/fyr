@@ -152,10 +152,11 @@ export const QUIET_HOLD_MS = 30_000;
 export const QUIET_SHOW_MS = 30 * 60_000;
 const SHOW_KEY = "fyr.quietShowUntil";
 
-/** The projects New thread offers: quiet ones left out unless showUntil is ahead; keep (the picked one) stays. */
-export function createProjects(projects: Project[], now: number, showUntil: number, keep?: string): Project[] {
+/** The projects New thread offers: quiet ones left out unless showUntil is ahead; `keep` (the picked one, and the one a
+ *  restored draft names) stays. */
+export function createProjects(projects: Project[], now: number, showUntil: number, ...keep: (string | undefined)[]): Project[] {
   if (showUntil > now) return projects;
-  return projects.filter((p) => !isQuiet(p, now) || (!!keep && p.id === keep));
+  return projects.filter((p) => !isQuiet(p, now) || (!!p.id && keep.includes(p.id)));
 }
 
 type KV = Pick<Storage, "getItem" | "setItem" | "removeItem">;

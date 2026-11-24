@@ -101,8 +101,10 @@ export function showsBottomBar(n: Nav, selecting: boolean): boolean {
 
 /** A history entry's state, or the URL's when the entry has none (first load, external link). */
 export function navFromHistory(state: unknown, search: string): Nav {
-  if (state && typeof state === "object" && "screen" in state) return state as Nav;
-  return parseUrl(search);
+  if (!state || typeof state !== "object" || !("screen" in state)) return parseUrl(search);
+  // A layer's entry (back-layer.ts) is its screen's state with a mark: the mark is the entry's, not the screen's.
+  const { screen, sheet } = state as Nav;
+  return { screen, sheet: sheet ?? null };
 }
 
 /** The browser's history as far as the phone's navigation uses it. */
@@ -111,13 +113,21 @@ interface HistoryLike {
   pushState(state: unknown, title: string, url: string): void;
 }
 
-/** Build the history once: the entries of a deep link (a push) get the inbox under them, so Back never leaves the
- *  app. Returns the entry the page is on. */
-export function seedHistory(h: HistoryLike, search: string): Nav {
+/** Build the history once: the entries of a deep link (a push) get the inbox under it, so Back never leaves the
+ *  app. Returns the entry the page is on. `state` is the entry's state as the page loads: a reload over a layer
+ *  (V0.dialogs-review (4), back-layer.ts: the folder picker, a confirmation) is on that layer's entry, whose screen
+ *  already has its entries under it, so only the layer's mark goes and nothing is pushed on top of them. The caller
+ *  then steps back off that entry, which is now a second one of the screen (back-layer.ts `seedPhoneHistory`). */
+export function seedHistory(h: HistoryLike, search: string, state?: unknown): Nav {
   const entries = initialEntries(search);
+  const last = entries[entries.length - 1];
+  if (state && typeof state === "object" && "backLayer" in state && "screen" in state) {
+    h.replaceState(last, "", urlFor(last, search));
+    return last;
+  }
   h.replaceState(entries[0], "", urlFor(entries[0], search));
   for (const e of entries.slice(1)) h.pushState(e, "", urlFor(e, search));
-  return entries[entries.length - 1];
+  return last;
 }
 
 /** Back and Forward on the phone: the entry the browser went to is the screen. `slide` plays the back slide when the

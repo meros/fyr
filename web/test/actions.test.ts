@@ -2,7 +2,7 @@
 // ⋯ menu) and the phone's sheets. An action reachable on one front is reachable on the other, unless it says why not.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESK_HEADER_BUTTONS, actionsFor, deskThreadMenu, runAction, settleRun, settleToast, threadActions, type ActionHandlers, type ActionId, type Front, type ThreadAction, type Where } from "../src/actions.ts";
+import { DESK_HEADER_BUTTONS, actionGroups, actionsFor, deskThreadMenu, menuKey, runAction, settleRun, settleToast, threadActions, type ActionHandlers, type ActionId, type Front, type ThreadAction, type Where } from "../src/actions.ts";
 import { thread } from "./helpers.ts";
 
 const states = [
@@ -101,8 +101,31 @@ test("the settle toast names a stopped run, from one place", () => {
   assert.equal(settleToast(states[0]), undefined);
 });
 
-test("the ⋯ menu opens on Project… (V0.26)", () => {
-  for (const t of states) assert.equal(deskThreadMenu(t)[0].id, "project", t.id);
+test("V0.dialogs-review: the ⋯ menu, the row menu and the phone's sheet show one order, Archive last", () => {
+  // V0.26 put Project… first in the ⋯ menu; one list in three orders was the cost (review round 2, 12).
+  for (const t of states) {
+    const all = threadActions(t, "thread").map((a) => a.id);
+    const menu = deskThreadMenu(t).map((a) => a.id);
+    assert.deepEqual(menu, all.filter((id) => menu.includes(id)), `${t.id}: the ⋯ menu keeps the list's order`);
+    for (const where of ["row", "thread"] as Where[])
+      for (const front of ["desktop", "phone"] as Front[]) {
+        const list = actionsFor(front, t, where);
+        assert.ok(["archive", "unarchive"].includes(list.at(-1)!.id), `${t.id} ${front} ${where}: what takes the thread away is last`);
+        assert.equal(list.at(-1)!.group, "end");
+        assert.equal(actionGroups(list).flat().length, list.length);
+        assert.equal(new Set(actionGroups(list).map((g) => g[0].group)).size, actionGroups(list).length, "each group is one run of the list");
+      }
+  }
+});
+
+test("V0.dialogs-review: a menu shows a key only when the key acts while the menu is open", () => {
+  const t = states.find((x) => x.id === "running") ?? states[0];
+  const row = actionsFor("desktop", t, "row");
+  assert.equal(menuKey(row.find((a) => a.id === "open")!), undefined, "Enter takes the focused entry");
+  const stop = row.find((a) => a.id === "interrupt");
+  if (stop) assert.equal(menuKey(stop), undefined, "Esc closes the menu");
+  assert.equal(menuKey(row.find((a) => a.id === "archive")!), "#");
+  assert.equal(menuKey({ key: "s", disabled: "Nothing to snooze" }), undefined, "an entry that is off has no key");
 });
 
 test("settleRun: the one run option both fronts pass to thread.settle", () => {

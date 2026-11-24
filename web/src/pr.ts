@@ -275,6 +275,34 @@ export const MERGE_METHODS = [
 
 export type MergeMethod = (typeof MERGE_METHODS)[number]["id"];
 
+/** V0.dialogs-review (27): the method each repository was merged with last on this device, so the Merge dialog starts
+ *  on it instead of always on Squash. */
+export const MERGE_METHOD_KEY = "fyr.mergeMethod";
+
+function mergeMethods(kv: Pick<Storage, "getItem"> | null): Record<string, unknown> {
+  try {
+    const j: unknown = JSON.parse(kv?.getItem(MERGE_METHOD_KEY) ?? "{}");
+    return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The method to start on for `repo`: the one used last there, else squash. */
+export function rememberedMergeMethod(kv: Pick<Storage, "getItem"> | null, repo: string): MergeMethod {
+  const m = mergeMethods(kv)[repo];
+  return MERGE_METHODS.find((x) => x.id === m)?.id ?? "squash";
+}
+
+export function rememberMergeMethod(kv: Pick<Storage, "getItem" | "setItem"> | null, repo: string, method: MergeMethod): void {
+  if (!repo) return;
+  try {
+    kv?.setItem(MERGE_METHOD_KEY, JSON.stringify({ ...mergeMethods(kv), [repo]: method }));
+  } catch {
+    /* storage blocked: the dialog starts on squash again */
+  }
+}
+
 /** The dialog's confirm button names the result. */
 /** V0.97: the short form of a head commit, as the owner sees it on a Merge button. */
 export const shortHead = (sha?: string) => (sha ?? "").slice(0, 7);
@@ -287,6 +315,57 @@ export function headLabel(label: string, head?: string): string {
 export function mergeButton(method: MergeMethod, n: number): string {
   return method === "squash" ? `Squash and merge #${n}` : method === "rebase" ? `Rebase and merge #${n}` : `Merge #${n}`;
 }
+
+/** V0.dialogs-review: one merge, as the Merge dialog asks about it, wherever it starts (the PR tab, a change's card,
+ *  the agent's merge ask). */
+export interface MergeAsk {
+  /** what is merged: the PR's number, title and repository (the method remembered per repository) */
+  number?: number;
+  title?: string;
+  repo?: string;
+  /** the branches, when known */
+  head?: string;
+  base?: string;
+  /** V0.97: the commit the merge is bound to */
+  sha?: string;
+  /** V0.sensitive-pr: why this merge needs a deliberate press; the dialog is then red and starts on Cancel */
+  sensitive?: string;
+  /** The host takes the method on this path (the PR tab's `pr.merge`): the dialog offers the choice. Without it the
+   *  merge runs with the method its change or ask names (`action.run` and `thread.answer` take none), and the dialog
+   *  says so instead of offering a choice it could not keep. */
+  choose?: boolean;
+  /** the method this merge runs with, when the path that takes no choice knows it (the agent's merge ask names it) */
+  method?: MergeMethod;
+  /** Start the merge; resolves to the host's error, or null when it started. */
+  run(method: MergeMethod | undefined): Promise<string | null>;
+}
+
+/** The Merge dialog's title: it names what is merged. */
+export function mergeTitle(a: Pick<MergeAsk, "number" | "sensitive">): string {
+  if (!a.number) return a.sensitive ? "Merge this sensitive PR" : "Merge this PR";
+  return a.sensitive ? `Merge #${a.number}, a sensitive PR` : `Merge #${a.number}`;
+}
+
+/** The Merge dialog's primary button: the method when one is chosen there or known, else what it merges. */
+export function mergeConfirm(a: Pick<MergeAsk, "number" | "choose" | "sha" | "method">, method: MergeMethod): string {
+  const m = a.choose ? method : a.method;
+  if (m && a.number) return mergeButton(m, a.number);
+  return a.number ? `Merge #${a.number}` : headLabel("Merge", a.sha);
+}
+
+/** A merge method by its id as a command carries it (an ask's `args.method`), or undefined. */
+export const mergeMethod = (id: unknown): MergeMethod | undefined => MERGE_METHODS.find((m) => m.id === id)?.id;
+
+/** What the dialog says in place of the method choice when the host takes none on this path: the method, when the
+ *  ask names it, and where another can be picked. */
+export function mergeMethodLine(a: Pick<MergeAsk, "method">): string {
+  const m = MERGE_METHODS.find((x) => x.id === a.method);
+  const how = m ? `Method: ${m.label}, as the agent asked.` : "The merge uses the method its change asks for: squash unless the agent named another.";
+  return `${how} To pick another, merge from the thread's PR tab.`;
+}
+
+/** The host's refusal, as the dialog prints it on a line of its own. */
+export const notMerged = (err: string) => `Not merged: ${err}`;
 
 /** The threads grouped per file, in the order they came. */
 export function threadsByFile(threads: PrThread[]): { path: string; threads: PrThread[] }[] {

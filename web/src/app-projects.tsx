@@ -180,7 +180,7 @@ export function useProjectActions(c: Pick<ReturnType<typeof useAppState>, "api" 
   const allHostsCtx = useMemo(() => ({ ...hostsCtx, hosts: fullStore.hostList }), [hostsCtx, fullStore.hostList]); // V0.207: Settings
   const folderPickView = folderPick
     ? phone ? (
-        <BottomSheet onClose={() => closeFolderPick(null)} label={pickTitle} cls="fsheet" scrimCls="fscrim">
+        <BottomSheet onClose={() => closeFolderPick(null)} label={pickTitle} cls="fsheet" scrimCls="fscrim" layer>
           <div class="fsh">
             <span class="m-shh">{pickTitle}</span>
             <button class="m-fchg" onClick={() => closeFolderPick(null)}>

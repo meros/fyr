@@ -157,24 +157,45 @@ interface NewRow {
   onNew(query: string): void;
 }
 
-/** A searchable project list: the picker (Project…), the new-thread picker and the filter. Rows: New project, the
- *  null row (No project, All projects), the projects by last use, then any extra rows. */
-export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus, newRow, extra }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; allLabel?: string; autoFocus?: boolean; newRow?: NewRow; extra?: ComponentChildren }) {
-  const [q, setQ] = useState("");
+/** A searchable project list: the picker (Project…), the new-thread picker and the filter. Rows with an empty search:
+ *  New project, the null row (No project, All projects), the projects in the owner's order, then any extra rows.
+ *  V0.dialogs-review (2): under typed text the matches come first and New project “text” after them, so the first row
+ *  is what Enter takes (projects.ts `enterAction`). `initialQuery` is the search's text when the list opens (the name
+ *  typed in the New project step, after Back from it). */
+export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus, newRow, extra, initialQuery = "" }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; allLabel?: string; autoFocus?: boolean; newRow?: NewRow; extra?: ComponentChildren; initialQuery?: string }) {
+  const [q, setQ] = useState(initialQuery);
   const ref = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   /* eslint-disable react-hooks/exhaustive-deps -- focus on mount only */
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
+    // V0.dialogs-review (22): the picked project is in view when the list opens, not below its fold.
+    // Only the list's own box scrolls for it (scrollIntoView would move the dialog or the sheet around it too).
+    const on = box.current?.querySelector<HTMLElement>(".pli.on");
+    const under = on && box.current ? on.getBoundingClientRect().bottom - box.current.getBoundingClientRect().bottom : 0;
+    if (under > 0) box.current!.scrollTop += under;
   }, []);
   /* eslint-enable react-hooks/exhaustive-deps */
   const list = matchProjects(projects, q);
-  // Keyboard: Enter in the search picks the first match, or names a new project when nothing matches; arrows walk the
+  const typed = !!q.trim();
+  // The row Enter takes is marked (⏎), so the owner sees which project a typed part of a name means.
+  const act = enterAction(list, q, !!newRow);
+  const takes = (p: Project) => !!act && "pick" in act && act.pick === p;
+  const newItem = newRow && (
+    <button class={`pli new${act && "create" in act ? " ent" : ""}`} role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
+      <span class="pi all">+</span>
+      <span class="plt">
+        <span class="ell pln">{newRowLabel(q, !!exactProject(projects, q), newRow.fromThread)}</span>
+        <span class="ell pls2">{newRow.sub}</span>
+      </span>
+      {act && "create" in act && <kbd class="plk">⏎</kbd>}
+    </button>
+  );
+  // Keyboard: Enter in the search takes the first row under typed text (a match, else New project); arrows walk the
   // rows and back to the search.
   const options = () => [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
   const onSearchKey = (e: KeyboardEvent) => {
-    const act = e.key === "Enter" ? enterAction(projects, list, q, !!newRow) : null;
-    if (act) {
+    if (e.key === "Enter" && act) {
       e.preventDefault();
       if ("pick" in act) onPick(act.pick);
       else newRow?.onNew(act.create);
@@ -195,15 +216,7 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
     <div class="plist">
       <input ref={ref} class="pq" type="search" placeholder={newRow ? "Search, or name a new project" : "Search projects"} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={onSearchKey} aria-label="Search projects" autocapitalize="off" />
       <div class="pls" role="listbox" ref={box} onKeyDown={onListKey}>
-        {newRow && (
-          <button class="pli new" role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
-            <span class="pi all">+</span>
-            <span class="plt">
-              <span class="ell pln">{newRowLabel(q, !!exactProject(projects, q), newRow.fromThread)}</span>
-              <span class="ell pls2">{newRow.sub}</span>
-            </span>
-          </button>
-        )}
+        {!typed && newItem}
         {allLabel && !q && (
           <button class={`pli none${!selectedId ? " on" : ""}`} role="option" aria-selected={!selectedId} onClick={() => onPick(null)}>
             <span class="pi all" />
@@ -214,15 +227,17 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
           </button>
         )}
         {list.map((p) => (
-          <button class={`pli${selectedId && p.id === selectedId ? " on" : ""}`} role="option" aria-selected={!!selectedId && p.id === selectedId} style={{ "--pc": colorVar(p.color, p.name) }} onClick={() => onPick(p)}>
+          <button class={`pli${selectedId && p.id === selectedId ? " on" : ""}${takes(p) ? " ent" : ""}`} role="option" aria-selected={!!selectedId && p.id === selectedId} style={{ "--pc": colorVar(p.color, p.name) }} onClick={() => onPick(p)}>
             <ProjectIcon project={p} name={p.name} size={28} />
             <span class="plt">
               <span class="ell pln">{p.name}</span>
               <span class="ell pls2">{projectSubtitle(p)}</span>
             </span>
-            {selectedId && p.id === selectedId ? <span class="plc">✓</span> : p.threads ? <span class="plc">{p.threads}</span> : null}
+            {/* the count says what it counts (a bare number beside a keyboard-driven list reads as a key) */}
+            {takes(p) ? <kbd class="plk">⏎</kbd> : selectedId && p.id === selectedId ? <span class="plc">✓</span> : p.threads ? <span class="plc" title={`${p.threads} thread${p.threads === 1 ? "" : "s"}`} aria-label={`${p.threads} thread${p.threads === 1 ? "" : "s"}`}>{p.threads}</span> : null}
           </button>
         ))}
+        {typed && newItem}
         {!list.length && !newRow && <div class="plempty">No project matches “{q}”.</div>}
         {extra}
       </div>

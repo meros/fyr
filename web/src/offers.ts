@@ -67,6 +67,23 @@ export function shownOffers(offers: Offer[] | undefined, c?: Pick<Change, "phase
   return (offers ?? []).filter(inPhase).sort((a, b) => Number(!!b.primary) - Number(!!a.primary));
 }
 
+/** V0.dialogs-review: the merge the card's need strip offers (Ready with a head, or the agent's merge ask), as the
+ *  offer it runs; null when the strip offers none. The strip's button is then the card's one Merge: the offer's own
+ *  button is left out of the action bar (`barOffers`), and the strip carries its state (running, failed). */
+export function stripMerge(c: Pick<Change, "need" | "offers">): Offer | null {
+  const n = c.need;
+  if (!n || n.muted) return null;
+  const merge = (c.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge") ?? null;
+  if (n.cause === "ready") return merge && n.head ? merge : null;
+  return n.cause === "ask" && n.action === "pr.merge" ? merge : null;
+}
+
+/** The action bar's buttons: the shown offers without the merge the need strip already offers. */
+export function barOffers(c: Pick<Change, "need" | "offers" | "phase"> | undefined, offers: Offer[] | undefined): Offer[] {
+  const strip = c ? stripMerge(c) : null;
+  return shownOffers(offers, c).filter((o) => o.id !== strip?.id);
+}
+
 /** What a press does, in one line, shown before the press (V0.60 (7)). */
 export function offerDetail(o: Offer, cwd?: string): string {
   if (o.run === "script") return `Runs ${(o.argv ?? []).map(quote).join(" ")}${o.cwd || cwd ? ` in ${o.cwd || cwd}` : ""}${o.revision ? ` · only on revision ${o.revision}` : ""}`;
@@ -117,14 +134,16 @@ export const canDone = (c: Pick<Change, "done">) => !isDone(c);
 export const doneArgs = (c: Pick<Change, "id">) => ({ change: c.id });
 
 /** V0.72: Fyr's confirmation before End this change: the end (abandoned by default, or reverted) and a reason. */
-export function endChangeAsk(c: Pick<Change, "evidence">): Ask & { choice: NonNullable<Ask["choice"]>; reason: NonNullable<Ask["reason"]> } {
+export function endChangeAsk(c: Pick<Change, "evidence" | "title">): Ask & { choice: NonNullable<Ask["choice"]>; reason: NonNullable<Ask["reason"]> } {
   const pr = (c.evidence ?? []).some((e) => e.kind === "pr");
   return {
-    title: "End this change?",
+    // V0.dialogs-review: the title names the change it ends (over a board of cards "this change" names none).
+    title: c.title ? `End “${c.title}”?` : "End this change?",
     text: `Fyr stops watching ${pr ? "its PR" : "it"} and removes its actions. The agent is told; more work on it becomes a new change.`,
     choice: { label: "Ended as", options: [{ value: "abandoned", label: "Abandoned" }, { value: "reverted", label: "Reverted" }], value: "abandoned" },
     reason: { label: "Reason (optional)", value: "", max: 200 },
     confirm: "End change",
+    danger: true, // V0.dialogs-review (28): it cannot be taken back (more work becomes a new change), so it is red like Delete project
   };
 }
 

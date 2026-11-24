@@ -194,7 +194,7 @@ function Card({ i, p, err }: { i: BoardItem; p: BoardProps; err?: string }) {
       <span aria-hidden="true">›</span>
     </button>
   );
-  const card = <ChangeCard c={i.change} cwd={i.thread.cwd} from={from} onRun={(a, args) => p.onRun(i.thread.id, a, args)} />;
+  const card = <ChangeCard c={i.change} cwd={i.thread.cwd} from={from} thread={i.thread} onRun={(a, args) => p.onRun(i.thread.id, a, args)} />;
   if (!err) return card;
   return (
     <div class="bdmerged">

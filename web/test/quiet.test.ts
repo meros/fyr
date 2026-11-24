@@ -126,6 +126,10 @@ test("New thread leaves quiet projects out, keeps the picked one, and shows them
   ];
   assert.deepEqual(createProjects(ps, now, 0).map((p) => p.id), ["p_home"]);
   assert.deepEqual(createProjects(ps, now, 0, "p_late").map((p) => p.id), ["p_home", "p_late"], "the picked project stays");
+  // V0.dialogs-review: and so does the one a restored draft was written for, while its picks wait (the picked one may be undefined then).
+  assert.deepEqual(createProjects(ps, now, 0, undefined, "p_late").map((p) => p.id), ["p_home", "p_late"]);
+  assert.deepEqual(createProjects(ps, now, 0, "p_work", "p_late").map((p) => p.id), ["p_work", "p_home", "p_late"]);
+  assert.deepEqual(createProjects(ps, now, 0, undefined, undefined).map((p) => p.id), ["p_home"]);
   assert.deepEqual(createProjects(ps, now, now + 60_000).map((p) => p.id), ["p_work", "p_home", "p_late"], "unlocked");
   assert.deepEqual(createProjects(ps, now, now).map((p) => p.id), ["p_home"], "the unlock ended");
   assert.deepEqual(createProjects(ps, Date.parse(until), 0).map((p) => p.id), ["p_work", "p_home"], "a window ended");

@@ -75,7 +75,7 @@ export function CommentBox({ where, phone, initial, onSave, onCancel, onSaveAndS
   // Phone: a sheet over the diff, as there is no room for a box under a line at phone width.
   if (phone)
     return (
-      <BottomSheet onClose={onCancel} label={`Comment on ${where}`} cls="dcm-sheet">
+      <BottomSheet onClose={onCancel} label={`Comment on ${where}`} cls="dcm-sheet" layer>
         {box}
       </BottomSheet>
     );
