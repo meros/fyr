@@ -1033,6 +1033,13 @@ function previewEvents(subject: string, start: number, now: number, stress: bool
 
 
 /** V0.21: one turn with every kind of machine line, plumbing, card tools and a mixed group (?mock=rail, Map perf). */
+// V0.message-links-files: with &files the thread's last message names paths the mock host has (mock-files.ts), one it
+// has not, and a URL written as code. Behind a flag, so the many checks that open this thread see it as it was.
+const FILE_LINKS =
+  typeof location !== "undefined" && new URLSearchParams(location.search).has("files")
+    ? " The slow setup is at `src/map/lasso.test.ts:9`, the config is [vitest.config.ts](vitest.config.ts), the marker is `public/marker.png`, the tile data is `dist/tiles.bin` (there is no `src/map/old.ts`), and the report is at `http://localhost:51204/__vitest__/`."
+    : "";
+
 function calmTurn(subject: string, now: number): FyrEvent[] {
   const out: FyrEvent[] = [];
   let seq = 0;
@@ -1092,7 +1099,7 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   e((t += 60), "user", { id: "m_map2", text: "Fix the snapshot test too.", images: 0 });
   e(t, "message.state", { id: "m_map2", state: "read" });
   e(t, "run.started", {});
-  e((t += 1), "msg", assistantText("The snapshot differs only in the sheet's shadow. I'll run that test alone first."));
+  e((t += 1), "msg", assistantText(`The snapshot differs only in the sheet's shadow. I'll run that test alone first.${FILE_LINKS}`));
   e((t += 2), "msg", toolUse("sn1", "Bash", { command: "yarn vitest src/map/snapshot", description: "Run the snapshot test" }));
   e((t += 30), "user", { id: "m_map3", text: "Keep the snapshot itself; only make the test faster.", images: 0 });
   e(t, "message.state", { id: "m_map3", state: "queued" });

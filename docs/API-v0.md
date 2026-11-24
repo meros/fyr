@@ -330,6 +330,20 @@ The patch is cut at 400 KB at a line end (`truncated: true`). A path without cha
 
 **Since you looked (V0.65).** The reply also has `head` (the commit, `""` without commits) and per file `blob` (its content's blob id now, absent when deleted) and `viewed` (the owner marked this content Viewed). After a `thread.changesSeen` it adds `since: {head, at, mode: "ancestor"|"rebased"|"missing", commits, files: [File], rangeDiff?, rangeDiffTruncated?}`: the files whose content differs from the look, with status and +/− from the seen head to the working tree. `?path=<p>&since=<commit>` returns that file's diff from the commit to the working tree; a `since` that is not a hex id is `400`. Commands: `thread.changesSeen {head, files: {path: blob}}` records the look; `thread.fileViewed {path, blob, viewed: bool}` sets or clears a mark. Both change the owner's View, which the thread DTO sends without them.
 
+## Files a message names (V0.message-links-files)
+
+`POST /api/threads/{id}/files/stat` with `{"paths": ["web/src/map.ts", "~/src/acme/README.md", …]}` (at most 64, else `400`) answers which of them are files of the thread's folders:
+
+```json
+{"files": [{"path": "web/src/map.ts", "abs": "/home/owner/src/acme/web/src/map.ts", "size": 2314, "kind": "text"}]}
+```
+
+- `path` is the path as it was asked, `abs` the file's real path on the host, `kind` one of `text` (valid UTF-8 without a NUL byte in its first 8 kB), `image` (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`) and `other`.
+- A path is absolute, under `~`, or relative to the thread's folder or to the worktree of one of its changes (tried in that order). A path that is not served is left out, whatever the reason.
+- **What is served.** A regular file whose real path (symlinks followed) lies inside the thread's folder, the worktree of one of its changes, or the temp folder. The home folder and the folders above it are never such a folder, so a thread that runs in the home folder serves only its worktrees and the temp folder. Never served: a file below a folder named `.git`, `.ssh`, `.gnupg` or `.aws`, and a file named `.env`, `.env.<anything but example, sample, template, dist>`, `.netrc`, `.npmrc` or `.pgpass`.
+
+`GET /api/threads/{id}/files?path=<path>` returns that file: text as `text/plain; charset=utf-8` (an HTML file too), an image with its type, anything else as `application/octet-stream` with `Content-Disposition: attachment`. `&download=1` answers every kind as an attachment. Every reply has `Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. A path that is not served, and an unknown thread, is `404`.
+
 ## PR detail (SPEC 0.5 V0.43)
 
 `GET /api/threads/{id}/pr` returns a PR of the thread, read with `gh` on the host and cached 30 s per PR. `?pr=<url>` or `?change=<id>` selects a specific PR linked to the thread (V0.multi-pr; defaults to the main PR or newest non-dismissed PR). `?fresh=1` skips the cache.

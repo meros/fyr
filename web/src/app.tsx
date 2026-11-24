@@ -36,6 +36,7 @@ import { HandoverDialog } from "./handover-ui.tsx";
 import { setToolDetails } from "./prefs.ts";
 import { ListResizer } from "./list-resize-ui.tsx";
 import { PreviewViewer } from "./preview-ui.tsx";
+import { FileViewer } from "./file-view-ui.tsx";
 import { Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
 import { snoozeKeyCount } from "./snooze.ts";
 import { isStandalone, promptInstall } from "./pwa.ts";
@@ -87,6 +88,7 @@ function App() {
       <AppProviders {...providers}>
         <Boundary name="Fyr">
         <PreviewViewer />
+        <FileViewer />
         <PhoneApp
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
           store={store}
@@ -163,6 +165,7 @@ function App() {
       <DeployBanner p={bannerDeploy(store)} threads={store.threads} conn={store.conn} onRestartNow={() => void restartNow()} />
       {ctxMenu}
       <PreviewViewer />
+      <FileViewer />
       <AppProviders {...providers}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
         <Rail sec={sec} active={activeSection} profiles={byHost} conn={store.conn} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
