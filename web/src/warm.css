@@ -2,9 +2,10 @@
    reads as one layer: softer shapes, shadows rather than hard lines, no coloured side stripes (the state is in the
    words), the agent's replies in bubbles. The colours themselves are the tokens in base.css. */
 
-/* Shadows in the dark: the warm light-theme lifts would vanish, so they are plain and deeper. */
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--lift-1:0 1px 2px rgba(0,0,0,.3);--lift-2:0 4px 16px rgba(0,0,0,.35);--lift-3:0 24px 64px rgba(0,0,0,.5)}}
-:root[data-theme="dark"]{--lift-1:0 1px 2px rgba(0,0,0,.3);--lift-2:0 4px 16px rgba(0,0,0,.35);--lift-3:0 24px 64px rgba(0,0,0,.5)}
+/* Shadows in the dark: the warm light-theme lifts would vanish, so they are plain and deeper, and a raised
+   surface catches a faint light on its top edge (V0.depth-polish). */
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--shade:0,0,0;--face:linear-gradient(to bottom,color-mix(in srgb,#fff 4%,var(--raised)),var(--raised));--lift-1:inset 0 1px 0 rgba(255,255,255,.05),0 0 0 1px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.4);--lift-2:inset 0 1px 0 rgba(255,255,255,.06),0 0 0 1px rgba(0,0,0,.4),0 2px 4px rgba(0,0,0,.3),0 12px 28px -6px rgba(0,0,0,.5);--lift-3:inset 0 1px 0 rgba(255,255,255,.07),0 0 0 1px rgba(0,0,0,.5),0 28px 72px rgba(0,0,0,.65)}}
+:root[data-theme="dark"]{--shade:0,0,0;--face:linear-gradient(to bottom,color-mix(in srgb,#fff 4%,var(--raised)),var(--raised));--lift-1:inset 0 1px 0 rgba(255,255,255,.05),0 0 0 1px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.4);--lift-2:inset 0 1px 0 rgba(255,255,255,.06),0 0 0 1px rgba(0,0,0,.4),0 2px 4px rgba(0,0,0,.3),0 12px 28px -6px rgba(0,0,0,.5);--lift-3:inset 0 1px 0 rgba(255,255,255,.07),0 0 0 1px rgba(0,0,0,.5),0 28px 72px rgba(0,0,0,.65)}
 
 /* Rail and list */
 .ri{border-radius:var(--r-m)}
@@ -107,3 +108,92 @@
 /* Phone */
 .m-mv{border-radius:14px}
 .m-seg .n{font-weight:600}
+
+/* ---- V0.depth-polish: planes and edges. The colours lose their yellow cast in the tokens (base.css); here the
+   surfaces get an order (the rail under the list, the list over the page, cards over both) and the controls an
+   edge to press. Sizes and positions do not change. ---- */
+
+/* Planes: the list is a sheet over the page, the rail a quieter ground under both */
+.rail{background:color-mix(in srgb,var(--sunken) 80%,var(--surface))}
+.ib{z-index:1;box-shadow:1px 0 0 var(--line),8px 0 20px -12px rgba(var(--shade),.14);border-right-color:transparent}
+.thh{box-shadow:0 8px 16px -14px rgba(var(--shade),.18);position:relative;z-index:1}
+
+/* The selected row: a warm tint with a faint amber edge (the tan slab is gone) */
+.rw.sel{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--beam) 16%,transparent)}
+.rw.sel .tile{background:var(--raised);box-shadow:var(--lift-1)}
+/* A row's tile takes the hue of its state, so the list reads by colour before it reads by word */
+.tile:has(.s-ask){background:var(--beam-wash)}
+.tile:has(.s-block){background:var(--harbour-wash)}
+.tile:has(.s-fail){background:color-mix(in srgb,var(--signal-ink) 9%,var(--raised))}
+
+/* Fields sit in: the search is a shallow well */
+.search{background:var(--sunken);box-shadow:inset 0 1px 2px rgba(var(--shade),.09)}
+.search:focus-within{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--harbour) 50%,var(--line)),0 0 0 3px color-mix(in srgb,var(--harbour) 12%,transparent)}
+
+/* Buttons stand out: a face that falls off a little towards its foot, a contact shadow, and a primary with a lit top */
+.btn:not(.p):not([disabled]),.m-bt:not(.p):not(:disabled),.m-navb,.m-sec .m-sbtn::before{background:var(--face);border-color:rgba(var(--shade),.16);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 60%,transparent),0 1px 1px rgba(var(--shade),.06)}
+.btn:not(.p):not([disabled]):hover{border-color:var(--line-strong)}
+:is(.btn.p,.m-bt.p,.m-send,.m-bnew):not(:disabled):not([disabled]),.st-bh+.st-mv .btn.p:not([disabled]){background:linear-gradient(to bottom,color-mix(in srgb,var(--on-night) 12%,var(--night)),var(--night));border-color:var(--night);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--on-night) 18%,transparent),0 1px 2px rgba(var(--shade),.3),0 4px 10px -3px rgba(var(--shade),.28)}
+.st-mv .btn.p:not([disabled]){background:var(--face);border-color:rgba(var(--shade),.16);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 60%,transparent),0 1px 1px rgba(var(--shade),.06)}
+/* a disabled primary is a shallow well: it sits in, where a live one stands out */
+.m-bt.p:disabled,.btn.p[disabled],.m-send:disabled{background:var(--sunken);border-color:transparent;box-shadow:inset 0 1px 2px rgba(var(--shade),.06)}
+/* a key cap has a foot */
+kbd{box-shadow:0 1px 0 var(--line)}
+.btn.p kbd{box-shadow:none;background:color-mix(in srgb,var(--on-night) 10%,transparent);color:color-mix(in srgb,var(--on-night) 80%,transparent)}
+
+/* Cards: the ring of the lift is the frame, so the 1 px border goes where a lift is */
+.st-mv,.st-mv:hover,.st-tile:hover{border-color:transparent}
+.st-mv:hover,.st-tile:hover{box-shadow:var(--lift-2)}
+.msgw:not(.proc),.runc,.runc.ok,.runc.failed,.runc.running,.ask,.cmp,.fromthread,.nstep{border-color:transparent}
+.cmp:focus-within{box-shadow:0 0 0 1px color-mix(in srgb,var(--harbour) 45%,transparent),0 0 0 4px color-mix(in srgb,var(--harbour) 12%,transparent),var(--lift-2)}
+.op:not(.on),.m-op:not(.on){border-color:rgba(var(--shade),.13);background:var(--raised);box-shadow:0 1px 0 rgba(var(--shade),.06)}
+.op:hover:not(.on){border-color:rgba(var(--shade),.2);box-shadow:var(--lift-1)}
+.ah,.m-ah{border-bottom-color:color-mix(in srgb,var(--beam) 26%,transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 55%,transparent)}
+/* the owner's bubble: a clean amber tint, not a beige */
+.you{background:color-mix(in srgb,var(--beam) 11%,var(--raised));border-color:color-mix(in srgb,var(--beam) 22%,transparent);box-shadow:0 1px 2px rgba(var(--shade),.05)}
+:is(.pr,.chip.pr,.m-chip.prc):is(.merged,.ok){background:color-mix(in srgb,var(--calm) 10%,var(--raised));color:var(--calm);border-color:color-mix(in srgb,var(--calm) 22%,transparent)}
+:is(.pr,.chip.pr,.m-chip.prc).fail{background:color-mix(in srgb,var(--signal-ink) 7%,var(--raised))}
+.pfc{background:var(--raised);border-color:color-mix(in srgb,var(--ink) 8%,var(--line))}
+
+/* Dialogs float highest: a darker, frosted page behind, a deep shadow under */
+.scrim{backdrop-filter:blur(8px)}
+.sg-c{border-color:color-mix(in srgb,var(--ink) 7%,var(--line));box-shadow:0 1px 2px rgba(var(--shade),.04)}
+
+/* Phone: the same order of planes. The strip is a track and the chosen section a pill on it. */
+.m-strip{background:var(--sunken);box-shadow:inset 0 1px 2px rgba(var(--shade),.07)}
+.m-strip>.slide{box-shadow:var(--lift-1)}
+.m-cmp{border-color:transparent;box-shadow:var(--lift-2)}
+.m-bn{box-shadow:0 -1px 0 var(--line),0 -10px 24px -14px rgba(var(--shade),.2)}
+.m-bnew{box-shadow:inset 0 1px 0 color-mix(in srgb,var(--on-night) 18%,transparent),0 2px 4px rgba(var(--shade),.25),0 10px 20px -8px rgba(var(--shade),.4)!important}
+
+/* code wells are warm, a step under the card */
+.msgw:not(.proc) .md pre,.runc-cmd,.runc-out,.appr pre.appr-cmd{background:color-mix(in srgb,var(--sunken) 75%,var(--raised))}
+
+/* The dark: no outline on the chosen row (it would read as focus), wells that are shallow rather than holes, and a
+   primary that stays one flat cream with a lit top */
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  .rw.sel{background:color-mix(in srgb,var(--beam) 4%,color-mix(in srgb,#fff 4%,var(--raised)));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .search{background:color-mix(in srgb,var(--surface) 60%,var(--sunken));box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+  .m-strip{background:color-mix(in srgb,var(--surface) 45%,var(--raised));box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
+  .m-bt.p:disabled,.btn.p[disabled],.m-send:disabled{background:color-mix(in srgb,var(--ink) 6%,var(--raised));box-shadow:none}
+  .op:not(.on),.m-op:not(.on){border-color:var(--line);background:color-mix(in srgb,#fff 5%,var(--raised));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  :is(.btn.p,.m-bt.p,.m-send,.m-bnew):not(:disabled):not([disabled]),.st-bh+.st-mv .btn.p:not([disabled]){background:var(--night);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 1px 2px rgba(0,0,0,.6)}
+  .st-mv .btn.p:not([disabled]){background:var(--face)}
+  .st-bh+.st-mv .btn.p:not([disabled]){background:var(--night)}
+  .btn:not(.p):not([disabled]),.m-bt:not(.p):not(:disabled),.m-navb,.m-sec .m-sbtn::before,.st-mv .btn.p:not([disabled]){border-color:var(--line-strong);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.4)}
+  .ah,.m-ah{box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+  .m-bnew{box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 2px 6px rgba(0,0,0,.6)!important}
+}}
+:root[data-theme="dark"]{
+  .rw.sel{background:color-mix(in srgb,var(--beam) 4%,color-mix(in srgb,#fff 4%,var(--raised)));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .search{background:color-mix(in srgb,var(--surface) 60%,var(--sunken));box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+  .m-strip{background:color-mix(in srgb,var(--surface) 45%,var(--raised));box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
+  .m-bt.p:disabled,.btn.p[disabled],.m-send:disabled{background:color-mix(in srgb,var(--ink) 6%,var(--raised));box-shadow:none}
+  .op:not(.on),.m-op:not(.on){border-color:var(--line);background:color-mix(in srgb,#fff 5%,var(--raised));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  :is(.btn.p,.m-bt.p,.m-send,.m-bnew):not(:disabled):not([disabled]),.st-bh+.st-mv .btn.p:not([disabled]){background:var(--night);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 1px 2px rgba(0,0,0,.6)}
+  .st-mv .btn.p:not([disabled]){background:var(--face)}
+  .st-bh+.st-mv .btn.p:not([disabled]){background:var(--night)}
+  .btn:not(.p):not([disabled]),.m-bt:not(.p):not(:disabled),.m-navb,.m-sec .m-sbtn::before,.st-mv .btn.p:not([disabled]){border-color:var(--line-strong);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.4)}
+  .ah,.m-ah{box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+  .m-bnew{box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 2px 6px rgba(0,0,0,.6)!important}
+}

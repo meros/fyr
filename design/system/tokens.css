@@ -1,51 +1,63 @@
 /* Fyr — generated from tokens.json */
 :root, [data-theme="light"] {
-  --surface: #f6f7f8;
-  --surface-raised: #ffffff;
-  --surface-sunken: #edeff2;
-  --surface-select: #e6ecf3;
-  --line: #dde1e6;
-  --line-strong: #b4bcc6;
-  --ink: #111820;
-  --ink-muted: #56616d;
-  --ink-faint: #7d8894;
-  --night: #14212d;
-  --on-night: #f6f7f8;
-  --beam: #e8960f;
-  --beam-mark: #b86e00;
-  --beam-ink: #8f5300;
+  --surface: #f9f6f1;
+  --surface-raised: #fffefc;
+  --surface-sunken: #f3eee7;
+  --surface-select: #f8f1e7;
+  --line: #ece7df;
+  --line-strong: #d6cdc0;
+  --ink: #1e1b18;
+  --ink-muted: #645e57;
+  --ink-faint: #6e6760;
+  --night: #292420;
+  --on-night: #fcfaf7;
+  --beam: #ee9512;
+  --beam-mark: #c06a00;
+  --beam-icon: #c47100;
+  --beam-ink: #a05800;
   --on-beam: #1a1204;
-  --beam-wash: #fdf1dc;
+  --beam-wash: #fff5e6;
   --signal: #d93a2b;
-  --signal-ink: #b42318;
-  --harbour: #2f6fb0;
-  --harbour-wash: #e7f0fa;
-  --calm: #2e7d5b;
-  --shadow-overlay: 0 12px 32px rgba(17,24,32,0.14), 0 1px 3px rgba(17,24,32,0.10);
+  --signal-ink: #b23a2a;
+  --harbour: #3b6c9e;
+  --harbour-wash: #eaf0f6;
+  --calm: #3b7a58;
+  --shadow-overlay: 0 0 0 1px rgba(70,45,15,0.08), 0 8px 16px -4px rgba(70,45,15,0.08), 0 28px 64px -12px rgba(70,45,15,0.32);
+  --lift-1: 0 0 0 1px rgba(70,45,15,0.07), 0 1px 2px rgba(70,45,15,0.06), 0 3px 8px -3px rgba(70,45,15,0.10);
+  --lift-2: 0 0 0 1px rgba(70,45,15,0.05), 0 2px 4px rgba(70,45,15,0.05), 0 8px 18px -6px rgba(70,45,15,0.10), 0 22px 44px -14px rgba(70,45,15,0.14);
+  --edge-control: inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 1px rgba(70,45,15,0.06);
+  --edge-primary: inset 0 1px 0 rgba(252,250,247,0.18), 0 1px 2px rgba(70,45,15,0.3), 0 4px 10px -3px rgba(70,45,15,0.28);
+  --well: inset 0 1px 2px rgba(70,45,15,0.09);
 }
 [data-theme="dark"] {
-  --surface: #0f1419;
-  --surface-raised: #161d24;
-  --surface-sunken: #0b0f13;
-  --surface-select: #1c2733;
-  --line: #26303a;
-  --line-strong: #3d4957;
-  --ink: #e8ecf0;
-  --ink-muted: #9aa6b2;
-  --ink-faint: #6f7b87;
-  --night: #24323f;
-  --on-night: #f6f7f8;
+  --surface: #161412;
+  --surface-raised: #211e1b;
+  --surface-sunken: #100f0d;
+  --surface-select: #2d2823;
+  --line: #322e29;
+  --line-strong: #4a443d;
+  --ink: #efeae4;
+  --ink-muted: #aaa39a;
+  --ink-faint: #8e877e;
+  --night: #f1ebe3;
+  --on-night: #1f1b16;
   --beam: #f5a524;
   --beam-mark: #f5a524;
+  --beam-icon: #f5a524;
   --beam-ink: #f5b54a;
   --on-beam: #1a1204;
-  --beam-wash: #2a2112;
+  --beam-wash: #2e251b;
   --signal: #ff6b5b;
-  --signal-ink: #ff8a7d;
-  --harbour: #6fa8e8;
-  --harbour-wash: #15253a;
-  --calm: #5cc49a;
-  --shadow-overlay: 0 12px 32px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.40);
+  --signal-ink: #ff8f7f;
+  --harbour: #7eaee0;
+  --harbour-wash: #1d2631;
+  --calm: #6cc39a;
+  --shadow-overlay: inset 0 1px 0 rgba(255,255,255,0.07), 0 0 0 1px rgba(0,0,0,0.5), 0 28px 72px rgba(0,0,0,0.65);
+  --lift-1: inset 0 1px 0 rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.4);
+  --lift-2: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3), 0 12px 28px -6px rgba(0,0,0,0.5);
+  --edge-control: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.4);
+  --edge-primary: inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(0,0,0,0.6);
+  --well: inset 0 1px 2px rgba(0,0,0,0.5);
 }
 :root {
   --space-1: 4px;
@@ -54,11 +66,12 @@
   --space-4: 16px;
   --space-6: 24px;
   --space-8: 32px;
-  --radius-sm: 3px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-sm: 5px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .title { font-family: var(--font-sans); font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
 .body { font-family: var(--font-sans); font-size: 15px; line-height: 24px; font-weight: 400; }
