@@ -6812,6 +6812,132 @@ for (const phone of [false, true]) section(`V0.load-invariants ${phone ? "phone"
 // FYR_SECTIONS=<regex> runs only the jobs whose name matches (a quick local run of one section; CI runs them all).
 if (process.env.FYR_SECTIONS) { const re = new RegExp(process.env.FYR_SECTIONS); for (const l of [jobs, timedJobs]) l.splice(0, l.length, ...l.filter((j) => re.test(j.name))); }
 const started = Date.now();
+// V0.diff-line-comments (#641): comment on diff lines in the Changes tab and send them. Desktop: a press on a line's numbers
+// opens the box under it, Shift extends to a range; one comment on the whole-branch diff and one on the since diff survive a
+// reload; Send makes one thread.send that names file, side, lines and head, and the conversation folds the quotes. Phone: a
+// tap picks a line, a second tap makes a range, Comment opens a sheet; every button 44 px. Light and dark.
+const DCM_SEND = `(window.__fyrCommands || []).filter((c) => c.action === 'thread.send').map((c) => String(c.args.text))`;
+const DCM_TYPE = (text) => `(() => { const t = document.querySelector('.dcm-ta'); t.focus(); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new Event('input', { bubbles: true })); })()`;
+const DCM_ADD = `[...document.querySelectorAll('.dcm-acts .btn')].find((b) => b.textContent === 'Add comment').click()`;
+const DCM_OPEN = (pick) => `(() => { const f = [...document.querySelectorAll('.chg-file')]${pick}; if (!f) return false; if (f.getAttribute('aria-expanded') !== 'true') f.click(); return true; })()`;
+const DCM_CHECKS = (ctx, phone) => `(() => {
+  const bar = document.querySelector('.dcm-bar'), small = [];
+  for (const b of document.querySelectorAll('.dcm-bar .btn, .dcm-pick .btn, .dcm-pend .btn, .dcm-acts .btn')) { const r = b.getBoundingClientRect(); if (r.width && (r.height < ${phone ? 43.5 : 0} || r.width < ${phone ? 43.5 : 0})) small.push(b.textContent + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)); }
+  const wide = [...document.querySelectorAll('.dcm-bar, .dcm-pend, .dcm-box, .dcm-pick, .dcm-lines')].filter((e) => e.getBoundingClientRect().right > innerWidth + 0.5).map((e) => e.className);
+  return { bar: bar?.querySelector('.dcm-n')?.textContent ?? '', small, wide, doc: document.documentElement.scrollWidth <= innerWidth };
+})()`;
+for (const dark of [false, true]) section(`V0.diff-line-comments desktop${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, navigate, key, shot }) => {
+  const ctx = `V0.diff-line-comments desktop${dark ? " dark" : ""}`;
+  const tag = dark ? "dark" : "light";
+  try {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    const url = `${origin}/?mock=1&open=t_done&tab=changes`;
+    await navigate(url, "document.querySelectorAll('.chg-file').length >= 2");
+    // The since diff: one line.
+    await evaluate(DCM_OPEN("[0]"));
+    await waitFor(`document.querySelectorAll('.chg-diff .lnb').length >= 3`, { what: "the since diff's lines" });
+    await evaluate(`document.querySelectorAll('.chg-diff .dl.add .lnb')[0].click()`);
+    await waitFor(`!!document.querySelector('.dcm-box .dcm-ta')`, { what: "the comment box under the line" });
+    await waitFor(`document.activeElement === document.querySelector('.dcm-ta')`, { what: "the box to take the focus" });
+    await evaluate(DCM_TYPE("Since: why this line?"));
+    await evaluate(DCM_ADD);
+    await waitFor(`document.querySelectorAll('.dcm-pend').length === 1`, { what: "the first pending comment" });
+    // The whole branch: a range by Shift.
+    await evaluate(`[...document.querySelectorAll('.chg-mode')].find((b) => b.textContent.startsWith('Whole')).click()`);
+    await waitFor(`document.querySelector('.chg-mode.on')?.textContent.startsWith('Whole')`, { what: "Whole branch" });
+    await evaluate(DCM_OPEN(".find((f) => f.title.endsWith('render.ts'))"));
+    await waitFor(`document.querySelectorAll('.chg-diff .dl.add .lnb').length >= 3`, { what: "render.ts's lines" });
+    await evaluate(`document.querySelectorAll('.chg-diff .dl.add .lnb')[0].click()`);
+    await waitFor(`!!document.querySelector('.dcm-box')`, { what: "the box" });
+    await evaluate(`document.querySelectorAll('.chg-diff .dl.add .lnb')[2].dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))`);
+    await waitFor(`document.querySelectorAll('.chg-diff .dl.pk').length >= 3`, { what: "a picked range" });
+    const where = await evaluate(`document.querySelector('.dcm-box .dcm-where').textContent`);
+    check(/^render\.ts:\d+-\d+ \(new\)$/.test(where), `${ctx}: the box names "${where}"`);
+    await evaluate(DCM_TYPE("Whole: split this up"));
+    await evaluate(DCM_ADD);
+    await waitFor(`document.querySelectorAll('.dcm-pend').length === 1 && !document.querySelector('.dcm-box')`, { what: "the second pending comment" });
+    // A reload keeps both.
+    await navigate(url, "!!document.querySelector('.dcm-bar')");
+    await settle();
+    const a = await evaluate(DCM_CHECKS(ctx, false));
+    check(a.bar === "2 comments on the diff" && !a.wide.length && a.doc, `${ctx}: after a reload ${JSON.stringify(a)}`);
+    await evaluate(`[...document.querySelectorAll('.chg-mode')].find((b) => b.textContent.startsWith('Whole')).click()`);
+    await evaluate(DCM_OPEN(".find((f) => f.title.endsWith('render.ts'))"));
+    await waitFor(`document.querySelectorAll('.dcm-pend').length === 1`, { what: "the pending comment under its lines after a reload" });
+    // The keyboard: c on a focused line opens the box; Escape closes it.
+    await evaluate(`document.querySelectorAll('.chg-diff .dl.ctx .lnb')[0].focus()`);
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "c", code: "KeyC", text: "c" });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "c", code: "KeyC" });
+    await waitFor(`!!document.querySelector('.dcm-box')`, { what: "c to open the box" });
+    const noDialog = await evaluate(`!document.querySelector('.dlg')`);
+    check(noDialog, `${ctx}: c on a diff line also opened the new-thread dialog`);
+    await evaluate(`document.querySelector('.dcm-pend').scrollIntoView({ block: 'center' })`);
+    await settle();
+    await shot(`diff-comments-${tag}-desktop.png`);
+    await key("Escape");
+    await waitFor(`!document.querySelector('.dcm-box')`, { what: "Escape to close the box" });
+    // Send: one message, then nothing pending.
+    await evaluate(`[...document.querySelectorAll('.dcm-bar .btn')].find((b) => b.textContent === 'Send').click()`);
+    await waitFor(`${DCM_SEND}.length === 1 && !document.querySelector('.dcm-bar')`, { what: "the comments to be sent" });
+    const sent = (await evaluate(DCM_SEND))[0];
+    check(/^Comments on the diff \(2\):/.test(sent) && /render\.ts:\d+-\d+ \(new\) · whole branch at [0-9a-f]{7}\n```diff\n\+/.test(sent) && /:\d+ \(new\) · since [0-9a-f]{7}, at [0-9a-f]{7}\n/.test(sent) && sent.includes("Whole: split this up") && sent.includes("Since: why this line?"), `${ctx}: the message is ${JSON.stringify(sent)}`);
+    const left = await evaluate(`Object.keys(localStorage).filter((k) => k.startsWith('fyr.diffComments.'))`);
+    check(left.length === 0, `${ctx}: Send left drafts ${JSON.stringify(left)}`);
+    // The conversation folds the quotes.
+    await evaluate(`[...document.querySelectorAll('.th .tabs [role=tab]')].find((x) => x.textContent.trim().startsWith('Conversation')).click()`);
+    await waitFor(`!!document.querySelector('.dcm-sent')`, { what: "the sent comments in the conversation" });
+    const c = await evaluate(`(() => { const s = [...document.querySelectorAll('.dcm-sent')].pop(); s.scrollIntoView({ block: 'center' }); return { n: s.querySelectorAll('.dcm-q').length, open: s.querySelectorAll('.dcm-q[open]').length, head: s.querySelector('.dcm-sh').textContent }; })()`);
+    check(c.n === 2 && c.open === 0 && c.head === "2 comments on the diff", `${ctx}: the sent message ${JSON.stringify(c)}`);
+    await settle();
+    await shot(`diff-comments-sent-${tag}-desktop.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+});
+for (const dark of [false, true]) section(`V0.diff-line-comments phone${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, openScreen, tapCenter, shot }) => {
+  const ctx = `V0.diff-line-comments phone${dark ? " dark" : ""}`;
+  const tag = dark ? "dark" : "light";
+  try {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    await openScreen({ url: "?mock=1&open=t_done&tab=changes", ready: "document.querySelectorAll('.chg-file').length >= 2" }, 390, 844);
+    await evaluate(DCM_OPEN("[0]"));
+    await waitFor(`document.querySelectorAll('.chg-diff .dl.add').length >= 2`, { what: "the diff's lines" });
+    await evaluate(`document.querySelectorAll('.chg-diff .dl.ctx')[0].scrollIntoView({ block: 'center' })`);
+    await settle();
+    const h = await evaluate(`document.querySelector('.chg-diff .dl.add').getBoundingClientRect().height`);
+    check(h >= 25.5, `${ctx}: a diff line is ${h} px tall, under the 26 px tap target`);
+    await evaluate(`(() => { const ls = document.querySelectorAll('.chg-diff .dl.ctx, .chg-diff .dl.add'); ls[0].setAttribute('data-t', 'a'); ls[2].setAttribute('data-t', 'b'); })()`);
+    await tapCenter(".chg-diff .dl[data-t=a] .sg", "!!document.querySelector('.dcm-pick')");
+    await tapCenter(".chg-diff .dl[data-t=b] .sg", "document.querySelectorAll('.chg-diff .dl.pk').length >= 3");
+    const pw = await evaluate(`document.querySelector('.dcm-pick .dcm-where').textContent`);
+    check(/^[^/]+:\d+-\d+ \(new\)(, \d+ \(old\))?$/.test(pw), `${ctx}: the pick bar names "${pw}"`);
+    const p1 = await evaluate(DCM_CHECKS(ctx, true));
+    check(!p1.small.length && !p1.wide.length && p1.doc, `${ctx}: the pick bar ${JSON.stringify(p1)}`);
+    await shot(`diff-comments-pick-${tag}-phone.png`);
+    await tapCenter(".dcm-pick .btn.p", "!!document.querySelector('.m-sheet.dcm-sheet .dcm-ta')");
+    await evaluate(DCM_TYPE("From the phone"));
+    await settle();
+    const p2 = await evaluate(DCM_CHECKS(ctx, true));
+    check(!p2.small.length && !p2.wide.length, `${ctx}: the sheet ${JSON.stringify(p2)}`);
+    await shot(`diff-comments-sheet-${tag}-phone.png`);
+    await evaluate(DCM_ADD);
+    await waitFor(`!document.querySelector('.dcm-sheet') && document.querySelectorAll('.dcm-pend').length === 1 && !!document.querySelector('.dcm-bar')`, { what: "the pending comment" });
+    await evaluate(`document.querySelector('.dcm-pend').scrollIntoView({ block: 'center' })`);
+    await settle();
+    const p3 = await evaluate(DCM_CHECKS(ctx, true));
+    check(p3.bar === "1 comment on the diff" && !p3.small.length && !p3.wide.length && p3.doc, `${ctx}: the pending comment ${JSON.stringify(p3)}`);
+    await shot(`diff-comments-pending-${tag}-phone.png`);
+    await evaluate(`[...document.querySelectorAll('.dcm-bar .btn')].find((b) => b.textContent === 'Send').click()`);
+    await waitFor(`${DCM_SEND}.length === 1 && !document.querySelector('.dcm-bar')`, { what: "the comment to be sent" });
+    const sent = (await evaluate(DCM_SEND))[0];
+    check(/^Comments on the diff \(1\):\n\n\S+:\d+-\d+ \(new\)(, \d+(-\d+)? \(old\))? · since [0-9a-f]{7}, at [0-9a-f]{7}\n/.test(sent) && sent.endsWith("From the phone"), `${ctx}: the message is ${JSON.stringify(sent)}`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+});
+
 await runJobs(jobs, TABS);
 const poolDone = Date.now();
 await runJobs(timedJobs, 1);

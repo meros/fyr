@@ -326,7 +326,7 @@ export function ThreadTabBody({ t, tab, setTab, prs, activePr, onSelectPr, event
         <div class="chtab">
           <ChangeList t={t} onRun={run} />
           <CiNotesScope changes={t.changes}>
-            <ChangesView host={t.hostId} threadId={t.id} changes={t.changes} />
+            <ChangesView host={t.hostId} threadId={t.id} changes={t.changes} phone={phone} onSend={(text) => send({ text })} sendOff={unavailableReason(t, "thread.send")} />
           </CiNotesScope>
         </div>
       )}

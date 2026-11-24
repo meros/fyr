@@ -546,3 +546,11 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 .m-app .htab-n{font-size:13.5px}
 .m-app .htabs.compact .htab{height:44px;min-height:44px;padding:0 12px}
 .m-lsheet .htabs{margin:-4px -16px 0;padding:0 12px}
+/* V0.diff-line-comments: a tap anywhere on a diff line picks it (the line is the target: 26 px tall and the full width,
+   as a 44 px row per diff line would show a third of the code); the bars' buttons and the sheet's are 44 px. */
+.m-app .chg-lines.pickable .dl{min-height:26px;align-items:center;cursor:pointer}
+.m-app .dcm-bar,.m-app .dcm-pick{margin-left:16px;margin-right:16px}
+.m-app :is(.dcm-bar,.dcm-pick,.dcm-acts,.dcm-ph) .btn{min-height:44px;padding:0 14px;font-size:14px}
+.m-app .dcm-pend{margin:4px 16px 6px;width:calc(100cqw - 32px)}
+.dcm-box.phone{margin:0;padding:4px 16px 16px;border:0;background:none;max-width:none}
+.dcm-box.phone .dcm-ta{font-size:16px;min-height:96px}
