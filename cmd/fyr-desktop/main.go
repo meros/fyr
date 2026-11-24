@@ -66,6 +66,10 @@ func main() {
 	if _, set := os.LookupEnv("WEBKIT_DISABLE_DMABUF_RENDERER"); !set {
 		os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 	}
+	// V0.desktop-system-theme: a session that sets GTK_THEME to a dark theme makes WebKitGTK report
+	// prefers-color-scheme: dark whatever the desktop's colour scheme is, so the page stayed dark in light mode. Without
+	// it WebKit follows the desktop's setting (the portal's colour scheme), light or dark.
+	os.Unsetenv("GTK_THEME")
 	home, _ := os.UserHomeDir()
 	data := flag.String("data", filepath.Join(home, ".local", "share", "fyr"), "Fyr's data directory")
 	unit := flag.String("unit", "fyr.service", "fyrd's systemd unit")
