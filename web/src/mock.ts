@@ -1115,7 +1115,7 @@ function mockProjects(now: number): Project[] {
       // V0.project-playbook
       playbookAt: ago(30),
       playbook: [
-        { slot: "stage", name: "staging", how: "Automatic on merge, about 6 minutes.", url: "https://staging.example.com", probe: 'git merge-base --is-ancestor {sha} "$(curl -fsS https://staging.example.com/version)"', probeOk: true, ownerChecks: true, by: "agent", thread: "t_setup", evidence: ".github/workflows/deploy.yml", at: ago(30) },
+        { slot: "stage", name: "staging", how: "Automatic on merge, about 6 minutes.", url: "https://staging.example.com", probe: 'git merge-base --is-ancestor {sha} "$(curl -fsS https://staging.example.com/version)"', probeOk: true, last: { state: "waiting", exit: 1, note: "fatal: Not a valid object name", at: ago(1) }, ownerChecks: true, by: "agent", thread: "t_setup", evidence: ".github/workflows/deploy.yml", at: ago(30) },
         { slot: "stage", name: "production", how: "A release tag, cut by hand on weekdays.", url: "https://example.com", deployCmd: "gh workflow run release.yml -f sha={sha}", by: "owner", at: ago(30),
           // V0.playbook-moments
           suggest: { how: "The release workflow, started by hand.", url: "https://example.com", deployCmd: "gh workflow run release.yml -f sha={sha}", probe: 'test "$(curl -fsS https://example.com/version)" = {sha}', evidence: ".github/workflows/release.yml", thread: "t_setup", at: ago(2) } },

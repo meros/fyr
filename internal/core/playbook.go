@@ -65,6 +65,9 @@ type PlaybookEntry struct {
 	// Missed counts the merges in a row the probe did not see here within
 	// the watch's day; the next one it sees clears it.
 	Missed int `json:"missed,omitempty"`
+	// Last is what the probe last said on this host, written when its answer
+	// changes (V0.playbook-probe-health). Like Missed it is this host's.
+	Last *ProbeResult `json:"last,omitempty"`
 	// Suggest is what an agent found that differs from the owner's entry:
 	// the owner takes it or dismisses it.
 	Suggest *PlaybookSuggestion `json:"suggest,omitempty"`
@@ -87,6 +90,46 @@ type PlaybookSuggestion struct {
 	Evidence    string    `json:"evidence,omitempty"`
 	Thread      string    `json:"thread,omitempty"`
 	At          time.Time `json:"at"`
+}
+
+// A probe's answer.
+const (
+	ProbeReached = "reached" // exit 0: the stage holds the commit
+	ProbeWaiting = "waiting" // another exit: not there yet
+	ProbeTimeout = "timeout" // stopped at the time limit
+	ProbeError   = "error"   // it could not run: no folder, no such command
+)
+
+// ProbeResult is the last answer of a stage's probe: State, the exit code,
+// the last line it printed, and since when it has answered so.
+type ProbeResult struct {
+	State string    `json:"state"`
+	Exit  int       `json:"exit,omitempty"`
+	Note  string    `json:"note,omitempty"`
+	At    time.Time `json:"at"`
+}
+
+// ProbeState reads one run of a probe: a run stopped at the limit is a
+// timeout, an exit a shell gives a command it cannot run (126, 127) or a run
+// that never started is an error, exit 0 is reached, and any other exit says
+// the commit is not there yet.
+func ProbeState(exit int, timedOut bool) string {
+	switch {
+	case timedOut:
+		return ProbeTimeout
+	case exit == 0:
+		return ProbeReached
+	case exit < 0 || exit == 126 || exit == 127:
+		return ProbeError
+	}
+	return ProbeWaiting
+}
+
+// Broken reports a stage whose probe Fyr runs and that cannot answer: it
+// timed out or could not run the last time. No change reaches the stage
+// while it is so.
+func (e PlaybookEntry) Broken() bool {
+	return e.Runs() && e.Last != nil && (e.Last.State == ProbeTimeout || e.Last.State == ProbeError)
 }
 
 // DoubtAfter is how many merges in a row a probe may miss before the entry
@@ -163,11 +206,20 @@ func StageReached(c *Change, e PlaybookEntry) bool {
 // ValidSHA reports a commit id that may stand in a probe's command.
 func ValidSHA(s string) bool { return commitSHA.MatchString(s) }
 
-// ProbeScript is a stage's probe for one merge commit: {sha} replaced. ""
-// when the commit id is not one (it would be read by a shell).
-func ProbeScript(probe, sha string) string {
+// ProbeScript is a stage's probe for one merge commit: {sha} replaced, and
+// {repo} by the pull request's repository (owner/name), so a project of
+// several repositories can tell them apart (V0.playbook-probe-health). ""
+// when the commit id is not one, or the command names {repo} and the
+// repository is not one (either would be read by a shell).
+func ProbeScript(probe, sha, repo string) string {
 	if !ValidSHA(sha) || strings.TrimSpace(probe) == "" {
 		return ""
+	}
+	if strings.Contains(probe, "{repo}") {
+		if !repoName.MatchString(repo) {
+			return ""
+		}
+		probe = strings.ReplaceAll(probe, "{repo}", repo)
 	}
 	return strings.ReplaceAll(probe, "{sha}", sha)
 }
@@ -191,8 +243,10 @@ const (
 	// not change.
 	KindProjectPlaybookRun = "project.playbookRun"
 	// KindProjectProbed counts a merge a stage's probe missed or saw
-	// (V0.playbook-moments): args {id, name, ok}. It moves no stamp: the
-	// count is this host's.
+	// (V0.playbook-moments): args {id, name, ok}. With state it writes the
+	// probe's last answer instead (V0.playbook-probe-health): args {id, name,
+	// probe, state, exit, note}, kept only for the command it ran. It moves
+	// no stamp: both are this host's.
 	KindProjectProbed = "project.probed"
 )
 
@@ -206,11 +260,25 @@ func init() {
 	RegisterKind(&InputKind{Name: KindProjectPlaybookRun, On: RecProject, From: ownerOnly, Reduce: func(r Rec, _ Input, _ time.Time) (Result, error) {
 		return Result{Reply: map[string]any{"id": r.P.ID}}, nil
 	}})
-	RegisterKind(&InputKind{Name: KindProjectProbed, On: RecProject, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
+	RegisterKind(&InputKind{Name: KindProjectProbed, On: RecProject, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 		a := mapArgs(in)
 		ok, _ := a["ok"].(bool)
 		for i := range r.P.Playbook {
 			if e := &r.P.Playbook[i]; e.Slot == SlotStage && e.Name == a.Str("name") {
+				if st := a.Str("state"); st != "" {
+					if e.Probe == a.Str("probe") {
+						exit, _ := a["exit"].(int)
+						if f, ok := a["exit"].(float64); ok { // an Input read back from JSON
+							exit = int(f)
+						}
+						note := a.trimmed("note")
+						if len(note) > maxPlaybookNote {
+							note = note[:maxPlaybookNote]
+						}
+						e.Last = &ProbeResult{State: st, Exit: exit, Note: note, At: now}
+					}
+					continue
+				}
 				if ok {
 					e.Missed = 0
 				} else {
@@ -296,6 +364,9 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 		if take {
 			// The owner's yes for a probe is for one command: another waits.
 			e.ProbeOK = e.ProbeOK && s.Probe == e.Probe
+			if s.Probe != e.Probe {
+				e.Last = nil
+			}
 			e.How, e.URL, e.Probe, e.Deploy, e.Live, e.OwnerChecks, e.Evidence, e.Thread, e.At, e.Missed = s.How, s.URL, s.Probe, s.Deploy, s.Live, s.OwnerChecks, s.Evidence, s.Thread, now, 0
 		}
 		stampPlaybook(p, now)
@@ -352,7 +423,7 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	if at >= 0 {
 		if e.Probe == old.Probe {
-			e.Missed = old.Missed
+			e.Missed, e.Last = old.Missed, old.Last
 		}
 		p.Playbook[at] = e
 	} else {
@@ -396,6 +467,15 @@ func reduceProjectSharedPlaybook(r Rec, in Input, _ time.Time) (Result, error) {
 		}
 		seen[e.Key()] = true
 	}
+	// What a probe did is each host's own: it stays with the same command.
+	for i := range es {
+		es[i].Missed, es[i].Last = 0, nil
+		for _, old := range p.Playbook {
+			if old.Key() == es[i].Key() && old.Probe == es[i].Probe {
+				es[i].Missed, es[i].Last = old.Missed, old.Last
+			}
+		}
+	}
 	p.Playbook, p.PlaybookAt = es, at
 	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}, nil
 }
@@ -403,7 +483,7 @@ func reduceProjectSharedPlaybook(r Rec, in Input, _ time.Time) (Result, error) {
 // PlaybookLearnPrompt is the line every agent of a project gets
 // (V0.project-playbook): when to write the playbook, and how to act when a
 // change reaches a stage.
-const PlaybookLearnPrompt = `This thread's project keeps a playbook in Fyr: the stages a merged change reaches (dev, prod) with how it gets there and how Fyr can tell, how a change is verified, promoted and rolled back, where issues are filed, and how the app is run. When the owner tells you one of these or corrects you, or you had to work one out, and the playbook does not say it, record it with mcp__fyr__project_learn so the next thread knows (mcp__fyr__project_learn {} reads the playbook). Do not copy what CLAUDE.md or the README already says, unless Fyr needs it: a stage's probe and url. A probe is a shell command Fyr runs itself after each merge, so nobody has to ask where a change is; Fyr tells you in a [Fyr] line when a merged change reaches a stage. To act at that moment (verify it there, tell the owner it can be tested), arm mcp__fyr__watch {when: {kind: "condition", change, type: "deploy:<stage>", status: "ok"}}, or {kind: "changeReached", change, phase: "live"} for the live stage.`
+const PlaybookLearnPrompt = `This thread's project keeps a playbook in Fyr: the stages a merged change reaches (dev, prod) with how it gets there and how Fyr can tell, how a change is verified, promoted and rolled back, where issues are filed, and how the app is run. When the owner tells you one of these or corrects you, or you had to work one out, and the playbook does not say it, record it with mcp__fyr__project_learn so the next thread knows (mcp__fyr__project_learn {} reads the playbook). Do not copy what CLAUDE.md or the README already says, unless Fyr needs it: a stage's probe and url. A probe is a shell command Fyr runs itself after each merge ({sha} is the merge commit, {repo} the pull request's owner/name), so nobody has to ask where a change is; it answers at once and never waits for a deploy, because Fyr runs it again each minute and stops it after 30 s; Fyr tells you in a [Fyr] line when a merged change reaches a stage. To act at that moment (verify it there, tell the owner it can be tested), arm mcp__fyr__watch {when: {kind: "condition", change, type: "deploy:<stage>", status: "ok"}}, or {kind: "changeReached", change, phase: "live"} for the live stage.`
 
 // PlaybookPrompt is the project's playbook for an agent's prompt: one line
 // per filled slot, "" for an empty playbook.
@@ -428,6 +508,16 @@ func PlaybookPrompt(p *Project) string {
 			parts = append(parts, "its probe waits for the owner's yes, so Fyr does not check it yet")
 		default:
 			parts = append(parts, "no probe: Fyr cannot tell when a change is there")
+		}
+		if e.Broken() {
+			why := fmt.Sprintf("could not run (exit %d)", e.Last.Exit)
+			if e.Last.State == ProbeTimeout {
+				why = "is stopped at Fyr's 30 s limit"
+			}
+			if e.Last.Note != "" {
+				why += ": " + e.Last.Note
+			}
+			parts = append(parts, "its probe "+why+", so no change is seen here: find out why and record one that answers at once")
 		}
 		if e.Doubted() {
 			parts = append(parts, fmt.Sprintf("its probe did not see the last %d merges within a day, so it may be wrong: check it and record a better one", e.Missed))

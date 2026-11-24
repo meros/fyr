@@ -138,7 +138,8 @@ func TestProbeStages(t *testing.T) {
 	if c.Phase != PhaseLive || !StageReached(c, prod) || len(ProbeWatches(th, ct0.Add(21*time.Minute))) != 0 {
 		t.Fatalf("phase %s", c.Phase)
 	}
-	if ProbeScript("x {sha} {sha}", "abc1234") != "x abc1234 abc1234" || ProbeScript("x {sha}", "m1; rm -rf /") != "" {
+	if ProbeScript("x {sha} {sha}", "abc1234", "") != "x abc1234 abc1234" || ProbeScript("x {sha}", "m1; rm -rf /", "") != "" ||
+		ProbeScript("x {sha} {repo}", "abc1234", "acme/app") != "x abc1234 acme/app" || ProbeScript("x {sha} {repo}", "abc1234", "acme/app; rm -rf /") != "" || ProbeScript("x {sha} {repo}", "abc1234", "") != "" {
 		t.Fatal("probe script")
 	}
 }
@@ -232,5 +233,40 @@ func TestStageMoments(t *testing.T) {
 	}
 	if len(StageMoments(th, &th.Changes[0], stages, now)) != 0 {
 		t.Fatal("offered twice")
+	}
+}
+
+// V0.playbook-probe-health: what a probe did on this host (its last answer,
+// the merges it missed) stays this host's when a link's playbook arrives,
+// for the same command only; and a run is read as one of four answers.
+func TestProbeAnswerIsTheHosts(t *testing.T) {
+	mine := &ProbeResult{State: ProbeTimeout, Exit: -1, At: ct0}
+	ps := map[string]*Project{"p1": {ID: "p1", Name: "Acme", Link: "l_0123456789abcdef", PlaybookAt: ct0, Playbook: []PlaybookEntry{
+		{Slot: SlotStage, Name: "dev", Probe: "check {sha}", ProbeOK: true, Missed: 2, Last: mine, By: ByOwner}}}}
+	send := func(min int, probe string) *Project {
+		t.Helper()
+		_, after, _, err := ReduceProject(ps, nil, Input{Source: FromOwner, Kind: KindProjectSharedPlaybook, CmdID: "c",
+			Args: Args{"id": "p1", "link": "l_0123456789abcdef", "at": ct0.Add(time.Duration(min) * time.Minute).Format(time.RFC3339Nano),
+				"playbook": []any{map[string]any{"slot": "stage", "name": "dev", "probe": probe, "probeOk": true, "by": "owner", "missed": 0,
+					"last": map[string]any{"state": "reached", "at": ct0.Format(time.RFC3339Nano)}}}}}, ct0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return after
+	}
+	if e := send(1, "check {sha}").Playbook[0]; e.Missed != 2 || e.Last == nil || e.Last.State != ProbeTimeout || !e.Broken() {
+		t.Fatalf("another host's answer replaced this host's: %+v %+v", e, e.Last)
+	}
+	if e := send(2, "other {sha}").Playbook[0]; e.Missed != 0 || e.Last != nil {
+		t.Fatalf("another command kept the old one's answer: %+v", e)
+	}
+	for _, c := range []struct {
+		exit     int
+		timedOut bool
+		want     string
+	}{{0, false, ProbeReached}, {1, false, ProbeWaiting}, {127, false, ProbeError}, {126, false, ProbeError}, {-1, false, ProbeError}, {-1, true, ProbeTimeout}, {0, true, ProbeTimeout}} {
+		if got := ProbeState(c.exit, c.timedOut); got != c.want {
+			t.Errorf("ProbeState(%d, %v) = %s, want %s", c.exit, c.timedOut, got, c.want)
+		}
 	}
 }

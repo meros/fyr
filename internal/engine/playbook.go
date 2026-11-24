@@ -48,7 +48,7 @@ func playbookBrief(p core.Project) string {
 	b.WriteString("Do not ask the owner anything, change no file, deploy nothing, and finish in a few minutes. Record only what you can back with evidence (a file and what it says, a workflow, what the last merges did); leave a slot empty when the repository does not say. A library with no deploy has no stages: that is an answer.\n\n")
 	b.WriteString("1. Read CLAUDE.md, AGENTS.md, the README, the CI and deploy workflows (.github/workflows, a Makefile, package.json scripts, deploy scripts, infrastructure folders), and what followed the last few merges to the default branch (gh run list, gh api repos/<owner>/<repo>/deployments, git tag).\n")
 	b.WriteString("2. Stages (slot stage, name the environment: dev, staging, prod). For each environment a merged change reaches: how it gets there (automatic on merge and roughly how long, a command, a release tag, a schedule), its url, and live: true for the one that is production. ")
-	b.WriteString("A stage GitHub Deployments already reports needs no probe: Fyr reads those itself. Otherwise give probe when a command can tell: a shell command where {sha} is the merge commit and exit 0 means the stage holds that commit, for example comparing a version endpoint with git (git merge-base --is-ancestor {sha} \"$(curl -fsS https://dev.example.com/version)\"). It must only read, end within 30 s and need no input. Fyr runs it after each merge once the owner allowed it. A stage a change reaches only by hand gets deployCmd: the command that puts the merge commit there ({sha}); Fyr shows it to the owner on a Run card and never runs it itself. Set ownerChecks only when the docs say the owner looks at each change on that stage.\n")
+	b.WriteString("A stage GitHub Deployments already reports needs no probe: Fyr reads those itself. Otherwise give probe when a command can tell: a shell command where {sha} is the merge commit and exit 0 means the stage holds that commit, for example comparing a version endpoint with git (git merge-base --is-ancestor {sha} \"$(curl -fsS https://dev.example.com/version)\"). {repo} is the pull request's repository (owner/name), for a project of several repositories. It must only read, need no input and answer at once: it never waits for the deploy (no --wait, no sleep), because Fyr runs it again each minute and stops it after 30 s. Fyr runs it after each merge once the owner allowed it. A stage a change reaches only by hand gets deployCmd: the command that puts the merge commit there ({sha}); Fyr shows it to the owner on a Run card and never runs it itself. Set ownerChecks only when the docs say the owner looks at each change on that stage.\n")
 	b.WriteString("3. The other slots, one or two sentences each: verify (where and how a change is looked at, with which login, and whether the owner or the agent checks), promote (the manual step to the next stage), issue (where issues live and how one is filed), run (how the app is started locally to show it), rollback (how a deploy is undone).\n")
 	b.WriteString("4. Do not copy general advice or what a reader of CLAUDE.md already knows unless Fyr needs it (a stage's probe and url).\n\n")
 	b.WriteString("End with a short list of what you recorded, what you left empty and why, and name each probe that waits for the owner's yes (Settings → Projects → this project → Playbook).")
@@ -89,6 +89,12 @@ func playbookText(p core.Project) string {
 	for _, e := range p.Stages() {
 		if e.Probe != "" {
 			fmt.Fprintf(&b, "\n  Probe of %s: %s", e.Name, e.Probe)
+			if l := e.Last; l != nil && e.Runs() {
+				fmt.Fprintf(&b, "\n    its last answer, since %s: %s (exit %d)", l.At.Format("2006-01-02 15:04"), l.State, l.Exit)
+				if l.Note != "" {
+					fmt.Fprintf(&b, ": %s", l.Note)
+				}
+			}
 		}
 		if e.Deploy != "" {
 			fmt.Fprintf(&b, "\n  Deploy command of %s: %s", e.Name, e.Deploy)
@@ -102,7 +108,7 @@ func (e *Engine) playbookTools(s *mcp.Server) {
 		Description: "Read or write the playbook of a Fyr project: what the project does around and after a pull request, kept for every later thread. Without slot it returns the playbook. " +
 			"Slots: stage (an environment a merged change reaches; name it: dev, prod), verify (where and how a change is looked at, and who checks), promote (the manual step to the next stage), issue (where issues live and how one is filed), run (how the app is started locally), rollback (how a deploy is undone). " +
 			"Write an entry when the owner tells you how the project works or corrects you, or when you had to work it out; how is a sentence or two, evidence what it rests on. " +
-			"A stage may carry url (where to look at it), live: true (reaching it makes a change live) and probe: a shell command Fyr runs by itself after each merge, in the project's folder, where {sha} is the merge commit and exit 0 means the stage holds that commit. A probe only reads, ends within 30 s and needs no input. Fyr runs it only once the owner allowed it. " +
+			"A stage may carry url (where to look at it), live: true (reaching it makes a change live) and probe: a shell command Fyr runs by itself after each merge, in the project's folder, where {sha} is the merge commit, {repo} the pull request's repository (owner/name, for a project of several repositories) and exit 0 means the stage holds that commit. A probe only reads, needs no input and answers at once: it never waits for a deploy, because Fyr runs it again each minute and stops it after 30 s. Fyr runs it only once the owner allowed it. " +
 			"A stage may also carry deployCmd (the command that puts a change there by hand: Fyr shows it to the owner on a Run card when the stage before holds the change) and ownerChecks (Fyr asks the owner to look at each change there). " +
 			"An entry the owner wrote is kept: what you write there is stored beside it as a suggestion the owner takes or dismisses. Pass ownerAsked when the owner's newest message asks for exactly this entry; it is then theirs, its probe allowed. A linked project's playbook is shared by all its hosts.",
 		Schema: obj(map[string]any{
@@ -111,7 +117,7 @@ func (e *Engine) playbookTools(s *mcp.Server) {
 			"name":        str("A stage's environment in lower case: dev, staging, prod."),
 			"how":         str("The entry in a sentence or two. For a stage: how a merged change gets there and roughly how long it takes."),
 			"url":         str("A stage's address, where a change is looked at."),
-			"probe":       str("A stage's check: a shell command with {sha}; exit 0 says the stage holds that commit."),
+			"probe":       str("A stage's check: a shell command with {sha} (and {repo} if it needs the repository); exit 0 says the stage holds that commit. It answers at once and does not wait."),
 			"live":        map[string]any{"type": "boolean", "description": "A stage only: a change that reaches it is live (production)."},
 			"deployCmd":   str("A stage reached by hand only: the shell command that puts a merged change there ({sha} is the merge commit). Fyr puts it on a Run card for the owner when the stage before holds the change."),
 			"ownerChecks": map[string]any{"type": "boolean", "description": "A stage only: the owner looks at each change there. Fyr asks them on a question card when a change reaches it, and you hear the answer."},
@@ -206,17 +212,19 @@ func (e *Engine) playbookTools(s *mcp.Server) {
 // the project's stages for the merge commit, by itself and without a model,
 // until each stage holds the commit or the deploy watch ends.
 
+// probeTimeout is a probe's limit; a test shortens it.
+var probeTimeout = 30 * time.Second
+
 const (
-	probeTimeout = 30 * time.Second
 	// ProbeEvery is how often the host looks for due probes; a watch older
 	// than an hour is probed less often (github.DeployEvery).
 	ProbeEvery = time.Minute
 )
 
 type probeJob struct {
-	thread, change, sha, dir, project string
-	since                             time.Time
-	stage                             core.PlaybookEntry
+	thread, change, sha, repo, dir, project string
+	since                                   time.Time
+	stage                                   core.PlaybookEntry
 }
 
 // probes keeps when each probe last ran.
@@ -253,7 +261,7 @@ func (e *Engine) dueProbes(now time.Time) []probeJob {
 			}
 			for _, st := range stages {
 				if !core.StageReached(c, st) {
-					jobs = append(jobs, probeJob{project: p.ID, thread: t.ID, change: c.ID, sha: d.SHA, dir: dir, since: d.Since, stage: st})
+					jobs = append(jobs, probeJob{project: p.ID, thread: t.ID, change: c.ID, sha: d.SHA, repo: d.Repo, dir: dir, since: d.Since, stage: st})
 				}
 			}
 		}
@@ -366,57 +374,132 @@ func (e *Engine) stageMoments(now time.Time) int {
 	return len(ms)
 }
 
-// runProbe runs one probe: true when the stage holds the commit (exit 0).
-func (e *Engine) runProbe(ctx context.Context, j probeJob) bool {
-	script := core.ProbeScript(j.stage.Probe, j.sha)
+// probeWorkers is how many probes run at once: a probe that sits until its
+// limit holds back three others at most, not every stage of every project
+// (V0.playbook-probe-health).
+const probeWorkers = 4
+
+// probeRan is one run of a probe: its state (core.ProbeState), the exit code
+// and the last line it printed.
+type probeRan struct {
+	state, note string
+	exit        int
+}
+
+// runProbe runs one probe and reads its answer.
+func (e *Engine) runProbe(ctx context.Context, j probeJob) probeRan {
+	script := core.ProbeScript(j.stage.Probe, j.sha, j.repo)
 	if script == "" {
-		return false
+		return probeRan{state: core.ProbeError, exit: -1, note: "the command names {repo} and this change has no repository"}
 	}
 	run := e.RunProbe
 	if run == nil {
-		run = func(ctx context.Context, dir, script string) (int, error) {
+		run = func(ctx context.Context, dir, script string) (string, int, error) {
 			if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-				return -1, fmt.Errorf("no folder %s", dir)
+				return "", -1, fmt.Errorf("no folder %s", dir)
 			}
 			argv := []string{"sh", "-c", script}
 			if e.FolderEnv != nil { // the folder's environment, as a Run card has
 				argv = e.FolderEnv(dir, argv)
 			}
-			_, exit, err := runScriptLive(ctx, dir, argv, nil)
-			return exit, err
+			return runScriptLive(ctx, dir, argv, nil)
 		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	exit, err := run(ctx, j.dir, script)
-	if exit < 0 && err != nil {
-		log.Printf("probe %s of %s: %v", j.stage.Name, j.change, err)
+	out, exit, err := run(ctx, j.dir, script)
+	timedOut := ctx.Err() == context.DeadlineExceeded
+	r := probeRan{state: core.ProbeState(exit, timedOut), exit: exit, note: lastLine(out)}
+	if r.note == "" && exit < 0 && err != nil {
+		r.note = err.Error()
 	}
-	return exit == 0 && ctx.Err() == nil
+	return r
 }
 
-// ProbeOnce runs the probes that are due and writes each stage that holds
-// its commit into the change, as an observation of the deploy observer. It
-// returns how many probes ran.
+// lastLine is the last line a probe printed, without the lines Fyr's runner
+// adds when it stops one.
+func lastLine(out string) string {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "" || l == "stopped after the time limit" || l == "signal: killed" {
+			continue
+		}
+		if len(l) > 200 {
+			l = l[:200]
+		}
+		return l
+	}
+	return ""
+}
+
+// probeRank orders the answers of one stage in one pass: a probe that cannot
+// answer is what the owner must hear of, then that it saw a commit.
+var probeRank = map[string]int{core.ProbeError: 3, core.ProbeTimeout: 3, core.ProbeReached: 2, core.ProbeWaiting: 1}
+
+// ProbeOnce runs the probes that are due, probeWorkers at a time, and writes
+// each stage that holds its commit into the change, as an observation of the
+// deploy observer. A stage whose probe answers differently than last time
+// gets that answer on its entry. It returns how many probes ran.
 func (e *Engine) ProbeOnce(ctx context.Context) int {
 	due := e.dueProbes(e.Now())
-	type key struct{ thread, change string }
-	reached := map[key][]core.Deployment{}
-	for _, j := range due {
+	ran := make([]*probeRan, len(due))
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, probeWorkers)
+	for i, j := range due {
 		if ctx.Err() != nil {
 			break
 		}
-		if e.runProbe(ctx, j) {
-			if j.stage.Missed > 0 { // the probe works again
-				e.applyProject(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindProjectProbed, CmdID: NewID("probe_"), Args: core.Args{"id": j.project, "name": j.stage.Name, "ok": true}})
-			}
-			k := key{j.thread, j.change}
-			reached[k] = append(reached[k], core.Deployment{Env: j.stage.Name, Production: j.stage.IsLive(), State: "success", URL: j.stage.URL})
-		}
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-slots; wg.Done() }()
+			r := e.runProbe(ctx, j)
+			ran[i] = &r
+		}()
 	}
-	for k, ds := range reached {
+	wg.Wait()
+	type key struct{ thread, change string }
+	type stage struct{ project, name string }
+	reached := map[key][]core.Deployment{}
+	said := map[stage]probeJob{}
+	answer := map[stage]probeRan{}
+	var order []key
+	for i, j := range due {
+		r := ran[i]
+		if r == nil || (ctx.Err() != nil && r.state != core.ProbeReached) { // Fyr is stopping: the run says nothing
+			continue
+		}
+		st := stage{j.project, j.stage.Name}
+		if old, ok := answer[st]; !ok || probeRank[r.state] > probeRank[old.state] {
+			answer[st], said[st] = *r, j
+		}
+		if r.state != core.ProbeReached {
+			continue
+		}
+		if j.stage.Missed > 0 { // the probe works again
+			e.applyProject(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindProjectProbed, CmdID: NewID("probe_"), Args: core.Args{"id": j.project, "name": j.stage.Name, "ok": true}})
+		}
+		k := key{j.thread, j.change}
+		if _, ok := reached[k]; !ok {
+			order = append(order, k)
+		}
+		reached[k] = append(reached[k], core.Deployment{Env: j.stage.Name, Production: j.stage.IsLive(), State: "success", URL: j.stage.URL})
+	}
+	for st, r := range answer {
+		j := said[st]
+		if last := j.stage.Last; last != nil && last.State == r.state && last.Exit == r.exit {
+			continue // the same answer: nothing is written, so a probe each minute costs no write
+		}
+		if r.state == core.ProbeTimeout || r.state == core.ProbeError {
+			log.Printf("probe %s of project %s: %s (exit %d) %s", st.name, st.project, r.state, r.exit, r.note)
+		}
+		e.applyProject(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindProjectProbed, CmdID: NewID("probe_"),
+			Args: core.Args{"id": st.project, "name": st.name, "probe": j.stage.Probe, "state": r.state, "exit": r.exit, "note": r.note}})
+	}
+	for _, k := range order {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindDeployObserved, Thread: k.thread,
-			Args: core.DeployObservedArgs{Change: k.change, Obs: core.DeployObs{Probe: true, Deployments: ds}, Probes: true}}); err != nil {
+			Args: core.DeployObservedArgs{Change: k.change, Obs: core.DeployObs{Probe: true, Deployments: reached[k]}, Probes: true}}); err != nil {
 			log.Printf("probe: change %s: %v", k.change, err)
 		}
 	}

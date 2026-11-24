@@ -3,13 +3,15 @@
 // correct or remove, an agent's suggestion to take or dismiss, the owner's yes for a stage's probe, and Add.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { PlaybookEntry, Project } from "./types.ts";
-import { addableSlots, doubted, entryKey, entryTitle, learnArgs, playbookEntries, playbookSummary, playbookWaiting, probeLine, slotTitle, stageNameError, suggestionLines } from "./playbook.ts";
+import { addableSlots, broken, doubted, entryKey, entryTitle, isLiveStage, learnArgs, playbookEntries, playbookSummary, playbookWaiting, probeLine, removeEntryAsk, slotTitle, stageHealth, stageNameError, stagesOf, suggestionLines } from "./playbook.ts";
 import { Group, Row, Switch, useSet } from "./settings-rows.tsx";
 import { useApi } from "./api-context.ts";
+import { useAsk } from "./confirm-ui.tsx";
+import { whenLabel } from "./format.ts";
 
 /** A text that may run over several lines (a sentence or two, a command) and is read whole on a phone: as tall as its
  *  text. Save shows while it differs; Ctrl or ⌘ Enter saves, Esc puts the text back. A one-line field cut these off. */
-function SaveArea({ value, label, placeholder, mono, onSave }: { value: string; label: string; placeholder?: string; mono?: boolean; onSave(v: string): Promise<string | null> }) {
+function SaveArea({ value, label, name, placeholder, mono, onSave }: { value: string; label: string; /** V0.playbook-probe-health: the field's name over it, so a filled field still says what it is */ name?: string; placeholder?: string; mono?: boolean; onSave(v: string): Promise<string | null> }) {
   const env = useSet();
   const [text, setText] = useState(value);
   const [busy, setBusy] = useState(false);
@@ -28,7 +30,7 @@ function SaveArea({ value, label, placeholder, mono, onSave }: { value: string; 
     await onSave(text.trim());
     setBusy(false);
   };
-  return (
+  const area = (
     <span class="pbarea">
       <textarea
         ref={ref}
@@ -52,6 +54,14 @@ function SaveArea({ value, label, placeholder, mono, onSave }: { value: string; 
       )}
     </span>
   );
+  return name ? (
+    <label class="pbf">
+      <span class="pbl">{name}</span>
+      {area}
+    </label>
+  ) : (
+    area
+  );
 }
 
 /** `project` is the page's (a linked project shows the playbook written last); `target` is the one record a change
@@ -59,6 +69,7 @@ function SaveArea({ value, label, placeholder, mono, onSave }: { value: string; 
 export function PlaybookGroup({ project, target }: { project: Project; target?: Project }) {
   const env = useSet();
   const api = useApi();
+  const ask = useAsk();
   const [errs, setErrs] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<string | null>(null);
@@ -81,6 +92,10 @@ export function PlaybookGroup({ project, target }: { project: Project; target?: 
     setRun(e ? null : "Started: the thread is in the inbox, and what it learns shows here.");
   };
   const waits = playbookWaiting(project);
+  const stages = stagesOf(project);
+  const root = useRef<HTMLDivElement>(null);
+  const show = (key: string) => root.current?.closest("section")?.querySelector(`[data-entry="${key}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const now = Date.now();
   return (
     <Group
       title="Playbook"
@@ -88,8 +103,31 @@ export function PlaybookGroup({ project, target }: { project: Project; target?: 
       class="pbook"
       fold={{ id: `project:${project.id}:playbook`, open: false, summary: playbookSummary(project), force: waits > 0, bad: waits > 0 }}
       foot="What agents here are told about the project, and what Fyr does itself after a merge."
-      how="Agents write an entry when you tell them how the project works or when they had to work it out. An entry you change is yours: an agent's later finding shows beside it as a suggestion. A stage's probe is a shell command Fyr runs in the project's folder after each merge, with {sha} as the merge commit: when it exits 0 the change is on that stage. Fyr runs a probe only after you allowed it, and a changed probe waits again. A stage you check gets a question card when a change reaches it. A stage with a deploy command gets a Run card when the stage before it holds the change, after your Looks good if you check that one; Fyr never runs it itself."
+      how="Agents write an entry when you tell them how the project works or when they had to work it out. An entry you change is yours: an agent's later finding shows beside it as a suggestion. A stage's probe is a shell command Fyr runs in the project's folder after each merge, with {sha} as the merge commit and {repo} as the pull request's repository: when it exits 0 the change is on that stage. It answers at once and does not wait for the deploy: Fyr runs it again each minute and stops it after 30 seconds. Fyr runs a probe only after you allowed it, and a changed probe waits again. A stage you check gets a question card when a change reaches it. A stage with a deploy command gets a Run card when the stage before it holds the change, after your Looks good if you check that one; Fyr never runs it itself."
     >
+      {stages.length > 0 && (
+        // V0.playbook-probe-health: the path of a merged change at a glance, and how Fyr follows each stage; a stage
+        // goes to its entry below. The same on the desktop and the phone.
+        <div class="sr col pbpipe" ref={root}>
+          <ol aria-label="After a merge">
+            <li class="pbp from">Merge</li>
+            {stages.map((e) => {
+              const h = stageHealth(e);
+              return (
+                <li key={e.name}>
+                  <button type="button" class={`pbp ${h.state}`} onClick={() => show(entryKey(e))}>
+                    <span class="pbp-n">
+                      {e.name}
+                      {isLiveStage(e) && <em>live</em>}
+                    </span>
+                    <span class="pbp-w">{h.word}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
       {entries.map((e) => {
         const key = entryKey(e);
         const stage = e.slot === "stage";
@@ -106,28 +144,34 @@ export function PlaybookGroup({ project, target }: { project: Project; target?: 
                 )}
               </span>
               <span class="end">
-                <button type="button" class="btn sm" disabled={off} aria-label={`Remove ${title}`} onClick={() => void send(key, "project.learn", { ...ref(e), remove: true })}>
+                {/* V0.playbook-probe-health: a quiet control that asks first: one press no longer drops an entry's text and commands */}
+                <button type="button" class="btn sm pbrm" disabled={off} aria-label={`Remove ${title}`} onClick={async () => void ((await ask(removeEntryAsk(e))) && send(key, "project.learn", { ...ref(e), remove: true }))}>
                   Remove
                 </button>
               </span>
             </div>
-            <SaveArea value={e.how ?? ""} label={`${title}: how`} placeholder={stage ? "How a merged change gets here" : "In a sentence or two"} onSave={(v) => learn(e, { how: v })} />
+            <SaveArea value={e.how ?? ""} label={`${title}: how`} name={stage ? "How a change gets here" : undefined} placeholder={stage ? "Automatic on merge, a release tag, a command" : "In a sentence or two"} onSave={(v) => learn(e, { how: v })} />
             {stage && (
               <>
-                <SaveArea value={e.url ?? ""} label={`${title}: address`} placeholder="https://… where it is looked at" onSave={(v) => learn(e, { url: v })} />
+                <SaveArea value={e.url ?? ""} label={`${title}: address`} name="Address" placeholder="https://… where it is looked at" onSave={(v) => learn(e, { url: v })} />
                 <SaveArea
                   mono
                   value={e.probe ?? ""}
                   label={`${title}: probe`}
-                  placeholder="Probe command, with {sha}"
+                  name="Probe"
+                  placeholder="A command that exits 0 when {sha} is here"
                   // The probe you write is yours: it is allowed with the same press.
                   onSave={async (v) => (await learn(e, { probe: v })) ?? (v ? send(key, "project.learn", { ...ref(e), allow: true }) : null)}
                 />
                 <label class="pbrun">
-                  <span class={`sr-d${(e.probe && !e.probeOk) || doubted(e) ? " warn" : ""}`}>{probeLine(e)}</span>
+                  <span class={`sr-d pbstate ${stageHealth(e).state}${(e.probe && !e.probeOk) || doubted(e) || broken(e) ? " warn" : ""}`}>
+                    {probeLine(e, e.probeOk ? whenLabel(e.last?.at, now) : "")}
+                    {/* what the probe printed last, when it did not see the commit: the reason is often in it */}
+                    {e.probeOk && e.last?.note && e.last.state !== "reached" && <code class="pbnote">{e.last.note}</code>}
+                  </span>
                   {e.probe && <Switch on={!!e.probeOk} label={`Run the probe of ${e.name}`} disabled={off} onChange={(on) => void send(key, "project.learn", { ...ref(e), allow: on })} />}
                 </label>
-                <SaveArea mono value={e.deployCmd ?? ""} label={`${title}: deploy command`} placeholder="Deploy command, with {sha}" onSave={(v) => learn(e, { deployCmd: v })} />
+                <SaveArea mono value={e.deployCmd ?? ""} label={`${title}: deploy command`} name="Deploy by hand" placeholder="A command that puts {sha} here; you run it from a card" onSave={(v) => learn(e, { deployCmd: v })} />
                 <label class="pbrun">
                   <span class="sr-d">{e.ownerChecks ? "Fyr asks you to look when a change gets here." : "Ask me to look when a change gets here."}</span>
                   <Switch on={!!e.ownerChecks} label={`Ask me to check each change on ${e.name}`} disabled={off} onChange={(on) => void learn(e, { ownerChecks: on })} />

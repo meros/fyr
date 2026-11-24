@@ -2,7 +2,7 @@
 // a merged change is among its project's stages.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addableSlots, entryTitle, learnArgs, newestPlaybook, playbookEntries, playbookSummary, playbookWaiting, probeLine, stageNameError, stageText, stageTrail, stagesOf, suggestionLines } from "../src/playbook.ts";
+import { addableSlots, broken, entryTitle, learnArgs, newestPlaybook, playbookEntries, playbookSummary, playbookWaiting, probeLine, removeEntryAsk, stageHealth, stageNameError, stageText, stageTrail, stagesOf, suggestionLines } from "../src/playbook.ts";
 import { linkProjects } from "../src/projects.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Change, PlaybookEntry, Project } from "../src/types.ts";
@@ -84,4 +84,27 @@ test("Add offers a stage and the notes that are missing", () => {
   assert.equal(addableSlots({ playbook: six }).includes("stage"), false);
   assert.equal(stageNameError("Dev"), null);
   assert.match(stageNameError("my stage") ?? "", /lower case/);
+});
+
+// V0.playbook-probe-health
+test("a probe that cannot answer is said on its stage, in the summary and in the pipeline", () => {
+  const run: PlaybookEntry = { ...dev, probeOk: true };
+  const stuck: PlaybookEntry = { ...run, last: { state: "timeout", exit: -1, note: "applied: 899b950", at: "2026-11-24T18:35:00Z" } };
+  const gone: PlaybookEntry = { ...run, last: { state: "error", exit: 127, note: "sh: check: not found" } };
+  assert.equal(broken(stuck) && broken(gone), true);
+  assert.equal(broken({ ...stuck, probeOk: false }), false, "a probe Fyr does not run is not broken");
+  assert.equal(broken({ ...run, last: { state: "waiting", exit: 1 } }), false, "not there yet is a probe that works");
+  assert.match(probeLine(stuck, "18:35"), /^Stopped at the 30 s limit since 18:35.*must not wait/);
+  assert.match(probeLine(gone), /^Cannot run \(exit 127\), so no change is seen here\.$/);
+  assert.match(probeLine({ ...run, last: { state: "waiting", exit: 1 } }, "18:35"), /Last answer since 18:35: not here yet \(exit 1\)/);
+  assert.match(probeLine({ ...run, last: { state: "reached" } }, "18:35"), /^Works: it last saw a change here 18:35\.$/);
+  assert.equal(playbookWaiting({ playbook: [stuck, issue] }), 1);
+  assert.equal(playbookSummary({ playbook: [stuck, { ...prod, probe: "p {sha}", probeOk: true, missed: 2 }, issue] }), "1 probe fails · 1 probe in doubt · 2 stages · 1 note");
+  assert.deepEqual([stuck, run, dev, prod, { ...run, missed: 2 }].map((e) => stageHealth(e).state), ["bad", "ok", "ask", "blind", "bad"]);
+  assert.equal(stageHealth(stuck).word, "probe fails");
+});
+
+test("Remove asks first, and says what goes with a stage", () => {
+  assert.deepEqual(removeEntryAsk(prod), { title: "Remove Stage prod · live?", text: "Fyr no longer follows merged changes to this stage, and its probe and commands are gone.", confirm: "Remove entry", danger: true });
+  assert.match(removeEntryAsk(issue).text, /no longer told/);
 });

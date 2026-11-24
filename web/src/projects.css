@@ -138,6 +138,35 @@ button.ptag{padding:0}
 .pbrun{display:flex;gap:12px;align-items:center;justify-content:space-between}
 .pbrun .warn{color:var(--signal-ink)}
 .set.phone .pbrun{min-height:44px} /* the label is the switch's touch target */
+/* V0.playbook-probe-health: each field has its name over it; the probe's state has a dot and what it last printed */
+.pbf{display:flex;flex-direction:column;gap:3px;min-width:0}
+.pbl{font:500 12px/16px var(--ui);color:var(--ink-muted)}
+.pbstate{position:relative;padding-left:14px}
+.pbstate::before{content:"";position:absolute;left:0;top:5px;width:7px;height:7px;border-radius:50%;background:var(--ink-faint)}
+.pbstate.ok::before{background:var(--calm)}
+.pbstate.ask::before{background:var(--beam-icon,var(--harbour))}
+.pbstate.bad::before{background:var(--signal-ink)}
+.pbnote{display:block;margin-top:4px;padding:4px 8px;border-radius:6px;background:var(--sunken);color:var(--ink);font:400 12px/16px var(--mono);overflow-wrap:anywhere;white-space:pre-wrap}
+.pbe .sbar .btn.pbrm{border-color:transparent;background:none;box-shadow:none;color:var(--ink-muted)}
+@media (hover:hover){.pbe .sbar .btn.pbrm:hover{color:var(--signal-ink);background:var(--hover)}}
+/* the pipeline: Merge, then each stage in the order a change reaches it, with how Fyr follows it */
+.pbpipe ol{display:flex;flex-wrap:wrap;align-items:stretch;gap:6px 0;margin:0;padding:0;list-style:none}
+.pbpipe li{display:flex;align-items:center}
+.pbpipe li+li::before{content:"→";padding:0 8px;color:var(--ink-faint);font:400 14px/1 var(--ui)}
+.pbp{display:flex;flex-direction:column;justify-content:center;gap:1px;min-height:40px;padding:4px 12px;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink);font:500 13px/18px var(--ui);text-align:left}
+button.pbp{cursor:pointer}
+.pbp.from{background:none;border-style:dashed;color:var(--ink-muted)}
+.pbp-n{display:flex;align-items:center;gap:6px}
+.pbp-n::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--ink-faint)}
+.pbp.ok .pbp-n::before{background:var(--calm)}
+.pbp.ask .pbp-n::before{background:var(--beam-icon,var(--harbour))}
+.pbp.bad .pbp-n::before{background:var(--signal-ink)}
+.pbp.bad{border-color:color-mix(in srgb,var(--signal-ink) 45%,var(--line))}
+.pbp-n em{font:500 11px/14px var(--ui);font-style:normal;color:var(--ink-muted);padding:0 5px;border:1px solid var(--line);border-radius:6px}
+.pbp-w{font:400 12px/16px var(--ui);color:var(--ink-muted);padding-left:13px}
+.pbp.bad .pbp-w,.pbp.ask .pbp-w{color:var(--signal-ink)}
+@media (hover:hover){button.pbp:hover{background:var(--hover)}}
+.set.phone .pbp{min-height:44px} /* a touch target */
 .pbarea textarea,.pbadd input{border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);padding:5px 10px;font:400 14px/20px var(--ui);min-width:0;max-width:100%;box-sizing:border-box}
 .pbadd input{height:32px;padding:0 10px}
 .set.phone .pbarea textarea,.set.phone .pbadd input{font-size:16px;line-height:22px;padding:10px 12px;min-height:44px}
