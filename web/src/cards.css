@@ -77,6 +77,9 @@
 .codeb:hover>.cpy,.msgw:hover>.cpy,.cv:hover>.msgw>.cpy,.cpy:focus-visible{opacity:1}
 .msgw{position:relative;min-width:0}
 .msgw>.msgcp{position:absolute;right:0;bottom:-22px}
+/* The message's Copy is quiet text in the type of the run line beside it (no pill); the box appears on hover. */
+.cpy.msgcp{font:400 12px/16px var(--ui);height:20px;padding:0 4px;border-color:transparent;background:none;color:var(--ink-faint)}
+.cpy.msgcp:hover{background:var(--sunken);color:var(--ink)}
 /* V0.187: an entry clips what leaves its box (content-visibility below), so the strip Copy hangs in is the entry's own
    padding, given back as a negative margin: the space between entries stays. Above the next entry while hovered. */
 .cv:has(>.msgw>.msgcp){padding-bottom:22px;margin-bottom:-22px}
