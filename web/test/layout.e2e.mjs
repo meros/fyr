@@ -1617,6 +1617,53 @@ try {
 }
 });
 
+// V0.message-links-files: on both fronts the paths the host has are links and the one it has not stays text; a press
+// opens the file viewer at the named line inside the screen, Back leaves it, an image opens the image viewer and a
+// binary file a note.
+for (const [front, w, hh] of [["phone", 390, 844], ["desktop", 1280, 800]])
+section(`V0.message-links-files ${front}`, async (h) => {
+  const { send, evaluate, waitFor, navigate, openScreen } = h;
+try {
+  if (front === "desktop") {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&open=t_mapperf&files`, `!!document.querySelector('.md-path')`);
+  } else await openScreen({ url: "?mock=rail&open=t_mapperf&files", ready: `!!document.querySelector('.md-path')` }, w, hh);
+  await waitFor(`document.querySelectorAll('.md-path.on').length >= 4`, { soft: true });
+  const links = await evaluate(`JSON.stringify([...document.querySelectorAll('.md-path')].map((e) => [e.dataset.path, e.dataset.line ?? '', e.classList.contains('on'), e.tabIndex]))`);
+  check(links === JSON.stringify([["src/map/lasso.test.ts", "9", true, 0], ["vitest.config.ts", "", true, 0], ["public/marker.png", "", true, 0], ["dist/tiles.bin", "", true, 0], ["src/map/old.ts", "", false, -1]]), `V0.message-links-files ${front}: the paths ${links}`);
+  check(await evaluate(`!!document.querySelector('.md a[href^="http://localhost:51204"] code')`), `V0.message-links-files ${front}: a URL written as code is no link`);
+  await evaluate(`document.querySelector('.md-path.on[data-line]').click()`);
+  await waitFor(`!!document.querySelector('.fv .fv-hit')`, { soft: true });
+  const v = await evaluate(`(() => {
+    const hit = document.querySelector('.fv .fv-hit')?.getBoundingClientRect();
+    const name = document.querySelector('.fv .fv-name');
+    const n = name?.getBoundingClientRect();
+    const body = document.querySelector('.fv .fv-body');
+    return { name: name?.textContent ?? '', nameIn: !!n && n.left >= 0 && n.right <= innerWidth, hit: document.querySelector('.fv .fv-hit')?.textContent ?? '', hitIn: !!hit && hit.top >= 52 && hit.bottom <= innerHeight,
+      nums: document.querySelector('.fv .fv-nums')?.textContent.split('\\n').length ?? 0, left: body?.scrollLeft ?? -1, wide: document.documentElement.scrollWidth > innerWidth,
+      small: [...document.querySelectorAll('.fv .pv-fh button, .fv .pv-fh a')].filter((b) => b.getBoundingClientRect().height < ${front === "phone" ? 36 : 20}).length };
+  })()`);
+  check(v.name === "lasso.test.ts:9" && v.nameIn, `V0.message-links-files ${front}: the header does not show the file's name and line (${JSON.stringify(v)})`);
+  check(v.hit === "  beforeEach(() => {" && v.hitIn && v.nums === 26, `V0.message-links-files ${front}: the named line is not marked in view (${JSON.stringify(v)})`);
+  check(v.left === 0 && !v.wide && v.small === 0, `V0.message-links-files ${front}: the viewer scrolled sideways, is wider than the screen or has a small control (${JSON.stringify(v)})`);
+  await evaluate(`history.back()`);
+  await waitFor(`!document.querySelector('.fv')`, { soft: true });
+  check(await evaluate(`!document.querySelector('.fv') && !!document.querySelector('.md-path.on')`), `V0.message-links-files ${front}: Back did not leave the viewer for the thread`);
+  await evaluate(`[...document.querySelectorAll('.md-path.on')].find((e) => e.dataset.path.endsWith('.png')).click()`);
+  await waitFor(`!!document.querySelector('.pv-full:not(.fv) img')`, { soft: true });
+  check(await evaluate(`!!document.querySelector('.pv-full:not(.fv) img')`), `V0.message-links-files ${front}: an image did not open in the image viewer`);
+  await evaluate(`history.back()`);
+  await waitFor(`!document.querySelector('.pv-full')`, { soft: true });
+  await evaluate(`[...document.querySelectorAll('.md-path.on')].find((e) => e.dataset.path.endsWith('.bin')).click()`);
+  await waitFor(`!!document.querySelector('.fv .fv-note')`, { soft: true });
+  const note = await evaluate(`document.querySelector('.fv .fv-note')?.textContent ?? ''`);
+  check(/not text/.test(note), `V0.message-links-files ${front}: a binary file's note ("${note}")`);
+} catch (e) {
+  failures.push(`V0.message-links-files ${front}: ${e.message}`);
+}
+});
+
 // V0.24: a message that fails to render shows an error card; the thread, its composer and the
 // rest of the conversation stay. (Found live: one bad field blanked the whole client.)
 section('V0.24', async (h) => {
