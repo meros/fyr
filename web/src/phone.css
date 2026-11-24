@@ -304,7 +304,7 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-below{flex:none;height:44px;width:100%;text-align:center;font:500 13px/44px var(--ui);color:var(--ink-muted);background:linear-gradient(transparent,var(--raised) 40%);margin-top:-44px;position:relative;border-top:1px dashed var(--line)}
 
 /* attachments on the phone */
-.m-cmp .att-b{border-radius:22px;width:40px}
+.m-cmp .att-b{border-radius:22px;width:44px} /* 44 x 44 inside the 4 px padding: the same margin on every side of the field */
 .m-cmpw .att-strip{padding:0 0 8px}
 .m-app .att-x{width:44px;height:44px;line-height:44px;font-size:20px}
 .m-app .att-chip{height:52px;width:236px}
