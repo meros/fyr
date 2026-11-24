@@ -128,7 +128,18 @@ button.ptag{padding:0}
 
 /* V0.project-playbook: a playbook entry: its title and Remove, then its fields one under the other */
 .pbe{gap:6px}
-.pbe .inl{display:flex;gap:8px;min-width:0}
-.pbe .inl input{flex:1;min-width:0}
+/* V0.playbook-moments: a text is read whole, so its field is as tall as it; Save stands beside it while it differs */
+.pbarea{display:flex;gap:8px;align-items:flex-start;min-width:0}
+.pbarea textarea{flex:1;resize:none;overflow:hidden;overflow-wrap:anywhere}
+.pbadd{gap:6px}
+.pbsug{display:flex;flex-direction:column;gap:4px;padding:8px 12px;border-radius:8px;background:var(--sunken)}
+.pbsugl{overflow-wrap:anywhere}
+.pbsugb{display:flex;gap:8px;margin-top:4px}
 .pbrun{display:flex;gap:12px;align-items:center;justify-content:space-between}
 .pbrun .warn{color:var(--signal-ink)}
+.set.phone .pbrun{min-height:44px} /* the label is the switch's touch target */
+.pbarea textarea,.pbadd input{border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);padding:5px 10px;font:400 14px/20px var(--ui);min-width:0;max-width:100%;box-sizing:border-box}
+.pbadd input{height:32px;padding:0 10px}
+.set.phone .pbarea textarea,.set.phone .pbadd input{font-size:16px;line-height:22px;padding:10px 12px;min-height:44px}
+.pbarea textarea:focus-visible,.pbadd input:focus-visible{outline:2px solid var(--harbour);outline-offset:1px}
+.pbarea textarea.mono,.set.phone .pbarea textarea.mono{font-family:var(--mono);font-size:13px}

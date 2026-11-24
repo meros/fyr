@@ -2,7 +2,7 @@
 // a merged change is among its project's stages.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { entryTitle, learnArgs, newestPlaybook, playbookEntries, playbookSummary, probeLine, probesWaiting, stageText, stageTrail, stagesOf } from "../src/playbook.ts";
+import { addableSlots, entryTitle, learnArgs, newestPlaybook, playbookEntries, playbookSummary, playbookWaiting, probeLine, stageNameError, stageText, stageTrail, stagesOf, suggestionLines } from "../src/playbook.ts";
 import { linkProjects } from "../src/projects.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Change, PlaybookEntry, Project } from "../src/types.ts";
@@ -20,7 +20,7 @@ test("the page lists the stages in the order a change reaches them, then the not
 });
 
 test("a probe that waits for the owner is said first", () => {
-  assert.equal(probesWaiting(p), 1);
+  assert.equal(playbookWaiting(p), 1);
   assert.equal(playbookSummary(p), "1 probe waits for you · 2 stages · 1 note");
   assert.equal(playbookSummary({ playbook: [{ ...dev, probeOk: true }] }), "1 stage");
   assert.equal(playbookSummary({}), "Nothing learned yet");
@@ -59,4 +59,29 @@ test("a linked project shows the playbook written last", () => {
   const rec = (h: string, pid: string, extra: Partial<Project>): Project => ({ id: `${h}/${pid}`, rid: pid, hostId: hid(h), name: "Fyr", link: "l_1", ...extra });
   const [one] = linkProjects([rec("A", "p1", {}), rec("B", "p9", { playbook: [dev], playbookAt: "2026-11-24T11:00:00Z" })], [host("A", "desk"), host("B", "mac")]);
   assert.deepEqual(one.playbook, [dev]);
+});
+
+// V0.playbook-moments
+test("an edit keeps the deploy command and the owner's check", () => {
+  const e: PlaybookEntry = { ...dev, deployCmd: "ship {sha}", ownerChecks: true };
+  assert.deepEqual(learnArgs("p1", e, { ownerChecks: false }), { id: "p1", slot: "stage", name: "dev", how: "automatic on merge", url: "https://dev.example.com", probe: "check {sha}", deployCmd: "ship {sha}" });
+});
+
+test("a suggestion and a probe in doubt wait for the owner and are said in the summary", () => {
+  const sug: PlaybookEntry = { ...prod, suggest: { how: "the release workflow", probe: "rel {sha}" } };
+  const doubt: PlaybookEntry = { ...dev, probeOk: true, missed: 2 };
+  assert.equal(playbookWaiting({ playbook: [sug, doubt, issue] }), 2);
+  assert.equal(playbookSummary({ playbook: [sug, doubt, issue] }), "1 suggestion · 1 probe in doubt · 2 stages · 1 note");
+  assert.deepEqual(suggestionLines(sug), ["the release workflow", "Probe: rel {sha}"]);
+  assert.deepEqual(suggestionLines({ ...prod, suggest: { how: prod.how } }), ["The same as yours"]);
+  assert.match(probeLine(doubt), /did not see the last 2 merges/);
+  assert.doesNotMatch(probeLine({ ...doubt, missed: 1 }), /doubt/);
+});
+
+test("Add offers a stage and the notes that are missing", () => {
+  assert.deepEqual(addableSlots(p), ["stage", "verify", "promote", "run", "rollback"]);
+  const six = Array.from({ length: 6 }, (_, i): PlaybookEntry => ({ slot: "stage", name: `s${i}`, by: "owner" }));
+  assert.equal(addableSlots({ playbook: six }).includes("stage"), false);
+  assert.equal(stageNameError("Dev"), null);
+  assert.match(stageNameError("my stage") ?? "", /lower case/);
 });

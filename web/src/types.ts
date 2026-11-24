@@ -342,6 +342,14 @@ export interface PlaybookEntry {
   probeOk?: boolean;
   /** a stage: reaching it makes a change live */
   live?: boolean;
+  /** V0.playbook-moments, a stage: Fyr asks the owner to look at each change that gets here */
+  ownerChecks?: boolean;
+  /** V0.playbook-moments, a stage: the command that puts a change here by hand; Fyr shows it on a Run card */
+  deployCmd?: string;
+  /** V0.playbook-moments: the merges in a row the probe did not see here within a day */
+  missed?: number;
+  /** V0.playbook-moments: what an agent found that differs from the owner's entry */
+  suggest?: Pick<PlaybookEntry, "how" | "url" | "probe" | "deployCmd" | "live" | "ownerChecks" | "evidence" | "thread" | "at">;
   by: string;
   /** the thread it was learned in */
   thread?: string;

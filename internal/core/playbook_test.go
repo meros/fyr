@@ -45,7 +45,8 @@ func TestPlaybookLearn(t *testing.T) {
 	if _, err := learn(t, ps, FromOwner, Args{"slot": "issue", "how": "GitHub issues, label bug"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := learn(t, ps, FromAgent, Args{"slot": "issue", "how": "Linear"}); err == nil || !strings.Contains(err.Error(), "the owner wrote the issue entry") {
+	// V0.playbook-moments: what the agent writes there waits as a suggestion.
+	if _, err := learn(t, ps, FromAgent, Args{"slot": "issue", "how": "Linear"}); err != nil || ps["p1"].Playbook[1].How != "GitHub issues, label bug" || ps["p1"].Playbook[1].Suggest == nil {
 		t.Fatalf("an agent wrote over the owner: %v", err)
 	}
 	if _, err := learn(t, ps, FromAgent, Args{"slot": "issue", "remove": true}); err == nil {
@@ -139,5 +140,97 @@ func TestProbeStages(t *testing.T) {
 	}
 	if ProbeScript("x {sha} {sha}", "abc1234") != "x abc1234 abc1234" || ProbeScript("x {sha}", "m1; rm -rf /") != "" {
 		t.Fatal("probe script")
+	}
+}
+
+// V0.playbook-moments: what an agent writes on the owner's entry waits
+// beside it; the owner takes it (a new probe waits for its yes) or drops it.
+func TestPlaybookSuggestion(t *testing.T) {
+	ps := map[string]*Project{"p1": {ID: "p1", Name: "Acme"}}
+	if _, err := learn(t, ps, FromOwner, Args{"slot": "stage", "name": "dev", "how": "by hand", "probe": "old {sha}"}); err != nil {
+		t.Fatal(err)
+	}
+	learn(t, ps, FromOwner, Args{"slot": "stage", "name": "dev", "allow": true})
+	res, err := learn(t, ps, FromAgent, Args{"slot": "stage", "name": "dev", "how": "automatic on merge", "probe": "new {sha}", "thread": "t9"})
+	e := ps["p1"].Playbook[0]
+	if err != nil || res.Reply.(map[string]any)["suggested"] != true || e.How != "by hand" || !e.Runs() || e.Suggest == nil || e.Suggest.Probe != "new {sha}" {
+		t.Fatalf("%v %+v", err, e)
+	}
+	if _, err := learn(t, ps, FromAgent, Args{"slot": "stage", "name": "dev", "take": true}); err == nil {
+		t.Fatal("an agent took its own suggestion")
+	}
+	if _, err := learn(t, ps, FromOwner, Args{"slot": "stage", "name": "dev", "dismiss": true}); err != nil || ps["p1"].Playbook[0].Suggest != nil || ps["p1"].Playbook[0].How != "by hand" {
+		t.Fatalf("dismiss: %v", err)
+	}
+	learn(t, ps, FromAgent, Args{"slot": "stage", "name": "dev", "how": "automatic on merge", "probe": "new {sha}", "thread": "t9"})
+	if _, err := learn(t, ps, FromOwner, Args{"slot": "stage", "name": "dev", "take": true}); err != nil {
+		t.Fatal(err)
+	}
+	e = ps["p1"].Playbook[0]
+	if e.How != "automatic on merge" || e.Probe != "new {sha}" || e.ProbeOK || e.By != ByOwner || e.Suggest != nil {
+		t.Fatalf("take: %+v", e)
+	}
+}
+
+// V0.playbook-moments: a stage the owner checks asks once when the change
+// gets there; the next stage's deploy command is a Run card only after the
+// owner said it looks good; an entry written after the fact asks nothing.
+func TestStageMoments(t *testing.T) {
+	th, c := mergedThread(t)
+	c.PR.MergeSHA = "abc1234"
+	dev := PlaybookEntry{Slot: SlotStage, Name: "dev", OwnerChecks: true, URL: "https://dev.example.com", At: ct0}
+	prod := PlaybookEntry{Slot: SlotStage, Name: "prod", Deploy: "release {sha}", At: ct0}
+	stages := []PlaybookEntry{dev, prod}
+	now := ct0.Add(5 * time.Minute)
+	if ms := StageMoments(th, c, stages, now); len(ms) != 0 {
+		t.Fatalf("before dev: %+v", ms)
+	}
+	// Without a check before it, the first stage's command is offered at the merge.
+	if ms := StageMoments(th, c, []PlaybookEntry{prod}, now); len(ms) != 1 || ms[0].Command != "release abc1234" {
+		t.Fatalf("first stage: %+v", ms)
+	}
+	ChangeDeployObserved(th, c.ID, DeployObs{Probe: true, Deployments: []Deployment{{Env: "dev", State: "success", URL: "https://dev.example.com"}}}, true, now)
+	ms := StageMoments(th, c, stages, now)
+	if len(ms) != 1 || ms[0].Ask == "" || ms[0].Stage != "dev" || ms[0].URL != "https://dev.example.com" {
+		t.Fatalf("on dev: %+v", ms)
+	}
+	late := dev
+	late.At = now.Add(time.Minute)
+	if ms := StageMoments(th, c, []PlaybookEntry{late}, now.Add(2*time.Minute)); len(ms) != 0 {
+		t.Fatalf("an entry written after the stage was reached asked: %+v", ms)
+	}
+	if ms := StageMoments(th, c, stages, now.Add(25*time.Hour)); len(ms) != 0 {
+		t.Fatalf("a day later: %+v", ms)
+	}
+	in := Input{Source: Observer(ObsDeploy), Kind: KindStageMoment, Args: ms[0]}
+	if _, err := reduceStageMoment(Rec{T: th}, in, now); err != nil {
+		t.Fatal(err)
+	}
+	c = &th.Changes[0]
+	if len(th.Decisions) != 1 || !strings.Contains(th.Decisions[0].Questions[0].Question, "PR #7 (Fix it) is on dev: https://dev.example.com") {
+		t.Fatalf("%+v", th.Decisions)
+	}
+	reduceStageMoment(Rec{T: th}, in, now)
+	if len(th.Decisions) != 1 || len(StageMoments(th, c, stages, now)) != 0 {
+		t.Fatal("asked twice, or prod was offered before the answer")
+	}
+	d := th.Decisions[0]
+	stageAnswered(th, d, map[string]string{d.Questions[0].Question: StageIsWrong})
+	if len(StageMoments(th, c, stages, now)) != 0 {
+		t.Fatal("prod was offered after Something is wrong")
+	}
+	stageAnswered(th, d, map[string]string{d.Questions[0].Question: StageLooksGood})
+	ms = StageMoments(th, c, stages, now)
+	if len(ms) != 1 || ms[0].Command != "release abc1234" || ms[0].Stage != "prod" {
+		t.Fatalf("after Looks good: %+v", ms)
+	}
+	if _, err := reduceStageMoment(Rec{T: th}, Input{Kind: KindStageMoment, Args: ms[0]}, now); err != nil {
+		t.Fatal(err)
+	}
+	if a := PendingRequest(th); a == nil || a.Command != "release abc1234" || !strings.Contains(a.Why, "Deploy PR #7 to prod") {
+		t.Fatalf("run card: %+v", a)
+	}
+	if len(StageMoments(th, &th.Changes[0], stages, now)) != 0 {
+		t.Fatal("offered twice")
 	}
 }

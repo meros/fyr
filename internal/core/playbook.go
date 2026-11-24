@@ -54,6 +54,20 @@ type PlaybookEntry struct {
 	// Live: a change that reaches this stage is live. A stage named prod or
 	// production is live without it.
 	Live bool `json:"live,omitempty"`
+	// OwnerChecks: when a merged change reaches this stage, Fyr asks the
+	// owner on a question card whether it looks right there
+	// (V0.playbook-moments).
+	OwnerChecks bool `json:"ownerChecks,omitempty"`
+	// Deploy is the shell command that puts a merged change on this stage by
+	// hand ({sha} is the merge commit): Fyr puts it on a Run card when the
+	// stage before it holds the change. The owner's press runs it.
+	Deploy string `json:"deployCmd,omitempty"`
+	// Missed counts the merges in a row the probe did not see here within
+	// the watch's day; the next one it sees clears it.
+	Missed int `json:"missed,omitempty"`
+	// Suggest is what an agent found that differs from the owner's entry:
+	// the owner takes it or dismisses it.
+	Suggest *PlaybookSuggestion `json:"suggest,omitempty"`
 	// By is who wrote it, ByOwner or ByAgent; Thread is where it was learned
 	// and Evidence what it rests on (a file, what the owner said).
 	By       string    `json:"by"`
@@ -61,6 +75,26 @@ type PlaybookEntry struct {
 	Evidence string    `json:"evidence,omitempty"`
 	At       time.Time `json:"at"`
 }
+
+// PlaybookSuggestion is an agent's finding for an entry the owner wrote.
+type PlaybookSuggestion struct {
+	How         string    `json:"how,omitempty"`
+	URL         string    `json:"url,omitempty"`
+	Probe       string    `json:"probe,omitempty"`
+	Deploy      string    `json:"deployCmd,omitempty"`
+	Live        bool      `json:"live,omitempty"`
+	OwnerChecks bool      `json:"ownerChecks,omitempty"`
+	Evidence    string    `json:"evidence,omitempty"`
+	Thread      string    `json:"thread,omitempty"`
+	At          time.Time `json:"at"`
+}
+
+// DoubtAfter is how many merges in a row a probe may miss before the entry
+// is doubted.
+const DoubtAfter = 2
+
+// Doubted reports a stage whose probe did not see the last merges.
+func (e PlaybookEntry) Doubted() bool { return e.Missed >= DoubtAfter }
 
 // Key names the entry in its playbook: the slot, or stage:<name>.
 func (e PlaybookEntry) Key() string { return PlaybookKey(e.Slot, e.Name) }
@@ -144,7 +178,9 @@ const (
 	// how?, url?, probe?, live?, evidence?, thread?} set it, {id, slot,
 	// name?, remove: true} removes it, and the owner's {id, slot, name?,
 	// allow: bool} allows or stops its probe. An agent never changes an
-	// entry the owner wrote and never allows a probe.
+	// entry the owner wrote and never allows a probe: what it writes there
+	// is kept as the entry's suggestion, which the owner's {take: true}
+	// makes the entry and {dismiss: true} drops (V0.playbook-moments).
 	KindProjectLearn = "project.learn"
 	// KindProjectSharedPlaybook is a linked project's playbook as another
 	// member has it: args {id, link, at, playbook}. An older at changes
@@ -154,6 +190,10 @@ const (
 	// repository: args {id}. The engine starts the thread; the record does
 	// not change.
 	KindProjectPlaybookRun = "project.playbookRun"
+	// KindProjectProbed counts a merge a stage's probe missed or saw
+	// (V0.playbook-moments): args {id, name, ok}. It moves no stamp: the
+	// count is this host's.
+	KindProjectProbed = "project.probed"
 )
 
 // FieldProjectPlaybook is a playbook entry: the owner's is kept.
@@ -164,6 +204,20 @@ func init() {
 		Refuse: "the owner wrote %s in the playbook; tell them what you found instead"})
 	RegisterKind(&InputKind{Name: KindProjectLearn, On: RecProject, From: []string{ByOwner, ByAgent}, Reduce: reduceProjectLearn})
 	RegisterKind(&InputKind{Name: KindProjectPlaybookRun, On: RecProject, From: ownerOnly, Reduce: func(r Rec, _ Input, _ time.Time) (Result, error) {
+		return Result{Reply: map[string]any{"id": r.P.ID}}, nil
+	}})
+	RegisterKind(&InputKind{Name: KindProjectProbed, On: RecProject, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
+		a := mapArgs(in)
+		ok, _ := a["ok"].(bool)
+		for i := range r.P.Playbook {
+			if e := &r.P.Playbook[i]; e.Slot == SlotStage && e.Name == a.Str("name") {
+				if ok {
+					e.Missed = 0
+				} else {
+					e.Missed++
+				}
+			}
+		}
 		return Result{Reply: map[string]any{"id": r.P.ID}}, nil
 	}})
 	RegisterKind(&InputKind{Name: KindProjectSharedPlaybook, On: RecProject, From: ownerOnly, Reduce: reduceProjectSharedPlaybook})
@@ -227,12 +281,31 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 		stampPlaybook(p, now)
 		return Result{Events: event("allow"), Reply: map[string]any{"id": p.ID, "key": key, "probeOk": v}}, nil
 	}
-	if at >= 0 {
-		if err := CanWrite(FieldProjectPlaybook, by, old.By, what); err != nil {
-			return Result{}, err
+	take, _ := a["take"].(bool)
+	dismiss, _ := a["dismiss"].(bool)
+	if take || dismiss { // the owner's answer to an agent's suggestion
+		if by != ByOwner {
+			return Result{}, reject(RejectRights, "only the owner takes or dismisses a suggestion")
 		}
+		if at < 0 || old.Suggest == nil {
+			return Result{}, reject(RejectNotFound, "%s has no suggestion", what)
+		}
+		s := old.Suggest
+		e := &p.Playbook[at]
+		e.Suggest = nil
+		if take {
+			// The owner's yes for a probe is for one command: another waits.
+			e.ProbeOK = e.ProbeOK && s.Probe == e.Probe
+			e.How, e.URL, e.Probe, e.Deploy, e.Live, e.OwnerChecks, e.Evidence, e.Thread, e.At, e.Missed = s.How, s.URL, s.Probe, s.Deploy, s.Live, s.OwnerChecks, s.Evidence, s.Thread, now, 0
+		}
+		stampPlaybook(p, now)
+		return Result{Events: event("suggestion"), Reply: map[string]any{"id": p.ID, "key": key, "taken": take}}, nil
 	}
+	kept := at >= 0 && CanWrite(FieldProjectPlaybook, by, old.By, what) != nil
 	if rm, _ := a["remove"].(bool); rm {
+		if kept {
+			return Result{}, CanWrite(FieldProjectPlaybook, by, old.By, what)
+		}
 		if at < 0 {
 			return Result{Reply: map[string]any{"id": p.ID, "key": key, "removed": false}}, nil
 		}
@@ -258,16 +331,29 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 		if e.URL != "" && !strings.HasPrefix(e.URL, "https://") && !strings.HasPrefix(e.URL, "http://") {
 			return Result{}, reject(RejectBadArgs, "url must start with https:// or http://")
 		}
+		if e.Deploy, err = clip(a.Str("deployCmd"), maxPlaybookCmd, "deployCmd"); err != nil {
+			return Result{}, err
+		}
 		e.Live, _ = a["live"].(bool)
+		e.OwnerChecks, _ = a["ownerChecks"].(bool)
 		// The owner's yes is for one command: a changed probe waits again.
 		e.ProbeOK = e.Probe != "" && e.Probe == old.Probe && old.ProbeOK
-	} else if a.Str("probe") != "" || a.Str("url") != "" {
-		return Result{}, reject(RejectBadArgs, "only a stage has a probe or a url; put it in how")
+	} else if a.Str("probe") != "" || a.Str("url") != "" || a.Str("deployCmd") != "" {
+		return Result{}, reject(RejectBadArgs, "only a stage has a probe, a url or a deploy command; put it in how")
 	}
-	if e.How == "" && e.Probe == "" && e.URL == "" {
+	if e.How == "" && e.Probe == "" && e.URL == "" && e.Deploy == "" {
 		return Result{}, reject(RejectBadArgs, "give how: %s in a sentence or two", what)
 	}
+	if kept {
+		// The owner's entry stays; what the agent found waits beside it.
+		p.Playbook[at].Suggest = &PlaybookSuggestion{How: e.How, URL: e.URL, Probe: e.Probe, Deploy: e.Deploy, Live: e.Live, OwnerChecks: e.OwnerChecks, Evidence: e.Evidence, Thread: e.Thread, At: now}
+		stampPlaybook(p, now)
+		return Result{Events: event("suggest"), Reply: map[string]any{"id": p.ID, "key": key, "suggested": true}}, nil
+	}
 	if at >= 0 {
+		if e.Probe == old.Probe {
+			e.Missed = old.Missed
+		}
 		p.Playbook[at] = e
 	} else {
 		if slot == SlotStage && len(p.Stages()) >= MaxStages {
@@ -304,7 +390,7 @@ func reduceProjectSharedPlaybook(r Rec, in Input, _ time.Time) (Result, error) {
 	seen := map[string]bool{}
 	for _, e := range es {
 		ok := slices.Contains(PlaybookSlots, e.Slot) && (e.Slot == SlotStage) == (e.Name != "") && !seen[e.Key()] &&
-			len(e.How) <= maxPlaybookHow && len(e.Probe) <= maxPlaybookCmd && len(e.URL) <= maxPlaybookURL
+			len(e.How) <= maxPlaybookHow && len(e.Probe) <= maxPlaybookCmd && len(e.Deploy) <= maxPlaybookCmd && len(e.URL) <= maxPlaybookURL
 		if !ok || (e.Slot == SlotStage && !stageName.MatchString(e.Name)) || len(es) > MaxStages+len(PlaybookSlots) {
 			return Result{}, reject(RejectBadArgs, "playbook has an entry Fyr cannot keep (%s)", e.Key())
 		}
@@ -342,6 +428,15 @@ func PlaybookPrompt(p *Project) string {
 			parts = append(parts, "its probe waits for the owner's yes, so Fyr does not check it yet")
 		default:
 			parts = append(parts, "no probe: Fyr cannot tell when a change is there")
+		}
+		if e.Doubted() {
+			parts = append(parts, fmt.Sprintf("its probe did not see the last %d merges within a day, so it may be wrong: check it and record a better one", e.Missed))
+		}
+		if e.Deploy != "" {
+			parts = append(parts, "a change gets here by a command the owner runs from a Run card Fyr shows when the stage before holds it")
+		}
+		if e.OwnerChecks {
+			parts = append(parts, "Fyr asks the owner to check a change here, and you hear the answer")
 		}
 		live := ""
 		if e.IsLive() {
