@@ -1,6 +1,6 @@
 # 0042 A read-only device: it reads everything, changes only its own view, and writes for 5 minutes after a passkey unlock
 
-Date: 2026-11-24 · Status: **proposed**: the owner answered three questions on 24 Nov (see "The owner's answers"); nothing is built · Builds on 0028 (sessions, devices, step-up), 0030 (one principal per hop, `Fyr-Actor`, the signed roster, the drive switch) · Amends 0028 (5) (the read-only device, dropped there, comes back as a switch per device; passkeys move from "later" to slice 2) · Spec: 5.4 (`verified` becomes built in part) and 11.2, with a change file per slice
+Date: 2026-11-24 · Status: **accepted 2026-11-24**: the owner answered five questions (see "The owner's answers"); nothing is built · Builds on 0028 (sessions, devices, step-up), 0030 (one principal per hop, `Fyr-Actor`, the signed roster, the drive switch) · Amends 0028 (5) (the read-only device, dropped there, comes back as a switch per device; passkeys move from "later" to slice 2) · Spec: 5.4 (`verified` becomes built in part) and 11.2, with a change file per slice
 
 ## Context
 
@@ -136,8 +136,5 @@ Each slice: red tests first, a change file in `docs/changes/`, and `internal/aut
 | Which devices are read-only | a switch per device | **a switch per device** |
 | How long one unlock allows writes | 5 minutes, with a proof per effect | **5 minutes for everything** |
 | What a locked device may still change | only its own view | **only its own view** |
-
-## Open, for the review of this record
-
-1. Rule 5 is stricter than "5 minutes for everything": an unlocked read-only device still cannot add a device or change a way in. The record proposes it because the window would otherwise undo the switch.
-2. A snooze removes a pin (V0.104), and pin and snooze are `view`. If a pin should count as something other devices notice, both pin kinds and the snoozes move to `write`.
+| May a read-only device change who is trusted during its 5 unlocked minutes | no, never (rule 5) | **no, never** |
+| May a locked device pin and snooze | yes, both are view state | **yes, view state** |
