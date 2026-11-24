@@ -167,7 +167,8 @@ test("V0.dialogs-review (6): while a project is being made the folder line is ab
   const cur = projects[0];
   assert.equal(folderHint(cur, { scratch: true }, { name: "Zebra", folder: "" }), "Zebra is new and has no folder: the thread starts in a fresh scratch folder.");
   assert.equal(folderHint(cur, { cwd: "/home/o/zebra", label: "~/zebra", scratch: false }, { name: "Zebra", folder: "/home/o/zebra" }), "Zebra is new: the thread starts in ~/zebra.");
-  assert.equal(folderHint(cur, { scratch: true }, { name: " ", folder: "" }), "The new project is new and has no folder: the thread starts in a fresh scratch folder.");
+  assert.equal(folderHint(cur, { scratch: true }, { name: " ", folder: "" }), "The new project has no folder: the thread starts in a fresh scratch folder.");
+  assert.equal(folderHint(cur, { cwd: "/home/o/z", label: "~/z", scratch: false }, { name: "", folder: "/home/o/z" }), "The new project is not named yet: the thread starts in ~/z.");
   assert.equal(folderNote(cur, { cwd: "/home/o/web", scratch: false }), "", "the project's own folder needs no line: the Project field shows it");
   assert.equal(folderNote(cur, { cwd: "/home/o/elsewhere", scratch: false }), "Filed in acme/web.");
   assert.equal(folderNote(undefined, { scratch: true }), "No project: a new folder just for this thread.");

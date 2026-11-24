@@ -1,6 +1,6 @@
 # V0.dialogs-review: New thread starts with the prompt and loses nothing typed, Back and Esc go one level up, and no key acts under an open dialog
 
-→ V0.30 (4), V0.42, V0.45, V0.61, V0.63, V0.67, V0.68, V0.139, V0.185, V0.composer-focus-reach (2), V0.trans-host-handover. Amends V0.61 (what Enter does in the project search) and V0.63 (what closes the New project step).
+→ V0.30 (4), V0.42, V0.45, V0.61, V0.63, V0.67, V0.68, V0.139, V0.185, V0.composer-focus-reach (2), V0.trans-host-handover. Amends V0.61 (what Enter does in the project search), V0.63 (what closes the New project step) and V0.185 ("until work is done" is the last preset; the date and time comes after it on both fronts, as it did on the phone).
 
 Why: a review of every dialog, sheet and menu outside Settings, run against the built client on both fronts, found work that could be lost and keys that acted in the wrong place. The numbers in brackets are the review's findings.
 

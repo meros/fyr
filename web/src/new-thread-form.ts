@@ -105,12 +105,21 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const [listQuery, setListQuery] = useState("");
 
   // V0.dialogs-review (3): the draft follows the form, so every way of closing it (Esc, the dimmed area, ×, Back, a
-  // reload) keeps what was typed; a started thread removes it. Not while a stored draft's picks still wait: saving
-  // then would drop them.
+  // reload) keeps what was typed; a started thread removes it. While a stored draft's picks still wait for the
+  // host's state, the words follow the form and those picks stay in the draft as they were stored.
   const sent = useRef(false);
-  useEffect(() => {
-    if (!sent.current && !waiting.current) saveDraft(browserStorage(), draftOf(f, ctxRef.current));
-  }, [f]);
+  const formRef = useRef(f);
+  formRef.current = f;
+  const keepDraft = () => {
+    if (sent.current) return;
+    const now = draftOf(formRef.current, ctxRef.current);
+    const w = waiting.current;
+    saveDraft(browserStorage(), w && now ? { ...w, text: now.text, title: now.title, liveView: now.liveView, newProject: now.newProject } : now);
+  };
+  /* eslint-disable react-hooks/exhaustive-deps -- keepDraft reads refs only: it runs when the form changes, and once more as the form closes (a key typed just before Esc may not have had its turn) */
+  useEffect(() => keepDraft(), [f]);
+  useEffect(() => () => keepDraft(), []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   keep.current = f.projectId ?? undefined;
   const cur = currentProject(f, ctx);
@@ -125,6 +134,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const plan = sendArgs(f.text, att.chips);
   const set = (patch: Partial<NewThreadForm>) => {
     setErr(null); // an edit answers the last error
+    formRef.current = { ...formRef.current, ...patch }; // at once, for a draft kept as the form closes in the same turn
     setF((x) => ({ ...x, ...patch }));
   };
   const byHand = (x: NewThreadForm, what: keyof NonNullable<NewThreadForm["hand"]>): NewThreadForm => ({ ...x, hand: { ...x.hand, [what]: true } });
@@ -156,9 +166,14 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
         setF((x) => madeProject(x, id, name, making.folder, ctxRef.current));
         pid = id;
       }
-      const e = await o.onCreate(createArgs(f, ctx, plan.args, pid, effort));
-      if (e) return void setErr(e);
+      // The draft stops following the form before the thread starts: the form closes while the reply is on its way,
+      // and must not keep what was just sent.
       sent.current = true;
+      const e = await o.onCreate(createArgs(f, ctx, plan.args, pid, effort));
+      if (e) {
+        sent.current = false;
+        return void setErr(e);
+      }
       saveDraft(browserStorage(), null);
       saveRemembered(browserStorage(), { projectId: pid ?? "", profile: f.profile, model: f.model });
     } finally {

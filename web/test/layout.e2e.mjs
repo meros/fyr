@@ -4003,7 +4003,8 @@ try {
 section('V0.185', async (h) => {
   const { send, evaluate, waitFor, settle, navigate, tapCenter, key, openScreen } = h;
   const png = async (name) => process.env.FYR_SHOTS && writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
-  const last = (sel) => `(() => { const b = [...document.querySelectorAll('${sel}')].pop(); return b ? { text: b.textContent, off: b.disabled } : null; })()`;
+  // V0.dialogs-review (15): the list ends with "Pick a date and time…", so the choice is found by its words.
+  const last = (sel) => `(() => { const b = [...document.querySelectorAll('${sel}')].filter((b) => b.textContent.includes('Until work is done')).pop(); return b ? { text: b.textContent, off: b.disabled } : null; })()`;
   try {
     await send("Emulation.setTouchEmulationEnabled", { enabled: false });
     await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -4014,7 +4015,7 @@ section('V0.185', async (h) => {
     check(on?.text.includes("Until work is done") && on.text.includes("at most 24 h") && !on.off, `V0.185 desktop: the choice for a working thread: ${JSON.stringify(on)}`);
     await settle();
     await png("snooze-done-desktop.png");
-    await evaluate(`[...document.querySelectorAll('.menu .mi')].pop().click()`);
+    await evaluate(`[...document.querySelectorAll('.menu .mi')].find((b) => b.textContent.includes('Until work is done')).click()`);
     await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.snoozeWhenDone' && c.threadId === 't_mapperf')`, { what: "the snooze command" });
     // The header toggles, and the fold is remembered: open the section only when it is folded.
     await evaluate(`(() => { const s = document.querySelector('#sec-snoozed'); if (!s.querySelector('[data-id]')) s.querySelector('.sec').click(); })()`);

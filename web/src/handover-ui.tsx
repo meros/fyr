@@ -75,6 +75,8 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  /** a select's list may be open (see onKey) */
+  const listOpen = useRef(false);
   // V0.dialogs-review (10): on the desktop the focus starts on the target ("To"), the choice this dialog is for, not
   // on the header's ×. Not on the phone: its sheet takes the focus itself (motion-ui.tsx), with no field focused.
   /* eslint-disable react-hooks/exhaustive-deps -- the first focus, once, when the form opens */
@@ -185,17 +187,23 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   // V0.dialogs-review (16): Enter confirms, as in the confirmation and New thread, unless a control that uses Enter
   // itself has the focus. Desktop only: the phone has no keyboard, so its buttons carry no key hints either.
   const onKey = (e: KeyboardEvent) => {
-    if (p.phone || e.key !== "Enter" || e.isComposing || e.defaultPrevented) return;
+    if (p.phone || e.isComposing || e.defaultPrevented) return;
     const el = e.target as HTMLElement | null;
+    // A select whose list the owner opened (Space, F4, Alt+arrow, a click) uses Enter to take a choice, and some
+    // browsers report that key to the page: that Enter must never hand the thread over.
+    if (el?.tagName === "SELECT" && (e.key === " " || e.key === "F4" || (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")))) listOpen.current = true;
+    if (e.key !== "Enter") return;
     if (el && ["BUTTON", "A", "TEXTAREA"].includes(el.tagName)) return;
+    if (listOpen.current) return void (listOpen.current = false);
     e.preventDefault();
     void confirm();
   };
+  const listShut = () => (listOpen.current = false);
   // Across hosts the button says what happens to this thread; the sentence above the form says it too.
   const label = crossHost && toHostName ? `Move to ${toHostName} and settle here` : "Hand over";
 
   return (
-    <div class="ho-form" ref={root} onKeyDown={onKey}>
+    <div class="ho-form" ref={root} onKeyDown={onKey} onMouseDown={(e) => (listOpen.current = (e.target as HTMLElement | null)?.tagName === "SELECT")} onChange={listShut} onFocusOut={listShut}>
       <div class={`db ho-b${p.phone ? " ho-ph" : ""}`}>
         <div class="ho-from">
           From <b>{from}</b>

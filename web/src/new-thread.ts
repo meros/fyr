@@ -329,8 +329,9 @@ export function changeOptions(pr: Project | undefined, current: string, host?: H
  *  the New project step is open (`making`) the line is about the project being made, never the one picked before. */
 export function folderHint(cur: Project | undefined, folder: { cwd?: string; label?: string; scratch: boolean }, making?: { name: string; folder: string } | null): string {
   if (making) {
-    const name = making.name.trim() || "The new project";
-    return folder.scratch ? `${name} is new and has no folder: the thread starts in a fresh scratch folder.` : `${name} is new: the thread starts in ${folder.label ?? folder.cwd}.`;
+    const name = making.name.trim();
+    const who = name ? `${name} is new` : "The new project";
+    return folder.scratch ? `${who}${name ? " and" : ""} has no folder: the thread starts in a fresh scratch folder.` : `${who}${name ? "" : " is not named yet"}: the thread starts in ${folder.label ?? folder.cwd}.`;
   }
   if (folder.scratch) return cur ? `${cur.name} has no folder; the thread is filed in it anyway.` : "No project: a new folder just for this thread.";
   if (!cur) return "No project.";
