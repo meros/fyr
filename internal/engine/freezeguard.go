@@ -124,6 +124,9 @@ func (e *Engine) applyGuard(d guard.Decision, now time.Time) guard.Answer {
 		}
 		clear(e.gateHeld)
 		e.mu.Unlock()
+		for _, th := range ths {
+			e.setGateHold(th, "") // V0.gate-hold-visible: memory recovered
+		}
 		return guard.Answer{Threads: ths}
 	}
 	return guard.Answer{}

@@ -146,6 +146,11 @@ type Conversation struct {
 	// MachineWait is set while Fyr holds off starting or judging the agent
 	// because the host thrashes (V0.153): it waits instead of killing.
 	MachineWait *MachineWait `json:"machineWait,omitempty"`
+	// GateHold is set while the gate holds the thread's heavy command back
+	// because memory is short (V0.gate-hold-visible): the command did not run
+	// and the thread is told when it may. It is not in the pool's queue, so
+	// this record is what shows the thread as waiting.
+	GateHold *GateHold `json:"gateHold,omitempty"`
 	// Handover is set while the thread moves to another profile (V0.45).
 	Handover *Handover `json:"handover,omitempty"`
 	// SlotQueued: the thread has a place in the host's queue for heavy jobs
@@ -184,6 +189,12 @@ type OutMsg struct {
 
 // MachineWait: since when and why Fyr waits for the machine (V0.153).
 type MachineWait struct {
+	Since time.Time `json:"since"`
+	Why   string    `json:"why"`
+}
+
+// GateHold: since when and why the gate holds a heavy command back.
+type GateHold struct {
 	Since time.Time `json:"since"`
 	Why   string    `json:"why"`
 }

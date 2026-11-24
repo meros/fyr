@@ -856,6 +856,10 @@ func checkAttentionPlacement(t *Thread, v *View, now time.Time, on func(repo str
 		if a.State != Waiting || a.Section != WorkingSec {
 			probs = append(probs, fmt.Sprintf("machineWait thread placed in %s/%s", a.State, a.Section))
 		}
+	case t.GateHold != nil:
+		if a.State != Waiting || a.Section != WorkingSec {
+			probs = append(probs, fmt.Sprintf("gateHold thread placed in %s/%s", a.State, a.Section))
+		}
 	case t.RunningTasks() > 0:
 		if a.State != Waiting || a.Section != WorkingSec {
 			probs = append(probs, fmt.Sprintf("%d running task(s) placed in %s/%s", t.RunningTasks(), a.State, a.Section))
