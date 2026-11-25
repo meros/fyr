@@ -1319,6 +1319,7 @@ type Feed = { queue?: Notice[];    // at most 50
 | `owner` | next | The owner renamed the thread, moved its project, turned the live view on or off, changed its settle or archive state, or ended a change (V0.72). A settle by the owner never wakes the agent (V0.89). |
 | `upkeep.stop` | stop | At the run's end: the live view or the agent's open changes were not touched in this run (V0.37, V0.62). |
 | `upkeep.reminder` | next | At a tool call: a run went 4 min (`ReminderAfter`) since the latest of its start, the last touch and the last reminder (V0.52, V0.62). |
+| `split` | next | Once per thread: a new change makes the third separate piece of work, or is the first in a second repo and tied to no other change (a stack by `after` and a group are one piece): start the other topics with `thread_new` and a full brief (V0.thread-focus). |
 | everything else | silent | Only in the log and in `fyr_state`. |
 
 - **Coalescing.** A notice with the key of a queued one merges into it: the higher urgency wins, and the same subject appends its state ("PR #12: merged → live."). A notice without a subject replaces the older text.

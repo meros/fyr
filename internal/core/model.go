@@ -59,6 +59,9 @@ type Thread struct {
 	// question and told the agent so (V0.text-ask-nudge): the run after it is
 	// the agent's answer, and is not read again.
 	TextNudged int `json:"textNudged,omitempty"`
+	// SplitNudged: Fyr told the agent once to start its other topics in
+	// threads of their own (V0.thread-focus).
+	SplitNudged bool `json:"splitNudged,omitempty"`
 	// Changes are the thread's change records (V0.59, decision 0018). A PR
 	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`
