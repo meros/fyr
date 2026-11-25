@@ -2,7 +2,7 @@
 // a merged change is among its project's stages.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addableSlots, broken, entryTitle, learnArgs, newestPlaybook, playbookEntries, playbookSummary, playbookWaiting, probeLine, removeEntryAsk, stageHealth, stageNameError, stageText, stageTrail, stagesOf, suggestionLines } from "../src/playbook.ts";
+import { MAX_LESSONS, addableSlots, broken, entryKey, entryTitle, learnArgs, lessonNameError, pendingLesson, newestPlaybook, playbookEntries, playbookSummary, playbookWaiting, probeLine, removeEntryAsk, stageHealth, stageNameError, stageText, stageTrail, stagesOf, suggestionLines } from "../src/playbook.ts";
 import { linkProjects } from "../src/projects.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Change, PlaybookEntry, Project } from "../src/types.ts";
@@ -79,7 +79,7 @@ test("a suggestion and a probe in doubt wait for the owner and are said in the s
 });
 
 test("Add offers a stage and the notes that are missing", () => {
-  assert.deepEqual(addableSlots(p), ["stage", "verify", "promote", "run", "rollback"]);
+  assert.deepEqual(addableSlots(p), ["stage", "verify", "promote", "run", "rollback", "lesson"]);
   const six = Array.from({ length: 6 }, (_, i): PlaybookEntry => ({ slot: "stage", name: `s${i}`, by: "owner" }));
   assert.equal(addableSlots({ playbook: six }).includes("stage"), false);
   assert.equal(stageNameError("Dev"), null);
@@ -107,4 +107,25 @@ test("a probe that cannot answer is said on its stage, in the summary and in the
 test("Remove asks first, and says what goes with a stage", () => {
   assert.deepEqual(removeEntryAsk(prod), { title: "Remove Stage prod · live?", text: "Fyr no longer follows merged changes to this stage, and its probe and commands are gone.", confirm: "Remove entry", danger: true });
   assert.match(removeEntryAsk(issue).text, /no longer told/);
+});
+
+// V0.playbook-lessons: a lesson is named, listed after the notes, counted apart; one an agent only suggested waits for
+// the owner, says its text as the suggestion, and is not counted as a lesson until taken.
+test("a lesson is named and listed last; a suggested one waits for the owner", () => {
+  const taken: PlaybookEntry = { slot: "lesson", name: "e2e-first", how: "Run make e2e before saying done.", by: "owner" };
+  const asked: PlaybookEntry = { slot: "lesson", name: "lint-web", by: "agent", suggest: { how: "Run the web lint too.", at: "2026-11-25T10:00:00Z" } };
+  const q = { playbook: [taken, issue, asked, { ...prod }] };
+  assert.deepEqual(playbookEntries(q).map(entryTitle), ["Stage prod · live", "Issues", "Lesson e2e-first", "Lesson lint-web"]);
+  assert.equal(entryKey(taken), "lesson:e2e-first");
+  assert.ok(pendingLesson(asked) && !pendingLesson(taken));
+  assert.deepEqual(suggestionLines(asked), ["Run the web lint too."]);
+  assert.equal(playbookWaiting(q), 1);
+  assert.equal(playbookSummary(q), "1 suggestion · 1 stage · 1 note · 1 lesson");
+  assert.match(removeEntryAsk(asked).text, /suggestion is gone/);
+  assert.deepEqual(learnArgs("p1", taken), { id: "p1", slot: "lesson", name: "e2e-first", how: "Run make e2e before saying done." });
+  assert.equal(lessonNameError("e2e-first"), null);
+  assert.ok(lessonNameError("Run e2e first"));
+  assert.ok(addableSlots(q).includes("lesson"));
+  const full = { playbook: Array.from({ length: MAX_LESSONS }, (_, i): PlaybookEntry => ({ slot: "lesson", name: `l${i}`, how: "x", by: "owner" })) };
+  assert.ok(!addableSlots(full).includes("lesson"));
 });

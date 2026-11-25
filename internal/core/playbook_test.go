@@ -16,6 +16,81 @@ func learn(t *testing.T, ps map[string]*Project, src Source, args Args) (Result,
 	return res, err
 }
 
+// V0.playbook-lessons: an agent only suggests a lesson; agents are told it
+// once the owner took it; a dismissed suggestion takes the lesson with it; an
+// agent's later finding waits beside the taken lesson; the owner's own lesson
+// is in the prompt at once; there are at most MaxLessons.
+func TestPlaybookLessons(t *testing.T) {
+	ps := map[string]*Project{"p1": {ID: "p1", Name: "Acme"}}
+	if _, err := learn(t, ps, FromAgent, Args{"slot": "lesson", "how": "run e2e"}); err == nil {
+		t.Fatal("a lesson without a name was taken")
+	}
+	res, err := learn(t, ps, FromAgent, Args{"slot": "lesson", "name": "e2e-first", "how": "Run make e2e before saying done.", "evidence": "CI failed twice after done", "thread": "t1"})
+	if err != nil || res.Reply.(map[string]any)["suggested"] != true {
+		t.Fatalf("%v %+v", err, res.Reply)
+	}
+	e := ps["p1"].Playbook[0]
+	if e.Key() != "lesson:e2e-first" || e.How != "" || e.Suggest == nil || e.Suggest.How != "Run make e2e before saying done." || e.By != ByAgent {
+		t.Fatalf("suggested: %+v", e)
+	}
+	if got := PlaybookPrompt(ps["p1"]); got != "" {
+		t.Fatalf("a suggested lesson reached the prompt: %q", got)
+	}
+	if _, err := learn(t, ps, FromOwner, Args{"slot": "lesson", "name": "e2e-first", "dismiss": true}); err != nil || len(ps["p1"].Playbook) != 0 {
+		t.Fatalf("dismiss: %v %+v", err, ps["p1"].Playbook)
+	}
+	learn(t, ps, FromAgent, Args{"slot": "lesson", "name": "e2e-first", "how": "Run make e2e before saying done.", "thread": "t2"})
+	if _, err := learn(t, ps, FromAgent, Args{"slot": "lesson", "name": "e2e-first", "take": true}); err == nil {
+		t.Fatal("an agent took its own lesson")
+	}
+	if _, err := learn(t, ps, FromOwner, Args{"slot": "lesson", "name": "e2e-first", "take": true}); err != nil {
+		t.Fatal(err)
+	}
+	e = ps["p1"].Playbook[0]
+	if e.How != "Run make e2e before saying done." || e.By != ByOwner || e.Suggest != nil || e.Thread != "t2" {
+		t.Fatalf("taken: %+v", e)
+	}
+	if got := PlaybookPrompt(ps["p1"]); !strings.Contains(got, "Lessons from earlier threads") || !strings.Contains(got, "e2e-first: Run make e2e before saying done.") {
+		t.Fatalf("prompt: %q", got)
+	}
+	// An agent's later finding on the taken lesson waits beside it.
+	learn(t, ps, FromAgent, Args{"slot": "lesson", "name": "e2e-first", "how": "Run make e2e-web."})
+	if e = ps["p1"].Playbook[0]; e.How != "Run make e2e before saying done." || e.Suggest == nil || e.Suggest.How != "Run make e2e-web." {
+		t.Fatalf("finding on a taken lesson: %+v", e)
+	}
+	if _, err := learn(t, ps, FromAgent, Args{"slot": "lesson", "name": "e2e-first", "remove": true}); err == nil {
+		t.Fatal("an agent removed the owner's lesson")
+	}
+	if _, err := learn(t, ps, FromAgent, Args{"slot": "lesson", "name": "e2e-first", "probe": "x {sha}", "how": "y"}); err == nil {
+		t.Fatal("a lesson took a probe")
+	}
+	// The owner's own lesson is theirs at once; the limit holds for both.
+	for i := 1; i < MaxLessons; i++ {
+		if _, err := learn(t, ps, FromOwner, Args{"slot": "lesson", "name": "l" + string(rune('a'+i)), "how": "do it"}); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	if n := len(ps["p1"].Lessons()); n != MaxLessons {
+		t.Fatalf("lessons: %d", n)
+	}
+	if _, err := learn(t, ps, FromAgent, Args{"slot": "lesson", "name": "one-more", "how": "x"}); err == nil {
+		t.Fatal("an agent's thirteenth lesson was kept")
+	}
+	if _, err := learn(t, ps, FromOwner, Args{"slot": "lesson", "name": "one-more", "how": "x"}); err == nil {
+		t.Fatal("the owner's thirteenth lesson was kept")
+	}
+	// A linked member takes the lessons with the playbook.
+	q := &Project{ID: "p2", Link: "L"}
+	pb := []any{}
+	for _, e := range ps["p1"].Playbook {
+		pb = append(pb, map[string]any{"slot": e.Slot, "name": e.Name, "how": e.How, "by": e.By, "at": e.At})
+	}
+	if _, after, _, err := ReduceProject(map[string]*Project{"p2": q}, nil, Input{Source: FromOwner, Kind: KindProjectSharedPlaybook, CmdID: "s",
+		Args: Args{"id": "p2", "link": "L", "at": ct0.Add(time.Hour).Format(time.RFC3339Nano), "playbook": pb}}, ct0.Add(time.Hour)); err != nil || len(after.Lessons()) != MaxLessons {
+		t.Fatalf("shared: %v", err)
+	}
+}
+
 // V0.project-playbook: an agent writes an entry, the owner's entry is kept
 // against it, and a probe runs only on the owner's yes, for that command.
 func TestPlaybookLearn(t *testing.T) {

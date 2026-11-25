@@ -15,8 +15,8 @@ import (
 // Fyr acts on the part it can check: a stage's probe is a shell command Fyr
 // runs itself after a merge, so that no model is asked where a change is.
 
-// The playbook's slots. A stage has a name (the environment); every other
-// slot holds one entry.
+// The playbook's slots. A stage has a name (the environment), and so does a
+// lesson; every other slot holds one entry.
 const (
 	SlotStage    = "stage"    // an environment a merged change reaches
 	SlotVerify   = "verify"   // where and how a change is looked at, and who checks
@@ -24,14 +24,22 @@ const (
 	SlotIssue    = "issue"    // where issues live and how one is filed
 	SlotRun      = "run"      // how the app is started locally to show it
 	SlotRollback = "rollback" // how a deploy is undone
+	// SlotLesson is what an agent here should do differently, learned from an
+	// earlier thread (V0.playbook-lessons). An agent only suggests one: it
+	// reaches agents once the owner took it.
+	SlotLesson = "lesson"
 )
 
 // PlaybookSlots are the slots in the order they are shown and said.
-var PlaybookSlots = []string{SlotStage, SlotVerify, SlotPromote, SlotIssue, SlotRun, SlotRollback}
+var PlaybookSlots = []string{SlotStage, SlotVerify, SlotPromote, SlotIssue, SlotRun, SlotRollback, SlotLesson}
+
+// namedSlot reports a slot that holds several entries, each with a name.
+func namedSlot(slot string) bool { return slot == SlotStage || slot == SlotLesson }
 
 // The playbook's limits: it stays a handful of short entries.
 const (
 	MaxStages       = 6
+	MaxLessons      = 12
 	maxPlaybookHow  = 600
 	maxPlaybookCmd  = 500
 	maxPlaybookURL  = 300
@@ -139,13 +147,15 @@ const DoubtAfter = 2
 // Doubted reports a stage whose probe did not see the last merges.
 func (e PlaybookEntry) Doubted() bool { return e.Missed >= DoubtAfter }
 
-// Key names the entry in its playbook: the slot, or stage:<name>.
+// Key names the entry in its playbook: the slot, or stage:<name> and
+// lesson:<name>.
 func (e PlaybookEntry) Key() string { return PlaybookKey(e.Slot, e.Name) }
 
-// PlaybookKey is the key of slot's entry; a stage's has its name.
+// PlaybookKey is the key of slot's entry; a stage's and a lesson's have
+// their name.
 func PlaybookKey(slot, name string) string {
-	if slot == SlotStage {
-		return SlotStage + ":" + name
+	if namedSlot(slot) {
+		return slot + ":" + name
 	}
 	return slot
 }
@@ -291,10 +301,14 @@ func init() {
 	RegisterKind(&InputKind{Name: KindProjectSharedPlaybook, On: RecProject, From: ownerOnly, Reduce: reduceProjectSharedPlaybook})
 }
 
-// entryName names an entry in a sentence: "the dev stage", "the verify entry".
+// entryName names an entry in a sentence: "the dev stage", "the lesson
+// e2e-first", "the verify entry".
 func entryName(slot, name string) string {
-	if slot == SlotStage {
+	switch slot {
+	case SlotStage:
 		return "the " + name + " stage"
+	case SlotLesson:
+		return "the lesson " + name
 	}
 	return "the " + slot + " entry"
 }
@@ -326,7 +340,10 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 	if slot == SlotStage && !stageName.MatchString(name) {
 		return Result{}, reject(RejectBadArgs, "a stage needs a name: the environment in lower case, such as dev or prod")
 	}
-	if slot != SlotStage {
+	if slot == SlotLesson && !stageName.MatchString(name) {
+		return Result{}, reject(RejectBadArgs, "a lesson needs a name: a short one in lower case with dashes, such as e2e-before-done")
+	}
+	if !namedSlot(slot) {
 		name = ""
 	}
 	key, what := PlaybookKey(slot, name), entryName(slot, name)
@@ -361,6 +378,10 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 		s := old.Suggest
 		e := &p.Playbook[at]
 		e.Suggest = nil
+		if dismiss && old.Slot == SlotLesson && old.How == "" {
+			// A lesson an agent only suggested is gone with its suggestion.
+			p.Playbook = slices.Delete(p.Playbook, at, at+1)
+		}
 		if take {
 			// The owner's yes for a probe is for one command: another waits.
 			e.ProbeOK = e.ProbeOK && s.Probe == e.Probe
@@ -368,6 +389,8 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 				e.Last = nil
 			}
 			e.How, e.URL, e.Probe, e.Deploy, e.Live, e.OwnerChecks, e.Evidence, e.Thread, e.At, e.Missed = s.How, s.URL, s.Probe, s.Deploy, s.Live, s.OwnerChecks, s.Evidence, s.Thread, now, 0
+			// What the owner took is theirs: an agent's later finding waits beside it.
+			e.By = ByOwner
 		}
 		stampPlaybook(p, now)
 		return Result{Events: event("suggestion"), Reply: map[string]any{"id": p.ID, "key": key, "taken": take}}, nil
@@ -415,6 +438,22 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 	if e.How == "" && e.Probe == "" && e.URL == "" && e.Deploy == "" {
 		return Result{}, reject(RejectBadArgs, "give how: %s in a sentence or two", what)
 	}
+	if slot == SlotLesson && by != ByOwner && !kept {
+		// An agent only suggests a lesson (V0.playbook-lessons): it reaches
+		// agents once the owner took it, so a lesson an agent wrote waits
+		// with no text of its own.
+		sug := &PlaybookSuggestion{How: e.How, Evidence: e.Evidence, Thread: e.Thread, At: now}
+		if at >= 0 {
+			p.Playbook[at].Suggest = sug
+		} else {
+			if lessons(p) >= MaxLessons {
+				return Result{}, reject(RejectBadArgs, "a playbook has at most %d lessons; tell the owner which one yours would replace", MaxLessons)
+			}
+			p.Playbook = append(p.Playbook, PlaybookEntry{Slot: slot, Name: name, By: by, Thread: e.Thread, At: now, Suggest: sug})
+		}
+		stampPlaybook(p, now)
+		return Result{Events: event("suggest"), Reply: map[string]any{"id": p.ID, "key": key, "suggested": true}}, nil
+	}
 	if kept {
 		// The owner's entry stays; what the agent found waits beside it.
 		p.Playbook[at].Suggest = &PlaybookSuggestion{How: e.How, URL: e.URL, Probe: e.Probe, Deploy: e.Deploy, Live: e.Live, OwnerChecks: e.OwnerChecks, Evidence: e.Evidence, Thread: e.Thread, At: now}
@@ -430,10 +469,38 @@ func reduceProjectLearn(r Rec, in Input, now time.Time) (Result, error) {
 		if slot == SlotStage && len(p.Stages()) >= MaxStages {
 			return Result{}, reject(RejectBadArgs, "a playbook has at most %d stages; remove one first", MaxStages)
 		}
+		if slot == SlotLesson && lessons(p) >= MaxLessons {
+			return Result{}, reject(RejectBadArgs, "a playbook has at most %d lessons; remove one first", MaxLessons)
+		}
 		p.Playbook = append(p.Playbook, e)
 	}
 	stampPlaybook(p, now)
 	return Result{Events: event("set"), Reply: map[string]any{"id": p.ID, "key": key, "needsAllow": e.Probe != "" && !e.ProbeOK}}, nil
+}
+
+// lessons counts the playbook's lessons, taken or suggested.
+func lessons(p *Project) int {
+	n := 0
+	for _, e := range p.Playbook {
+		if e.Slot == SlotLesson {
+			n++
+		}
+	}
+	return n
+}
+
+// Lessons are the lessons the owner took or wrote, as agents are told them.
+func (p *Project) Lessons() []PlaybookEntry {
+	if p == nil {
+		return nil
+	}
+	var out []PlaybookEntry
+	for _, e := range p.Playbook {
+		if e.Slot == SlotLesson && e.How != "" {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // reduceProjectSharedPlaybook takes a link's playbook when it is newer than
@@ -460,9 +527,9 @@ func reduceProjectSharedPlaybook(r Rec, in Input, _ time.Time) (Result, error) {
 	}
 	seen := map[string]bool{}
 	for _, e := range es {
-		ok := slices.Contains(PlaybookSlots, e.Slot) && (e.Slot == SlotStage) == (e.Name != "") && !seen[e.Key()] &&
+		ok := slices.Contains(PlaybookSlots, e.Slot) && namedSlot(e.Slot) == (e.Name != "") && !seen[e.Key()] &&
 			len(e.How) <= maxPlaybookHow && len(e.Probe) <= maxPlaybookCmd && len(e.Deploy) <= maxPlaybookCmd && len(e.URL) <= maxPlaybookURL
-		if !ok || (e.Slot == SlotStage && !stageName.MatchString(e.Name)) || len(es) > MaxStages+len(PlaybookSlots) {
+		if !ok || (namedSlot(e.Slot) && !stageName.MatchString(e.Name)) || len(es) > MaxStages+MaxLessons+len(PlaybookSlots) {
 			return Result{}, reject(RejectBadArgs, "playbook has an entry Fyr cannot keep (%s)", e.Key())
 		}
 		seen[e.Key()] = true
@@ -483,12 +550,13 @@ func reduceProjectSharedPlaybook(r Rec, in Input, _ time.Time) (Result, error) {
 // PlaybookLearnPrompt is the line every agent of a project gets
 // (V0.project-playbook): when to write the playbook, and how to act when a
 // change reaches a stage.
-const PlaybookLearnPrompt = `This thread's project keeps a playbook in Fyr: the stages a merged change reaches (dev, prod) with how it gets there and how Fyr can tell, how a change is verified, promoted and rolled back, where issues are filed, and how the app is run. When the owner tells you one of these or corrects you, or you had to work one out, and the playbook does not say it, record it with mcp__fyr__project_learn so the next thread knows (mcp__fyr__project_learn {} reads the playbook). Do not copy what CLAUDE.md or the README already says, unless Fyr needs it: a stage's probe and url. A probe is a shell command Fyr runs itself after each merge ({sha} is the merge commit, {repo} the pull request's owner/name), so nobody has to ask where a change is; it answers at once and never waits for a deploy, because Fyr runs it again each minute and stops it after 30 s; Fyr tells you in a [Fyr] line when a merged change reaches a stage. To act at that moment (verify it there, tell the owner it can be tested), arm mcp__fyr__watch {when: {kind: "condition", change, type: "deploy:<stage>", status: "ok"}}, or {kind: "changeReached", change, phase: "live"} for the live stage.`
+const PlaybookLearnPrompt = `This thread's project keeps a playbook in Fyr: the stages a merged change reaches (dev, prod) with how it gets there and how Fyr can tell, how a change is verified, promoted and rolled back, where issues are filed, and how the app is run. When the owner tells you one of these or corrects you, or you had to work one out, and the playbook does not say it, record it with mcp__fyr__project_learn so the next thread knows (mcp__fyr__project_learn {} reads the playbook). Do not copy what CLAUDE.md or the README already says, unless Fyr needs it: a stage's probe and url. A probe is a shell command Fyr runs itself after each merge ({sha} is the merge commit, {repo} the pull request's owner/name), so nobody has to ask where a change is; it answers at once and never waits for a deploy, because Fyr runs it again each minute and stops it after 30 s; Fyr tells you in a [Fyr] line when a merged change reaches a stage. To act at that moment (verify it there, tell the owner it can be tested), arm mcp__fyr__watch {when: {kind: "condition", change, type: "deploy:<stage>", status: "ok"}}, or {kind: "changeReached", change, phase: "live"} for the live stage. When the owner corrects you on something every later thread here should do differently (what to run before saying done, a check you missed), suggest a lesson: mcp__fyr__project_learn {slot: "lesson", name: "<short-name>", how: "<what to do, in a sentence>", evidence: "<what happened>"}; it reaches later agents once the owner takes it.`
 
 // PlaybookPrompt is the project's playbook for an agent's prompt: one line
-// per filled slot, "" for an empty playbook.
+// per filled slot and per lesson the owner took, "" for an empty playbook (a
+// lesson an agent only suggested is not said).
 func PlaybookPrompt(p *Project) string {
-	if p == nil || len(p.Playbook) == 0 {
+	if p == nil || !slices.ContainsFunc(p.Playbook, func(e PlaybookEntry) bool { return e.Slot != SlotLesson || e.How != "" }) {
 		return ""
 	}
 	var b strings.Builder
@@ -536,9 +604,15 @@ func PlaybookPrompt(p *Project) string {
 	}
 	for _, slot := range PlaybookSlots[1:] {
 		for _, e := range p.Playbook {
-			if e.Slot == slot {
+			if e.Slot == slot && slot != SlotLesson {
 				fmt.Fprintf(&b, "\n  %s: %s", strings.ToUpper(slot[:1])+slot[1:], e.How)
 			}
+		}
+	}
+	if ls := p.Lessons(); len(ls) > 0 {
+		b.WriteString("\n  Lessons from earlier threads here, which the owner took; follow them:")
+		for _, e := range ls {
+			fmt.Fprintf(&b, "\n    %s: %s", e.Name, e.How)
 		}
 	}
 	return b.String()

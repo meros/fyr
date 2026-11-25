@@ -100,13 +100,21 @@ func playbookText(p core.Project) string {
 			fmt.Fprintf(&b, "\n  Deploy command of %s: %s", e.Name, e.Deploy)
 		}
 	}
+	// A lesson that waits for the owner is said here, not in the prompt, so an
+	// agent adds to it instead of suggesting it again.
+	for _, e := range p.Playbook {
+		if e.Slot == core.SlotLesson && e.Suggest != nil {
+			fmt.Fprintf(&b, "\n  Lesson %s, suggested and waiting for the owner: %s", e.Name, e.Suggest.How)
+		}
+	}
 	return b.String()
 }
 
 func (e *Engine) playbookTools(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "project_learn",
 		Description: "Read or write the playbook of a Fyr project: what the project does around and after a pull request, kept for every later thread. Without slot it returns the playbook. " +
-			"Slots: stage (an environment a merged change reaches; name it: dev, prod), verify (where and how a change is looked at, and who checks), promote (the manual step to the next stage), issue (where issues live and how one is filed), run (how the app is started locally), rollback (how a deploy is undone). " +
+			"Slots: stage (an environment a merged change reaches; name it: dev, prod), verify (where and how a change is looked at, and who checks), promote (the manual step to the next stage), issue (where issues live and how one is filed), run (how the app is started locally), rollback (how a deploy is undone), lesson (what every later agent here should do differently, learned when the owner corrected you or a change failed after you said it was done; name it in a few words with dashes, at most 12 per project). " +
+			"A lesson you write is a suggestion: it reaches later agents only once the owner takes it, unless the owner's newest message asks you to remember it (ownerAsked). Make it a thing to do, not a warning (\"run make e2e before saying done: unit tests miss the web client\"), and do not repeat what CLAUDE.md says. " +
 			"Write an entry when the owner tells you how the project works or corrects you, or when you had to work it out; how is a sentence or two, evidence what it rests on. " +
 			"A stage may carry url (where to look at it), live: true (reaching it makes a change live) and probe: a shell command Fyr runs by itself after each merge, in the project's folder, where {sha} is the merge commit, {repo} the pull request's repository (owner/name, for a project of several repositories) and exit 0 means the stage holds that commit. A probe only reads, needs no input and answers at once: it never waits for a deploy, because Fyr runs it again each minute and stops it after 30 s. Fyr runs it only once the owner allowed it. " +
 			"A stage may also carry deployCmd (the command that puts a change there by hand: Fyr shows it to the owner on a Run card when the stage before holds the change) and ownerChecks (Fyr asks the owner to look at each change there). " +
@@ -114,7 +122,7 @@ func (e *Engine) playbookTools(s *mcp.Server) {
 		Schema: obj(map[string]any{
 			"project":     str("The project's id or name; default this thread's project."),
 			"slot":        map[string]any{"type": "string", "enum": core.PlaybookSlots, "description": "The slot to write. Leave it out to read the playbook."},
-			"name":        str("A stage's environment in lower case: dev, staging, prod."),
+			"name":        str("A stage's environment in lower case: dev, staging, prod. A lesson's short name: e2e-before-done."),
 			"how":         str("The entry in a sentence or two. For a stage: how a merged change gets there and roughly how long it takes."),
 			"url":         str("A stage's address, where a change is looked at."),
 			"probe":       str("A stage's check: a shell command with {sha} (and {repo} if it needs the repository); exit 0 says the stage holds that commit. It answers at once and does not wait."),
@@ -172,14 +180,20 @@ func (e *Engine) playbookTools(s *mcp.Server) {
 			}
 			res, _ := r.Result.(map[string]any)
 			what := "the " + slot + " entry"
-			if slot == core.SlotStage {
+			switch slot {
+			case core.SlotStage:
 				what = "the " + strings.ToLower(sArg(a, "name")) + " stage"
+			case core.SlotLesson:
+				what = "the lesson " + strings.ToLower(sArg(a, "name"))
 			}
 			if _, rm := args["remove"]; rm {
 				if removed, _ := res["removed"].(bool); !removed {
 					return fmt.Sprintf("The playbook of %q has no such entry.", p.Name), nil
 				}
 				return fmt.Sprintf("Removed %s from the playbook of %q.", what, p.Name), nil
+			}
+			if s, _ := res["suggested"].(bool); s && slot == core.SlotLesson && !asked {
+				return fmt.Sprintf("Suggested %s for the project %q. It waits on the project's page for the owner to take or dismiss; later agents here are told it once the owner took it. Tell the owner in a sentence what you suggested and why.", what, p.Name), nil
 			}
 			if s, _ := res["suggested"].(bool); s {
 				return fmt.Sprintf("The owner wrote %s in the playbook of %q, so it stands. What you found is kept beside it as a suggestion on the project's page, for the owner to take or dismiss; tell them in a sentence what differs.", what, p.Name), nil

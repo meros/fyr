@@ -3,7 +3,7 @@
 // correct or remove, an agent's suggestion to take or dismiss, the owner's yes for a stage's probe, and Add.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { PlaybookEntry, Project } from "./types.ts";
-import { addableSlots, broken, doubted, entryKey, entryTitle, isLiveStage, learnArgs, playbookEntries, playbookSummary, playbookWaiting, probeLine, removeEntryAsk, slotTitle, stageHealth, stageNameError, stagesOf, suggestionLines } from "./playbook.ts";
+import { addableSlots, broken, doubted, entryKey, entryTitle, isLiveStage, learnArgs, lessonNameError, pendingLesson, playbookEntries, playbookSummary, playbookWaiting, probeLine, removeEntryAsk, slotTitle, stageHealth, stageNameError, stagesOf, suggestionLines } from "./playbook.ts";
 import { Group, Row, Switch, useSet } from "./settings-rows.tsx";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
@@ -150,7 +150,8 @@ export function PlaybookGroup({ project, target }: { project: Project; target?: 
                 </button>
               </span>
             </div>
-            <SaveArea value={e.how ?? ""} label={`${title}: how`} name={stage ? "How a change gets here" : undefined} placeholder={stage ? "Automatic on merge, a release tag, a command" : "In a sentence or two"} onSave={(v) => learn(e, { how: v })} />
+            {/* V0.playbook-lessons: a lesson an agent only suggested has no text of its own yet: its suggestion below is all there is */}
+            {!pendingLesson(e) && <SaveArea value={e.how ?? ""} label={`${title}: how`} name={stage ? "How a change gets here" : undefined} placeholder={stage ? "Automatic on merge, a release tag, a command" : "In a sentence or two"} onSave={(v) => learn(e, { how: v })} />}
             {stage && (
               <>
                 <SaveArea value={e.url ?? ""} label={`${title}: address`} name="Address" placeholder="https://… where it is looked at" onSave={(v) => learn(e, { url: v })} />
@@ -181,7 +182,7 @@ export function PlaybookGroup({ project, target }: { project: Project; target?: 
             {e.evidence && <span class="sr-d">From: {e.evidence}</span>}
             {e.suggest && (
               <div class="pbsug" role="note">
-                <span class="sr-t">An agent suggests</span>
+                <span class="sr-t">{pendingLesson(e) ? "An agent suggests this lesson. Agents here are told it once you take it." : "An agent suggests"}</span>
                 {suggestionLines(e).map((l) => (
                   <span key={l} class="sr-d pbsugl">
                     {l}
@@ -232,10 +233,10 @@ function AddEntry({ project, off, error, onAdd }: { project: Project; off: boole
   if (!slots.length) return null;
   const add = async () => {
     if (!slot) return;
-    const e = slot === "stage" ? stageNameError(name) : null;
+    const e = slot === "stage" ? stageNameError(name) : slot === "lesson" ? lessonNameError(name) : null;
     if (e || !how.trim()) return setBad(e ?? "Say it in a sentence or two");
     setBad(null);
-    if (!(await onAdd({ slot, ...(slot === "stage" ? { name: name.trim().toLowerCase() } : {}), how: how.trim() }))) (setSlot(""), setName(""), setHow(""));
+    if (!(await onAdd({ slot, ...(slot === "stage" || slot === "lesson" ? { name: name.trim().toLowerCase() } : {}), how: how.trim() }))) (setSlot(""), setName(""), setHow(""));
   };
   return (
     <div class={`sr col pbadd${bad || error ? " bad" : ""}`}>
@@ -253,8 +254,9 @@ function AddEntry({ project, off, error, onAdd }: { project: Project; off: boole
       {slot && (
         <>
           {slot === "stage" && <input type="text" value={name} placeholder="The environment: dev, staging, prod" aria-label="Stage name" autocapitalize="off" onInput={(e) => setName((e.target as HTMLInputElement).value)} />}
+          {slot === "lesson" && <input type="text" value={name} placeholder="A short name: e2e-before-done" aria-label="Lesson name" autocapitalize="off" onInput={(e) => setName((e.target as HTMLInputElement).value)} />}
           <span class="pbarea">
-            <textarea rows={2} value={how} placeholder={slot === "stage" ? "How a merged change gets here" : "In a sentence or two"} aria-label="How" onInput={(e) => setHow((e.target as HTMLTextAreaElement).value)} />
+            <textarea rows={2} value={how} placeholder={slot === "stage" ? "How a merged change gets here" : slot === "lesson" ? "What agents here should do, in a sentence" : "In a sentence or two"} aria-label="How" onInput={(e) => setHow((e.target as HTMLTextAreaElement).value)} />
             <button type="button" class="btn sm p" disabled={off} onClick={() => void add()}>
               Add
             </button>
