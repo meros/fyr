@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/store"
 )
 
 // fakeTitler records what the title call got and answers with title or err.
@@ -112,12 +113,15 @@ func TestAgentRegeneratesTheTitle(t *testing.T) {
 	if r := h.cmd("thread.rename", id, core.Args{"title": "My name"}); !r.OK {
 		t.Fatalf("rename: %+v", r)
 	}
+	ft.mu.Lock()
 	ft.title = "Something else"
+	ft.mu.Unlock()
+	calls := ft.n() // Fyr's own start title (V0.auto-title) may have run too
 	text, isErr = callAs(t, h.e, id, "thread_rename", map[string]any{"regenerate": true})
 	if !isErr || !strings.Contains(text, "owner named") {
 		t.Fatalf("regenerated over the owner's name: %v %q", isErr, text)
 	}
-	if ft.n() != 1 {
+	if ft.n() != calls {
 		t.Fatalf("a title call for a name the owner keeps: %d calls", ft.n())
 	}
 	if th, _ := h.e.Thread(id); th.Title != "My name" {
@@ -125,8 +129,10 @@ func TestAgentRegeneratesTheTitle(t *testing.T) {
 	}
 
 	// A failed call keeps the title and tells the agent.
-	other := created(h, "second thread")
+	ft.mu.Lock()
 	ft.err = errors.New("timeout")
+	ft.mu.Unlock()
+	other := created(h, "second thread")
 	text, isErr = callAs(t, h.e, other, "thread_rename", map[string]any{"regenerate": true})
 	if !isErr || !strings.Contains(text, "The title stays") {
 		t.Fatalf("%v %q", isErr, text)
@@ -146,5 +152,69 @@ func TestTitleConversationKeepsTheStartAndTheEnd(t *testing.T) {
 	}
 	if clipConversation("short") != "short" {
 		t.Fatal("a short conversation changed")
+	}
+}
+
+// V0.auto-title (1), (3): when the first run of a thread named from a vague
+// first message ends, Fyr titles it from the conversation by itself, and
+// the title stays Fyr's.
+func TestAutoTitleAtTheFirstRunsEnd(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	ft := &fakeTitler{title: "Toast unreadable in dark mode"}
+	h.e.Titler = ft.make
+	guardDeps(t, h.e)
+	id := created(h, "Not nice")
+	// The harness's agent answers and ends its first run by itself.
+	th := h.wait(id, "the made title", func(th core.Thread, _ core.Attention) bool { return th.Title == "Toast unreadable in dark mode" })
+	if th.TitleBy != "" || th.TitleAuto != core.TitleAutoStart || ft.n() != 1 {
+		t.Fatalf("titleBy %q auto %q calls %d", th.TitleBy, th.TitleAuto, ft.n())
+	}
+	if !hasEvent(h.events(id), "thread.renamed", `"by":"fyr"`) {
+		t.Fatal("no renamed event")
+	}
+}
+
+// V0.auto-title (5): the title call reads an attachment as one, and leaves
+// out Fyr's own notices.
+func TestTitleTextNamesImages(t *testing.T) {
+	ev := func(typ, data string) store.Event { return store.Event{Type: typ, Data: []byte(data)} }
+	got := titleText([]store.Event{
+		ev("user", `{"text":"","images":1,"attachments":[{"id":"a","name":"s.png","mediaType":"image/png"}]}`),
+		ev("user", `{"text":"[Fyr] Handover: the owner handed this thread over"}`),
+		ev("user", `{"text":"and this","attachments":[{"id":"b","name":"r.pdf","mediaType":"application/pdf"}]}`),
+	})
+	want := "Owner: [attached image]\n\nOwner: and this [attached file]"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// V0.auto-title (2): when the thread's first change appears, the goal call
+// reads the current title, to keep unless the goal moved, and the change's.
+func TestAutoTitleAtTheGoalKeepsOrMoves(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	ft := &fakeTitler{title: "Why the listing was not updated"}
+	h.e.Titler = ft.make
+	guardDeps(t, h.e)
+	id := created(h, "Why was it not updated last night?")
+	// The harness's agent ends the first run: the start title lands first.
+	h.wait(id, "the start title", func(th core.Thread, _ core.Attention) bool { return th.Title == "Why the listing was not updated" })
+	ft.mu.Lock()
+	ft.title = "Remove sold listings the same night"
+	ft.mu.Unlock()
+	if _, err := h.e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindChangeOpen, Thread: id,
+		Args: core.ChangeOpenArgs{Open: core.ChangeOpen{Key: "x", Kind: core.KindCode, Title: "Remove a confirmed-gone listing the same night", Branch: "x"}}}); err != nil {
+		t.Fatal(err)
+	}
+	th := h.wait(id, "the goal title", func(th core.Thread, _ core.Attention) bool { return th.Title == "Remove sold listings the same night" })
+	if th.TitleAuto != core.TitleAutoDone {
+		t.Fatalf("auto %q", th.TitleAuto)
+	}
+	ft.mu.Lock()
+	conv := ft.conv
+	ft.mu.Unlock()
+	if !strings.HasPrefix(conv, "The thread's current title: Why the listing was not updated\nIts changes: Remove a confirmed-gone listing the same night\n\n") ||
+		!strings.Contains(conv, "Owner: Why was it not updated last night?") {
+		t.Fatalf("the call read %q", conv)
 	}
 }

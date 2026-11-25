@@ -6,6 +6,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -76,6 +77,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -146,6 +148,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -216,6 +219,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -287,6 +291,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -357,6 +362,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -434,6 +440,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -504,6 +511,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -594,6 +602,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -664,6 +673,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -743,6 +753,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -813,6 +824,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -884,6 +896,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -961,6 +974,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1053,6 +1067,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "projectId": "p_2",
         "projectManual": true,
@@ -1147,6 +1162,7 @@
       "thread": {
         "id": "t_1",
         "title": "hello",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "projectId": "p_2",
         "projectManual": true,
@@ -1243,6 +1259,7 @@
       "thread": {
         "id": "t_3",
         "title": "unread snooze",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1332,6 +1349,7 @@
       "thread": {
         "id": "t_3",
         "title": "unread snooze",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1441,6 +1459,7 @@
       "thread": {
         "id": "t_4",
         "title": "unread archive",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1530,6 +1549,7 @@
       "thread": {
         "id": "t_4",
         "title": "unread archive",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1628,6 +1648,7 @@
       "thread": {
         "id": "t_5",
         "title": "unread settle",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1717,6 +1738,7 @@
       "thread": {
         "id": "t_5",
         "title": "unread settle",
+        "titleAuto": "done",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1816,6 +1838,7 @@
       "thread": {
         "id": "t_7",
         "title": "x",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",
@@ -1944,6 +1967,7 @@
       "thread": {
         "id": "t_8",
         "title": "x",
+        "titleAuto": "start",
         "cwd": "/home/owner/src/app",
         "owner": "owner",
         "visibility": "private",

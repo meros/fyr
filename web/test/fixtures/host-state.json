@@ -279,6 +279,7 @@
       "sessionId": "",
       "stopped": true,
       "title": "a thread that asks to run a command",
+      "titleAuto": "first",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
@@ -331,6 +332,7 @@
       "sessionId": "",
       "stopped": true,
       "title": "a thread in a quiet project",
+      "titleAuto": "first",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
@@ -401,6 +403,7 @@
       "sessionId": "",
       "stopped": true,
       "title": "a thread with a live view",
+      "titleAuto": "first",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
@@ -456,6 +459,7 @@
       "sessionId": "",
       "stopped": true,
       "title": "a thread in a clone",
+      "titleAuto": "first",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
@@ -507,6 +511,7 @@
       "sessionId": "",
       "stopped": true,
       "title": "a thread in the home folder",
+      "titleAuto": "first",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
@@ -562,6 +567,7 @@
       "sessionId": "",
       "stopped": true,
       "title": "a thread in a folder",
+      "titleAuto": "first",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",

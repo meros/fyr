@@ -664,9 +664,11 @@ func reduceRename(r Rec, in Input, _ time.Time) (Result, error) {
 	if err := CanWrite(FieldThreadTitle, ByAgent, r.T.TitleBy, "this thread"); err != nil {
 		return Result{}, err
 	}
-	if r.T.Title == title {
+	if r.T.Title == title && r.T.TitleBy == ByAgent {
 		return Result{}, nil
 	}
+	// V0.auto-title (1): the agent's rename to the title Fyr made still
+	// makes it the agent's, so Fyr's goal title keeps it.
 	r.T.Title, r.T.TitleBy = title, ByAgent
 	return Result{Events: []Event{{"thread.renamed", map[string]any{"title": title, "by": ByAgent}}}}, nil
 }

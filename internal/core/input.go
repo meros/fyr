@@ -276,6 +276,8 @@ func ReduceIn(env Env, t *Thread, v *View, in Input, now time.Time) (*Thread, *V
 	res.Effects = append(res.Effects, asked.Effects...)
 	// V0.settle-merge-fixes (1): so does a merge asked in text.
 	res.Effects = append(res.Effects, mergeTextAfter(before, t, in).Effects...)
+	// V0.auto-title: the first run's end and a clear goal ask for a title.
+	res.Effects = append(res.Effects, titleAutoAfter(before, t, in)...)
 	// V0.project-archive: new work brings a shelved thread back, last, so it
 	// reads every run and question the steps above opened.
 	res.Events = append(res.Events, returnShelved(t)...)

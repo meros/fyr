@@ -19,6 +19,8 @@ type turn struct {
 	From, Text string
 	// Files are the ids and names of the files the owner attached.
 	Files []file
+	// Images is how many pasted images the message carried.
+	Images int
 	// turnAgent: the top-level assistant message, its parts in order.
 	Parts []part
 	// turnHandover.
@@ -60,12 +62,13 @@ func readTurns(evs []store.Event) []turn {
 		case "user":
 			var d struct {
 				Text, From  string
+				Images      int
 				Attachments []struct {
 					ID, Name, MediaType string
 				}
 			}
 			json.Unmarshal(ev.Data, &d)
-			t.Kind, t.Text, t.From = turnUser, d.Text, d.From
+			t.Kind, t.Text, t.From, t.Images = turnUser, d.Text, d.From, d.Images
 			for _, a := range d.Attachments {
 				t.Files = append(t.Files, file{a.ID, a.Name, a.MediaType})
 			}

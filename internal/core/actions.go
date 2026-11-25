@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // OldViewTyped is the mark a message typed on the View tab carried before
@@ -66,6 +67,9 @@ type Effect struct {
 	Run int `json:"run,omitempty"`
 	// Asked is the question an EffectAnswered answers (V0.ask-tool).
 	Asked *Decision `json:"asked,omitempty"`
+	// TitleAuto marks an EffectTitle Fyr asked for by itself, and when:
+	// TitleAutoStart or TitleAutoGoal (V0.auto-title).
+	TitleAuto string `json:"titleAuto,omitempty"`
 }
 
 // Script is an exact command: argv in dir, within a time limit.
@@ -197,7 +201,7 @@ func sendAction(name, label string) *Action {
 					SetView(t, true)
 				}
 				if t.Title == "" {
-					t.Title = TitleFrom(text)
+					t.Title, t.TitleAuto = TitleFrom(text), TitleAutoFirst // V0.auto-title
 				}
 				// V0.42: the engine checked that the project exists.
 				if pid := a.Str("projectId"); pid != "" {
@@ -897,17 +901,32 @@ func init() {
 		}})
 }
 
-// TitleFrom makes a first title from the first line of a prompt.
+// placeholderChars is the longest first title before the made one
+// (V0.auto-title (6)).
+const placeholderChars = 60
+
+// TitleFrom makes a first title from the first line of a prompt: the line,
+// or its first sentence when the line is long, else the line cut at a word
+// to placeholderChars. It stands until the start title (V0.auto-title).
 func TitleFrom(text string) string {
 	line := strings.TrimSpace(strings.SplitN(strings.TrimSpace(text), "\n", 2)[0])
 	if line == "" {
 		return "Image"
 	}
-	r := []rune(line)
-	if len(r) > 80 {
-		return string(r[:79]) + "…"
+	if utf8.RuneCountInString(line) <= placeholderChars {
+		return line
 	}
-	return line
+	if i := strings.IndexAny(line, ".?!"); i > 0 && i+1 < len(line) && line[i+1] == ' ' {
+		if s := line[:i+1]; utf8.RuneCountInString(s) <= placeholderChars && len(strings.Fields(s)) >= 3 {
+			return strings.TrimSuffix(s, ".")
+		}
+	}
+	r := []rune(line)[:placeholderChars]
+	cut := string(r)
+	if i := strings.LastIndexByte(cut, ' '); i >= placeholderChars/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(cut, " ,;:-") + "…"
 }
 
 // AttachmentIDs reads args.attachments, a list of stored file ids.

@@ -236,9 +236,21 @@ func TestTitleFrom(t *testing.T) {
 		t.Fatal("first line")
 	}
 	long := TitleFrom(string(make([]rune, 0)) + stringsRepeat("å", 200))
-	if len([]rune(long)) != 80 {
+	if len([]rune(long)) != 61 {
 		t.Fatalf("title length %d", len([]rune(long)))
 	}
+	// V0.auto-title (6): a long line gives its first sentence, else a cut
+	// at a word; a short one is kept whole.
+	check := func(in, want string) {
+		t.Helper()
+		if got := TitleFrom(in); got != want {
+			t.Errorf("TitleFrom(%q) = %q, want %q", in, got, want)
+		}
+	}
+	check("Vissa bostäder hamnar utanför kartan i produktion. Vårat egna bestånd. Undersök", "Vissa bostäder hamnar utanför kartan i produktion")
+	check("Make s thorough analysis of todays threads, I feel it's not always clear what is going on", "Make s thorough analysis of todays threads, I feel it's not…")
+	check("Stämmer det?", "Stämmer det?")
+	check("", "Image")
 }
 
 func stringsRepeat(s string, n int) string {

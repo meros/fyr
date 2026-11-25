@@ -22,6 +22,10 @@ type Thread struct {
 	// TitleBy is who named the thread last: the owner's name is kept
 	// against the agent's (V0.69); "" for a title from the first message.
 	TitleBy string `json:"titleBy,omitempty"`
+	// TitleAuto is where the thread is in its automatic titles
+	// (V0.auto-title): TitleAutoFirst, TitleAutoStart, TitleAutoDone; ""
+	// for a thread named at its start or made before them.
+	TitleAuto string `json:"titleAuto,omitempty"`
 	// LastAsker is the person's actor behind the newest message to the
 	// agent ("device:<id>", "local:owner"); "" when Fyr or another agent
 	// wrote it (V0.project-icons-on-demand).

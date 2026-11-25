@@ -302,7 +302,7 @@ func (e *Engine) threadTools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "thread_rename",
-		Description: "Rename this Fyr thread, or a thread this thread started (id), so the owner's list says what the work is. Give a short, specific title (at most 80 characters) when the goal becomes clear or changes: the goal of the work, like an issue title (\"Fix the header that overlaps the menu on phones\"), not the step you are at now. Or pass regenerate: true instead of a title, and Fyr writes one from the thread's conversation so far with a small model. A name the owner gave is kept.",
+		Description: "Rename this Fyr thread, or a thread this thread started (id), so the owner's list says what the work is. Fyr titles a thread by itself after its first run and when its goal is clear; rename it when that title is wrong. Give a short, specific title (3 to 8 words, at most 50 characters, in the language the owner writes in): the goal of the work, like an issue title (\"Header overlaps the menu on phones\"), not the step you are at now. Your title stops Fyr's own. Or pass regenerate: true instead of a title, and Fyr writes one from the thread's conversation so far with a small model. A name the owner gave is kept.",
 		Schema: obj(map[string]any{"title": str("The new title."), "id": str("Optional: a thread this thread started; default this thread."),
 			"regenerate": map[string]any{"type": "boolean", "description": "Fyr writes the title from the conversation so far; give no title."}}),
 		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
@@ -323,7 +323,7 @@ func (e *Engine) threadTools(s *mcp.Server) {
 				if err := core.CanWrite(core.FieldThreadTitle, core.ByAgent, t.TitleBy, "this thread"); err != nil {
 					return "", err
 				}
-				made, err := e.makeTitle(id)
+				made, err := e.makeTitle(id, false)
 				if err != nil {
 					return "", errors.New(core.TitleFailed(err.Error()))
 				}

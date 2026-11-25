@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,7 +48,28 @@ func titleText(evs []store.Event) string {
 	for _, t := range readTurns(evs) {
 		switch t.Kind {
 		case turnUser:
-			if s := strings.TrimSpace(t.Text); s != "" {
+			s := strings.TrimSpace(t.Text)
+			if strings.HasPrefix(s, "[Fyr]") {
+				continue // V0.auto-title (5): Fyr's own notices say nothing of the work
+			}
+			// V0.auto-title (5): an attachment is named once, so a message that
+			// is only a screenshot reads as one and the title comes from the work.
+			// A pasted image is counted and also stored as a file.
+			img, other := t.Images > 0, false
+			for _, f := range t.Files {
+				if strings.HasPrefix(f.MediaType, "image/") {
+					img = true
+				} else {
+					other = true
+				}
+			}
+			if img {
+				s = strings.TrimSpace(s + " [attached image]")
+			}
+			if other {
+				s = strings.TrimSpace(s + " [attached file]")
+			}
+			if s != "" {
 				fmt.Fprintf(&b, "%s: %s\n\n", speaker("Owner", t.From), s)
 			}
 		case turnAgent:
@@ -61,22 +83,30 @@ func titleText(evs []store.Event) string {
 	return strings.TrimSpace(b.String())
 }
 
-// makeTitle runs one title call for a thread: at most one at a time per
-// thread.
-func (e *Engine) makeTitle(threadID string) (string, error) {
+// makeTitle runs one title call for a thread: one at a time per thread. keep gives the call the current title to keep unless the goal
+// moved (V0.auto-title (2)).
+func (e *Engine) makeTitle(threadID string, keep bool) (string, error) {
 	if e.Titler == nil {
 		return "", errors.New("this host has no title maker")
 	}
-	e.titleMu.Lock()
-	if e.titling == nil {
-		e.titling = map[string]bool{}
-	}
-	if e.titling[threadID] {
+	// V0.auto-title: a call waits for the one in flight (Fyr's start title
+	// and the goal's, or an owner's press, can meet), for as long as a call
+	// may take.
+	for deadline := time.Now().Add(titleTimeout); ; time.Sleep(100 * time.Millisecond) {
+		e.titleMu.Lock()
+		if e.titling == nil {
+			e.titling = map[string]bool{}
+		}
+		if !e.titling[threadID] {
+			e.titling[threadID] = true
+			e.titleMu.Unlock()
+			break
+		}
 		e.titleMu.Unlock()
-		return "", errors.New("a title is being made already")
+		if time.Now().After(deadline) {
+			return "", errors.New("a title is being made already")
+		}
 	}
-	e.titling[threadID] = true
-	e.titleMu.Unlock()
 	defer func() {
 		e.titleMu.Lock()
 		delete(e.titling, threadID)
@@ -93,7 +123,7 @@ func (e *Engine) makeTitle(threadID string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), titleTimeout)
 	defer cancel()
-	out, err := e.Titler(ctx, threadID, clipConversation(conv))
+	out, err := e.Titler(ctx, threadID, e.titleContext(threadID, keep)+clipConversation(conv))
 	if err != nil {
 		return "", err
 	}
@@ -104,15 +134,56 @@ func (e *Engine) makeTitle(threadID string) (string, error) {
 	return title, nil
 }
 
+// titleContext is what the title call reads before the conversation
+// (V0.auto-title (2)): the current title when it is to be kept, and the
+// titles of the thread's changes, which say what is being built.
+func (e *Engine) titleContext(threadID string, keep bool) string {
+	th, ok := e.Thread(threadID)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	if keep && th.Title != "" {
+		fmt.Fprintf(&b, "The thread's current title: %s\n", th.Title)
+	}
+	var chs []string
+	for _, c := range th.Changes {
+		if s := strings.TrimSpace(c.Title); s != "" && !slices.Contains(chs, s) {
+			chs = append(chs, s)
+		}
+	}
+	if len(chs) > 0 {
+		fmt.Fprintf(&b, "Its changes: %s\n", strings.Join(chs, "; "))
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return b.String() + "\n"
+}
+
 // regenerateTitle is the owner's effect: its result lands as a made title,
 // or as the reason the title stays.
 func (e *Engine) regenerateTitle(threadID string) {
-	title, err := e.makeTitle(threadID)
+	title, err := e.makeTitle(threadID, false)
 	made := core.TitleMade{Title: title, By: core.ByOwner}
 	if err != nil {
 		made = core.TitleMade{By: core.ByOwner, Error: err.Error()}
 	}
 	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsTitle), Kind: core.KindTitleMade, Thread: threadID, Args: made}); err != nil {
 		log.Printf("thread %s: made title: %v", threadID, err)
+	}
+}
+
+// autoTitle is Fyr's own title call (V0.auto-title): its result lands as a
+// made title by Fyr; a failure is only logged.
+func (e *Engine) autoTitle(threadID, when string) {
+	title, err := e.makeTitle(threadID, when == core.TitleAutoGoal)
+	if err != nil {
+		log.Printf("thread %s: automatic title (%s): %v", threadID, when, err)
+		return
+	}
+	made := core.TitleMade{Title: title, By: core.ByFyr, Auto: when}
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsTitle), Kind: core.KindTitleMade, Thread: threadID, Args: made}); err != nil {
+		log.Printf("thread %s: automatic title: %v", threadID, err)
 	}
 }
