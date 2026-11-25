@@ -14,17 +14,18 @@ test("the view folds from the thread DTO; no page is no view", () => {
   assert.deepEqual(liveViewOf(t), live);
   assert.equal(liveViewOf(thread("t2", "done", "needs")), null);
   assert.equal(liveViewOf(thread("t3", "done", "needs", { live: { state: { headline: "x" } } })), null, "state without a page");
-  assert.deepEqual(liveViewOf(thread("t4", "done", "needs", { live: { pageId: "p", state: [] as never } }))?.state, {}, "state that is not an object");
+  assert.deepEqual(liveViewOf(thread("t4", "done", "needs", { liveView: true, live: { pageId: "p", state: [] as never } }))?.state, {}, "state that is not an object");
+  assert.equal(liveViewOf(thread("t5", "done", "needs", { live: { pageId: "p", state: {} } })), null, "V0.view-off-tab: a view turned off keeps its page but is no view");
 });
 
 test("the inbox row uses the headline when there is one", () => {
-  assert.equal(rowSummary(thread("t", "done", "needs", { summary: "last words", live })), "Tests pass");
-  assert.equal(rowSummary(thread("t", "done", "needs", { summary: "last words", live: { ...live, headline: "" } })), "last words");
+  assert.equal(rowSummary(thread("t", "done", "needs", { summary: "last words", liveView: true, live })), "Tests pass");
+  assert.equal(rowSummary(thread("t", "done", "needs", { summary: "last words", liveView: true, live: { ...live, headline: "" } })), "last words");
   assert.equal(rowSummary(thread("t", "done", "needs", { summary: "last words" })), "last words");
 });
 
 test("dimmed while a run goes that has not touched the view", () => {
-  const run = (startedAt: string, checkedAt: string) => thread("t", "working", "working", { running: true, runStartedAt: startedAt, live: { ...live, checkedAt } });
+  const run = (startedAt: string, checkedAt: string) => thread("t", "working", "working", { liveView: true, running: true, runStartedAt: startedAt, live: { ...live, checkedAt } });
   assert.equal(viewDimmed(run("2026-11-14T09:05:00Z", "2026-11-14T09:00:00Z")), true);
   assert.equal(viewDimmed(run("2026-11-14T09:05:00Z", "2026-11-14T09:06:00Z")), false, "touched this run");
   assert.equal(viewDimmed(thread("t", "done", "needs", { live })), false, "no run");
@@ -90,7 +91,7 @@ test("the view tools never show as tool rows", () => {
 // SPEC 0.5 V0.37: a thread with a live view opens on its View tab; the Conversation tab is
 // always one tap away, and an explicit choice wins.
 test("the start tab follows the live view", () => {
-  const withView = thread("v", "done", "needs", { live: { pageId: "p", state: {} } });
+  const withView = thread("v", "done", "needs", { liveView: true, live: { pageId: "p", state: {} } });
   const plain = thread("c", "done", "needs");
   assert.equal(defaultTab(withView, undefined), "view");
   assert.equal(defaultTab(withView, "conv"), "conv");

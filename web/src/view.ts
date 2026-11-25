@@ -18,7 +18,8 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /** The thread's view, or null when it has no page yet. */
-export function liveViewOf(t: Pick<Thread, "live">): LiveViewDTO | null {
+export function liveViewOf(t: Pick<Thread, "live" | "liveView">): LiveViewDTO | null {
+  if (!t.liveView) return null; // turned off: the server keeps the last page, but the View tab and the headline go
   const v = obj(t.live);
   const pageId = str(v.pageId);
   if (!pageId) return null;
@@ -26,12 +27,12 @@ export function liveViewOf(t: Pick<Thread, "live">): LiveViewDTO | null {
 }
 
 /** The inbox row's line when nothing more urgent shows: the view's headline, else the last assistant text. */
-export function rowSummary(t: Pick<Thread, "live" | "summary">): string {
+export function rowSummary(t: Pick<Thread, "live" | "liveView" | "summary">): string {
   return liveViewOf(t)?.headline || t.summary || "";
 }
 
 /** Dimmed while a run goes that has not touched the view yet: what it shows may be old. */
-export function viewDimmed(t: Pick<Thread, "running" | "runStartedAt" | "live">): boolean {
+export function viewDimmed(t: Pick<Thread, "running" | "runStartedAt" | "live" | "liveView">): boolean {
   if (!t.running) return false;
   const v = liveViewOf(t);
   if (!v) return false;
@@ -124,7 +125,7 @@ export function pressReply(id: string | number, ok: boolean) {
 
 /** SPEC 0.5 V0.37: the tab a thread opens on. A live view opens on View; an explicit
  *  choice wins; View does not exist without a view; PR exists whenever the thread has any non-dismissed PR. */
-export function defaultTab(t: Pick<Thread, "live" | "pr"> & { changes?: Change[] }, requested: string | undefined): string {
+export function defaultTab(t: Pick<Thread, "live" | "liveView" | "pr"> & { changes?: Change[] }, requested: string | undefined): string {
   const has = !!liveViewOf(t);
   if (requested === "view") return has ? "view" : "conv";
   if (requested === "pr" && !threadPrs(t).length) return "conv"; // V0.36: no PR, no PR tab
@@ -145,7 +146,7 @@ export function tabLabel(t: Pick<Thread, "pr"> & { changes?: Change[] }, tab: Th
 }
 
 /** #41: the tabs a thread has, in order, on desktop and phone: View only with a view (V0.37), PR with any non-dismissed PR (V0.36, V0.multi-pr). */
-export function threadTabs(t: Pick<Thread, "live" | "pr"> & { changes?: Change[] }): ThreadTab[] {
+export function threadTabs(t: Pick<Thread, "live" | "liveView" | "pr"> & { changes?: Change[] }): ThreadTab[] {
   return [...(liveViewOf(t) ? (["view"] as const) : []), "conv", "changes", ...(threadPrs(t).length ? (["pr"] as const) : [])];
 }
 
