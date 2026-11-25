@@ -886,16 +886,31 @@ function turnOf(it: Item, users: number): string {
 
 /**
  * The role of each item. Outcome: the owner's messages, the agent's last message of a run (the
- * newest one while the run goes on), previews, and failures (a failed run, effect or agent).
- * Process: everything the agent did on the way there, its earlier messages included.
+ * newest one while the run goes on), the agent's last message before a mid-run owner message it
+ * read (that message closed an answer, V0.midrun-answer), previews, and failures (a failed run,
+ * effect or agent). Process: everything the agent did on the way there, its earlier messages
+ * included.
  */
 export function roles(items: Item[]): Role[] {
   const lastText = new Map<string, number>();
+  // V0.midrun-answer: texts that answered before the owner's next mid-run message was read.
+  const answered = new Set<number>();
+  let since = -1; // the newest non-quiet text of the current run since its last read owner message
   let users = 0;
   const turns = items.map((it, i) => {
     if (it.kind === "user" && it.run === undefined) users++;
     const t = turnOf(it, users);
-    if (it.kind === "assistant" && !it.quiet) lastText.set(t, i);
+    if (it.kind === "assistant" && !it.quiet) {
+      lastText.set(t, i);
+      since = i;
+    }
+    if (it.kind === "run" || (it.kind === "user" && it.run === undefined)) since = -1;
+    if (it.kind === "user" && it.run !== undefined && readByAgent(it)) {
+      // A message the agent read in the middle of a run sits where it was read; the text just
+      // before it answered what came before. It is not judged by its words (decision 0011).
+      if (since >= 0 && items[since].run === it.run) answered.add(since);
+      since = -1;
+    }
     return t;
   });
   return items.map((it, i): Role => {
@@ -906,7 +921,7 @@ export function roles(items: Item[]): Role[] {
       case "runcard": // never folded away: it holds buttons and a result
         return "outcome";
       case "assistant":
-        return !it.quiet && lastText.get(turns[i]) === i ? "outcome" : "process";
+        return !it.quiet && (lastText.get(turns[i]) === i || answered.has(i)) ? "outcome" : "process";
       case "run":
         // V0.quota-wait, V0.overload-retry: a wait is not an outcome the owner acts on.
         return it.failure && !failureWait(it.failure.class) ? "outcome" : "end";
@@ -918,6 +933,12 @@ export function roles(items: Item[]): Role[] {
         return "process";
     }
   });
+}
+
+/** The owner's message that the agent read: read, sent before messages had ids (""), or found
+ *  read through the outbox. Not a cancelled or lost one, and not one from another thread. */
+function readByAgent(it: Extract<Item, { kind: "user" }>): boolean {
+  return (it.delivery === "read" || it.delivery === "") && (!it.from || it.from === "view");
 }
 
 /** The run still going: the newest run with items and no end yet. */
@@ -963,6 +984,15 @@ export function pace(items: Item[], opts: { details?: boolean } = {}): Entry[] {
   return out;
 }
 
+/** V0.midrun-answer: a fold that holds the agent's text says so first ("1 message · Ran 5
+ *  commands"), so no text hides behind a line that names only tools. */
+function foldText(s: Item[], calls: ToolCall[], steps: number): string {
+  const msgs = s.filter((it) => it.kind === "assistant").length;
+  const said = msgs ? `${msgs} ${msgs === 1 ? "message" : "messages"}` : "";
+  const rest = calls.length ? groupSummary(calls) : steps > msgs ? `${steps - msgs} steps` : "";
+  return [said, rest].filter(Boolean).join(" · ");
+}
+
 function foldOf(s: Item[]): Extract<Entry, { kind: "fold" }> {
   const calls = s.flatMap((it) => (it.kind === "tools" ? it.calls : []));
   const steps = calls.length + s.filter((it) => it.kind !== "tools").length;
@@ -984,7 +1014,7 @@ function foldOf(s: Item[]): Extract<Entry, { kind: "fold" }> {
     kind: "fold",
     key: `${s[0].key}.fold`,
     items: s,
-    text: calls.length ? groupSummary(calls) : `${steps} steps`,
+    text: foldText(s, calls, steps),
     steps,
     failed: st.failed,
     running: st.running,

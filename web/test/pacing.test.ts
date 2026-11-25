@@ -9,7 +9,7 @@ const ev = (type: string, data: unknown, sec?: number) => {
   return { seq, at: new Date(1_700_000_000_000 + (sec ?? seq) * 1000).toISOString(), subject: "t", type, data };
 };
 const text = (t: string) => ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: t }] } });
-const use = (id: string, name = "Bash", input: unknown = { command: "yarn test", description: "Run the tests" }) => ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id, name, input }] } });
+const toolUse = (id: string, name = "Bash", input: unknown = { command: "yarn test", description: "Run the tests" }) => ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id, name, input }] } });
 const result = (id: string, isError = false) => ev("msg", { type: "user", parent_tool_use_id: null, message: { content: [{ type: "tool_result", tool_use_id: id, content: "ok", is_error: isError }] } });
 
 /** "fold" or "<role>:<kind>[:text]" for each entry. */
@@ -22,19 +22,20 @@ test("a finished run: the last message is the outcome, the steps before it fold 
     ev("user", { text: "Fix it" }),
     ev("run.started", {}),
     text("I'll look before I touch anything."),
-    use("a"),
+    toolUse("a"),
     result("a"),
     text("Test first, then the code:"),
-    use("b", "Read", { file_path: "/x/a.ts" }),
+    toolUse("b", "Read", { file_path: "/x/a.ts" }),
     result("b"),
-    use("c", "Edit", { file_path: "/x/a.ts", old_string: "a", new_string: "b" }),
+    toolUse("c", "Edit", { file_path: "/x/a.ts", old_string: "a", new_string: "b" }),
     result("c"),
     text("160 tests pass and the typecheck is clean."),
     ev("run.ended", { durationMs: 12_000 }),
   ]);
   assert.deepEqual(shape(pace(items)), ["outcome:user", "fold(assistant,tools,assistant,tools)", "outcome:assistant:160 tests pass and the typecheck is clean.", "end:run"]);
   const fold = pace(items).find((e) => e.kind === "fold") as Extract<Entry, { kind: "fold" }>;
-  assert.equal(fold.text, "Ran the tests · read 1 file · edited 1 file");
+  // V0.midrun-answer: the line names the messages it holds before the tools
+  assert.equal(fold.text, "2 messages · Ran the tests · read 1 file · edited 1 file");
   assert.equal(fold.steps, 5);
   assert.equal(fold.failed, 0);
   assert.ok(fold.durationMs !== null && fold.durationMs > 0);
@@ -43,7 +44,7 @@ test("a finished run: the last message is the outcome, the steps before it fold 
 test("failures are outcomes; a successful effect and an answer are steps", () => {
   const items = buildConversation([
     ev("run.started", {}),
-    use("a"),
+    toolUse("a"),
     result("a", true),
     ev("task", { kind: "ended", id: "k", description: "Bisect", status: "failed", summary: "no browser" }),
     ev("decision.closed", { answer: "Approve" }),
@@ -61,13 +62,13 @@ test("while the run goes on, the newest message reads as the outcome and the ste
     ev("user", { text: "Go" }),
     ev("run.started", {}),
     text("A new deploy went live; not mine."),
-    use("a"),
+    toolUse("a"),
     result("a"),
     text("Test first:"),
-    use("b"),
+    toolUse("b"),
     result("b"),
     text("160 tests pass. I'll check the layout."),
-    use("c", "Bash", { command: "make shots", description: "Take the screenshots" }),
+    toolUse("c", "Bash", { command: "make shots", description: "Take the screenshots" }),
     ev("effect.result", { action: "x", ok: true, text: "Done" }),
   ];
   const items = buildConversation(evs);
@@ -80,35 +81,105 @@ test("while the run goes on, the newest message reads as the outcome and the ste
   assert.deepEqual(shape(later), ["outcome:user", "fold(assistant,tools,assistant,tools,assistant,tools,effect)", "outcome:assistant:The layout holds at 700 px.", "end:run"]);
 });
 
-test("the owner's message in the middle of a run splits the steps; one step alone is not folded", () => {
+test("the owner's message in the middle of a run splits the steps and closes the answer before it; one step alone is not folded", () => {
   const items = buildConversation([
     ev("run.started", {}),
     text("Checking the repo."),
-    use("a"),
+    toolUse("a"),
     result("a"),
     ev("user", { text: "Also make the panel hideable" }),
-    use("b"),
+    toolUse("b"),
     result("b"),
     text("Done: the panel hides with \\."),
     ev("run.ended", {}),
   ]);
-  assert.deepEqual(shape(pace(items)), ["fold(assistant,tools)", "outcome:user", "process:tools", "outcome:assistant:Done: the panel hides with \\.", "end:run"]);
+  // V0.midrun-answer: the agent's last text before the message it read is an outcome too
+  assert.deepEqual(shape(pace(items)), ["outcome:assistant:Checking the repo.", "process:tools", "outcome:user", "process:tools", "outcome:assistant:Done: the panel hides with \\.", "end:run"]);
 });
 
 test("events without run markers: the last message before the owner's next one is the outcome", () => {
-  const items = buildConversation([ev("user", { text: "a" }), text("one"), use("a"), result("a"), text("two"), ev("user", { text: "b" }), text("three")]);
+  const items = buildConversation([ev("user", { text: "a" }), text("one"), toolUse("a"), result("a"), text("two"), ev("user", { text: "b" }), text("three")]);
   assert.deepEqual(roles(items), ["outcome", "process", "process", "outcome", "outcome", "outcome"]);
   assert.equal(liveRun(items), undefined);
 });
 
 test("with tool details on, nothing folds", () => {
-  const items = buildConversation([ev("run.started", {}), text("one"), use("a"), result("a"), text("two"), ev("run.ended", {})], { details: true });
+  const items = buildConversation([ev("run.started", {}), text("one"), toolUse("a"), result("a"), text("two"), ev("run.ended", {})], { details: true });
   assert.ok(!pace(items, { details: true }).some((e) => e.kind === "fold"));
   assert.ok(pace(items).some((e) => e.kind === "fold"));
 });
 
 test("subagents in a folded line are named as subagents", () => {
-  const items = buildConversation([ev("run.started", {}), text("Exploring."), use("a", "Task", { description: "explore" }), use("b", "Task", { description: "explore" }), result("a"), result("b"), text("Found it."), ev("run.ended", {})]);
+  const items = buildConversation([ev("run.started", {}), text("Exploring."), toolUse("a", "Task", { description: "explore" }), toolUse("b", "Task", { description: "explore" }), result("a"), result("b"), text("Found it."), ev("run.ended", {})]);
   const fold = pace(items).find((e) => e.kind === "fold") as Extract<Entry, { kind: "fold" }>;
-  assert.equal(fold.text, "Started 2 subagents");
+  assert.equal(fold.text, "1 message · Started 2 subagents");
+});
+
+// V0.midrun-answer: an answer the owner's mid-run message closed is not folded away.
+const reported = (state: string) => [
+  ev("user", { text: "Price a parallel coding workstation" }),
+  ev("run.started", {}),
+  text("A: the priced comparison table."),
+  ev("user", { text: "Compare with on demand cloud runner prices", id: "m1" }),
+  toolUse("a", "mcp__fyr__offer_action", { label: "x" }),
+  ev("message.state", { id: "m1", state }),
+  result("a"),
+  text("Looking up the cloud prices."),
+  toolUse("b"),
+  result("b"),
+  toolUse("c"),
+  result("c"),
+  toolUse("d"),
+  result("d"),
+  text("B: the cloud comparison."),
+  ev("run.ended", {}),
+];
+
+test("the reported run: the answer before the owner's mid-run message and the last answer are both outcomes", () => {
+  const items = buildConversation(reported("read"));
+  assert.deepEqual(shape(pace(items)), [
+    "outcome:user",
+    "outcome:assistant:A: the priced comparison table.",
+    "process:tools",
+    "outcome:user",
+    "fold(assistant,tools)",
+    "outcome:assistant:B: the cloud comparison.",
+    "end:run",
+  ]);
+  const fold = pace(items).find((e) => e.kind === "fold") as Extract<Entry, { kind: "fold" }>;
+  assert.equal(fold.text, "1 message · Ran the tests and 2 more");
+});
+
+test("a mid-run message the agent never read closes no answer", () => {
+  for (const state of ["cancelled", "lost"]) {
+    const items = buildConversation(reported(state));
+    const rs = roles(items);
+    const a = items.findIndex((it) => it.kind === "assistant" && it.text.startsWith("A:"));
+    assert.equal(rs[a], "process", state);
+  }
+});
+
+test("a text in an earlier run is not closed by a message read in a later one", () => {
+  const items = buildConversation([
+    ev("run.started", {}),
+    text("one"),
+    toolUse("a"),
+    result("a"),
+    text("two"),
+    ev("run.ended", {}),
+    ev("run.started", {}),
+    toolUse("b"),
+    result("b"),
+    ev("user", { text: "and?", id: "m2" }),
+    ev("message.state", { id: "m2", state: "read" }),
+    text("three"),
+    ev("run.ended", {}),
+  ]);
+  assert.deepEqual(shape(pace(items)), ["fold(assistant,tools)", "outcome:assistant:two", "end:run", "process:tools", "outcome:user", "outcome:assistant:three", "end:run"]);
+});
+
+test("a fold of messages only names them", () => {
+  const items = buildConversation([ev("run.started", {}), text("one"), text("two"), text("three"), ev("run.ended", {})]);
+  const fold = pace(items).find((e) => e.kind === "fold") as Extract<Entry, { kind: "fold" }>;
+  assert.equal(fold.text, "2 messages");
 });
