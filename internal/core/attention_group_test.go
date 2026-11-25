@@ -34,7 +34,7 @@ func TestAttentionGroupCodes(t *testing.T) {
 	gone := &Thread{ID: "t"}
 	gone.Unresponsive = &Unresponsive{Since: at(1), Reason: "no reply"}
 	gone.Running = true
-	check("not responding", Compute(gone, v, at(10)), want{Blocked, GroupUnblock, "", ""})
+	check("not responding", Compute(gone, v, at(10)), want{Blocked, GroupUnblock, UnresponsiveWord, "since " + at(1).Local().Format("15:04") + ": no reply"})
 
 	run, _, err := runReq(t, requestThread(), RunRequestArgs{Command: "ls", Why: "Mount the SD card"})
 	if err != nil {

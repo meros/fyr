@@ -87,7 +87,50 @@ export function rowState(t: Thread): string {
     if (d?.kind === "approval") return describeApproval(d, t.cwd).label;
     if (d?.kind === "effect") return describeEffect(d, prForEffect(t, d)).label;
   }
+  // V0.thread-claims: a failed row says "Failed" and then the failure, as the chip and the push do; the message alone in
+  // the state's place read as a sentence with no state.
+  if (st === "failed") return "Failed";
   return blockedReason(t)?.word ?? (t.attention.reason || stateLabel(st));
+}
+
+/** V0.thread-claims: the state in the few words of a chip, and the why behind it. One function for the header chip of
+ *  both fronts, so the chip says what the row says: "Merge", "1 question", "Failed", "Waiting", "Finished". An inbox row
+ *  has room for the reason itself and keeps `rowState`; a chip does not, so a wait is "Waiting" with its reason as `why`. */
+export function stateChip(t: Thread): { word: string; why: string } {
+  const a = t.attention;
+  switch (a.state) {
+    case "asking":
+      return { word: rowState(t), why: rowDetail(t) };
+    case "failed":
+      return { word: "Failed", why: a.reason || t.failure?.message || "" };
+    case "blocked": {
+      const b = blockedReason(t);
+      // A host before V0.thread-claims sends no word for an agent that does not respond: the reason is the why.
+      return b ? { word: b.word, why: b.what } : { word: "Blocked", why: a.reason ?? "" };
+    }
+    case "working":
+      return { word: a.reason || "Working", why: t.activity ?? "" };
+    case "waiting":
+      return { word: "Waiting", why: a.reason ?? "" };
+    case "done":
+    case "seen":
+      return { word: "Finished", why: "" };
+    default:
+      return { word: stateLabel(a.state), why: "" };
+  }
+}
+
+/** The whole state in one line, for where there is room and no icon to lean on (the Details sheet, a row's spoken
+ *  label): "Merge · Add login", "Waiting for CI on #846", "Finished, unread". A wait's reason says "Waiting" itself. */
+export function stateLine(t: Thread): string {
+  const st = t.attention.state;
+  // The sections' words, not a second pair for the same two states.
+  if (st === "done") return "Finished, unread";
+  if (st === "seen") return "Finished, seen";
+  const c = stateChip(t);
+  if (st === "snoozed") return [c.word, t.attention.reason].filter(Boolean).join(" · ");
+  if (st === "waiting") return c.why || c.word;
+  return [c.word, c.why].filter(Boolean).join(" · ");
 }
 
 /** V0.row-calm: the row puts the short word ("Merge", "Run", "Settle") in the state's place and the rest on the line,
@@ -112,6 +155,8 @@ export function stateNamesPr(t: Thread): boolean {
  *  out when it names the same PR ("Merge #12" over "Merge pull request #12 · checks are green"), and a detail that
  *  starts with the state word loses that part, or only the word when nothing follows ("API error 529: overloaded" reads "529: overloaded"). */
 export function rowDetail(t: Thread, o: { keys?: boolean } = {}): string {
+  // A failure's message is never an echo of the word "Failed" ("Failed to connect" must stay whole).
+  if (t.attention.state === "failed") return rowMeta(t, o);
   return trimEcho(rowState(t), rowMeta(t, o));
 }
 
@@ -146,7 +191,8 @@ export function rowMeta(t: Thread, o: { keys?: boolean } = {}): string {
       return `${x.title}${x.why ? " · " + x.why : ""}`;
     }
   }
-  if (st === "failed") return `${t.failure?.message ?? ""}${o.keys ? " · r to retry" : ""}`;
+  // V0.thread-claims: the host's reason, which rewrites a quota failure's stale countdown; the raw message for an older host.
+  if (st === "failed") return `${t.attention.reason || t.failure?.message || ""}${o.keys ? " · r to retry" : ""}`;
   if (st === "working") return t.activity ?? "";
   const b = blockedReason(t);
   if (b) return [b.what, rowSummary(t)].filter(Boolean).join(" · ");

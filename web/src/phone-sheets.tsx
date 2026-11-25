@@ -10,8 +10,8 @@ import { LoadSheetBody, useLoad } from "./load-ui.tsx";
 import { stripHosts } from "./host-load.ts";
 import { unavailableReason } from "./store.ts";
 import { currentDecision } from "./decode.ts";
-import { StateIcon } from "./icons.tsx";
-import { rowDetail, rowState, stateLabel } from "./rows.ts";
+import { StateIcon, stateClass } from "./icons.tsx";
+import { rowDetail, rowState, stateLine } from "./rows.ts";
 import { SNOOZE_CUSTOM_LABEL, snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
 import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { headerPrs, threadPrs } from "./offers.ts";
@@ -236,7 +236,7 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
             )}
             {d && (
               <div class="m-pkq">
-                <b class="s-ask">{rowState(t)}</b>
+                <b class={stateClass(t.attention.state)}>{rowState(t)}</b>
                 {rowDetail(t) ? ` · ${rowDetail(t)}` : ""}
               </div>
             )}
@@ -291,7 +291,7 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
       <MSheet onClose={close} label="Details">
         <div class="m-shh prose">{t.title}</div>
         <div class="m-kvs">
-          {row("State", `${stateLabel(t.attention.state)}${t.attention.reason ? " · " + t.attention.reason : ""}`)}
+          {row("State", stateLine(t))}
           {row(
             "Project",
             (() => {

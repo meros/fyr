@@ -680,6 +680,7 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 			res.Effects = []Effect{{Kind: EffectThread, Press: press, Text: msg, Cwd: t.Cwd, Project: t.ProjectID}}
 		} else {
 			res.Effects = []Effect{{Kind: EffectSend, Press: press, Text: msg}}
+			markStarting(t, now) // V0.thread-claims: the press starts a turn
 		}
 	case RunScript:
 		dir := a.Cwd

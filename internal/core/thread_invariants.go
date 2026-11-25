@@ -819,87 +819,51 @@ func checkAttentionPlacement(t *Thread, v *View, now time.Time, on func(repo str
 		}
 	}
 
-	// 5. Active thread placement guarantees.
-	switch {
-	case len(asks) > 0:
+	// 5. V0.thread-claims: the placement against the raw fields, written
+	// without the claims list the attention reads (a copy of its chain would
+	// agree with it by construction), and against the two families the Rules
+	// read, so the row and the snooze or settle Rules cannot disagree.
+	if len(asks) > 0 {
 		if a.State != Asking || a.Section != NeedsYou {
 			probs = append(probs, fmt.Sprintf("%d open owner ask(s) placed in %s/%s", len(asks), a.State, a.Section))
 		}
 		if want := askGroup(asks); a.Group != want {
 			probs = append(probs, fmt.Sprintf("Asking group=%q want %q", a.Group, want))
 		}
-	case quotaWait != "":
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("quota wait placed in %s/%s", a.State, a.Section))
+	} else if t.Failure != nil && quotaWait == "" && t.Handover == nil && (a.State != Failed || a.Section != NeedsYou) {
+		probs = append(probs, fmt.Sprintf("failure (%s) hidden as %s/%s", t.Failure.Class, a.State, a.Section))
+	}
+	switch a.Section {
+	case SeenSec:
+		var live []string
+		for name, on := range map[string]bool{
+			"running": t.Running, "starting": t.Starting != nil, "tasks": t.RunningTasks() > 0, "slotQueued": t.SlotQueued,
+			"gateHold": t.GateHold != nil, "machineWait": t.MachineWait != nil, "handover": t.Handover != nil,
+			"failure": t.Failure != nil, "unresponsive": t.Unresponsive != nil, "settleAsk": t.SettleAsk != nil,
+			"runRequest": PendingRequest(t) != nil, "runningRequest": RunningRequest(t) != nil, "heldAsks": len(t.HeldAsks) > 0,
+		} {
+			if on {
+				live = append(live, name)
+			}
 		}
-	case t.Failure != nil:
-		if a.State != Failed || a.Section != NeedsYou {
-			probs = append(probs, fmt.Sprintf("failure (%s) hidden as %s/%s", t.Failure.Class, a.State, a.Section))
+		if len(live) > 0 {
+			slices.Sort(live)
+			probs = append(probs, fmt.Sprintf("finished (%s) with %s", a.State, strings.Join(live, ",")))
 		}
-	case t.Unresponsive != nil:
-		if a.State != Blocked || a.Section != NeedsYou {
-			probs = append(probs, fmt.Sprintf("unresponsive agent placed in %s/%s", a.State, a.Section))
-		}
-	case t.Running && t.NoProgress != nil:
-		if a.State != Blocked || a.Section != NeedsYou || a.Group != GroupUnblock {
-			probs = append(probs, fmt.Sprintf("silent run placed in %s/%s", a.State, a.Section))
-		}
-	case t.Running:
-		if a.State != Working || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("running thread placed in %s/%s", a.State, a.Section))
-		}
-	case t.MachineWait == nil && t.Starting != nil:
-		if a.State != Working || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("starting thread placed in %s/%s", a.State, a.Section))
-		}
-	case t.MachineWait != nil:
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("machineWait thread placed in %s/%s", a.State, a.Section))
-		}
-	case t.GateHold != nil:
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("gateHold thread placed in %s/%s", a.State, a.Section))
-		}
-	case t.RunningTasks() > 0:
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("%d running task(s) placed in %s/%s", t.RunningTasks(), a.State, a.Section))
-		}
-	case t.SlotQueued:
-		// V0.slot-queued-waits: a heavy job held in the host's queue waits.
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("slot-queued thread placed in %s/%s", a.State, a.Section))
-		}
-	case func() bool { _, n := threadNeed(t, on); return n != nil }():
-		if a.State != Blocked || a.Section != NeedsYou {
-			probs = append(probs, fmt.Sprintf("threadNeed placed in %s/%s", a.State, a.Section))
-		}
-	case PendingRequest(t) != nil:
-		if a.State != Blocked || a.Section != NeedsYou {
-			probs = append(probs, fmt.Sprintf("pending Run card placed in %s/%s", a.State, a.Section))
-		}
-	case RunningRequest(t) != nil:
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("running Run command placed in %s/%s", a.State, a.Section))
-		}
-	case t.SettleAsk != nil:
-		if a.State != Blocked || a.Section != NeedsYou {
-			probs = append(probs, fmt.Sprintf("settleAsk placed in %s/%s", a.State, a.Section))
-		}
-	case ciWait(t) != "":
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("ciWait placed in %s/%s", a.State, a.Section))
-		}
-	case WatchWaitText(t, now) != "":
-		if a.State != Waiting || a.Section != WorkingSec {
-			probs = append(probs, fmt.Sprintf("armed watch placed in %s/%s", a.State, a.Section))
-		}
-	default:
 		want := Seen
 		if t.ActivityAt.After(v.SeenAt) {
 			want = Done
 		}
-		if a.State != want || a.Section != SeenSec {
-			probs = append(probs, fmt.Sprintf("idle thread placed in %s/%s want %s/%s", a.State, a.Section, want, SeenSec))
+		if a.State != want {
+			probs = append(probs, fmt.Sprintf("idle thread is %s want %s", a.State, want))
+		}
+	case WorkingSec:
+		if !WorkGoingAt(t, now) {
+			probs = append(probs, fmt.Sprintf("%s (%q) in Moving, but no work is going on", a.State, a.Reason))
+		}
+	case NeedsYou:
+		if !NeedsOwnerAt(t, now) && t.SettleAsk == nil {
+			probs = append(probs, fmt.Sprintf("%s (%q) in Your move, but nothing needs the owner", a.State, a.Reason))
 		}
 	}
 	return strings.Join(probs, "; ")

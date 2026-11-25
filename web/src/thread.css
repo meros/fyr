@@ -18,6 +18,8 @@
 .chip span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .chip.st{flex:none;background:transparent;border:1px solid var(--line-strong);color:var(--ink);--knock:var(--raised)}
 .chip.st .icw,.chip.st .spin{display:inline-flex;flex:none;overflow:visible}
+/* V0.thread-claims: the chip says the row's word, which can be a failing check's name: it is cut, the title has it whole */
+.chip.st .stw{color:var(--ink);max-width:24ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip.m{font-family:var(--ui);font-weight:400;font-variant-numeric:tabular-nums}
 .chip.pj{max-width:36%}
 .chip.fldc{flex:1 1 0;max-width:max-content;border:0;cursor:pointer} /* V0.folder-chip: shrinks first, as the branch chip it replaced, so the row stays one line */

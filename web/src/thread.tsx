@@ -10,8 +10,7 @@ import { SlideMark } from "./motion-ui.tsx";
 import type { Decision, FyrEvent, PullRequest, Thread } from "./types.ts";
 import { previewsOf } from "./conversation.ts";
 import { currentDecision } from "./decode.ts";
-import { StateIcon, stateClass } from "./icons.tsx";
-import { stateLabel } from "./rows.ts";
+import { StateChip } from "./state-chip.tsx";
 import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { UsageChip } from "./usage-ui.tsx";
 import { HandoverLinkBar } from "./handover-ui.tsx";
@@ -159,12 +158,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           </div>
         </div>
         <div class="chips">
-          <span class={`chip st ${stateClass(st)}`} title={t.attention.reason || stateLabel(st)}>
-            <span class={t.running ? "spin" : "icw"}>
-              <StateIcon state={st} size={14} />
-            </span>
-            <span style="color:var(--ink)">{stateLabel(st)}</span>
-          </span>
+          <StateChip t={t} />
           {p.mode === "peek" && (
             <span class="chip peek">
               <span>Peek · ⏎ opens</span>

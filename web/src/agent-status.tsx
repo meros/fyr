@@ -11,7 +11,27 @@ export function AgentStatus({ t, now, phone, onRestart }: { t: Thread; now: numb
   const cls = phone ? "sys m-status" : "sys live";
   if (!t.running && !stuck && !t.machineWait) {
     const wait = waitLine(t, now);
-    if (!wait) return null;
+    if (!wait) {
+      // V0.thread-claims: every other wait says why inside the thread too (CI, a quota reset, a held or queued command,
+      // a handover), as its inbox row does; until now only the desktop chip's tooltip had it. The agent's own watches
+      // have their strip with a Cancel (WaitsStrip), so they are not said twice.
+      // Running subagents have theirs too (AgentsStrip).
+      const reason = t.attention.reason ?? "";
+      const watch = !!t.waits?.length && reason.startsWith(t.waits[0].text);
+      const agents = t.tasks.some((x) => x.status === "running");
+      const why = t.attention.state === "waiting" && !watch && !agents ? reason : "";
+      if (!why) return null;
+      return (
+        <div class={cls} role="status" data-wait>
+          <span class="icw">
+            <StateIcon state="waiting" size={14} />
+          </span>
+          <span class="ell" title={why}>
+            {why}
+          </span>
+        </div>
+      );
+    }
     const quiet = t.tasks.some((x) => x.status === "running" && x.quietSince);
     return (
       <div class={`${cls}${quiet ? " stuck" : ""}`} role="status" data-bg-wait>

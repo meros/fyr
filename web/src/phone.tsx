@@ -22,8 +22,9 @@ import { stripHosts } from "./host-load.ts";
 import { SECTIONS, connLabel, connWords, mergedToSettle, unpinned, matchesQuery, selectAllIds, sweptUnread, undoVerb, type SectionKey, type Sections, type View } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
-import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
-import { stateLabel } from "./rows.ts";
+import { BrandMark, StateIcon } from "./icons.tsx";
+import { stateChip } from "./rows.ts";
+import { StateChip } from "./state-chip.tsx";
 import { snoozedHint, type SnoozeCmd } from "./snooze.ts";
 import { AgentPill, showOnly, threadAgent } from "./agent-ui.tsx";
 import { UsageChip } from "./usage-ui.tsx";
@@ -614,7 +615,6 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   useEffect(() => setCollapsed(false), [decision?.id]);
   useEffect(() => setSelectedPr(null), [t.id]);
   const cardOpen = !!decision && !collapsed;
-  const st = t.attention.state;
   const setTab = (tab: string) => p.nav.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
   const allPrs = threadPrs(t);
   const openPrs = headerPrs(t);
@@ -660,12 +660,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
         <div class="m-chips">
           <MProjectChip t={t} projects={p.store.projects} onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "project", ids: [t.id] } })} />
           <button class="m-chipsd" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} aria-label="Thread details">
-          <span class={`m-chip st ${stateClass(st)}`}>
-            <span class={t.running ? "spin icw" : "icw"}>
-              <StateIcon state={st} size={14} />
-            </span>
-            <span>{stateLabel(st)}</span>
-          </span>
+          <StateChip t={t} phone />
           {hostTag(t, p.store.hostList) && !t.hostOffline && (
             <span class="m-chip m m-hostc">
               <HostMark name={t.host!} />
@@ -749,7 +744,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
       {!cardOpen && <LeftoverStrip id={t.id} now={p.now} />}
       {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} events={p.open.events} cwd={t.cwd} />}
       {cardOpen ? (
-        <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
+        <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateChip(t).word} · ${t.project}`}</div>
       ) : (
         <ThreadTabBody
           phone

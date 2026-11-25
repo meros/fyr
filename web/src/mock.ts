@@ -228,7 +228,7 @@ function fullFixture(now: number): Fixture {
   );
   add(
     base("t_block", "Listing cards v2", now, 21, {
-      attention: { state: "blocked", section: "needs", reason: "CI failed", group: "unblock" },
+      attention: { state: "blocked", section: "needs", reason: "CI failed", group: "unblock", word: "CI failed" },
       summary: "lint: 2 errors in CardGrid.tsx",
       pr: { url: "https://github.com/acme/web/pull/88", repo: "acme/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
       unavailable: NOT_RUNNING,
@@ -687,7 +687,7 @@ function railFixture(now: number): Fixture {
       unavailable: { "thread.interrupt": "No run is going" },
     }),
     base("t_cards", "Listing cards v2", now, 21, {
-      attention: { state: "blocked", section: "needs", reason: "CI failed", group: "unblock" },
+      attention: { state: "blocked", section: "needs", reason: "CI failed", group: "unblock", word: "CI failed" },
       summary: "lint: 2 errors in CardGrid.tsx",
       pr: { url: "https://github.com/acme/web/pull/88", repo: "acme/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
       unavailable: quiet,
@@ -714,7 +714,7 @@ function railFixture(now: number): Fixture {
       tasks: [task("st1", "Run Cloud SQL proxy to the clone", "running", now, 120)],
       outbox: [{ id: "m_stuck", state: "sent" }],
       unresponsive: { since: min(51), at: min(38), reason: "it did not take a message within 1 min; a background task holds the process: Run Cloud SQL proxy to the clone" },
-      attention: { state: "blocked", section: "needs", reason: "Agent not responding: it did not take a message within 1 min", group: "unblock" },
+      attention: { state: "blocked", section: "needs", reason: "Agent not responding: it did not take a message within 1 min", group: "unblock", word: "Not responding", subject: "it did not take a message within 1 min" },
       unavailable: { "thread.retry": "The last run did not fail", "thread.markUnseen": "A run is going" },
     }),
   );
