@@ -193,6 +193,16 @@ func TestGuardWakeTheGateHoldsANewCommandWhileMemoryIsShort(t *testing.T) {
 			th, _ := e.Thread(id)
 			t.Fatalf("%s not told: %+v", id, th.Feed.Queue)
 		}
+		// V0.guard-retry-wake: the agent ended its turn on the hold, so the
+		// notice must wake it, not wait for the owner's next message.
+		th, _ := e.Thread(id)
+		woke := false
+		for _, n := range th.Feed.Queue {
+			woke = woke || (string(n.Urgency) == "wake" && strings.Contains(n.What, "Memory has recovered"))
+		}
+		if !woke {
+			t.Fatalf("%s: the recovery notice does not wake: %+v", id, th.Feed.Queue)
+		}
 	}
 	if r := e.HeavyGate(HeavyCall{Thread: a, Class: "make e2e", ToolUse: "tu5"}); r != "" {
 		t.Fatalf("held after memory recovered: %q", r)

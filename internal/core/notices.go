@@ -134,7 +134,7 @@ func slotNotices(r Reduced) []Notice {
 			continue
 		}
 		if d["retry"] == true { // V0.guard-wake (decision 0036 E1)
-			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Memory has recovered on this host: run the heavy command Fyr held again."})
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Wake, What: "Memory has recovered on this host: run the heavy command Fyr held again."})
 			continue
 		}
 		if d["resumed"] == true && d["work"] == true {
