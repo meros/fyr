@@ -1312,7 +1312,7 @@ type Feed = { queue?: Notice[];    // at most 50
 |---|---|---|
 | `result` | wake | The result of an effect the agent asked for, or of an action anyone pressed on the thread's records: "Your change_request merge on PR #12 succeeded." |
 | `watch` | wake | The agent's own watch fired: "Your watch w_… fired: <note>." |
-| `fact.blocks` | wake | A fact that makes a change fail or block: CI failed, changes requested, a conflict, a deploy failed, a PR closed or does not exist (V0.72). |
+| `fact.blocks` | wake | A fact that makes a change fail or block: CI failed, changes requested, unresolved review threads with their count (V0.review-thread-notice), a conflict, a deploy failed, a PR closed or does not exist (V0.72). |
 | `fact.moves` | next | A fact that moves a change forward: checks passed, approved, merged, live. |
 | `record` | next | A host record the thread shows merged or went (3.14). |
 | `owner` | next | The owner renamed the thread, moved its project, turned the live view on or off, changed its settle or archive state, or ended a change (V0.72). A settle by the owner never wakes the agent (V0.89). |

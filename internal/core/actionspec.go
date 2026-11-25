@@ -437,7 +437,9 @@ func prGuard(merge bool) func(*Thread, map[string]any) string {
 		open, conflict, changes := true, false, false
 		if c := changeByPR(t, url); c != nil {
 			fails := func(typ CondType) bool { k := condition(c, typ); return k != nil && k.Status == CondFail }
-			open, conflict, changes = c.Phase.InFlight(), fails(CondConflict), fails(CondReview)
+			// V0.review-thread-notice: unresolved threads alone do not stop the
+			// owner's merge; the base's rules do that, read in the merge ask.
+			open, conflict, changes = c.Phase.InFlight(), fails(CondConflict), fails(CondReview) && !threadsOnly(condition(c, CondReview))
 		}
 		switch {
 		case !open:
@@ -563,8 +565,12 @@ func syncBuiltins(c *Change) {
 			Prompt: "CI failed on " + pr + ". Read the failed jobs (gh run view --log-failed), fix the cause and push; Fyr reads the new checks itself."})
 	}
 	if changesAsked {
+		what := "The review of " + pr + " asks for changes."
+		if k := condition(c, CondReview); threadsOnly(k) {
+			what = pr + " has " + k.Reason + "."
+		}
 		add(ActionSpec{ID: "fyr.review", Label: "Address review", Run: RunAgent, In: "this", Primary: !failing,
-			Prompt: "The review of " + pr + " asks for changes. Read the unresolved review threads, address each one, push, and reply on each thread."})
+			Prompt: what + " Read the unresolved review threads, address each one, push, and reply on each thread."})
 	}
 	if conflict {
 		add(ActionSpec{ID: "fyr.rebase", Label: "Rebase", Run: RunAgent, In: "this",

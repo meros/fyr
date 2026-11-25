@@ -491,6 +491,12 @@ func factNotices(r Reduced, blocks bool) []Notice {
 			if k.Status == CondFail {
 				state = failWord
 			}
+			said := state
+			if threadsOnly(&k) {
+				// V0.review-thread-notice: name the count; threads resolved
+				// and new ones left on the same head are news again.
+				state, said = k.Reason, k.Reason+"@"+k.At.UTC().Format(time.RFC3339Nano)
+			}
 			// V0.project-playbook: a stage reached says where to look at it.
 			if env, ok := strings.CutPrefix(string(k.Type), condDeployPrefix); ok && k.Status == CondOK {
 				for _, ev := range c.Evidence {
@@ -501,7 +507,7 @@ func factNotices(r Reduced, blocks bool) []Notice {
 				}
 			}
 			key := "cond:" + c.ID + ":" + string(k.Type)
-			out = append(out, Notice{About: about, Key: key, Subject: subj + " on " + changeName(c), States: []string{state}, said: key + "@" + changeHead(c), state: state})
+			out = append(out, Notice{About: about, Key: key, Subject: subj + " on " + changeName(c), States: []string{state}, said: key + "@" + changeHead(c), state: said})
 		}
 		var prevPhase Phase
 		if was != nil {
