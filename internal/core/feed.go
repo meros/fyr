@@ -233,6 +233,13 @@ func (t *Thread) Asleep() bool { return t.Settle.At != nil || t.ArchivedAt != ni
 // and not moving to another profile (the handover's end wakes it).
 func (t *Thread) wakeable() bool { return !t.Asleep() && t.Handover == nil }
 
+// wakeableAt is wakeable that also holds a thread the provider's quota
+// stopped and that waits for its reset (V0.quota-held-wakes): a notice would
+// start a turn the provider refuses again, so it waits for the auto-continue.
+func (t *Thread) wakeableAt(now time.Time) bool {
+	return t.wakeable() && QuotaWaitText(t, now) == ""
+}
+
 // NoticeText is how notices read to the agent: one line each.
 func NoticeText(ns []Notice) string {
 	lines := make([]string, len(ns))

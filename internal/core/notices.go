@@ -202,9 +202,9 @@ func project(r Reduced, now time.Time) []Effect {
 			added = added || t.Feed.waking(n, now)
 		}
 	}
-	revived := !r.Before.wakeable() && t.wakeable()
+	revived := !r.Before.wakeableAt(now) && t.wakeableAt(now)
 	freed := r.In.Kind == KindClock
-	if !t.wakeable() || !t.Feed.wakes(now) || !(added || revived || freed) {
+	if !t.wakeableAt(now) || !t.Feed.wakes(now) || !(added || revived || freed) {
 		return nil
 	}
 	return []Effect{{Kind: EffectFeed}}
@@ -736,7 +736,7 @@ func reduceFeedTake(r Rec, in Input, now time.Time) (Result, error) {
 	var out []Notice
 	switch a.At {
 	case AtIdle:
-		if !t.wakeable() || !f.wakes(now) {
+		if !t.wakeableAt(now) || !f.wakes(now) {
 			return Result{}, nil
 		}
 		out = f.take(func(Notice) bool { return true })

@@ -427,3 +427,21 @@ func TestQuotaStaleFailureReason(t *testing.T) {
 		t.Fatalf("StateText leaked stale countdown: %q", st)
 	}
 }
+
+// V0.quota-held-wakes: a notice does not wake a thread the provider's quota
+// stopped while it waits for the reset; the auto-continue delivers it.
+func TestQuotaWaitHoldsFeedWakes(t *testing.T) {
+	at := time.Date(2026, 11, 21, 12, 0, 0, 0, time.Local)
+	th, v := &Thread{ID: "t_1", Profile: "antigravity", ActivityAt: at, Conversation: Conversation{
+		Failure: &Failure{Class: ClassQuota, Message: "⚠ Individual quota reached. Resets in 2h.", At: at},
+	}}, &View{SeenAt: at}
+	th.Feed.Enqueue(Notice{About: "thread", Key: "k", What: "A question was answered.", Urgency: Wake, At: at})
+	if th.wakeableAt(at.Add(time.Minute)) {
+		t.Fatal("quota-waiting thread is wakeable")
+	}
+	res := step(t, th, v, Input{Source: Observer(ObsProcess), Kind: KindFeedTake, Args: FeedTake{At: AtIdle}}, at.Add(time.Minute))
+	_ = res
+	if len(th.Feed.Queue) != 1 {
+		t.Fatalf("notice was taken: %+v", th.Feed.Queue)
+	}
+}

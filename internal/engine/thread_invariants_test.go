@@ -625,3 +625,25 @@ func TestThreadInvariantsCheckEveryPath(t *testing.T) {
 		t.Fatalf("change.observed was not checked:\n%s", ring())
 	}
 }
+
+// V0.quota-held-wakes: an agent's message to a thread waiting for its quota
+// is refused, so it cannot start the refused turn again and again.
+func TestAgentSendToQuotaWaitRefused(t *testing.T) {
+	e, _, now := bare(t)
+	e.Agents = &sends{}
+	id := bareThread(t, e)
+	other := bareThread(t, e)
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunStarted, Thread: id}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id, Args: core.RunEndedArgs{
+		Failure: &core.Failure{Class: core.ClassQuota, Message: "⚠ Individual quota reached. Resets in 2h.", At: *now},
+		Data:    map[string]any{"durationMs": float64(500)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := callAs(t, e, other, "thread_send", map[string]any{"id": id, "text": "hello"})
+	if !isErr || !strings.Contains(out, "quota") {
+		t.Fatalf("not refused: %v %q", isErr, out)
+	}
+}
