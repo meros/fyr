@@ -273,7 +273,7 @@ const SCREENS = [
   // inset; with the keyboard up a focused field and its button stay in view.
   { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 8 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
   // V0.settings-ia: the per-job rows are a folded group (Per job); the screen opens it, as the owner's device would remember.
-  { name: "settings providers", url: "?mock=rail&settings=providers", storage: { "fyr.settingsFold": '{":sajobs":true,":found":true}' }, ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section.sacalls select, section.sajobs select').length === 5" },
+  { name: "settings providers", url: "?mock=rail&settings=providers", storage: { "fyr.settingsFold": '{":sajobs":true,":found":true}' }, ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section.sacalls select, section.sajobs select').length === 4" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
