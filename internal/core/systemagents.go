@@ -18,7 +18,6 @@ const (
 
 	JobTitle    = "title"                  // V0.108: Regenerate title
 	JobSetup    = "setup"                  // the project setup run: icon, colour and name
-	JobQuestion = "question"               // V0.210: does a turn's end wait on the owner
 	JobSearch   = "search"                 // V0.ai-search: which threads fit the owner's words
 	JobApproval = string(DecisionApproval) // V0.tool-approval-judge: allow or escalate a tool approval
 
@@ -39,7 +38,6 @@ type SystemJob struct {
 var SystemJobs = []SystemJob{
 	{ID: JobTitle, Name: "Thread titles"},
 	{ID: JobSetup, Name: "Project setup"},
-	{ID: JobQuestion, Name: "Questions in text"},
 	{ID: JobSearch, Name: "Thread search"},
 	{ID: JobApproval, Name: "Tool approvals", DefaultThread: true},
 }

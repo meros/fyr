@@ -1,6 +1,6 @@
 # 0033: Questions written in text reach Needs you through a cheap classifier
 
-Status: accepted, 18 Nov 2026. Spec: V0.210.
+Status: accepted, 18 Nov 2026; superseded by V0.text-ask-removed, 25 Nov 2026 (the feature is gone). Spec: V0.210.
 
 ## Problem
 

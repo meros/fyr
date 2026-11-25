@@ -21,7 +21,7 @@ type SystemAgent struct {
 }
 
 // SystemAgent reads the owner's setting for a job (core.JobTitle,
-// core.JobSetup, core.JobQuestion, core.JobSearch, core.JobApproval): the
+// core.JobSetup, core.JobSearch, core.JobApproval): the
 // job's override, else the default; no provider is the host's default
 // provider, no model is that provider's fast model. For a thread-defaulting
 // job (core.JobApproval) with no override, it returns an empty SystemAgent

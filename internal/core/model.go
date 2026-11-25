@@ -55,10 +55,6 @@ type Thread struct {
 	// QuietMerge is the change whose auto-approved merge is the thread's
 	// latest news (V0.200): no push for it. A new ask or message clears it.
 	QuietMerge string `json:"quietMerge,omitempty"`
-	// TextNudged is the run count (RunEnds) whose text Fyr last read as a
-	// question and told the agent so (V0.text-ask-nudge): the run after it is
-	// the agent's answer, and is not read again.
-	TextNudged int `json:"textNudged,omitempty"`
 	// SplitNudged: Fyr told the agent once to start its other topics in
 	// threads of their own (V0.thread-focus).
 	SplitNudged bool `json:"splitNudged,omitempty"`

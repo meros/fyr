@@ -536,7 +536,6 @@ export function createMockApi(scenario: string): Api {
             jobs: [
               { id: "title", name: "Thread titles", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
               { id: "setup", name: "Project setup", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
-              { id: "question", name: "Questions in text", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
             ],
           };
         const first = ps[0];
@@ -548,7 +547,6 @@ export function createMockApi(scenario: string): Api {
           jobs: [
             { id: "title", name: "Thread titles", choice: {}, ...runs },
             { id: "setup", name: "Project setup", choice: {}, ...runs },
-            { id: "question", name: "Questions in text", choice: {}, ...runs },
           ],
         };
       });

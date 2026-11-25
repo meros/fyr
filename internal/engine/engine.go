@@ -204,12 +204,11 @@ type Engine struct {
 	SubagentLive func(thread, agent string) bool
 	// V0.rerun-classes: the threads whose killed job waits for its rerun
 	// (thread → entry); the kills are gs.RerunKills.
-	rerunWait    map[string]string // under mu
-	inv          invariants        // V0.load-invariants: under its own lock
-	titleMu      sync.Mutex
-	titling      map[string]bool
-	textAskSlots chan struct{} // V0.210: the question job's calls at once
-	searchSlots  chan struct{} // V0.ai-search: the searches at once
+	rerunWait   map[string]string // under mu
+	inv         invariants        // V0.load-invariants: under its own lock
+	titleMu     sync.Mutex
+	titling     map[string]bool
+	searchSlots chan struct{} // V0.ai-search: the searches at once
 	// V0.quota-reset-wake: exhausted quota windows observed (profile\x00window
 	// -> resetsAt) and reset frames already sent (thread\x00profile\x00window -> resetsAt), under mu.
 	quotaWindows   map[string]time.Time
@@ -217,7 +216,7 @@ type Engine struct {
 }
 
 func New(st *store.Store) *Engine {
-	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, textAskSlots: make(chan struct{}, textAskCalls), searchSlots: make(chan struct{}, searchCalls), threads: map[string]*core.Thread{}, views: map[string]*core.View{},
+	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, searchSlots: make(chan struct{}, searchCalls), threads: map[string]*core.Thread{}, views: map[string]*core.View{},
 		last: map[string]core.State{}, lastWhy: map[string]string{}, revs: map[string]int64{}, usage: map[string]*api.Usage{}, projects: map[string]*core.Project{}, stored: map[string]*storedJSON{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{},
 		quotaWindows: map[string]time.Time{}, quotaResetSent: map[string]time.Time{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute},

@@ -49,9 +49,6 @@ type AgentDeps struct {
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none.
 	Titler Titler
-	// TextJudge reads the end of a turn for a question to the owner (V0.210);
-	// nil: this host does not look.
-	TextJudge TextJudge
 	// Searcher picks threads for the owner's words (V0.ai-search); nil: this
 	// host has no AI search.
 	Searcher Searcher
