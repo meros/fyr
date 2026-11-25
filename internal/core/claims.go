@@ -39,6 +39,7 @@ const (
 	ClaimNeed         = "need"
 	ClaimRunRequest   = "run-request"
 	ClaimCommand      = "command"
+	ClaimMerging      = "merging"
 	ClaimSettleOffer  = "settle-offer"
 	ClaimCI           = "ci"
 	ClaimWatch        = "watch"
@@ -51,7 +52,7 @@ const (
 var ClaimOrder = []string{
 	ClaimAsk, ClaimHandover, ClaimQuota, ClaimFailure, ClaimUnresponsive, ClaimNoProgress,
 	ClaimRun, ClaimStarting, ClaimMachine, ClaimDelivering, ClaimGate, ClaimTasks, ClaimSlot,
-	ClaimNeed, ClaimRunRequest, ClaimCommand, ClaimSettleOffer,
+	ClaimNeed, ClaimRunRequest, ClaimCommand, ClaimMerging, ClaimSettleOffer,
 	ClaimCI, ClaimWatch, ClaimWaking, ClaimRule,
 }
 
@@ -170,6 +171,11 @@ func claims(t *Thread, now time.Time, on func(repo string) bool, counts func(Rul
 	if a := RunningRequest(t); a != nil {
 		// V0.waiting-for-command: the command the owner pressed Run on runs.
 		moving(ClaimCommand, Waiting, "Waiting for command: "+a.Why)
+	}
+	if s := mergingText(t); s != "" {
+		// V0.merge-in-flight: a merge Fyr started that GitHub has not
+		// reported yet.
+		moving(ClaimMerging, Waiting, s)
 	}
 	if t.SettleAsk != nil {
 		// V0.settle-offer-your-move: the agent offers to settle.

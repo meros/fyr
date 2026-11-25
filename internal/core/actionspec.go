@@ -251,6 +251,9 @@ func (h Holder) Available(a ActionSpec) string {
 			return "It is running"
 		}
 	}
+	if c := h.Change; c != nil && a.Run == RunFyr && a.Effect == FyrMerge && c.InMerge() {
+		return "It is merging" // V0.merge-in-flight: however the merge was started
+	}
 	if a.Run == RunFyr {
 		fx := FyrEffects[a.Effect]
 		if fx == nil {

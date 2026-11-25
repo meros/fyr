@@ -1407,6 +1407,7 @@ In v0 the residence host lists what a thread waits on as **claims** (`core.Claim
 | 14 | need | yours | blocked | a change is ready to merge, or stopped on a failure |
 | 15 | run-request | yours | blocked | a command the agent asked the owner to run |
 | 16 | command | moving | waiting | that command runs |
+| 16a | merging | moving | waiting | a merge Fyr started on a change's PR that GitHub has not reported yet (V0.merge-in-flight) |
 | 17 | settle-offer | yours | blocked | the agent offers to settle |
 | 18 | ci | moving | waiting | CI runs on an open PR, or a merge ask is held for it |
 | 19 | watch | moving | waiting | an armed watch of the agent's, or the owner's quota wake |

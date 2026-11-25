@@ -101,6 +101,10 @@ type Change struct {
 	// AutoApproved is set when Fyr approved the change's merge by the repo
 	// setting, with no press (V0.102).
 	AutoApproved *AutoApproval `json:"autoApproved,omitempty"`
+	// Merging is set while a merge Fyr started on the change's PR is in
+	// flight (V0.merge-in-flight): from the effect's start until GitHub
+	// reports the PR merged, the merge is refused, or MergingFor passes.
+	Merging *Merging `json:"merging,omitempty"`
 }
 
 // Park is when the owner pressed Not now on a change, and a fingerprint of
