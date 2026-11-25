@@ -235,6 +235,7 @@ img{-webkit-user-drag:none}
 /* solid buttons sink */
 :is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.htabs.compact .htab,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
 :is(.btn,.m-bt,.m-sbtn,.m-capb,.m-dchip)[data-pressed]:not(.p){background-color:var(--sunken)}
+.toast .btn[data-pressed]{background-color:rgba(255,255,255,.14)} /* the toast is dark in both themes: a light well would hide its light text, as on the phone's .tb */
 :is(.btn.p,.m-bt.p,.m-send,.m-bnew)[data-pressed]{filter:brightness(.86)}
 /* icon buttons get a soft well */
 :is(.b44,.ibtn,.dh .x,.att-b,.att-x,.src-x,.m-load,.m-bi)[data-pressed]{opacity:1;background-color:var(--select);scale:.92;transition-duration:.05s}
