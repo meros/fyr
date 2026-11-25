@@ -75,6 +75,11 @@ func ChangeNeedWith(t *Thread, c *Change, on func(repo string) bool) *Need {
 			return &Need{Cause: CauseAsk, Ask: d.ID, Action: d.Effect.Action, Head: head, Text: text}
 		}
 	}
+	if c.InMerge() {
+		// V0.merge-in-flight: the merge was started; nothing here is the
+		// owner's until GitHub answers.
+		return &Need{Cause: CauseMerging, Text: MergingText, Head: c.PR.Head, Muted: true}
+	}
 	if n := heldNeed(t, c); n != nil { // V0.136: a merge ask waits for CI
 		return n
 	}

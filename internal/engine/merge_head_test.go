@@ -121,19 +121,28 @@ func TestMergeBoundToHead(t *testing.T) {
 		t.Fatalf("PR tab merged head %v, want %s", got, headB)
 	}
 
+	// V0.merge-in-flight: while that merge is in flight the offer is closed.
+	if m := findOffer(changeOf(h, id, c.ID).Offers, "fyr.merge"); m != nil {
+		if r := h.cmd("action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest, "head": headB}); r.OK || !strings.Contains(r.Error, "It is merging") {
+			t.Fatalf("a press during the merge: %+v", r)
+		}
+	}
+	// A new head ends it (the merge was bound to the old one).
+	const headC = "c3d4e5f60718293a4b5c6d7e8f90123456789012"
+	set(headC)
 	m := findOffer(changeOf(h, id, c.ID).Offers, "fyr.merge")
-	if r := h.cmd("action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest, "head": headA}); r.OK || !strings.Contains(r.Error, core.HeadMoved) {
+	if r := h.cmd("action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest, "head": headB}); r.OK || !strings.Contains(r.Error, core.HeadMoved) {
 		t.Fatalf("press with a stale head: %+v", r)
 	}
-	if r := h.cmd("action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest, "head": headB}); !r.OK {
+	if r := h.cmd("action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest, "head": headC}); !r.OK {
 		t.Fatalf("press with the current head: %+v", r)
 	}
 	eventually(t, "the press ran", func() bool { return h.r.n() == 3 })
 	h.r.mu.Lock()
 	got = h.r.calls[2].Args["head"]
 	h.r.mu.Unlock()
-	if got != headB {
-		t.Fatalf("the press merged head %v, want %s", got, headB)
+	if got != headC {
+		t.Fatalf("the press merged head %v, want %s", got, headC)
 	}
 }
 

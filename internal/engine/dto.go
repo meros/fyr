@@ -46,7 +46,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	running := t.Running || t.RunningTasks() > 0
 	for i := range changes { // V0.97: derived, never stored
 		c := &changes[i]
-		if c.Phase.InFlight() && !c.Dismissed {
+		if c.Phase.InFlight() && !c.Dismissed && !c.InMerge() { // V0.merge-in-flight: a started merge is not Ready
 			c.Ready = core.Ready(c.PR, running)
 		}
 		c.Need = core.ChangeNeedWith(t, c, e.autoMergeOn) // V0.101: the client only reads it

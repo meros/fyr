@@ -170,8 +170,10 @@ func TestPushQuietFollowsTheAutoMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := Compute(th, &View{}, later).State; got != Blocked || !PushQuiet(th, got, on) {
-		t.Fatalf("the ready PR of the running merge: %s, quiet %v", got, PushQuiet(th, got, on))
+	// V0.merge-in-flight: the running merge is Waiting, not a Ready PR in
+	// Your move; it stays quiet.
+	if got := Compute(th, &View{}, later).State; got != Waiting || !PushQuiet(th, got, on) {
+		t.Fatalf("the PR of the running merge: %s, quiet %v", got, PushQuiet(th, got, on))
 	}
 	if !PushQuiet(th, Done, on) {
 		t.Fatal("done after the auto-merge pushes")

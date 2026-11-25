@@ -430,7 +430,7 @@ export type ChangePhase = "working" | "review" | "landed" | "live" | "abandoned"
 /** V0.101 (decision 0024 section 5): why a change waits on the owner, as the host computed it. head is the commit the
  *  cause is about (a Merge button is bound to it); ask and action name an open ask. */
 export interface ChangeNeed {
-  cause: "ask" | "ready" | "failure" | "fixing" | "waiting" | "automerge"; // V0.205: automerge is muted, Fyr merges it itself
+  cause: "ask" | "ready" | "failure" | "fixing" | "waiting" | "automerge" | "merging"; // V0.205: automerge is muted, Fyr merges it itself; V0.merge-in-flight: so is a merge that was started
   head?: string;
   text?: string;
   ask?: string;

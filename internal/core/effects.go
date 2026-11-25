@@ -59,6 +59,7 @@ func reduceEffectResult(r Rec, in Input, now time.Time) (Result, error) {
 	case !x.OK:
 		res.Events = append(res.Events, Event{"effect.error", map[string]any{"kind": ef.Kind, "error": x.Text}})
 	}
+	mergeResult(r.T, ef.Request, x.OK, now) // V0.merge-in-flight
 	// V0.136: a merge Fyr ran that failed, whoever started it, marks the
 	// change and tells the agent GitHub's words and the next step.
 	if req := ef.Request; req != nil && req.Action == FyrMerge && !x.OK && (ef.Allow || ef.ByOwner || ef.Press != nil) {

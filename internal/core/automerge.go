@@ -201,6 +201,10 @@ func PushQuiet(t *Thread, state State, on func(repo string) bool) bool {
 		return len(t.Decisions) > 0
 	case Done:
 		return autoMerged(t) != nil
+	case Waiting:
+		// V0.merge-in-flight: the approved merge is in flight.
+		c := autoMerged(t)
+		return c != nil && c.InMerge()
 	case Blocked:
 		c := autoMerged(t)
 		if c == nil || t.Unresponsive != nil {

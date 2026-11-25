@@ -225,6 +225,10 @@ func ReduceIn(env Env, t *Thread, v *View, in Input, now time.Time) (*Thread, *V
 	if err != nil {
 		return nil, nil, Result{}, asRejection(err)
 	}
+	// V0.merge-in-flight: a merge this Input started, before anything below
+	// reads the change's need or whether work goes on.
+	dropStaleMerging(t, now)
+	markMerging(t, res.Effects, now)
 	// V0.review-correctness (2): the thread lands in its project before the
 	// rules read it.
 	env.file(t)

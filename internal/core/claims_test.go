@@ -11,7 +11,7 @@ import (
 // change of where threads stand, so it is made here too.
 func TestClaimOrderIsPinned(t *testing.T) {
 	want := []string{"ask", "handover", "quota", "failure", "unresponsive", "no-progress", "run", "starting", "machine",
-		"delivering", "gate", "tasks", "slot", "need", "run-request", "command", "settle-offer", "ci", "watch", "waking", "rule"}
+		"delivering", "gate", "tasks", "slot", "need", "run-request", "command", "merging", "settle-offer", "ci", "watch", "waking", "rule"}
 	if !slices.Equal(ClaimOrder, want) {
 		t.Fatalf("ClaimOrder = %v", ClaimOrder)
 	}
