@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/release"
@@ -30,14 +31,18 @@ type Watcher struct {
 	Start func(sha string)
 	Now   func() time.Time
 
-	kick chan struct{}
-	errs int
+	kickOnce sync.Once
+	kick     chan struct{}
+	errs     int
 }
 
 // wanted is the release waiting for its quiet period, kept across restarts.
 type wanted struct {
 	SHA  string    `json:"sha"`
 	Seen time.Time `json:"seen"`
+	// Due is when its quiet period ends and it installs by itself, for
+	// the fronts (V0.update-now-fresh); the watcher reads Seen.
+	Due  time.Time `json:"due,omitzero"`
 	Back bool      `json:"back,omitempty"`
 }
 
@@ -48,13 +53,16 @@ const (
 
 // Kick checks deployable now (after Fyr merged a PR of its own repo).
 func (w *Watcher) Kick() {
-	if w.kick == nil {
-		return
-	}
 	select {
-	case w.kick <- struct{}{}:
+	case w.kicks() <- struct{}{}:
 	default:
 	}
+}
+
+// kicks is the channel Kick wakes Run with; a Kick before Run waits for it.
+func (w *Watcher) kicks() chan struct{} {
+	w.kickOnce.Do(func() { w.kick = make(chan struct{}, 1) })
+	return w.kick
 }
 
 // DefaultEvery is how often a host reads deployable: hourly, which is
@@ -71,7 +79,7 @@ func (w *Watcher) every() time.Duration {
 
 // Run polls until ctx ends.
 func (w *Watcher) Run(ctx context.Context) {
-	w.kick = make(chan struct{}, 1)
+	kick := w.kicks()
 	for {
 		w.Step(ctx)
 		next := w.every()
@@ -84,7 +92,7 @@ func (w *Watcher) Run(ctx context.Context) {
 			t.Stop()
 			return
 		case <-t.C:
-		case <-w.kick:
+		case <-kick:
 			t.Stop()
 		}
 	}
@@ -140,7 +148,7 @@ func (w *Watcher) Step(ctx context.Context) {
 	seen, _ := d.DB.GetKV(seenKey)
 	if sha != seen {
 		d.DB.SetKV(seenKey, sha)
-		wt := wanted{SHA: sha, Seen: w.now()}
+		wt := wanted{SHA: sha, Seen: w.now(), Due: w.now().Add(w.quiet())}
 		// A move to an ancestor of what CI published before is a person's
 		// act (to stop a bad release everywhere): follow it.
 		if seen != "" {

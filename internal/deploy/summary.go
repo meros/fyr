@@ -35,6 +35,9 @@ type HostUpdate struct {
 	// a pinned version (V0.versioned-releases).
 	Version string `json:"version,omitempty"`
 	Channel string `json:"channel,omitempty"`
+	// Due is when the release that waits out its quiet period installs by
+	// itself (V0.update-now-fresh); zero when none waits.
+	Due time.Time `json:"due,omitzero"`
 }
 
 // BadMark is a release marked bad on this host.
@@ -151,6 +154,12 @@ func (d *Deployer) Summary() HostUpdate {
 		s.Bad = m
 	}
 	s.Paused = d.PausedBy() != nil
+	if raw, _ := d.DB.GetKV(wantedKey); raw != "" {
+		var wt wanted
+		if json.Unmarshal([]byte(raw), &wt) == nil && wt.SHA != "" && !sameCommit(wt.SHA, s.Running) {
+			s.Due = wt.Due
+		}
+	}
 	s.Version = d.LiveVersion
 	if d.Releases != nil {
 		s.Channel = d.Releases.ChannelName()

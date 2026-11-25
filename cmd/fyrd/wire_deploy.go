@@ -123,6 +123,9 @@ func (w *wiring) wireDeploy() {
 	// at once, ending a local build's pause.
 	// V0.host-updates: the press is also the retry of a release held back
 	// as bad here; if it fails again it is marked again.
+	// V0.update-now-fresh: it reads `deployable` at once (not the hourly
+	// read) and skips the quiet period; the watcher reads it again too, so
+	// the host's update state follows.
 	updateNow := func() error {
 		if dep.Busy() {
 			return errors.New("An update runs already")
@@ -135,6 +138,7 @@ func (w *wiring) wireDeploy() {
 				log.Printf("update now: %v", err)
 			}
 		}()
+		watcher.Kick()
 		return nil
 	}
 	serveTarget := "unix:" + auth.SocketPath(data, auth.ServeSocket)

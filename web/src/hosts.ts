@@ -46,6 +46,8 @@ interface HostUpdate {
   /** V0.versioned-releases: the running build's vX.Y.Z (empty on main) and the channel it follows */
   version?: string;
   channel?: string;
+  /** V0.update-now-fresh: when the release that waits out its quiet period installs by itself; missing when none waits */
+  due?: string;
 }
 
 export interface HostLink {
@@ -125,6 +127,7 @@ function decodeUpdate(u: Record<string, unknown>): HostUpdate {
     ...(u.paused === true ? { paused: true } : {}),
     ...(str(u.version) ? { version: str(u.version) } : {}),
     ...(str(u.channel) ? { channel: str(u.channel) } : {}),
+    ...(str(u.due) ? { due: str(u.due) } : {}),
   };
 }
 
@@ -173,7 +176,18 @@ export function updateAction(h: Pick<HostInfo, "update">, view: { bad?: { commit
   }
   if (t) return { title: `The ${LAST_BAD[u!.last!.result]}`, desc: `${u!.last!.reason ? `Reason: ${u!.last!.reason}. ` : ""}This host is still behind the newest release.`, button: "Update now", chip: t.chip };
   if (u ? u.paused : view?.paused) return { title: "A local build runs", desc: "Auto-update waits until a release contains it, or until you go back to the release.", button: "Back to release" };
-  if (u) return u.behind === 0 ? null : { title: u.behind > 0 ? `${u.behind} commit${u.behind === 1 ? "" : "s"} behind the newest release` : "A newer release may be ready", desc: "Fyr installs it by itself when Auto-update is on; Update now does not wait.", button: "Update now" };
+  // V0.update-now-fresh: Update now reads the newest green main at once and installs it without the quiet period, so it
+  // is offered while a release waits (with the time it would install by itself) and also when the host thinks it is up
+  // to date: it reads `deployable` only hourly, so a release CI published since may not be known here yet.
+  if (u) {
+    if (u.behind === 0) return { title: "Up to date as of the last read", desc: "Fyr reads the newest release every hour; Update now reads it again and installs it at once if it is newer.", button: "Update now" };
+    const due = u.due && Date.parse(u.due) > now ? clockTime(u.due) : "";
+    return {
+      title: u.behind > 0 ? `${u.behind} commit${u.behind === 1 ? "" : "s"} behind the newest release` : "A newer release may be ready",
+      desc: due ? `With Auto-update on, Fyr installs it by itself at ${due}, once the release has stayed the newest for its quiet period; Update now does not wait.` : "Fyr installs it by itself when Auto-update is on; Update now does not wait.",
+      button: "Update now",
+    };
+  }
   return view ? { title: "Install the newest release now", desc: "This host does not say how far behind it is.", button: "Update now" } : null;
 }
 

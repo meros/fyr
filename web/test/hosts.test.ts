@@ -234,7 +234,13 @@ test("V0.settings-ia: what is wrong with a host's update is read one way: its ow
   assert.equal(updateTrouble({}, { bad: { commit: "", why: "" } }), null);
 
   // the one row that asks for a press
-  assert.equal(updateAction({ update: { behind: 0 } }, null, now), null, "nothing to install");
+  // V0.update-now-fresh: up to date by the last hourly read still offers the press, which reads the tag again.
+  assert.deepEqual(updateAction({ update: { behind: 0 } }, null, now), { title: "Up to date as of the last read", desc: "Fyr reads the newest release every hour; Update now reads it again and installs it at once if it is newer.", button: "Update now" });
+  // A release that waits out its quiet period says when it installs by itself; a due time past says nothing of it.
+  const due = "2026-11-19T15:07:00";
+  assert.equal(updateAction({ update: { behind: 2, due } }, null, now)?.desc, `With Auto-update on, Fyr installs it by itself at ${clockTime(due)}, once the release has stayed the newest for its quiet period; Update now does not wait.`);
+  assert.equal(updateAction({ update: { behind: 2, due: "2026-11-19T14:50:00" } }, null, now)?.desc, "Fyr installs it by itself when Auto-update is on; Update now does not wait.");
+  assert.equal(decodeHosts([{ name: "x", online: true, update: { behind: 2, due } }])[0].update!.due, due);
   assert.deepEqual(updateAction({ update: { behind: 3 } }, null, now), { title: "3 commits behind the newest release", desc: "Fyr installs it by itself when Auto-update is on; Update now does not wait.", button: "Update now" });
   assert.equal(updateAction({ update: { behind: 1 } }, null, now)?.title, "1 commit behind the newest release");
   assert.equal(updateAction({ update: { behind: -1 } }, null, now)?.button, "Update now", "not known: the press is offered");
