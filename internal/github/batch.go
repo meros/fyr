@@ -19,7 +19,8 @@ const BatchMax = 20
 const prFields = `state mergeable reviewDecision title headRefName headRefOid baseRefName isDraft mergeStateStatus mergedAt
   mergeCommit { oid } autoMergeRequest { enabledAt } labels(first: 20) { nodes { name } } reviewThreads(first: 100) { totalCount nodes { isResolved } }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-    __typename ... on CheckRun { name status conclusion } ... on StatusContext { context state } } } } } } }`
+    __typename ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { workflow { name } } } }
+    ... on StatusContext { context state } } } } } } }`
 
 // FetchViews reads the PRs (URLs of one repo) in one query and returns, by
 // URL, each one's JSON in gh pr view's shape. A PR GitHub did not return
@@ -109,7 +110,9 @@ func (p *batchPR) view() map[string]any {
 	rollup := []map[string]any{}
 	for _, c := range p.Commits.Nodes {
 		if c.Commit.Rollup != nil {
-			rollup = append(rollup, c.Commit.Rollup.Contexts.Nodes...)
+			for _, n := range c.Commit.Rollup.Contexts.Nodes {
+				rollup = append(rollup, flatCheck(n))
+			}
 		}
 	}
 	rd := ""
@@ -149,4 +152,28 @@ func (p *batchPR) view() map[string]any {
 		v["mergedAt"] = *p.MergedAt
 	}
 	return v
+}
+
+// flatCheck puts a CheckRun's workflow name where gh pr view prints it
+// (workflowName), which V0.ci-superseded-checks reads to tell two runs of
+// one check from two checks of the same name in different workflows.
+func flatCheck(n map[string]any) map[string]any {
+	cs, ok := n["checkSuite"].(map[string]any)
+	if !ok {
+		return n
+	}
+	out := make(map[string]any, len(n))
+	for k, v := range n {
+		if k != "checkSuite" {
+			out[k] = v
+		}
+	}
+	if wr, ok := cs["workflowRun"].(map[string]any); ok {
+		if wf, ok := wr["workflow"].(map[string]any); ok {
+			if name, ok := wf["name"].(string); ok {
+				out["workflowName"] = name
+			}
+		}
+	}
+	return out
 }
