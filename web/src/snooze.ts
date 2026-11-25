@@ -113,3 +113,15 @@ export function snoozedHint(list: Thread[], now: number): string {
   if (next) return `next: ${untilLabel(next, now)}`;
   return list.some((t) => t.view?.snoozeWhenDone) ? SNOOZE_DONE_LINE : "none";
 }
+
+// ---- V0.snooze-until-wake: the snooze of the waits strip (waits-ui.tsx) ----
+
+type Wait = NonNullable<Thread["waits"]>[number];
+
+/** The time a wait's snooze runs to, or null when it has none: the wait is not on a time, the time has passed, or the
+ *  host does not take a snooze of this thread (settled, archived). A thread that is snoozed already has no button. */
+export function snoozeUntilWait(t: Pick<Thread, "unavailable" | "attention">, w: Wait, now: number): string | null {
+  if (!w.at || !(new Date(w.at).getTime() > now)) return null;
+  if (t.attention?.state === "snoozed" || t.unavailable["thread.snooze"]) return null;
+  return w.at;
+}

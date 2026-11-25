@@ -785,7 +785,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
       )}
       {/* V0.next-step-dock: a run request waits in the dock above the composer, as on the desktop (DockRun) */}
       {!decision && dock && showsDecision(p.tab) && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={(a, args) => void p.commands.run(a, [t.id], args)} onShow={(id) => showCard(id, p.tab, setTab)} />}
-      {!decision && !nextOffer && <WaitsStrip phone t={t} onCancel={(rule) => void p.commands.run("thread.cancelWait", [t.id], { rule })} />}
+      {!decision && !nextOffer && <WaitsStrip phone t={t} onCancel={(rule) => void p.commands.run("thread.cancelWait", [t.id], { rule })} onSnooze={(until) => p.actions.snooze({ action: "thread.snooze", ids: [t.id], args: { until } })} />}
       {!decision && !nextOffer && (
         <PhoneComposer
           key={t.id}
