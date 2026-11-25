@@ -124,16 +124,36 @@ func TestCommandEffectsFixture(t *testing.T) {
 		if work != nil {
 			h.wait(id, name+": the work it started ended", func(t core.Thread, a core.Attention) bool { return t.RunEnds > ends && work(t, a) })
 		}
-		h.e.Hub.Unsubscribe(ch)
-		// As a client reads them (#42): by rev, and none older than the
-		// thread before the command (a late upsert of the turn before).
+		// The stream is behind the engine: apply commits a change and
+		// publish sends its upsert after, without the lock, so the wait above
+		// can see the work over before its last upsert is sent. Read up to
+		// the upsert of the thread as it rests now, and nothing after it (a
+		// clock tick), so the path ends at the same point on every run.
+		want := dtoOf(h.e, id).Rev
 		var frames []api.Thread
-		for f := range ch {
-			var d api.Thread
-			if f.Event == stream.FrameThread && json.Unmarshal(f.Data, &d) == nil && d.ID == id && d.Rev > before.Rev {
-				frames = append(frames, d)
+		timeout := time.After(8 * time.Second)
+		for caught := false; !caught; {
+			select {
+			case f, ok := <-ch:
+				if !ok {
+					t.Fatalf("%s: the stream dropped the subscription", name)
+				}
+				var d api.Thread
+				if f.Event != stream.FrameThread || json.Unmarshal(f.Data, &d) != nil || d.ID != id {
+					continue
+				}
+				caught = d.Rev >= want
+				// As a client reads them (#42): by rev, and none older than
+				// the thread before the command (a late upsert of the turn
+				// before).
+				if d.Rev > before.Rev && d.Rev <= want {
+					frames = append(frames, d)
+				}
+			case <-timeout:
+				t.Fatalf("%s: no upsert of the thread at rev %d", name, want)
 			}
 		}
+		h.e.Hub.Unsubscribe(ch)
 		slices.SortStableFunc(frames, func(a, b api.Thread) int { return int(a.Rev - b.Rev) })
 		var seen []effectAttention
 		for _, d := range frames {
