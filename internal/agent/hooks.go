@@ -48,17 +48,26 @@ func (m *Manager) feed(threadID string) error {
 // hook answers a hook callback of s's process by its callback id. The
 // feed's notices are for the thread's own agent (#49): a hook input that
 // names a subagent (the CLI adds agent_id and agent_type to the input of a
-// tool call made inside one) takes nothing and leaves the queue as it is.
-// A subagent's stop is SubagentStop, which Fyr does not register; the
-// check covers the Stop hook too.
+// tool call made inside one) takes nothing and leaves the queue as it is;
+// it gets only what waits for that subagent (V0.subagent-admission). The
+// check covers the Stop hook too. A subagent's stop is SubagentStop.
 func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
+	sub, _ := in["agent_id"].(string)
+	if id == "substop" {
+		m.subagentStopped(s, sub)
+		return nil
+	}
+	m.subagentSeen(s, sub)
 	switch id {
 	case "view", "viewnudge":
 		if id == "viewnudge" {
 			u, _ := in["tool_use_id"].(string)
 			m.toolDone(s, u)
 		}
-		if sub, _ := in["agent_id"].(string); sub != "" {
+		if sub != "" {
+			if id == "viewnudge" {
+				return m.subagentNote(s, sub)
+			}
 			return nil
 		}
 		if id == "view" {
@@ -80,8 +89,8 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 	if c, _ := ti["command"].(string); name == "Bash" && c != "" && onBash != nil && s != nil {
 		u, _ := in["tool_use_id"].(string)
 		bg, _ := ti["run_in_background"].(bool)
-		sub, _ := in["agent_id"].(string)
-		if r := onBash(BashCall{Thread: s.thread, Command: c, ToolUse: u, Background: bg, Subagent: sub != ""}); r != "" {
+		typ, _ := in["agent_type"].(string)
+		if r := onBash(BashCall{Thread: s.thread, Command: c, ToolUse: u, Background: bg, Subagent: sub != "", Agent: sub, AgentType: typ}); r != "" {
 			return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
 				"permissionDecision": "deny", "permissionDecisionReason": r}}
 		}
@@ -99,6 +108,49 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse", "additionalContext": strings.Join(notes, "\n")}}
 	}
 	return nil
+}
+
+// subagentSeen notes a subagent a hook named as running.
+func (m *Manager) subagentSeen(s *session, agent string) {
+	if s == nil || agent == "" {
+		return
+	}
+	m.mu.Lock()
+	if s.subs == nil {
+		s.subs = map[string]bool{}
+	}
+	s.subs[agent] = true
+	m.mu.Unlock()
+}
+
+// subagentStopped hears a SubagentStop: what waited for it goes to the
+// thread's agent (V0.subagent-admission).
+func (m *Manager) subagentStopped(s *session, agent string) {
+	if s == nil || agent == "" {
+		return
+	}
+	m.mu.Lock()
+	delete(s.subs, agent)
+	end := m.cfg.OnSubagentEnd
+	m.mu.Unlock()
+	if end != nil {
+		go end(s.thread, agent) // never on the stream's goroutine: it may wake the thread
+	}
+}
+
+// subagentNote gives a subagent's tool call what waits for that subagent.
+func (m *Manager) subagentNote(s *session, agent string) claude.Msg {
+	m.mu.Lock()
+	f := m.cfg.SubagentNote
+	m.mu.Unlock()
+	if f == nil || s == nil {
+		return nil
+	}
+	n := f(s.thread, agent)
+	if n == "" {
+		return nil
+	}
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": n}}
 }
 
 // stopHook answers the Stop hook (SPEC 0.5 V0.37): the feed's stop notices
@@ -154,12 +206,15 @@ func orNil(v any) any {
 	return v
 }
 
-// initHooks is what a process registers at start: the merge gate always,
+// initHooks is what a process registers at start: the merge gate and the
+// subagents' stop always,
 // and the agent feed's Stop and PostToolUse hooks and the SessionStart
 // hook after a compaction (V0.96) only for a process with
 // Fyr's tools, so other processes get no extra round trip.
 func initHooks(feed bool) claude.Msg {
-	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
+	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}},
+		// V0.subagent-admission: a subagent's end hands what waited for it to the thread's agent.
+		"SubagentStop": []claude.Msg{{"hookCallbackIds": []string{"substop"}}}}
 	if feed {
 		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
 		h["PostToolUse"] = []claude.Msg{{"hookCallbackIds": []string{"viewnudge"}}}

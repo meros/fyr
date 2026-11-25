@@ -276,6 +276,19 @@ func (v *guardView) Exists(th string) bool {
 
 // slotNotice records a slot event for the thread's agent (decision 0029).
 func (e *Engine) slotNotice(owner string, d map[string]any) {
+	if d["retry"] == true { // V0.subagent-admission: the held command's actor
+		by, kept := e.routeToSubagent(owner, subWake{retry: true})
+		if kept {
+			return
+		}
+		if by.ID != "" {
+			d = map[string]any{"retry": true, "agent": by.ID, "agentType": by.Type}
+		}
+	}
+	e.applySlotPause(owner, d)
+}
+
+func (e *Engine) applySlotPause(owner string, d map[string]any) {
 	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotPause, Thread: owner, Args: d}); err != nil {
 		log.Printf("slot pause %s: %v", owner, err)
 	}

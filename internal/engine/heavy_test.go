@@ -60,15 +60,18 @@ func TestV209AFullHostQueuesThenTheThreadIsToldToRunItAgain(t *testing.T) {
 	}
 }
 
-// A subagent never gets the [Fyr] admission, so its refusal says not to run
-// the command again and to report it as queued (on 2026-11-19 one sent the
-// same queued check four times).
+// A subagent cannot be woken by a message, so its refusal says not to retry
+// or wait (on 2026-11-19 one sent the same queued check four times), that the
+// admission comes with its next tool call (V0.subagent-admission), and to
+// report the job as queued if it ends first.
 func TestASubagentIsToldNotToRetryAQueuedJob(t *testing.T) {
 	e, _, a, b := heavyEngine(t, 1)
 	e.HeavyGate(HeavyCall{Thread: a, Class: "make test", ToolUse: "tu1"})
-	r := e.HeavyGate(HeavyCall{Thread: b, Class: "make check", ToolUse: "tu2", Subagent: true})
-	if !strings.Contains(r, "queued") || !strings.Contains(r, "Do not run this command again") || strings.Contains(r, "run the command again then") {
-		t.Fatalf("refusal %q", r)
+	r := e.HeavyGate(HeavyCall{Thread: b, Class: "make check", ToolUse: "tu2", Subagent: true, Agent: "a1"})
+	for _, want := range []string{"queued", "You are a subagent", "result of your next tool call", "Do not run it again before that", "say in your report that it is queued"} {
+		if !strings.Contains(r, want) {
+			t.Fatalf("refusal %q lacks %q", r, want)
+		}
 	}
 }
 
@@ -179,11 +182,13 @@ func TestGuardWakeTheGateHoldsANewCommandWhileMemoryIsShort(t *testing.T) {
 	if !strings.Contains(r, "memory is short on this host, so Fyr holds new heavy commands until it recovers") || !strings.Contains(r, "It did not run") {
 		t.Fatalf("an admitted thread's new command ran: %q", r)
 	}
+	if r := e.HeavyGate(HeavyCall{Thread: b, Class: "gradle assemble", ToolUse: "tu4", Subagent: true, Agent: "a1"}); !strings.Contains(r, "You are a subagent") {
+		t.Fatalf("subagent: %q", r)
+	}
+	// The thread's own agent is refused last, so the recovery is its own
+	// (V0.subagent-admission).
 	if r := e.HeavyGate(HeavyCall{Thread: b, Class: "gradle assemble", ToolUse: "tu3"}); !strings.Contains(r, "holds new heavy commands") {
 		t.Fatalf("a learned command ran: %q", r)
-	}
-	if r := e.HeavyGate(HeavyCall{Thread: b, Class: "gradle assemble", ToolUse: "tu4", Subagent: true}); !strings.Contains(r, "You are a subagent") {
-		t.Fatalf("subagent: %q", r)
 	}
 	free = 0.5
 	*now = now.Add(10 * time.Second)

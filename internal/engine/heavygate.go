@@ -73,6 +73,7 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 			e.noteGrant(c)
 		}
 		if e.trackHeavy(c) {
+			e.noteAdmitted(c) // V0.subagent-admission
 			if rerun {
 				e.mu.Lock()
 				delete(e.rerunWait, c.Thread)
@@ -96,11 +97,12 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 				why = " Waiting: " + s.Why + "."
 			}
 			head := fmt.Sprintf("Heavy job (%s): %s has no room for it yet, so it is queued (%d ahead; it needs %s).%s Do not work around this.", c.Class, e.hostName(), i, strings.TrimPrefix(jobShare(s, w.Owner), "≈ "), why)
+			e.noteRefused(c) // V0.subagent-admission
 			if c.Subagent {
-				// A subagent never gets the [Fyr] admission and ends its run
-				// by handing back: on 2026-11-19 one sent the same queued
-				// check four times.
-				return head + " You are a subagent: the admission message goes to the main session, not to you. Do not run this command again; say in your report that it is queued and did not run, and hand back when the rest is done."
+				// A subagent cannot wait for a message: on 2026-11-19 one
+				// sent the same queued check four times. V0.subagent-admission:
+				// the admission reaches it at its next tool call while it runs.
+				return head + subagentWait("it is admitted", "queued")
 			}
 			return head + " Fyr tells you in a [Fyr] message when it is admitted; run the command again then. Do other work meanwhile or end your turn."
 		}
@@ -179,10 +181,18 @@ func (e *Engine) gateHold(c HeavyCall, soft bool) string {
 	e.guardOnce(e.Now(), "gate:"+c.Thread, fmt.Sprintf("held at the gate thread=%s class=%q admitted=%t learned=%t: memory is short; a new heavy command waits before a running one is frozen", c.Thread, c.Class, holds, soft))
 	e.setGateHold(c.Thread, fmt.Sprintf("memory is short on %s; the %s command runs when it recovers", e.hostName(), c.Class))
 	head := fmt.Sprintf("Heavy job (%s): memory is short on %s, so Fyr holds new heavy commands until it recovers instead of pausing ones that run. It did not run. Do not work around this.", c.Class, e.hostName())
+	e.noteRefused(c) // V0.subagent-admission
 	if c.Subagent {
-		return head + " You are a subagent: the message that memory has recovered goes to the main session, not to you. Do not run this command again; say in your report that it was held and did not run, and hand back when the rest is done."
+		return head + subagentWait("memory has recovered", "held")
 	}
 	return head + " Fyr tells you in a [Fyr] message when memory has recovered; run the command again then. Do other work meanwhile or end your turn."
+}
+
+// subagentWait is the end of a subagent's refusal (V0.subagent-admission):
+// when the command may run, Fyr says so in the result of the subagent's next
+// tool call, and if it ends first, the main session is told, naming it.
+func subagentWait(when, state string) string {
+	return " You are a subagent: no message can wake you. If " + when + " while you still run, Fyr says so in the result of your next tool call; run the command again then. Do not run it again before that, and do not wait or poll for it: do the rest of your work, and if that ends first, say in your report that it is " + state + " and did not run, and hand back. Fyr then tells the main session, naming you."
 }
 
 // trackHeavy notes what carries the thread's admission; false when the
