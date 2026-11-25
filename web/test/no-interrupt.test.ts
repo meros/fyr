@@ -1,0 +1,38 @@
+// V0.no-interrupt: what the host or the clock does never takes over what the owner is doing.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { answerTakesComposer } from "../src/compose.ts";
+import { ARRIVAL_GRACE_MS, TYPING_QUIET_MS, cardTakesKeys, ownerBusy, pushedValue } from "../src/no-interrupt.ts";
+
+test("V0.no-interrupt (1): a question that arrives over a draft leaves the composer to the draft", () => {
+  const asked = { text: "", chosen: false };
+  assert.equal(answerTakesComposer("half a sentence", asked), false);
+  assert.equal(answerTakesComposer("   ", asked), true, "an empty field is the answer field");
+  assert.equal(answerTakesComposer("", asked), true);
+  assert.equal(answerTakesComposer("draft", { text: "", chosen: true }), true, "Other… (0) takes the field on purpose");
+  assert.equal(answerTakesComposer("draft", { text: "my answer", chosen: false }), true, "an answer begun stays the field's");
+  assert.equal(answerTakesComposer("draft", null), false);
+});
+
+test("V0.no-interrupt (3): a card that just arrived takes no key; one shown since the thread opened does", () => {
+  assert.equal(cardTakesKeys(0, 5), true, "there when the thread opened");
+  assert.equal(cardTakesKeys(10_000, 10_000 + ARRIVAL_GRACE_MS - 1), false);
+  assert.equal(cardTakesKeys(10_000, 10_000 + ARRIVAL_GRACE_MS), true);
+  assert.equal(cardTakesKeys(null, 10_000), false);
+});
+
+test("V0.no-interrupt (4): a reload for a new build waits while the owner types, fills a field or has a dialog open", () => {
+  const idle = { hidden: false, dialogOpen: false, fieldText: null, lastKeyAt: 0, now: 100_000 };
+  assert.equal(ownerBusy(idle), false);
+  assert.equal(ownerBusy({ ...idle, fieldText: "" }), false, "an empty focused composer does not hold the update");
+  assert.equal(ownerBusy({ ...idle, fieldText: "half" }), true);
+  assert.equal(ownerBusy({ ...idle, dialogOpen: true }), true);
+  assert.equal(ownerBusy({ ...idle, lastKeyAt: idle.now - TYPING_QUIET_MS + 1 }), true);
+  assert.equal(ownerBusy({ ...idle, lastKeyAt: idle.now - TYPING_QUIET_MS }), false);
+  assert.equal(ownerBusy({ ...idle, hidden: true, dialogOpen: true, fieldText: "x", lastKeyAt: idle.now }), false, "a hidden page reloads");
+});
+
+test("V0.no-interrupt (5): a pushed value replaces a settings field only while the owner has not changed it", () => {
+  assert.equal(pushedValue("old", "old", "new"), "new");
+  assert.equal(pushedValue("mine", "old", "new"), "mine");
+});

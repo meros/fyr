@@ -2011,7 +2011,7 @@ type HoursBody = {
 - **U12. Explainable order.** Every row's position can be explained from its reason.
 - **U13. Away strip.** When the user returns after 15 min or more, a one-line strip shows what happened since: "Since 14:02: 3 done · 2 PRs merged · 1 failed · 4 settled". Clicking it filters the inbox to those rows. "Dismiss" clears the strip; it does not visit rows.
 - **U14. Switching is instant.** `⌘1`–`⌘9` are stable slots; `⌘[` goes back; the palette finds any thread. The design budget is 1,900 visits a day (0.2).
-- **U15. Composer.** Enter steers the current run (or starts one). `⌘Enter` queues. There is no third send mode. While a question is open, the composer becomes the answer field for the focused question's "Other" option, so there is one Enter target.
+- **U15. Composer.** Enter steers the current run (or starts one). `⌘Enter` queues. There is no third send mode. While a question is open, the composer becomes the answer field for the focused question's "Other" option, so there is one Enter target. A question that arrives while the composer holds a message does not take it (U26): the message stays and Enter sends it, and the field becomes the answer field once it is empty or when the owner chooses "Other…" (V0.no-interrupt (1)).
 - **U16. Density.** Rows in the section `attention` have two lines. Other rows have one line of 32 px: icon, title, last activity (for working: "vitest · 38 s", "waiting on monitor: deploy · 12 min", "3 subagents"), PR badge, time. Settled lists the last 24 h.
 - **U17. Words.** The UI uses the user's words, never internal names: no "run 7", "parks", "eseq", "digest", "thread.send". Token counts appear only on hover. A default appears only when there is one; a deadline appears only within 2 h of it.
 - **U18. Icons.** Each state icon must pass a test at 14 px and 1× pixel density, in grayscale and with a deuteranopia simulation, against every other state icon. The shapes are:
@@ -2035,6 +2035,7 @@ type HoursBody = {
 - **U23. Outbox.** When the target host is unreachable, a capture or a send goes to the client outbox and is sent when the host returns, or to another online host if the user chooses one.
 - **U24. No header chrome.** The inbox header has the name, the host chips (only with more than one host) and the search field.
 - **U25. Asker.** A Decision card names who asked: the thread, or "subagent 'explore gestures' in <thread>".
+- **U26. Never interrupt the owner (V0.no-interrupt).** Nothing the host, an agent or the clock does takes over what the owner is doing in Fyr. While the owner types, fills a field or has a dialog open, an arrival may show beside it (a card, a badge, a toast) but never takes the focus, never removes or repurposes the field they are in, never changes what their next key does, never replaces their text and never reloads the page. It waits until they are done, or until they reach for it. A dialog or sheet opens only from the owner's own press. This holds on both fronts and for every new feature; a change that needs an exception says why in its change entry.
 
 ### 13.2 Decision UX
 - **Questions are the main kind (0.2).**

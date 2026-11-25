@@ -72,6 +72,7 @@ import { linkingFor } from "./project-linking.tsx";
 import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
 import { AgentsStrip } from "./agents-strip.tsx";
 import { PhoneComposer, sendFrom } from "./composer.tsx";
+import { writingIn } from "./drafts.ts";
 import { workingHint, MRow } from "./phone-row.tsx";
 import { FolderChip } from "./folder-ui.tsx";
 import { PreviewsChip } from "./preview-ui.tsx";
@@ -610,9 +611,20 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   const t = p.t;
   const decision = currentDecision(t);
   const dock = dockRun(t);
-  const [collapsed, setCollapsed] = useState(false);
+  // V0.no-interrupt (2): a question or approval that arrives while the owner writes a message comes folded, and the
+  // composer stays under it with the focus and the keyboard; one that is there when the thread opens comes open. Decided
+  // in the render the decision arrives in, so the field is never unmounted under the owner's fingers.
+  const key = `${t.id}/${decision?.id ?? ""}`;
+  const [fold, setFold] = useState(() => ({ key, collapsed: false, held: false }));
+  let cur = fold;
+  if (fold.key !== key) {
+    const held = !!decision && fold.key.startsWith(`${t.id}/`) && writingIn(t.id);
+    cur = { key, collapsed: held, held };
+    setFold(cur);
+  }
+  const collapsed = cur.collapsed;
+  const setCollapsed = (v: boolean) => setFold({ ...cur, collapsed: v });
   const [selectedPr, setSelectedPr] = useState<{ id: string; url: string } | null>(null);
-  useEffect(() => setCollapsed(false), [decision?.id]);
   useEffect(() => setSelectedPr(null), [t.id]);
   const cardOpen = !!decision && !collapsed;
   const setTab = (tab: string) => p.nav.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
@@ -786,7 +798,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
       {/* V0.next-step-dock: a run request waits in the dock above the composer, as on the desktop (DockRun) */}
       {!decision && dock && showsDecision(p.tab) && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={(a, args) => void p.commands.run(a, [t.id], args)} onShow={(id) => showCard(id, p.tab, setTab)} />}
       {!decision && !nextOffer && <WaitsStrip phone t={t} onCancel={(rule) => void p.commands.run("thread.cancelWait", [t.id], { rule })} onSnooze={(until) => p.actions.snooze({ action: "thread.snooze", ids: [t.id], args: { until } })} />}
-      {!decision && !nextOffer && (
+      {(!decision || (collapsed && cur.held)) && !nextOffer && (
         <PhoneComposer
           key={t.id}
           t={t}

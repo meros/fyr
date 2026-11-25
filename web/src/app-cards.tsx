@@ -163,6 +163,7 @@ export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "api" | "cmds
           text: card.other[card.index] ?? "",
           setText: (text: string) => onCard((cs) => setOther(cs, decision, text)),
           submit: answerEnter,
+          chosen: card.otherOpen,
         }
       : null;
 
