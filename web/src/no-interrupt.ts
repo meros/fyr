@@ -21,6 +21,24 @@ export function ownerBusy(s: { hidden: boolean; dialogOpen: boolean; fieldText: 
   return s.dialogOpen || !!s.fieldText?.trim() || s.now - s.lastKeyAt < TYPING_QUIET_MS;
 }
 
+/** V0.no-interrupt-rest (1): the tab a thread shows when nobody picked one: a live view that was there when the thread opened makes it
+ *  View; one that appears while the thread is open adds the View tab but leaves the owner on what they read. */
+export function unpickedTab(hasView: boolean, hadViewWhenOpened: boolean): "view" | "conv" {
+  return hasView && hadViewWhenOpened ? "view" : "conv";
+}
+
+/** V0.no-interrupt-rest (3): the desktop opens the next thread after an answer only if the owner is still on the answered thread and has
+ *  pressed no key since the answer: the host's yes can come seconds late. */
+export function moveOnAfterAnswer(s: { stillOpen: boolean; keyAfter: boolean }): boolean {
+  return s.stillOpen && !s.keyAfter;
+}
+
+/** V0.no-interrupt-rest (2): the page a live view's frame shows: a republished page replaces the shown one at once, unless the owner is in
+ *  the frame (it has the focus): then the old page stays and the header offers the new one. */
+export function framePage(shown: string, latest: string, inFrame: boolean): string {
+  return shown === latest || inFrame ? shown : latest;
+}
+
 /** (5) A field's value pushed by the host replaces the text only while the owner has not changed it. */
 export function pushedValue(text: string, before: string, after: string): string {
   return text === before ? after : text;

@@ -120,6 +120,8 @@
 .lv-top{display:flex;align-items:center;min-width:0}
 .lv-top .lv-h{flex:1}
 .lv-top .pv-fs{margin-right:16px}
+/* V0.no-interrupt-rest (2): a republished page that waits while the owner is in the frame */
+.lv-up{flex:none;margin-right:8px;padding:0 10px;min-height:24px;border:1px solid var(--line-strong);border-radius:12px;font:500 12px/22px var(--ui);color:var(--ink)}
 
 /* SPEC 0.5 V0.165: an HTML preview or the live view full screen, in place. The browser's full screen puts the element
    in the top layer; without it (iPhone) the class alone covers the screen. The page zooms by steps inside .fzw. */

@@ -76,6 +76,7 @@ import { writingIn } from "./drafts.ts";
 import { workingHint, MRow } from "./phone-row.tsx";
 import { FolderChip } from "./folder-ui.tsx";
 import { PreviewsChip } from "./preview-ui.tsx";
+import { useOpenedWithView } from "./view-ui.tsx";
 
 
 // ---- props from the app shell ----
@@ -219,12 +220,13 @@ export function PhoneApp(p: PhoneProps) {
   const sheetThread = p.nav.at.sheet?.ids?.length === 1 ? p.store.threads[p.nav.at.sheet.ids[0]] : undefined;
   const bottomBar = showsBottomBar(p.nav.at, p.list.selecting);
   const api = useApi(); // V0.98 (3): the board visit
+  const openedWithView = useOpenedWithView(s.name === "thread" ? p.open.thread : null); // V0.no-interrupt-rest (1)
   return (
     <div class={`m-app${bottomBar ? " has-bar" : ""}`}>
       {p.status}
       {s.name === "inbox" && <MInbox {...p} />}
       {s.name === "search" && <MSearch {...p} />}
-      {s.name === "thread" && p.open.thread && <MThread {...p} t={p.open.thread} tab={defaultTab(p.open.thread, s.tab)} />}
+      {s.name === "thread" && p.open.thread && <MThread {...p} t={p.open.thread} tab={defaultTab(p.open.thread, s.tab, openedWithView)} />}
       {s.name === "thread" && !p.open.thread && p.open.gated && (
         <div class="m-screen">
           <MHeader onBack={p.nav.back} title="Quiet hours" />
