@@ -864,6 +864,11 @@ func checkAttentionPlacement(t *Thread, v *View, now time.Time, on func(repo str
 		if a.State != Waiting || a.Section != WorkingSec {
 			probs = append(probs, fmt.Sprintf("%d running task(s) placed in %s/%s", t.RunningTasks(), a.State, a.Section))
 		}
+	case t.SlotQueued:
+		// V0.slot-queued-waits: a heavy job held in the host's queue waits.
+		if a.State != Waiting || a.Section != WorkingSec {
+			probs = append(probs, fmt.Sprintf("slot-queued thread placed in %s/%s", a.State, a.Section))
+		}
 	case func() bool { _, n := threadNeed(t, on); return n != nil }():
 		if a.State != Blocked || a.Section != NeedsYou {
 			probs = append(probs, fmt.Sprintf("threadNeed placed in %s/%s", a.State, a.Section))
