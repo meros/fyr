@@ -104,38 +104,43 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 		// cannot read review threads, so its read leaves -1 (not read).
 		UnresolvedThreads int `json:"unresolvedThreads"`
 		Rollup            []struct {
-			Typename   string `json:"__typename"`
-			Name       string `json:"name"`
-			Context    string `json:"context"`
-			Status     string `json:"status"`
-			Conclusion string `json:"conclusion"`
-			State      string `json:"state"`
+			Typename   string    `json:"__typename"`
+			Name       string    `json:"name"`
+			Context    string    `json:"context"`
+			Workflow   string    `json:"workflowName"`
+			Status     string    `json:"status"`
+			Conclusion string    `json:"conclusion"`
+			State      string    `json:"state"`
+			StartedAt  time.Time `json:"startedAt"`
 		} `json:"statusCheckRollup"`
 	}
 	v.UnresolvedThreads = -1
 	if err := json.Unmarshal(out, &v); err != nil {
 		return core.PR{}, 0, fmt.Errorf("gh pr view: %w", err)
 	}
-	states := make([]string, 0, len(v.Rollup))
-	done, failedNames, passed := 0, []string(nil), map[string]bool{}
+	all := make([]Check, 0, len(v.Rollup))
 	for _, c := range v.Rollup {
-		if !Counts(c.Name + c.Context) {
-			continue
+		ck := Check{Name: c.Name + c.Context, Workflow: c.Workflow, Conclusion: c.Conclusion, StartedAt: ts(c.StartedAt),
+			State: CheckState(c.Typename, c.Status, c.Conclusion, c.State)}
+		if c.Typename == "StatusContext" {
+			ck.Conclusion = c.State
 		}
-		s := CheckState(c.Typename, c.Status, c.Conclusion, c.State)
+		all = append(all, ck)
+	}
+	gating := Gating(all)
+	states := make([]string, 0, len(gating))
+	done, failedNames, passed := 0, []string(nil), map[string]bool{}
+	for _, c := range gating {
+		s := c.State
 		states = append(states, s)
 		if s != checkRunning && s != checkFail {
-			passed[c.Name+c.Context] = true
+			passed[c.Name] = true
 		}
 		if s != checkRunning { // V0.136: "n of m checks done"
 			done++
 		}
 		if s == checkFail {
-			name := c.Name
-			if name == "" {
-				name = c.Context
-			}
-			failedNames = append(failedNames, name)
+			failedNames = append(failedNames, c.Name)
 		}
 	}
 	checks, failed := core.ChecksNone, 0

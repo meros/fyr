@@ -126,15 +126,82 @@ func Counts(name string) bool {
 	return !strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), "(advisory)")
 }
 
-// gating is the detail's checks that gate a merge (Counts).
-func (d Detail) gating() []Check {
-	out := make([]Check, 0, len(d.Checks))
-	for _, c := range d.Checks {
-		if Counts(c.Name) {
+// gating is the detail's checks that gate a merge (Gating).
+func (d Detail) gating() []Check { return Gating(d.Checks) }
+
+// Gating is the checks of one head that gate a merge: every check but an
+// advisory one (Counts), a cancelled run that a newer run of the same check
+// replaced (V0.ci-superseded-checks), and one of a fallback pair that the
+// other settled (localFallback). Every place that decides whether CI passed
+// reads the checks through it: the poll and the merge ask (fromView), the
+// detail's summary and the host's last look before it merges (MergeBlock).
+func Gating(cs []Check) []Check {
+	out := make([]Check, 0, len(cs))
+	for i, c := range cs {
+		if Counts(c.Name) && !superseded(cs, i) && !localFallback(cs, i) {
 			out = append(out, c)
 		}
 	}
 	return out
+}
+
+// superseded reports whether cs[i] is a cancelled run that a newer run of
+// the same check (same name, same workflow) on the head replaced: marking a
+// PR ready, a re-run or a second event starts the workflow again, and its
+// concurrency group cancels the older run, which GitHub keeps in the
+// rollup. A run with no start time is replaced by any run that was not
+// cancelled.
+func superseded(cs []Check, i int) bool {
+	c := cs[i]
+	if !strings.EqualFold(c.Conclusion, "CANCELLED") {
+		return false
+	}
+	for j, o := range cs {
+		if j == i || o.Name != c.Name || o.Workflow != c.Workflow {
+			continue
+		}
+		if c.StartedAt != nil && o.StartedAt != nil {
+			if o.StartedAt.After(*c.StartedAt) {
+				return true
+			}
+		} else if !strings.EqualFold(o.Conclusion, "CANCELLED") {
+			return true
+		}
+	}
+	return false
+}
+
+// LocalPrefix names a commit status that stands in for a check of the same
+// name (scripts/ci-local.sh posts local/test for the runner's test).
+const LocalPrefix = "local/"
+
+// localFallback reports whether cs[i] is one of a pair "X" (the runner's
+// check) and "local/X" (the same gate run on a host, a fallback) that does
+// not count because the other one settled it (V0.ci-superseded-checks):
+// the runner's X passed, so local/X does not count, whatever it says (a red
+// local gate is load on that host); or local/X passed while X has not
+// finished (the runner is down, the job stays queued), so X does not count.
+// A failed X always counts: a red runner check is fixed or re-run there,
+// not outvoted by a host.
+func localFallback(cs []Check, i int) bool {
+	c := cs[i]
+	if name, ok := strings.CutPrefix(c.Name, LocalPrefix); ok {
+		for _, o := range cs {
+			if o.Name == name && o.State == "pass" {
+				return true
+			}
+		}
+		return false
+	}
+	if c.State != checkRunning {
+		return false
+	}
+	for _, o := range cs {
+		if o.Name == LocalPrefix+c.Name && o.State == "pass" {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckState reads a CheckRun (status, conclusion) or a commit status (state)

@@ -3,7 +3,8 @@
 # .github/workflows/pr.yml on that runner (V0.ci-self-hosted), and this script runs the same steps (`make test-ci`, the
 # Nix packages, gitleaks over the PR's commits) in the flake's dev shell, on the pushed head of the current branch, and
 # posts the result as the commit status `local/test` on that SHA. Fyr reads that status as the PR's CI: a merge ask
-# waits for it and a failure is reported like a red check.
+# waits for it and a failure is reported like a red check, until the runner's `test` passes on the same SHA: then local/test
+# no longer counts, and a green local/test stands in for a `test` that is still queued (V0.ci-superseded-checks).
 #
 #   scripts/ci-local.sh          # push first; the head must be on GitHub
 #
