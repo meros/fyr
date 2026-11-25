@@ -69,6 +69,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "quota.continue", Urgency: Wake, OnReduce: quotaContinueNotices},            // V0.quota-auto-continue
 	{Name: "setup", Urgency: Next, OnReduce: setupNotices},                             // V0.prompt-fits-setup
 	{Name: "noprogress", Urgency: Next, OnReduce: noProgressNotices},                   // V0.no-progress
+	{Name: "split", Urgency: Next, OnReduce: splitNotices},                             // V0.thread-focus
 }
 
 // EventSlot is the event of a slot for a heavy job that became the

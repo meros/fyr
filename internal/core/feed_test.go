@@ -378,6 +378,18 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
 			}
 		},
+		// V0.thread-focus: a third separate piece of work: one line at the
+		// next tool call (split_test.go has the cases).
+		"split": func(t *testing.T) {
+			th := feedThread()
+			var res Result
+			for _, k := range []string{"a", "b", "c"} {
+				th, res = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeOpen, Args: ChangeOpenArgs{Open: ChangeOpen{Key: k, Kind: KindCode, Title: k, Branch: k}}}, ct0)
+			}
+			if n := queued(t, th, "split"); n.Urgency != Next || !strings.Contains(n.What, "mcp__fyr__thread_new") || wakes(res) {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+		},
 	}
 	for _, r := range NoticeRules {
 		f := rows[r.Name]
