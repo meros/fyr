@@ -9,6 +9,7 @@ import { SlideMark } from "./motion-ui.tsx";
 import { haptic } from "./native.ts";
 import { foldNow, storedFold, writeFold } from "./settings-fold.ts";
 import { savedClock } from "./saved.ts";
+import { pushedValue } from "./no-interrupt.ts";
 
 /** What every control on a page reads: the page is read-only (no connection), it is the phone, and how to show Saved. */
 interface SetEnv {
@@ -331,7 +332,13 @@ export function SaveField(p: SaveFieldProps) {
   const [text, setText] = useState(p.value);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => setText(p.value), [p.value]);
+  // V0.no-interrupt (5): a value the host pushes replaces the text only while the owner has not changed it.
+  const pushed = useRef(p.value);
+  useEffect(() => {
+    const before = pushed.current;
+    pushed.current = p.value;
+    setText((t) => pushedValue(t, before, p.value));
+  }, [p.value]);
   /* eslint-disable react-hooks/exhaustive-deps -- focus on mount only, and not on a phone */
   useEffect(() => {
     if (p.autoFocus && !env.phone) ref.current?.focus();

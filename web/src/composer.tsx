@@ -12,7 +12,7 @@ import { createSubmitGuard } from "./send-guard.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { haptic } from "./native.ts";
 import { I } from "./phone-icons.tsx";
-import { composerKey, composerPlaceholder } from "./compose.ts";
+import { answerTakesComposer, composerKey, composerPlaceholder } from "./compose.ts";
 
 export interface AnswerField {
   index: number;
@@ -20,6 +20,9 @@ export interface AnswerField {
   setText(text: string): void;
   /** Enter: take the text as this question's answer, then submit or move on */
   submit(): void;
+  /** V0.no-interrupt (1): the owner chose to answer in their own words ("Other…", 0), so the field is the answer's
+   *  even over a draft */
+  chosen: boolean;
 }
 
 /** What a send carries (SPEC V0.18): text and uploaded attachment ids; text may be empty. */
@@ -43,8 +46,10 @@ export async function sendFrom(tab: string, args: SendArgs, send: (a: SendArgs) 
  * desktop, the answer's text), attachments, the `/` list, the field's height and one guarded send. A send that
  * the host took clears the field and the chips and gives a short haptic tap (a no-op without a touch screen).
  */
-export function useComposer(t: Thread, onSend: (a: SendArgs) => Promise<boolean>, answer: AnswerField | null = null) {
+export function useComposer(t: Thread, onSend: (a: SendArgs) => Promise<boolean>, asked: AnswerField | null = null) {
   const [draft, setDraft] = useDraft(t.id);
+  // V0.no-interrupt (1): a question that arrives while the owner writes a message waits on its card; the field stays theirs.
+  const answer = answerTakesComposer(draft, asked) ? asked : null;
   const att = useAttachments(t.hostId);
   const ta = useRef<HTMLTextAreaElement>(null);
   const [sending, setSending] = useState(false);
@@ -91,6 +96,8 @@ export function useComposer(t: Thread, onSend: (a: SendArgs) => Promise<boolean>
   const stopReason = unavailableReason(t, "thread.interrupt");
   return {
     ta,
+    /** The open question's answer field when it holds the composer now (V0.no-interrupt (1)) */
+    answer,
     text,
     setText,
     att,
@@ -121,11 +128,13 @@ interface ComposerProps {
 
 /**
  * The desktop's composer. Enter sends (steers a running thread). While a question is open the composer is the answer
- * field for the active question's "Other" (U15): Enter answers, ⌘Enter queues the text as a message instead.
+ * field for the active question's "Other" (U15): Enter answers, ⌘Enter queues the text as a message instead. A
+ * question that arrives over a draft leaves the draft and its Enter alone until it is sent or cleared (V0.no-interrupt (1)).
  * Files: the paperclip, paste and drop, any type; each uploads at once and shows a chip.
  */
-export function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerProps) {
-  const c = useComposer(t, onSend, answer);
+export function Composer({ t, now, answer: asked, onSend, onInterrupt, onRestart }: ComposerProps) {
+  const c = useComposer(t, onSend, asked);
+  const answer = c.answer;
   return (
     <div class="cmpw" onDrop={c.att.onDrop} onDragOver={c.att.onDragOver}>
       <AgentStatus t={t} now={now} onRestart={onRestart} />
@@ -172,7 +181,8 @@ export function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: Com
 /**
  * The phone's composer: the same state as the desktop's (useComposer); what differs, and why:
  * - Enter is a new line and Send is the button: the on-screen keyboard's return key is the only way to start a line.
- * - No answer mode: the phone's question sheet (MAsk) has its own field, and the composer is hidden while it shows.
+ * - No answer mode: the phone's question sheet (MAsk) has its own field, and the composer is hidden while it shows,
+ *   except under a sheet that came folded over a message the owner was writing (V0.no-interrupt (2)).
  * - Stop takes Send's place while a run goes on and the field is empty: one 44 px button at the thumb, no width for two.
  * - The camera and file pickers instead of the paperclip: a phone takes a photo where a desktop picks a file.
  */

@@ -12,6 +12,15 @@ export function composerKey(
   return o.answering && !(e.metaKey || e.ctrlKey) ? "answer" : "send";
 }
 
+/** V0.no-interrupt (1): whether an open question's answer field takes the desktop composer. A question that arrives
+ *  while the owner has a message in the field does not take it: the draft stays, and Enter sends it. The field becomes
+ *  the answer field once it is empty, at once when the owner chooses "Other…" (0), or when the answer already has
+ *  text. */
+export function answerTakesComposer(draft: string, answer: { text: string; chosen: boolean } | null): boolean {
+  if (!answer) return false;
+  return !draft.trim() || answer.chosen || answer.text !== "";
+}
+
 /** The placeholder: the question to answer, why sending is off, or what a message does now. */
 export function composerPlaceholder(t: { running: boolean }, sendReason: string | undefined, answer: { index: number } | null): string {
   if (answer) return `Answer question ${answer.index + 1} in your own words…`;

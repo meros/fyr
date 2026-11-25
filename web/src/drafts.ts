@@ -40,6 +40,12 @@ export function draftStore(storage: KV | null) {
 
 const drafts = draftStore(browserStorage());
 
+/** V0.no-interrupt (2): the owner is writing a message in this thread: the phone's composer has the focus, or holds a draft. */
+export function writingIn(threadId: string): boolean {
+  const a = typeof document === "undefined" ? null : document.activeElement;
+  return !!a?.closest?.(".m-cmp") || drafts.get(threadId).trim() !== "";
+}
+
 /** The composer text of one thread, kept outside the component. */
 export function useDraft(threadId: string): [string, (t: string) => void] {
   const [text, setLocal] = useState(() => drafts.get(threadId));
