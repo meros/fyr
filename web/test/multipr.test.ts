@@ -1,7 +1,7 @@
 // V0.multi-pr: tracking multiple PRs per thread in chips, row badges, PR tabs and effect cards.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changeChip, headerPrs, prForEffect, threadPrs } from "../src/offers.ts";
+import { changeChip, headerPrs, prForEffect, rowPrs, threadPrs } from "../src/offers.ts";
 import { hasMultipleRepos, pickPr, prUrgency, rowPrChip, shortRepo } from "../src/pr.ts";
 import { rowState, stateNamesPr } from "../src/rows.ts";
 import { defaultTab, tabLabel, threadTabs } from "../src/view.ts";
@@ -129,4 +129,31 @@ test("V0.multi-pr: stateNamesPr keeps multi-PR chip visible; effect cards and di
   assert.equal(dismiss?.kind, "command");
   assert.equal(dismiss?.label, "Dismiss PR #20");
   assert.deepEqual(dismiss.kind === "command" ? dismiss.args : undefined, { pr: p2.url });
+});
+
+test("V0.threads-row-pr: the row's chip is the PR that needs attention, never the thread's first merged one", () => {
+  const merged = { state: "MERGED" };
+  const done = { at: at(5), by: "observed" as const, reason: "merged" };
+  // The main PR merged first; a later PR in another repo conflicts.
+  const first = pr(1678, { repo: "acme/hosting", ...merged });
+  let t = { pr: first, changes: [ch("a", { pr: first, phase: "live", done, createdAt: at(1) }), ch("b", { pr: pr(13569, { conflict: true }), createdAt: at(2) })] };
+  assert.equal(rowPrChip(rowPrs(t))?.text, "#13569 conflicts");
+  // Failing beats newer open PRs; +N counts the other open ones.
+  t = {
+    pr: pr(1170),
+    changes: [ch("m", { pr: pr(1158, merged), phase: "landed", done, createdAt: at(1) }), ch("f", { pr: pr(1168, { checks: "fail" }), createdAt: at(2) }), ch("p", { pr: pr(1169, { checks: "pending" }), createdAt: at(3) }), ch("r", { pr: pr(1170), createdAt: at(4) })],
+  };
+  assert.equal(rowPrChip(rowPrs(t))?.text, "#1168 failing +2");
+  // All merged: the newest merged PR, not the main one.
+  const old = pr(1615, merged);
+  t = { pr: old, changes: [ch("o", { pr: old, phase: "landed", done, createdAt: at(1) }), ch("n", { pr: pr(1672, merged), phase: "live", done, createdAt: at(2) })] };
+  assert.equal(rowPrChip(rowPrs(t))?.text, "#1672 merged", "no +N for merged PRs");
+  // A PR still open on GitHub whose change was abandoned never reads as open or ready.
+  t = { pr: old, changes: [ch("o", { pr: old, phase: "landed", done, createdAt: at(1) }), ch("x", { pr: pr(13570), phase: "abandoned", createdAt: at(2) })] };
+  const c = rowPrChip(rowPrs(t));
+  assert.equal(c?.text, "#1615 merged", "a merged PR outranks an abandoned one");
+  assert.match(c?.title ?? "", /#13570 · abandoned, still open on GitHub/);
+  t = { pr: null as unknown as PullRequest, changes: [ch("x", { pr: pr(13570), phase: "abandoned", createdAt: at(2) })] };
+  assert.equal(rowPrChip(rowPrs(t))?.text, "#13570 abandoned");
+  assert.equal(rowPrChip(rowPrs(t), true)?.text, "abandoned", "the short (phone) chip reads the same word");
 });

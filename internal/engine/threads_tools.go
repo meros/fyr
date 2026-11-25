@@ -161,9 +161,9 @@ func (e *Engine) threadTools(s *mcp.Server) {
 				if d.ArchivedAt != nil || n >= 30 {
 					continue
 				}
-				pr := ""
-				if d.PR != nil {
-					pr = fmt.Sprintf(" · PR #%d %s", d.PR.Number, strings.ToLower(d.PR.State))
+				pr := "" // V0.threads-row-pr: the PR the inbox row shows, not the first one the thread got
+				if l := core.RowPRText(d.Changes, d.PR); l != "" {
+					pr = " · " + l
 				}
 				pin := "" // V0.104: the owner's pin; agents read it, never set it
 				if d.PinnedAt != nil {
