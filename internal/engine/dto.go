@@ -20,6 +20,7 @@ func (e *Engine) seen(t *core.Thread, now time.Time) (api.Thread, core.State) {
 	d := e.build(t, now)
 	prev := e.last[t.ID]
 	e.last[t.ID] = d.Attention.State
+	e.lastWhy[t.ID] = attentionWhy(d.Attention)
 	return d, prev
 }
 
@@ -172,4 +173,11 @@ func (e *Engine) ProjectNames(ids []string) map[string]usage.ProjectName {
 		}
 	}
 	return out
+}
+
+// attentionWhy is the words of an attention beside its state: Tick sends the
+// thread again when they change with the clock alone (V0.thread-claims: a
+// quota wait that turns to "resuming", a wake-up that gains its date).
+func attentionWhy(a core.Attention) string {
+	return a.Reason + "\x00" + a.Word + "\x00" + a.Subject
 }

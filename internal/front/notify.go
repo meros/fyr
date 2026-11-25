@@ -301,12 +301,14 @@ func dtoOf(m map[string]any) (api.Thread, error) {
 func AttentionDetail(d api.Thread) (meta, detail string) {
 	switch d.Attention.State {
 	case core.Failed:
-		if d.Failure != nil {
+		// V0.thread-claims: the row's words, which rewrite a quota failure's
+		// stale countdown; the raw message when there is no reason.
+		if d.Attention.Reason == "" && d.Failure != nil {
 			return "Failed", d.Failure.Message
 		}
 		return "Failed", d.Attention.Reason
 	case core.Done:
-		return "Done", d.Summary
+		return "Finished", d.Summary // V0.thread-claims: the section's word
 	case core.Waiting:
 		// V0.quota-wait: the reason says what it waits on, as Blocked's does.
 		return "", d.Attention.Reason

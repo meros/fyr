@@ -7,7 +7,7 @@ import { type VNode } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Thread } from "./types.ts";
 import { StateIcon } from "./icons.tsx";
-import { stateLabel } from "./rows.ts";
+import { stateLine } from "./rows.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, swipeAvail, swipeArmed, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import { NeedsRowBody, OneRowBody, PHONE_LOOK } from "./row-ui.tsx";
 import { GUEST_TEXT } from "./selection.ts";
@@ -183,7 +183,6 @@ export function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; nee
   };
 
   const side = under ? (under.dir > 0 ? avail.right : avail.left) : null;
-  const st = t.attention.state;
   const picked = p.list.picked.has(t.id);
   const lead = p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : own;
   const pre = <MHost t={t} />;
@@ -212,7 +211,7 @@ export function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; nee
         onClick={onClick}
         onContextMenu={(e) => e.preventDefault()}
         role="button"
-        aria-label={`${t.title}, ${stateLabel(st)}${guest ? `, ${GUEST_TEXT[guest].tag}` : ""}`}
+        aria-label={`${t.title}, ${stateLine(t)}${guest ? `, ${GUEST_TEXT[guest].tag}` : ""}`}
       >
         {body}
       </div>

@@ -1385,6 +1385,39 @@ Coordinators have no lifecycle, so rows 1, 4 and 5 never match a coordinator.
 - **Coordinators.** For a coordinator, the View has no snooze, and row 3 uses `acknowledged`.
 - **Failed is sticky.** A visit does not clear row 3. Only `thread.send`, `thread.retry`, `thread.settle` and `thread.archive` move the acting user's `failureAck` (they append `thread.failureAck`). Settle and archive move it for every View.
 
+### 6.2a The v0 precedence: claims (V0.thread-claims)
+
+In v0 the residence host lists what a thread waits on as **claims** (`core.Claims`, `internal/core/claims.go`). Each claim is the owner's move (`yours`) or work that goes on without the owner (`moving`), and its condition holds on its own. After archived, settled and the snooze, the attention is the first claim that is not quiet; with none the thread is finished (`done` until the owner has seen the result, then `seen`).
+
+| # | Claim | Side | State | Holds when |
+|---|---|---|---|---|
+| 1 | ask | yours | asking | an open question, approval or effect the owner must answer (not a merge Fyr does by itself) |
+| 2 | handover | moving | waiting | the thread moves to another provider |
+| 3 | quota | moving | waiting | the provider's quota stopped the run and a reset is still ahead |
+| 4 | failure | yours | failed | the last run failed (and it is not a quota wait) |
+| 5 | unresponsive | yours | blocked | the agent's process takes nothing Fyr writes |
+| 6 | no-progress | yours | blocked | a live run has been silent too long |
+| 7 | run | moving | working | a run is live |
+| 8 | starting | moving | working | a message that starts a turn was sent: the owner's, a notice that wakes the agent, a pressed agent action |
+| 9 | machine | moving | waiting | Fyr waits for the host before it starts the agent |
+| 10 | delivering | moving, quiet | | a message the agent has not read |
+| 11 | gate | moving | waiting | a heavy command is held at the gate |
+| 12 | tasks | moving | waiting | a background task or subagent runs |
+| 13 | slot | moving | waiting | a heavy job waits for room on the host |
+| 14 | need | yours | blocked | a change is ready to merge, or stopped on a failure |
+| 15 | run-request | yours | blocked | a command the agent asked the owner to run |
+| 16 | command | moving | waiting | that command runs |
+| 17 | settle-offer | yours | blocked | the agent offers to settle |
+| 18 | ci | moving | waiting | CI runs on an open PR, or a merge ask is held for it |
+| 19 | watch | moving | waiting | an armed watch of the agent's, or the owner's quota wake |
+| 20 | waking | moving, quiet | | a notice that wakes the agent waits in its queue |
+| 21 | rule | moving, quiet | | another armed Rule of the agent's (its own "settle when merged") |
+
+- **One list, three readers.** The attention, "it needs the owner" (`NeedsOwnerAt`: the yours claims but the settle offer) and "its work goes on" (`WorkGoingAt`: any moving claim) read this list. The snooze until work is done and "settle when done" read the last two, so a thread the row shows in Moving without you is never idle for them, and one they count as going on is never Finished for a reason the row could name.
+- **Quiet claims** count as work going on and do not hold the row in Moving without you: the queue of notices is not news for the owner, and an unread message a quota stop left behind must not read as a start.
+- **Words.** A blocked claim carries the row's `word` and `subject` ("Merge" / the change's title, "Run" / the why, "Not responding" / since when). The thread's header chip on both fronts says that word (`web/src/state-chip.tsx`), "Failed", "Waiting", "Working" or "Finished"; a wait says its reason above the composer.
+- **The clock.** A reason that changes with the clock alone (a quota wait that turns to resuming) is sent again at the next tick, as a state change is.
+
 ### 6.3 The inbox
 - **Rows.**
   - A Decision that blocks exactly one entity is shown as that entity's row. The question text is the row's summary, and the asking subagent, if any, is named.

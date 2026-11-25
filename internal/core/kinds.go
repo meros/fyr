@@ -408,6 +408,11 @@ func init() {
 				}
 			}
 			RunEnded(r.T, a.Failure, now)
+			if stopped, _ := data["interrupted"].(bool); stopped && a.Failure == nil && r.V != nil {
+				// V0.thread-claims: the owner stopped the run (Stop, or a
+				// settle), so its end is not news to them: Finished, seen.
+				r.V.SeenAt = now
+			}
 			r.T.Branch = a.Git.Branch
 			if a.Summary != nil {
 				r.T.Summary = *a.Summary

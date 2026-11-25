@@ -68,7 +68,7 @@ const (
 // ComputeWith returns the attention of t for the user who owns v at time now.
 //
 // Order: archived, settled, then the snooze (which a new question or failure
-// breaks), then asking, failed, working, blocked, done, seen.
+// breaks), then the thread's first claim (ClaimOrder), else done or seen.
 //
 // on is the auto-merge setting (V0.205): it says whether a repo merges with
 // no press, so a merge ask Fyr will do by itself does not count as an ask of
@@ -81,7 +81,6 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 		return Attention{State: Settled, Section: SettledSec}
 	}
 	asks := ownerAsks(t, on)
-	asking := len(asks) > 0
 	quotaWait := QuotaWaitText(t, now)
 	if until, since := SnoozeOf(v); until != nil && until.After(now) {
 		// V0.185: until work is done never hides a request, whatever its age.
@@ -104,79 +103,11 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 			return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until " + until.Format(time.RFC3339)}
 		}
 	}
-	switch {
-	case asking:
-		return Attention{State: Asking, Section: NeedsYou, Reason: string(asks[0].Kind), Group: askGroup(asks)}
-	case quotaWait != "":
-		// V0.quota-wait: the provider's quota stopped the run; nothing the
-		// owner says or does moves it before the reset the notice names, so
-		// the thread waits, as for CI, rather than needing them. Past that
-		// reset the wait is over and the failure is the owner's again.
-		return Attention{State: Waiting, Section: WorkingSec, Reason: quotaWait}
-	case t.Failure != nil:
-		return Attention{State: Failed, Section: NeedsYou, Reason: FailureReason(t, now), Group: GroupUnblock}
-	case t.Unresponsive != nil:
-		// V0.143: a live process that takes nothing Fyr writes needs the
-		// owner: Restart, or wait for the automatic one.
-		return Attention{State: Blocked, Section: NeedsYou, Reason: UnresponsiveText(t.Unresponsive), Group: GroupUnblock}
-	case t.Running && t.NoProgress != nil:
-		// V0.no-progress: a live run silent past NoProgressAfter.
-		w, s := NoProgressWord(), NoProgressSubject(t.NoProgress)
-		return blocked(GroupUnblock, w, s, w+": "+s)
-	case t.Running:
-		return Attention{State: Working, Section: WorkingSec}
-	}
-	if t.MachineWait == nil && t.Starting != nil {
-		// V0.starting-moves: the agent is starting; it moves without the
-		// owner already.
-		return Attention{State: Working, Section: WorkingSec, Reason: "Starting"}
-	}
-	if t.MachineWait != nil {
-		// V0.153: Fyr waits for the host before it starts the agent.
-		return Attention{State: Waiting, Section: WorkingSec, Reason: MachineWaitText(t.MachineWait)}
-	}
-	if t.GateHold != nil {
-		// V0.gate-hold-visible: a heavy command the gate holds back is work
-		// still coming, not a finished turn: the thread waits, with the why.
-		return Attention{State: Waiting, Section: WorkingSec, Reason: GateHoldText(t.GateHold)}
-	}
-	if n := t.RunningTasks(); n > 0 {
-		return Attention{State: Waiting, Section: WorkingSec, Reason: waitReason(t, n)}
-	}
-	// V0.slot-queued-waits: the host holds a heavy job of this thread until
-	// it has room; the thread moves without the owner, so a ready PR's Merge
-	// ask does not pull it into Your move meanwhile.
-	if t.SlotQueued {
-		return Attention{State: Waiting, Section: WorkingSec, Reason: QueuedText}
-	}
-	// V0.101: Needs you is computed: Ready or Stopped on a failure (asks
-	// are decisions, above). A finished run whose result the owner has not
-	// seen is unread in Seen, not in Needs you.
-	if c, n := threadNeed(t, on); n != nil {
-		return blocked(needGroup(t, on), n.Text, c.Title, c.Title+": "+n.Text)
-	}
-	// V0.149 (5): a command the agent asked the owner to run.
-	if a := PendingRequest(t); a != nil {
-		return blocked(GroupApprove, "Run", a.Why, "Run: "+a.Why)
-	}
-	// V0.waiting-for-command: a command the owner pressed Run on is running
-	// and the agent ended its turn on it: the thread moves without the owner.
-	if a := RunningRequest(t); a != nil {
-		return Attention{State: Waiting, Section: WorkingSec, Reason: "Waiting for command: " + a.Why}
-	}
-	// V0.settle-offer-your-move: the agent offers to settle once its run
-	// ended; the owner's move is Settle, or a message that clears it.
-	if t.SettleAsk != nil {
-		return blocked(GroupApprove, "Settle", settleWhy(t.SettleAsk), SettleOfferText(t.SettleAsk))
-	}
-	// V0.ci-wait-moves: CI the thread waits on moves without the owner, so
-	// the thread is not Finished while it runs.
-	if r := ciWait(t); r != "" {
-		return Attention{State: Waiting, Section: WorkingSec, Reason: r}
-	}
-	// V0.watch-waits: the agent's own armed watch is work still coming.
-	if s := WatchWaitText(t, now); s != "" {
-		return Attention{State: Waiting, Section: WorkingSec, Reason: s}
+	// V0.thread-claims: what the thread waits on is one ordered list; the row
+	// shows its first claim. V0.101: with none, a finished run whose result
+	// the owner has not seen is unread in Seen.
+	if c := firstClaim(Claims(t, now, on)); c != nil {
+		return c.attention()
 	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
 		return Attention{State: Done, Section: SeenSec}
@@ -210,11 +141,25 @@ func ciWait(t *Thread) string {
 		if n := heldNeed(t, &t.Changes[i]); n != nil {
 			// "Waiting for CI on #846: 2 of 5 checks done": the row's word
 			// is before the colon, the count after it.
-			if c := t.Changes[i].PR; c != nil && c.Number > 0 {
-				return fmt.Sprintf("Waiting for CI on #%d%s", c.Number, strings.TrimPrefix(n.Text, "Waiting for CI"))
+			c := t.Changes[i].PR
+			if rest, ok := strings.CutPrefix(n.Text, "Waiting for CI"); ok && c != nil && c.Number > 0 {
+				return fmt.Sprintf("Waiting for CI on #%d%s", c.Number, rest)
 			}
+			// A held ask that waits on something else than checks ("Waiting
+			// for GitHub to read whether it can merge") keeps its own words.
 			return n.Text
 		}
+	}
+	// A held merge ask on a PR Fyr has not read into a change yet: it waits
+	// all the same (workGoing counted it; the row said Finished).
+	for _, d := range t.HeldAsks {
+		if d.Effect == nil {
+			continue
+		}
+		if _, why, _ := mergeGate(t, d.Effect); why != "" {
+			return why
+		}
+		return "Waiting for CI"
 	}
 	for _, c := range t.Changes {
 		if c.PRWaitsOnCI() {

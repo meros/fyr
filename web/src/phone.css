@@ -184,6 +184,8 @@
 .m-chip span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .m-chip.st{flex:none;background:transparent;border:1px solid var(--line-strong);color:var(--ink);--knock:var(--raised)}
 .m-chip.st span{color:var(--ink)}
+/* 20ch, not the desktop's 24: the phone's chip row also holds the project and the host in 390 px */
+.m-chip.st .stw{max-width:20ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m-chip .icw{display:inline-flex;flex:none;overflow:visible}
 .m-chip.m{font-family:var(--ui);font-weight:400;font-size:12px;font-variant-numeric:tabular-nums}
 .m-pjb{flex:none;max-width:180px;min-width:0;height:44px;display:flex;align-items:center;padding:0}

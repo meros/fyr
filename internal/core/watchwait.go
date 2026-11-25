@@ -17,7 +17,7 @@ import (
 func agentWatches(t *Thread) []Rule {
 	var at, other []Rule
 	for _, r := range t.Rules {
-		if r.Purpose != PurposeWatch || (r.CreatedBy != ByAgent && r.CreatedBy != ByOwner) || r.Status != RuleArmed {
+		if !namedWatch(r) {
 			continue
 		}
 		if (r.When.Kind == WhenAt || r.When.Kind == WhenQuota) && r.When.At != nil {
@@ -30,12 +30,23 @@ func agentWatches(t *Thread) []Rule {
 	return append(at, other...)
 }
 
+// namedWatch reports an armed notify watch the row names: the agent's, or the
+// owner's quota wake.
+func namedWatch(r Rule) bool {
+	return r.Purpose == PurposeWatch && (r.CreatedBy == ByAgent || r.CreatedBy == ByOwner) && r.Status == RuleArmed
+}
+
 // WatchWaitText is the Waiting reason of a thread with armed agent watches,
 // or "" when it has none: "wakes 07:00", "waits for #1009 to be live",
 // with "+N more" for the rest. Times are the host's local time, as
 // UnresponsiveText's; the date shows when it is not today.
 func WatchWaitText(t *Thread, now time.Time) string {
-	ws := agentWatches(t)
+	return watchWait(t, now, func(Rule) bool { return true })
+}
+
+// watchWait is WatchWaitText over the watches counts takes.
+func watchWait(t *Thread, now time.Time, counts func(Rule) bool) string {
+	ws := slices.DeleteFunc(agentWatches(t), func(r Rule) bool { return !counts(r) })
 	if len(ws) == 0 {
 		return ""
 	}

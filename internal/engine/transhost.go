@@ -276,6 +276,7 @@ func (e *Engine) RollbackHandIn(id string) {
 	delete(e.threads, id)
 	delete(e.views, id)
 	delete(e.last, id)
+	delete(e.lastWhy, id)
 	delete(e.revs, id)
 	e.mu.Unlock()
 	_, _ = e.st.Write(func(tx *store.Tx) error { return tx.DeleteThread(id) })

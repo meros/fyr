@@ -25,29 +25,41 @@ const (
 // the owner's only from its reset (V0.quota-wait), so the answer moves
 // with the clock.
 func NeedsOwnerAt(t *Thread, now time.Time) bool {
-	if NeedsOwnerNowAt(t, now) {
-		return true
-	}
-	_, n := ThreadNeed(t)
-	return n != nil
+	return NeedsOwnerNowAt(t, now) || hasClaim(Claims(t, now, nil), ClaimNeed)
 }
+
+// ownerNow are the claims of NeedsOwnerNowAt. The settle offer is the
+// owner's move on the row but is left out: "settle when done" must fire on a
+// thread whose agent offers to settle.
+var ownerNow = []string{ClaimAsk, ClaimFailure, ClaimUnresponsive, ClaimNoProgress, ClaimRunRequest}
 
 // NeedsOwnerNowAt is NeedsOwner without the changes at now: a question, an
 // approval or a merge ask, a failure, an agent that does not respond, a Run
 // card. A failure the provider's quota caused is not the owner's before its
 // reset (V0.quota-wait): the owner can do nothing about it, so the thread
 // waits; past it, the failure is theirs.
+//
+// V0.thread-claims: read from the thread's claims, as the attention is. The
+// Rules and Available that call this have no auto-merge setting, so a merge
+// Fyr does by itself still counts as the owner's here.
 func NeedsOwnerNowAt(t *Thread, now time.Time) bool {
-	return len(t.Decisions) > 0 || (t.Failure != nil && QuotaWaitText(t, now) == "") || t.Unresponsive != nil || t.NoProgress != nil || PendingRequest(t) != nil
+	cs := Claims(t, now, nil)
+	if hasClaim(cs, ClaimHandover) {
+		// The failure a handover moves the thread away from is not the
+		// owner's while it goes: the row says Moving, and so do the Rules.
+		cs = slices.DeleteFunc(cs, func(c Claim) bool { return c.Kind == ClaimFailure })
+	}
+	return hasClaim(cs, ownerNow...)
 }
 
 // WorkGoingAt reports that the thread's work goes on by itself: a run or a
 // background task is live, the agent is about to get a turn (an unread
 // message, a notice that wakes it, a handover, a wait for the machine), or it
 // waits on something it set up: a watch or settle condition of its own, a
-// place in the slot queue, a merge ask held for CI, CI on an open PR. A
-// message that starts the agent counts from its send (V0.settle-merge-fixes
-// (4)): the run it starts has not begun yet.
+// place in the slot queue, a merge ask held for CI, CI on an open PR, a
+// command at the gate or one the owner started for it. A message that starts
+// the agent counts from its send (V0.settle-merge-fixes (4)): the run it
+// starts has not begun yet.
 //
 // V0.quota-wait: a thread Waiting for quota reads as work going on until the
 // reset its notice names; the time is read at now, as the attention is.
@@ -55,29 +67,11 @@ func WorkGoingAt(t *Thread, now time.Time) bool {
 	return workGoing(t, func(Rule) bool { return true }, now)
 }
 
-// workGoing is WorkGoingAt, counting the agent's armed Rules that counts takes.
+// workGoing is WorkGoingAt, counting the agent's armed Rules that counts
+// takes. V0.thread-claims: any claim that moves without the owner, so what
+// the row shows as Moving is never idle here.
 func workGoing(t *Thread, counts func(Rule) bool, now time.Time) bool {
-	if t.Running || t.Starting != nil || t.RunningTasks() > 0 || t.MachineWait != nil || t.Handover != nil || len(t.Outbox) > 0 {
-		return true
-	}
-	if QuotaWaitText(t, now) != "" {
-		// V0.quota-wait: the provider's quota stopped the run, and it comes
-		// back at a time Fyr can name: the thread waits for it as it waits
-		// for CI. Past that time the failure is the owner's, as any failure.
-		return true
-	}
-	if t.SlotQueued || len(t.HeldAsks) > 0 {
-		return true
-	}
-	if slices.ContainsFunc(t.Rules, func(r Rule) bool {
-		return (r.CreatedBy == ByAgent || r.Purpose == PurposeWatch) && r.Status == RuleArmed && counts(r)
-	}) {
-		return true
-	}
-	if t.wakeable() && slices.ContainsFunc(t.Feed.Queue, func(n Notice) bool { return n.Urgency == Wake && !n.Self }) {
-		return true
-	}
-	return slices.ContainsFunc(t.Changes, func(c Change) bool { return c.PRWaitsOnCI() })
+	return slices.ContainsFunc(claims(t, now, nil, counts), func(c Claim) bool { return c.Side == SideMoving })
 }
 
 // WorkOverAt is the Condition's value at now: the snooze has nothing left

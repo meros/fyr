@@ -720,6 +720,10 @@ func reduceFeedTake(r Rec, in Input, now time.Time) (Result, error) {
 		if !slices.ContainsFunc(out, func(n Notice) bool { return n.Urgency == Wake && !n.Self && !n.Budget }) {
 			f.Woke = append(f.woke(now), now)
 		}
+		// V0.thread-claims: the notices start a turn, so the thread moves
+		// from the take, not from the turn's first report; until now the row
+		// read Finished in between.
+		markStarting(t, now)
 	case AtTurn:
 		out = f.take(func(n Notice) bool { return n.Urgency != Stop })
 	case AtTool:
