@@ -117,21 +117,27 @@ export function chipStatus(pr: PullRequest): MergeStatus {
   return { text: "Ready to merge", tone: "ok", canMerge: true };
 }
 
+/** V0.threads-row-pr: a PR as the inbox row reads it; ended names why its change is over ("abandoned", "reverted",
+ *  "done") when the PR is still open on GitHub. */
+export type RowPr = PullRequest & { ended?: string };
+
 /** The PR chip on inbox rows and in the thread header: a short label, the status line as its title. */
-export function prChip(pr: PullRequest, short = false): { text: string; cls: string; title: string } {
+export function prChip(pr: RowPr, short = false): { text: string; cls: string; title: string } {
   const s = chipStatus(pr);
   const n = `#${pr.number}`;
   const word =
-    pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.state === "MISSING" ? "missing" : pr.conflict ? "conflicts" : pr.checks === "fail" ? "failing" : pr.review === "CHANGES_REQUESTED" || pr.review === "REVIEW_REQUIRED" ? "review" : pr.checks === "pending" ? "running" : "ready";
-  const cls = word === "merged" || word === "closed" || word === "missing" ? "merged" : s.tone === "fail" ? "fail" : s.tone === "ok" ? "ok" : "";
-  const text = short && (word === "merged" || word === "closed" || word === "missing") ? word : `${n} ${word}`;
-  return { text, cls, title: [n, s.text, pr.title].filter(Boolean).join(" · ") };
+    pr.ended ? pr.ended : pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.state === "MISSING" ? "missing" : pr.conflict ? "conflicts" : pr.checks === "fail" ? "failing" : pr.review === "CHANGES_REQUESTED" || pr.review === "REVIEW_REQUIRED" ? "review" : pr.checks === "pending" ? "running" : "ready";
+  const gone = !!pr.ended || word === "merged" || word === "closed" || word === "missing";
+  const cls = gone ? "merged" : s.tone === "fail" ? "fail" : s.tone === "ok" ? "ok" : "";
+  const text = short && gone ? word : `${n} ${word}`;
+  return { text, cls, title: [n, pr.ended ? `${pr.ended}, still open on GitHub` : s.text, pr.title].filter(Boolean).join(" · ") };
 }
 
 /** V0.multi-pr: urgency order for picking the inbox row's headline PR: failing > conflicts > changes requested >
- *  review required > ready > running > merged/closed/missing. */
-export function prUrgency(pr: PullRequest): number {
+ *  review required > ready > running > merged/closed/missing > an ended change's PR still open on GitHub. */
+export function prUrgency(pr: RowPr): number {
   const st = pr.state ?? "OPEN";
+  if (pr.ended) return 7; // V0.threads-row-pr: a merged PR outranks one whose change was given up
   if (st !== "OPEN") return 6;
   if (pr.checks === "fail") return 0;
   if (pr.conflict) return 1;
@@ -141,15 +147,17 @@ export function prUrgency(pr: PullRequest): number {
   return 4;
 }
 
-/** V0.multi-pr: one inbox-row chip for one or more PRs: the most urgent PR, with "+N" when more exist, and every
+/** V0.multi-pr: one inbox-row chip for one or more PRs: the most urgent PR, with "+N" when more open ones exist, and every
  *  PR's status line in the tooltip. */
-export function rowPrChip(prs: PullRequest[], short = false): { text: string; cls: string; title: string } | null {
+export function rowPrChip(prs: RowPr[], short = false): { text: string; cls: string; title: string } | null {
   if (!prs.length) return null;
   const sorted = [...prs].sort((a, b) => prUrgency(a) - prUrgency(b));
   const top = prChip(sorted[0], short);
   if (sorted.length === 1) return top;
+  // V0.threads-row-pr: "+N" counts the other open PRs; merged and given-up ones are only in the tooltip.
+  const more = sorted.slice(1).filter((p) => prUrgency(p) < 6).length;
   return {
-    text: `${top.text} +${sorted.length - 1}`,
+    text: more ? `${top.text} +${more}` : top.text,
     cls: top.cls,
     title: sorted.map((p) => prChip(p).title).join("\n"),
   };

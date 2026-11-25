@@ -14,7 +14,7 @@ import { StateIcon, stateClass } from "./icons.tsx";
 import { rowDetail, rowState, stateLine } from "./rows.ts";
 import { SNOOZE_CUSTOM_LABEL, snoozeChoices, snoozeCommand, type SnoozeChoice } from "./snooze.ts";
 import { AgentPill, threadAgent } from "./agent-ui.tsx";
-import { headerPrs, threadPrs } from "./offers.ts";
+import { rowPrs, threadPrs } from "./offers.ts";
 import { actionGroups, actionsFor, runAction, type ActionHandlers, type ThreadAction } from "./actions.ts";
 import { prChip, rowPrChip } from "./pr.ts";
 import { needsCount } from "./board.ts";
@@ -224,8 +224,7 @@ export function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined })
             </div>
             <div class="m-pkm ell">
               {(() => {
-                const open = headerPrs(t);
-                const chip = rowPrChip(open.length ? open : threadPrs(t));
+                const chip = rowPrChip(rowPrs(t));
                 return [t.project, t.branch, chip?.text ?? null].filter(Boolean).join(" · ");
               })()}
             </div>

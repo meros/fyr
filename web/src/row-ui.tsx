@@ -17,7 +17,7 @@ import { rowDetail, rowState, stateNamesPr } from "./rows.ts";
 import { relTime, whenLabel } from "./format.ts";
 import { snoozeLine } from "./snooze.ts";
 import { rowPrChip } from "./pr.ts";
-import { changeChip, headerPrs, needLook, pressArgs, rowNeed, threadPrs } from "./offers.ts";
+import { changeChip, needLook, pressArgs, rowNeed, rowPrs, threadPrs } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
 import { WakeChip } from "./wake-ui.tsx";
 import { GUEST_TEXT, type GuestWhy } from "./selection.ts";
@@ -151,8 +151,7 @@ function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
         {c.text}
       </span>
     );
-  const open = headerPrs(t);
-  const l = rowPrChip(open.length ? open : threadPrs(t), short);
+  const l = rowPrChip(rowPrs(t), short);
   if (!l) return <span class="pr none" aria-label="no pull request" />;
   return (
     <span class={`pr ${l.cls}`} title={l.title}>

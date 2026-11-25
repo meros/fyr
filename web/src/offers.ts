@@ -3,7 +3,7 @@
 import { dayMonth, clockTime, ago, clip } from "./format.ts";
 
 import type { Change, ChangeNeed, ChangePhase, Offer, OfferRun, PullRequest, Thread } from "./types.ts";
-import { shortHead } from "./pr.ts";
+import { shortHead, type RowPr } from "./pr.ts";
 import type { Ask } from "./confirm.ts";
 
 const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
@@ -256,7 +256,7 @@ function prOfChange(c: Change, main?: PullRequest | null): PullRequest | null {
 
 /** V0.multi-pr: all non-dismissed PRs of a thread for the PR tab and details sheet, open ones first (newest first),
  *  followed by non-dismissed merged/closed PRs (newest first). */
-export function threadPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullRequest[] {
+export function threadPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }, tagEnded = false): RowPr[] {
   const main = t.pr ?? null;
   const changes = [...(t.changes ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const open: PullRequest[] = [];
@@ -271,7 +271,9 @@ export function threadPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullR
     if (c.dismissed || seen.has(k)) continue;
     seen.add(k);
     const isOpen = !ended(c.phase) && !isDone(c) && (p.state ?? "OPEN") === "OPEN";
-    (isOpen ? open : rest).push(p);
+    // V0.threads-row-pr: a PR still open on GitHub whose change was abandoned, reverted or marked done is not open work.
+    if (!isOpen && tagEnded && (p.state ?? "OPEN") === "OPEN") rest.push({ ...p, ended: isDone(c) ? "done" : c.phase });
+    else (isOpen ? open : rest).push(p);
   }
   if (main?.url) {
     const k = prUrlKey(main.url);
@@ -280,6 +282,13 @@ export function threadPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }): PullR
     }
   }
   return [...open, ...rest];
+}
+
+/** V0.multi-pr, V0.threads-row-pr: the PRs the inbox row (desktop and phone) picks its chip from: the open ones, else
+ *  every PR of the thread, with an ended change's PR marked so it never reads as open. */
+export function rowPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }): RowPr[] {
+  const open = headerPrs(t);
+  return open.length ? open : threadPrs(t, true);
 }
 
 /** V0.multi-pr, V0.98 (6): the PRs shown as chips in the thread header: every open change's PR (never a done, ended
