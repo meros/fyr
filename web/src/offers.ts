@@ -260,7 +260,7 @@ export function threadPrs(t: Pick<Thread, "pr"> & { changes?: Change[] }, tagEnd
   const main = t.pr ?? null;
   const changes = [...(t.changes ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const open: PullRequest[] = [];
-  const rest: PullRequest[] = [];
+  const rest: RowPr[] = [];
   const seen = new Set<string>();
   const owned = new Set<string>();
   for (const c of changes) {

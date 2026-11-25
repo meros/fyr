@@ -20,6 +20,8 @@ var vocabAllow = map[string][]string{
 	"internal/claude/fake/fake.go": {"ok", "ask", "fail"},
 	// A word searched for in the CLI's login output.
 	"internal/cli/claudecli/login.go": {"fail"},
+	// V0.threads-row-pr: the inbox row chip's words, display text that mirrors web/src/pr.ts.
+	"internal/core/rowpr.go": {"review", "running"},
 	// The name of change_request's ask argument.
 	"internal/engine/change_tools.go": {"ask"},
 	// The name of the ask tool.

@@ -39,7 +39,11 @@ func TestRowPR(t *testing.T) {
 		}, "PR #11 open"},
 		{"a dismissed change is left out", []Change{
 			ch(20, 0, PhaseReview, PR{State: "OPEN", Checks: ChecksPass}),
-			func() Change { c := ch(21, 1, PhaseReview, PR{State: "OPEN", Checks: ChecksFail}); c.Dismissed = true; return c }(),
+			func() Change {
+				c := ch(21, 1, PhaseReview, PR{State: "OPEN", Checks: ChecksFail})
+				c.Dismissed = true
+				return c
+			}(),
 		}, "PR #20 open"},
 		{"a closed PR reads closed", []Change{
 			ch(30, 0, PhaseReview, PR{State: "CLOSED"}),
