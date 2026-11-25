@@ -161,9 +161,13 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 				m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k})
 			}
 			ids := make(map[string]bool, len(ks))
+			m.mu.Lock()
 			for _, k := range ks {
-				ids[k.ID] = true
+				if !s.bgEnded[k.ID] { // V0.bg-list-after-ended
+					ids[k.ID] = true
+				}
 			}
+			m.mu.Unlock()
 			m.backgroundChanged(s, ids)
 			return
 		}
@@ -184,6 +188,10 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 				// V0.bg-count-follows-ended: the CLI may send no
 				// background_tasks_changed after the last one ends.
 				m.mu.Lock()
+				if s.bgEnded == nil {
+					s.bgEnded = map[string]bool{}
+				}
+				s.bgEnded[k.ID] = true
 				ids := make(map[string]bool, len(s.bgIDs))
 				for id := range s.bgIDs {
 					if id != k.ID {
