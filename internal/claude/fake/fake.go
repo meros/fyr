@@ -543,7 +543,7 @@ func turn(text string) (took []queued) {
 		result(false, "success", "done")
 	case "fail":
 		assistant(msg{"type": "text", "text": "Trying"})
-		result(true, "success", "API Error: 500 Internal server error")
+		result(true, "success", "API Error: 400 invalid_request_error") // a failure that does not pass by itself (V0.overload-retry)
 	case "hang":
 		assistant(msg{"type": "tool_use", "id": "tu_h", "name": "Bash", "input": msg{"command": "sleep 600"}})
 		select {

@@ -151,8 +151,7 @@ func OpenMain(t *Thread) *Change {
 // failure, the settle and the snooze, and counts as seeing the thread.
 func revive(t *Thread, v *View, now time.Time) {
 	t.Failure = nil
-	t.QuotaResumes = 0
-	t.QuotaResumedAt = nil
+	resetAutoResumes(t)
 	t.Settle.At = nil
 	dropSettleDone(t) // a new run: "when done" was for the last one
 	t.SettleAsk = nil // V0.settle-request: so was the agent's word
@@ -544,8 +543,7 @@ func init() {
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.Failure = nil
-			t.QuotaResumes = 0
-			t.QuotaResumedAt = nil
+			resetAutoResumes(t)
 			v.SeenAt = now
 			return nil, nil
 		}})
@@ -580,8 +578,7 @@ func init() {
 			}
 			settleNow(t, now)
 			t.Failure = nil
-			t.QuotaResumes = 0
-			t.QuotaResumedAt = nil
+			resetAutoResumes(t)
 			v.SeenAt = now
 			Unsnooze(v)
 			return fx, nil
@@ -600,7 +597,7 @@ func init() {
 			switch {
 			case settlesWhenDoneByOwner(t):
 				return "Already set"
-			case t.Failure != nil && QuotaWaitText(t, now) == "":
+			case t.Failure != nil && ProviderWaitText(t, now) == "":
 				return "The last run failed"
 			case WorkDoneAt(t, now):
 				return SettleDoneIdle
@@ -766,6 +763,13 @@ func init() {
 				if at := QuotaResumeAt(t); at != nil && !at.After(now) {
 					t.QuotaResumes = MaxQuotaAutoResumes
 				}
+			}
+			// V0.overload-retry: the same for a retry that came due meanwhile.
+			if at := OverloadRetryAt(t); at != nil && !at.After(now) {
+				f := *t.Failure
+				f.Class = ClassAPI
+				t.Failure = &f
+				t.OverloadRetries, t.OverloadRetriedAt = 0, nil
 			}
 			return nil, nil
 		}})

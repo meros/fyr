@@ -77,6 +77,8 @@ func longWait(t *Thread, now time.Time) string {
 		return "waiting for the machine"
 	case QuotaWaitText(t, now) != "":
 		return "waiting for quota"
+	case OverloadWaitText(t, now) != "":
+		return "waiting for the provider"
 	case t.Unresponsive != nil || t.Handover != nil:
 		return "held"
 	}

@@ -7060,6 +7060,26 @@ for (const [w, ht] of [[390, 844]]) section(`V0.quota-wait phone ${w}`, async ({
     failures.push(`${ctx}: ${e.message}`);
   }
 });
+// V0.overload-retry: a run a passing provider failure stopped (529 Overloaded) is a wait Fyr retries, not a failure:
+// the row sits in Working with the retry time, and the end of the run says "Waiting to retry". The same on both fronts.
+for (const [name, w, ht] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.overload-retry ${name}`, async ({ evaluate, openScreen, shot }) => {
+  const ctx = `V0.overload-retry ${name}`;
+  const sec = name === "phone" ? "m-sec" : "sec";
+  try {
+    await openScreen({ url: "?mock=rail&overloadw=1", ready: "!!document.querySelector('.rw, .one')" }, w, ht);
+    const row = await evaluate(`(() => {
+      const r = [...document.querySelectorAll('.rw, .one')].find((x) => /Rename the invoice fields/.test(x.textContent));
+      return r ? { line: r.innerText, needs: !!r.closest('#${sec}-needs'), working: !!r.closest('#${sec}-working') } : { missing: true };
+    })()`);
+    check(!row.missing && /Waiting for the provider · retry 2 of 7 at \d\d:\d\d/.test(row.line) && row.working && !row.needs, `${ctx}: the row does not read as a retry wait (${JSON.stringify(row)})`);
+    await openScreen({ url: "?mock=rail&overloadw=1&open=t_overloadw", ready: "!!document.querySelector('.convo .runmark, .convo .sys')" }, w, ht);
+    const run = await evaluate(`(() => { const e = document.querySelector('.convo .runmark, .convo .sys'); return { text: e.textContent, fail: e.classList.contains('fail') }; })()`);
+    check(/^Waiting to retry: API Error: 529 Overloaded/.test(run.text) && !run.fail, `${ctx}: the end of the run does not read as a wait (${JSON.stringify(run)})`);
+    await shot(`overload-retry-${name}.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
 // V0.load-invariants, V0.thread-invariants: a broken invariant is a card under Needs you on both fronts (one component),
 // the newest first, with Fix it and Dismiss; a press sends the command with the card's id and the card goes; Settings →
 // Automation lists the load and the thread invariants. With ?invariants=1 the mock has two open cards.

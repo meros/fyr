@@ -800,7 +800,7 @@ func checkAttentionPlacement(t *Thread, v *View, now time.Time, on func(repo str
 	}
 
 	asks := ownerAsks(t, on)
-	quotaWait := QuotaWaitText(t, now)
+	quotaWait := ProviderWaitText(t, now)
 	if until, since := SnoozeOf(v); until != nil && until.After(now) {
 		if SnoozedWhenDone(v) && WorkOverAt(t, now) && a.State == Snoozed {
 			probs = append(probs, "snooze-when-done still Snoozed after workOver")
@@ -910,7 +910,7 @@ func checkAvailabilityMismatch(t *Thread, v *View, now time.Time) string {
 	if t.ArchivedAt == nil {
 		wantAvail("thread.retry", t.Failure != nil, fmt.Sprintf("failure=%t", t.Failure != nil))
 		if t.Settle.At == nil {
-			wantAvail("thread.settleWhenDone", !settlesWhenDoneByOwner(t) && (t.Failure == nil || QuotaWaitText(t, now) != "") && !WorkDoneAt(t, now), "settleWhenDone")
+			wantAvail("thread.settleWhenDone", !settlesWhenDoneByOwner(t) && (t.Failure == nil || ProviderWaitText(t, now) != "") && !WorkDoneAt(t, now), "settleWhenDone")
 			wantAvail("thread.snoozeWhenDone", !NeedsOwnerAt(t, now) && WorkGoingAt(t, now), "snoozeWhenDone")
 		}
 	}

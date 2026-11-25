@@ -737,6 +737,15 @@ function railFixture(now: number): Fixture {
         unavailable: { "thread.retry": "The last run did not fail" },
       }),
     );
+  // V0.overload-retry: the provider failed in passing; Fyr retries by itself and the thread waits meanwhile.
+  if (MOCK_OVERLOADW)
+    threads.push(
+      base("t_overloadw", "Rename the invoice fields", now, 1, {
+        project: "acme/web",
+        failure: { class: "overloaded", message: OVERLOAD_MSG, at: min(1) },
+        attention: { state: "waiting", section: "working", reason: "Waiting for the provider · retry 2 of 7 at " + new Date(Date.now() + 60_000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) },
+      }),
+    );
   const working: [string, string, string, number, number, "working" | "waiting"][] = [
     ["t_babysit", "Babysit PR #4170", "Bash git rebase origin/main", 0, 3, "working"],
     ["t_mapperf", "Map perf", "Bash yarn vitest src/map", 2, 12, "working"],
@@ -832,6 +841,15 @@ function railFixture(now: number): Fixture {
   push(131, "decision.opened", { decision: ask });
   events.t_lasso = ev2;
   events.t_mapperf = calmTurn("t_mapperf", now);
+  if (MOCK_OVERLOADW) {
+    const T = now - 4 * 60_000;
+    events.t_overloadw = [
+      ev(1, T, "t_overloadw", "user", { id: "m_ow1", text: "Rename the invoice fields to the new names.", images: 0 }),
+      ev(2, T, "t_overloadw", "run.started", {}),
+      ev(3, T + 20_000, "t_overloadw", "msg", assistantText("I will start with the model.")),
+      ev(4, T + 40_000, "t_overloadw", "run.ended", { failure: { class: "overloaded", message: OVERLOAD_MSG, at: iso(T + 40_000) }, interrupted: false, durationMs: 40_000 }),
+    ];
+  }
   // V0.quota-wait: ?quotaw=1 has a thread whose run the provider's quota
   // stopped: its end of turn reads as a wait, on both fronts.
   if (MOCK_QUOTAW) {
@@ -1872,6 +1890,8 @@ function mockDeploy() {
  *  offline for 25 minutes (the layout test uses it). Read once at load, as ?deploy=. */
 const MOCK_LONGTITLE = mockParam("longtitle") === "1";
 const MOCK_QUOTAW = mockParam("quotaw") === "1";
+const MOCK_OVERLOADW = mockParam("overloadw") === "1";
+const OVERLOAD_MSG = "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.";
 const MOCK_RUNS = mockParam("runs") === "1";
 const MOCK_JUMPS = mockParam("jumps") === "1";
 const MOCK_ROOTPROMPT = mockParam("rootprompt") === "no";
