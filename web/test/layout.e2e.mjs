@@ -273,7 +273,7 @@ const SCREENS = [
   // inset; with the keyboard up a focused field and its button stay in view.
   { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 8 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
   // V0.settings-ia: the per-job rows are a folded group (Per job); the screen opens it, as the owner's device would remember.
-  { name: "settings providers", url: "?mock=rail&settings=providers", storage: { "fyr.settingsFold": '{":sajobs":true,":found":true}' }, ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section.sacalls select, section.sajobs select').length === 5" },
+  { name: "settings providers", url: "?mock=rail&settings=providers", storage: { "fyr.settingsFold": '{":sajobs":true,":found":true}' }, ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section.sacalls select, section.sajobs select').length === 4" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
@@ -627,7 +627,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     const st = m.settings;
     check(!!st && st.rows === 3 && st.found >= 1 && st.imports === st.found && st.needs.includes("Needs a login") && !st.login, `${ctx}: the Providers page is wrong ${JSON.stringify(st)}`);
     // SPEC V0.115: the phone has System agents too; the labels are unchanged and a job reads "Same as default".
-    check(!!st?.systemAgents && st.systemAgents.selects.join("|") === "Provider|Model|Thread titles|Project setup|Questions in text" && st.systemAgents.lines.length === 3 && st.systemAgents.same === "Same as default", `${ctx}: System agents are wrong ${JSON.stringify(st?.systemAgents)}`);
+    check(!!st?.systemAgents && st.systemAgents.selects.join("|") === "Provider|Model|Thread titles|Project setup" && st.systemAgents.lines.length === 2 && st.systemAgents.same === "Same as default", `${ctx}: System agents are wrong ${JSON.stringify(st?.systemAgents)}`);
   }
   // SPEC 0.5 V0.53, V0.119: a running login shows on the provider's page: the sign-in link, the code field and Cancel, all 44 px.
   if (ctx.startsWith("settings provider login")) check(!!m.settings?.login && /^https:\/\/claude\.com\//.test(m.settings.login.link) && m.settings.login.code && m.settings.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(m.settings?.login)}`);
@@ -1983,7 +1983,7 @@ try {
   const sa = await evaluate(`(() => { const el = document.querySelector('.dlg .stp'); if (!el?.querySelector('section.sacalls')) return null;
     return { selects: [...el.querySelectorAll('section.sacalls select, section.sajobs select')].map(s => s.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .sr-d')].map(e => e.textContent),
       model: el.querySelector('select[aria-label="Model"]')?.selectedOptions[0]?.textContent ?? '', same: el.querySelector('select[aria-label="Thread titles"]')?.selectedOptions[0]?.textContent ?? '' }; })()`);
-  check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup|Questions in text" && sa.model === "Haiku (claude-haiku-5-5)" && sa.same === "Same as default" && sa.lines.length === 3 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
+  check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup" && sa.model === "Haiku (claude-haiku-5-5)" && sa.same === "Same as default" && sa.lines.length === 2 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
     `V0.115 desktop: the System agents section is wrong (${JSON.stringify(sa)})`);
   await shot("settings-providers-desktop.png");
   // The same size on all four pages; each page shows its heading.

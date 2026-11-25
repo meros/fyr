@@ -1,0 +1,9 @@
+# V0.text-ask-removed: Fyr no longer reads the agent's last message for a question it did not ask on a card
+
+→ V0.210, V0.text-ask-nudge, decision 0033. *Removes both: decision 0033 is superseded.*
+
+**Why.** In one day of use the job woke finished threads six times for two real questions. It read a question into status recaps, "Next steps" lists, "What's left" sections and tips the owner could follow alone (take a page out of a printout, merge on GitHub), and once it invented a question the message did not ask, which made the agent put a needless question card in front of the owner. Each false yes costs an agent turn and a "nothing waits on you" line in a thread that was done. A tuning was tried first: a narrower prompt that also returns the words that ask, checked against the message, and a read of the message's start as well as its end. It removed that day's false yeses, but it needed live model runs to keep it honest and still cost a turn on every yes. The owner chose to remove the feature. What is lost: a question an agent writes only in text, without `mcp__fyr__ask`, is no longer caught; the agent instructions that say to ask on a card are the remaining guard.
+
+(1) **What goes.** The system job **Questions in text** (`question`) leaves Settings → System agents on both fronts. The effect `textAsk`, the observed input `textAsk.judged`, the event `textAsk.nudged`, the notice rule `textquestion` and the thread field `textNudged` are gone. A run's end no longer starts a model call.
+
+(2) **What stays.** Old `textAsk.raised`, `textAsk.dismissed` and `textAsk.nudged` events stay in the log as history; nothing reads them. A stored system agent choice for the `question` job is ignored. A merge asked in text (V0.settle-merge-fixes (1)) is a separate, rule-based check and stays.

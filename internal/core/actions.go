@@ -63,7 +63,7 @@ type Effect struct {
 	// Git is the folder's facts of an EffectGit, read by the agent manager
 	// at the run's end.
 	Git *GitFacts `json:"git,omitempty"`
-	// Run is the run count an EffectTextAsk judges (V0.210).
+	// Run is the run count an EffectMergeText reads.
 	Run int `json:"run,omitempty"`
 	// Asked is the question an EffectAnswered answers (V0.ask-tool).
 	Asked *Decision `json:"asked,omitempty"`

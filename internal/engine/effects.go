@@ -104,9 +104,6 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 		}
 		e.regenerateTitle(threadID) // V0.108: its result lands as a made title
 		return nil, false
-	case core.EffectTextAsk:
-		go e.judgeText(threadID, ef.Run) // V0.210: the effects after it do not wait
-		return nil, false
 	case core.EffectMergeText:
 		go e.readMergeText(threadID, ef.Run) // V0.settle-merge-fixes (1): it Applies its reading
 		return nil, false

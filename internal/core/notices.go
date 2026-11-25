@@ -63,13 +63,12 @@ var NoticeRules = []NoticeRule{
 	{Name: "task.quiet", Urgency: Wake, Budget: true, OnReduce: taskQuietNotices}, // V0.195
 	{Name: "task.stopped", Urgency: Next, OnReduce: taskStopNotices},              // V0.stop-ends-background
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
-	{Name: "textquestion", Urgency: Wake, Budget: true, OnReduce: textQuestionNotices}, // V0.ask-tool, V0.text-ask-nudge
-	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},                     // V0.settle-merge-fixes (1)
-	{Name: "overload.retry", Urgency: Wake, OnReduce: overloadRetryNotices},            // V0.overload-retry
-	{Name: "quota.continue", Urgency: Wake, OnReduce: quotaContinueNotices},            // V0.quota-auto-continue
-	{Name: "setup", Urgency: Next, OnReduce: setupNotices},                             // V0.prompt-fits-setup
-	{Name: "noprogress", Urgency: Next, OnReduce: noProgressNotices},                   // V0.no-progress
-	{Name: "split", Urgency: Next, OnReduce: splitNotices},                             // V0.thread-focus
+	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},          // V0.settle-merge-fixes (1)
+	{Name: "overload.retry", Urgency: Wake, OnReduce: overloadRetryNotices}, // V0.overload-retry
+	{Name: "quota.continue", Urgency: Wake, OnReduce: quotaContinueNotices}, // V0.quota-auto-continue
+	{Name: "setup", Urgency: Next, OnReduce: setupNotices},                  // V0.prompt-fits-setup
+	{Name: "noprogress", Urgency: Next, OnReduce: noProgressNotices},        // V0.no-progress
+	{Name: "split", Urgency: Next, OnReduce: splitNotices},                  // V0.thread-focus
 }
 
 // EventSlot is the event of a slot for a heavy job that became the

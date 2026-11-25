@@ -270,10 +270,6 @@ func ReduceIn(env Env, t *Thread, v *View, in Input, now time.Time) (*Thread, *V
 	done := settleWhenWorkDone(Rec{T: t, V: v}, in, now)
 	res.Events = append(res.Events, done.Events...)
 	res.Effects = append(res.Effects, done.Effects...)
-	// V0.210: a question in text reads the end state too.
-	asked := textAskAfter(before, t, in, now)
-	res.Events = append(res.Events, asked.Events...)
-	res.Effects = append(res.Effects, asked.Effects...)
 	// V0.settle-merge-fixes (1): so does a merge asked in text.
 	res.Effects = append(res.Effects, mergeTextAfter(before, t, in).Effects...)
 	// V0.auto-title: the first run's end and a clear goal ask for a title.
