@@ -306,6 +306,9 @@ type session struct {
 	// bgIDs: the ids behind bg; a task that ends leaves it before the CLI
 	// says so (V0.bg-count-follows-ended).
 	bgIDs map[string]bool
+	// bgEnded: ids whose end was seen; a later list that still names one
+	// does not count it (V0.bg-list-after-ended).
+	bgEnded map[string]bool
 	// inputClosed: Fyr closed the process's stdin (closeInput).
 	inputClosed bool
 	// tools: tool_use id → tool name, until its result (V0.133).
