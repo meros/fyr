@@ -314,6 +314,8 @@ export interface Project {
   toolApproval?: "auto";
   /** V0.46: the end of the quiet hours the project is in now (RFC 3339); absent when not quiet */
   quietUntil?: string;
+  /** V0.quiet-now: the end of a quiet stretch the owner started by hand (RFC 3339); a time passed is off */
+  quietNow?: string;
   /** V0.58: only on the stream, `{id, deleted: true}` after project.delete */
   deleted?: boolean;
   /** V0.116: the version of the project's image icon (served at /api/projects/<id>/icon); absent draws the glyph */

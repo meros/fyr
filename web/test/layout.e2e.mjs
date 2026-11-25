@@ -468,12 +468,15 @@ const MEASURE = `(() => {
       const r = el.getBoundingClientRect();
       const box = (b) => b.getBoundingClientRect();
       const days = [...el.querySelectorAll('.qdays button')].map(box);
-      const times = [...el.querySelectorAll('.qtime select')].map(box);
+      const times = [...el.querySelectorAll('.qwin .qtime select')].map(box);
       const others = [...el.querySelectorAll('.qrm, .qtog, .qadd button')].map(box); // .qtog: the All day switch's label, the switch's target
-      const all = [...days, ...times, ...others];
+      // V0.quiet-now: the Quiet now row's choices and its time pick, touch-sized too
+      const nows = [...el.querySelectorAll('.qnow button, .qnow select')].map(box);
+      const all = [...days, ...times, ...others, ...nows];
       return { parts, right: Math.max(r.right, ...all.map(d => d.right)), rows: el.querySelectorAll('.qwin').length,
         add: [...el.querySelectorAll('.qadd button')].map(b => b.textContent.replace(/\\s+/g, ' ').trim()),
-        line: el.querySelector('.sg-f')?.textContent ?? '', note: el.querySelector('.sg-h .end')?.textContent ?? '', days: days.length, times: times.length, small: all.filter(d => d.height < 43.5).length };
+        line: el.querySelector('.sg-f')?.textContent ?? '', note: el.querySelector('.sg-h .end')?.textContent ?? '', days: days.length, times: times.length,
+        quietNow: [...el.querySelectorAll('.qnow button')].map(b => b.textContent.trim()), small: all.filter(d => d.height < 43.5).length };
     })(),
   };
 })()`;
@@ -666,6 +669,8 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(q.parts.length === 3, `${ctx}: expected two rows and the add bar, found ${q.parts.length} parts`);
       check(q.right <= m.innerWidth + 0.5, `${ctx}: the Quiet hours row runs ${(q.right - m.innerWidth).toFixed(1)} px past the right edge`);
       check(q.small === 0, `${ctx}: ${q.small} quiet-hours targets are under 44 px`);
+      // V0.quiet-now: the first row starts a quiet stretch by hand
+      check(q.quietNow.length === 4 && q.quietNow[0] === "1 hour" && q.quietNow[1] === "3 hours" && /^Until (tomorrow )?08:00$/.test(q.quietNow[2]) && /^Until \d\d:\d\d$/.test(q.quietNow[3]), `${ctx}: the Quiet now row is wrong ${JSON.stringify(q.quietNow)}`);
     }
   }
   if (ctx.startsWith("inbox filtered")) {

@@ -165,3 +165,51 @@ func QuietUntil(qs QuietHours, t time.Time) (time.Time, bool) {
 	}
 	return end, true
 }
+
+// MaxQuietNow bounds how far ahead a quiet stretch started by hand may end
+// (V0.quiet-now).
+const MaxQuietNow = 7 * 24 * time.Hour
+
+// ParseQuietNow reads project.update's quietNow: an RFC 3339 time, or null
+// (or "") for none. A time already passed is kept as none; one further than
+// MaxQuietNow ahead of now is refused.
+func ParseQuietNow(raw any, now time.Time) (*time.Time, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("quietNow must be a time (RFC 3339) or null")
+	}
+	if s == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return nil, fmt.Errorf("quietNow must be a time (RFC 3339) or null, got %q", s)
+	}
+	if t.Sub(now) > MaxQuietNow+time.Minute {
+		return nil, fmt.Errorf("quietNow must be at most 7 days ahead")
+	}
+	if !t.After(now) {
+		return nil, nil
+	}
+	t = t.UTC()
+	return &t, nil
+}
+
+// QuietUntilNow is QuietUntil with a quiet stretch started by hand
+// (V0.quiet-now): while manual is after t the project is quiet until the
+// later of manual and the windows' stretch, and windows that hold when
+// manual ends join on as they do with each other.
+func QuietUntilNow(qs QuietHours, manual *time.Time, t time.Time) (time.Time, bool) {
+	end, ok := QuietUntil(qs, t)
+	if manual == nil || !manual.After(t) || (ok && !manual.After(end)) {
+		return end, ok
+	}
+	end = manual.In(t.Location())
+	if next, more := QuietUntil(qs, end); more && next.After(end) {
+		end = next
+	}
+	return end, true
+}

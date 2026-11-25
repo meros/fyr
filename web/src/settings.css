@@ -260,6 +260,10 @@ label.sr{cursor:pointer}
 .qw-top .allday{display:inline-flex;align-items:center;gap:8px;font:500 13px/18px var(--ui);margin-left:auto;cursor:pointer}
 .qw-top .allday.first{margin-left:0}
 .qw-top .allday.first+.xb{margin-left:auto}
+.qnow .qw-top{justify-content:space-between;flex-wrap:nowrap} /* V0.quiet-now: the line, then End now on the right */
+.qnow .qw-top .sr-b{min-width:0}
+.qnow .chips{margin-top:8px}
+.qnow-at{display:inline-flex;align-items:center;gap:6px}
 .qtime select{height:30px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);padding:0 6px;font:400 13px/18px var(--ui)}
 .qd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;max-width:360px}
 .qd button{height:30px;border:1px solid var(--line);border-radius:8px;font:500 12px/16px var(--ui);color:var(--ink-muted);text-align:center;padding:0 2px}

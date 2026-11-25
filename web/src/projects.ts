@@ -141,6 +141,7 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
         color: newest.color,
         icon: newest.icon,
         quiet: newest.quiet,
+        quietNow: newest.quietNow, // V0.quiet-now
         priority: newest.priority,
         agentSettle: newest.agentSettle, // V0.linked-agent-settle
         toolApproval: newest.toolApproval, // V0.tool-approval-judge
@@ -190,7 +191,7 @@ export function memberOn(p: Project | undefined, hostId: string | undefined): Pr
 export function splitSharedPatch<T extends Record<string, unknown>>(patch: T): { shared: Partial<T>; own: Partial<T> } {
   const shared: Partial<T> = {};
   const own: Partial<T> = {};
-  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet", "priority", "agentSettle", "toolApproval"].includes(String(k)) ? shared : own)[k] = patch[k];
+  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet", "quietNow", "priority", "agentSettle", "toolApproval"].includes(String(k)) ? shared : own)[k] = patch[k];
   return { shared, own };
 }
 
@@ -402,11 +403,13 @@ interface ProjectFields {
   /** V0.model-choice */
   effort: string;
   quiet: QuietHours[];
+  /** V0.quiet-now: the end of the quiet stretch started by hand, or null to end it */
+  quietNow: string | null;
   priority: ProjectPriority;
   agentSettle: AgentSettle;
   toolApproval: ToolApproval;
 }
-type ProjectFieldPatch = { toolApproval?: "auto" | null; agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; effort?: string; quiet?: QuietHours[] | null; priority?: "high" | "low" | null };
+type ProjectFieldPatch = { toolApproval?: "auto" | null; agentSettle?: "auto" | null; name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; effort?: string; quiet?: QuietHours[] | null; quietNow?: string | null; priority?: "high" | "low" | null };
 
 /** V0.project-priority: a project's priority as the page shows it; normal is stored as none. */
 export type ProjectPriority = "high" | "normal" | "low";
@@ -452,6 +455,8 @@ export function patchFor<K extends keyof ProjectFields>(field: K, value: Project
       const q = value as QuietHours[];
       return { quiet: q.length ? q.map(cleanWindow) : null };
     }
+    case "quietNow":
+      return { quietNow: (value as string | null) || null };
     case "priority":
       return { priority: value === "normal" ? null : (value as "high" | "low") };
     case "agentSettle":

@@ -1247,7 +1247,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   }
   // V0.46: the host computes quietUntil; the mock does the same for its own clock.
   const withQuiet = (p: Project): Project => {
-    const u = mockQuietUntil(p.quiet, clock());
+    const u = mockQuietUntil(p.quiet, clock(), p.quietNow);
     const { quietUntil: _, ...rest } = p;
     return u ? { ...rest, quietUntil: u } : rest;
   };
@@ -1385,7 +1385,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: "No such project" };
       const patch: Partial<Project> = {};
-      for (const k of ["name", "color", "icon", "profile", "model", "quiet", "priority", "agentSettle"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
+      for (const k of ["name", "color", "icon", "profile", "model", "quiet", "quietNow", "priority", "agentSettle"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
       // V0.116: a changed value is the owner's; the image's upload or remove too.
       const by = { ...p.by };
       for (const k of ["name", "color"] as const) if (k in args && args[k] !== p[k]) by[k] = "owner";
@@ -1394,7 +1394,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if ("folder" in args) patch.folder = args.folder ? expand(String(args.folder)) : undefined;
       const np = putProject({ ...p, ...patch });
       // V0.46: the threads carry the project's quietUntil, so they change with it.
-      if ("quiet" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
+      if ("quiet" in args || "quietNow" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
       return { ok: true };
     }
     if (action === "action.run") {
@@ -1840,7 +1840,7 @@ const MOCK_ARCHIVED = mockParam("archived");
 
 /** The host's QuietUntil (internal/core/quiet.go) on the device's clock, for the mock only: any window holds, and
  *  windows that follow on join, at most a week ahead. */
-export function mockQuietUntil(q: Project["quiet"], now: number): string | undefined {
+export function mockQuietUntil(q: Project["quiet"], now: number, manual?: string): string | undefined {
   const hm = (s: string) => /^(\d{1,2}):(\d\d)$/.exec(s ?? "");
   const keys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
   const one = (w: QuietHours, at: number): number | null => {
@@ -1866,14 +1866,24 @@ export function mockQuietUntil(q: Project["quiet"], now: number): string | undef
     }
     return best;
   };
-  let end = window(now);
-  if (end === null) return undefined;
-  for (let i = 0; i < 64 && end - now < 7 * 24 * 3600_000; i++) {
-    const next = window(end);
-    if (next === null || next <= end) break;
-    end = next;
+  const stretch = (from: number): number | null => {
+    let end = window(from);
+    if (end === null) return null;
+    for (let i = 0; i < 64 && end - from < 7 * 24 * 3600_000; i++) {
+      const next = window(end);
+      if (next === null || next <= end) break;
+      end = next;
+    }
+    return end;
+  };
+  let end = stretch(now);
+  // V0.quiet-now: a stretch started by hand, joined with a window that holds when it ends, as the host does.
+  const m = manual ? Date.parse(manual) : NaN;
+  if (m > now && (end === null || m > end)) {
+    const next = stretch(m);
+    end = next !== null && next > m ? next : m;
   }
-  return new Date(end).toISOString();
+  return end === null ? undefined : new Date(end).toISOString();
 }
 
 /** V0.39: ?deploy=<phase> in the mock shows an update in progress (the layout test uses it). */
