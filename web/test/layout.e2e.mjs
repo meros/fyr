@@ -87,11 +87,20 @@ const cleanup = () => {
   server.close();
   rmSync(profile, { recursive: true, force: true });
 };
-const watchdog = setTimeout(() => {
-  console.error("layout test: timed out");
-  cleanup();
-  process.exit(2);
-}, 420_000); // a hang guard, not a speed check: about 35 s on a quiet 8-core machine, 140 s and more at a load average of 80 (a deploy beside other sessions' test suites, 16 Nov)
+// A hang guard, not a speed check: it fires when no job has ended for 240 s. The run's own length follows the load
+// (about 35 s on a quiet 8-core machine, 140 s and more at a load average of 80, 400 s on 25 Nov beside a build and
+// the Go tests, close to the fixed 420 s it had before), so a limit on the whole run failed a healthy run under
+// load; each job that ends re-arms it.
+let watchdog;
+const armWatchdog = () => {
+  clearTimeout(watchdog);
+  watchdog = setTimeout(() => {
+    console.error("layout test: timed out (no job ended for 240 s)");
+    cleanup();
+    process.exit(2);
+  }, 240_000);
+};
+armWatchdog();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Chrome's debug port: up to 60 s, since make test starts Chrome beside the Go tests, the typecheck and the unit tests
@@ -1094,6 +1103,7 @@ async function runJobs(list, width) {
           failures.push(`${job.name}: ${e.message}`);
         }
         jobTimes.push([Date.now() - t0, job.name]);
+        armWatchdog();
       }
     } finally {
       await closeTab(t);
@@ -4366,8 +4376,9 @@ section('V0.dialogs-review round 2', async (h) => {
     await evaluate(`(() => { const ta = document.querySelector('.dlg textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'a prompt worth keeping'); ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await evaluate(`document.querySelector('.dlg .dh .x').click()`);
     await waitFor(`!document.querySelector('.dlg')`, { what: "New thread closed" });
-    await evaluate(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }))`);
-    await waitFor(`!!document.querySelector('.dlg .ntdraft')`, { what: "the draft's line", soft: true });
+    // The key is sent again until the dialog is there: right after the close the app's key handler may not be
+    // bound again yet (under load a single press was lost and the line never came).
+    await waitFor(`(() => { if (!document.querySelector('.dlg')) document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true })); return !!document.querySelector('.dlg .ntdraft'); })()`, { what: "the draft's line", soft: true });
     const line = await evaluate(`(() => { const l = document.querySelector('.dlg .ntdraft'), ta = document.querySelector('.dlg textarea'), b = document.querySelector('.dlg .db'); if (!l || !ta || !b) return null; const r = l.getBoundingClientRect(), tr = ta.getBoundingClientRect(), br = b.getBoundingClientRect(); const named = (root) => [...root.querySelectorAll('button')].map((x) => x.textContent.trim() || x.getAttribute('aria-label')); return { text: l.textContent, above: r.bottom <= tr.top + 0.5, inside: r.left >= br.left - 0.5 && r.right <= br.right + 0.5, value: ta.value, lineButtons: named(l), discard: named(document.querySelector('.dlg .df')).includes('Discard') }; })()`);
     check(!!line, "round 2 draft desktop: a reopened New thread shows no line about its draft");
     if (line) {
