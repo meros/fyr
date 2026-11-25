@@ -158,12 +158,14 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 		p.MergedAt = v.MergedAt
 	}
 	p.Base = v.BaseRefName
+	// V0.review-thread-notice: every read keeps the count, which fills the
+	// review condition (-1: this read could not see the threads).
+	p.UnresolvedThreads = v.UnresolvedThreads
 	if p.State == "OPEN" && p.MergeState == "BLOCKED" && (checks == core.ChecksPass || checks == core.ChecksNone) {
 		// V0.136: name what blocks it, once per repo and base (cached).
 		rs := readRules(ctx, gh, repo, p.Base)
 		p.Rules, p.Protected = rs.types, rs.protected
 		p.Approvals, p.ThreadResolution = rs.approvals, rs.threads
-		p.UnresolvedThreads = v.UnresolvedThreads
 		for _, ctxName := range rs.required {
 			if !passed[ctxName] {
 				p.MissingChecks = append(p.MissingChecks, ctxName)

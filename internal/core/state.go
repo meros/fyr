@@ -124,6 +124,9 @@ func stateChanges(b *strings.Builder, cs []Change, now time.Time) {
 			if p.Review != "" {
 				fmt.Fprintf(b, " · review %s", p.Review)
 			}
+			if p.UnresolvedThreads > 0 {
+				fmt.Fprintf(b, " · %s", ThreadsReason(p.UnresolvedThreads)) // V0.review-thread-notice
+			}
 			if p.Conflict {
 				b.WriteString(" · conflict")
 			}

@@ -541,6 +541,11 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	}
 	snap := p
 	snap.Annotations = nil
+	if snap.UnresolvedThreads < 0 && c.PR != nil {
+		// V0.review-thread-notice: a read that could not see the threads
+		// (gh pr view) keeps the count the last read saw; threads outlive a push.
+		snap.UnresolvedThreads = c.PR.UnresolvedThreads
+	}
 	if p.State == PRMissing && c.PR != nil {
 		// GitHub said nothing about it; what it said before stays.
 		snap.Title, snap.Branch, snap.Head = c.PR.Title, c.PR.Branch, c.PR.Head
@@ -601,12 +606,17 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		// without CI); what the last head's checks said no longer holds.
 		dropObserved(c, CondChecks)
 	}
-	switch p.Review {
-	case "APPROVED":
-		setCondition(c, CondReview, CondOK, "", ByObserved, now)
-	case "CHANGES_REQUESTED":
+	// V0.review-thread-notice: unresolved review threads fail the review
+	// too, whoever left them and whatever the review decision (a bot's
+	// COMMENTED review leaves it empty); a requested change names itself first.
+	switch {
+	case p.Review == "CHANGES_REQUESTED":
 		setCondition(c, CondReview, CondFail, "Changes requested", ByObserved, now)
-	case "REVIEW_REQUIRED":
+	case snap.UnresolvedThreads > 0:
+		setCondition(c, CondReview, CondFail, ThreadsReason(snap.UnresolvedThreads), ByObserved, now)
+	case p.Review == "APPROVED":
+		setCondition(c, CondReview, CondOK, "", ByObserved, now)
+	case p.Review == "REVIEW_REQUIRED":
 		setCondition(c, CondReview, CondPending, "", ByObserved, now)
 	default:
 		// V0.review-correctness (1): no decision (dismissed, or none required).
@@ -691,6 +701,26 @@ func condition(c *Change, typ CondType) *Condition {
 		}
 	}
 	return nil
+}
+
+// threadsSuffix ends the reason of a review condition that fails only for
+// unresolved review threads (V0.review-thread-notice).
+const threadsSuffix = " unresolved review thread"
+
+// ThreadsReason is the review condition's reason for n unresolved threads:
+// "1 unresolved review thread", "3 unresolved review threads".
+func ThreadsReason(n int) string {
+	if n == 1 {
+		return "1" + threadsSuffix
+	}
+	return fmt.Sprintf("%d%ss", n, threadsSuffix)
+}
+
+// threadsOnly reports whether k is a review condition Fyr observed failing
+// only for unresolved review threads, not for a requested change.
+func threadsOnly(k *Condition) bool {
+	return k != nil && k.Type == CondReview && k.Status == CondFail && k.Source == ByObserved &&
+		(strings.HasSuffix(k.Reason, threadsSuffix) || strings.HasSuffix(k.Reason, threadsSuffix+"s"))
 }
 
 func setCondition(c *Change, typ CondType, status CondStatus, reason, by string, now time.Time) {
