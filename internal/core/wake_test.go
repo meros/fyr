@@ -217,3 +217,23 @@ func TestWaitsAreShownAndCancelled(t *testing.T) {
 		t.Fatal("cancel on with no wait")
 	}
 }
+
+// V0.snooze-until-wake: a wait on a time carries the time, so the owner can
+// snooze the thread until then; a wait on anything else has none.
+func TestWaitOnATimeCarriesIt(t *testing.T) {
+	th, v := &Thread{ID: "t_1", ActivityAt: ct0}, &View{}
+	at := ct0.Add(20 * time.Hour)
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_idle", When: When{Kind: WhenIdleFor, Ms: 1_800_000}, Then: "notify"}}, ct0)
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_at", When: When{Kind: WhenAt, At: &at}, Then: "notify"}}, ct0)
+	ws := Waits(th, ct0)
+	if len(ws) != 2 || ws[0].Rule != "w_at" || ws[0].At == nil || !ws[0].At.Equal(at) || ws[1].At != nil {
+		t.Fatalf("waits %+v", ws)
+	}
+	step(t, th, v, Input{Source: FromOwner, Kind: "thread.snooze", Args: Args{"until": ws[0].At.Format(time.RFC3339)}}, ct0.Add(time.Minute))
+	if until, _ := SnoozeOf(v); until == nil || !until.Equal(at) {
+		t.Fatalf("snoozed until %v, want %v", until, at)
+	}
+	if len(Waits(th, ct0)) != 2 {
+		t.Fatalf("the snooze dropped a wait: %+v", th.Rules)
+	}
+}

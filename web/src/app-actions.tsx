@@ -130,11 +130,16 @@ export function useThreadActions(c: Pick<ReturnType<typeof useAppState>, "store"
     void leaveAfterHost(cmds.took(c.action, c.ids, c.args), leaveGone);
   };
 
+  /** V0.snooze-until-wake: a snooze to a time the thread itself names (its wait), with no dialog. */
+  const snoozeUntil = (ids: string[], until: string) => {
+    void leaveAfterHost(cmds.took("thread.snooze", ids, { until }), leaveGone);
+  };
+
   const markUnseen = (id: string) => {
     if (view?.id === id) setTracker((tr) => markedUnseen(tr));
     void cmds.run("thread.markUnseen", [id]);
   };
 
 
-  return { deskAtRef, openThread, closePeek, closeThread, target, settle, settleWhenDone, settleBulk, settleGroup, settleMerged, archive, openSnooze, snoozeList, snooze, markUnseen };
+  return { deskAtRef, openThread, closePeek, closeThread, target, settle, settleWhenDone, settleBulk, settleGroup, settleMerged, archive, openSnooze, snoozeList, snooze, snoozeUntil, markUnseen };
 }

@@ -171,10 +171,13 @@ func cancelledWakes(b, a *Thread) []Notice {
 const KindCancelWait = "thread.cancelWait"
 
 // Wait is one armed watch as clients read it: its id and its condition in a few words.
+// At is when it wakes, for a wait on a time (a wake-up, a quota reset): the
+// owner can snooze the thread until then (V0.snooze-until-wake).
 type Wait struct {
-	Rule string `json:"rule"`
-	Text string `json:"text"`
-	By   string `json:"by,omitempty"`
+	Rule string     `json:"rule"`
+	Text string     `json:"text"`
+	By   string     `json:"by,omitempty"`
+	At   *time.Time `json:"at,omitempty"`
 }
 
 // Waits are the thread's armed notify watches, soonest wake-up first, the
@@ -182,7 +185,12 @@ type Wait struct {
 func Waits(t *Thread, now time.Time) []Wait {
 	var out []Wait
 	for _, r := range agentWatches(t) {
-		out = append(out, Wait{Rule: r.ID, Text: watchText(t, r.When, now), By: r.CreatedBy})
+		w := Wait{Rule: r.ID, Text: watchText(t, r.When, now), By: r.CreatedBy}
+		if (r.When.Kind == WhenAt || r.When.Kind == WhenQuota) && r.When.At != nil {
+			at := *r.When.At
+			w.At = &at
+		}
+		out = append(out, w)
 	}
 	return out
 }
