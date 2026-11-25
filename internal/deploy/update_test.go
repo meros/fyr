@@ -286,6 +286,40 @@ func TestWatcherWakesWhenTheQuietEnds(t *testing.T) {
 	}
 }
 
+// V0.update-now-fresh: the host's summary says when a release that waits
+// out its quiet period installs by itself, so the fronts can offer Update
+// now before then; once it runs, nothing is due.
+func TestSummarySaysWhenTheWaitingReleaseIsDue(t *testing.T) {
+	d, _, _ := newDeployer(t, "")
+	d.Releases = fakeReleases(t, relSHA, false)
+	d.DB.SetKV("live_commit", oldSHA)
+	now := time.Now()
+	w := &Watcher{D: d, Now: func() time.Time { return now }, Start: func(string) {}}
+	if !d.Summary().Due.IsZero() {
+		t.Fatal("due before any release was seen")
+	}
+	w.Step(context.Background())
+	if got := d.Summary().Due; !got.Equal(now.Add(10 * time.Minute)) {
+		t.Fatalf("due %v, want the end of the quiet period %v", got, now.Add(10*time.Minute))
+	}
+	d.DB.SetKV("live_commit", relSHA)
+	if got := d.Summary().Due; !got.IsZero() {
+		t.Fatalf("due %v while the release runs", got)
+	}
+}
+
+// A Kick before Run is kept, not lost: the first Step after it is at once.
+func TestKickBeforeRunIsKept(t *testing.T) {
+	w := &Watcher{}
+	w.Kick()
+	w.Kick() // a second one while the first waits is folded into it
+	select {
+	case <-w.kicks():
+	default:
+		t.Fatal("the kick was lost")
+	}
+}
+
 // #159: while a local build runs, a release that does not contain it is
 // not installed.
 func TestWatcherLeavesALocalBuild(t *testing.T) {
