@@ -54,13 +54,33 @@ type part struct {
 
 // readTurns reads the conversation from events. Subagent messages and other
 // events are left out.
+//
+// V0.midrun-answer: a user message with an id takes its place where the agent
+// read it (its message.state read, cancelled or lost event), as the web
+// conversation places it (V0.33), so thread_read, a handover and the web show
+// one order. A message whose state never arrives stays where it was sent.
 func readTurns(evs []store.Event) []turn {
 	var out []turn
+	held := map[string]turn{}
+	heldAt := map[string]int{} // the index in out where each held message was sent
+	var sent []string          // held ids in the order they were sent
 	for _, ev := range evs {
 		t := turn{At: ev.At}
 		switch ev.Type {
+		case "message.state":
+			var d struct{ ID, State string }
+			json.Unmarshal(ev.Data, &d)
+			h, ok := held[d.ID]
+			if !ok || (d.State != "read" && d.State != "cancelled" && d.State != "lost") {
+				continue
+			}
+			delete(held, d.ID)
+			delete(heldAt, d.ID)
+			out = append(out, h)
+			continue
 		case "user":
 			var d struct {
+				ID          string `json:"id"`
 				Text, From  string
 				Images      int
 				Attachments []struct {
@@ -71,6 +91,12 @@ func readTurns(evs []store.Event) []turn {
 			t.Kind, t.Text, t.From, t.Images = turnUser, d.Text, d.From, d.Images
 			for _, a := range d.Attachments {
 				t.Files = append(t.Files, file{a.ID, a.Name, a.MediaType})
+			}
+			if d.ID != "" {
+				held[d.ID] = t
+				heldAt[d.ID] = len(out)
+				sent = append(sent, d.ID)
+				continue
 			}
 		case "msg":
 			var d struct {
@@ -120,6 +146,20 @@ func readTurns(evs []store.Event) []turn {
 			continue
 		}
 		out = append(out, t)
+	}
+	if len(held) == 0 {
+		return out
+	}
+	// Messages never read go back where they were sent. Inserted the latest
+	// sent first, so the earlier places stay right and two sent at one place
+	// keep their order.
+	for k := len(sent) - 1; k >= 0; k-- {
+		id := sent[k]
+		if _, ok := held[id]; !ok {
+			continue
+		}
+		i := heldAt[id]
+		out = append(out[:i], append([]turn{held[id]}, out[i:]...)...)
 	}
 	return out
 }
