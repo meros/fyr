@@ -225,6 +225,10 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			if len(t.Decisions) > 0 {
 				return "", errors.New("that thread has an open question or approval for the user; only the user can answer it")
 			}
+			if w := core.QuotaWaitText(&t, e.Now()); w != "" {
+				// V0.quota-held-wakes: the provider would refuse the turn again.
+				return "", fmt.Errorf("that thread is stopped by the provider's quota (%s); it continues by itself at the reset, so do not message it now", strings.ToLower(w))
+			}
 			if !e.sendLimit.allow(self, e.Now()) {
 				return "", errors.New("send limit: 30 messages an hour per thread")
 			}

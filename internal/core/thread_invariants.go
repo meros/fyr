@@ -1044,7 +1044,7 @@ func OverdueRule(t *Thread, v *View, now time.Time) string {
 // OldestWakingNotice returns the earliest At among waking notices within budget
 // on t's feed at now, or zero if none may wake.
 func OldestWakingNotice(t *Thread, now time.Time) time.Time {
-	if t == nil || !t.wakeable() {
+	if t == nil || !t.wakeableAt(now) {
 		return time.Time{}
 	}
 	var oldest time.Time
