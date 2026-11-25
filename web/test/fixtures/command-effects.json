@@ -1953,6 +1953,10 @@
         {
           "state": "working",
           "section": "working"
+        },
+        {
+          "state": "done",
+          "section": "seen"
         }
       ]
     },
@@ -2088,6 +2092,10 @@
         {
           "state": "working",
           "section": "working"
+        },
+        {
+          "state": "done",
+          "section": "seen"
         }
       ]
     }
