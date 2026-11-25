@@ -15,6 +15,11 @@ const (
 // more (V0.97): nothing was merged.
 const HeadMoved = "The head moved. Look again."
 
+// GitHubFailed opens the refusal of a merge that GitHub's own trouble (a
+// 5xx, a lost connection) stopped on every try (V0.merge-github-trouble):
+// the PR was not merged, and nothing in it is the cause.
+const GitHubFailed = "GitHub failed, not the PR"
+
 // Ready is what a PR waits for from the owner (V0.97): "Merge" when it is
 // open, not a draft, its checks pass (none is not pass), it has no conflict,
 // GitHub's merge state is CLEAN or HAS_HOOKS, no auto-merge is set and the
