@@ -98,6 +98,10 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 		}
 		return nil, false
 	case core.EffectTitle:
+		if ef.TitleAuto != "" {
+			go e.autoTitle(threadID, ef.TitleAuto) // V0.auto-title: the effects after it do not wait
+			return nil, false
+		}
 		e.regenerateTitle(threadID) // V0.108: its result lands as a made title
 		return nil, false
 	case core.EffectTextAsk:

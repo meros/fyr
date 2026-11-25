@@ -562,6 +562,7 @@ A Thread is one conversation with one agent session in one folder, on one host. 
 type Thread = Conversation & {
   id: string; title: string;
   titleBy?: "owner" | "agent";     // who named it last; the owner's name is kept (V0.69, 5.2)
+  titleAuto?: "first" | "start" | "done"; // Fyr's own titles while nobody named it: after the first run, then at the goal (V0.auto-title)
   lastAsker?: string;              // the person behind the newest message to the agent ("device:<id>", "local:owner")
   cwd: string;                     // the folder it runs in
   projectId?: string;              // 3.15
