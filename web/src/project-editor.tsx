@@ -34,6 +34,8 @@ export interface ProjectPatch {
   model?: string;
   /** V0.46: quiet hours, a list of windows (decision 0014 addendum); null turns them off */
   quiet?: QuietHours[] | null;
+  /** V0.quiet-now: the end of a quiet stretch started by hand (RFC 3339); null ends it */
+  quietNow?: string | null;
   /** V0.project-priority: null is normal */
   priority?: "high" | "low" | null;
   /** V0.settle-request: null is ask */
@@ -141,7 +143,7 @@ function imageTarget(members: Project[], own: Project, hosts: readonly HostInfo[
 
 function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, archive, shownHere, host, hostManage, linked, shown, imageTargets }: EditorProps & { /** V0.139, V0.host-tabs: HostTabs (linked) and the offline note, under the header */ host?: ComponentChildren; /** V0.settings-ia: the folded Other hosts group */ hostManage?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** V0.linked-values-sync: the record an image goes to; the front copies it to the other members */ imageTargets: Project[] }) {
   // Decision 0034: name, colour, icon, quiet hours, priority, agentSettle and toolApproval are the link's; the rest of the page is this host's record.
-  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom, playbook: shown.playbook, playbookAt: shown.playbookAt };
+  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, quietNow: shown.quietNow, priority: shown.priority, agentSettle: shown.agentSettle, toolApproval: shown.toolApproval, image: shown.image, imageFrom: shown.imageFrom, playbook: shown.playbook, playbookAt: shown.playbookAt };
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -477,6 +479,9 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
       <QuietGroup
         value={quiet}
         note={quietNote(project, now)}
+        now={now}
+        manual={project.quietNow}
+        onManual={(end) => void save("quiet", patchFor("quietNow", end))}
         onChange={(q) => {
           setQuiet(q);
           saver.current.push(q);

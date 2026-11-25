@@ -918,6 +918,7 @@ type PlaybookEntry = { slot: "stage" | "verify" | "promote" | "issue" | "run" | 
   - **Links.** A linked project's members take the playbook with the newest `playbookAt`, the owner's yes for a probe included (`project.sharedPlaybook {id, link, at, playbook}`, sent by the front as it sends the image).
 - **Setup (V0.116).** An agent run fills the fields the owner has not set (`by`): the image icon, the colour from it, the name. The owner's value is kept (the rights rows `project.name`, `project.color`, `project.image`).
 - **Quiet hours.** While a window holds, the thread DTO carries `quietUntil`; the front sends no push for the thread and the client hides it from the inbox (V0.46). Quiet hours are computed, not a Rule (7.6, decision 0020).
+- **Quiet now (V0.quiet-now).** The owner can also start a quiet stretch by hand: `quietNow` is its end, at most 7 days ahead. While it is ahead the project is quiet as in its windows, until the later of `quietNow` and the windows' stretch, and a window that holds when it ends joins on. `null` ends it early; a time passed is off.
 
 ### 3.16 Provider
 
@@ -1565,7 +1566,7 @@ When the last reason goes, the Rule resumes:
 
 - **Settle.** A settle Rule settles only when the thread is idle, so a working thread is never hidden and a failed run keeps the thread in the inbox. The first settle Rule that fires settles the thread; settling clears every settle Rule. "When done" (V0.203: no run or task, nothing waiting for the owner, no open PR) is dropped when the owner's message starts a new run. `thread.unsettle` clears the settle and every settle Rule.
 - **The deploy watch.** While it is armed, the deployments observer reads the merge commit's GitHub Deployments (`observe`), and each read lands as `deploy.observed` (V0.66). A repo without any deployment ends the watch at the first read.
-- **Quiet hours** are computed from the project's windows and the clock when the state is read (3.15), not a Rule: they change no record and start no Input, so a Rule would only store what the clock already says (decision 0020). The engine's clock broadcasts a project and its threads when a window starts or ends.
+- **Quiet hours** are computed from the project's windows, its `quietNow` (V0.quiet-now) and the clock when the state is read (3.15), not a Rule: they change no record and start no Input, so a Rule would only store what the clock already says (decision 0020). The engine's clock broadcasts a project and its threads when a window starts or ends.
 
 **Post-v1** (the default Rules of a new thread, from the `DefaultRules` extension point, created with `createdBy: system(defaults)`):
 

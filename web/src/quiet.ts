@@ -247,3 +247,37 @@ export function quietSaver<T>(send: (v: T) => void, ms = QUIET_SAVE_MS): { push(
     flush,
   };
 }
+
+/** V0.quiet-now: the end of the quiet stretch the owner started by hand, or 0 when none holds at now. */
+export function manualUntil(p: { quietNow?: string } | undefined, now: number): number {
+  const t = p?.quietNow ? Date.parse(p.quietNow) : NaN;
+  return Number.isFinite(t) && t > now ? t : 0;
+}
+
+/** V0.quiet-now: the next time the clock reads HH:MM after now (today, else tomorrow), in this browser's time zone. */
+export function nextClock(hhmm: string, now: number): number {
+  const m = /^(\d{1,2}):(\d\d)$/.exec(hhmm);
+  const d = new Date(now);
+  const at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), m ? +m[1] : 0, m ? +m[2] : 0).getTime();
+  return at > now ? at : new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, m ? +m[1] : 0, m ? +m[2] : 0).getTime();
+}
+
+/** V0.quiet-now: the one-tap choices of Quiet now: for an hour, for three, and until the next 08:00. */
+export function quietNowChoices(now: number): { label: string; end: number }[] {
+  const morning = nextClock("08:00", now);
+  const sameDay = new Date(morning).getDate() === new Date(now).getDate();
+  return [
+    { label: "1 hour", end: now + 3600_000 },
+    { label: "3 hours", end: now + 3 * 3600_000 },
+    { label: sameDay ? "Until 08:00" : "Until tomorrow 08:00", end: morning },
+  ];
+}
+
+/** V0.quiet-now: what the Quiet now row says: "Quiet by hand until 15:30." (the day named past a day), or what it does. */
+export function quietNowLine(p: { quietNow?: string } | undefined, now: number): string {
+  const end = manualUntil(p, now);
+  if (!end) return "Hide its threads and hold notifications from now, once.";
+  const d = new Date(end);
+  const day = end - now > 24 * 3600_000 ? `${WEEK[(d.getDay() + 6) % 7].label} ` : new Date(now).getDate() !== d.getDate() ? "tomorrow " : "";
+  return `Quiet by hand until ${day}${hm(d)}.`;
+}

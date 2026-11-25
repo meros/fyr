@@ -180,3 +180,26 @@ test("the quiet-hours save keeps only the last value", () => {
     mock.timers.reset();
   }
 });
+
+// V0.quiet-now: a quiet stretch started by hand.
+test("quiet now by hand: choices, the line, and the mock joins it with a window", async () => {
+  const { manualUntil, nextClock, quietNowChoices, quietNowLine } = await import("../src/quiet.ts");
+  const noon = new Date(2026, 10, 13, 12, 0).getTime(); // a Friday
+  assert.equal(nextClock("15:30", noon), new Date(2026, 10, 13, 15, 30).getTime());
+  assert.equal(nextClock("08:00", noon), new Date(2026, 10, 14, 8, 0).getTime(), "a time passed today is tomorrow");
+  assert.deepEqual(
+    quietNowChoices(noon).map((c) => c.label),
+    ["1 hour", "3 hours", "Until tomorrow 08:00"],
+  );
+  assert.equal(quietNowChoices(new Date(2026, 10, 13, 2, 0).getTime())[2].label, "Until 08:00", "before 08:00 it is today");
+  const three = new Date(2026, 10, 13, 15, 0).toISOString();
+  assert.equal(manualUntil({ quietNow: three }, noon), Date.parse(three));
+  assert.equal(manualUntil({ quietNow: three }, Date.parse(three)), 0, "ended");
+  assert.equal(quietNowLine({ quietNow: three }, noon), "Quiet by hand until 15:00.");
+  assert.equal(quietNowLine({ quietNow: new Date(2026, 10, 14, 8, 0).toISOString() }, noon), "Quiet by hand until tomorrow 08:00.");
+  assert.equal(quietNowLine({}, noon), "Hide its threads and hold notifications from now, once.");
+  assert.equal(mockQuietUntil(undefined, noon, three), three);
+  const night = [{ from: "17:00", to: "06:00" }];
+  assert.equal(mockQuietUntil(night, noon, new Date(2026, 10, 13, 17, 0).toISOString()), new Date(2026, 10, 14, 6, 0).toISOString(), "runs into the night window");
+  assert.equal(mockQuietUntil(night, noon, new Date(2026, 10, 13, 11, 0).toISOString()), undefined, "a time passed is off");
+});

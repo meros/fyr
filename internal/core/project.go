@@ -25,6 +25,10 @@ type Project struct {
 	// one (V0.model-choice); "" leaves it to the provider.
 	Effort string     `json:"effort,omitempty"`
 	Quiet  QuietHours `json:"quiet,omitempty"` // quiet hours (V0.46): a list of windows
+	// QuietNow is the end of a quiet stretch the owner started by hand
+	// (V0.quiet-now): the project is quiet from then until this time, joined
+	// with the windows of Quiet that hold or follow on. A time passed is off.
+	QuietNow *time.Time `json:"quietNow,omitempty"`
 	// Priority is the owner's say in how much the project's threads get of
 	// the host (V0.project-priority): PriorityHigh, PriorityLow, or "" for
 	// normal. It orders new waiters in the slot queue and sets the threads'
@@ -438,6 +442,13 @@ func reduceProjectUpdate(r Rec, in Input, now time.Time) (Result, error) {
 		}
 		p.Quiet = qs
 	}
+	if raw, ok := a["quietNow"]; ok { // V0.quiet-now; null ends it
+		t, err := ParseQuietNow(raw, now)
+		if err != nil {
+			return Result{}, reject(RejectBadArgs, "%s", err.Error())
+		}
+		p.QuietNow = t
+	}
 	if raw, ok := a["priority"]; ok { // V0.project-priority; null is normal
 		v, _ := raw.(string)
 		if raw != nil && !ValidPriority(v) {
@@ -507,7 +518,7 @@ func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{Reply: map[string]any{"id": p.ID, "kept": true}}, nil
 	}
 	shared := Args{}
-	for _, k := range []string{"name", "color", "icon", "quiet", "priority", "agentSettle", "toolApproval"} { // V0.linked-agent-settle, V0.tool-approval-judge
+	for _, k := range []string{"name", "color", "icon", "quiet", "quietNow", "priority", "agentSettle", "toolApproval"} { // V0.linked-agent-settle, V0.tool-approval-judge, V0.quiet-now
 		if v, ok := a[k]; ok {
 			shared[k] = v
 		}

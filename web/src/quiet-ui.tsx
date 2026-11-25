@@ -2,7 +2,7 @@
 // quiet-hours group of the project page.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Project, QuietHours } from "./types.ts";
-import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietNote, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
+import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, manualUntil, nextClock, quietLine, quietNote, quietNowChoices, quietNowLine, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { browserStorage } from "./prefs.ts";
 import { Group, Switch, useSet } from "./settings-rows.tsx";
 import { clockAt } from "./format.ts";
@@ -145,15 +145,55 @@ function TimePick({ value, label, onChange }: { value: string; label: string; on
   );
 }
 
+/** V0.quiet-now: the first row of Quiet hours: start a quiet stretch by hand (1 hour, 3 hours, until 08:00, or until a
+ *  time picked in 24-hour time), and End now while one holds. now is the host's clock. */
+function QuietNowRow({ manual, now, onManual }: { manual?: string; now: number; onManual(end: string | null): void }) {
+  const env = useSet();
+  const [at, setAt] = useState("22:00");
+  const on = manualUntil({ quietNow: manual }, now) > 0;
+  const go = (end: number) => onManual(new Date(end).toISOString());
+  return (
+    <div class="sr col qnow">
+      <div class="qw-top">
+        <span class="sr-b">
+          <span class="sr-t">Quiet now</span>
+          <span class="sr-d">{quietNowLine({ quietNow: manual }, now)}</span>
+        </span>
+        {on && (
+          <button type="button" class="btn" disabled={env.readOnly} onClick={() => onManual(null)}>
+            End now
+          </button>
+        )}
+      </div>
+      {!on && (
+        <div class="chips">
+          {quietNowChoices(now).map((c) => (
+            <button type="button" class="btn" disabled={env.readOnly} onClick={() => go(c.end)}>
+              {c.label}
+            </button>
+          ))}
+          <span class="qnow-at">
+            <TimePick value={at} label="Quiet now until" onChange={setAt} />
+            <button type="button" class="btn" disabled={env.readOnly} onClick={() => go(nextClock(at, now))}>
+              Until {at}
+            </button>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** V0.46, the decision 0014 addendum, V0.119: the project page's Quiet hours group. One row per window: from–to in
  *  24-hour time, an All day switch, ×, and the seven day chips under them; the last row adds a window or a preset
  *  that is not there yet; the foot says what all the rows do. No rows is off. */
-export function QuietGroup({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
+export function QuietGroup({ value, onChange, note, now, manual, onManual }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null; /** V0.quiet-now: the host's clock, the stretch started by hand, and how to start or end it */ now?: number; manual?: string; onManual?(end: string | null): void }) {
   const env = useSet();
   const set = (i: number, w: QuietHours) => onChange(value.map((x, k) => (k === i ? w : x)));
   const presets = QUIET_PRESETS.filter((p) => !hasWindow(value, p.window));
   return (
     <Group title="Quiet hours" end={note ?? undefined} class="qfld" label="Quiet hours" foot={quietLine(value)}>
+      {onManual && now !== undefined && <QuietNowRow manual={manual} now={now} onManual={onManual} />}
       {value.map((w, i) => {
         const days = new Set(w.days?.length ? w.days : WEEK.map((d) => d.key));
         const all = isAllDay(w);

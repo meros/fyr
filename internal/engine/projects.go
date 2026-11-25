@@ -21,10 +21,10 @@ import (
 // host's time zone, or nil (SPEC 0.5 V0.46). Call with e.mu held.
 func (e *Engine) quietUntil(id string, now time.Time) *time.Time {
 	p := e.projects[id]
-	if p == nil || len(p.Quiet) == 0 {
+	if p == nil || (len(p.Quiet) == 0 && p.QuietNow == nil) {
 		return nil
 	}
-	if u, ok := core.QuietUntil(p.Quiet, now.In(time.Local)); ok {
+	if u, ok := core.QuietUntilNow(p.Quiet, p.QuietNow, now.In(time.Local)); ok {
 		return &u
 	}
 	return nil
@@ -376,7 +376,7 @@ func (e *Engine) applyProject(in core.Input) api.Reply {
 		delete(e.quietSent, id.ID)
 	}
 	var shows []api.Thread
-	if after != nil && (before == nil || before.Name != after.Name || !sameJSON(before.Quiet, after.Quiet)) {
+	if after != nil && (before == nil || before.Name != after.Name || !sameJSON(before.Quiet, after.Quiet) || !sameJSON(before.QuietNow, after.QuietNow)) {
 		for tid, t := range e.threads {
 			if t.ProjectID == after.ID && !staged[tid] {
 				e.bump(tid)
