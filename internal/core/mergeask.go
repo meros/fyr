@@ -139,6 +139,8 @@ func blockedWhy(p *PR) (string, string) {
 func refusedNext(p *PR, text string) string {
 	l := strings.ToLower(text)
 	switch {
+	case strings.Contains(l, strings.ToLower(GitHubFailed)): // V0.merge-github-trouble
+		return "nothing in the PR to fix: check GitHub's status, wait a few minutes, and ask again"
 	case strings.Contains(l, strings.ToLower(HeadMoved)) || strings.Contains(l, "head branch was modified"):
 		return "ask again for the new head; Fyr shows it when CI is green on it"
 	case strings.Contains(l, "conversation") || strings.Contains(l, "review thread"): // V0.review-threads

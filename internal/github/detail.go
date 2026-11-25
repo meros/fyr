@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -409,6 +410,13 @@ var methods = map[string]bool{"squash": true, "merge": true, "rebase": true}
 
 // MergeChecked reads the PR again and merges it unless MergeBlock refuses
 // or its head is not head, the commit the owner saw (V0.97).
+//
+// V0.merge-github-trouble: when GitHub's own trouble (a 5xx, a lost
+// connection) answers the merge or the read, the merge may still have
+// happened. MergeChecked waits, reads the PR again, and takes a merged PR as
+// the merge's success; an open one is merged again. Only when GitHub fails
+// every try does it fail, with GitHubFailed. Each try is one read and at most
+// one merge, after a wait of seconds: no tight loop on GitHub's API.
 func MergeChecked(ctx context.Context, gh Runner, url, method, head string) (string, error) {
 	if method == "" {
 		method = "squash"
@@ -419,10 +427,32 @@ func MergeChecked(ctx context.Context, gh Runner, url, method, head string) (str
 	if head == "" {
 		return "", errors.New("not merged: no head commit was given")
 	}
-	for try := 0; ; try++ {
+	var trouble error // GitHub's last passing failure, nil when none
+	moved, failed := 0, 0
+	wait := func(d time.Duration) bool {
+		select {
+		case <-time.After(d):
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	for {
 		d, err := FetchDetail(ctx, gh, url)
 		if err != nil {
-			return "", err
+			if !GitHubTrouble(err) {
+				return "", err
+			}
+			trouble = err
+			if failed >= len(troubleBackoff) || !wait(troubleBackoff[failed]) {
+				return "", githubFailed(trouble, failed+1)
+			}
+			failed++
+			continue
+		}
+		if trouble != nil && d.State == "MERGED" {
+			// The merge GitHub answered with an error went through.
+			return "Merged (GitHub answered with an error, but the PR is merged)", nil
 		}
 		if !core.SameHead(d.HeadSha, head) {
 			return "", errors.New(core.HeadMoved)
@@ -431,16 +461,75 @@ func MergeChecked(ctx context.Context, gh Runner, url, method, head string) (str
 			return "", fmt.Errorf("not merged: %s", why)
 		}
 		out, err := Merge(ctx, gh, url, method, d.HeadSha)
-		if err == nil || try >= len(mergeBackoff) || !strings.Contains(err.Error(), baseModified) {
-			return out, Friendly(err)
-		}
-		select { // V0.205: another merge landed first; the same head may still merge
-		case <-time.After(mergeBackoff[try]):
-		case <-ctx.Done():
+		switch {
+		case err == nil:
+			return out, nil
+		case GitHubTrouble(err):
+			trouble = err
+			if failed >= len(troubleBackoff) || !wait(troubleBackoff[failed]) {
+				return out, githubFailed(trouble, failed+1)
+			}
+			failed++
+		case strings.Contains(err.Error(), baseModified) && moved < len(mergeBackoff):
+			// V0.205: another merge landed first; the same head may still merge
+			if !wait(mergeBackoff[moved]) {
+				return out, Friendly(err)
+			}
+			moved++
+		default:
 			return out, Friendly(err)
 		}
 	}
 }
+
+// githubFailed is the refusal of a merge GitHub's trouble stopped tries
+// times (V0.merge-github-trouble), with the first line of its last answer.
+func githubFailed(err error, tries int) error {
+	line := strings.TrimSpace(err.Error())
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = strings.TrimSpace(line[:i])
+	}
+	if len(line) > 200 {
+		line = line[:200] + "…"
+	}
+	return fmt.Errorf("not merged: %s: GitHub answered with its own error on %d tries, and the PR is still open (%s)", core.GitHubFailed, tries, line)
+}
+
+// GitHubTrouble reports an error that is GitHub's own passing trouble
+// (V0.merge-github-trouble): a 5xx, GraphQL's "Something went wrong", or a
+// connection that failed or timed out. A refusal (a conflict, a rule, a 4xx),
+// a rate limit or a failed login is not: trying again does not help those.
+func GitHubTrouble(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	if troubleStatus.MatchString(s) {
+		return true
+	}
+	for _, w := range troubleWords {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// troubleStatus is a 5xx as gh writes it: "HTTP 502", "status code: 502".
+var troubleStatus = regexp.MustCompile(`(?:http|status code:?)\s+5\d\d\b`)
+
+// troubleWords name GitHub's passing trouble when no status is given.
+var troubleWords = []string{
+	"something went wrong while executing your query",
+	"bad gateway", "service unavailable", "gateway timeout", "internal server error",
+	"connection reset", "connection refused", "i/o timeout", "tls handshake timeout",
+	"unexpected eof", "server closed", ": eof",
+}
+
+// troubleBackoff is the wait before each further read after GitHub's
+// trouble (V0.merge-github-trouble): 4 tries over about 50 s, so a short
+// outage passes and a long one fails within a minute.
+var troubleBackoff = []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
 
 // baseModified is GitHub's refusal when the base moved during a merge.
 const baseModified = "Base branch was modified"

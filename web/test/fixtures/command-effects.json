@@ -2068,10 +2068,6 @@
         {
           "state": "working",
           "section": "working"
-        },
-        {
-          "state": "done",
-          "section": "seen"
         }
       ]
     }
