@@ -29,8 +29,8 @@
 /* V0.137: Waiting for a slot. The place in the queue ("#2") stands where the state icon stands; on the desktop it is
    the grip (drag, or Alt+↑/↓). The deploy's own tests sit pinned on top. On the phone the one Reorder mode adds ↑, ↓
    and a handle beside each row (touch: no drag handle beside a swipe row, no hover). */
-.sqn{justify-self:center;grid-row:1;min-width:22px;height:18px;padding:0 3px;display:inline-grid;place-items:center;border-radius:5px;background:var(--sunken);color:var(--ink-muted);font:500 11px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
-.sqn.grip{width:auto;cursor:grab;letter-spacing:0;font:500 11px/1 var(--mono)}
+.sqn{justify-self:center;grid-row:1;min-width:22px;height:18px;padding:0 3px;display:inline-grid;place-items:center;border-radius:5px;background:var(--sunken);color:var(--ink-muted);font:500 11px/1 var(--ui);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sqn.grip{width:auto;cursor:grab;letter-spacing:0;font:500 11px/1 var(--ui);font-variant-numeric:tabular-nums}
 .sqn.grip:hover{background:var(--select);color:var(--ink)}
 .sqn.pin{background:transparent;border:1px solid var(--line)}
 .sqp{display:grid;grid-template-columns:28px minmax(0,1fr) auto;column-gap:10px;align-items:center;min-height:30px;padding:4px 8px;font:400 12px/16px var(--ui);color:var(--ink-muted)}
@@ -80,7 +80,7 @@
 .tund{color:var(--beam-ink);font-weight:500}
 .tund .und-ic{vertical-align:-2px;margin-right:3px}
 
-/* Decision 0032: the memory guard's chart (Settings → Automation). Short memory is a wash, a freeze is hatched in the beam
+/* Decision 0032: the memory guard's chart (Settings → Hosts → a host). Short memory is a wash, a freeze is hatched in the beam
    colour, the lane's line is the work running. Tokens only, so it follows the theme. */
 .gwrap{padding:4px 14px 10px}
 .gchart{margin:0;min-width:0}
@@ -141,12 +141,11 @@
 
 /* the rail's host: the meter and the button under it are one block; the button is outside the ring's role=img */
 .rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
-/* V0.157: Settings → Devices (decision 0030 3.4), desktop and phone from the same rows. */
+/* V0.157: Settings → Sign-in (decision 0030 3.4), desktop and phone from the same rows. */
 .set .qrimg { display: block; margin: 8px auto; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
 .set .linkout { width: 100%; box-sizing: border-box; }
 .set .codein { display: inline-flex; gap: 8px; align-items: center; }
 .set .codein input { width: 9.5em; letter-spacing: .08em; }
-.set .pill.you { margin-left: .4em; opacity: .7; font-size: .85em; }
 .set .addout { align-items: center; }
 
 /* SPEC V0.167 (amends V0.99, V0.141, V0.152, V0.166): each host's load and heavy jobs are two labelled meters
@@ -159,7 +158,7 @@
 .hm.hot{--lv:var(--signal-ink)}
 .hmn{display:flex;align-items:center;gap:3px;min-width:0;font:500 9.5px/11px var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hostc .hmark{margin-left:-3px}
-.hmr{display:grid;grid-template-columns:17px minmax(8px,1fr) auto;align-items:center;column-gap:3px;font:400 9px/11px var(--mono);color:var(--ink-faint);cursor:default}
+.hmr{display:grid;grid-template-columns:17px minmax(8px,1fr) auto;align-items:center;column-gap:3px;font:400 9px/11px var(--ui);color:var(--ink-faint);cursor:default;font-variant-numeric:tabular-nums}
 .hmb{display:flex;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .hmb i{display:block;flex:none;height:100%}
 .hmr.ld .hmb i{background:var(--lv)}
@@ -169,7 +168,7 @@
 .hmv{color:var(--ink-muted);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .hmr.hot .hmv{color:var(--signal-ink);font-weight:600}
 .hmv em{font-style:normal}
-.hmo{font:400 9px/11px var(--mono);color:var(--ink-faint)}
+.hmo{font:400 9px/11px var(--ui);color:var(--ink-faint);font-variant-numeric:tabular-nums}
 .rail .rmid{padding:0 3px;gap:10px}
 .rail .rmid::-webkit-scrollbar{display:none}
 .rail .rmid>.rld{flex-direction:column;align-items:center;gap:8px}
@@ -187,9 +186,11 @@
   --spring:linear(0,.058,.173,.312,.453,.584,.696,.788,.86,.915,.954,.981,.999,1.009,1.014,1.016,1.016,1.014,1.012,1.01,1.008,1.006,1.004,1.003,1.002,1.001,1);--spring-ms:.48s;
   --spring-pop:linear(0,.08,.242,.436,.627,.793,.923,1.015,1.071,1.098,1.103,1.094,1.076,1.056,1.037,1.02,1.007,.998,.992,.99,.989,.99,.992,.994,.996,.998,.999,1);--spring-pop-ms:.6s;
   --ease-sheet:cubic-bezier(.32,.72,0,1);
-  --lift-1:0 1px 2px rgba(16,24,32,.06),0 2px 6px rgba(16,24,32,.05);
-  --lift-2:0 2px 6px rgba(16,24,32,.08),0 12px 28px rgba(16,24,32,.14);
-  --lift-3:0 4px 12px rgba(16,24,32,.1),0 24px 64px rgba(16,24,32,.24);
+  /* V0.depth-polish: each lift is a hairline ring, a tight contact shadow and a soft ambient one, in a warm grey */
+  --lift-1:0 0 0 1px rgba(70,45,15,.07),0 1px 2px rgba(70,45,15,.06),0 3px 8px -3px rgba(70,45,15,.10);
+  --lift-2:0 0 0 1px rgba(70,45,15,.05),0 2px 4px rgba(70,45,15,.05),0 8px 18px -6px rgba(70,45,15,.10),0 22px 44px -14px rgba(70,45,15,.14);
+  --lift-3:0 0 0 1px rgba(70,45,15,.08),0 8px 16px -4px rgba(70,45,15,.08),0 28px 64px -12px rgba(70,45,15,.32);
+  --shade:70,45,15;--face:linear-gradient(to bottom,var(--raised),#fbf8f3); /* what a shadow is made of: warm in the light, black in the dark (warm.css) */
   --edge-light:inset 0 1px 0 rgba(255,255,255,.08);
 }
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;text-rendering:optimizeLegibility}
@@ -317,7 +318,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .st-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--harbour);animation:st-pulse 1.4s ease-in-out infinite}
 @keyframes st-pulse{50%{opacity:.3}}
 @media (prefers-reduced-motion:reduce){.st-dot{animation:none}}
-.st-meta{font:400 11px/14px var(--mono);color:var(--ink-faint)}
+.st-meta{font:400 11px/14px var(--ui);color:var(--ink-faint);font-variant-numeric:tabular-nums}
 .st-calm{padding:16px;margin-bottom:22px;border:1px dashed var(--line);border-radius:8px;color:var(--ink-muted);text-align:center}
 .st-log{list-style:none;margin:0;padding:0}
 .st-ev{display:flex;gap:10px;width:100%;padding:5px 0;border-bottom:1px solid var(--line);color:var(--ink);min-width:0}
@@ -335,7 +336,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .st-chart{position:relative;padding:0;background:var(--raised);border:1px solid var(--line);border-radius:8px;overflow:hidden;touch-action:pan-y}
 .st-chart svg{display:block}
 .st-grid{stroke:var(--line);stroke-width:1}
-.st-ax{font:400 10px var(--mono);fill:var(--ink-faint)}
+.st-ax{font:400 10px var(--ui);fill:var(--ink-faint);font-variant-numeric:tabular-nums}
 .st-area{fill:var(--harbour);opacity:.14}
 .st-ln{fill:none;stroke:var(--harbour);stroke-width:2;stroke-linejoin:round}
 .st-now{fill:var(--harbour);stroke:var(--raised);stroke-width:2}
@@ -412,7 +413,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .ags{position:relative;display:inline-flex;align-items:center;gap:6px;padding:0 8px;min-width:0;flex:0 1 auto}
 .ags+.ags{box-shadow:inset 1px 0 0 var(--line)}
 .ags.agv{flex-shrink:2}
-.ags.agm{font-family:var(--mono);font-weight:400;color:var(--ink)}
+.ags.agm{font-family:var(--ui);font-weight:400;color:var(--ink);font-variant-numeric:tabular-nums}
 .ags.age{flex:none;gap:5px}
 .ags .agt{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .ags.pick{cursor:pointer}
@@ -455,7 +456,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 /* V0.agent-pill on V0.model-choice: New thread's provider · model is one part over one choice; a hairline inside it
    keeps the header's look (provider, then the model in mono). */
 .agsep{flex:none;align-self:stretch;width:1px;margin:0 2px;background:var(--line)}
-.ags .agmn{font-family:var(--mono);font-weight:400;font-size:13px}
+.ags .agmn{font-family:var(--ui);font-weight:400;font-size:13px;font-variant-numeric:tabular-nums}
 .agp.field .ags.agv{flex:1 1 auto}
 /* V0.load-invariants: a broken load invariant, a card at the top of Needs you (invariants-ui.tsx, both fronts) */
 .invc-list{display:flex;flex-direction:column;gap:8px;padding:6px 12px 8px}
@@ -481,7 +482,8 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .arrived button{border:1px solid var(--line-strong);background:var(--raised);color:var(--ink);border-radius:6px;padding:3px 10px;font:inherit;cursor:pointer;flex:none}
 .arrived .arr-x{border-color:transparent;background:none;color:var(--ink-muted);padding:3px 6px}
 .arrived.m{padding:6px 12px}
-.arrived.m .arr-tx{flex-direction:column;gap:0}
+.arrived.m .arr-tx{flex-direction:column;gap:0;align-items:stretch}
+.arrived.m .arr-tx>*{min-width:0}
 .arrived.m button{min-height:44px;min-width:44px}
 @keyframes arr-in{from{transform:translateY(-100%);opacity:0}to{transform:none;opacity:1}}
 @keyframes arr-wash{from{box-shadow:inset 0 0 0 999px var(--beam-wash)}to{box-shadow:inset 0 0 0 999px transparent}}
@@ -534,3 +536,7 @@ button.chip.wake:hover{color:var(--ink)}
 .setup-qr-svg svg{width:180px;height:180px;background:#fff;padding:8px;border-radius:8px}
 .setup-qr-url{font-size:11px;word-break:break-all;color:var(--ink-muted)}
 .setup-err{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px}
+
+/* V0.usage-page: today's tokens per hour on the status home, framed like the day chart above it (both fronts). */
+.st-tokens .ug-chart.st-ug{background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:10px 12px 8px}
+.st-tokens .ug-days{height:64px}
