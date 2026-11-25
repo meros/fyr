@@ -175,6 +175,7 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 			cur.Tokens = k.Tokens
 		}
 		cur.Background = cur.Background || k.Background
+		cur.RemoteWait = cur.RemoteWait || k.RemoteWait
 		if k.Tool != "" {
 			cur.Tool = k.Tool
 		}

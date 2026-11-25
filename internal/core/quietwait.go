@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -54,6 +55,24 @@ func waitReason(t *Thread, n int) string {
 		return "1 subagent running"
 	}
 	return fmt.Sprintf("%d subagents running", n)
+}
+
+// V0.quiet-remote-wait: a command that visibly waits on a remote system: a
+// CI run, a deploy, a rollout. It sits quiet by design for as long as the
+// remote work takes (10 of 10 quiet wakes on 25 Nov were such waits), so its
+// quiet counts only after QuietRemoteAfter. The rule reads the command: a
+// --wait flag, gh's watches, kubectl's waits, and a polling loop that asks a
+// network client.
+var (
+	remoteWaitCmd = regexp.MustCompile(`(^|\s)--wait(\s|=|$)` +
+		`|\bgh\s+run\s+watch\b|\bgh\b[^|;&\n]*\s--watch\b` +
+		`|\bkubectl\b[^|;&\n]*\s(wait|rollout\s+status)\b`)
+	remoteClient = regexp.MustCompile(`\b(gh|gcloud|kubectl|curl|wget|aws|az|terraform|tofu|helm|ssh)\s`)
+)
+
+// RemoteWait says a background command waits on a remote system.
+func RemoteWait(cmd string) bool {
+	return remoteWaitCmd.MatchString(cmd) || (pollLoop.MatchString(cmd) && remoteClient.MatchString(cmd))
 }
 
 // QuietCandidates are the tasks whose wait the CPU can judge: the turn is

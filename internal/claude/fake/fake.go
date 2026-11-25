@@ -657,14 +657,18 @@ func turn(text string) (took []queued) {
 			assistant(msg{"type": "text", "text": "background read ok"})
 			write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "background read ok", "session_id": session})
 		}()
-	case "bgstuck", "bgmonitor":
+	case "bgstuck", "bgmonitor", "bgremote":
 		// V0.195: a background command that never ends, as a wait whose
-		// condition can no longer turn true does.
-		tool, desc := "Bash", "Wait for both experiments to finish"
-		if word == "bgmonitor" {
+		// condition can no longer turn true does. bgremote is a wait on a
+		// remote system (V0.quiet-remote-wait).
+		tool, desc, cmd := "Bash", "Wait for both experiments to finish", "until false; do sleep 15; done"
+		switch word {
+		case "bgmonitor":
 			tool, desc = "Monitor", "CI on the PR"
+		case "bgremote":
+			desc, cmd = "Wait for the deploy", "kubectl -n acme rollout status deploy/web --timeout=3600s"
 		}
-		assistant(msg{"type": "tool_use", "id": "tu_stuck", "name": tool, "input": msg{"command": "until false; do sleep 15; done", "run_in_background": true}})
+		assistant(msg{"type": "tool_use", "id": "tu_stuck", "name": tool, "input": msg{"command": cmd, "run_in_background": true}})
 		write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{msg{"task_id": "bs1", "task_type": "local_bash", "description": desc}}})
 		write(msg{"type": "system", "subtype": "task_started", "task_id": "bs1", "tool_use_id": "tu_stuck", "description": desc, "task_type": "local_bash", "is_backgrounded": true})
 		assistant(msg{"type": "text", "text": "I continue when it ends"})

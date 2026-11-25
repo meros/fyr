@@ -269,6 +269,9 @@ type Task struct {
 	ToolUseID  string     `json:"toolUseId,omitempty"`
 	QuietSince *time.Time `json:"quietSince,omitempty"`
 	QuietTold  bool       `json:"quietTold,omitempty"`
+	// V0.quiet-remote-wait: the command visibly waits on a remote system
+	// (RemoteWait), so its quiet is judged over QuietRemoteAfter.
+	RemoteWait bool `json:"remoteWait,omitempty"`
 }
 
 // RunningTasks counts the conversation's running tasks.

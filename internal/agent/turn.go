@@ -173,6 +173,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		if k, ev, ok := taskFromSystem(msg); ok {
 			k.Tool = s.digest.taskTool(msg)
+			k.RemoteWait = k.Tool == "Bash" && core.RemoteWait(s.digest.taskCommand(msg)) // V0.quiet-remote-wait
 			byStop := false
 			if ev == "ended" && k.Status == core.TaskStopped {
 				m.mu.Lock()

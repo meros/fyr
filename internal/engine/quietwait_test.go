@@ -142,3 +142,35 @@ func TestAGapInTheClockIsNotQuiet(t *testing.T) {
 		t.Fatal("told after a gap")
 	}
 }
+
+// V0.quiet-remote-wait: on 25 Nov every quiet wake was a wait on a CI run,
+// a deploy or a job. A command that visibly waits on a remote system is
+// left alone for QuietRemoteAfter, and then told once like any other.
+func TestRemoteWaitIsToldMuchLater(t *testing.T) {
+	r := newQuietRig(t, "bgremote")
+	if !r.task().RemoteWait {
+		t.Fatalf("not read as a remote wait: %+v", r.task())
+	}
+	r.pass(int(QuietRemoteAfter/time.Minute)-5, 0.01)
+	time.Sleep(100 * time.Millisecond)
+	if r.told() != 0 || r.task().QuietTold {
+		t.Fatalf("told %d about a remote wait, %+v", r.told(), r.task())
+	}
+	r.pass(10, 0.01)
+	r.h.wait(r.id, "told after QuietRemoteAfter", func(th core.Thread, _ core.Attention) bool {
+		return r.told() == 1 && !th.Running
+	})
+	r.pass(30, 0.01)
+	time.Sleep(100 * time.Millisecond)
+	if n := r.told(); n != 1 {
+		t.Fatalf("told %d times", n)
+	}
+}
+
+// A local wait keeps the short count.
+func TestLocalWaitIsNotARemoteWait(t *testing.T) {
+	r := newQuietRig(t, "bgstuck")
+	if r.task().RemoteWait {
+		t.Fatalf("a local loop read as a remote wait: %+v", r.task())
+	}
+}

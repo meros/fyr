@@ -20,6 +20,11 @@ const (
 	// QuietCores is the line. Idle threads with their CLI measured 0.004 to
 	// 0.03 cores; a poll every 15 s adds little.
 	QuietCores = 0.05
+	// QuietRemoteAfter replaces QuietAfter for a command that visibly waits
+	// on a remote system (V0.quiet-remote-wait). The CLI ends a background
+	// Bash at its timeout (30 min unless given, at most 2 h), so most such
+	// waits end before it.
+	QuietRemoteAfter = time.Hour
 )
 
 // quietWait is one thread's CPU watch.
@@ -113,7 +118,14 @@ func (e *Engine) quietStep(id string, usage time.Duration, frozen bool, now time
 	}
 	var ids []string
 	for _, k := range tasks {
-		if (k.QuietSince == nil || !k.QuietTold) && k.StartedAt != nil && !k.StartedAt.After(now.Add(-QuietAfter)) {
+		after := QuietAfter
+		if k.RemoteWait {
+			after = QuietRemoteAfter
+		}
+		if now.Sub(since) < after {
+			continue
+		}
+		if (k.QuietSince == nil || !k.QuietTold) && k.StartedAt != nil && !k.StartedAt.After(now.Add(-after)) {
 			ids = append(ids, k.ID)
 		}
 	}

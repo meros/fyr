@@ -231,6 +231,13 @@ func (d *digest) taskTool(m map[string]any) string {
 	return d.tools[id].name
 }
 
+// taskCommand is the command of the Bash that started a task, or "".
+func (d *digest) taskCommand(m map[string]any) string {
+	id, _ := m["tool_use_id"].(string)
+	cmd, _ := d.tools[id].input["command"].(string)
+	return cmd
+}
+
 // taskList reads background_tasks_changed: the tasks that run now.
 func taskList(m map[string]any) []core.Task {
 	raw, _ := m["tasks"].([]any)
