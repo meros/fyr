@@ -216,6 +216,9 @@ type State struct {
 	RerunKills map[string][]time.Time
 	// MemTold: the memory notice told a thread in this episode.
 	MemTold bool
+	// V0.freeze-cycle-cap: each thread's thaws in the last ThawWindow, jobs
+	// and undeclared work alike.
+	Thaws map[string][]time.Time
 }
 
 // clone is s with its own maps and slices, so a tick never writes the
@@ -231,6 +234,10 @@ func (s State) clone() State {
 		s.UndFroze = map[string]UndFreeze{}
 	}
 	s.RerunKills = maps.Clone(s.RerunKills)
+	s.Thaws = maps.Clone(s.Thaws)
+	if s.Thaws == nil {
+		s.Thaws = map[string][]time.Time{}
+	}
 	return s
 }
 
@@ -482,6 +489,7 @@ func (t *tick) freezeGuard() {
 	}
 	st.Frozen = keep
 	for _, th := range thaws {
+		st.Thaws[th.f.Owner] = append(slices.DeleteFunc(slices.Clone(st.Thaws[th.f.Owner]), func(at time.Time) bool { return now.Sub(at) >= ThawWindow }), now)
 		if !th.f.Undeclared {
 			t.emit(Decision{Kind: Thawed, Thread: th.f.Owner, At: now})
 		}
@@ -615,6 +623,18 @@ func (t *tick) freezeJob(sig resource.Signals) {
 	t.notify(victim.Owner, map[string]any{"paused": why})
 }
 
+// cycled says thread was thawed MaxThawsPerHour times within ThawWindow
+// (V0.freeze-cycle-cap): it is let run, not frozen a fourth time.
+func (t *tick) cycled(thread string) bool {
+	n := 0
+	for _, at := range t.st.Thaws[thread] {
+		if t.in.Now.Sub(at) < ThawWindow {
+			n++
+		}
+	}
+	return n >= MaxThawsPerHour
+}
+
 // freezeVictim is the job to freeze: of the holds not frozen yet, the one whose
 // memory grew most (V0.load-tuning; freezing a job that uses none frees nothing
 // and stops nothing), the newest of equals. V0.guard-wake (decision 0036 E4,
@@ -632,7 +652,7 @@ func (t *tick) freezeVictim(held []resource.Holder) (resource.Holder, bool) {
 	}
 	for _, h := range held {
 		done := t.st.FrozeHolds[h.Owner].Equal(h.Since)
-		if h.Priority || done || h.Owner == oldest.Owner || t.in.View.Service(h.Owner) {
+		if h.Priority || done || t.cycled(h.Owner) || h.Owner == oldest.Owner || t.in.View.Service(h.Owner) {
 			continue
 		}
 		grew := t.in.View.Growth(h.Owner)
@@ -703,6 +723,10 @@ func (t *tick) freezeUndeclared(sig resource.Signals, admitted bool, heavy map[s
 		}
 		if m := held[f.Thread]; m > 0 && float64(m-1) < WorkMemShare*float64(f.Mem) {
 			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: the work holds little of the thread's memory (its processes %s of %s)", f.Thread, resource.GB(float64(m-1)), resource.GB(float64(f.Mem)))})
+			continue
+		}
+		if t.cycled(f.Thread) {
+			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: thawed %d times in the last %s, letting it run", f.Thread, MaxThawsPerHour, ThawWindow)})
 			continue
 		}
 		prev := st.UndFroze[f.Thread]

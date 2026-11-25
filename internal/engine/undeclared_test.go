@@ -219,7 +219,9 @@ func TestF7F8ThawByTheRuleAndNotFrozenAgainInTheEpisode(t *testing.T) {
 }
 
 // Decision 0032 slice 1: at most guard.MaxFreezes freezes of one episode; then the
-// work runs and the guard says so once.
+// work runs and the guard says so once. V0.freeze-cycle-cap: the loop below
+// thaws within the hour, so the hourly cap of guard.MaxThawsPerHour is the
+// one that ends it.
 func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
@@ -242,8 +244,8 @@ func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
 		e.Tick() // fine for 30 s: thawed
 		*now = now.Add(guard.RefreezeAfter + time.Second)
 	}
-	if froze != guard.MaxFreezes {
-		t.Fatalf("froze %d times, want %d", froze, guard.MaxFreezes)
+	if want := min(guard.MaxFreezes, guard.MaxThawsPerHour); froze != want {
+		t.Fatalf("froze %d times, want %d", froze, want)
 	}
 	if !strings.Contains(buf.String(), "letting it run") {
 		t.Fatalf("the cap was not logged:\n%s", buf.String())

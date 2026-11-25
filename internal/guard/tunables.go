@@ -86,3 +86,15 @@ const SlotIdle = 2 * time.Minute
 // HeavyCallStale is how long a heavy command may look dead (no result, no CPU)
 // before its admission stops counting on it: a result can get lost.
 const HeavyCallStale = 15 * time.Minute
+
+// V0.freeze-cycle-cap: a thread thawed MaxThawsPerHour times within ThawWindow
+// is not frozen again until the oldest of those thaws leaves the window. Each
+// new hold of a job (a check run again and again) had its own once-only
+// freeze, so a short stall spike froze and thawed one thread a fourth time
+// within the hour (the load invariant freeze-cycling allows 3). Work let run
+// is still protected by oomd's limit and the gate; it is the flapping, with
+// its swap-in cost on every thaw, that is ended.
+const (
+	MaxThawsPerHour = 3
+	ThawWindow      = time.Hour
+)

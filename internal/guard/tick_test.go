@@ -327,3 +327,37 @@ func TestTickLeavesItsInputAlone(t *testing.T) {
 		t.Fatalf("the caller's state changed: %+v", st)
 	}
 }
+
+// V0.freeze-cycle-cap: a thread thawed MaxThawsPerHour times within the hour
+// is not frozen again until the oldest of those thaws is an hour old: each
+// new hold of a job (a pre-push check run again and again) got its own
+// freeze, so a 2 s stall spike froze and thawed one thread a fourth time
+// (invariant freeze-cycling).
+func TestTickDoesNotFreezeAThreadThawedOftenThisHour(t *testing.T) {
+	v := &fakeView{growth: map[string]uint64{"a": 1e9, "c": 3e9}}
+	in := inputs(v, critical(), hold("a", time.Hour), hold("c", time.Minute))
+	thaws := []time.Time{t0.Add(-50 * time.Minute), t0.Add(-30 * time.Minute), t0.Add(-10 * time.Minute)}
+	h := &host{ok: true, sig: critical()}
+	st := Run(in, State{Thaws: map[string][]time.Time{"c": thaws}}, h.apply)
+	if len(st.Frozen) != 0 || slices.Contains(h.kinds(), Freeze) {
+		t.Fatalf("froze a thread thawed %d times this hour: %+v", len(thaws), st.Frozen)
+	}
+	// Two thaws in the hour leave room for one more freeze, and an old thaw does not count.
+	h = &host{ok: true, sig: critical()}
+	st = Run(in, State{Thaws: map[string][]time.Time{"c": {t0.Add(-2 * time.Hour), thaws[1], thaws[2]}}}, h.apply)
+	if len(st.Frozen) != 1 || st.Frozen[0].Owner != "c" {
+		t.Fatalf("did not freeze with 2 thaws in the hour: %+v", st.Frozen)
+	}
+}
+
+// Every thaw is counted against its thread, jobs and undeclared work alike.
+func TestTickCountsEachThaw(t *testing.T) {
+	v := &fakeView{}
+	b := hold("b", time.Hour)
+	in := inputs(v, calm(), hold("a", 2*time.Hour), b)
+	st := State{Frozen: []Frozen{{Owner: "b", Since: b.Since.Format(time.RFC3339Nano), At: t0.Add(-FreezeMax)}}, Short: true}
+	st = Run(in, st, (&host{sig: calm()}).apply)
+	if got := st.Thaws["b"]; len(got) != 1 || !got[0].Equal(t0) {
+		t.Fatalf("thaws %+v", st.Thaws)
+	}
+}
