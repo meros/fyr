@@ -1257,7 +1257,7 @@ Each session gets Fyr's MCP server (V0.12, 16.2). A tool call becomes an Input w
 | `thread_new {cwd, text, title?, model?}` | `thread.create` | Starts a thread with source `agent` and `from` this thread; at most 12 an hour per thread (V0.22, V0.202). |
 | `thread_send {id, text}` | `thread.send` | Sends another thread a message with `from` this thread; field rights apply (5.2); at most 30 an hour per thread (V0.22, V0.71). |
 | `threads {query?, state?}` | read | The owner's other threads (5.11, V0.22). |
-| `thread_read {id, last?}` | read | Another thread's recent events (5.11, V0.22). |
+| `thread_read {id, last?}` | read | Another thread's last `last` messages (default 30, at most 500), tool calls between them counted; says when older events were not read (5.11, V0.22, V0.thread-read-messages). |
 | `show {path? \| html? \| url?, entry?, title?, caption?, size?, full?}` | `record` (observer `host`) | Appends a preview event: an image, a sandboxed HTML page or folder, or a screenshot of a URL (V0.19, V0.47). |
 | `fyr_state {about?}` | read | The thread's records in one compact text (5.11, 5.14). |
 

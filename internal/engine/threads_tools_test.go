@@ -10,6 +10,7 @@ import (
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/store"
 )
 
 // callAs calls a Fyr tool as the agent of thread `as`.
@@ -61,6 +62,45 @@ func TestThreadsListAndRead(t *testing.T) {
 	text, isErr := callAs(t, h.e, a, "thread_read", map[string]any{"id": b})
 	if isErr || !strings.Contains(text, "lasso work") || !strings.Contains(text, "echo: lasso work") || len(text) > 8000 {
 		t.Fatalf("%v %q", isErr, text)
+	}
+}
+
+// V0.thread-read-messages: last counts messages, so a long run of tool calls
+// after the last words does not hide them, and the result says when older
+// events were left out.
+func TestThreadReadSkipsToolCalls(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	a := h.create("reader")
+	b := h.create("busy worker")
+	h.wait(a, "done", state(core.Done))
+	h.wait(b, "done", state(core.Done))
+	now := h.e.Now()
+	msg := func(c map[string]any) map[string]any {
+		return map[string]any{"type": "assistant", "message": map[string]any{"content": []any{c}}}
+	}
+	if _, err := h.e.st.Write(func(tx *store.Tx) error {
+		if err := tx.Append(b, "msg", msg(map[string]any{"type": "text", "text": "the words before the tools"}), now); err != nil {
+			return err
+		}
+		for i := 0; i < 1200; i++ {
+			if err := tx.Append(b, "msg", msg(map[string]any{"type": "tool_use", "name": "Bash", "input": map[string]any{}}), now); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text, isErr := callAs(t, h.e, a, "thread_read", map[string]any{"id": b})
+	if isErr || !strings.Contains(text, "the words before the tools") || !strings.Contains(text, "(1200 tool calls)") {
+		t.Fatalf("the words were pushed out by tool calls: %v %q", isErr, text)
+	}
+	if !strings.Contains(text, "User: busy worker") || strings.Contains(text, "older events not read") {
+		t.Fatalf("reading the whole thread says it skipped: %q", text)
+	}
+	one, _ := callAs(t, h.e, a, "thread_read", map[string]any{"id": b, "last": 1})
+	if !strings.Contains(one, "the words before the tools") || strings.Contains(one, "User: busy worker") || !strings.Contains(one, "older events not read") {
+		t.Fatalf("last: 1 is not the newest message alone with a note: %q", one)
 	}
 }
 

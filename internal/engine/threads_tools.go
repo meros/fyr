@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -115,6 +116,62 @@ func age(t time.Time) string {
 	return fmt.Sprintf("%d d", int(d.Hours()/24))
 }
 
+// lastMessages reads a thread's log back from its end until it holds want
+// messages (user turns and agent text blocks), so a run of tool calls cannot
+// push the words out of the window (V0.thread-read-messages). It reads at most
+// readScanCap events; more reports that older events were left unread.
+func (e *Engine) lastMessages(id string, want int) (evs []store.Event, more bool, err error) {
+	const page = 500
+	before := int64(math.MaxInt64)
+	n := 0
+	for len(evs) < readScanCap {
+		got, err := e.EventsBefore(id, before, page)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(got) == 0 {
+			return evs, false, nil
+		}
+		before = got[0].Seq
+		// Walk the page back from its end; cut where the want-th message starts.
+		for i := len(got) - 1; i >= 0; i-- {
+			n += messages(got[i])
+			if n >= want {
+				evs = append(got[i:], evs...)
+				older, err := e.EventsBefore(id, got[i].Seq, 1)
+				return evs, err == nil && len(older) > 0, err
+			}
+		}
+		evs = append(got, evs...)
+		if len(got) < page {
+			return evs, false, nil
+		}
+	}
+	return evs, true, nil
+}
+
+// readScanCap bounds how far back thread_read looks for messages.
+const readScanCap = 20000
+
+// messages counts the words an event holds for thread_read: a user turn, or
+// the text blocks of a top-level agent message.
+func messages(ev store.Event) int {
+	n := 0
+	for _, t := range readTurns([]store.Event{ev}) {
+		switch t.Kind {
+		case turnUser:
+			n++
+		case turnAgent:
+			for _, p := range t.Parts {
+				if p.Tool == "" {
+					n++
+				}
+			}
+		}
+	}
+	return n
+}
+
 // threadText renders a thread's last turns as plain text for thread_read.
 func threadText(evs []store.Event) string {
 	var b strings.Builder
@@ -190,22 +247,26 @@ func (e *Engine) threadTools(s *mcp.Server) {
 
 	s.Add(mcp.Tool{Name: "thread_read",
 		Description: "Read the last turns of another Fyr thread as plain text: the user's and the agent's words, with tool calls counted. At most 8,000 characters.",
-		Schema:      obj(map[string]any{"id": str("The thread id from threads."), "last": map[string]any{"type": "integer", "description": "How many events to look at, default 200."}}, "id"),
+		Schema:      obj(map[string]any{"id": str("The thread id from threads."), "last": map[string]any{"type": "integer", "description": "How many messages (the user's and the agent's words) to read, default 30, at most 500. Tool calls between them are counted, not limited."}}, "id"),
 		Call: func(_ context.Context, _ string, a map[string]any) (string, error) {
 			id, _ := a["id"].(string)
 			t, ok := e.Thread(id)
 			if !ok {
 				return "", fmt.Errorf("no thread %q", id)
 			}
-			last := 200
-			if f, ok := a["last"].(float64); ok && f > 0 && f <= 1000 {
-				last = int(f)
+			last := 30
+			if f, ok := a["last"].(float64); ok && f >= 1 {
+				last = min(int(f), 500)
 			}
-			evs, err := e.Events(id, 0, last)
+			evs, more, err := e.lastMessages(id, last)
 			if err != nil {
 				return "", err
 			}
 			head := fmt.Sprintf("Thread %s · %s · %s\n", t.ID, t.Title, t.Cwd)
+			if more {
+				// V0.thread-read-messages: say that older events were left out.
+				head += fmt.Sprintf("(older events not read; this is the last %d messages, ask for more with last)\n", last)
+			}
 			return head + threadText(evs), nil
 		}})
 
