@@ -816,7 +816,15 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", disposition+"; filename*=UTF-8''"+url.PathEscape(m.Name))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "sandbox")
+	// V0.attachment-doc-preview: HTML runs scripts but never as Fyr's origin; a PDF is shown by the browser's reader,
+	// which a sandbox policy blocks, and a PDF has no markup to run.
+	switch m.MediaType {
+	case "application/pdf":
+	case "text/html":
+		w.Header().Set("Content-Security-Policy", "sandbox allow-scripts allow-popups allow-forms")
+	default:
+		w.Header().Set("Content-Security-Policy", "sandbox")
+	}
 	http.ServeContent(w, r, m.Name, time.Time{}, f)
 }
 

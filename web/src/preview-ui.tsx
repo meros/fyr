@@ -20,6 +20,8 @@ export interface ViewerImage {
   caption?: string;
   /** the file's name, for a source that carries none (V0.download-assets) */
   name?: string;
+  /** V0.attachment-doc-preview: a document the viewer shows in a frame (the browser's own PDF reader; HTML sandboxed) */
+  frame?: "pdf" | "html";
 }
 /** One open viewer at a time: the images it can swipe between and the one on screen. */
 type Open = { items: ViewerImage[]; at: number } | null;
@@ -360,27 +362,40 @@ export function PreviewViewer() {
         </button>
       </div>
       <div
-        class={`pv-stage${view.scale > 1 ? " zoomed" : ""}`}
+        class={`pv-stage${view.scale > 1 ? " zoomed" : ""}${c.frame ? " doc" : ""}`}
         ref={stage}
         data-scale={String(Math.round(view.scale * 1000) / 1000)}
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={up}
-        onDblClick={dbl}
-        onWheel={wheel}
+        // a document frame scrolls and zooms by itself: no pan, pinch or double-tap on it
+        onPointerDown={c.frame ? undefined : down}
+        onPointerMove={c.frame ? undefined : move}
+        onPointerUp={c.frame ? undefined : up}
+        onPointerCancel={c.frame ? undefined : up}
+        onDblClick={c.frame ? undefined : dbl}
+        onWheel={c.frame ? undefined : wheel}
       >
-        <img
-          key={c.key}
-          src={c.src}
-          alt={c.title}
-          draggable={false}
-          onLoad={(e) => {
-            const i = e.currentTarget as HTMLImageElement;
-            setNatural({ width: i.naturalWidth, height: i.naturalHeight });
-          }}
-          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
-        />
+        {c.frame ? (
+          <iframe
+            key={c.key}
+            class="pv-doc"
+            src={c.src}
+            title={c.title}
+            // HTML runs without Fyr's origin (the response is sandboxed too); the PDF reader needs none of it
+            sandbox={c.frame === "html" ? "allow-scripts allow-popups allow-forms" : undefined}
+            allow={c.frame === "html" ? FRAME_ALLOW : undefined}
+          />
+        ) : (
+          <img
+            key={c.key}
+            src={c.src}
+            alt={c.title}
+            draggable={false}
+            onLoad={(e) => {
+              const i = e.currentTarget as HTMLImageElement;
+              setNatural({ width: i.naturalWidth, height: i.naturalHeight });
+            }}
+            style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+          />
+        )}
         {open.at > 0 && (
           <button class="pv-nav l" aria-label="Previous preview" onPointerDown={(e) => e.stopPropagation()} onClick={() => go(-1)}>
             ‹
