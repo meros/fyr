@@ -6,7 +6,7 @@ import { sensitiveLine } from "./sensitive.ts";
 import { useState } from "preact/hooks";
 import type { Decision, PullRequest } from "./types.ts";
 import { StateIcon } from "./icons.tsx";
-import { back, pick, progressText, questionsOf, goTo, settledOf, skip, type CardState, nextOpen, submitState } from "./question.ts";
+import { back, openOther, pick, progressText, questionsOf, goTo, settledOf, skip, type CardState, nextOpen, submitState } from "./question.ts";
 
 interface CardProps {
   d: Decision;
@@ -192,7 +192,7 @@ function AskCard(p: CardProps & { card: CardState }) {
               <span class="d">{o.description ?? ""}</span>
             </button>
           ))}
-          <button class={`op${other ? " on" : ""}`} role={q.multiSelect ? "checkbox" : "radio"} aria-checked={!!other} onClick={() => document.getElementById("composer")?.focus()} title="Answer in your own words in the field below (0)">
+          <button class={`op${other ? " on" : ""}`} role={q.multiSelect ? "checkbox" : "radio"} aria-checked={!!other} onClick={() => (p.onCard(openOther), setTimeout(() => document.getElementById("composer")?.focus(), 0))} title="Answer in your own words in the field below (0)">
             <span class="a ell">Other…</span>
             <kbd>0</kbd>
             <span class="d">{other ?? ""}</span>

@@ -11,6 +11,7 @@ import {
 } from "./store.ts";
 import { stepRow } from "./selection.ts";
 import { cardKey, goTo } from "./question.ts";
+import { cardTakesKeys } from "./no-interrupt.ts";
 import { escapeTarget } from "./settings-nav.ts";
 import { snoozeChoiceForKey } from "./snooze.ts";
 import { takeOpen } from "./push.ts";
@@ -29,6 +30,15 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
   const gPending = useRef(0);
   const lastEsc = useRef(0);
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  // V0.no-interrupt (3): when the open thread's decision came. One that is there when the owner opens the thread
+  // takes the keys at once; one that arrives while it is open waits ARRIVAL_GRACE_MS.
+  const shown = useRef<{ thread: string | null; decision: string | null; at: number }>({ thread: null, decision: null, at: 0 });
+  const decisionId = decision?.id ?? null;
+  const threadId = view?.id ?? null;
+  useEffect(() => {
+    const s = shown.current;
+    shown.current = { thread: threadId, decision: decisionId, at: s.thread === threadId && decisionId !== s.decision ? Date.now() : 0 };
+  }, [threadId, decisionId]);
   keyRef.current = (e: KeyboardEvent) => {
     if (phoneRef.current) return; // the phone has touch forms for every key (design/mobile, section 2)
     const k = e.key;
@@ -110,7 +120,7 @@ export function useKeyboard(c: Pick<ReturnType<typeof useAppState>, "store" | "s
     gPending.current = 0;
 
     // Decision card keys when the open thread has focus.
-    if (zone === "thread" && view?.mode === "open" && decision) {
+    if (zone === "thread" && view?.mode === "open" && decision && shown.current.decision === decision.id && cardTakesKeys(shown.current.at, Date.now())) {
       if (decision.kind === "ask" && card) {
         const r = cardKey(card, decision, k, { shift: e.shiftKey });
         if (r.handled) {
