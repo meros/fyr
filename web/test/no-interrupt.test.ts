@@ -2,7 +2,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { answerTakesComposer } from "../src/compose.ts";
-import { ARRIVAL_GRACE_MS, TYPING_QUIET_MS, cardTakesKeys, ownerBusy, pushedValue } from "../src/no-interrupt.ts";
+import { ARRIVAL_GRACE_MS, TYPING_QUIET_MS, cardTakesKeys, framePage, moveOnAfterAnswer, ownerBusy, pushedValue, unpickedTab } from "../src/no-interrupt.ts";
+import { defaultTab } from "../src/view.ts";
+
+test("V0.no-interrupt-rest (1): a view that appears while the thread is open does not take the owner off Conversation", () => {
+  assert.equal(unpickedTab(true, true), "view", "there when opened: opens on View (V0.37)");
+  assert.equal(unpickedTab(true, false), "conv");
+  assert.equal(unpickedTab(false, false), "conv");
+  const withView = { live: { pageId: "p1", state: {}, updatedAt: "", checkedAt: "", headline: "" }, liveView: true, pr: undefined } as unknown as Parameters<typeof defaultTab>[0];
+  assert.equal(defaultTab(withView, undefined, false), "conv");
+  assert.equal(defaultTab(withView, "view", false), "view", "a pick wins");
+  assert.equal(defaultTab(withView, undefined), "view", "callers that do not say keep V0.37");
+});
+
+test("V0.no-interrupt-rest (2): a republished page waits while the owner is in the frame", () => {
+  assert.equal(framePage("p1", "p2", true), "p1");
+  assert.equal(framePage("p1", "p2", false), "p2");
+  assert.equal(framePage("p2", "p2", true), "p2");
+});
+
+test("V0.no-interrupt-rest (3): a late yes to an answer moves on only if the owner stayed and pressed nothing", () => {
+  assert.equal(moveOnAfterAnswer({ stillOpen: true, keyAfter: false }), true);
+  assert.equal(moveOnAfterAnswer({ stillOpen: false, keyAfter: false }), false);
+  assert.equal(moveOnAfterAnswer({ stillOpen: true, keyAfter: true }), false);
+});
 
 test("V0.no-interrupt (1): a question that arrives over a draft leaves the composer to the draft", () => {
   const asked = { text: "", chosen: false };

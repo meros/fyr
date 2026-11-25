@@ -13,6 +13,8 @@ import type { useThreadActions } from "./app-actions.tsx";
 import { decisionSensitive } from "./sensitive.ts";
 import { threadPrs } from "./offers.ts";
 import { mergeMethod } from "./pr.ts";
+import { lastKeyAt } from "./activity.ts";
+import { moveOnAfterAnswer } from "./no-interrupt.ts";
 
 export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" | "threadsRef" | "tracker" | "setTracker" | "cards" | "setCards" | "setInText" | "sec" | "gatedRef" | "viewThread">) {
   const { api, threadsRef, tracker, setTracker, cards, setCards, setInText, sec, gatedRef, viewThread } = c;
@@ -80,6 +82,8 @@ export function useDecisionCards(c: Pick<ReturnType<typeof useAppState>, "api" |
  *  arrival bar, and its composer is the answer field of an open question (the phone's card has its own field). */
 export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "api" | "cmds" | "view" | "cards" | "setCards" | "store" | "sel" | "sec" | "setArrival" | "mergeHost" | "threadsRef"> & Pick<ReturnType<typeof useDecisionCards>, "decision" | "card"> & Pick<ReturnType<typeof useThreadActions>, "openThread">) {
   const { api, cmds, view, cards, setCards, store, sel, sec, setArrival, mergeHost, threadsRef, decision, card, openThread } = c;
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const submit = async (d: Decision): Promise<boolean> => {
     const cs = cards[d.id];
     const send = cs ? submitOf(cs, d) : null;
@@ -139,9 +143,13 @@ export function useAnswers(c: Pick<ReturnType<typeof useAppState>, "api" | "cmds
     if (!view) return;
     const id = view.id;
     const from = { id, title: store.threads[id]?.title ?? "" };
+    const at = Date.now();
     void answerThenNext(
       () => submit(d),
       () => {
+        // V0.no-interrupt-rest (3): the host's yes can come late. An owner who has opened another thread or pressed a key
+        // since is left where they are.
+        if (!moveOnAfterAnswer({ stillOpen: viewRef.current?.id === id, keyAfter: lastKeyAt() > at })) return;
         const to = nextNeeding(1, id);
         if (to) setArrival(arrive(from, to, sec.needs.map((t) => t.id)));
       },

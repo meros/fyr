@@ -5,7 +5,7 @@ import type { PushHidden } from "./hidden.ts";
 import type { Api, PushReply } from "./api.ts";
 import { base64UrlToBytes, deviceLabel, notificationIsStale, pushStatus, reconcilePush, type PushEnv, type PushPrefs, type PushStatus } from "./push.ts";
 
-import { ownerBusy } from "./no-interrupt.ts";
+import { whenIdle } from "./activity.ts";
 
 let waiting: ServiceWorker | null = null;
 
@@ -86,38 +86,10 @@ export function registerServiceWorker(onOpen: (threadId: string) => void): void 
     });
 }
 
-let lastKeyAt = 0;
-if (typeof document !== "undefined") document.addEventListener("keydown", () => (lastKeyAt = Date.now()), true);
-let reloadPending = false;
-
-/** V0.no-interrupt (4): the owner is busy with the page now (no-interrupt.ts `ownerBusy`). */
-function busyNow(): boolean {
-  const a = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
-  const field = a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && !["checkbox", "radio", "button"].includes(a.type))) ? a.value : null;
-  return ownerBusy({
-    hidden: document.visibilityState === "hidden",
-    dialogOpen: !!document.querySelector("[role=dialog],[aria-modal=true]"),
-    fieldText: field,
-    lastKeyAt,
-    now: Date.now(),
-  });
-}
-
 /** Reload for a new build (the buildId rule), once the owner is not busy with the page (V0.no-interrupt (4)): a
- *  reload mid-sentence loses the open card's answer, a dialog or a field being filled in. It checks again every 2 s
- *  and the moment the page is hidden. */
+ *  reload mid-sentence loses the open card's answer, a dialog or a field being filled in (activity.ts `whenIdle`). */
 export function reloadForNewBuild(): void {
-  if (reloadPending) return;
-  if (!busyNow()) return reloadNow();
-  reloadPending = true;
-  const check = () => {
-    if (busyNow()) return;
-    clearInterval(iv);
-    document.removeEventListener("visibilitychange", check);
-    reloadNow();
-  };
-  const iv = setInterval(check, 2000);
-  document.addEventListener("visibilitychange", check);
+  whenIdle(reloadNow);
 }
 
 /** Activate a waiting worker first, so the reload gets the new shell. */

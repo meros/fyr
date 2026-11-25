@@ -319,6 +319,8 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .pv-h .pv-fs,.m-app .pv-h .pv-cdl{width:44px;height:44px;line-height:42px}
 /* V0.165: the live view's Full screen button, at touch size (desktop: 28 px) */
 .m-app .lv-top .pv-fs{width:44px;height:44px;line-height:42px;margin-right:8px}
+/* the new version's button at touch size (desktop: 24 px) */
+.m-app .lv-up{min-height:44px;border-radius:22px;padding:0 14px}
 .m-app .fs-item{width:88px}
 .m-app .fs-item img,.m-app .fs-html{width:88px;height:64px}
 /* calm tool output on the phone: 44 px targets */

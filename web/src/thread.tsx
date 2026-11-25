@@ -26,7 +26,7 @@ import { HostMark } from "./host-mark-ui.tsx";
 import { ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { Filmstrip, PreviewsChip } from "./preview-ui.tsx";
-import { LiveViewPanel } from "./view-ui.tsx";
+import { LiveViewPanel, useOpenedWithView } from "./view-ui.tsx";
 import { rememberTab } from "./desk-history.ts";
 import { tabLabel, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
@@ -93,7 +93,8 @@ export function ThreadPane(p: ThreadPaneProps) {
   // defaultTab (no View without a view, no PR tab without a PR).
   const [pick, setPick] = useState<{ id: string; tab: string } | null>(null);
   const [selectedPr, setSelectedPr] = useState<{ id: string; url: string } | null>(null);
-  const tab = defaultTab(t, pick?.id === t.id ? pick.tab : urlTab(t.id));
+  const openedWithView = useOpenedWithView(t);
+  const tab = defaultTab(t, pick?.id === t.id ? pick.tab : urlTab(t.id), openedWithView);
   const setTab = (tab: string) => {
     setPick({ id: t.id, tab });
     rememberTab(t.id, tab); // V0.145: Back to this thread shows this tab

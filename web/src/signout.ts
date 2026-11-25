@@ -4,6 +4,7 @@
 // sign-in page. Reloading is rate limited so a page that cannot be signed in does not reload in a loop.
 
 import { sessionStore } from "./prefs.ts";
+import { whenIdle } from "./activity.ts";
 
 /** Whether a 401 body is the front's "this device is not signed in". */
 export function isSignedOut(status: number, body: unknown): boolean {
@@ -32,7 +33,9 @@ export async function reloadIfSignedOut(probe: StateProbe): Promise<boolean> {
     } catch {
       /* storage full: reload anyway, once per call */
     }
-    location.reload();
+    // V0.no-interrupt-rest (4): not under the owner's fingers. What they type is kept by the draft store, and the sign-in
+    // page comes once they pause (activity.ts `whenIdle`).
+    whenIdle(() => location.reload());
     return true;
   } catch {
     return false;

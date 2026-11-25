@@ -3,6 +3,7 @@
 // and a press in it becomes a message `from: "view"`.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { framePage } from "./no-interrupt.ts";
 import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDimmed, viewHeight } from "./view.ts";
 import { FRAME_ALLOW } from "./previews.ts";
 import { FsBar, FsButton, useFrameFullscreen } from "./preview-ui.tsx";
@@ -19,6 +20,17 @@ function loadCollapsed(): Set<string> {
 
 function saveCollapsed(s: Set<string>) {
   storedSet(COLLAPSED_KEY, JSON.stringify([...s].slice(-200)));
+}
+
+/** V0.no-interrupt-rest (1): whether the thread had a live view when it was opened here (defaultTab's third
+ *  argument). Read in the render the thread opens in, and kept while it stays open. Desktop and phone. */
+export function useOpenedWithView(t: Thread | null | undefined): boolean {
+  const id = t?.id ?? "";
+  const has = !!t && !!liveViewOf(t);
+  const [opened, setOpened] = useState({ id, has });
+  if (opened.id === id) return opened.has;
+  setOpened({ id, has });
+  return has;
 }
 
 /** V0.37: the full view (the View tab). V0.56: no headline bar in Conversation; the tab is the way in. */
@@ -57,6 +69,23 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
   const sendState = () => frame.current?.contentWindow?.postMessage(stateMessage(stateRef.current), "*");
 
   const hasView = !!v;
+
+  // V0.no-interrupt-rest (2): a republished page waits while the owner is in the frame (it has the focus), so what
+  // they type or pick there is not lost to a reload; the header offers it, and it comes once they leave the frame.
+  const latest = v?.pageId ?? "";
+  const [shown, setShown] = useState({ id: t.id, page: latest });
+  const page = shown.id === t.id && shown.page ? shown.page : latest;
+  const newer = page !== latest;
+  useEffect(() => {
+    if (!newer) return;
+    const take = () => {
+      const next = framePage(page, latest, !!frame.current && document.activeElement === frame.current);
+      if (next !== page) setShown({ id: t.id, page: next });
+    };
+    take();
+    const iv = setInterval(take, 1000);
+    return () => clearInterval(iv);
+  }, [newer, page, latest, t.id]);
   // The pane's height caps the view (60 %).
   useLayoutEffect(() => {
     const host = box.current?.parentElement;
@@ -112,6 +141,11 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
             </span>
             {!full && <span class="chev">{collapsed ? "▸" : "▾"}</span>}
           </button>
+          {!collapsed && newer && (
+            <button class="lv-up" onClick={() => setShown({ id: t.id, page: latest })} title="The agent published a new version; it loads when you leave the view">
+              New version · Show
+            </button>
+          )}
           {!collapsed && <FsButton onPress={fs.enter} />}
         </div>
       )}
@@ -121,7 +155,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
           <iframe
             ref={frame}
             class="lv-f"
-            src={api.previewUrl(t.hostId, v.pageId)}
+            src={api.previewUrl(t.hostId, page)}
             sandbox="allow-scripts"
             allow={FRAME_ALLOW}
             allowFullScreen

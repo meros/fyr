@@ -3,6 +3,7 @@
 
 import type { Change, Thread } from "./types.ts";
 import { threadPrs } from "./offers.ts";
+import { unpickedTab } from "./no-interrupt.ts";
 
 interface LiveViewDTO {
   pageId: string;
@@ -125,11 +126,12 @@ export function pressReply(id: string | number, ok: boolean) {
 
 /** SPEC 0.5 V0.37: the tab a thread opens on. A live view opens on View; an explicit
  *  choice wins; View does not exist without a view; PR exists whenever the thread has any non-dismissed PR. */
-export function defaultTab(t: Pick<Thread, "live" | "liveView" | "pr"> & { changes?: Change[] }, requested: string | undefined): string {
+export function defaultTab(t: Pick<Thread, "live" | "liveView" | "pr"> & { changes?: Change[] }, requested: string | undefined, hadViewWhenOpened = true): string {
   const has = !!liveViewOf(t);
   if (requested === "view") return has ? "view" : "conv";
   if (requested === "pr" && !threadPrs(t).length) return "conv"; // V0.36: no PR, no PR tab
-  return requested ?? (has ? "view" : "conv");
+  // V0.no-interrupt-rest (1): a view that appears while the thread is open does not take the owner off what they read.
+  return requested ?? unpickedTab(has, hadViewWhenOpened);
 }
 
 type ThreadTab = "view" | "conv" | "changes" | "pr";
