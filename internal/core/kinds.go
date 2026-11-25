@@ -402,6 +402,13 @@ func init() {
 			return Result{Events: a.Log}, nil
 		}},
 		{Name: KindRunStarted, From: observed, Reduce: func(r Rec, _ Input, now time.Time) (Result, error) {
+			// V0.settled-self-turn: the CLI of a settled thread lives on for
+			// its background work and can start a turn by itself; that run
+			// is work again, so the thread is not settled any more.
+			if r.T.Settle.At != nil {
+				r.T.Settle.At = nil
+				dropSettleDone(r.T)
+			}
 			RunStarted(r.T, now)
 			return Result{Events: []Event{{"run.started", map[string]any{"by": "agent"}}}}, nil
 		}},
