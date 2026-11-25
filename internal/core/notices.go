@@ -135,7 +135,7 @@ func slotNotices(r Reduced) []Notice {
 			continue
 		}
 		if d["retry"] == true { // V0.guard-wake (decision 0036 E1)
-			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Wake, What: "Memory has recovered on this host: run the heavy command Fyr held again."})
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Wake, What: HeldRetryText(str(d["agent"]), str(d["agentType"]))})
 			continue
 		}
 		if d["resumed"] == true && d["work"] == true {
@@ -164,10 +164,38 @@ func slotNotices(r Reduced) []Notice {
 		if d["granted"] != true {
 			continue
 		}
-		kind := str(d["kind"])
-		out = append(out, Notice{About: "thread", Key: "slot", What: "Your " + kind + " job is admitted now: run the command again."})
+		out = append(out, Notice{About: "thread", Key: "slot", What: AdmittedText(str(d["kind"]), str(d["agent"]), str(d["agentType"]))})
 	}
 	return out
+}
+
+// AdmittedText is the line that a queued heavy job is admitted now. With no
+// agent it is for the actor that was refused, the thread's own agent or the
+// subagent itself at its next tool call; with one it tells the thread's agent
+// that the subagent it names was refused the job and has ended without
+// running it (V0.subagent-admission).
+func AdmittedText(kind, agent, agentType string) string {
+	if agent == "" {
+		return "Your " + kind + " job is admitted now: run the command again."
+	}
+	return "The " + kind + " job your subagent " + SubagentName(agent, agentType) + " was queued for is admitted now, but that subagent has ended without running it: run the command again yourself if you still need its result."
+}
+
+// HeldRetryText is the line that memory has recovered for a heavy command
+// the gate held, worded as AdmittedText (V0.subagent-admission).
+func HeldRetryText(agent, agentType string) string {
+	if agent == "" {
+		return "Memory has recovered on this host: run the heavy command Fyr held again."
+	}
+	return "Memory has recovered on this host, so the heavy command Fyr held for your subagent " + SubagentName(agent, agentType) + " can run now, but that subagent has ended without running it: run it again yourself if you still need its result."
+}
+
+// SubagentName names a subagent as the agent knows it: its type and its id.
+func SubagentName(agent, agentType string) string {
+	if agentType == "" {
+		return agent
+	}
+	return agentType + " (" + agent + ")"
 }
 
 // project runs the reduce rules on one reduce and queues their notices. It

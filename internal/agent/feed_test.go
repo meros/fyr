@@ -106,7 +106,7 @@ func TestToolHookSkipsSubagent(t *testing.T) {
 
 // #49: a hook input that names a subagent takes nothing, at a tool call or
 // at a stop. The CLI sends a subagent's stop as SubagentStop, which Fyr
-// does not register.
+// registers for V0.subagent-admission (TestSubagentHooksCarryItsAdmission).
 func TestSubagentHooksTakeNothing(t *testing.T) {
 	h := &feedHost{cwd: t.TempDir(), queue: []core.Notice{{About: "thread", What: "Renamed."}}}
 	m := fakeManager(t, h)
@@ -122,7 +122,59 @@ func TestSubagentHooksTakeNothing(t *testing.T) {
 	if _, takes, q := h.state(); len(takes) != 0 || q != 1 {
 		t.Fatalf("takes %v, queue %d", takes, q)
 	}
-	if _, ok := initHooks(true)["SubagentStop"]; ok {
-		t.Fatal("SubagentStop is registered")
+}
+
+// V0.subagent-admission: a subagent a hook names runs until its SubagentStop;
+// its tool call's result carries what waits for it (its heavy job's
+// admission), and its stop hands what is left to the engine.
+func TestSubagentHooksCarryItsAdmission(t *testing.T) {
+	h := &feedHost{cwd: t.TempDir(), queue: []core.Notice{{About: "thread", What: "Renamed."}}}
+	m := fakeManager(t, h)
+	s := &session{thread: "t1", changeTools: true}
+	m.mu.Lock()
+	m.sessions["t1"] = s
+	m.mu.Unlock()
+	t.Cleanup(func() { // before StopAll: the session has no process to close
+		m.mu.Lock()
+		delete(m.sessions, "t1")
+		m.mu.Unlock()
+	})
+	ended := make(chan string, 1)
+	m.SetSubagentHooks(func(thread, agent string) string {
+		if thread == "t1" && agent == "a1" {
+			return "[Fyr] Your test job is admitted now: run the command again."
+		}
+		return ""
+	}, func(thread, agent string) { ended <- thread + "/" + agent })
+	if m.SubagentLive("t1", "a1") {
+		t.Fatal("live before any hook named it")
+	}
+	in := claude.Msg{"hook_event_name": "PostToolUse", "agent_id": "a1", "agent_type": "worker", "tool_name": "Read"}
+	r := m.hook(s, "viewnudge", in)
+	out, _ := r["hookSpecificOutput"].(claude.Msg)
+	if out["additionalContext"] != "[Fyr] Your test job is admitted now: run the command again." {
+		t.Fatalf("the subagent's tool call got %v", r)
+	}
+	if !m.SubagentLive("t1", "a1") {
+		t.Fatal("not live after its tool call")
+	}
+	in["agent_id"] = "a2"
+	if r := m.hook(s, "viewnudge", in); r != nil {
+		t.Fatalf("another subagent got %v", r)
+	}
+	if _, takes, q := h.state(); len(takes) != 0 || q != 1 {
+		t.Fatalf("a subagent took the thread's feed: takes %v, queue %d", takes, q)
+	}
+	if r := m.hook(s, "substop", claude.Msg{"hook_event_name": "SubagentStop", "agent_id": "a1", "agent_type": "worker"}); r != nil {
+		t.Fatalf("SubagentStop got %v", r)
+	}
+	if got := <-ended; got != "t1/a1" {
+		t.Fatalf("ended %q", got)
+	}
+	if m.SubagentLive("t1", "a1") || !m.SubagentLive("t1", "a2") {
+		t.Fatal("liveness after the stop")
+	}
+	if _, ok := initHooks(false)["SubagentStop"]; !ok {
+		t.Fatal("SubagentStop is not registered")
 	}
 }

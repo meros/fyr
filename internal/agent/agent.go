@@ -121,6 +121,12 @@ type Config struct {
 	OnBash func(BashCall) string
 	// OnToolDone hears that a thread's tool call ended (V0.209). Optional.
 	OnToolDone func(thread, toolUse string)
+	// SubagentNote is the line for a tool call of a thread's subagent: what
+	// waits for it, such as its heavy job's admission; "" for none.
+	// OnSubagentEnd hears that a subagent stopped (V0.subagent-admission).
+	// Optional.
+	SubagentNote  func(thread, agent string) string
+	OnSubagentEnd func(thread, agent string)
 	// JobEnv is what a CLI's environment gets so the tools its jobs run size
 	// themselves (V0.job-limits); JobHint is the gate hook's notice for a Bash
 	// command of a thread: a runner that ignores its cgroup, the containers it
@@ -251,6 +257,9 @@ type session struct {
 	// request the runner has not asked again yet.
 	adopted map[string]bool
 	reqs    map[string]string // control request id → decision id
+	// subs: the subagents seen in a hook that have not stopped
+	// (V0.subagent-admission), by agent id; under Manager.mu.
+	subs map[string]bool
 	// V0.tool-approval-judge: in-flight approval judge calls by control
 	// request id (so cancelRequest / exit aborts them), and exact-match
 	// per-session auto-approval cache (canonical tool+input hash → reason).
@@ -431,6 +440,8 @@ func writeMCPConfig(dir string, cfg []byte) (string, error) {
 type BashCall struct {
 	Thread, Command, ToolUse string
 	Background, Subagent     bool
+	// Agent and AgentType name the subagent (V0.subagent-admission).
+	Agent, AgentType string
 }
 
 // SetOnBash sets Config.OnBash and Config.OnToolDone after New (the slots come
@@ -439,6 +450,24 @@ func (m *Manager) SetOnBash(f func(BashCall) string, done func(thread, toolUse s
 	m.mu.Lock()
 	m.cfg.OnBash, m.cfg.OnToolDone = f, done
 	m.mu.Unlock()
+}
+
+// SetSubagentHooks sets Config.SubagentNote and Config.OnSubagentEnd after
+// New (V0.subagent-admission).
+func (m *Manager) SetSubagentHooks(note func(thread, agent string) string, end func(thread, agent string)) {
+	m.mu.Lock()
+	m.cfg.SubagentNote, m.cfg.OnSubagentEnd = note, end
+	m.mu.Unlock()
+}
+
+// SubagentLive says whether a subagent of the thread's process still runs:
+// a hook named it and its stop has not come, and the process lives
+// (V0.subagent-admission).
+func (m *Manager) SubagentLive(thread, agent string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[thread]
+	return s != nil && s.subs[agent]
 }
 
 // SetJobHints sets Config.JobEnv and Config.JobHint after New (V0.job-limits).

@@ -192,6 +192,16 @@ type Engine struct {
 	// V0.guard-wake (decision 0036 E1): the threads whose new heavy command
 	// the gate held while memory was short.
 	gateHeld map[string]bool
+	// V0.subagent-admission: heldBy is the subagent whose heavy command the
+	// gate refused last on a thread (none: the thread's own agent); subWake
+	// is the admission or recovery that waits for that subagent's next tool
+	// call while it still runs. Both under mu.
+	heldBy  map[string]subAgent
+	subWake map[string]subWake
+	// SubagentLive says whether a subagent of the thread's process still runs
+	// (the agent manager knows; V0.subagent-admission). Optional: without it
+	// every subagent counts as ended.
+	SubagentLive func(thread, agent string) bool
 	// V0.rerun-classes: the threads whose killed job waits for its rerun
 	// (thread → entry); the kills are gs.RerunKills.
 	rerunWait    map[string]string // under mu

@@ -94,8 +94,11 @@ func (w *wiring) wireHeavy() {
 		if cfg.HeavyGate == "off" {
 			return ""
 		}
-		return eng.HeavyGate(engine.HeavyCall{Thread: c.Thread, Class: class, ToolUse: c.ToolUse, Background: c.Background || heavy.Detached(c.Command), Subagent: c.Subagent})
+		return eng.HeavyGate(engine.HeavyCall{Thread: c.Thread, Class: class, ToolUse: c.ToolUse, Background: c.Background || heavy.Detached(c.Command), Subagent: c.Subagent, Agent: c.Agent, AgentType: c.AgentType})
 	}, func(thread, toolUse string) { go eng.HeavyDone(thread, toolUse) }) // never on the stream's goroutine: it may grant
+	// V0.subagent-admission: a subagent's admission reaches it, not its parent.
+	eng.SubagentLive = mgr.SubagentLive
+	mgr.SetSubagentHooks(eng.SubagentNote, eng.SubagentEnded)
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
 		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject, // V0.164
 		Services: services, ServiceBook: svcBook, // V0.services-not-jobs

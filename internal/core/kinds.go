@@ -149,6 +149,10 @@ type (
 	MachineWaitArgs struct{ Why string }
 	// GateHoldArgs: why the gate holds a heavy command back; "" ends the hold.
 	GateHoldArgs struct{ Why string }
+	// SlotGrantedArgs: the kind of a queued job admitted now, and the
+	// subagent that was refused it when that subagent has ended
+	// (V0.subagent-admission); a plain string is the kind alone.
+	SlotGrantedArgs struct{ Kind, Agent, AgentType string }
 	// RestartedArgs: why Fyr restarted the process and the background
 	// tasks that ended with it (V0.143).
 	RestartedArgs struct {
@@ -315,12 +319,21 @@ func init() {
 			return Result{}, nil
 		}},
 		{Name: KindSlotGranted, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
-			kind, _ := in.Args.(string)
-			if kind == "" {
+			// The kind alone, or SlotGrantedArgs when a subagent that has
+			// ended was refused the job (V0.subagent-admission).
+			a, ok := in.Args.(SlotGrantedArgs)
+			if !ok {
+				a.Kind, _ = in.Args.(string)
+			}
+			if a.Kind == "" {
 				return Result{}, errors.New("slot.granted needs the kind")
 			}
 			r.T.SlotQueued = false
-			return Result{Events: []Event{{EventSlot, map[string]any{"kind": kind, "granted": true}}}}, nil
+			d := map[string]any{"kind": a.Kind, "granted": true}
+			if a.Agent != "" {
+				d["agent"], d["agentType"] = a.Agent, a.AgentType
+			}
+			return Result{Events: []Event{{EventSlot, d}}}, nil
 		}},
 		{Name: KindSlotMemory, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
 			a, err := argsOf[SlotMemoryArgs](in)

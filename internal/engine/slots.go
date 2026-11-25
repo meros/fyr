@@ -18,9 +18,11 @@ import (
 type HeavyCall struct {
 	Thread, Class, ToolUse string
 	Background             bool
-	// Subagent: a subagent made the call. The admission notice goes to the
-	// thread's own agent, so the refusal tells a subagent not to wait for it.
-	Subagent bool
+	// Subagent: a subagent made the call; Agent and AgentType name it as the
+	// hook input does. Its admission goes to its next tool call while it
+	// runs, else to the thread's agent naming it (V0.subagent-admission).
+	Subagent         bool
+	Agent, AgentType string
 }
 
 // UseSlots gives the engine the host's pool of slots for heavy jobs
@@ -62,7 +64,13 @@ func (e *Engine) slotGranted(owner, kind string) {
 	if t == nil {
 		return
 	}
-	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotGranted, Thread: owner, Args: kind}); err != nil {
+	// V0.subagent-admission: a running subagent that was refused the job
+	// hears it at its next tool call; the thread's agent is not woken.
+	by, kept := e.routeToSubagent(owner, subWake{kind: kind})
+	if kept {
+		return
+	}
+	if err := e.applySlotGranted(owner, core.SlotGrantedArgs{Kind: kind, Agent: by.ID, AgentType: by.Type}); err != nil {
 		e.Slots.Release(owner)
 	}
 }
@@ -193,6 +201,7 @@ func (e *Engine) sweepSlots() {
 	for _, id := range drop {
 		e.dropSlot(id)
 	}
+	e.sweepSubWakes() // V0.subagent-admission
 	e.syncSlotQueue()
 	e.checkSlotQueueInvariant() // V0.thread-invariants
 	e.heavierThanPredicted(s)
