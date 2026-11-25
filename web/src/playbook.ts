@@ -4,12 +4,22 @@
 import type { Change, PlaybookEntry, Project } from "./types.ts";
 
 /** The slots, in the order the page lists them; a stage has a name. */
-export const PLAYBOOK_SLOTS = ["stage", "verify", "promote", "issue", "run", "rollback"] as const;
+export const PLAYBOOK_SLOTS = ["stage", "verify", "promote", "issue", "run", "rollback", "lesson"] as const;
 
-const SLOT_TITLE: Record<string, string> = { verify: "Verify", promote: "Promote", issue: "Issues", run: "Run locally", rollback: "Roll back" };
+const SLOT_TITLE: Record<string, string> = { verify: "Verify", promote: "Promote", issue: "Issues", run: "Run locally", rollback: "Roll back", lesson: "Lesson" };
 
-/** An entry's key in its playbook: the slot, or stage:<name>. */
-export const entryKey = (e: Pick<PlaybookEntry, "slot" | "name">) => (e.slot === "stage" ? `stage:${e.name ?? ""}` : e.slot);
+/** A slot that holds several entries, each with a name: a stage, and a lesson (V0.playbook-lessons). */
+export const namedSlot = (slot: string) => slot === "stage" || slot === "lesson";
+
+/** At most this many lessons in a project (the host's MaxLessons). */
+export const MAX_LESSONS = 12;
+
+/** An entry's key in its playbook: the slot, or stage:<name> and lesson:<name>. */
+export const entryKey = (e: Pick<PlaybookEntry, "slot" | "name">) => (namedSlot(e.slot) ? `${e.slot}:${e.name ?? ""}` : e.slot);
+
+/** V0.playbook-lessons: a lesson an agent suggested that the owner has not taken: it has no text of its own, and no
+ *  agent is told it yet. */
+export const pendingLesson = (e: Pick<PlaybookEntry, "slot" | "how">) => e.slot === "lesson" && !e.how;
 
 /** A stage that makes a change live: marked so, or named prod or production. */
 export function isLiveStage(e: Pick<PlaybookEntry, "slot" | "name" | "live">): boolean {
@@ -38,6 +48,7 @@ export function newestPlaybook(members: Pick<Project, "playbook" | "playbookAt">
 
 /** An entry's title on the page: "Stage dev", "Stage prod · live", "Issues". */
 export function entryTitle(e: PlaybookEntry): string {
+  if (e.slot === "lesson") return `Lesson ${e.name}`;
   if (e.slot !== "stage") return SLOT_TITLE[e.slot] ?? e.slot;
   return `Stage ${e.name}${isLiveStage(e) ? " · live" : ""}`;
 }
@@ -72,7 +83,7 @@ export function stageHealth(e: Pick<PlaybookEntry, "probe" | "probeOk" | "missed
 
 /** The one question before an entry is removed. */
 export function removeEntryAsk(e: PlaybookEntry): { title: string; text: string; confirm: string; danger: true } {
-  return { title: `Remove ${entryTitle(e)}?`, text: e.slot === "stage" ? "Fyr no longer follows merged changes to this stage, and its probe and commands are gone." : "Agents here are no longer told this.", confirm: "Remove entry", danger: true };
+  return { title: `Remove ${entryTitle(e)}?`, text: e.slot === "stage" ? "Fyr no longer follows merged changes to this stage, and its probe and commands are gone." : pendingLesson(e) ? "The agent's suggestion is gone." : "Agents here are no longer told this.", confirm: "Remove entry", danger: true };
 }
 
 /** The folded group's summary: "2 stages · 3 notes", with the probes that wait first. */
@@ -84,9 +95,10 @@ export function playbookSummary(p: Pick<Project, "playbook"> | undefined): strin
   const sug = all.filter((e) => e.suggest).length;
   const fails = stages.filter(broken).length;
   const doubt = stages.filter((e) => doubted(e) && !broken(e)).length;
-  const notes = all.length - stages.length;
+  const lessons = all.filter((e) => e.slot === "lesson" && !pendingLesson(e)).length;
+  const notes = all.filter((e) => !namedSlot(e.slot)).length;
   const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
-  return [waits ? `${n(waits, "probe")} ${waits === 1 ? "waits" : "wait"} for you` : "", sug ? n(sug, "suggestion") : "", fails ? `${n(fails, "probe")} ${fails === 1 ? "fails" : "fail"}` : "", doubt ? `${n(doubt, "probe")} in doubt` : "", stages.length ? n(stages.length, "stage") : "", notes ? n(notes, "note") : ""]
+  return [waits ? `${n(waits, "probe")} ${waits === 1 ? "waits" : "wait"} for you` : "", sug ? n(sug, "suggestion") : "", fails ? `${n(fails, "probe")} ${fails === 1 ? "fails" : "fail"}` : "", doubt ? `${n(doubt, "probe")} in doubt` : "", stages.length ? n(stages.length, "stage") : "", notes ? n(notes, "note") : "", lessons ? n(lessons, "lesson") : ""]
     .filter(Boolean)
     .join(" · ");
 }
@@ -101,10 +113,12 @@ export function playbookWaiting(p: Pick<Project, "playbook"> | undefined): numbe
 /** V0.playbook-moments: a stage whose probe did not see the last two merges within a day (the host's DoubtAfter). */
 export const doubted = (e: Pick<PlaybookEntry, "missed">) => (e.missed ?? 0) >= 2;
 
-/** V0.playbook-moments: the slots the owner can still add by hand: a stage always (up to six), each note once. */
+/** V0.playbook-moments: the slots the owner can still add by hand: a stage (up to six) and a lesson (up to twelve,
+ *  V0.playbook-lessons), each note once. */
 export function addableSlots(p: Pick<Project, "playbook"> | undefined): PlaybookEntry["slot"][] {
   const all = p?.playbook ?? [];
-  return PLAYBOOK_SLOTS.filter((s) => (s === "stage" ? all.filter((e) => e.slot === "stage").length < 6 : !all.some((e) => e.slot === s)));
+  const count = (s: string) => all.filter((e) => e.slot === s).length;
+  return PLAYBOOK_SLOTS.filter((s) => (s === "stage" ? count(s) < 6 : s === "lesson" ? count(s) < MAX_LESSONS : !all.some((e) => e.slot === s)));
 }
 
 /** A slot's name in the Add menu. */
@@ -113,6 +127,11 @@ export const slotTitle = (s: string) => (s === "stage" ? "Stage" : (SLOT_TITLE[s
 /** A stage's name as the host takes it, or why not. */
 export function stageNameError(name: string): string | null {
   return /^[a-z0-9][a-z0-9._-]{0,23}$/.test(name.trim().toLowerCase()) ? null : "Name the environment in lower case, such as dev or prod";
+}
+
+/** V0.playbook-lessons: a lesson's name as the host takes it (the same rule as a stage's), or why not. */
+export function lessonNameError(name: string): string | null {
+  return stageNameError(name) ? "Name it in a few words in lower case with dashes, such as e2e-before-done" : null;
 }
 
 /** What differs in an agent's suggestion, one line per field, for the page. */

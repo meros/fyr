@@ -334,8 +334,8 @@ export interface Project {
 
 /** V0.project-playbook: one entry of a project's playbook: a stage a merged change reaches, or one of the notes. */
 export interface PlaybookEntry {
-  slot: "stage" | "verify" | "promote" | "issue" | "run" | "rollback";
-  /** a stage's environment: dev, prod */
+  slot: "stage" | "verify" | "promote" | "issue" | "run" | "rollback" | "lesson";
+  /** a stage's environment: dev, prod; a lesson's short name (V0.playbook-lessons) */
   name?: string;
   how?: string;
   /** a stage: where it is looked at */
