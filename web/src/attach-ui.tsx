@@ -194,10 +194,18 @@ interface SentAttachment {
 /** A user message's attachments: image thumbnails (tap: the zooming viewer, V0.165, swiping between this message's
  *  images) and file chips (open in a new tab: the phone hands a PDF to its own viewer), each chip with Download
  *  beside it (V0.download-assets; an image has it in the viewer). */
+/** How the viewer frames a sent file, or undefined when it cannot (V0.attachment-doc-preview). */
+function docFrame(a: SentAttachment): "pdf" | "html" | undefined {
+  if (a.mediaType === "application/pdf") return "pdf";
+  if (a.mediaType === "text/html") return "html";
+  return undefined;
+}
+
 export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: HostId }) {
   const { attachmentUrl } = useApi();
   if (!items.length) return null;
-  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(host, a.id), title: a.name, name: a.name }));
+  // V0.attachment-doc-preview: images, PDFs and HTML pages open in the viewer, in the order sent
+  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType) || docFrame(a)).map((a) => ({ key: a.id, src: attachmentUrl(host, a.id), title: a.name, name: a.name, frame: docFrame(a) }));
   return (
     <div class="att-sent">
       {items.map((a) =>
@@ -207,7 +215,15 @@ export function SentAttachments({ items, host }: { items: SentAttachment[]; host
           </button>
         ) : (
           <span class="att-fw">
-            <a class="att-file" href={attachmentUrl(host, a.id)} target="_blank" rel="noopener noreferrer" title={a.name}>
+            <a
+              class="att-file"
+              href={attachmentUrl(host, a.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={a.name}
+              // a plain press previews it; a modified click or middle click keeps the link's own tab
+              onClick={docFrame(a) ? (e) => { if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); openImages(images, images.findIndex((x) => x.key === a.id)); } : undefined}
+            >
               <span class="att-th lab">{fileLabel(a.mediaType, a.name)}</span>
               <span class="att-tx">
                 <span class="att-n">{a.name}</span>
