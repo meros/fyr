@@ -495,6 +495,10 @@ func classify(text string) string {
 	if core.QuotaNotice(text) != "" {
 		return core.ClassQuota
 	}
+	// V0.overload-retry: the provider's own passing trouble is a wait too.
+	if core.OverloadNotice(text) != "" {
+		return core.ClassOverloaded
+	}
 	l := strings.ToLower(text)
 	switch {
 	case strings.Contains(l, "auth") || strings.Contains(l, "401") || strings.Contains(l, "login"):
@@ -502,7 +506,7 @@ func classify(text string) string {
 	case strings.Contains(l, "mcp"):
 		return "mcp"
 	case strings.Contains(l, "api error") || strings.Contains(l, "overloaded") || strings.Contains(l, "rate limit") || strings.Contains(l, "529") || strings.Contains(l, "500"):
-		return "api"
+		return core.ClassAPI
 	}
 	return "error"
 }

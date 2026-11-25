@@ -106,7 +106,7 @@ func claims(t *Thread, now time.Time, on func(repo string) bool, counts func(Rul
 	quiet := func(kind, reason string) {
 		out = append(out, Claim{Kind: kind, Side: SideMoving, State: Waiting, Reason: reason, Quiet: true})
 	}
-	quota := QuotaWaitText(t, now)
+	quota := ProviderWaitText(t, now)
 
 	if asks := ownerAsks(t, on); len(asks) > 0 {
 		yours(ClaimAsk, Asking, askGroup(asks), string(asks[0].Kind), "", "")
@@ -117,7 +117,8 @@ func claims(t *Thread, now time.Time, on func(repo string) bool, counts func(Rul
 		moving(ClaimHandover, Waiting, HandoverText(t.Handover))
 	}
 	if quota != "" {
-		// V0.quota-wait: nothing the owner does moves it before the reset.
+		// V0.quota-wait, V0.overload-retry: nothing the owner does moves it
+		// before the reset or the next retry.
 		moving(ClaimQuota, Waiting, quota)
 	}
 	if t.Failure != nil && quota == "" {

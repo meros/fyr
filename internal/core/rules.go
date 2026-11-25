@@ -593,6 +593,9 @@ func NextCheck(t *Thread, v *View, now time.Time) *time.Time {
 // Fyr automatically continues it after the reset + buffer (V0.quota-auto-continue),
 // or nil when auto-continue does not apply.
 func quotaCheck(t *Thread, _ time.Time) *time.Time {
+	if OverloadCanRetry(t) {
+		return OverloadRetryAt(t) // V0.overload-retry
+	}
 	if !QuotaCanAutoContinue(t) {
 		return nil
 	}

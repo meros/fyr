@@ -65,6 +65,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 	{Name: "textquestion", Urgency: Wake, Budget: true, OnReduce: textQuestionNotices}, // V0.ask-tool, V0.text-ask-nudge
 	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},                     // V0.settle-merge-fixes (1)
+	{Name: "overload.retry", Urgency: Wake, OnReduce: overloadRetryNotices},            // V0.overload-retry
 	{Name: "quota.continue", Urgency: Wake, OnReduce: quotaContinueNotices},            // V0.quota-auto-continue
 	{Name: "setup", Urgency: Next, OnReduce: setupNotices},                             // V0.prompt-fits-setup
 	{Name: "noprogress", Urgency: Next, OnReduce: noProgressNotices},                   // V0.no-progress
@@ -404,6 +405,24 @@ func quotaContinueNotices(r Reduced) []Notice {
 			what = "The provider quota has reset (the last run stopped with: " + msg + "). Continue from where you stopped."
 		}
 		out = append(out, Notice{About: "thread", Key: "quota.continue", What: what})
+	}
+	return out
+}
+
+// overload.retry: Fyr retried a thread a passing provider failure stopped
+// (V0.overload-retry).
+func overloadRetryNotices(r Reduced) []Notice {
+	var out []Notice
+	for _, ev := range r.Events {
+		if ev.Type != "overload.retried" {
+			continue
+		}
+		d, _ := ev.Data.(map[string]any)
+		what := "The last run stopped on a provider error; this is an automatic retry. Continue from where you stopped."
+		if msg := strings.TrimSpace(str(d["message"])); msg != "" {
+			what = "The last run stopped on a provider error (" + msg + "); this is an automatic retry. Continue from where you stopped."
+		}
+		out = append(out, Notice{About: "thread", Key: "overload.retry", What: what})
 	}
 	return out
 }

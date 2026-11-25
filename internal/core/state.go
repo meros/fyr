@@ -69,7 +69,7 @@ func stateThread(b *strings.Builder, t *Thread, now time.Time) {
 		run = "a run is live"
 	}
 	fmt.Fprintf(b, "thread %s %q · %s", t.ID, t.Title, run)
-	if w := QuotaWaitText(t, now); w != "" {
+	if w := ProviderWaitText(t, now); w != "" {
 		fmt.Fprintf(b, " · %s", w)
 	} else if t.Failure != nil {
 		fmt.Fprintf(b, " · last run failed (%s): %s", t.Failure.Class, FailureReason(t, now))

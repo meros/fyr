@@ -244,6 +244,9 @@ func ReduceIn(env Env, t *Thread, v *View, in Input, now time.Time) (*Thread, *V
 	// V0.quota-auto-continue: when a quota wait reaches its reset + buffer on
 	// KindClock, clear the failure and wake the agent to continue.
 	res.Events = append(res.Events, quotaContinueAfter(t, in, now)...)
+	// V0.overload-retry: the same for a passing provider failure, at the
+	// next retry of its schedule.
+	res.Events = append(res.Events, overloadRetryAfter(t, in, now)...)
 	// V0.98: touchedAt and done, after the rules (a deploy watch's end).
 	markDone(before, t, now)
 	// V0.101: once more after the done marks (an ask on a change this

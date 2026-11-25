@@ -35,7 +35,20 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 		t.QuotaResumes = 0
 		t.QuotaResumedAt = nil
 	}
-	if f != nil && (f.Class != ClassQuota || t.QuotaResumes >= MaxQuotaAutoResumes) {
+	// V0.overload-retry: a retried run that worked for a while before the
+	// provider failed again is a new incident, so its schedule starts over.
+	if f == nil || f.Class != ClassOverloaded ||
+		(t.OverloadRetriedAt != nil && now.Sub(*t.OverloadRetriedAt) >= OverloadProgress) {
+		t.OverloadRetries = 0
+		t.OverloadRetriedAt = nil
+	}
+	if f != nil && f.Class == ClassOverloaded && t.OverloadRetries >= MaxOverloadRetries {
+		// The schedule is used up: this failure is the owner's, a plain API
+		// failure in the row and in the conversation.
+		f.Class = ClassAPI
+		t.OverloadRetries, t.OverloadRetriedAt = 0, nil
+	}
+	if f != nil && !providerWaits(t, f) {
 		dropSettleDone(t) // the run did not finish
 	}
 }

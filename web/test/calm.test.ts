@@ -142,6 +142,11 @@ test("a quota stop reads as a wait", () => {
   const end = items.find((i) => i.kind === "run") as Extract<Item, { kind: "run" }>;
   assert.equal(end.failure?.class, "quota");
   assert.equal(roles(items).find((_, i) => items[i].kind === "run"), "end", "a quota wait is not the outcome");
+  // V0.overload-retry: a passing provider failure Fyr retries is a wait too.
+  const over = run({ failure: { class: "overloaded", message: "API Error: 529 Overloaded." } as never });
+  assert.deepEqual(runLabel(over), { text: "Waiting to retry: API Error: 529 Overloaded.", more: "" });
+  const overItems = buildConversation([ev("run.ended", { failure: { class: "overloaded", message: "API Error: 529 Overloaded." }, interrupted: false })]);
+  assert.equal(roles(overItems).find((_, i) => overItems[i].kind === "run"), "end", "a retry wait is not the outcome");
   // A failure that is not the quota's still is.
   const failed = buildConversation([ev("run.ended", { failure: { class: "api", message: "overloaded" }, interrupted: false })]);
   assert.equal(roles(failed).find((_, i) => failed[i].kind === "run"), "outcome");

@@ -101,8 +101,7 @@ func init() {
 				return r.Purpose == PurposeWatch && r.When.Kind == WhenQuota && r.When.Provider == provider && r.When.Window == window
 			})
 			t.Failure = nil
-			t.QuotaResumes = 0
-			t.QuotaResumedAt = nil
+			resetAutoResumes(t)
 			Unsnooze(v)
 			v.SeenAt = now
 			ArmRule(t, Rule{

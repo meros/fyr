@@ -129,6 +129,11 @@ type Conversation struct {
 	// rejecting with quota stops for the owner instead of looping.
 	QuotaResumes   int        `json:"quotaResumes,omitempty"`
 	QuotaResumedAt *time.Time `json:"quotaResumedAt,omitempty"`
+	// OverloadRetries counts consecutive automatic retries after a passing
+	// provider failure (V0.overload-retry); it picks the next wait of the
+	// schedule and bounds it.
+	OverloadRetries   int        `json:"overloadRetries,omitempty"`
+	OverloadRetriedAt *time.Time `json:"overloadRetriedAt,omitempty"`
 	// RunEnds counts the runs that ended: runEnded Rules compare with it.
 	RunEnds int `json:"runEnds,omitempty"`
 	// RunEndedAt is when the last run ended (V0.101): a failure is the

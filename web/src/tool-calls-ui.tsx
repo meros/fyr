@@ -5,7 +5,7 @@ import { useContext, useEffect, useState } from "preact/hooks";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import type { HostId } from "./hostid.ts";
 import { createContext } from "preact";
-import { agentPrompt, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, segments, type Item, type ToolCall, type SubStep, runLabel, fullOutputOf } from "./conversation.ts";
+import { agentPrompt, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, segments, type Item, type ToolCall, type SubStep, runLabel, failureWait, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon } from "./icons.tsx";
 import { duration } from "./format.ts";
@@ -55,9 +55,10 @@ export function QuietLine({ icon, line, full, fail, und }: { icon: "settled" | "
 export function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
   const [open, setOpen] = useState(false);
   const facts = it.durationMs !== undefined ? duration(it.durationMs) : "";
-  const quota = it.failure?.class === "quota";
+  const wait = failureWait(it.failure?.class);
+  const quota = !!wait; // V0.overload-retry: a passing provider failure Fyr retries is a wait too
   const icon = quota ? "waiting" : it.failure ? "failed" : it.interrupted ? "seen" : "settled";
-  const word = quota ? `Waiting for quota: ${it.failure?.message}` : it.failure ? `Failed (${it.failure.class}): ${it.failure.message}` : it.interrupted ? "Interrupted" : "Finished";
+  const word = quota ? `${wait}: ${it.failure?.message}` : it.failure ? `Failed (${it.failure.class}): ${it.failure.message}` : it.interrupted ? "Interrupted" : "Finished";
   if (!it.compact) {
     return (
       <div class={`sys prose${it.failure && !quota ? " fail" : ""}`}>

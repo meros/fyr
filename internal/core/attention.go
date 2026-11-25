@@ -81,7 +81,7 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 		return Attention{State: Settled, Section: SettledSec}
 	}
 	asks := ownerAsks(t, on)
-	quotaWait := QuotaWaitText(t, now)
+	quotaWait := ProviderWaitText(t, now)
 	if until, since := SnoozeOf(v); until != nil && until.After(now) {
 		// V0.185: until work is done never hides a request, whatever its age.
 		bound := SnoozedWhenDone(v)

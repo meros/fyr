@@ -79,6 +79,16 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
 			}
 		},
+		// V0.overload-retry: a passing provider failure is retried by the clock.
+		"overload.retry": func(t *testing.T) {
+			th := feedThread()
+			th.Failure = &Failure{Class: ClassOverloaded, Message: "API Error: 529 Overloaded.", At: ct0}
+			th, res := fstep(t, th, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0.Add(overloadBackoff[0]))
+			n := queued(t, th, "overload.retry")
+			if n.Urgency != Wake || n.Budget || !wakes(res) || !strings.Contains(n.What, "automatic retry") {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+		},
 		// V0.195: a background command sits quiet: an observer's wake, once.
 		"task.quiet": func(t *testing.T) {
 			th := feedThread()
