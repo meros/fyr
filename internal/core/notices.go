@@ -52,6 +52,7 @@ type NoticeRule struct {
 // NoticeRules is the table; each row has a test (feed_test.go).
 var NoticeRules = []NoticeRule{
 	{Name: "result", Urgency: Wake, OnReduce: resultNotices},
+	{Name: "result.long", Urgency: Next, OnReduce: longRunNotices}, // V0.run-long-notice-next
 	{Name: "watch", Urgency: Wake, Budget: true, OnReduce: watchNotices},
 	{Name: "fact.blocks", Urgency: Wake, Budget: true, OnReduce: func(r Reduced) []Notice { return factNotices(r, true) }},
 	{Name: "fact.moves", Urgency: Next, Budget: true, OnReduce: func(r Reduced) []Notice { return factNotices(r, false) }},
@@ -238,6 +239,24 @@ func project(r Reduced, now time.Time) []Effect {
 	return []Effect{{Kind: EffectFeed}}
 }
 
+// result.long: a pressed run request still runs after LongRunAfter. It
+// never starts a turn (V0.run-long-notice-next): it goes with the next
+// delivery, and the result, under the same key, replaces it while queued
+// (V0.run-long-notice (3)).
+func longRunNotices(r Reduced) []Notice {
+	var out []Notice
+	for _, ev := range r.Events {
+		if ev.Type != EventActionLong {
+			continue
+		}
+		d, _ := ev.Data.(map[string]any)
+		root, _ := d["root"].(bool)
+		out = append(out, Notice{About: "thread", Key: fmt.Sprintf("result:thread:%v", d["action"]),
+			What: requestLongText(str(d["why"]), root)})
+	}
+	return out
+}
+
 // result: the result of an effect the agent asked for, or of an action
 // anyone pressed on its records (V0.60 (4)).
 func resultNotices(r Reduced) []Notice {
@@ -264,10 +283,6 @@ func resultNotices(r Reduced) []Notice {
 			out = append(out, Notice{About: "thread", Key: fmt.Sprintf("result:thread:%v", d["action"]),
 				What: fmt.Sprintf("The owner chose Not now for %q; do not ask again unless they ask.", str(d["why"]))})
 		case ev.Type == "action" && d["dismissed"] == true:
-		case ev.Type == EventActionLong: // V0.run-long-notice: the result replaces it while queued
-			root, _ := d["root"].(bool)
-			out = append(out, Notice{About: "thread", Key: fmt.Sprintf("result:thread:%v", d["action"]),
-				What: requestLongText(str(d["why"]), root)})
 		case ev.Type == "action" && d["ended"] == true && d["request"] == true:
 			ok, _ := d["ok"].(bool)
 			exit, _ := d["exit"].(int)

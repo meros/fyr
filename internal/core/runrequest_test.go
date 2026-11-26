@@ -226,7 +226,7 @@ func TestRunRequestLongNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ns := resultNotices(Reduced{Events: res.Events})
+	ns := longRunNotices(Reduced{Events: res.Events})
 	if len(ns) != 1 || !strings.Contains(ns[0].What, `Run as root on your run request "Build"`) || !strings.Contains(ns[0].What, "still runs") {
 		t.Fatalf("long notice: %+v", ns)
 	}
@@ -237,6 +237,37 @@ func TestRunRequestLongNotice(t *testing.T) {
 	}
 	if _, _, res, _ = Reduce(th, nil, long, at(6)); len(res.Events) != 0 {
 		t.Fatalf("a run that ended told it runs: %+v", res.Events)
+	}
+}
+
+// V0.run-long-notice-next: the start notice never starts a turn. An idle
+// agent is not woken by it; the result wakes it once and it reads one line.
+// In a live turn it goes out with the next tool call.
+func TestRunRequestLongNoticeWaitsForNext(t *testing.T) {
+	th, _, _ := runReq(t, requestThread(), RunRequestArgs{Command: "make", Why: "Build"})
+	o := th.Offers[0]
+	th, press, _ := pressReq(t, th, KindActionPress, Args{"on": OnThread, "action": o.ID, "digest": o.Digest})
+	long := Input{Source: Observer(ObsProcess), Kind: KindActionLong, Thread: th.ID, Args: ActionLongArgs{On: OnThread, Action: o.ID}}
+	th, _, res, err := Reduce(th, nil, long, at(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "result:thread:" + o.ID
+	if n := queued(t, th, key); n.Urgency != Next || wakes(res) {
+		t.Fatalf("the start notice wakes the agent: %+v wakes=%v", n, wakes(res))
+	}
+	if _, ns := take(t, th, FeedTake{At: AtIdle}, at(4)); len(ns) != 0 {
+		t.Fatalf("an idle agent took the start notice: %q", whats(ns))
+	}
+	if _, ns := take(t, th, FeedTake{At: AtTool}, at(4)); len(ns) != 1 || !strings.Contains(ns[0].What, "still runs") {
+		t.Fatalf("not delivered at the next tool call: %q", whats(ns))
+	}
+	th, _, res, _ = Reduce(th, nil, Input{Source: FromEffect("e1"), Kind: KindEffectResult, Thread: th.ID, Args: EffectResult{Effect: press.Effects[0], OK: true, Text: "done"}}, at(5))
+	if n := queued(t, th, key); n.Urgency != Wake || !wakes(res) {
+		t.Fatalf("the result does not wake the agent: %+v wakes=%v", n, wakes(res))
+	}
+	if _, ns := take(t, th, FeedTake{At: AtIdle}, at(5)); len(ns) != 1 || strings.Contains(ns[0].What, "still runs") {
+		t.Fatalf("the agent reads more than the result: %q", whats(ns))
 	}
 }
 
