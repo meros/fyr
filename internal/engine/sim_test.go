@@ -112,6 +112,9 @@ func (r *simRun) newEngine() {
 	adm := guard.NewAdmission(pool, 2, simSampler{r}, simJobs{r}, 0, 0)
 	adm.Now = e.Now
 	adm.Open = e.HeavyOpen
+	if !r.h.p.OldConcurrency {
+		adm.OpenCalls = e.HeavyOpenCalls
+	}
 	pool.Install(adm)
 	e.UseSlots(pool)
 	h := r.h
@@ -764,6 +767,46 @@ func scenarios() []scenario {
 		}
 		s.learned = map[string]resource.Learned{"go test": learnedClass(2, 1.2, 150)}
 		add(s)
+	}
+	// 16c. incident-retry with the lint command known to the gate (a class,
+	// as it is once the book has learned it): each run is an admitted job.
+	{
+		s := scenario{name: "incident-retry-class", idle: 3, params: func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb },
+			desktop: func(time.Duration) float64 { return 9 * gb }}
+		for i := range 30 {
+			s.units = append(s.units, unit("lint", fmt.Sprintf("yarn lint %d", i), "yarn lint", kAdmitted, time.Duration(30*i)*time.Second, 1.2, 2.2, 240))
+		}
+		smoke := unit("smoke", "yarn smoke --db", "", kUndeclared, 20*time.Second, 2.5, 5, 240)
+		smoke.Ramp = 0.2
+		s.units = append(s.units, smoke)
+		for i := range 6 {
+			s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test ./internal/...", "go test", kAdmitted, time.Duration(30+20*i)*time.Second, 2, 1.2, 150))
+		}
+		s.learned = map[string]resource.Learned{"go test": learnedClass(2, 1.2, 150), "yarn lint": learnedClass(1.2, 2.2, 240)}
+		add(s)
+	}
+	// 16d. V0.freeze-controller: one thread starts n heavy 3 GB commands of
+	// one class at once (an agent running its lint in several shells or
+	// retrying what timed out), beside two small threads. Old is the tree
+	// that counted the thread's open calls as one need.
+	for _, n := range []int{4, 8, 16} {
+		for _, old := range []bool{true, false} {
+			name := fmt.Sprintf("concurrent-%d", n)
+			if old {
+				name += "-old"
+			}
+			s := scenario{name: name, idle: 2, learned: map[string]resource.Learned{"yarn lint": learnedClass(1.5, 3, 200), "go test": learnedClass(2, 1, 100)}}
+			if old {
+				s.params = func(p *simParams) { p.OldConcurrency = true }
+			}
+			for i := range n {
+				s.units = append(s.units, unit("lint", fmt.Sprintf("yarn lint %d", i), "yarn lint", kAdmitted, time.Duration(10*i)*time.Second, 1.5, 3, 300))
+			}
+			for i := range 4 {
+				s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test", "go test", kAdmitted, time.Duration(20+30*i)*time.Second, 2, 1, 120))
+			}
+			add(s)
+		}
 	}
 	// 17. V0.freeze-controller: one law from light to heavy. n threads each
 	// run an undeclared 3 GB, 2 core job; the budget is 12 GB.

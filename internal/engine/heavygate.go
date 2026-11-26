@@ -40,6 +40,7 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 	kind := heavy.KindOf(c.Class)
 	// The admission is taken outside heavyMu (a grant calls into the engine)
 	// and then checked under it: the thread's last call may just have ended.
+	waitsToGrow := false // V0.freeze-controller: a concurrent run that found no room waits, learned or not
 	for range 3 {
 		held, fresh := false, false
 		if h, ok := e.Slots.Holding(c.Thread); ok {
@@ -47,8 +48,15 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 			// V0.admission-tidy: a heavier command than the hold was admitted
 			// for is admitted again for the difference (a learned one never
 			// waits); a cheaper one runs.
-			if !soft && !h.Priority && e.heavier(c, h) {
-				held, _ = e.Slots.Grow(c.Thread, kind)
+			// V0.freeze-controller: another heavy command beside one that runs
+			// asks for room for both, as a heavier one does. A learned
+			// command asks too: it never waits when the thread holds nothing,
+			// but a second one at once, with the first still running, is
+			// what filled the host on 26 Nov.
+			more := e.HeavyOpenCalls(c.Thread) >= 1 && !e.callOpen(c) && !e.cheaperThanHold(c, h)
+			if !h.Priority && (more || (!soft && e.heavier(c, h))) {
+				held, _ = e.Slots.GrowFor(c.Thread, kind, e.HeavyOpenCalls(c.Thread)+1)
+				waitsToGrow = waitsToGrow || (!held && more)
 				e.syncSlotQueue()
 				e.checkSlotQueueInvariant() // V0.thread-invariants
 				if held {
@@ -83,7 +91,7 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 			return ""
 		}
 	}
-	if soft {
+	if soft && !waitsToGrow {
 		return ""
 	}
 	s := e.Slots.Snapshot()
@@ -108,6 +116,32 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 		}
 	}
 	return "" // neither held nor queued: the pool changed under us, let it run
+}
+
+// cheaperThanHold says c is another command whose class needs no more than the
+// class h was admitted for, in both resources: it runs free beside it
+// (V0.admission-tidy). The same class is not cheaper: a second run of it at
+// once is another need (V0.freeze-controller).
+func (e *Engine) cheaperThanHold(c HeavyCall, h resource.Holder) bool {
+	e.heavyMu.Lock()
+	g, ok := e.heavyGranted[c.Thread]
+	e.heavyMu.Unlock()
+	if !ok || !g.since.Equal(h.Since) || g.class == c.Class || e.SlotClassNeed == nil {
+		return false
+	}
+	was, now := e.SlotClassNeed(c.Thread, g.class), e.SlotClassNeed(c.Thread, c.Class)
+	return now.CPU <= was.CPU+1e-9 && now.Mem <= was.Mem
+}
+
+// callOpen says c's tool call is already counted open (the gate is asked again
+// for a command it held).
+func (e *Engine) callOpen(c HeavyCall) bool {
+	if c.ToolUse == "" {
+		return false
+	}
+	e.heavyMu.Lock()
+	defer e.heavyMu.Unlock()
+	return e.heavyCalls[c.Thread][c.ToolUse]
 }
 
 // grantedClass is the class a hold (its Since) was admitted for at the gate.
@@ -219,12 +253,15 @@ func (e *Engine) trackHeavy(c HeavyCall) bool {
 // with heavyMu held after heavyCalls changed.
 func (e *Engine) publishOpenLocked() {
 	open := make(map[string]bool, len(e.heavyCalls))
+	n := make(map[string]int, len(e.heavyCalls))
 	for th, c := range e.heavyCalls {
 		if len(c) > 0 {
 			open[th] = true
+			n[th] = len(c)
 		}
 	}
 	e.heavyOpen.Store(&open)
+	e.heavyOpenN.Store(&n)
 }
 
 // HeavyOpen says thread has a heavy foreground call open. It takes no lock:
@@ -232,6 +269,16 @@ func (e *Engine) publishOpenLocked() {
 func (e *Engine) HeavyOpen(thread string) bool {
 	m := e.heavyOpen.Load()
 	return m != nil && (*m)[thread]
+}
+
+// HeavyOpenCalls is how many heavy foreground calls thread has open. It takes
+// no lock, like HeavyOpen: admission asks it under the pool's lock.
+func (e *Engine) HeavyOpenCalls(thread string) int {
+	m := e.heavyOpenN.Load()
+	if m == nil {
+		return 0
+	}
+	return (*m)[thread]
 }
 
 // HeavyDone hears that a tool call ended (V0.209). When it was the last heavy

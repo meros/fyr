@@ -57,6 +57,17 @@ type Admission struct {
 	// V0.admission-tidy); nil is none. Under the pool's lock, so it must take
 	// no lock the engine holds while it calls the pool.
 	Open func(thread string) bool
+	// OpenCalls is how many heavy foreground calls a thread has open
+	// (V0.freeze-controller); nil is none. Same lock rule as Open.
+	OpenCalls func(thread string) int
+}
+
+// scaled is need for n of the same command at once.
+func scaled(need resource.Need, n int) resource.Need {
+	if n <= 1 {
+		return need
+	}
+	return resource.Need{CPU: need.CPU * float64(n), Mem: need.Mem * uint64(n)}
 }
 
 // NewAdmission is the policy for pool, with n the host's `slots` setting as
@@ -125,6 +136,13 @@ func (a *Admission) cost(h resource.Holder) (need resource.Need, grow uint64) {
 		return resource.Need{CPU: IdleShare * sig.CPU, Mem: l.Mem}, 0
 	default:
 		need, _ = a.Predict(h)
+		// V0.freeze-controller: a thread that runs several heavy commands at
+		// once holds the need of each; the hold was one need however many ran
+		// (on 26 Nov a thread's lint run started every 30 s and the pool
+		// counted one).
+		if a.OpenCalls != nil {
+			need = scaled(need, a.OpenCalls(h.Owner))
+		}
 		if isLive {
 			need = need.Max(l)
 		}
@@ -198,6 +216,7 @@ func (a *Admission) extras(held []resource.Holder) []resource.Extra {
 // It returns why not and the binding resource.
 func (a *Admission) Admit(head resource.Holder, held []resource.Holder) (bool, string, string) {
 	need, _ := a.Predict(head)
+	need = scaled(need, head.Instances) // V0.freeze-controller: a grow for another run at once
 	needs, sig := a.heldNeeds(held)
 	return DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), head.Owner, need)
 }
