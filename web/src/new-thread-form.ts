@@ -3,7 +3,7 @@
 // V0.dialogs-review: it also keeps the draft (what was typed survives closing the form), says why Start is off, and
 // goes one level up for Esc and Back.
 
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useAttachments } from "./attach-ui.tsx";
 import { sendArgs, type Chip } from "./attach.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -161,12 +161,16 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   });
   chipsRef.current = rawAtt.chips;
   const fileCount = rawAtt.chips.length;
+  // V0.draft-close-sync: layout effects, because their cleanup runs as the form leaves the page. Preact 11 runs a
+  // useEffect's cleanup on unmount only after the next paint, so a form opened again within that frame (Esc, then c)
+  // read the storage before the closed one had written its draft, and opened empty; the closed form's late timer could
+  // then write over the new one.
   /* eslint-disable react-hooks/exhaustive-deps -- keepDraft reads refs only: it runs a moment after the form or its files change (not on every key, a long prompt is written whole each time), and at once as the form closes or the page goes */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const t = setTimeout(keepDraft, DRAFT_WRITE_MS);
     return () => clearTimeout(t);
   }, [f, fileCount]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Another tab started the thread or discarded the draft: this form must not put it back as it closes.
     const gone = (e: StorageEvent) => {
       if (e.key === NEW_DRAFT_KEY && e.newValue === null) stale.current = true;
