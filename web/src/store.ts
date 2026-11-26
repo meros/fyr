@@ -395,6 +395,16 @@ function compareActivityDesc(a: Thread, b: Thread): number {
   return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }
 
+/** V0.snoozed-wake-order: Snoozed, the thread that wakes first on top. A snooze until work is done has no wake time
+ *  of its own (its snoozeUntil is only the cap), so it goes after the timed ones, as the section's "next:" hint leaves it
+ *  out; ties by newest activity. */
+function compareWake(a: Thread, b: Thread): number {
+  const wake = (t: Thread) => (t.view?.snoozeWhenDone ? Infinity : ts(t.view?.snoozeUntil) || Infinity);
+  const wa = wake(a);
+  const wb = wake(b);
+  return (wa === wb ? 0 : wa < wb ? -1 : 1) || compareActivityDesc(a, b);
+}
+
 /** V0.207: Seen, the thread read last first. Reading is the owner's act, so nothing else moves a row here. */
 function compareSeen(a: Thread, b: Thread): number {
   return (ts(b.view?.seenAt) || activity(b)) - (ts(a.view?.seenAt) || activity(a)) || a.id.localeCompare(b.id);
@@ -473,7 +483,7 @@ export function sections(threads: Record<string, Thread>, queue: readonly QueueE
   out.working.sort(byArrival);
   out.unread.sort(byArrival);
   out.seen.sort(compareSeen);
-  out.snoozed.sort(compareActivityDesc);
+  out.snoozed.sort(compareWake);
   out.settled.sort(compareActivityDesc);
   out.pinned = SECTIONS.filter((s) => s.key !== "slots").flatMap((s) => out[s.key].filter(isPinned));
   return out;

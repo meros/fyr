@@ -82,8 +82,19 @@ test("needs you puts merge asks after questions and before failures", () => {
   assert.deepEqual(sec.needs.map((t) => t.id), ["question-old", "both", "merge-new", "failed"]);
 });
 
-// SPEC 0.5 V0.26, V0.stable-groups: Working sorts by run start, oldest first; seen, snoozed, settled by newest activity
-test("working sorts by runStartedAt (oldest started first); seen, snoozed, settled by newest activity", () => {
+// V0.snoozed-wake-order: Snoozed lists the thread that wakes first on top; "until work is done" after the timed ones
+test("snoozed sorts by wake time, earliest first; a snooze until work is done goes last", () => {
+  const ts = [
+    thread("late", "snoozed", "snoozed", { activityAt: at(50), view: { snoozeUntil: at(40) } }),
+    thread("done", "snoozed", "snoozed", { activityAt: at(59), view: { snoozeUntil: at(1), snoozeWhenDone: true } }),
+    thread("soon", "snoozed", "snoozed", { activityAt: at(2), view: { snoozeUntil: at(10) } }),
+  ];
+  const sec = sections(view(applySnapshot(initialStore(), snap(ts), 0)).threads);
+  assert.deepEqual(sec.snoozed.map((t) => t.id), ["soon", "late", "done"]);
+});
+
+// SPEC 0.5 V0.26, V0.stable-groups: Working sorts by run start, oldest first; seen and settled by newest activity
+test("working sorts by runStartedAt (oldest started first); seen and settled by newest activity", () => {
   const ts = [
     thread("w-late", "working", "working", { runStartedAt: at(30), activityAt: at(59) }),
     thread("w-early", "working", "working", { runStartedAt: at(5), activityAt: at(10) }),
