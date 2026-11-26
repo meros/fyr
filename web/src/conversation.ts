@@ -86,7 +86,8 @@ export type Item = (
       /** the owner's last message the agent read: the only one that says "Read" */
       lastRead: boolean;
     }
-  | { kind: "assistant"; key: string; text: string; quiet?: boolean }
+  /** asks: V0.ask-closes-answer, the agent asked the owner something right after this text */
+  | { kind: "assistant"; key: string; text: string; quiet?: boolean; asks?: boolean }
   | { kind: "tools"; key: string; calls: ToolCall[] }
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; durationMs?: number; compact: boolean }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string; line: string }
@@ -236,9 +237,13 @@ export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { 
   let inRun = false;
   let now = 0;
   const meta = (): ItemMeta => (inRun ? { at: now, run } : { at: now });
+  // V0.ask-closes-answer: the agent's newest text of this run since the owner's last message; a question closes it.
+  let said = -1;
 
   const pushItem = (it: Item) => {
     group = null;
+    if (it.kind === "user") said = -1;
+    else if (it.kind === "assistant" && !it.quiet) said = items.length;
     // a held message keeps the time it was sent; it joins the run that read it
     items.push({ ...meta(), ...it, ...(inRun ? { run } : {}) });
   };
@@ -267,6 +272,7 @@ export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { 
         case "run.started":
           run++;
           inRun = true;
+          said = -1;
           break;
         case "user": {
           const text = str(e.data?.text);
@@ -335,6 +341,10 @@ export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { 
             if (d.type === "assistant" && b.type === "text") {
               if (b.text?.trim()) pushItem({ kind: "assistant", key: `${key}.${items.length}`, text: b.text, ...(forcedTurn ? { quiet: true } : {}) });
             } else if (d.type === "assistant" && b.type === "tool_use") {
+              if (ASKING_TOOLS.has(b.name ?? "") && said >= 0) {
+                items[said] = { ...(items[said] as Extract<Item, { kind: "assistant" }>), asks: true };
+                said = -1;
+              }
               const c = newCall(b, at);
               calls.set(c.id, c);
               if (!group) {
@@ -364,6 +374,7 @@ export function conversationBuilder(opts: Omit<BuildOptions, "outbox"> = {}): { 
             compact: !details,
           });
           inRun = false;
+          said = -1;
           break;
         }
         case "preview": {
@@ -593,6 +604,9 @@ export function toolRows(calls: ToolCall[]): ToolRow[] {
 }
 
 // ---- V0.21: calm tool output ----
+
+/** V0.ask-closes-answer: calls that put a question or a request in front of the owner and wait for the answer. */
+const ASKING_TOOLS = new Set(["mcp__fyr__ask", "AskUserQuestion", "mcp__fyr__run_request"]);
 
 /** Calls whose result has its own card in the log: the call itself never shows (unless it failed). */
 const CARD_TOOLS = new Set(["mcp__fyr__view_publish", "mcp__fyr__view_state", "mcp__fyr__view_unchanged", "mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "mcp__fyr__ask", "AskUserQuestion"]);
@@ -887,7 +901,8 @@ function turnOf(it: Item, users: number): string {
 /**
  * The role of each item. Outcome: the owner's messages, the agent's last message of a run (the
  * newest one while the run goes on), the agent's last message before a mid-run owner message it
- * read (that message closed an answer, V0.midrun-answer), previews, and failures (a failed run,
+ * read (that message closed an answer, V0.midrun-answer), the agent's last message before it asked
+ * the owner something (a question or a Run card, V0.ask-closes-answer), previews, and failures (a failed run,
  * effect or agent). Process: everything the agent did on the way there, its earlier messages
  * included.
  */
@@ -921,7 +936,7 @@ export function roles(items: Item[]): Role[] {
       case "runcard": // never folded away: it holds buttons and a result
         return "outcome";
       case "assistant":
-        return !it.quiet && (lastText.get(turns[i]) === i || answered.has(i)) ? "outcome" : "process";
+        return !it.quiet && (lastText.get(turns[i]) === i || answered.has(i) || it.asks) ? "outcome" : "process";
       case "run":
         // V0.quota-wait, V0.overload-retry: a wait is not an outcome the owner acts on.
         return it.failure && !failureWait(it.failure.class) ? "outcome" : "end";

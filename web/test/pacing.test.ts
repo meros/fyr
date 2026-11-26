@@ -183,3 +183,67 @@ test("a fold of messages only names them", () => {
   const fold = pace(items).find((e) => e.kind === "fold") as Extract<Entry, { kind: "fold" }>;
   assert.equal(fold.text, "2 messages");
 });
+
+// V0.ask-closes-answer: the text the agent wrote before it asked the owner something is not folded away.
+test("the reported run: the explanation before a question card and the closing line are both outcomes", () => {
+  const items = buildConversation([
+    ev("user", { text: "Go on" }),
+    ev("run.started", {}),
+    toolUse("a"),
+    result("a"),
+    text("## How a call is stored today\n\n| Value | What it says |\n|---|---|\n| No answer | how the call went |"),
+    toolUse("q", "mcp__fyr__ask", { questions: [{ question: "Change the data model too?" }] }),
+    result("q"),
+    text("I'll wait for your answer."),
+    ev("run.ended", {}),
+  ]);
+  assert.deepEqual(shape(pace(items)), [
+    "outcome:user",
+    "process:tools",
+    "outcome:assistant:## How a call is stored today\n\n| Value | What it says |\n|---|---|\n| No answer | how the call went |",
+    "outcome:assistant:I'll wait for your answer.",
+    "end:run",
+  ]);
+});
+
+test("AskUserQuestion and a Run card request close the text before them too; narration between still folds", () => {
+  for (const name of ["AskUserQuestion", "mcp__fyr__run_request"]) {
+    const items = buildConversation([
+      ev("run.started", {}),
+      text("Looking."),
+      toolUse("a"),
+      result("a"),
+      text("Here is what I found."),
+      toolUse("q", name, {}),
+      result("q"),
+      text("Next I check the logs."),
+      toolUse("b"),
+      result("b"),
+      text("Done."),
+      ev("run.ended", {}),
+    ]);
+    const rs = roles(items);
+    const said = items.map((it, i) => (it.kind === "assistant" ? `${rs[i]}:${it.text}` : "")).filter(Boolean);
+    assert.deepEqual(said, ["process:Looking.", "outcome:Here is what I found.", "process:Next I check the logs.", "outcome:Done."], name);
+  }
+});
+
+test("a question in a later run does not close a text from an earlier run", () => {
+  const items = buildConversation([
+    ev("run.started", {}),
+    text("First."),
+    toolUse("a"),
+    result("a"),
+    text("Earlier answer."),
+    ev("run.ended", {}),
+    ev("run.started", {}),
+    toolUse("q", "mcp__fyr__ask", {}),
+    result("q"),
+    ev("run.ended", {}),
+  ]);
+  const rs = roles(items);
+  assert.deepEqual(
+    items.map((it, i) => (it.kind === "assistant" ? `${rs[i]}:${it.text}` : "")).filter(Boolean),
+    ["process:First.", "outcome:Earlier answer."],
+  );
+});
