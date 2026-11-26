@@ -276,3 +276,43 @@ func TestRuleFanoutIsNotALoop(t *testing.T) {
 		t.Fatal(ov)
 	}
 }
+
+// SPEC 7.2, V0.watch-head-moved (#725): a watch armed on head A does not
+// fire on the change's other facts (checks, review), fires once when Fyr
+// reads head B, whoever pushed it, and is then removed.
+func TestWatchHeadMovedFiresOnceOnANewHead(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	const url = "https://github.com/o/r/pull/12"
+	read := func(pr PR, at time.Time) Result {
+		pr.URL, pr.State, pr.CheckedAt = url, "OPEN", &at
+		return step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Args: pr}, at)
+	}
+	read(PR{Checks: ChecksPending, Head: "aaaa1111"}, ct0)
+	c := th.Changes[0]
+	res := step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Kind: WhenHeadMoved, Change: c.Key}}}, ct0.Add(time.Minute))
+	if fired(res, "w_1") != 0 || FindRule(th, "w_1") == nil {
+		t.Fatalf("armed: %+v %+v", res.Events, th.Rules)
+	}
+	if res = read(PR{Checks: ChecksPass, Head: "aaaa1111", Review: "APPROVED"}, ct0.Add(2*time.Minute)); fired(res, "w_1") != 0 {
+		t.Fatal("the watch fired on checks and review of the same head")
+	}
+	if res = read(PR{Checks: ChecksPending, Head: "bbbb2222"}, ct0.Add(3*time.Minute)); fired(res, "w_1") != 1 || FindRule(th, "w_1") != nil {
+		t.Fatalf("a new head did not fire the watch once: %+v %+v", res.Events, th.Rules)
+	}
+	if res = read(PR{Checks: ChecksPending, Head: "cccc3333"}, ct0.Add(4*time.Minute)); fired(res, "w_1") != 0 {
+		t.Fatal("a fired watch fired again")
+	}
+}
+
+// V0.watch-head-moved: with no head read yet there is nothing to compare
+// with, so the watch is refused rather than fire on the first read.
+func TestWatchHeadMovedNeedsAKnownHead(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	step(t, th, v, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Args: PR{URL: "https://github.com/o/r/pull/12", State: "OPEN"}}, ct0)
+	c := th.Changes[0]
+	if _, _, _, err := Reduce(th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_1", Then: "notify",
+		When: When{Kind: WhenHeadMoved, Change: c.Key}}}, ct0); err == nil {
+		t.Fatal("a headMoved watch armed with no head known")
+	}
+}
