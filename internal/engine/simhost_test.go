@@ -67,6 +67,9 @@ type simParams struct {
 	// the budget. Off is the tree before it, which sized both from the free
 	// budget at the move (73 MB on 19 Nov).
 	LimitFloor bool
+	// OldConcurrency: V0.freeze-controller off, a thread's open heavy calls
+	// count as one need (the tree before it).
+	OldConcurrency bool
 }
 
 func defaultParams() simParams {

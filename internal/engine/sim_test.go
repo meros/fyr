@@ -112,6 +112,9 @@ func (r *simRun) newEngine() {
 	adm := guard.NewAdmission(pool, 2, simSampler{r}, simJobs{r}, 0, 0)
 	adm.Now = e.Now
 	adm.Open = e.HeavyOpen
+	if !r.h.p.OldConcurrency {
+		adm.OpenCalls = e.HeavyOpenCalls
+	}
 	pool.Install(adm)
 	e.UseSlots(pool)
 	h := r.h
@@ -450,6 +453,21 @@ func (r *simRun) run(fyr bool, horizon time.Duration) {
 		if fyr {
 			*r.now = r.t0.Add(h.t)
 		}
+		if os.Getenv("FYR_SIM_TRACE") == r.sc.name && fyr && h.t%(30*time.Second) == 0 {
+			run, gated, frz := map[string]int{}, 0, 0
+			for _, u := range h.units {
+				switch {
+				case u.state == sRunning && u.frozen:
+					frz++
+				case u.state == sRunning:
+					run[u.Thread]++
+				case u.state == sGated:
+					gated++
+				}
+			}
+			s := h.signals()
+			fmt.Printf("TRACE t=%4.0fs running=%v gated=%d frozen=%d agentsMem=%.1fGB swap=%.1fGB stall=%.0f%% head=%.0f%%\n", h.t.Seconds(), run, gated, frz, h.agentsRes/gb, h.swapUsed/gb, *s.UnitStall, *s.Headroom*100)
+		}
 		if v := h.oomd(); v != "" {
 			k := simKill{at: h.t, thread: v, guardable: r.guardable(v)}
 			h.kills = append(h.kills, k)
@@ -725,10 +743,128 @@ func scenarios() []scenario {
 		a.Background, b.Background = true, true
 		add(scenario{name: "background", idle: 1, units: []*simUnit{a, b}, learned: map[string]resource.Learned{"make check": learnedClass(2, 1.5, 300)}})
 	}
+	// 16. V0.freeze-controller: the 26 Nov laptop. One thread's lint run of
+	// four heavy parts (7.5 GB with the stack), a 5 GB smoke run of another,
+	// and six threads with small jobs, nine agents in all, swap cap 10 GB.
+	{
+		s := scenario{name: "incident-26nov", idle: 3, params: func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb }}
+		for i, g := range []float64{2.2, 1.9, 0.9, 0.6} {
+			u := unit("lint", fmt.Sprintf("lint part %d", i), "", kUndeclared, 0, 1.2, g, 300)
+			u.Ramp = 0.1
+			s.units = append(s.units, u)
+		}
+		smoke := unit("smoke", "yarn smoke --db", "", kUndeclared, 20*time.Second, 2.5, 5, 240)
+		smoke.Ramp = 0.2
+		s.units = append(s.units, smoke)
+		for i := range 6 {
+			s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test ./internal/...", "go test", kAdmitted, time.Duration(30+20*i)*time.Second, 2, 1.2, 150))
+		}
+		s.learned = map[string]resource.Learned{"go test": learnedClass(2, 1.2, 150)}
+		add(s)
+	}
+	// 16b. The same laptop with what the log also showed: the desktop and the
+	// user's session hold 9 GB, and the lint thread starts a new run every 30 s
+	// (its agent retries what timed out), so parts pile up while the first
+	// ones are slowed by the stall.
+	{
+		s := scenario{name: "incident-retry", idle: 3, params: func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb },
+			desktop: func(time.Duration) float64 { return 9 * gb }}
+		for i := range 30 {
+			u := unit("lint", fmt.Sprintf("yarn lint %d", i), "", kUndeclared, time.Duration(30*i)*time.Second, 1.2, 2.2, 240)
+			u.Ramp = 0.1
+			s.units = append(s.units, u)
+		}
+		smoke := unit("smoke", "yarn smoke --db", "", kUndeclared, 20*time.Second, 2.5, 5, 240)
+		smoke.Ramp = 0.2
+		s.units = append(s.units, smoke)
+		for i := range 6 {
+			s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test ./internal/...", "go test", kAdmitted, time.Duration(30+20*i)*time.Second, 2, 1.2, 150))
+		}
+		s.learned = map[string]resource.Learned{"go test": learnedClass(2, 1.2, 150)}
+		add(s)
+	}
+	// 16c. incident-retry with the lint command known to the gate (a class,
+	// as it is once the book has learned it): each run is an admitted job.
+	{
+		s := scenario{name: "incident-retry-class", idle: 3, params: func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb },
+			desktop: func(time.Duration) float64 { return 9 * gb }}
+		for i := range 30 {
+			s.units = append(s.units, unit("lint", fmt.Sprintf("yarn lint %d", i), "yarn lint", kAdmitted, time.Duration(30*i)*time.Second, 1.2, 2.2, 240))
+		}
+		smoke := unit("smoke", "yarn smoke --db", "", kUndeclared, 20*time.Second, 2.5, 5, 240)
+		smoke.Ramp = 0.2
+		s.units = append(s.units, smoke)
+		for i := range 6 {
+			s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test ./internal/...", "go test", kAdmitted, time.Duration(30+20*i)*time.Second, 2, 1.2, 150))
+		}
+		s.learned = map[string]resource.Learned{"go test": learnedClass(2, 1.2, 150), "yarn lint": learnedClass(1.2, 2.2, 240)}
+		add(s)
+	}
+	// 16d. V0.freeze-controller: one thread starts n heavy 3 GB commands of
+	// one class at once (an agent running its lint in several shells or
+	// retrying what timed out), beside two small threads. Old is the tree
+	// that counted the thread's open calls as one need.
+	for _, n := range []int{4, 8, 16} {
+		for _, old := range []bool{true, false} {
+			name := fmt.Sprintf("concurrent-%d", n)
+			if old {
+				name += "-old"
+			}
+			s := scenario{name: name, idle: 2, learned: map[string]resource.Learned{"yarn lint": learnedClass(1.5, 3, 200), "go test": learnedClass(2, 1, 100)}}
+			if old {
+				s.params = func(p *simParams) { p.OldConcurrency = true }
+			}
+			for i := range n {
+				s.units = append(s.units, unit("lint", fmt.Sprintf("yarn lint %d", i), "yarn lint", kAdmitted, time.Duration(10*i)*time.Second, 1.5, 3, 300))
+			}
+			for i := range 4 {
+				s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test", "go test", kAdmitted, time.Duration(20+30*i)*time.Second, 2, 1, 120))
+			}
+			add(s)
+		}
+	}
+	// 16e. incident-retry when the repeat of a command is a class at once but
+	// nothing is learned of it: the gate charges the prior (1/N of the host).
+	{
+		s := scenario{name: "incident-retry-unknown", idle: 3, params: func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb },
+			desktop: func(time.Duration) float64 { return 9 * gb }}
+		for i := range 30 {
+			s.units = append(s.units, unit("lint", fmt.Sprintf("yarn lint %d", i), "yarn lint", kAdmitted, time.Duration(30*i)*time.Second, 1.2, 2.2, 240))
+		}
+		smoke := unit("smoke", "yarn smoke --db", "", kUndeclared, 20*time.Second, 2.5, 5, 240)
+		smoke.Ramp = 0.2
+		s.units = append(s.units, smoke)
+		for i := range 6 {
+			s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test ./internal/...", "go test", kAdmitted, time.Duration(30+20*i)*time.Second, 2, 1.2, 150))
+		}
+		s.learned = map[string]resource.Learned{"go test": learnedClass(2, 1.2, 150)}
+		add(s)
+	}
+	// 17. V0.freeze-controller: one law from light to heavy. n threads each
+	// run an undeclared 3 GB, 2 core job; the budget is 12 GB.
+	for _, n := range []int{2, 4, 6, 8} {
+		s := scenario{name: fmt.Sprintf("ladder-%d", n), idle: 1}
+		for i := range n {
+			u := unit(fmt.Sprintf("l%d", i), "tsc -b", "", kUndeclared, time.Duration(5*i)*time.Second, 2, 3, 300)
+			u.Ramp = 0.15
+			s.units = append(s.units, u)
+		}
+		add(s)
+	}
+	// 17b. The ladder with the tool a class (unknown, nothing learned): what
+	// it would be if the gate named the same heavy command from several threads.
+	for _, n := range []int{4, 8} {
+		s := scenario{name: fmt.Sprintf("ladder-class-%d", n), idle: 1}
+		for i := range n {
+			s.units = append(s.units, unit(fmt.Sprintf("l%d", i), "tsc -b", "tsc -b", kAdmitted, time.Duration(5*i)*time.Second, 2, 3, 300))
+		}
+		add(s)
+	}
 	// V0.sim-fixes fixed the rest of V0.load-sim's list: a violation of
 	// those scenarios now fails the test.
 	known := map[string]map[string]string{
-		"swap-full": {invOomd: whyFrozenKill},
+		"swap-full":      {invOomd: whyFrozenKill},
+		"incident-retry": {invOomd: whyRetryStorm},
 	}
 	for i := range out {
 		out[i].expect = known[out[i].name]
@@ -739,6 +875,15 @@ func scenarios() []scenario {
 // Why the current code makes the violations the table lists (V0.load-sim).
 // Each is a finding to fix; remove its line when the fix lands.
 const (
+	// V0.freeze-controller: the 26 Nov laptop with the retry the log showed
+	// (a new lint run every 30 s from a thread whose agent retries what timed
+	// out) and the desktop at 9 GB: 31 threads lost to oomd, 6 of 37 jobs done.
+	// The undeclared parts start whatever the guard holds, so freezing cannot
+	// outrun them. Tried and not taken (see docs/changes/freeze-controller.md):
+	// the heaviest thread first, a wait that shrinks with the stall, and
+	// freezing all the heavy work at oomd's limit; each lost more threads to
+	// oomd on ladder-4/6/8 than today's rules.
+	whyRetryStorm = "a thread starts a new heavy part every 30 s and the guard cannot hold what the gate does not see: parts pile up faster than freezes take memory out"
 	// V0.sim-fixes (5): left as a finding of the model. The 2 GB of swap
 	// cannot hold the two parts that run, so the stall reaches oomd's limit
 	// with or without Fyr (no Fyr loses a thread too); the model counts the

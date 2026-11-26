@@ -72,3 +72,18 @@ func FrozenUndeclared(fs []Frozen, thread string) (Frozen, bool) {
 	}
 	return Frozen{}, false
 }
+
+// HoldingFreezes is how many of fs fill a slot of MaxFrozen
+// (V0.freeze-cap-holds-memory): the freezes of the whole work that held
+// TurnMinRSS or more when frozen. A freeze of a small part frees nothing, and
+// work taking turns (Active != 0) has a part running; counting either let the
+// limit stop the freeze of the one thread whose memory caused the stall.
+func HoldingFreezes(fs []Frozen) int {
+	n := 0
+	for _, f := range fs {
+		if f.Active == 0 && f.Mem >= TurnMinRSS {
+			n++
+		}
+	}
+	return n
+}

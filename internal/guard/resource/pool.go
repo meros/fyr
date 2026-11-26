@@ -18,6 +18,11 @@ type Holder struct {
 	Kind     string    `json:"kind"`
 	Since    time.Time `json:"since"`
 	Priority bool      `json:"priority,omitempty"`
+	// Instances (V0.freeze-controller): how many heavy commands the hold asks
+	// to run at once, set by a grow when a thread starts another beside one
+	// that runs; 0 is one. The need of the holders that run is counted from
+	// the open calls (Admission.OpenCalls), not from this.
+	Instances int `json:"instances,omitempty"`
 	// V0.163, in a snapshot: the job's need (learned or live: cores and
 	// bytes) as percentages of the host, CPU and memory, and Pct the larger
 	// of the two; for a waiter, what it will need. Need is nil without

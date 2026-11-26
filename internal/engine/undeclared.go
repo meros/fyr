@@ -11,3 +11,14 @@ func (e *Engine) flags() []resource.Undeclared {
 	}
 	return e.Undeclared()
 }
+
+// HasUndeclared says thread runs heavy work Fyr did not admit now
+// (V0.freeze-controller): a repeat of its command is a class (heavy.Calls).
+func (e *Engine) HasUndeclared(thread string) bool {
+	for _, f := range e.flags() {
+		if f.Thread == thread {
+			return true
+		}
+	}
+	return false
+}

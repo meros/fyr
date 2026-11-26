@@ -81,10 +81,22 @@ func (w *wiring) wireHeavy() {
 	// V0.rerun-classes: the classes the owner marked rerunnable on this host.
 	rerun := &cgroup.RerunClasses{KV: h.st}
 	rerun.Load()
+	calls := &heavy.Calls{} // V0.freeze-controller: what each agent ran, to name its unadmitted work
 	mgr.SetOnBash(func(c agent.BashCall) string {
+		now := time.Now()
 		groups.Bash(c.Thread, c.Command)
 		services.Bash(c.Thread, c.Command)
 		class, text := heavyCmds.Match(c.Command)
+		// V0.freeze-controller: a thread that runs heavy work Fyr did not
+		// admit and runs the same command again (the retry of a timeout) has a
+		// class at once, without three finished episodes: the first storm
+		// would be over before one ended.
+		if class == "" && eng.HasUndeclared(c.Thread) {
+			if r := calls.Repeat(c.Thread, c.Command, now); r != "" {
+				class, text = r, r
+			}
+		}
+		calls.Note(c.Thread, c.Command, now)
 		if class == "" && eng.RerunWaiting(c.Thread) {
 			class = rerun.Match("", c.Command) // a killed undeclared job's rerun is admitted too
 		}
@@ -132,8 +144,14 @@ func (w *wiring) wireHeavy() {
 	detector.OnEnd = func(ep cgroup.Episode) {
 		ep.Project = eng.ThreadProject(ep.Thread)
 		episodes.Add(ep)
-		if ep.Command != "" {
-			book.Saw(heavy.Seen{Thread: ep.Thread, Command: ep.Command, At: ep.End, Memory: ep.PeakMem, CPU: ep.MeanCores, Seconds: int(ep.End.Sub(ep.Start).Seconds())})
+		// V0.freeze-controller: the command the agent ran names the work (the
+		// gate matches that text); the process command line is the fallback.
+		cmd := calls.Cause(ep.Thread, ep.Start)
+		if cmd == "" {
+			cmd = ep.Command
+		}
+		if cmd != "" {
+			book.Saw(heavy.Seen{Thread: ep.Thread, Command: cmd, At: ep.End, Memory: ep.PeakMem, CPU: ep.MeanCores, Seconds: int(ep.End.Sub(ep.Start).Seconds())})
 		}
 		groups.EndUndeclared(ep.Thread)
 		stops.EndUndeclared(ep.Thread)

@@ -314,6 +314,12 @@ func (p *Pool) TryAcquire(owner, kind string) bool {
 // meanwhile; the grant replaces the hold. held: it fits now; else ahead is how
 // many wait before it.
 func (p *Pool) Grow(owner, kind string) (held bool, ahead int) {
+	return p.GrowFor(owner, kind, 0)
+}
+
+// GrowFor is Grow for instances heavy commands at once (V0.freeze-controller;
+// 0 and 1 are one): the waiter's need is counted that many times.
+func (p *Pool) GrowFor(owner, kind string, instances int) (held bool, ahead int) {
 	if p.Off() {
 		return true, 0
 	}
@@ -326,7 +332,7 @@ func (p *Pool) Grow(owner, kind string) (held bool, ahead int) {
 		p.mu.Unlock()
 		return false, i
 	}
-	h := resource.Holder{Owner: owner, Kind: kind, Since: p.now()}
+	h := resource.Holder{Owner: owner, Kind: kind, Since: p.now(), Instances: instances}
 	if len(p.wait) == 0 && p.admitLocked(h) {
 		p.mu.Unlock()
 		return true, 0

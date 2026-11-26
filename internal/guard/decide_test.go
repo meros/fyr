@@ -171,9 +171,17 @@ func TestFreezeGateAndRoom(t *testing.T) {
 		{"young last, near oomd", 1, 2, now.Add(-time.Second), true, false, false},
 		{"room, last old enough", 1, 2, now.Add(-AddFreezeAfter), false, false, false},
 	} {
-		block, say := freezeRoom(c.kept, c.max, c.last, now, c.oomd)
+		block, say := freezeRoom(c.kept, c.kept, c.max, c.last, now, c.oomd)
 		if block != c.block || say != c.say {
 			t.Errorf("%s: block=%v say=%v", c.name, block, say)
 		}
+	}
+	// V0.freeze-cap-holds-memory: freezes that hold no memory do not fill the
+	// limit, but a young last freeze still makes the next wait.
+	if block, _ := freezeRoom(2, 0, 2, now.Add(-time.Hour), now, false); block {
+		t.Error("two freezes holding no memory filled the limit")
+	}
+	if block, _ := freezeRoom(2, 0, 2, now.Add(-time.Second), now, false); !block {
+		t.Error("a young last freeze did not make the next wait")
 	}
 }

@@ -84,7 +84,8 @@ func (w *wiring) wireGuard() {
 	// Decision 0029 S2–S4, V0.163, V0.164: admission by a budget of costs,
 	// gated by the slowdown and memory; the policy is internal/guard.
 	adm := guard.NewAdmission(pool, n, sampler, jobs, cfg.SlotSlowdownMax, cfg.SlotMemoryReserve)
-	adm.Open = eng.HeavyOpen // V0.admission-tidy: a quiet open call is not idle
+	adm.Open = eng.HeavyOpen           // V0.admission-tidy: a quiet open call is not idle
+	adm.OpenCalls = eng.HeavyOpenCalls // V0.freeze-controller: each open call counts its need
 	pool.Install(adm)
 	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
 	// being slow and restarts none into the same thrash.

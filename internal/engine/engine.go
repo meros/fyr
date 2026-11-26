@@ -178,6 +178,8 @@ type Engine struct {
 	// heavyOpen: the threads with a heavy foreground call open, published for
 	// admission, which reads it under the pool's lock (V0.admission-tidy).
 	heavyOpen atomic.Pointer[map[string]bool]
+	// heavyOpenN: how many heavy foreground calls each thread has open, published like heavyOpen (V0.freeze-controller).
+	heavyOpenN atomic.Pointer[map[string]int]
 	// gs is the memory guard's state between ticks (V0.guard-tick: internal/guard
 	// decides; the engine keeps it and applies the decisions), under mu.
 	gs           guard.State
