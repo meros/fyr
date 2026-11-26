@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -452,7 +453,8 @@ func (s *Service) Observe(profile string, info map[string]any) {
 }
 
 // NormalizeWindow maps common window spellings ("5h", "five_hour", "7d",
-// "seven_day") to Fyr's canonical names ("5 h", "7 d").
+// "seven_day", "seven_day_opus") to Fyr's canonical names ("5 h", "7 d",
+// "7 d Opus").
 func NormalizeWindow(name string) string {
 	s := strings.TrimSpace(name)
 	switch strings.ToLower(strings.ReplaceAll(s, " ", "")) {
@@ -461,7 +463,57 @@ func NormalizeWindow(name string) string {
 	case "7d", "seven_day", "7days", "7day":
 		return "7 d"
 	}
+	if n := windowName(strings.ToLower(s)); n != "" {
+		return n
+	}
 	return s
+}
+
+// windowKey is a provider's window key: a span ("five_hour", "seven_day")
+// and an optional scope ("_opus", "_sonnet", "_oauth_apps"). A key of any
+// other shape (a flag, extra_usage, a code name) is not a window.
+var windowKey = regexp.MustCompile(`^(one|two|three|four|five|six|seven|eight|ten|twelve|fourteen|thirty)_(hour|day|week|month)s?(?:_([a-z0-9_]+))?$`)
+
+var spanCount = map[string]string{"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "ten": "10", "twelve": "12", "fourteen": "14", "thirty": "30"}
+var spanUnit = map[string]string{"hour": "h", "day": "d", "week": "w", "month": "mo"}
+var scopeName = map[string]string{"opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku", "oauth_apps": "apps"}
+
+// windowName is Fyr's name for a provider's window key ("five_hour" → "5 h",
+// "seven_day_opus" → "7 d Opus"), or "" when the key is not a window.
+func windowName(key string) string {
+	m := windowKey.FindStringSubmatch(key)
+	if m == nil {
+		return ""
+	}
+	n := spanCount[m[1]] + " " + spanUnit[m[2]]
+	if m[3] == "" {
+		return n
+	}
+	sc := scopeName[m[3]]
+	if sc == "" {
+		sc = strings.ReplaceAll(m[3], "_", " ")
+	}
+	return n + " " + sc
+}
+
+// windowHours is how long a window name's span is, for its order.
+func windowHours(name string) float64 {
+	var k float64
+	var u string
+	if _, err := fmt.Sscanf(name, "%g %s", &k, &u); err != nil {
+		return math.MaxFloat64
+	}
+	switch u {
+	case "h":
+		return k
+	case "d":
+		return k * 24
+	case "w":
+		return k * 24 * 7
+	case "mo":
+		return k * 24 * 30
+	}
+	return math.MaxFloat64
 }
 
 // ResetOf resolves the reset time of a profile's quota window for a quota wake
@@ -511,7 +563,7 @@ func (s *Service) ResetOf(ctx context.Context, profile, window string) (string, 
 	var picked *Window
 	if want := NormalizeWindow(window); want != "" {
 		for i := range st.Windows {
-			if st.Windows[i].Name == want {
+			if strings.EqualFold(st.Windows[i].Name, want) {
 				picked = &st.Windows[i]
 				break
 			}
@@ -574,20 +626,19 @@ func (s *Service) ResetOf(ctx context.Context, profile, window string) (string, 
 	return picked.Name, picked.ResetsAt.UTC(), nil
 }
 
-var windowNames = map[string]string{"five_hour": "5 h", "seven_day": "7 d"}
-
+// sortWindows orders windows by span (5 h before 7 d), the whole-account
+// window before its scoped ones ("7 d" before "7 d Opus"), then by name.
 func sortWindows(ws []Window) {
-	rank := func(n string) int {
-		if n == "5 h" {
-			return 0
+	sort.SliceStable(ws, func(i, j int) bool {
+		a, b := ws[i].Name, ws[j].Name
+		if ha, hb := windowHours(a), windowHours(b); ha != hb {
+			return ha < hb
 		}
-		return 1
-	}
-	for i := 1; i < len(ws); i++ {
-		for j := i; j > 0 && rank(ws[j].Name) < rank(ws[j-1].Name); j-- {
-			ws[j], ws[j-1] = ws[j-1], ws[j]
+		if len(a) != len(b) && (strings.HasPrefix(b, a) || strings.HasPrefix(a, b)) {
+			return len(a) < len(b)
 		}
-	}
+		return a < b
+	})
 }
 
 // streamWindows reads the CLI's rate_limit_info: utilization there is a
@@ -595,24 +646,26 @@ func sortWindows(ws []Window) {
 func streamWindows(info map[string]any) []Window {
 	var out []Window
 	if uw, ok := info["unifiedWindows"].(map[string]any); ok {
-		for _, key := range []string{"five_hour", "seven_day"} {
-			w, ok := uw[key].(map[string]any)
-			if !ok {
+		for key, v := range uw {
+			name := windowName(key)
+			w, ok := v.(map[string]any)
+			if name == "" || !ok {
 				continue
 			}
 			u, ok := w["utilization"].(float64)
 			if !ok {
 				continue
 			}
-			out = append(out, Window{Name: windowNames[key], UsedPct: pct(u * 100), ResetsAt: unix(w["resetsAt"])})
+			out = append(out, Window{Name: name, UsedPct: pct(u * 100), ResetsAt: unix(w["resetsAt"])})
 		}
 		if len(out) > 0 {
+			sortWindows(out)
 			return out
 		}
 	}
 	typ, _ := info["rateLimitType"].(string)
 	u, ok := info["utilization"].(float64)
-	if name := windowNames[typ]; name != "" && ok {
+	if name := windowName(typ); name != "" && ok {
 		out = append(out, Window{Name: name, UsedPct: pct(u * 100), ResetsAt: unix(info["resetsAt"])})
 	}
 	return out
@@ -758,23 +811,28 @@ func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
 		return result{err: &fail{class: errOther, msg: loginExpired}}
 	}
 	// The reply holds more than the windows (flags, numbers, other objects):
-	// read it loosely and decode only the two windows (found live: a strict
-	// decode failed and the 5 h window went missing).
+	// read it loosely (found live: a strict decode failed and the 5 h window
+	// went missing) and take every key shaped like a window, so a scoped
+	// window (seven_day_opus, seven_day_sonnet) or a new one is never left out.
 	var u map[string]json.RawMessage
 	if f := s.get(ctx, t.spec.BaseURL+"/api/oauth/usage", cred.OAuth.AccessToken,
 		map[string]string{"anthropic-beta": "oauth-2025-04-20"}, &u, loginExpired); f != nil {
 		return result{err: f}
 	}
 	var ws []Window
-	for _, key := range []string{"five_hour", "seven_day"} {
+	for key, raw := range u {
+		name := windowName(key)
+		if name == "" {
+			continue
+		}
 		var w *struct {
 			Utilization *float64 `json:"utilization"`
 			ResetsAt    *string  `json:"resets_at"`
 		}
-		if raw, ok := u[key]; !ok || json.Unmarshal(raw, &w) != nil || w == nil || w.Utilization == nil {
+		if json.Unmarshal(raw, &w) != nil || w == nil || w.Utilization == nil {
 			continue
 		}
-		x := Window{Name: windowNames[key], UsedPct: pct(*w.Utilization)}
+		x := Window{Name: name, UsedPct: pct(*w.Utilization)}
 		if w.ResetsAt != nil {
 			if at, err := time.Parse(time.RFC3339Nano, *w.ResetsAt); err == nil {
 				at = at.UTC()
@@ -783,6 +841,7 @@ func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
 		}
 		ws = append(ws, x)
 	}
+	sortWindows(ws)
 	if len(ws) == 0 {
 		return result{err: &fail{class: errOther, msg: "The provider sent no usage windows"}}
 	}

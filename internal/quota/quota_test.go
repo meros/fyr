@@ -117,6 +117,42 @@ func TestAnthropicUsage(t *testing.T) {
 	noLeak(t, sts, log)
 }
 
+func TestAnthropicUsageReadsEveryWindow(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"seven_day_sonnet":{"utilization":8,"resets_at":"2026-11-18T08:00:00Z"},"seven_day":{"utilization":52,"resets_at":"2026-11-18T08:00:00Z"},`+
+			`"five_hour":{"utilization":3,"resets_at":"2026-11-14T13:00:00Z"},"seven_day_opus":{"utilization":97,"resets_at":"2026-11-17T08:00:00Z"},`+
+			`"seven_day_oauth_apps":null,"extra_usage":{"is_enabled":true,"utilization":40},"iguana_necktie":{"utilization":5},"tier":"max"}`)
+	}))
+	defer srv.Close()
+	c, log := newClock(), &bytes.Buffer{}
+	dir := t.TempDir()
+	credentials(t, dir, c.t.Add(time.Hour))
+	s := svc(c, log, Profile{ID: "claude", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
+	sts := s.Get(context.Background())
+	var names []string
+	for _, w := range sts[0].Windows {
+		names = append(names, fmt.Sprintf("%s=%g", w.Name, w.UsedPct))
+	}
+	if got := strings.Join(names, ","); got != "5 h=3,7 d=52,7 d Opus=97,7 d Sonnet=8" {
+		t.Fatalf("windows %s", got)
+	}
+	if win, at, err := s.ResetOf(context.Background(), "claude", "seven_day_opus"); err != nil || win != "7 d Opus" || at.Format(time.RFC3339) != "2026-11-17T08:00:00Z" {
+		t.Fatalf("seven_day_opus: %q %v %v", win, at, err)
+	}
+	if win, _, err := s.ResetOf(context.Background(), "claude", "7 d opus"); err != nil || win != "7 d Opus" {
+		t.Fatalf("7 d opus: %q %v", win, err)
+	}
+}
+
+func TestWindowName(t *testing.T) {
+	for key, want := range map[string]string{"five_hour": "5 h", "seven_day": "7 d", "seven_day_opus": "7 d Opus", "seven_day_oauth_apps": "7 d apps",
+		"seven_day_cowork": "7 d cowork", "thirty_days": "30 d", "extra_usage": "", "overage": "", "tier": ""} {
+		if got := windowName(key); got != want {
+			t.Errorf("windowName(%q) = %q, want %q", key, got, want)
+		}
+	}
+}
+
 func TestAnthropicExpiredAndMissingLogin(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1); w.WriteHeader(401) }))
@@ -309,6 +345,12 @@ func TestStreamEventUpdatesWindows(t *testing.T) {
 	s.Observe("claudeAlt", map[string]any{"status": "allowed_warning", "rateLimitType": "five_hour", "utilization": 0.9, "resetsAt": reset})
 	st = s.Snapshot()[0]
 	if st.Windows[0].UsedPct != 90 || st.Windows[1].UsedPct != 61 {
+		t.Fatalf("%+v", st.Windows)
+	}
+	// A scoped window from the stream is kept beside the others, after its account window.
+	s.Observe("claudeAlt", map[string]any{"status": "allowed_warning", "rateLimitType": "seven_day_opus", "utilization": 0.95, "resetsAt": reset})
+	st = s.Snapshot()[0]
+	if len(st.Windows) != 3 || st.Windows[2].Name != "7 d Opus" || st.Windows[2].UsedPct != 95 {
 		t.Fatalf("%+v", st.Windows)
 	}
 	// Other kinds and unknown profiles ignore it.

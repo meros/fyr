@@ -82,12 +82,15 @@ export function busiestFigure(q: Quota): QuotaPart | null {
   return { text: pctText(top), hot: top >= HOT };
 }
 
-/** "5 h" → "5 hours", "7 d" → "7 days"; any other window name as the provider gives it. */
+/** "5 h" → "5 hours", "7 d" → "7 days", "7 d Opus" → "7 days, Opus" (a window that counts one model, V0.quota-all-windows);
+ *  any other window name as the provider gives it. */
 export function windowName(n: string): string {
-  const m = /^(\d+) ?(h|d)$/.exec(n.trim());
+  const m = /^(\d+) ?(h|d|w|mo)(?: (.+))?$/.exec(n.trim());
   if (!m) return n;
   const k = Number(m[1]);
-  return `${k} ${m[2] === "h" ? (k === 1 ? "hour" : "hours") : k === 1 ? "day" : "days"}`;
+  const unit = { h: "hour", d: "day", w: "week", mo: "month" }[m[2] as "h" | "d" | "w" | "mo"];
+  const span = `${k} ${unit}${k === 1 ? "" : "s"}`;
+  return m[3] ? `${span}, ${m[3]}` : span;
 }
 
 /** V0.hover-cards (amends V0.44's detail lines, V0.77 (1), V0.quota-in-thread): one quota as a card, on hover on the
