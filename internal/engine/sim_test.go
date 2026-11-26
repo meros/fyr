@@ -851,6 +851,15 @@ func scenarios() []scenario {
 		}
 		add(s)
 	}
+	// 17b. The ladder with the tool a class (unknown, nothing learned): what
+	// it would be if the gate named the same heavy command from several threads.
+	for _, n := range []int{4, 8} {
+		s := scenario{name: fmt.Sprintf("ladder-class-%d", n), idle: 1}
+		for i := range n {
+			s.units = append(s.units, unit(fmt.Sprintf("l%d", i), "tsc -b", "tsc -b", kAdmitted, time.Duration(5*i)*time.Second, 2, 3, 300))
+		}
+		add(s)
+	}
 	// V0.sim-fixes fixed the rest of V0.load-sim's list: a violation of
 	// those scenarios now fails the test.
 	known := map[string]map[string]string{
