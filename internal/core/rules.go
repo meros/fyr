@@ -154,6 +154,7 @@ const (
 	WhenIdle      = "idle"          // no run is live and the last one did not fail
 	WhenMoved     = "changeMoved"   // anchored: {change}: the change's phase, conditions or evidence moved since the last firing
 	WhenEnded     = "changeEnded"   // {change}: the change ended (abandoned or reverted)
+	WhenHeadMoved = "headMoved"     // anchored: {change}: the change's PR head differs from the head at arming, whoever pushed (V0.watch-head-moved)
 	WhenWorkOver  = "workOver"      // V0.185: no work goes on, or the thread needs the owner
 	WhenWorkDone  = "workDone"      // V0.203: no work goes on, nothing waits for the owner, no PR is open
 	WhenNoOpenPR  = "noOpenPR"      // V0.settle-merge-fixes (2): no PR of the thread is open
@@ -163,7 +164,7 @@ const (
 // AgentWhens are the kinds the agent may use in its own Rules.
 // workDone only alone and with then settle (V0.one-tool-vocabulary: it was
 // settle_when done).
-var AgentWhens = []string{WhenRunEnded, WhenReached, WhenCondition, WhenAt, WhenQuota, WhenIdleFor, WhenWorkDone}
+var AgentWhens = []string{WhenRunEnded, WhenReached, WhenCondition, WhenAt, WhenQuota, WhenIdleFor, WhenHeadMoved, WhenWorkDone}
 
 // All is the Condition that holds when all of ws hold.
 func All(ws ...When) When { return When{All: ws} }
@@ -262,6 +263,9 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 		return truth(k != nil && k.Status == w.Status)
 	case WhenMoved:
 		return truth(armed["change:"+c.ID] != changeDigest(c))
+	case WhenHeadMoved:
+		at, now := armed["head:"+c.ID], changeHead(c)
+		return truth(at != "" && now != "" && !sameCommit(at, now))
 	}
 	return unknown
 }
@@ -317,7 +321,7 @@ func (w When) nextCheck(t *Thread) *time.Time {
 // anchored reports a Condition made true by an event after the Rule was
 // armed (7.2), not by the current state.
 func (w When) anchored() bool {
-	return w.has(WhenRunEnded, WhenAt, WhenQuota, WhenMoved)
+	return w.has(WhenRunEnded, WhenAt, WhenQuota, WhenMoved, WhenHeadMoved)
 }
 
 // anchor takes the snapshot of the anchored kinds in w.
@@ -329,6 +333,10 @@ func (w When) anchor(t *Thread, armed map[string]string) {
 		case WhenMoved:
 			if c := FindChange(t, x.Change); c != nil {
 				armed["change:"+c.ID] = changeDigest(c)
+			}
+		case WhenHeadMoved:
+			if c := FindChange(t, x.Change); c != nil {
+				armed["head:"+c.ID] = changeHead(c)
 			}
 		}
 		return false
@@ -862,6 +870,18 @@ func checkAgentWhen(t *Thread, w *When, depth int) error {
 		}
 		if w.Kind == WhenCondition && (w.Type == "" || !w.Status.Valid()) {
 			return fmt.Errorf("condition needs a type and a status (%s)", OrList(CondStatuses()))
+		}
+	case WhenHeadMoved:
+		c, err := findChange(t, w.Change)
+		if err != nil {
+			return err
+		}
+		w.Change = c.ID
+		if !c.Phase.InFlight() {
+			return fmt.Errorf("%s is %s: its head no longer moves", c.Key, c.Phase)
+		}
+		if changeHead(c) == "" {
+			return fmt.Errorf("no head of %s is known yet: arm it once Fyr has read the PR", c.Key)
 		}
 	case WhenAt:
 		if w.At == nil {

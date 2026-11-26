@@ -947,7 +947,7 @@ func checkWhenInvalid(t *Thread, w When) string {
 		if w.Ms <= 0 {
 			return fmt.Sprintf("when=idleFor has ms=%d", w.Ms)
 		}
-	case WhenReached, WhenCondition, WhenMoved, WhenEnded:
+	case WhenReached, WhenCondition, WhenMoved, WhenHeadMoved, WhenEnded:
 		if w.Change != "" && FindChange(t, w.Change) == nil {
 			return fmt.Sprintf("when=%s references missing change %q", w.Kind, w.Change)
 		}

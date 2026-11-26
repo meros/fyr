@@ -82,6 +82,8 @@ func watchText(t *Thread, w When, now time.Time) string {
 		return "waits for " + watchedChange(t, w.Change) + " to be " + string(w.Phase)
 	case WhenCondition:
 		return fmt.Sprintf("waits for %s %s on %s", w.Type, w.Status, watchedChange(t, w.Change))
+	case WhenHeadMoved:
+		return "waits for a push to " + watchedChange(t, w.Change)
 	case WhenRunEnded:
 		return "waits for the run to end"
 	case WhenIdleFor:

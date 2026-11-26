@@ -125,6 +125,8 @@ function describeWatchWhen(when: unknown): string {
       return `When the${str(w.window) ? " " + str(w.window) : ""} quota window resets`;
     case "workDone":
       return "When all work is done";
+    case "headMoved":
+      return `When ${str(w.change) || "the change"} gets a new push`;
     case "runEnded":
       return "When the current run ends";
     case "idleFor":
