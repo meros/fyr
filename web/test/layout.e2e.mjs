@@ -4374,11 +4374,18 @@ section('V0.dialogs-review round 2', async (h) => {
     // Discard has one place, the foot, so it does not move when the line goes.
     await navigate(`${origin}/?mock=1&dialog=new`, "!!document.querySelector('.dlg textarea')");
     await evaluate(`(() => { const ta = document.querySelector('.dlg textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'a prompt worth keeping'); ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-    await evaluate(`document.querySelector('.dlg .dh .x').click()`);
-    await waitFor(`!document.querySelector('.dlg')`, { what: "New thread closed" });
-    // The key is sent again until the dialog is there: right after the close the app's key handler may not be
-    // bound again yet (under load a single press was lost and the line never came).
-    await waitFor(`(() => { if (!document.querySelector('.dlg')) document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true })); return !!document.querySelector('.dlg .ntdraft'); })()`, { what: "the draft's line", soft: true });
+    // V0.draft-close-sync: closed and opened again in one task, before a frame is painted (Esc, then c, on a busy
+    // machine). The closed form writes its draft as it leaves the page, so the new one reads it.
+    const reopened = await evaluate(`(async () => {
+      document.querySelector('.dlg .dh .x').click();
+      for (let i = 0; i < 5 && document.querySelector('.scrim:not([data-ghost]) .dlg'); i++) await Promise.resolve();
+      const closed = !document.querySelector('.scrim:not([data-ghost]) .dlg');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }));
+      for (let i = 0; i < 5 && !document.querySelector('.scrim:not([data-ghost]) .dlg'); i++) await Promise.resolve();
+      return { closed, open: !!document.querySelector('.scrim:not([data-ghost]) .dlg') };
+    })()`);
+    check(reopened.closed && reopened.open, `round 2 draft desktop: New thread did not close and open again within one task ${JSON.stringify(reopened)}`);
+    await waitFor(`!!document.querySelector('.dlg .ntdraft')`, { what: "the draft's line", soft: true });
     const line = await evaluate(`(() => { const l = document.querySelector('.dlg .ntdraft'), ta = document.querySelector('.dlg textarea'), b = document.querySelector('.dlg .db'); if (!l || !ta || !b) return null; const r = l.getBoundingClientRect(), tr = ta.getBoundingClientRect(), br = b.getBoundingClientRect(); const named = (root) => [...root.querySelectorAll('button')].map((x) => x.textContent.trim() || x.getAttribute('aria-label')); return { text: l.textContent, above: r.bottom <= tr.top + 0.5, inside: r.left >= br.left - 0.5 && r.right <= br.right + 0.5, value: ta.value, lineButtons: named(l), discard: named(document.querySelector('.dlg .df')).includes('Discard') }; })()`);
     check(!!line, "round 2 draft desktop: a reopened New thread shows no line about its draft");
     if (line) {

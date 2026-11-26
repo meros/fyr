@@ -1,7 +1,7 @@
 // Attachment chips, pickers and a sent message's attachments (SPEC 0.5 V0.18, V0.165).
 
 import type { HostId } from "./hostid.ts";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, pasteMarkers, pastedName, removeChip, type Chip } from "./attach.ts";
 import { useApi } from "./api-context.ts";
 import { DownloadLink, openImages, type ViewerImage } from "./preview-ui.tsx";
@@ -23,7 +23,9 @@ export function useAttachments(host?: HostId, o: { initial?: Chip[]; onClose?(ch
   closeRef.current = o.onClose;
   const aborts = useRef(new Map<string, AbortController>());
   const previews = useRef(new Set<string>((o.initial ?? []).flatMap((c) => c.preview ?? [])));
-  useEffect(
+  // V0.draft-close-sync: a layout effect, so the kept chips are handed over as the composer leaves the page (Preact 11
+  // runs a useEffect's cleanup only after the next paint), before a New thread opened again in that frame reads them.
+  useLayoutEffect(
     () => () => {
       aborts.current.forEach((a) => a.abort());
       const kept = new Set((closeRef.current?.(chipsRef.current) ?? []).map((c) => c.preview));
