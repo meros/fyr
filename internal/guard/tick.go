@@ -547,7 +547,7 @@ func (t *tick) freezeGuard() {
 	// V0.freeze-cap-holds-memory: only a freeze that holds memory fills a slot.
 	// A frozen esbuild of 0.0 GB, or work taking turns (a part runs), frees
 	// nothing, yet it used to stop the freeze of the thread that held 7 GB.
-	if block, say := freezeRoom(HoldingFreezes(keep), n, lastFrozen, now, nearOomd); block {
+	if block, say := freezeRoom(len(keep), HoldingFreezes(keep), n, lastFrozen, now, nearOomd); block {
 		if say {
 			t.once("maxfrozen", fmt.Sprintf("not freezing more: %d frozen that hold memory, at most %d (threads with heavy work less one)", HoldingFreezes(keep), n))
 		}

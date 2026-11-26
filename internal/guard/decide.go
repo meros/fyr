@@ -184,15 +184,16 @@ func freezeGate(m guardMemory, stalling bool, thawedOrKilled int) freezeGateWhy 
 	return gateOpen
 }
 
-// freezeRoom says whether one more freeze must wait: block when n freezes (at
-// most max(maxFrozen, 1)) are held or the last one is younger than
-// AddFreezeAfter (not near oomd's limit, where the next does not wait: oomd
-// kills after its duration, sooner than that). say is true when the limit
-// itself, not the wait, is why (so it is logged once).
-func freezeRoom(kept, maxFrozen int, lastFrozen, now time.Time, nearOomd bool) (block, say bool) {
+// freezeRoom says whether one more freeze must wait: block when holding
+// freezes (those that hold memory, V0.freeze-cap-holds-memory) are at least
+// max(maxFrozen, 1), or when some freeze is held (kept) and the last one is
+// younger than AddFreezeAfter (not near oomd's limit, where the next does not
+// wait: oomd kills after its duration, sooner than that). say is true when the
+// limit itself, not the wait, is why (so it is logged once).
+func freezeRoom(kept, holding, maxFrozen int, lastFrozen, now time.Time, nearOomd bool) (block, say bool) {
 	wait := kept > 0 && now.Sub(lastFrozen) < AddFreezeAfter && !nearOomd
-	if kept >= max(maxFrozen, 1) || wait {
-		return true, kept >= maxFrozen && maxFrozen > 0
+	if holding >= max(maxFrozen, 1) || wait {
+		return true, holding >= maxFrozen && maxFrozen > 0
 	}
 	return false, false
 }
