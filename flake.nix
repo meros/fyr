@@ -54,8 +54,9 @@
         };
 
         # The Linux app (decision 0038): Fyr's window, tray item and
-        # notifications. cgo with GTK, WebKitGTK and Ayatana AppIndicator; it
-        # talks to the fyrd the module (services.fyr.desktop) or
+        # notifications. cgo with GTK and Ayatana AppIndicator for the tray;
+        # the window is the bundled Chromium (V0.desktop-chromium). It talks
+        # to the fyrd the module (services.fyr.desktop) or
         # scripts/install-linux.sh runs, through the owner socket.
         fyr-desktop = pkgs.buildGoModule {
           pname = "fyr-desktop";
@@ -64,9 +65,9 @@
           inherit (fyr) vendorHash;
           subPackages = [ "cmd/fyr-desktop" ];
           env.CGO_ENABLED = 1;
-          ldflags = [ "-s" "-w" ];
+          ldflags = [ "-s" "-w" "-X main.chromium=${pkgs.chromium}/bin/chromium" ];
           nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook3 ];
-          buildInputs = with pkgs; [ gtk3 webkitgtk_4_1 libayatana-appindicator glib-networking ];
+          buildInputs = with pkgs; [ gtk3 libayatana-appindicator ];
           # Its logic is tested with the rest (internal/desktop, go test ./internal/...).
           doCheck = false;
           postInstall = ''
@@ -89,7 +90,7 @@
         # `nix develop .#desktop`: build and run cmd/fyr-desktop with
         # CGO_ENABLED=1 go build ./cmd/fyr-desktop.
         desktop = pkgs.mkShell {
-          packages = with pkgs; [ go gnumake git pkg-config gtk3 webkitgtk_4_1 libayatana-appindicator glib-networking ];
+          packages = with pkgs; [ go gnumake git pkg-config gtk3 libayatana-appindicator chromium ];
           CGO_ENABLED = "1";
         };
       });

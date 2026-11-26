@@ -1,7 +1,7 @@
 //go:build !(linux && cgo)
 
-// fyr-desktop is Fyr's Linux app (decision 0038). It needs GTK, WebKitGTK
-// and cgo: `nix build .#fyr-desktop`, or `CGO_ENABLED=1 go build` with the
+// fyr-desktop is Fyr's Linux app (decision 0038). It needs GTK, Ayatana
+// AppIndicator and cgo, and Chromium for its window (V0.desktop-chromium): `nix build .#fyr-desktop`, or `CGO_ENABLED=1 go build` with the
 // libraries' development files.
 package main
 
