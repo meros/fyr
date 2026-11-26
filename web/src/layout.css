@@ -216,7 +216,7 @@ img{-webkit-user-drag:none}
 .tmenu-l{transform-origin:top right;box-shadow:var(--edge-light),var(--lift-2);animation:pop-menu .14s cubic-bezier(.22,1,.36,1)}
 @keyframes pop-menu{from{opacity:0;scale:.96}}
 .m-toast .tb{transition:background-color .18s ease-out,scale .3s var(--spring)}
-.m-toast .tb[data-pressed]{background:rgba(255,255,255,.14)}
+.m-toast .tb[data-pressed]{background:var(--sunken)}
 
 /* The sliding mark of tabs and segments: the chosen child's text sits above it. */
 .slide{position:absolute;left:0;top:0;display:block;pointer-events:none;z-index:0}
@@ -235,7 +235,6 @@ img{-webkit-user-drag:none}
 /* solid buttons sink */
 :is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.htabs.compact .htab,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
 :is(.btn,.m-bt,.m-sbtn,.m-capb,.m-dchip)[data-pressed]:not(.p){background-color:var(--sunken)}
-.toast .btn[data-pressed]{background-color:rgba(255,255,255,.14)} /* the toast is dark in both themes: a light well would hide its light text, as on the phone's .tb */
 :is(.btn.p,.m-bt.p,.m-send,.m-bnew)[data-pressed]{filter:brightness(.86)}
 /* icon buttons get a soft well */
 :is(.b44,.ibtn,.dh .x,.att-b,.att-x,.src-x,.m-load,.m-bi)[data-pressed]{opacity:1;background-color:var(--select);scale:.92;transition-duration:.05s}
