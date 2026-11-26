@@ -1498,7 +1498,7 @@ type Rule = {
 | `builtins` | `change.builtins` | Fyr, for a code change with a PR (7.6) |
 | `watch` | `rule.notify` | the agent (`watch {then: notify}`) |
 
-- **The agent's watches.** The agent arms its own Rules with the tool `watch`: Condition kinds `runEnded`, `changeReached`, `condition`, `at` and `idleFor`, nested at most 3 deep, `after: disarm`, at most 20 per thread. It removes only its own. The owner sees them on the thread; `fyr_state {about: "rules"}` lists them.
+- **The agent's watches.** The agent arms its own Rules with the tool `watch`: Condition kinds `runEnded`, `changeReached`, `condition`, `headMoved`, `at`, `quota`, `idleFor` and `workDone`, nested at most 3 deep, `after: disarm`, at most 20 per thread. It removes only its own. The owner sees them on the thread; `fyr_state {about: "rules"}` lists them.
 
 **Post-v1.** Purposes `wait`, `deferred`, `schedule` and `custom`; Rules owned by module entities; a Rule that a move carries (10.4); a `viewer` field for snoozes of several users; the suspend reasons `decision` and `move`.
 
@@ -1511,6 +1511,7 @@ A Condition is one kind with its params, or `any`, `all` or `not` of others. It 
 | `runEnded` | yes | a run ended after the Rule was armed (`runEnds` is above the snapshot) |
 | `at {at}` | yes | `now ≥ at` |
 | `changeMoved {change}` | yes | the change's title, phase, PR, conditions or evidence differ from the snapshot |
+| `headMoved {change}` | yes | the change's PR head (else its record's head) differs from the head at arming, whoever pushed (V0.watch-head-moved); refused while no head is known or once the change is not in flight |
 | `changeReached {change, phase}` | no | the change got at least that far (3.13 Phases) |
 | `changeEnded {change}` | no | the change ended: abandoned or reverted |
 | `condition {change, type, status}` | no | the change has that condition with that status |
