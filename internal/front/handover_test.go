@@ -69,6 +69,7 @@ func newHandoverHost(t *testing.T, name, id string) *handoverHost {
 	mgr = agent.New(eng, agent.Config{
 		Profile:     func(pid string) provider.Profile { return profiles[pid] },
 		IdleStop:    time.Minute,
+		InitTimeout: agentInitTimeout,
 		MCPURL:      mcpHS.URL + "/mcp",
 		HandoverDir: hoDir,
 	})
@@ -103,16 +104,40 @@ func (h *handoverHost) createThread(t *testing.T, cwd, text string) core.Thread 
 	if !r.OK {
 		t.Fatalf("create thread on %s: %+v", h.name, r)
 	}
-	var got core.Thread
-	eventually(t, "first run on "+h.name, func() bool {
-		th, ok := h.eng.Thread(r.ThreadID)
-		if !ok || th.Running || th.Summary == "" {
-			return false
+	return awaitRun(t, h.eng, r.ThreadID, "first run on "+h.name, func(th core.Thread) bool { return th.Summary != "" })
+}
+
+// runGuard bounds a wait for an agent's turn. It is a hang guard, not a
+// speed budget (V0.handover-test-load): the agent is a real process (this
+// test binary as the fake CLI), and on a host short on memory its start
+// alone took more than the 5 s that eventually allows. Fyr itself gives a
+// start InitTimeout (1 min) before it calls it stuck and records a Failure,
+// so the guard lies past that: a slow start passes, a stuck one fails on
+// the thread's Failure, and only a turn the product never ends meets it.
+const runGuard = agentInitTimeout + time.Minute
+
+// agentInitTimeout is these hosts' agent.Config.InitTimeout (its default).
+const agentInitTimeout = time.Minute
+
+// awaitRun waits until thread id has ended a turn that done accepts. A
+// Failure on the thread ends the wait at once: the test fails on what the
+// product said, not on a timer.
+func awaitRun(t *testing.T, eng *engine.Engine, id, what string, done func(core.Thread) bool) core.Thread {
+	t.Helper()
+	for end := time.Now().Add(runGuard); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		th, ok := eng.Thread(id)
+		if !ok {
+			continue
 		}
-		got = th
-		return true
-	})
-	return got
+		if th.Failure != nil {
+			t.Fatalf("%s: the thread failed: %+v", what, *th.Failure)
+		}
+		if !th.Running && done(th) {
+			return th
+		}
+	}
+	t.Fatalf("no turn ended for %s within %s", what, runGuard)
+	return core.Thread{}
 }
 
 func apiCmd(cid, action, tid string, args core.Args) (out struct {
@@ -222,9 +247,8 @@ func TestTransHostHandoverResumeAndInjectNotice(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("send on target: %d", code)
 	}
-	eventually(t, "target responds with injected notice", func() bool {
-		th, _ := b.eng.Thread(targetID)
-		return !th.Running && strings.Contains(th.Summary, "Host handover:")
+	awaitRun(t, b.eng, targetID, "target responds with injected notice", func(th core.Thread) bool {
+		return strings.Contains(th.Summary, "Host handover:")
 	})
 }
 
@@ -249,9 +273,8 @@ func TestTransHostHandoverFallbackToAdopt(t *testing.T) {
 		t.Fatalf("want rung adopt, got %+v", res)
 	}
 	targetID := strings.TrimPrefix(res["threadId"].(string), "HOST-B/")
-	eventually(t, "target adopt turn includes host-move info", func() bool {
-		th, _ := b.eng.Thread(targetID)
-		return !th.Running && strings.Contains(th.Summary, "Host handover:") && strings.Contains(th.Summary, "host-a")
+	awaitRun(t, b.eng, targetID, "target adopt turn includes host-move info", func(th core.Thread) bool {
+		return strings.Contains(th.Summary, "Host handover:") && strings.Contains(th.Summary, "host-a")
 	})
 }
 
@@ -307,9 +330,8 @@ func TestTransHostHandoverFallbackToBrief(t *testing.T) {
 		t.Fatalf("want rung brief, got %+v", res)
 	}
 	targetID := strings.TrimPrefix(res["threadId"].(string), "HOST-B/")
-	eventually(t, "target brief turn runs", func() bool {
-		th, _ := b.eng.Thread(targetID)
-		return !th.Running && strings.Contains(th.Summary, "Host handover:")
+	awaitRun(t, b.eng, targetID, "target brief turn runs", func(th core.Thread) bool {
+		return strings.Contains(th.Summary, "Host handover:")
 	})
 }
 
