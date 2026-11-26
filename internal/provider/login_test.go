@@ -35,6 +35,10 @@ func TestMain(m *testing.M) {
 }
 
 func fakeLogin(mode string) {
+	if mode == "mcp" {
+		fakeMCP() // mcp_test.go
+		return
+	}
 	if f := os.Getenv("FYR_FAKE_LOG"); f != "" {
 		_, tok := os.LookupEnv("CLAUDE_CODE_OAUTH_TOKEN")
 		wd, _ := os.Getwd()

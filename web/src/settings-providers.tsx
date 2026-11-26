@@ -40,6 +40,16 @@ import {
   usageLine,
   whereText,
   type LoginDTO,
+  type MCPForm,
+  EMPTY_MCP_FORM,
+  MCP_STATUS,
+  mcpAddArgs,
+  mcpCanSignIn,
+  mcpCanSignOut,
+  mcpCheckLine,
+  mcpRemovable,
+  mcpServerLine,
+  mcpSharedLine,
   type ModelRow,
   type ModelsOp,
   type ProviderDTO,
@@ -310,6 +320,7 @@ export function ProviderPage({ p, host, projects, run, refresh, now, clockKnown,
       )}
       <ModelsGroup p={p} run={run} refresh={refresh} now={now} clockKnown={clockKnown} />
       <ProjectsGroup p={p} projects={projects} run={run} />
+      <McpGroup p={p} run={run} now={now} />
       <Group title="Quota" class="usage">
         <Row title={quota ? <QuotaLine q={quota} name={p.name} bare /> : "No reading yet"} desc={usageLine(p)} />
       </Group>
@@ -636,14 +647,31 @@ function ProjectsGroup({ p, projects, run }: { p: ProviderDTO; projects: { id: s
 
 // V0.53: a login Fyr runs with the CLI: the sign-in link, the code field, Cancel. The code goes to the CLI only.
 function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
+  return (
+    <SignInPanel
+      l={l}
+      line={loginLine(l, p.cli)}
+      field="Code from the sign-in page"
+      placeholder="Paste the code"
+      button="Send code"
+      send={(code) => run("provider.loginCode", { id: p.id, code })}
+      cancel={() => void run("provider.loginCancel", { id: p.id })}
+      retry={() => void run("provider.login", { id: p.id })}
+    />
+  );
+}
+
+/** A sign-in the CLI runs on the host (V0.53, V0.provider-mcp): the link, the field for what the browser shows, Cancel
+ *  and Try again. What is pasted goes to the CLI only. Shared by the account's login and an MCP server's sign-in. */
+function SignInPanel({ l, line, field, placeholder, button, send, cancel, retry }: { l: LoginDTO; line: string; field: string; placeholder: string; button: string; send(code: string): Promise<string | null>; cancel(): void; retry(): void }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const env = useSet();
   const active = loginActive(l);
-  const send = () => void run("provider.loginCode", { id: p.id, code }).then((e) => (setErr(e), !e && setCode("")));
+  const go = () => void send(code).then((e) => (setErr(e), !e && setCode("")));
   return (
     <div class={`login ${l.state}`} aria-live="polite">
-      <div class="setd">{loginLine(l, p.cli)}</div>
+      <div class="setd">{line}</div>
       {((active && l.message) || err) && (
         <div class="seterr" role="alert">
           {err ?? l.message}
@@ -655,20 +683,20 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
             Open the sign-in page
           </a>
           <label class="fld">
-            <span>Code from the sign-in page</span>
+            <span>{field}</span>
             <div class="setkey">
               <input
                 autocomplete="off"
                 autocapitalize="off"
                 spellcheck={false}
                 value={code}
-                placeholder="Paste the code"
+                placeholder={placeholder}
                 disabled={l.state === "checking" || env.readOnly}
                 onInput={(e) => setCode((e.target as HTMLInputElement).value)}
-                onKeyDown={(e) => e.key === "Enter" && code.trim() && send()}
+                onKeyDown={(e) => e.key === "Enter" && code.trim() && go()}
               />
-              <button type="button" class="btn" disabled={!code.trim() || l.state === "checking" || env.readOnly} onClick={send}>
-                Send code
+              <button type="button" class="btn" disabled={!code.trim() || l.state === "checking" || env.readOnly} onClick={go}>
+                {button}
               </button>
             </div>
           </label>
@@ -678,17 +706,227 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
         {active ? (
           <>
             <span class="setd">The sign-in ends at {clockTime(l.expires)}</span>
-            <button type="button" class="btn" disabled={env.readOnly} onClick={() => void run("provider.loginCancel", { id: p.id })}>
+            <button type="button" class="btn" disabled={env.readOnly} onClick={cancel}>
               Cancel
             </button>
           </>
         ) : (
           (l.state === "failed" || l.state === "timeout" || l.state === "cancelled") && (
-            <button type="button" class="btn" disabled={env.readOnly} onClick={() => void run("provider.login", { id: p.id })}>
+            <button type="button" class="btn" disabled={env.readOnly} onClick={retry}>
               Try again
             </button>
           )
         )}
+      </div>
+    </div>
+  );
+}
+
+/** V0.provider-mcp: the MCP servers the provider's CLI keeps, which every session on it starts with. One component for
+ *  the desktop's dialog and the phone's screen (ProviderPage is both). The list health-checks every server, so it runs
+ *  when the page first opens on a host that has not listed yet and on Check now, never by itself after that; a sign-in,
+ *  an add or a remove lists again on the host. Nothing here takes the focus or changes a field the owner types in: a
+ *  list that ends while the Add form is open only changes the rows above it. */
+function McpGroup({ p, run, now }: { p: ProviderDTO; run: Run; now: number }) {
+  const env = useSet();
+  const ask = useAsk();
+  const m = p.mcp;
+  const [err, setErr] = useState<{ row: string; text: string } | null>(null);
+  const [adding, setAdding] = useState(false);
+  const rowErr = (row: string) => (err?.row === row ? err.text : null);
+  const act = async (row: string, action: string, args: Record<string, unknown>) => {
+    const e = await run(action, { id: p.id, ...args });
+    setErr(e ? { row, text: e } : null);
+    return e;
+  };
+  const asked = useRef(false);
+  /* eslint-disable react-hooks/exhaustive-deps -- lists once per provider page when the host has no list yet (asked guards it) */
+  useEffect(() => {
+    if (asked.current || !m) return;
+    asked.current = true;
+    if (!m.checkedAt && !m.listing && !env.readOnly) void act("list", "provider.mcpList", {});
+  }, [p.id]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+  if (!m) return null;
+  const l = m.login;
+  const signing = loginActive(l);
+  const shared = mcpSharedLine(m);
+  return (
+    <Group
+      title="MCP servers"
+      label="MCP servers"
+      class="mcp"
+      end={
+        <>
+          <span class="mchk" aria-live="polite">
+            {mcpCheckLine(m, now)}
+          </span>
+          <button type="button" class="lnk" disabled={!!m.listing || env.readOnly} onClick={() => void act("list", "provider.mcpList", {})}>
+            Check now
+          </button>
+        </>
+      }
+      foot={m.error ? `Could not list the servers: ${m.error.replace(/\.$/, "")}.${m.servers.length ? " The list below is the last one." : ""}` : `Kept in ${m.config}. Every new session on ${p.name} starts with them.`}
+      footErr={!!m.error}
+    >
+      {shared && <Row class="mcpshared" desc={shared} />}
+      {rowErr("list") && <Row error={rowErr("list")} />}
+      {l && (signing || l.state !== "done") && (
+        <Row col>
+          <SignInPanel
+            l={l}
+            line={loginLine(l)}
+            field="Address the browser ended on"
+            placeholder="http://localhost:…/callback?code=…"
+            button="Send address"
+            send={(code) => run("provider.mcpLoginCode", { id: p.id, code })}
+            cancel={() => void run("provider.mcpLoginCancel", { id: p.id })}
+            retry={() => void act(l.server ?? "", "provider.mcpLogin", { name: l.server })}
+          />
+        </Row>
+      )}
+      {m.servers.map((s) => {
+        const line = mcpServerLine(s);
+        return (
+          <Row
+            key={s.name}
+            class={`mcps ${s.status}`}
+            data={{ mcp: s.name }}
+            error={rowErr(s.name)}
+            title={
+              <>
+                {s.name}
+                <span class={`tag mcpst ${s.status}`}>{MCP_STATUS[s.status]}</span>
+              </>
+            }
+            desc={
+              <>
+                <span class="mono mid">{line.target}</span>
+                <span class="sr-d2">{line.more}</span>
+              </>
+            }
+            end={
+              <>
+                {mcpCanSignIn(s) && (
+                  <button type="button" class="btn p" disabled={signing || env.readOnly} onClick={() => void act(s.name, "provider.mcpLogin", { name: s.name })}>
+                    Sign in
+                  </button>
+                )}
+                {mcpCanSignOut(s) && (
+                  <button type="button" class="btn" disabled={signing || env.readOnly} onClick={() => void act(s.name, "provider.mcpLogout", { name: s.name })}>
+                    Sign out
+                  </button>
+                )}
+                {mcpRemovable(s) && (
+                  <button
+                    type="button"
+                    class="btn danger"
+                    disabled={env.readOnly}
+                    onClick={async () => {
+                      if (!(await ask({ title: `Remove ${s.name}?`, text: shared ? `It leaves ${m.config}, which ${(m.sharedWith ?? []).join(", ")} read too.` : `It leaves ${m.config}. Running sessions keep it until they restart.`, confirm: "Remove server", danger: true }))) return;
+                      await act(s.name, "provider.mcpRemove", { name: s.name });
+                    }}
+                  >
+                    Remove…
+                  </button>
+                )}
+              </>
+            }
+          />
+        );
+      })}
+      {m.checkedAt && !m.servers.length && !m.error && <Row desc="No MCP servers yet." />}
+      {!m.checkedAt && !m.error && <Row desc={m.listing ? "Asking claude for its servers and checking each one. This takes up to half a minute." : "Not listed yet. Check now asks claude."} />}
+      {adding ? (
+        <Row col>
+          <McpAddForm p={p} run={run} onDone={() => setAdding(false)} />
+        </Row>
+      ) : (
+        <Row
+          title="Add a server"
+          desc="To the user config, so every session on this provider gets it."
+          end={
+            <button type="button" class="btn" disabled={env.readOnly} onClick={() => setAdding(true)}>
+              Add server…
+            </button>
+          }
+        />
+      )}
+    </Group>
+  );
+}
+
+/** V0.provider-mcp: Add server, in place. Header and env values go to the host's CLI on its stdin only. */
+function McpAddForm({ p, run, onDone }: { p: ProviderDTO; run: Run; onDone(): void }) {
+  const env = useSet();
+  const [f, setF] = useState<MCPForm>(EMPTY_MCP_FORM);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof MCPForm) => (e: Event) => setF({ ...f, [k]: (e.target as HTMLInputElement).value });
+  const submit = async () => {
+    const r = mcpAddArgs(p.id, f);
+    if ("error" in r) return setErr(r.error);
+    setBusy(true);
+    const e = await run("provider.mcpAdd", r.args);
+    setBusy(false);
+    setErr(e);
+    if (!e) onDone();
+  };
+  const stdio = f.transport === "stdio";
+  return (
+    <div class="mcpadd">
+      <label class="fld">
+        <span>Name</span>
+        <input value={f.name} onInput={set("name")} placeholder="tracker" autocomplete="off" autocapitalize="off" spellcheck={false} disabled={env.readOnly} />
+      </label>
+      <label class="fld">
+        <span>Transport</span>
+        <select aria-label="Transport" value={f.transport} disabled={env.readOnly} onChange={(e) => setF({ ...f, transport: (e.target as HTMLSelectElement).value as MCPForm["transport"] })}>
+          <option value="http">HTTP</option>
+          <option value="sse">SSE</option>
+          <option value="stdio">stdio (a command on this host)</option>
+        </select>
+      </label>
+      {stdio ? (
+        <>
+          <label class="fld">
+            <span>Command</span>
+            <input class="mono" value={f.command} onInput={set("command")} placeholder="npx" autocomplete="off" autocapitalize="off" spellcheck={false} disabled={env.readOnly} />
+          </label>
+          <label class="fld">
+            <span>Arguments, one per line</span>
+            <textarea rows={2} class="mono" value={f.args} onInput={set("args")} placeholder="-y&#10;acme-mcp" disabled={env.readOnly} />
+          </label>
+          <label class="fld">
+            <span>Environment, NAME=value per line (optional)</span>
+            <textarea rows={2} class="mono" value={f.env} onInput={set("env")} placeholder="ACME_TOKEN=…" autocomplete="off" spellcheck={false} disabled={env.readOnly} />
+          </label>
+        </>
+      ) : (
+        <>
+          <label class="fld">
+            <span>URL</span>
+            <input class="mono" value={f.url} onInput={set("url")} placeholder="https://mcp.example.com/mcp" inputMode="url" autocomplete="off" autocapitalize="off" spellcheck={false} disabled={env.readOnly} />
+          </label>
+          <label class="fld">
+            <span>Headers, Name: value per line (optional)</span>
+            <textarea rows={2} class="mono" value={f.headers} onInput={set("headers")} placeholder="Authorization: Bearer …" autocomplete="off" spellcheck={false} disabled={env.readOnly} />
+          </label>
+        </>
+      )}
+      <span class="sr-d">Header and env values are kept by claude in its config on this host and never shown again. A server that signs in with OAuth needs none: add it, then Sign in.</span>
+      {err && (
+        <div class="seterr" role="alert">
+          {err}
+        </div>
+      )}
+      <div class="setbar">
+        <button type="button" class="btn" onClick={onDone}>
+          Cancel
+        </button>
+        <button type="button" class="btn p" disabled={busy || env.readOnly} onClick={() => void submit()}>
+          Add server
+        </button>
       </div>
     </div>
   );

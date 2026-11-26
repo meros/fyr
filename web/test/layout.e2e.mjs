@@ -285,6 +285,7 @@ const SCREENS = [
   { name: "settings providers", url: "?mock=rail&settings=providers", storage: { "fyr.settingsFold": '{":sajobs":true,":found":true}' }, ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section.sacalls select, section.sajobs select').length === 4" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings provider MCP (V0.provider-mcp)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .mcps').length === 6" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings select[aria-label=Kind]')" },
   { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('section[aria-label=\"Auto-update\"] [aria-label=\"Auto-update Fyr\"]') && !!document.querySelector('section[aria-label=\"Auto-merge\"] [role=switch]') && !!document.querySelector('section[aria-label=\"Per project\"]')", field: ".m-settings .fieldrow .inl input" },
@@ -2309,6 +2310,49 @@ for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) section(`liv
     await shot(`live-openrouter-${phone ? "phone" : "desktop"}.png`);
   } catch (e) {
     failures.push(`live ${w}: ${e.message}`);
+  }
+});
+
+// V0.provider-mcp: a Claude provider's MCP servers, one component on the desktop and the phone. The rows say each
+// server's status and where it is configured; Sign in only where one is needed, Remove only where Fyr can remove it
+// (not a plugin's or a connector's); the note says which providers share the config; Add server opens a form in place
+// whose fields follow the transport; Sign in shows the link and the field for the redirect address. All at 44 px on
+// the phone (the screens pass measures that).
+for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) section(`provider mcp ${w}`, async ({ send, evaluate, waitFor, settle, navigate, shot }) => {
+  const at = phone ? ".m-settings" : ".dlg";
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: phone, maxTouchPoints: phone ? 5 : 0 });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: phone });
+    await navigate(phone ? `${origin}/?mock=rail&settings=providers/claude` : `${origin}/?mock=rail&dialog=settings&page=providers/claude`, `document.querySelectorAll('${at} .mcps').length === 6`);
+    const row = (n) => `document.querySelector('${at} .mcps[data-mcp="${n}"]')`;
+    const btns = (n) => `[...(${row(n)}?.querySelectorAll('button') ?? [])].map(b => b.textContent.trim())`;
+    const r = await evaluate(`({ shared: document.querySelector('${at} .mcpshared')?.textContent ?? '', line: document.querySelector('${at} .mcp .mchk')?.textContent ?? '',
+      docs: ${btns("docs-search")}, tracker: ${btns("tracker")}, plugin: ${btns("plugin:acme:tools")}, conn: ${btns("claude.ai Acme Docs")}, render: ${row("render")}?.textContent ?? '' })`);
+    check(/^Shared with DeepSeek/.test(r.shared) && /^Checked/.test(r.line) && r.docs.join("|") === "Sign in|Remove…" && r.tracker.join("|") === "Sign out|Remove…" && r.plugin.join("|") === "Sign in" && r.conn.length === 0 && /Failed/.test(r.render) && /uvx/.test(r.render),
+      `mcp ${w}: the rows (${JSON.stringify(r)})`);
+    // Add server: the form in place, URL and headers for HTTP, command, arguments and env for stdio.
+    await evaluate(`[...document.querySelectorAll('${at} .mcp button')].find(b => b.textContent.trim() === 'Add server…').click()`);
+    await waitFor(`!!document.querySelector('${at} .mcpadd select[aria-label=Transport]')`);
+    const http = await evaluate(`[...document.querySelectorAll('${at} .mcpadd .fld > span')].map(e => e.textContent)`);
+    await evaluate(`(() => { const s = document.querySelector('${at} .mcpadd select'); s.value = 'stdio'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await settle();
+    const stdio = await evaluate(`[...document.querySelectorAll('${at} .mcpadd .fld > span')].map(e => e.textContent)`);
+    check(http.join("|").startsWith("Name|Transport|URL|Headers") && stdio.join("|").startsWith("Name|Transport|Command|Arguments") && /Environment/.test(stdio.join("|")), `mcp ${w}: the Add form (${JSON.stringify({ http, stdio })})`);
+    await evaluate(`(() => { const s = document.querySelector('${at} .mcpadd select'); s.value = 'http'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await evaluate(`document.querySelector('${at} section.mcp').scrollIntoView({ block: 'start' })`);
+    await settle();
+    await shot(`provider-mcp-add-${phone ? "phone" : "desktop"}.png`);
+    await evaluate(`[...document.querySelectorAll('${at} .mcpadd button')].find(b => b.textContent.trim() === 'Cancel').click()`);
+    // Sign in: the link and the field for the address the browser ends on.
+    await evaluate(`${row("docs-search")}.querySelector('button').click()`);
+    await waitFor(`!!document.querySelector('${at} .mcp .login a.loginlink')`);
+    const l = await evaluate(`({ link: document.querySelector('${at} .mcp .login a.loginlink')?.getAttribute('href') ?? '', field: document.querySelector('${at} .mcp .login .fld > span')?.textContent ?? '', line: document.querySelector('${at} .mcp .login .setd')?.textContent ?? '' })`);
+    check(/^https:\/\/auth\.example\.com\//.test(l.link) && l.field === "Address the browser ended on" && /docs-search/.test(l.line), `mcp ${w}: the sign-in (${JSON.stringify(l)})`);
+    await evaluate(`document.querySelector('${at} section.mcp').scrollIntoView({ block: 'start' })`);
+    await settle();
+    await shot(`provider-mcp-${phone ? "phone" : "desktop"}.png`);
+  } catch (e) {
+    failures.push(`mcp ${w}: ${e.message}`);
   }
 });
 

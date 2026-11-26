@@ -58,6 +58,13 @@ type Registry struct {
 	lmu    sync.Mutex
 	logins map[string]*loginRun
 
+	// V0.provider-mcp: MCPDir is where the MCP commands run ("": a folder
+	// in the user's cache), MCPListTimeout ends a list (0: mcpListTimeout).
+	MCPDir         string
+	MCPListTimeout time.Duration
+	mmu            sync.Mutex
+	mcp            map[string]*mcpState
+
 	cmu      sync.Mutex
 	checking map[string]chan struct{}
 }
@@ -321,13 +328,17 @@ type DTO struct {
 	CheckError string       `json:"checkError,omitempty"`
 	CheckNote  string       `json:"checkNote,omitempty"`
 	Checking   bool         `json:"checking,omitempty"`
+	// V0.provider-mcp: the MCP servers its CLI keeps; nil when its adapter
+	// has none.
+	MCP *MCPDTO `json:"mcp,omitempty"`
 }
 
 // List is GET /api/providers.
 func (r *Registry) List() []DTO {
 	out := []DTO{}
 	now := time.Now()
-	for _, p := range r.Providers() {
+	all := r.Providers()
+	for _, p := range all {
 		ad := AdapterFor(p.CLI)
 		d := DTO{ID: p.ID, Name: p.Name, Kind: p.Kind(), CLI: p.CLI, Color: p.Color, Auth: string(p.Auth.Kind), ConfigDir: p.Auth.ConfigDir,
 			BaseURL: p.Endpoint.BaseURL, ModelEnv: p.Endpoint.ModelEnv, Models: p.Models, DefaultModel: p.DefaultModel,
@@ -352,6 +363,7 @@ func (r *Registry) List() []DTO {
 			d.CheckedAt = &t
 		}
 		d.CheckError, d.CheckNote, d.Checking = p.CheckError, p.CheckNote, r.isChecking(p.ID)
+		d.MCP = r.mcpDTO(p, all)
 		out = append(out, d)
 	}
 	return out
@@ -464,6 +476,23 @@ func (r *Registry) run(c api.Cmd) api.Reply {
 		return r.loginCode(id, a.Str("code"))
 	case "provider.loginCancel":
 		return r.cancelLogin(id)
+	case "provider.mcpList":
+		return r.mcpList(id)
+	case "provider.mcpAdd":
+		return r.mcpAdd(id, a)
+	case "provider.mcpRemove":
+		return r.mcpRemove(id, a.Str("name"))
+	case "provider.mcpLogin":
+		return r.mcpLogin(id, a.Str("name"))
+	case "provider.mcpLoginCode":
+		if _, _, rep := r.mcpFor(id); rep != nil {
+			return *rep
+		}
+		return r.sendCode(mcpKey(id), a.Str("code"), "paste the address the browser opened after the sign-in (it starts with http://localhost)")
+	case "provider.mcpLoginCancel":
+		return r.cancelLogin(mcpKey(id))
+	case "provider.mcpLogout":
+		return r.mcpLogout(id, a.Str("name"))
 	case "provider.delete":
 		p, ok := r.get(id)
 		if !ok {
@@ -481,6 +510,7 @@ func (r *Registry) run(c api.Cmd) api.Reply {
 			r.Secrets.Delete(p.Auth.Secret)
 		}
 		r.cancelLogin(id)
+		r.dropMCP(id)
 		r.mu.Lock()
 		for i, x := range r.list {
 			if x.ID == id {

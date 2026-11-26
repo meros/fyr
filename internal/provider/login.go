@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -48,8 +49,10 @@ const (
 // LoginDTO is what clients see of a login: never the CLI's output, never a
 // token or the code.
 type LoginDTO struct {
-	Kind    string    `json:"kind"` // "token" or "folder"
-	State   string    `json:"state"`
+	Kind  string `json:"kind"` // "token", "folder" or "mcp" (V0.provider-mcp)
+	State string `json:"state"`
+	// Server: the MCP server a "mcp" sign-in is for.
+	Server  string    `json:"server,omitempty"`
 	URL     string    `json:"url,omitempty"`
 	Message string    `json:"message,omitempty"`
 	Expires time.Time `json:"expires"`
@@ -76,20 +79,32 @@ type loginRun struct {
 	outLen   int // output length so far
 	cancel   context.CancelFunc
 	byOwner  bool
+	// parse and redact read the CLI's output: the account login's
+	// (cli.Loginer) or an MCP server's sign-in (cli.MCPManager).
+	parse  func([]byte, bool) cli.LoginOut
+	redact func(string) string
+	// server: the MCP server signed in to ("" for the account's login);
+	// onEnd runs once the login has settled.
+	server string
+	onEnd  func(state string)
 }
 
 func (l *loginRun) dto() LoginDTO {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return LoginDTO{Kind: l.kind, State: l.state, URL: l.url, Message: l.msg, Expires: l.expires}
+	return LoginDTO{Kind: l.kind, State: l.state, Server: l.server, URL: l.url, Message: l.msg, Expires: l.expires}
 }
 
 func (l *loginRun) active() bool { return l.dto().Active() }
 
 // login is the provider's current or recent login, if any.
-func (r *Registry) login(id string) *LoginDTO {
+func (r *Registry) login(id string) *LoginDTO { return r.loginFor(id) }
+
+// loginFor is the current or recent login under key (a provider id, or
+// mcpKey of one for an MCP server's sign-in).
+func (r *Registry) loginFor(key string) *LoginDTO {
 	r.lmu.Lock()
-	l := r.logins[id]
+	l := r.logins[key]
 	r.lmu.Unlock()
 	if l == nil {
 		return nil
@@ -137,7 +152,7 @@ func (r *Registry) startLogin(id string) api.Reply {
 	if p.TokenLogin {
 		kind = "token"
 	}
-	l := &loginRun{kind: kind, adapter: ad, loginer: ln, state: LoginStarting, expires: time.Now().Add(r.loginTimeout())}
+	l := &loginRun{kind: kind, adapter: ad, loginer: ln, parse: ln.ParseLogin, redact: ln.RedactLogin, state: LoginStarting, expires: time.Now().Add(r.loginTimeout())}
 	r.logins[id] = l
 	r.lmu.Unlock()
 	if err := r.runLogin(p, l); err != nil {
@@ -180,11 +195,17 @@ func (r *Registry) runLogin(p Provider, l *loginRun) error {
 	if bin == "" {
 		bin = spec.Binary
 	}
-	cmd := exec.Command(bin, spec.Args...)
-	cmd.Env = spec.Env
+	return r.startLoginProc(p.ID, l, bin, spec.Args, spec.Env, spec.Terminal, cwd, tmp)
+}
+
+// startLoginProc starts a login's process (on a pseudo-terminal when
+// terminal) and the goroutine that reads it until it settles.
+func (r *Registry) startLoginProc(id string, l *loginRun, bin string, args, env []string, terminal bool, cwd, tmp string) error {
+	cmd := exec.Command(bin, args...)
+	cmd.Env = env
 	cmd.Dir = cwd
 	var out io.ReadCloser
-	if spec.Terminal {
+	if terminal {
 		m, err := pty.Start(cmd, 400, 40)
 		if err != nil {
 			os.RemoveAll(tmp)
@@ -209,7 +230,7 @@ func (r *Registry) runLogin(p Provider, l *loginRun) error {
 			pw.Close()
 			os.RemoveAll(tmp)
 			if errors.Is(err, exec.ErrNotFound) {
-				return errors.New(spec.Binary + " is not installed on this host")
+				return errors.New(filepath.Base(bin) + " is not installed on this host")
 			}
 			return fmt.Errorf("could not start the login: %w", err)
 		}
@@ -223,7 +244,7 @@ func (r *Registry) runLogin(p Provider, l *loginRun) error {
 		<-ctx.Done()
 		syscall.Kill(-pid, syscall.SIGKILL) // the CLI and anything it started
 	}()
-	go r.watchLogin(p.ID, l, cmd, out, ctx, cancel, cwd, tmp)
+	go r.watchLogin(id, l, cmd, out, ctx, cancel, cwd, tmp)
 	return nil
 }
 
@@ -280,8 +301,10 @@ func (r *Registry) watchLogin(id string, l *loginRun, cmd *exec.Cmd, out io.Read
 		l.state, l.msg = LoginTimedOut, fmt.Sprintf("The login timed out after %d minutes. Start it again.", int(r.loginTimeout().Minutes()))
 	case l.kind == "folder" && werr == nil && l.adapter.LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: cwd}):
 		l.state, l.msg = LoginDone, ""
+	case l.kind == loginMCP && werr == nil: // V0.provider-mcp: the CLI keeps the server's sign-in
+		l.state, l.msg = LoginDone, ""
 	default:
-		msg := l.loginer.ParseLogin(buf[min(l.mark, len(buf)):], true).Line
+		msg := l.parse(buf[min(l.mark, len(buf)):], true).Line
 		if msg == "" {
 			msg = "The login ended without signing in."
 			if l.kind == "token" {
@@ -294,17 +317,20 @@ func (r *Registry) watchLogin(id string, l *loginRun, cmd *exec.Cmd, out io.Read
 	state := l.state
 	l.mu.Unlock()
 	log.Printf("providers: login for %s %s", id, state)
+	if l.onEnd != nil {
+		l.onEnd(state)
+	}
 	r.changed()
 }
 
 // readLogin updates the login from the output so far; true once a token
 // is in the secret store.
 func (r *Registry) readLogin(id string, l *loginRun, buf []byte, done bool) bool {
-	o := l.loginer.ParseLogin(buf, done)
+	o := l.parse(buf, done)
 	if o.Token != "" {
 		if err := r.storeToken(id, o.Token); err != nil {
 			l.mu.Lock()
-			l.msg = "The token could not be stored: " + l.loginer.RedactLogin(err.Error())
+			l.msg = "The token could not be stored: " + l.redact(err.Error())
 			l.mu.Unlock()
 			return false
 		}
@@ -321,7 +347,7 @@ func (r *Registry) readLogin(id string, l *loginRun, buf []byte, done bool) bool
 	}
 	if l.state == LoginChecking {
 		// After the code: an error line means it can be tried again.
-		after := l.loginer.ParseLogin(buf[min(l.mark, len(buf)):], false)
+		after := l.parse(buf[min(l.mark, len(buf)):], false)
 		if after.Line != "" {
 			l.state, l.msg = LoginWaiting, after.Line
 			if after.Retry && l.terminal {
@@ -356,12 +382,17 @@ func (r *Registry) storeToken(id, tok string) error {
 
 // loginCode runs provider.loginCode: the code the sign-in page showed.
 func (r *Registry) loginCode(id, code string) api.Reply {
+	return r.sendCode(id, code, "paste the code the sign-in page shows")
+}
+
+// sendCode sends what the owner pasted to the login running under key.
+func (r *Registry) sendCode(key, code, empty string) api.Reply {
 	code = strings.TrimSpace(code)
 	if code == "" || len(code) > 4096 || strings.ContainsAny(code, "\r\n\x03\x04\x1b") {
-		return fail(errors.New("paste the code the sign-in page shows"))
+		return fail(errors.New(empty))
 	}
 	r.lmu.Lock()
-	l := r.logins[id]
+	l := r.logins[key]
 	r.lmu.Unlock()
 	if l == nil || !l.active() {
 		return api.Reply{Error: "no login is running; start it again", Status: 409}

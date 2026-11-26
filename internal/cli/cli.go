@@ -323,3 +323,90 @@ func EffortFor(models []Model, model, asked string, defaults ...string) string {
 type Prober interface {
 	Probe(ctx context.Context, l Launch, prompt string) (Msg, error)
 }
+
+// V0.provider-mcp: the MCP servers a provider's CLI keeps in its own config,
+// which every session on that provider starts with. An adapter whose CLI
+// manages them implements MCPManager; Settings shows the section only then.
+
+// MCP scopes: where a server is configured.
+const (
+	MCPUser      = "user"      // the CLI's user config: Fyr can add and remove it
+	MCPLocal     = "local"     // a project's private entry
+	MCPProject   = "project"   // a project's shared .mcp.json
+	MCPPlugin    = "plugin"    // a plugin brings it; the plugin removes it
+	MCPConnector = "connector" // a connector of the account (claude.ai)
+	MCPOther     = "other"     // anything else (dynamic, managed)
+)
+
+// MCPStatus is a server's state as the CLI's health check found it.
+type MCPStatus string
+
+// MCP statuses.
+const (
+	MCPConnected MCPStatus = "connected"
+	MCPNeedsAuth MCPStatus = "needs-auth"
+	MCPFailed    MCPStatus = "failed"
+	MCPPending   MCPStatus = "pending" // a project server not approved yet
+	MCPUnknown   MCPStatus = "unknown"
+)
+
+// MCPServer is one server as clients see it: never a header or env value.
+type MCPServer struct {
+	Name      string `json:"name"`
+	Scope     string `json:"scope"`
+	Transport string `json:"transport"` // stdio, http, sse
+	// Target is the URL or the command line, with secret-looking parts
+	// redacted.
+	Target string    `json:"target,omitempty"`
+	Status MCPStatus `json:"status"`
+	Reason string    `json:"reason,omitempty"` // why it failed, redacted
+	// Headers and Env are the names only, for a server Fyr can read.
+	Headers []string `json:"headers,omitempty"`
+	Env     []string `json:"env,omitempty"`
+}
+
+// MCPAdd is a server the owner adds. Header and env values are secrets:
+// they reach the CLI on stdin only.
+type MCPAdd struct {
+	Name      string
+	Transport string // stdio, http, sse
+	URL       string
+	Command   string
+	Args      []string
+	Headers   map[string]string
+	Env       map[string]string
+}
+
+// MCPOp is one MCP command: list, add, remove, login or logout.
+type MCPOp struct {
+	Kind  string
+	Name  string
+	Scope string
+	Add   *MCPAdd
+}
+
+// MCPRun is how to run one MCP command of the CLI.
+type MCPRun struct {
+	Binary   string
+	Args     []string
+	Env      []string
+	Stdin    string // what goes on stdin (the server's JSON for add)
+	Terminal bool   // needs a pseudo-terminal (login)
+}
+
+// MCPManager is an adapter whose CLI keeps MCP servers per config.
+type MCPManager interface {
+	// MCPCommand is how to run op for a provider launched as l, starting
+	// from the environment base: the same config folder and account as its
+	// sessions, so the command sees and changes what they use.
+	MCPCommand(base []string, l Launch, op MCPOp) (MCPRun, error)
+	// ParseMCPList reads the list command's output; userConfig is the
+	// CLI's user config file (its scope and details), "" for none.
+	ParseMCPList(out []byte, userConfig []byte) []MCPServer
+	// MCPConfigFile is the user config file the commands of l read.
+	MCPConfigFile(l Launch, home string) string
+	// ParseMCPLogin reads a server sign-in's output so far.
+	ParseMCPLogin(buf []byte, done bool) LoginOut
+	// RedactMCP removes secrets from a line meant for a person or a log.
+	RedactMCP(s string) string
+}
