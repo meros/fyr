@@ -1,6 +1,7 @@
 package heavy
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -68,6 +69,36 @@ func (c *Calls) Cause(thread string, start time.Time) string {
 		}
 		if p, _ := Suggest(l[i].Command); p != "" {
 			return l[i].Command
+		}
+	}
+	return ""
+}
+
+// RepeatWithin is how long an earlier run of the same command makes the next
+// one a repeat.
+const RepeatWithin = 10 * time.Minute
+
+// Repeat is the class of command when the thread ran the same command (the
+// one Suggest would teach) within RepeatWithin before at, "" when it did not or
+// the command names no work of its own (V0.freeze-controller). Learning
+// happens when an episode ends, and a retry storm is one long episode, so the
+// first storm taught nothing; the repeat is the class at once. The class has
+// no history, so admission charges it the prior (a share of the host) and the
+// copies of it wait for room, one by one, as a known class does. The caller
+// asks it before noting the command.
+func (c *Calls) Repeat(thread, command string, at time.Time) string {
+	pat, _ := Suggest(command)
+	if pat == "" {
+		return ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, p := range c.by[thread] {
+		if at.Sub(p.At) > RepeatWithin {
+			continue
+		}
+		if q, _ := Suggest(p.Command); q == pat {
+			return strings.ReplaceAll(pat, `\`, "")
 		}
 	}
 	return ""

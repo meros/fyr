@@ -823,6 +823,23 @@ func scenarios() []scenario {
 			add(s)
 		}
 	}
+	// 16e. incident-retry when the repeat of a command is a class at once but
+	// nothing is learned of it: the gate charges the prior (1/N of the host).
+	{
+		s := scenario{name: "incident-retry-unknown", idle: 3, params: func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb },
+			desktop: func(time.Duration) float64 { return 9 * gb }}
+		for i := range 30 {
+			s.units = append(s.units, unit("lint", fmt.Sprintf("yarn lint %d", i), "yarn lint", kAdmitted, time.Duration(30*i)*time.Second, 1.2, 2.2, 240))
+		}
+		smoke := unit("smoke", "yarn smoke --db", "", kUndeclared, 20*time.Second, 2.5, 5, 240)
+		smoke.Ramp = 0.2
+		s.units = append(s.units, smoke)
+		for i := range 6 {
+			s.units = append(s.units, unit(fmt.Sprintf("s%d", i), "go test ./internal/...", "go test", kAdmitted, time.Duration(30+20*i)*time.Second, 2, 1.2, 150))
+		}
+		s.learned = map[string]resource.Learned{"go test": learnedClass(2, 1.2, 150)}
+		add(s)
+	}
 	// 17. V0.freeze-controller: one law from light to heavy. n threads each
 	// run an undeclared 3 GB, 2 core job; the budget is 12 GB.
 	for _, n := range []int{2, 4, 6, 8} {
