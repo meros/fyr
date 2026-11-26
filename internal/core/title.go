@@ -13,9 +13,10 @@ import (
 // gave. The engine makes the call; its result comes back as KindTitleMade.
 
 // Automatic titles (V0.auto-title): a thread whose title came from its first
-// message gets a made title twice, by itself: once when its first run ends
-// (TitleAutoStart), so a vague or image-only first message is named from
-// what the agent did, and once when its goal is clear (TitleAutoGoal): its
+// message gets a made title twice, by itself: once early in its first run
+// (TitleAutoStart: StartTitleAfter into it, or at its end if that is
+// sooner), so a vague or image-only first message is named from what the
+// agent did, and once when its goal is clear (TitleAutoGoal): its
 // first change appears, or it settles. A name the owner or the agent gave
 // stops both; a thread named at its start (thread_new's title) has none.
 const (
@@ -96,10 +97,16 @@ func autoTitleMade(t *Thread, x TitleMade, title string) Result {
 	return Result{Events: []Event{{"thread.renamed", map[string]any{"title": title, "by": ByFyr, "auto": x.Auto}}}}
 }
 
-// titleAutoAfter asks for the automatic titles (V0.auto-title (1), (2)): at
-// the end of the thread's first run, and when its first change appears or
-// it settles. Each is asked once; the goal's makes the start's moot.
-func titleAutoAfter(before, t *Thread, in Input) []Effect {
+// StartTitleAfter is how far into the first run the start title is asked
+// (V0.auto-title-timely (1)): long enough for the agent to have read and
+// said something, short of the minutes a first run often takes.
+const StartTitleAfter = 45 * time.Second
+
+// titleAutoAfter asks for the automatic titles (V0.auto-title (1), (2)):
+// StartTitleAfter into the thread's first run (on the agent's next message)
+// or at its end, and when its first change appears or it settles. Each is
+// asked once; the goal's makes the start's moot.
+func titleAutoAfter(before, t *Thread, in Input, now time.Time) []Effect {
 	if t.TitleBy != "" || t.TitleAuto == "" || t.TitleAuto == TitleAutoDone {
 		return nil
 	}
@@ -108,7 +115,8 @@ func titleAutoAfter(before, t *Thread, in Input) []Effect {
 	case goal:
 		t.TitleAuto = TitleAutoDone
 		return []Effect{{Kind: EffectTitle, TitleAuto: TitleAutoGoal}}
-	case t.TitleAuto == TitleAutoFirst && in.Kind == KindRunEnded && before.Running && !t.Running:
+	case t.TitleAuto == TitleAutoFirst && in.Kind == KindRunEnded && before.Running && !t.Running,
+		t.TitleAuto == TitleAutoFirst && in.Kind == KindDigest && t.Running && t.RunStartedAt != nil && now.Sub(*t.RunStartedAt) >= StartTitleAfter:
 		t.TitleAuto = TitleAutoStart
 		return []Effect{{Kind: EffectTitle, TitleAuto: TitleAutoStart}}
 	}
