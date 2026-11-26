@@ -131,3 +131,23 @@ export function downloadUrl(src: string): string {
 export function attachmentUrl(host: HostId | undefined, id: string): string {
   return hostUrl(host, `/attachments/${encodeURIComponent(id)}`);
 }
+
+/** V0.paste-inline: the name a pasted file gets. A clipboard image comes as "image.png" (or with no name), so each
+ *  is named image-N with the first N no chip of this composer has; a named file keeps its name unless a chip has it. */
+export function pastedName(name: string, mediaType: string, taken: ReadonlySet<string>): string {
+  const ext = /\.([A-Za-z0-9]{1,5})$/.exec(name)?.[1] ?? (isImage(mediaType) ? mediaType.slice(6).replace(/\W.*$/, "") || "png" : "");
+  const generic = !name || (isImage(mediaType) && /^image\.[A-Za-z0-9]+$/i.test(name));
+  if (!generic && !taken.has(name)) return name;
+  const stem = generic ? (isImage(mediaType) ? "image" : "file") : name.replace(/\.[A-Za-z0-9]{1,5}$/, "");
+  for (let n = 1; ; n++) {
+    const c = `${stem}-${n}${ext ? "." + ext : ""}`;
+    if (!taken.has(c)) return c;
+  }
+}
+
+/** V0.paste-inline: the text a paste puts at the caret: a [name] marker per file, with a space on a side where the
+ *  marker would otherwise touch a word. */
+export function pasteMarkers(names: string[], before: string, after: string): string {
+  const s = names.map((n) => `[${n}]`).join(" ");
+  return (before && !/\s$/.test(before) ? " " : "") + s + (after && !/^\s/.test(after) ? " " : "");
+}
