@@ -295,6 +295,7 @@ func (e *Engine) HeavyDone(thread, toolUse string) {
 	}
 	delete(calls, toolUse)
 	gave := false
+	e.publishOpenLocked() // V0.freeze-controller: the count changes with every call that ends, not only the last
 	if len(calls) == 0 {
 		delete(e.heavyCalls, thread)
 		e.publishOpenLocked()

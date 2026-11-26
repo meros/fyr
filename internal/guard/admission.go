@@ -216,8 +216,30 @@ func (a *Admission) extras(held []resource.Holder) []resource.Extra {
 // It returns why not and the binding resource.
 func (a *Admission) Admit(head resource.Holder, held []resource.Holder) (bool, string, string) {
 	need, _ := a.Predict(head)
-	need = scaled(need, head.Instances) // V0.freeze-controller: a grow for another run at once
 	needs, sig := a.heldNeeds(held)
+	// V0.freeze-controller: a grow for another run at once is decided for one
+	// more run beside the ones that go now. They are held need, so the pool's
+	// "one job always runs" does not wave through the thread that is the only
+	// holder: its first run runs, the others fit or wait (on 26 Nov the thread
+	// asking for a fifth lint run was admitted as if alone). The runs that go
+	// are counted when it is decided, not when the grow queued: they may have
+	// ended since.
+	if head.Instances > 1 && a.OpenCalls != nil {
+		if n := a.OpenCalls(head.Owner); n > 0 {
+			running := scaled(need, n)
+			needs = append(needs, running)
+			// What they may still grow counts against the headroom as it does
+			// for any holder (V0.admission-memory): all of it without a
+			// reading, else less what the thread grew since its grant.
+			grew := uint64(0)
+			if l, ok := a.Live(head); ok {
+				grew = l.Mem
+			}
+			if running.Mem > grew {
+				sig.Growth += running.Mem - grew
+			}
+		}
+	}
 	return DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), head.Owner, need)
 }
 

@@ -453,6 +453,21 @@ func (r *simRun) run(fyr bool, horizon time.Duration) {
 		if fyr {
 			*r.now = r.t0.Add(h.t)
 		}
+		if os.Getenv("FYR_SIM_TRACE") == r.sc.name && fyr && h.t%(30*time.Second) == 0 {
+			run, gated, frz := map[string]int{}, 0, 0
+			for _, u := range h.units {
+				switch {
+				case u.state == sRunning && u.frozen:
+					frz++
+				case u.state == sRunning:
+					run[u.Thread]++
+				case u.state == sGated:
+					gated++
+				}
+			}
+			s := h.signals()
+			fmt.Printf("TRACE t=%4.0fs running=%v gated=%d frozen=%d agentsMem=%.1fGB swap=%.1fGB stall=%.0f%% head=%.0f%%\n", h.t.Seconds(), run, gated, frz, h.agentsRes/gb, h.swapUsed/gb, *s.UnitStall, *s.Headroom*100)
+		}
 		if v := h.oomd(); v != "" {
 			k := simKill{at: h.t, thread: v, guardable: r.guardable(v)}
 			h.kills = append(h.kills, k)
