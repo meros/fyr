@@ -159,6 +159,10 @@ type Conversation struct {
 	// and the thread is told when it may. It is not in the pool's queue, so
 	// this record is what shows the thread as waiting.
 	GateHold *GateHold `json:"gateHold,omitempty"`
+	// Frozen is set while the memory guard has some of the thread's work
+	// frozen (V0.freeze-visible): its processes sit still and the row must
+	// not read them as running.
+	Frozen *Frozen `json:"frozen,omitempty"`
 	// Handover is set while the thread moves to another profile (V0.45).
 	Handover *Handover `json:"handover,omitempty"`
 	// SlotQueued: the thread has a place in the host's queue for heavy jobs
@@ -205,6 +209,15 @@ type MachineWait struct {
 type GateHold struct {
 	Since time.Time `json:"since"`
 	Why   string    `json:"why"`
+}
+
+// Frozen: since when and why the memory guard holds the thread's work
+// frozen. Keys names each freeze ("job": the slotted job, "work":
+// undeclared heavy work); the record ends when the last one does.
+type Frozen struct {
+	Since time.Time `json:"since"`
+	Why   string    `json:"why"`
+	Keys  []string  `json:"keys"`
 }
 
 // Unresponsive says since when the agent process has said nothing and why

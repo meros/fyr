@@ -48,6 +48,7 @@ const (
 	// V0.153: Fyr waits for a thrashing host ("" Why: it no longer waits).
 	KindMachineWait      = "agent.machineWait"
 	KindGateHold         = "agent.gateHold" // V0.gate-hold-visible
+	KindFrozen           = "agent.frozen"   // V0.freeze-visible
 	KindTask             = "task"
 	KindTaskQuiet        = "task.quiet" // V0.195: a background command waits while the thread uses no CPU
 	KindSession          = "session"
@@ -149,6 +150,9 @@ type (
 	MachineWaitArgs struct{ Why string }
 	// GateHoldArgs: why the gate holds a heavy command back; "" ends the hold.
 	GateHoldArgs struct{ Why string }
+	// FrozenArgs: a freeze of the thread's work (Key "job" or "work") and
+	// why; "" ends that freeze.
+	FrozenArgs struct{ Key, Why string }
 	// SlotGrantedArgs: the kind of a queued job admitted now, and the
 	// subagent that was refused it when that subagent has ended
 	// (V0.subagent-admission); a plain string is the kind alone.
@@ -349,12 +353,15 @@ func init() {
 			}
 			return Result{Events: []Event{{EventSlot, map[string]any{"over": a.Class, "live": a.Live, "predicted": a.Predicted}}}}, nil
 		}},
-		{Name: KindSlotPause, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
+		{Name: KindSlotPause, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 			d := mapArgs(in)
 			_, p := d["paused"].(string)
 			_, k := d["killed"].(string)
 			if !p && !k && d["resumed"] != true && d["waits"] != true && d["retry"] != true {
 				return Result{}, errors.New("slot.pause needs paused, resumed, waits, retry or killed")
+			}
+			if k || d["resumed"] == true {
+				unfreeze(r.T, FreezeKey(d["work"])) // V0.freeze-visible
 			}
 			return Result{Events: []Event{{EventSlot, map[string]any(d)}}}, nil
 		}},
@@ -506,6 +513,7 @@ func init() {
 			r.T.GateHold = &GateHold{Since: now, Why: a.Why}
 			return Result{Events: []Event{{"agent.gateHold", map[string]any{"why": a.Why}}}}, nil
 		}},
+		{Name: KindFrozen, From: observed, Reduce: reduceFrozen},
 		{Name: KindRestarted, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[RestartedArgs](in)
 			if err != nil {
@@ -705,6 +713,7 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 		}
 	}
 	t.GateHold = nil // the hold lived in the last host
+	t.Frozen = nil   // V0.freeze-visible: so did the freeze
 	if t.MachineWait != nil {
 		t.MachineWait = nil
 		res.Events = append(res.Events, Event{"agent.machineWait", map[string]any{"done": true}})

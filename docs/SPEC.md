@@ -1407,6 +1407,7 @@ In v0 the residence host lists what a thread waits on as **claims** (`core.Claim
 | 9 | machine | moving | waiting | Fyr waits for the host before it starts the agent |
 | 10 | delivering | moving, quiet | | a message the agent has not read |
 | 11 | gate | moving | waiting | a heavy command is held at the gate |
+| 11a | frozen | moving | waiting | the memory guard holds some of the thread's work frozen, "Frozen by Fyr: memory is short on host-a; it resumes when memory recovers" (V0.freeze-visible) |
 | 12 | tasks | moving | waiting | a background task or subagent runs |
 | 13 | slot | moving | waiting | a heavy job waits for room on the host |
 | 14 | need | yours | blocked | a change is ready to merge, or stopped on a failure |

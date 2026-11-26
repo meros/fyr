@@ -133,6 +133,7 @@ func settleNow(t *Thread, now time.Time) {
 	t.Starting = nil
 	t.MachineWait = nil
 	t.GateHold = nil
+	t.Frozen = nil
 	t.PinnedAt = nil
 	t.SettleAsk = nil
 	DropSettleRules(t)
