@@ -1563,6 +1563,13 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.cancelWait": // V0.waits-strip
         put(t, { waits: (t.waits ?? []).filter((w) => w.rule !== args.rule), wakes: (t.wakes ?? []).filter((w) => w.rule !== args.rule) });
         break;
+      case "thread.snoozeUntilWait": { // V0.snooze-every-wait: a wait on a time to that time, any other at most 24 h
+        const w = (t.waits ?? []).find((x) => x.rule === args.rule);
+        if (!w) return { ok: false, error: `no wait "${String(args.rule)}" on this thread` };
+        const until = w.at ?? new Date(clock() + 24 * 3600_000).toISOString();
+        put(t, { attention: { state: "snoozed", section: "snoozed", reason: w.at ? `until ${until}` : "until the wait ends" }, view: { seenAt: null, snoozeUntil: until, snoozeWait: w.at ? undefined : w.text }, pinnedAt: null });
+        break;
+      }
       case "thread.cancelWake": // V0.wakeups-via-watch
         put(t, { wakes: (t.wakes ?? []).filter((w) => w.rule !== args.rule) });
         break;

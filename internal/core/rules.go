@@ -137,6 +137,7 @@ type When struct {
 	Ms       int64      `json:"ms,omitempty"`
 	Provider string     `json:"provider,omitempty"`
 	Window   string     `json:"window,omitempty"`
+	Rule     string     `json:"rule,omitempty"`
 	Any      []When     `json:"any,omitempty"`
 	All      []When     `json:"all,omitempty"`
 	Not      *When      `json:"not,omitempty"`
@@ -156,6 +157,7 @@ const (
 	WhenWorkOver  = "workOver"      // V0.185: no work goes on, or the thread needs the owner
 	WhenWorkDone  = "workDone"      // V0.203: no work goes on, nothing waits for the owner, no PR is open
 	WhenNoOpenPR  = "noOpenPR"      // V0.settle-merge-fixes (2): no PR of the thread is open
+	WhenWatchGone = "watchGone"     // V0.snooze-every-wait: {rule}: the thread's watch with that id is no longer armed (it fired or was cancelled)
 )
 
 // AgentWhens are the kinds the agent may use in its own Rules.
@@ -238,6 +240,9 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 		return truth(WorkDoneAt(t, now))
 	case WhenNoOpenPR:
 		return truth(!OpenPR(t))
+	case WhenWatchGone:
+		x := FindRule(t, w.Rule)
+		return truth(x == nil || x.Status != RuleArmed)
 	}
 	c := FindChange(t, w.Change)
 	if c == nil {

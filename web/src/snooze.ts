@@ -100,13 +100,18 @@ export function snoozeCommand(c: Pick<SnoozeChoice, "until" | "done" | "ids">, i
 
 /** A snoozed row's second line. */
 export function snoozeLine(t: Thread, now: number): string {
-  return t.view?.snoozeWhenDone ? SNOOZE_DONE_LINE : `until ${untilLabel(t.view?.snoozeUntil, now)}`;
+  if (t.view?.snoozeWhenDone) return SNOOZE_DONE_LINE;
+  if (t.view?.snoozeWait) return SNOOZE_WAIT_LINE;
+  return `until ${untilLabel(t.view?.snoozeUntil, now)}`;
 }
+
+/** V0.snooze-every-wait: a snooze until a wait on no time ends. */
+const SNOOZE_WAIT_LINE = "until the wait ends";
 
 /** The Snoozed section's hint: the next time a thread wakes; a snooze until work is done has no such time. */
 export function snoozedHint(list: Thread[], now: number): string {
   const next = list
-    .filter((t) => !t.view?.snoozeWhenDone)
+    .filter((t) => !t.view?.snoozeWhenDone && !t.view?.snoozeWait)
     .map((t) => t.view?.snoozeUntil)
     .filter((x): x is string => !!x)
     .sort()[0];
@@ -118,10 +123,12 @@ export function snoozedHint(list: Thread[], now: number): string {
 
 type Wait = NonNullable<Thread["waits"]>[number];
 
-/** The time a wait's snooze runs to, or null when it has none: the wait is not on a time, the time has passed, or the
- *  host does not take a snooze of this thread (settled, archived). A thread that is snoozed already has no button. */
-export function snoozeUntilWait(t: Pick<Thread, "unavailable" | "attention">, w: Wait, now: number): string | null {
-  if (!w.at || !(new Date(w.at).getTime() > now)) return null;
-  if (t.attention?.state === "snoozed" || t.unavailable["thread.snooze"]) return null;
-  return w.at;
+/** V0.snooze-every-wait: the owner's snooze until one wait ends; args {rule}. */
+export const SNOOZE_WAIT_ACTION = "thread.snoozeUntilWait";
+
+/** Whether a wait has the strip's snooze: every wait does (V0.snooze-every-wait), but a wait on a time that has passed
+ *  (it fires now), a thread that is snoozed already, and one the host does not snooze (settled, archived) have none. */
+export function canSnoozeWait(t: Pick<Thread, "unavailable" | "attention">, w: Wait, now: number): boolean {
+  if (w.at && !(new Date(w.at).getTime() > now)) return false;
+  return t.attention?.state !== "snoozed" && !t.unavailable[SNOOZE_WAIT_ACTION];
 }

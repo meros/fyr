@@ -149,6 +149,10 @@
       "name": "thread.snooze"
     },
     {
+      "label": "Snooze until the wait ends",
+      "name": "thread.snoozeUntilWait"
+    },
+    {
       "bulk": true,
       "label": "Snooze until work is done",
       "name": "thread.snoozeWhenDone"
@@ -298,6 +302,7 @@
         "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
+        "thread.snoozeUntilWait": "Nothing is waited for",
         "thread.snoozeWhenDone": "It needs you now",
         "thread.unarchive": "Not archived",
         "thread.unpin": "Not pinned",
@@ -352,6 +357,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
         "thread.settleWhenMerged": "No open PR",
+        "thread.snoozeUntilWait": "Nothing is waited for",
         "thread.snoozeWhenDone": "Nothing is working",
         "thread.unarchive": "Not archived",
         "thread.unpin": "Not pinned",
@@ -423,6 +429,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
         "thread.settleWhenMerged": "No open PR",
+        "thread.snoozeUntilWait": "Nothing is waited for",
         "thread.snoozeWhenDone": "Nothing is working",
         "thread.unarchive": "Not archived",
         "thread.unpin": "Not pinned",
@@ -479,6 +486,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
         "thread.settleWhenMerged": "No open PR",
+        "thread.snoozeUntilWait": "Nothing is waited for",
         "thread.snoozeWhenDone": "Nothing is working",
         "thread.unarchive": "Not archived",
         "thread.unpin": "Not pinned",
@@ -531,6 +539,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
         "thread.settleWhenMerged": "No open PR",
+        "thread.snoozeUntilWait": "Nothing is waited for",
         "thread.snoozeWhenDone": "Nothing is working",
         "thread.unarchive": "Not archived",
         "thread.unpin": "Not pinned",
@@ -587,6 +596,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenDone": "Nothing to wait for",
         "thread.settleWhenMerged": "No open PR",
+        "thread.snoozeUntilWait": "Nothing is waited for",
         "thread.snoozeWhenDone": "Nothing is working",
         "thread.unarchive": "Not archived",
         "thread.unpin": "Not pinned",

@@ -217,6 +217,84 @@ func init() {
 		}})
 }
 
+// V0.snooze-every-wait: every wait of the strip snoozes the thread until it
+// ends. A wait on a time snoozes until that time (V0.snooze-until-wake); any
+// other wait until its watch fires or is cancelled, at most SnoozeDoneMax.
+
+// KindSnoozeUntilWait is the owner's snooze until one of the agent's waits ends.
+const KindSnoozeUntilWait = "thread.snoozeUntilWait"
+
+// SnoozeUntilWait hides the thread until the watch rule is gone, at most
+// SnoozeDoneMax; a watch on a time until that time.
+func SnoozeUntilWait(t *Thread, v *View, rule string, now time.Time) error {
+	ws := agentWatches(t)
+	i := slices.IndexFunc(ws, func(r Rule) bool { return r.ID == rule })
+	if i < 0 {
+		return reject(RejectNotFound, "no wait %q on this thread", rule)
+	}
+	if w := ws[i].When; (w.Kind == WhenAt || w.Kind == WhenQuota) && w.At != nil {
+		if !w.At.After(now) {
+			return reject(RejectNotFound, "the wait %q is due now", rule)
+		}
+		Snooze(v, *w.At, now)
+		return nil
+	}
+	end := now.Add(SnoozeDoneMax)
+	v.Rules = armIn(v.Rules, &Thread{}, Rule{ID: snoozeRule, Purpose: PurposeSnooze, When: Any(When{Kind: WhenWatchGone, Rule: rule}, When{Kind: WhenAt, At: &end}),
+		Then: Then{Kind: KindRuleWake}, After: AfterDisarm, CreatedBy: ByOwner}, now)
+	return nil
+}
+
+// SnoozedWait is the text of the wait the armed snooze lasts until, or "".
+func SnoozedWait(t *Thread, v *View, now time.Time) string {
+	if v == nil {
+		return ""
+	}
+	r := findIn(v.Rules, snoozeRule)
+	if r == nil {
+		return ""
+	}
+	id := ""
+	r.When.walk(func(x When) bool {
+		if x.Kind == WhenWatchGone {
+			id = x.Rule
+		}
+		return id != ""
+	})
+	if id == "" {
+		return ""
+	}
+	if w := FindRule(t, id); w != nil {
+		return watchText(t, w.When, now)
+	}
+	return "the wait"
+}
+
+func init() {
+	register(&Action{Name: KindSnoozeUntilWait, Label: "Snooze until the wait ends",
+		Available: func(t *Thread, v *View, now time.Time) string {
+			if t.Settle.At != nil {
+				return "Settled threads do not snooze"
+			}
+			if r := notArchived(t, v, now); r != "" {
+				return r
+			}
+			if len(agentWatches(t)) == 0 {
+				return "Nothing is waited for"
+			}
+			return ""
+		},
+		// rule: the wait to snooze until.
+		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+			if err := SnoozeUntilWait(t, v, a.trimmed("rule"), now); err != nil {
+				return nil, err
+			}
+			t.PinnedAt = nil // V0.104
+			v.SeenAt = now
+			return nil, nil
+		}})
+}
+
 // cancelledWaits are the agent's notices for its watches an owner's cancel
 // dropped: it must not count on them. An owner-armed watch cancels quietly.
 func cancelledWaits(b, a *Thread, now time.Time) []Notice {
