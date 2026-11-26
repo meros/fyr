@@ -100,6 +100,9 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 			if bound {
 				return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until work is done"}
 			}
+			if SnoozedWait(t, v, now) != "" { // V0.snooze-every-wait
+				return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until the wait ends"}
+			}
 			return Attention{State: Snoozed, Section: SnoozedSec, Reason: "until " + until.Format(time.RFC3339)}
 		}
 	}

@@ -883,14 +883,14 @@ func checkAvailabilityMismatch(t *Thread, v *View, now time.Time) string {
 
 	if t.ArchivedAt != nil {
 		wantAvail("thread.unarchive", true, "archived")
-		for _, cmd := range []string{"thread.archive", "thread.send", "thread.retry", "thread.settle", "thread.settleWhenDone", "thread.snooze", "thread.snoozeWhenDone", "thread.pin", "thread.setView", "thread.handover", "thread.setModel", KindWakeOnQuota} {
+		for _, cmd := range []string{"thread.archive", "thread.send", "thread.retry", "thread.settle", "thread.settleWhenDone", "thread.snooze", "thread.snoozeWhenDone", KindSnoozeUntilWait, "thread.pin", "thread.setView", "thread.handover", "thread.setModel", KindWakeOnQuota} {
 			wantAvail(cmd, false, "archived")
 		}
 	} else {
 		wantAvail("thread.unarchive", false, "not archived")
 		if t.Settle.At != nil {
 			wantAvail("thread.unsettle", true, "settled")
-			for _, cmd := range []string{"thread.settle", "thread.settleWhenDone", "thread.snooze", "thread.snoozeWhenDone", "thread.pin", KindWakeOnQuota} {
+			for _, cmd := range []string{"thread.settle", "thread.settleWhenDone", "thread.snooze", "thread.snoozeWhenDone", KindSnoozeUntilWait, "thread.pin", KindWakeOnQuota} {
 				wantAvail(cmd, false, "settled")
 			}
 		}

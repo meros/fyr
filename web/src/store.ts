@@ -530,7 +530,7 @@ const INVERSE: Record<UndoKind, string> = {
 export function undoKindOf(action: string): UndoKind | null {
   if (action === "thread.settle" || action === "thread.settleWhenDone") return "settle";
   if (action === "thread.archive") return "archive";
-  if (action === "thread.snooze" || action === "thread.snoozeWhenDone") return "snooze";
+  if (action === "thread.snooze" || action === "thread.snoozeWhenDone" || action === "thread.snoozeUntilWait") return "snooze";
   return null;
 }
 

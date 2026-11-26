@@ -1,0 +1,10 @@
+# V0.snooze-every-wait: every wait in the strip snoozes the thread until it ends
+
+→ V0.snooze-until-wake, V0.waits-strip, V0.185 (the snooze until work is done). *Extends V0.snooze-until-wake (2): the button is on every wait, not only a wait on a time.* (owner, of the strip "Waiting: waits for checks ok on PR #…": every wait should be snoozable.)
+
+1. **The command.** `thread.snoozeUntilWait {rule}` is the owner's snooze until one of the agent's waits ends. A wait on a time (a wake-up, a quota reset) snoozes until that time, as `thread.snooze {until: at}` did. Any other wait (a change's phase, a check, the run's end, idleness) arms the View's snooze Rule with the Condition `any(watchGone{rule}, at(now + 24 h))`: the thread comes back when the watch fires or is cancelled, and after `SnoozeDoneMax` (24 h) however the wait goes, as the snooze until work is done does. The wait stays armed. Off with a reason when the thread is settled or archived, or has no wait.
+2. **The Condition.** `watchGone {rule}` holds when the thread has no armed Rule with that id. It is not one of the agent's kinds. The scheduler evaluates the View's Rules after the thread's in the same pass, so the snooze ends in the Input that fires the watch.
+3. **The strip.** Every wait has **Snooze until then** before **Cancel wait** on the desktop and the phone (one component, `web/src/waits-ui.tsx`), except a wait on a time that has passed, a thread snoozed already, and one the host does not take this snooze of (`unavailable`). A press is `thread.snoozeUntilWait {rule}` with no dialog; it leaves the list and undoes as any snooze. It comes only from the owner's press, so it never moves the focus while they type.
+4. **The row.** The view carries `snoozeWait` (the wait's words) while this snooze is armed; the snoozed row reads "until the wait ends", and the Snoozed section's "next" time leaves it out, as it does the snooze until work is done.
+
+Tests: `internal/core/wake_test.go` (TestEveryWaitSnoozesUntilItEnds); `web/test/waits.test.ts`.

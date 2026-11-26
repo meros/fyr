@@ -42,6 +42,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	vd := &api.View{View: &vc}
 	vd.SnoozeUntil, vd.SnoozedAt = core.SnoozeOf(v)
 	vd.SnoozeWhenDone = core.SnoozedWhenDone(v)
+	vd.SnoozeWait = core.SnoozedWait(t, v, now)
 	changes := e.shown(t)
 	running := t.Running || t.RunningTasks() > 0
 	for i := range changes { // V0.97: derived, never stored

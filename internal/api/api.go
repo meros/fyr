@@ -106,6 +106,10 @@ type View struct {
 	// SnoozeWhenDone: the snooze lasts until work is done (V0.185);
 	// SnoozeUntil is then its maximum time.
 	SnoozeWhenDone bool `json:"snoozeWhenDone,omitempty"`
+	// SnoozeWait: the snooze lasts until this wait of the agent's ends, in
+	// the strip's words (V0.snooze-every-wait); SnoozeUntil is then its
+	// maximum time.
+	SnoozeWait string `json:"snoozeWait,omitempty"`
 }
 
 // NewProject is what "New project from this thread" starts with (SPEC 0.5

@@ -210,7 +210,8 @@ export interface ThreadDTO {
   /** V0.210: a question Fyr read in the agent's text; the owner's message, Not a question or a settle clears it */
   attention: Attention;
   /** V0.185: snoozeWhenDone: the snooze lasts until work is done; snoozeUntil is then its maximum time */
-  view?: { seenAt?: string | null; snoozeUntil?: string | null; snoozeWhenDone?: boolean } | null;
+  /** V0.snooze-every-wait: snoozeWait: the snooze lasts until this wait (its words) ends; snoozeUntil is then its maximum time */
+  view?: { seenAt?: string | null; snoozeUntil?: string | null; snoozeWhenDone?: boolean; snoozeWait?: string } | null;
   unavailable?: Record<string, string> | null;
 }
 

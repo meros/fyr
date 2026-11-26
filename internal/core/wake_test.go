@@ -237,3 +237,58 @@ func TestWaitOnATimeCarriesIt(t *testing.T) {
 		t.Fatalf("the snooze dropped a wait: %+v", th.Rules)
 	}
 }
+
+// V0.snooze-every-wait: a wait on anything but a time snoozes the thread
+// until its watch fires (or is cancelled), at most SnoozeDoneMax; a wait on a
+// time until that time.
+func TestEveryWaitSnoozesUntilItEnds(t *testing.T) {
+	th, v := &Thread{ID: "t_1", ActivityAt: ct0}, &View{}
+	at := ct0.Add(20 * time.Hour)
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_idle", When: When{Kind: WhenIdleFor, Ms: 1_800_000}, Then: "notify"}}, ct0)
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_at", When: When{Kind: WhenAt, At: &at}, Then: "notify"}}, ct0)
+	if r := Registry[KindSnoozeUntilWait].Available(th, v, ct0); r != "" {
+		t.Fatalf("snooze until the wait off: %s", r)
+	}
+
+	// The time wait: snoozed until its time, as "Snooze until then" was.
+	step(t, th, v, Input{Source: FromOwner, Kind: KindSnoozeUntilWait, Args: Args{"rule": "w_at"}}, ct0.Add(time.Minute))
+	if until, _ := SnoozeOf(v); until == nil || !until.Equal(at) {
+		t.Fatalf("snoozed until %v, want %v", until, at)
+	}
+	step(t, th, v, Input{Source: FromOwner, Kind: "thread.unsnooze"}, ct0.Add(2*time.Minute))
+
+	// The idle wait: snoozed, at most SnoozeDoneMax, until the watch fires.
+	now := ct0.Add(3 * time.Minute)
+	step(t, th, v, Input{Source: FromOwner, Kind: KindSnoozeUntilWait, Args: Args{"rule": "w_idle"}}, now)
+	if until, _ := SnoozeOf(v); until == nil || !until.Equal(now.Add(SnoozeDoneMax)) {
+		t.Fatalf("snoozed until %v, want %v", until, now.Add(SnoozeDoneMax))
+	}
+	if a := Compute(th, v, now); a.State != Snoozed || a.Reason != "until the wait ends" {
+		t.Fatalf("attention %+v", a)
+	}
+	if w := SnoozedWait(th, v, now); w != "wakes after 30 min idle" {
+		t.Fatalf("snoozed wait %q", w)
+	}
+	if len(Waits(th, now)) != 2 {
+		t.Fatalf("the snooze dropped a wait: %+v", th.Rules)
+	}
+	step(t, th, v, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0.Add(31*time.Minute))
+	if FindRule(th, "w_idle") != nil {
+		t.Fatalf("the idle watch did not fire: %+v", th.Rules)
+	}
+	if until, _ := SnoozeOf(v); until != nil {
+		t.Fatalf("the snooze outlived its wait: until %v", until)
+	}
+
+	// A cancelled wait ends its snooze too.
+	step(t, th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_run", When: When{Kind: WhenRunEnded}, Then: "notify"}}, ct0.Add(32*time.Minute))
+	step(t, th, v, Input{Source: FromOwner, Kind: KindSnoozeUntilWait, Args: Args{"rule": "w_run"}}, ct0.Add(33*time.Minute))
+	step(t, th, v, Input{Source: FromOwner, Kind: KindCancelWait, Args: Args{"rule": "w_run"}}, ct0.Add(34*time.Minute))
+	if until, _ := SnoozeOf(v); until != nil {
+		t.Fatalf("the snooze outlived its cancelled wait: until %v", until)
+	}
+
+	if _, _, _, err := Reduce(th, v, Input{Source: FromOwner, Kind: KindSnoozeUntilWait, Args: Args{"rule": "w_none"}}, ct0.Add(35*time.Minute)); err == nil {
+		t.Fatal("a snooze until a wait that does not exist was taken")
+	}
+}
