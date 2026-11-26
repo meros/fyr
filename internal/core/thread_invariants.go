@@ -838,7 +838,7 @@ func checkAttentionPlacement(t *Thread, v *View, now time.Time, on func(repo str
 		var live []string
 		for name, on := range map[string]bool{
 			"running": t.Running, "starting": t.Starting != nil, "tasks": t.RunningTasks() > 0, "slotQueued": t.SlotQueued,
-			"gateHold": t.GateHold != nil, "machineWait": t.MachineWait != nil, "handover": t.Handover != nil,
+			"gateHold": t.GateHold != nil, "frozen": t.Frozen != nil, "machineWait": t.MachineWait != nil, "handover": t.Handover != nil,
 			"failure": t.Failure != nil, "unresponsive": t.Unresponsive != nil, "settleAsk": t.SettleAsk != nil,
 			"runRequest": PendingRequest(t) != nil, "runningRequest": RunningRequest(t) != nil, "heldAsks": len(t.HeldAsks) > 0,
 		} {

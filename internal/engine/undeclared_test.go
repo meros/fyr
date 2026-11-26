@@ -523,3 +523,27 @@ func TestF17TheGuardHistoryIsBounded(t *testing.T) {
 		t.Fatalf("%d events", n)
 	}
 }
+
+// V0.freeze-visible: while the guard holds a thread's work frozen, the
+// thread's record says so, and a thaw the agent is not told about (the
+// episode ended) clears it.
+func TestFreezeVisibleWhileFrozenAndClearedOnAnyThaw(t *testing.T) {
+	e, u, now, z, th := fzEngine(t)
+	a, b := th[0], th[1]
+	e.Slots.Acquire(b, resource.Test)
+	u.flags = []resource.Undeclared{flagFor(a, *now)}
+	z.free = 0.04
+	e.Tick()
+	if !z.frozen[a] {
+		t.Fatal("not frozen")
+	}
+	got, _ := e.Thread(a)
+	if got.Frozen == nil || core.FrozenText(got.Frozen) != "Frozen by Fyr: memory is short on "+e.hostName()+"; it resumes when memory recovers" {
+		t.Fatalf("frozen record: %+v", got.Frozen)
+	}
+	u.flags = nil
+	e.Tick()
+	if got, _ := e.Thread(a); z.frozen[a] || got.Frozen != nil {
+		t.Fatalf("after the thaw: frozen %v record %+v", z.frozen[a], got.Frozen)
+	}
+}

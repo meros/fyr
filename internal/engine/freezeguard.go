@@ -6,6 +6,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -77,6 +78,9 @@ func (e *Engine) applyGuard(d guard.Decision, now time.Time) guard.Answer {
 		} else {
 			e.SlotThaw(d.Thread)
 		}
+		// V0.freeze-visible: every thaw ends the record, also one the agent
+		// is not told about (its processes are gone, the hold ended).
+		e.setFrozen(d.Thread, d.Undeclared, "")
 	case guard.Rotate:
 		return guard.Answer{OK: e.UndeclaredRotate(d.Thread, d.Units, d.PID)}
 	case guard.Kill:
@@ -274,6 +278,18 @@ func (v *guardView) Exists(th string) bool {
 	})
 }
 
+// setFrozen records on the thread that the guard froze its slotted job or its
+// undeclared work (why), or thawed it ("").
+func (e *Engine) setFrozen(thread string, undeclared bool, why string) {
+	key := "job"
+	if undeclared {
+		key = "work"
+	}
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindFrozen, Thread: thread, Args: core.FrozenArgs{Key: key, Why: why}}); err != nil {
+		log.Printf("frozen %s: %v", thread, err)
+	}
+}
+
 // slotNotice records a slot event for the thread's agent (decision 0029).
 func (e *Engine) slotNotice(owner string, d map[string]any) {
 	if d["retry"] == true { // V0.subagent-admission: the held command's actor
@@ -289,6 +305,10 @@ func (e *Engine) slotNotice(owner string, d map[string]any) {
 }
 
 func (e *Engine) applySlotPause(owner string, d map[string]any) {
+	if _, ok := d["paused"].(string); ok {
+		// V0.freeze-visible: the row says the work is frozen, not running.
+		e.setFrozen(owner, core.FreezeKey(d["work"]) == "work", fmt.Sprintf("memory is short on %s; it resumes when memory recovers", e.hostName()))
+	}
 	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotPause, Thread: owner, Args: d}); err != nil {
 		log.Printf("slot pause %s: %v", owner, err)
 	}

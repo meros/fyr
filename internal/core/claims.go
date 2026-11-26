@@ -34,6 +34,7 @@ const (
 	ClaimMachine      = "machine"
 	ClaimDelivering   = "delivering"
 	ClaimGate         = "gate"
+	ClaimFrozen       = "frozen"
 	ClaimTasks        = "tasks"
 	ClaimSlot         = "slot"
 	ClaimNeed         = "need"
@@ -51,7 +52,7 @@ const (
 // attention. Claims returns them in this order.
 var ClaimOrder = []string{
 	ClaimAsk, ClaimHandover, ClaimQuota, ClaimFailure, ClaimUnresponsive, ClaimNoProgress,
-	ClaimRun, ClaimStarting, ClaimMachine, ClaimDelivering, ClaimGate, ClaimTasks, ClaimSlot,
+	ClaimRun, ClaimStarting, ClaimMachine, ClaimDelivering, ClaimGate, ClaimFrozen, ClaimTasks, ClaimSlot,
 	ClaimNeed, ClaimRunRequest, ClaimCommand, ClaimMerging, ClaimSettleOffer,
 	ClaimCI, ClaimWatch, ClaimWaking, ClaimRule,
 }
@@ -153,6 +154,11 @@ func claims(t *Thread, now time.Time, on func(repo string) bool, counts func(Rul
 	if t.GateHold != nil {
 		// V0.gate-hold-visible: a heavy command the gate holds back.
 		moving(ClaimGate, Waiting, GateHoldText(t.GateHold))
+	}
+	if t.Frozen != nil {
+		// V0.freeze-visible: the memory guard froze the thread's work; above
+		// its tasks, which would read as running.
+		moving(ClaimFrozen, Waiting, FrozenText(t.Frozen))
 	}
 	if n := t.RunningTasks(); n > 0 {
 		moving(ClaimTasks, Waiting, waitReason(t, n))

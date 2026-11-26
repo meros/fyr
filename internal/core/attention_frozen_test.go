@@ -10,7 +10,9 @@ func TestFrozenWorkWaits(t *testing.T) {
 	const why = "memory is short on host-a; it resumes when memory recovers"
 	const want = "Frozen by Fyr: " + why
 	idle := func() *Thread {
-		return &Thread{ID: "t", Title: "x", Tasks: []Task{{ID: "b1", Status: TaskRunning, Background: true, Type: "local_bash", Description: "Run the smoke check"}}}
+		th := &Thread{ID: "t", Title: "x"}
+		th.Tasks = []Task{{ID: "b1", Status: TaskRunning, Background: true, Type: "local_bash", Description: "Run the smoke check"}}
+		return th
 	}
 	reduce := func(th *Thread, in Input) *Thread {
 		t.Helper()

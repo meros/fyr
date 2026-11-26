@@ -61,6 +61,7 @@ func ProcessLost(t *Thread, class, msg string, now time.Time) {
 	t.Unresponsive = nil // V0.143: the process is gone
 	t.MachineWait = nil  // V0.153
 	t.GateHold = nil     // V0.gate-hold-visible
+	t.Frozen = nil       // V0.freeze-visible
 	var keep []Decision
 	live := t.Running || t.Starting != nil // V0.starting-moves: the start died with it
 	t.Starting = nil
@@ -185,6 +186,9 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		cur.UpdatedAt = now
 		if ended {
 			t.ActivityAt = now
+			if !t.Running && t.RunningTasks() == 0 {
+				t.Frozen = nil // V0.freeze-visible: nothing of it runs to be frozen
+			}
 		}
 		return
 	}

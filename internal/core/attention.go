@@ -135,6 +135,11 @@ func GateHoldText(h *GateHold) string {
 	return "Held: " + h.Why
 }
 
+// FrozenText is the one line of work the memory guard froze.
+func FrozenText(f *Frozen) string {
+	return "Frozen by Fyr: " + f.Why
+}
+
 // ciWait is the reason a thread waits for CI (V0.ci-wait-moves), or "": a
 // merge ask held for CI (V0.136) names the checks it waits on, else an open
 // PR of a change still going whose checks the poller read as running (a PR
