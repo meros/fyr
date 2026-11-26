@@ -218,3 +218,25 @@ func TestAutoTitleAtTheGoalKeepsOrMoves(t *testing.T) {
 		t.Fatalf("the call read %q", conv)
 	}
 }
+
+// V0.auto-title-timely (2): the goal call does not keep a title that is
+// still the first message's line: no model made it.
+func TestGoalTitleDoesNotKeepThePlaceholder(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	guardDeps(t, h.e)
+	id := created(h, "order snoozed is earliest deadline first")
+	evs, err := h.e.st.EventsFor(id, 0, 1<<30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ph := firstLine(evs)
+	if th, _ := h.e.Thread(id); th.Title != ph {
+		t.Fatalf("title %q, placeholder %q", th.Title, ph)
+	}
+	if got := h.e.titleContext(id, true, ph); strings.Contains(got, "current title") {
+		t.Fatalf("the goal call keeps the placeholder: %q", got)
+	}
+	if got := h.e.titleContext(id, true, "something else"); !strings.Contains(got, "The thread's current title: order snoozed is earliest deadline first") {
+		t.Fatalf("a made title is not kept: %q", got)
+	}
+}

@@ -123,7 +123,7 @@ func (e *Engine) makeTitle(threadID string, keep bool) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), titleTimeout)
 	defer cancel()
-	out, err := e.Titler(ctx, threadID, e.titleContext(threadID, keep)+clipConversation(conv))
+	out, err := e.Titler(ctx, threadID, e.titleContext(threadID, keep, firstLine(evs))+clipConversation(conv))
 	if err != nil {
 		return "", err
 	}
@@ -134,16 +134,30 @@ func (e *Engine) makeTitle(threadID string, keep bool) (string, error) {
 	return title, nil
 }
 
+// firstLine is the placeholder title the first message gave the thread
+// (core.TitleFrom), "" when it has no owner's message.
+func firstLine(evs []store.Event) string {
+	for _, t := range readTurns(evs) {
+		if t.Kind == turnUser {
+			return core.TitleFrom(t.Text)
+		}
+	}
+	return ""
+}
+
 // titleContext is what the title call reads before the conversation
 // (V0.auto-title (2)): the current title when it is to be kept, and the
-// titles of the thread's changes, which say what is being built.
-func (e *Engine) titleContext(threadID string, keep bool) string {
+// titles of the thread's changes, which say what is being built. A title
+// that is still the first message's line (placeholder) is not kept: no
+// model made it, and the goal call kept it word for word
+// (V0.auto-title-timely (2)).
+func (e *Engine) titleContext(threadID string, keep bool, placeholder string) string {
 	th, ok := e.Thread(threadID)
 	if !ok {
 		return ""
 	}
 	var b strings.Builder
-	if keep && th.Title != "" {
+	if keep && th.Title != "" && th.Title != placeholder {
 		fmt.Fprintf(&b, "The thread's current title: %s\n", th.Title)
 	}
 	var chs []string

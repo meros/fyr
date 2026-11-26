@@ -2,6 +2,7 @@ package core
 
 import (
 	"testing"
+	"time"
 )
 
 // autoTitles returns the TitleAuto of each title effect in res.
@@ -116,5 +117,28 @@ func TestAutoTitleLands(t *testing.T) {
 	th, v = &Thread{ID: "t_1", Title: "Old"}, &View{}
 	if step(t, th, v, Input{Source: Observer(ObsTitle), Kind: KindTitleMade, Thread: "t_1", Args: TitleMade{Title: "New", By: ByFyr}}, ct0); th.Title != "Old" {
 		t.Fatalf("title %q", th.Title)
+	}
+}
+
+// V0.auto-title-timely (1): the start title is asked StartTitleAfter into
+// the first run, on the agent's next message, not only at the run's end.
+func TestAutoTitleEarlyInTheFirstRun(t *testing.T) {
+	th, v := &Thread{ID: "t_1", Title: "order snoozed first", TitleAuto: TitleAutoFirst}, &View{}
+	start := ct0
+	th.Running, th.RunStartedAt = true, &start
+	digest := func(at time.Time) Result {
+		return step(t, th, v, Input{Source: Observer(ObsProcess), Kind: KindDigest, Args: DigestArgs{Summary: "Reading"}}, at)
+	}
+	if got := autoTitles(digest(ct0.Add(StartTitleAfter - time.Second))); len(got) != 0 {
+		t.Fatalf("a message before StartTitleAfter asked %v", got)
+	}
+	if got := autoTitles(digest(ct0.Add(StartTitleAfter))); len(got) != 1 || got[0] != TitleAutoStart {
+		t.Fatalf("a message at StartTitleAfter asked %v", got)
+	}
+	if got := autoTitles(digest(ct0.Add(2 * StartTitleAfter))); len(got) != 0 {
+		t.Fatalf("a later message asked %v", got)
+	}
+	if got := autoTitles(runEnded(t, th, v)); len(got) != 0 {
+		t.Fatalf("the run's end after the start title asked %v", got)
 	}
 }
