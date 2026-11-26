@@ -20,8 +20,8 @@ import { SECTIONS, connLabel, connWords, isOpen, mergedToSettle, unpinned, type 
 import { BrandMark, StateIcon } from "./icons.tsx";
 import { count } from "./format.ts";
 import { snoozedHint } from "./snooze.ts";
-import { quietLocked, quietNote } from "./quiet.ts";
-import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
+import { isQuiet, quietNote } from "./quiet.ts";
+import { QuietGate } from "./quiet-ui.tsx";
 
 export type Theme = "system" | "light" | "dark";
 
@@ -178,8 +178,8 @@ interface InboxProps {
   extra?: ComponentChildren;
   /** the host and project filters (V0.23, V0.134) */
   filter: FilterView;
-  /** V0.114: the one unlock of quiet projects, and how many search hits it hides */
-  unlock: QuietUnlock;
+  /** V0.quiet-lift: a project's page, where its quiet is lifted; V0.114: how many search hits the quiet hides */
+  openProject(id: string): void;
   quietHits: number;
   /** V0.ai-search: what AI search may read, in list order (the same reach as the typed search) */
   searchable: Thread[];
@@ -215,8 +215,8 @@ export function Inbox(p: InboxProps) {
           {PLUS}
         </button>
       </div>
-      <FilterRow f={p.filter} now={p.now} unlock={p.unlock} />
-      {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
+      <FilterRow f={p.filter} now={p.now} openProject={p.openProject} />
+      {p.quietHits > 0 && <QuietGate now={p.now} what="search" />}
       <div class="list" role="listbox" aria-label="Threads" onClick={(e) => e.target === e.currentTarget && p.onBackground?.()}>
         {p.setup}
         <AiSearchPanel ai={ai} onOpen={p.onClick} />
@@ -325,7 +325,7 @@ export interface FilterView {
  *  over the hosts that are on: a click picks a project, a click on the picked one or the × clears it. Each row shows
  *  only when it has a choice. V0.114: picking a quiet project shows the gate under the rows, not its threads, until the
  *  30 s hold. */
-export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlock: QuietUnlock }) {
+export function FilterRow({ f, now, openProject }: { f: FilterView; now: number; openProject(id: string): void }) {
   if (!f.hosts.length && !f.projects.length) return null;
   const picked = f.projects.find((c) => c.selected)?.project;
   const n = (x: number) => `${x.toLocaleString()} thread${x === 1 ? "" : "s"} in view`;
@@ -369,7 +369,7 @@ export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlo
       </div>
     )}
     </div>
-    {picked && quietLocked(picked, now, unlock.showUntil) && <QuietGate project={picked} now={now} unlock={unlock} what="threads" />}
+    {picked && isQuiet(picked, now) && <QuietGate project={picked} now={now} what="threads" onProject={openProject} />}
     </>
   );
 }

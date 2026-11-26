@@ -29,6 +29,11 @@ type Project struct {
 	// (V0.quiet-now): the project is quiet from then until this time, joined
 	// with the windows of Quiet that hold or follow on. A time passed is off.
 	QuietNow *time.Time `json:"quietNow,omitempty"`
+	// QuietLift is the end of a pause of the quiet the owner held for on
+	// the project page (V0.quiet-lift): until then the project is not quiet,
+	// whatever its windows and QuietNow say, on every device and every host
+	// of a linked project. A time passed is off.
+	QuietLift *time.Time `json:"quietLift,omitempty"`
 	// Priority is the owner's say in how much the project's threads get of
 	// the host (V0.project-priority): PriorityHigh, PriorityLow, or "" for
 	// normal. It orders new waiters in the slot queue and sets the threads'
@@ -448,6 +453,16 @@ func reduceProjectUpdate(r Rec, in Input, now time.Time) (Result, error) {
 			return Result{}, reject(RejectBadArgs, "%s", err.Error())
 		}
 		p.QuietNow = t
+		if _, lift := a["quietLift"]; t != nil && !lift {
+			p.QuietLift = nil // V0.quiet-lift: quiet started by hand ends a lift
+		}
+	}
+	if raw, ok := a["quietLift"]; ok { // V0.quiet-lift; null ends it
+		t, err := ParseQuietLift(raw, now)
+		if err != nil {
+			return Result{}, reject(RejectBadArgs, "%s", err.Error())
+		}
+		p.QuietLift = t
 	}
 	if raw, ok := a["priority"]; ok { // V0.project-priority; null is normal
 		v, _ := raw.(string)
@@ -518,7 +533,7 @@ func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{Reply: map[string]any{"id": p.ID, "kept": true}}, nil
 	}
 	shared := Args{}
-	for _, k := range []string{"name", "color", "icon", "quiet", "quietNow", "priority", "agentSettle", "toolApproval"} { // V0.linked-agent-settle, V0.tool-approval-judge, V0.quiet-now
+	for _, k := range []string{"name", "color", "icon", "quiet", "quietNow", "quietLift", "priority", "agentSettle", "toolApproval"} { // V0.linked-agent-settle, V0.tool-approval-judge, V0.quiet-now, V0.quiet-lift
 		if v, ok := a[k]; ok {
 			shared[k] = v
 		}

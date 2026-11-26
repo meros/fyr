@@ -48,7 +48,6 @@ import { projectChip, findProject, memberOn } from "./projects.ts";
 import { effortsFor, startEffort } from "./providers.ts";
 import { createProjects, isQuiet } from "./quiet.ts";
 import type { Project } from "./types.ts";
-import { useQuietUnlock } from "./quiet-ui.tsx";
 
 export interface NewThreadFormOptions extends FormCtx {
   projectFilter: string | null;
@@ -73,11 +72,9 @@ let held: { host: HostId | undefined; chips: Chip[] } | null = null;
 const DRAFT_WRITE_MS = 300;
 
 export function useNewThreadForm(o: NewThreadFormOptions) {
-  // V0.74: quiet projects stay out of the list until a 30 s hold shows them for 30 minutes; the picked one stays.
-  // V0.114: the unlock is the one every path shares.
+  // V0.74: quiet projects stay out of the list; the picked one stays. V0.quiet-lift: one whose quiet is lifted on its
+  // page is not quiet, so it is offered.
   const off = o.clockOffset ?? 0;
-  const unlock = useQuietUnlock(off);
-  const showUntil = unlock.showUntil;
   const keep = useRef<string | undefined>(undefined);
   const now = Date.now() + off;
   const last = useMemo(() => loadRemembered(browserStorage()), []);
@@ -86,7 +83,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const stored = useMemo(() => loadDraft(browserStorage()), []);
   const waiting = useRef(stored);
   // A quiet project the draft was written for is offered while its picks wait, as the picked one is.
-  const offered = createProjects(o.projects, now, showUntil, keep.current, waiting.current?.project || undefined);
+  const offered = createProjects(o.projects, now, keep.current, waiting.current?.project || undefined);
   const quietCount = o.projects.filter((x) => isQuiet(x, now)).length;
   const ctx: FormCtx = { projects: offered, profiles: o.profiles, hosts: o.hosts };
   const ctxRef = useRef(ctx);
@@ -314,13 +311,8 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     form: f,
     set,
     projects: formProjects(f, ctx),
-    /** V0.74: the hold row under the project list */
-    quiet: {
-      count: quietCount,
-      showUntil,
-      show: unlock.show,
-      hide: unlock.hide,
-    },
+    /** V0.74: the line under the project list */
+    quiet: { count: quietCount },
     cur,
     making,
     chip: projectChip(cur, making),

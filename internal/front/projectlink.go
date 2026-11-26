@@ -35,7 +35,7 @@ const (
 )
 
 // sharedKeys are the values a link's members share.
-var sharedKeys = []string{"name", "color", "icon", "quiet", "quietNow", "priority", "agentSettle", "toolApproval"} // V0.linked-agent-settle, V0.tool-approval-judge, V0.quiet-now
+var sharedKeys = []string{"name", "color", "icon", "quiet", "quietNow", "quietLift", "priority", "agentSettle", "toolApproval"} // V0.linked-agent-settle, V0.tool-approval-judge, V0.quiet-now
 
 // linkTarget is one project record a link command writes.
 type linkTarget struct {
@@ -259,7 +259,7 @@ func sharedAtOf(p map[string]any) time.Time {
 // priority (V0.project-priority), no quiet stretch started by hand
 // (V0.quiet-now), and ask for agentSettle / toolApproval are sent as null.
 func sharedOf(p map[string]any) map[string]any {
-	out := map[string]any{"quiet": p["quiet"], "quietNow": p["quietNow"], "priority": p["priority"], "agentSettle": p["agentSettle"], "toolApproval": p["toolApproval"]}
+	out := map[string]any{"quiet": p["quiet"], "quietNow": p["quietNow"], "quietLift": p["quietLift"], "priority": p["priority"], "agentSettle": p["agentSettle"], "toolApproval": p["toolApproval"]}
 	for _, k := range sharedKeys[:3] {
 		if v, ok := p[k]; ok {
 			out[k] = v
@@ -534,6 +534,11 @@ func checkShared(args map[string]any) error {
 			return err
 		}
 	}
+	if v, ok := args["quietLift"]; ok { // V0.quiet-lift
+		if _, err := core.ParseQuietLift(v, time.Now()); err != nil {
+			return err
+		}
+	}
 	if v, ok := args["quiet"]; ok && v != nil {
 		var q core.QuietHours
 		b, _ := json.Marshal(v)
@@ -546,7 +551,7 @@ func checkShared(args map[string]any) error {
 }
 
 // projectSharedCommand runs front.projectShared {link, name?, color?, icon?,
-// quiet?, quietNow?, priority?, agentSettle?}: the link's newest values with these changed, stamped later than
+// quiet?, quietNow?, quietLift?, priority?, agentSettle?}: the link's newest values with these changed, stamped later than
 // anything this front has seen and written to every online member. An offline
 // member catches up when it is back.
 func (f *Front) projectSharedCommand(w http.ResponseWriter, commandID string, args map[string]any) {

@@ -80,7 +80,7 @@ function App() {
   useKeyboard({ ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G });
   const I = useHostActions({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G });
   const J = usePhoneNav({ ...A, ...N, ...B, ...C, ...D, ...E, ...F, ...G, ...I });
-  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, unlock, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, onCard, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, snoozeUntilWait, runDeskAction, ctxMenu, submitAsk, answerField, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, mergeHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
+  const { api, rawStore, fullStore, store, byHost, view, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, handoverId, setTracker, sectionOpen, query, setQuery, help, searchRef, expanded, setExpanded, theme, inText, toolDetailsOn, phone, cmds, toast, nav, selecting, setSelecting, pushSt, canInstall, setCanInstall, env, pushReason, now, setProjectFilter, settingsAt, setSettingsAt, pickIds, filterId, searchList, quietHits, sec, filterView, gate, gatedThread, setArrival, arrivedHere, rows, guest, viewThread, navGo, navReplace, navBack, earlier, loadEarlier, decision, card, answers, onCard, openThread, closePeek, closeThread, settle, settleMerged, archive, openSnooze, snoozeList, snooze, snoozeUntilWait, runDeskAction, ctxMenu, submitAsk, answerField, winW, listOn, toggleList, toggleSection, nameSection, sectionUsed, hideShown, jump, send, projectActions, folderPicker, confirmHost, mergeHost, hostsCtx, folderPickView, openProjectScreen, directory, create, restartNow, cycleTheme, pwaControls, settingsFor, phoneActions, phoneSettingsGo, phoneSettingsReplace, undNav } = { ...A, ...N, ...B, ...C, ...C2, ...D, ...E, ...F, ...G, ...I, ...J };
 
   const providers: Omit<AppProvidersProps, "children"> = { directory, folderPicker, undNav, hostsCtx, hostMarks: store.hostMarks, confirm: confirmHost.ask, merge: mergeHost.ask, profiles: byHost };
 
@@ -96,7 +96,7 @@ function App() {
           profiles={byHost}
           allProjects={fullStore.projects}
           shownHere={{ hidden: A.deviceHidden, set: A.setHidden }}
-          inbox={{ sec, rows, guest, search: { query, setQuery, list: searchList, quietHits }, unlock }}
+          inbox={{ sec, rows, guest, search: { query, setQuery, list: searchList, quietHits }, openProject: openProjectScreen }}
           now={now}
           commands={cmds}
           open={{
@@ -195,7 +195,7 @@ function App() {
           onExpand={(k) => (markListFilter(), setExpanded((x) => ({ ...x, [k]: true })))}
           onNew={() => setDialog("new")}
           filter={filterView}
-          unlock={unlock}
+          openProject={openProjectScreen}
           quietHits={quietHits}
           extra={pwaControls}
           setup={
@@ -248,7 +248,7 @@ function App() {
           </Boundary>
         ) : gatedThread ? (
           <section class="th empty-th">
-            <QuietGate project={recordOf(store.projects, gatedThread.projectId)} now={Date.now() + store.clockOffset} unlock={unlock} what="thread" />
+            <QuietGate project={recordOf(store.projects, gatedThread.projectId)} now={Date.now() + store.clockOffset} what="thread" onProject={openProjectScreen} />
           </section>
         ) : store.loaded ? (
           // V0.status-home: no thread open: the status screen.

@@ -75,7 +75,8 @@ button.ptag{padding:0}
 .empty-th .qgate{align-self:center;width:calc(100% - 24px)}
 .qgh{padding:12px 12px 0;font:500 14px/20px var(--ui);color:var(--ink)}
 .qgb{padding:2px 12px 0;font:400 13px/18px var(--ui);color:var(--ink-muted)}
-.qgate .qhold{margin-top:12px}
+.qgf{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px 12px} /* V0.quiet-lift: where the quiet is lifted */
+.qgf .qgb{padding:0}
 /* V0.30: the one picker and the one-step New project */
 .pli.new .pln{color:var(--harbour)}
 .pli.new .pi.all,.pli.more .pi.all{color:var(--harbour);font-weight:500}

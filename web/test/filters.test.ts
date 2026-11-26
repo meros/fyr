@@ -17,7 +17,7 @@ const NOW = Date.parse("2026-11-17T12:00:00Z");
 const byId = (...ts: Thread[]) => Object.fromEntries(ts.map((t) => [t.id, t]));
 const T = (id: string, section: "needs" | "working" | "seen" | "snoozed" | "settled", projectId: string, host: string, extra: Record<string, unknown> = {}) =>
   thread(id, "done", section, { projectId, project: projects.find((p) => p.id === projectId)?.name ?? "", host, hostId: hid(host), ...extra });
-const base = { projects, hosts, now: NOW, showUntil: 0, open: {} };
+const base = { projects, hosts, now: NOW, open: {} };
 const S = (hostsOff: string[] = [], project: string | null = null): FilterSel => ({ hostsOff, project });
 const names = (f: ReturnType<typeof activeFilters>) => ({ hosts: f.hosts.map((h) => h.name), projects: f.projects.map((p) => p.project.name) });
 
@@ -88,15 +88,15 @@ test("V0.134: a selected project stays, selected, after its last thread leaves; 
   assert.deepEqual(g.projects.map((c) => [c.project.name, c.selected, c.n]), [["web", true, 0], ["fyr", false, 1]], "fyr is on desk, which is on");
 });
 
-test("V0.114: a quiet project is not shown or counted while locked; unlocked, it is; selected, it stays", () => {
+test("V0.114: a quiet project is not shown or counted; lifted (V0.quiet-lift, no quietUntil), it is; selected, it stays", () => {
   const quietUntil = "2026-11-17T18:00:00Z";
   const qp = [P("p_web", "web"), P("p_fyr", "fyr"), P("p_home", "home", { quietUntil })];
   const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "desk"), T("c", "needs", "p_home", "lab", { quietUntil }));
   const locked = activeFilters({ ...base, projects: qp, threads, sel: S() });
   assert.deepEqual(names(locked), { hosts: [], projects: ["web", "fyr"] }, "lab has only quiet threads: not counted");
-  const unlocked = activeFilters({ ...base, projects: qp, threads, showUntil: NOW + 60_000, sel: S() });
+  const liftedThreads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "desk"), T("c", "needs", "p_home", "lab"));
+  const unlocked = activeFilters({ ...base, projects: [qp[0], qp[1], P("p_home", "home")], threads: liftedThreads, sel: S() });
   assert.deepEqual(names(unlocked).projects, ["web", "fyr", "home"]);
-  assert.deepEqual(names(unlocked).hosts, [], "unlocked quiet threads stay out of the inbox (V0.46) unless their project is picked");
   const picked = activeFilters({ ...base, projects: qp, threads, sel: S([], "p_home") });
   assert.deepEqual(names(picked).projects, ["web", "fyr", "home"]);
   assert.equal(picked.projects[2].selected, true);

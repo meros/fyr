@@ -1236,7 +1236,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   if (MOCK_QUIET) {
     const hm = (ms: number) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
     const quiet = [{ from: hm(now0 - 3600_000), to: hm(now0 + 2 * 3600_000) }, { from: hm(now0 + 10 * 3600_000), to: hm(now0 + 11 * 3600_000), days: ["sat", "sun"] }];
-    projects = projects.map((p) => (p.id === MOCK_QUIET ? { ...p, quiet } : p));
+    // V0.quiet-lift: &lift=1 lifts that quiet for the next 30 minutes, as the project page's hold does.
+    const lift = MOCK_LIFT ? { quietLift: new Date(now0 + 30 * 60_000).toISOString() } : {};
+    projects = projects.map((p) => (p.id === MOCK_QUIET ? { ...p, quiet, ...lift } : p));
   }
   // V0.project-archive: ?archived=<projectId> archives that project and shelves its threads, as the host does.
   if (MOCK_ARCHIVED) {
@@ -1247,7 +1249,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   }
   // V0.46: the host computes quietUntil; the mock does the same for its own clock.
   const withQuiet = (p: Project): Project => {
-    const u = mockQuietUntil(p.quiet, clock(), p.quietNow);
+    // V0.quiet-lift: while a lift runs the project is not quiet.
+    const lifted = !!p.quietLift && Date.parse(p.quietLift) > clock();
+    const u = lifted ? undefined : mockQuietUntil(p.quiet, clock(), p.quietNow);
     const { quietUntil: _, ...rest } = p;
     return u ? { ...rest, quietUntil: u } : rest;
   };
@@ -1385,16 +1389,17 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: "No such project" };
       const patch: Partial<Project> = {};
-      for (const k of ["name", "color", "icon", "profile", "model", "quiet", "quietNow", "priority", "agentSettle"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
+      for (const k of ["name", "color", "icon", "profile", "model", "quiet", "quietNow", "quietLift", "priority", "agentSettle"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
       // V0.116: a changed value is the owner's; the image's upload or remove too.
       const by = { ...p.by };
       for (const k of ["name", "color"] as const) if (k in args && args[k] !== p[k]) by[k] = "owner";
       if ("image" in args) (patch.image = args.image ? String(args.image) : undefined), (by.image = "owner");
       patch.by = by;
       if ("folder" in args) patch.folder = args.folder ? expand(String(args.folder)) : undefined;
+      if (args.quietNow && !("quietLift" in args)) patch.quietLift = undefined; // V0.quiet-lift: quiet by hand ends a lift
       const np = putProject({ ...p, ...patch });
       // V0.46: the threads carry the project's quietUntil, so they change with it.
-      if ("quiet" in args || "quietNow" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
+      if ("quiet" in args || "quietNow" in args || "quietLift" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
       return { ok: true };
     }
     if (action === "action.run") {
@@ -1842,6 +1847,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
 // V0.195: ?bgwait=1: the waiting thread of ?mock=rail waits for a background command that went quiet.
 const MOCK_BGWAIT = mockParam("bgwait") === "1";
 const MOCK_QUIET = mockParam("quiet");
+const MOCK_LIFT = mockParam("lift") === "1";
 // V0.project-archive: ?archived=<projectId> (read once at load).
 const MOCK_ARCHIVED = mockParam("archived");
 

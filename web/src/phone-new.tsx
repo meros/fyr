@@ -13,7 +13,7 @@ import { useNewThreadForm } from "./new-thread-form.ts";
 import { HostField } from "./host-pick-ui.tsx";
 import { ProfileQuota, QuotaList } from "./quota-ui.tsx";
 import { NewProjectStep } from "./project-picker.tsx";
-import { QuietHold } from "./quiet-ui.tsx";
+import { QuietHidden } from "./quiet-ui.tsx";
 import { DraftLine, StartNote } from "./new-thread-ui.tsx";
 import { useAsk } from "./confirm-ui.tsx";
 import { useGrow } from "./grow-ui.ts";
@@ -128,7 +128,7 @@ export function MNew(p: PhoneProps) {
                 initialQuery={n.listQuery}
                 newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: n.startCreating }}
                 onPick={n.choose}
-                extra={<QuietHold {...n.quiet} />}
+                extra={<QuietHidden count={n.quiet.count} />}
               />
             </div>
           )}

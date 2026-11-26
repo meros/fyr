@@ -174,22 +174,36 @@ const MaxQuietNow = 7 * 24 * time.Hour
 // (or "") for none. A time already passed is kept as none; one further than
 // MaxQuietNow ahead of now is refused.
 func ParseQuietNow(raw any, now time.Time) (*time.Time, error) {
+	return parseQuietTime("quietNow", raw, now, MaxQuietNow, "7 days")
+}
+
+// MaxQuietLift bounds how far ahead a lift of the quiet may end
+// (V0.quiet-lift): a pause, not a way to turn quiet hours off.
+const MaxQuietLift = 24 * time.Hour
+
+// ParseQuietLift reads project.update's quietLift as ParseQuietNow reads
+// quietNow, at most MaxQuietLift ahead.
+func ParseQuietLift(raw any, now time.Time) (*time.Time, error) {
+	return parseQuietTime("quietLift", raw, now, MaxQuietLift, "24 hours")
+}
+
+func parseQuietTime(name string, raw any, now time.Time, max time.Duration, maxText string) (*time.Time, error) {
 	if raw == nil {
 		return nil, nil
 	}
 	s, ok := raw.(string)
 	if !ok {
-		return nil, fmt.Errorf("quietNow must be a time (RFC 3339) or null")
+		return nil, fmt.Errorf("%s must be a time (RFC 3339) or null", name)
 	}
 	if s == "" {
 		return nil, nil
 	}
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {
-		return nil, fmt.Errorf("quietNow must be a time (RFC 3339) or null, got %q", s)
+		return nil, fmt.Errorf("%s must be a time (RFC 3339) or null, got %q", name, s)
 	}
-	if t.Sub(now) > MaxQuietNow+time.Minute {
-		return nil, fmt.Errorf("quietNow must be at most 7 days ahead")
+	if t.Sub(now) > max+time.Minute {
+		return nil, fmt.Errorf("%s must be at most %s ahead", name, maxText)
 	}
 	if !t.After(now) {
 		return nil, nil
@@ -212,4 +226,13 @@ func QuietUntilNow(qs QuietHours, manual *time.Time, t time.Time) (time.Time, bo
 		end = next
 	}
 	return end, true
+}
+
+// QuietUntilLifted is QuietUntilNow with a lift (V0.quiet-lift): while lift
+// is after t the project is not quiet at all.
+func QuietUntilLifted(qs QuietHours, manual, lift *time.Time, t time.Time) (time.Time, bool) {
+	if lift != nil && lift.After(t) {
+		return time.Time{}, false
+	}
+	return QuietUntilNow(qs, manual, t)
 }

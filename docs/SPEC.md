@@ -920,6 +920,7 @@ type PlaybookEntry = { slot: "stage" | "verify" | "promote" | "issue" | "run" | 
 - **Setup (V0.116).** An agent run fills the fields the owner has not set (`by`): the image icon, the colour from it, the name. The owner's value is kept (the rights rows `project.name`, `project.color`, `project.image`).
 - **Quiet hours.** While a window holds, the thread DTO carries `quietUntil`; the front sends no push for the thread and the client hides it from the inbox (V0.46). Quiet hours are computed, not a Rule (7.6, decision 0020).
 - **Quiet now (V0.quiet-now).** The owner can also start a quiet stretch by hand: `quietNow` is its end, at most 7 days ahead. While it is ahead the project is quiet as in its windows, until the later of `quietNow` and the windows' stretch, and a window that holds when it ends joins on. `null` ends it early; a time passed is off.
+- **Lift the quiet (V0.quiet-lift).** The one way into a quiet project is its page: `quietLift` is the end of a lift, at most 24 hours ahead, started by holding a time for 30 s. While it is ahead the project is not quiet at all, whatever its windows and `quietNow` say: no `quietUntil` on the project or its threads, so every surface, device and linked host shows them and pushes go out. Quiet started by hand ends a lift; `null` ends it early. Replaces the per-device unlock of V0.74 and V0.114.
 
 ### 3.16 Provider
 

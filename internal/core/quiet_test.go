@@ -213,3 +213,36 @@ func quietNow(qs QuietHours, t time.Time) bool {
 	_, ok := qs.window(t)
 	return ok
 }
+
+// V0.quiet-lift: a lift reads like quietNow, at most a day ahead, and while
+// it runs the project is not quiet, whatever its windows and quietNow say.
+func TestQuietLift(t *testing.T) {
+	now := time.Date(2026, 11, 13, 18, 0, 0, 0, time.UTC)
+	if got, err := ParseQuietLift(now.Add(30*time.Minute).Format(time.RFC3339), now); err != nil || got == nil || !got.Equal(now.Add(30*time.Minute)) {
+		t.Fatalf("30 min: %v %v", got, err)
+	}
+	if _, err := ParseQuietLift(now.Add(25*time.Hour).Format(time.RFC3339), now); err == nil || !strings.Contains(err.Error(), "24 hours") {
+		t.Fatalf("25 h: %v", err)
+	}
+	for _, raw := range []any{nil, "", now.Add(-time.Minute).Format(time.RFC3339)} {
+		if got, err := ParseQuietLift(raw, now); err != nil || got != nil {
+			t.Fatalf("%v: %v %v", raw, got, err)
+		}
+	}
+	if _, err := ParseQuietLift(12, now); err == nil {
+		t.Fatal("a number accepted")
+	}
+
+	night := QuietHours{{From: "17:00", To: "06:00"}}
+	manual := now.Add(2 * time.Hour)
+	lift := now.Add(30 * time.Minute)
+	if _, ok := QuietUntilLifted(night, &manual, &lift, now); ok {
+		t.Fatal("quiet while lifted")
+	}
+	if end, ok := QuietUntilLifted(night, &manual, &lift, lift); !ok || !end.Equal(time.Date(2026, 11, 14, 6, 0, 0, 0, time.UTC)) {
+		t.Fatalf("after the lift: %v %v", end, ok)
+	}
+	if _, ok := QuietUntilLifted(night, nil, nil, now); !ok {
+		t.Fatal("no lift is the windows")
+	}
+}

@@ -2,7 +2,7 @@
 // unless the project filter picks their project or a search is typed, and re-renders at the nearest end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { QUIET_HOLD_MS, QUIET_PRESETS, QUIET_SHOW_MS, cleanWindow, createProjects, loadQuietShow, saveQuietShow, dayText, hasWindow, hideQuiet, isAllDay, isQuiet, nextQuietEnd, quietLine, quietList, quietNote, setAllDay, toggleDay, windowWords } from "../src/quiet.ts";
+import { QUIET_HOLD_MS, QUIET_PRESETS, cleanWindow, createProjects, dayText, hasWindow, hideQuiet, isAllDay, isQuiet, nextQuietEnd, quietLine, quietList, quietNote, setAllDay, toggleDay, windowWords } from "../src/quiet.ts";
 import { mockQuietUntil } from "../src/mock.ts";
 import { sections } from "../src/store.ts";
 import type { Project } from "../src/types.ts";
@@ -117,38 +117,46 @@ test("the old single object and the list both read as a list", () => {
   assert.deepEqual(cleanWindow({ from: "17:00", to: "06:00", days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] }), { from: "17:00", to: "06:00" }, "every day is no days");
 });
 
-// SPEC 0.5 V0.74: a quiet project stays out of New thread; a 30 s hold shows it for 30 minutes.
-test("New thread leaves quiet projects out, keeps the picked one, and shows them all while unlocked", () => {
+// SPEC 0.5 V0.74: a quiet project stays out of New thread. V0.quiet-lift: until its quiet is lifted on its page.
+test("New thread leaves quiet projects out and keeps the picked one", () => {
   const ps: Project[] = [
     { id: "p_work", name: "Work", quietUntil: until },
     { id: "p_home", name: "Home" },
     { id: "p_late", name: "Late", quietUntil: later },
   ];
-  assert.deepEqual(createProjects(ps, now, 0).map((p) => p.id), ["p_home"]);
-  assert.deepEqual(createProjects(ps, now, 0, "p_late").map((p) => p.id), ["p_home", "p_late"], "the picked project stays");
+  assert.deepEqual(createProjects(ps, now).map((p) => p.id), ["p_home"]);
+  assert.deepEqual(createProjects(ps, now, "p_late").map((p) => p.id), ["p_home", "p_late"], "the picked project stays");
   // V0.dialogs-review: and so does the one a restored draft was written for, while its picks wait (the picked one may be undefined then).
-  assert.deepEqual(createProjects(ps, now, 0, undefined, "p_late").map((p) => p.id), ["p_home", "p_late"]);
-  assert.deepEqual(createProjects(ps, now, 0, "p_work", "p_late").map((p) => p.id), ["p_work", "p_home", "p_late"]);
-  assert.deepEqual(createProjects(ps, now, 0, undefined, undefined).map((p) => p.id), ["p_home"]);
-  assert.deepEqual(createProjects(ps, now, now + 60_000).map((p) => p.id), ["p_work", "p_home", "p_late"], "unlocked");
-  assert.deepEqual(createProjects(ps, now, now).map((p) => p.id), ["p_home"], "the unlock ended");
-  assert.deepEqual(createProjects(ps, Date.parse(until), 0).map((p) => p.id), ["p_work", "p_home"], "a window ended");
+  assert.deepEqual(createProjects(ps, now, undefined, "p_late").map((p) => p.id), ["p_home", "p_late"]);
+  assert.deepEqual(createProjects(ps, now, "p_work", "p_late").map((p) => p.id), ["p_work", "p_home", "p_late"]);
+  assert.deepEqual(createProjects(ps, now, undefined, undefined).map((p) => p.id), ["p_home"]);
+  assert.deepEqual(createProjects(ps, Date.parse(until)).map((p) => p.id), ["p_work", "p_home"], "a window ended");
 });
 
-test("the hold takes 30 s and shows quiet projects for 30 minutes on this device", () => {
+// V0.quiet-lift: the lift is held for 30 s, from a list of times like snooze's.
+test("lift the quiet: a 30 s hold, a list of times, and the lift's end", async () => {
+  const { endWords, liftUntil, quietLiftChoices } = await import("../src/quiet.ts");
   assert.equal(QUIET_HOLD_MS, 30_000);
-  assert.equal(QUIET_SHOW_MS, 30 * 60_000);
-  const mem = new Map<string, string>();
-  const kv = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
-  assert.equal(loadQuietShow(kv), 0);
-  const end = saveQuietShow(kv, now);
-  assert.equal(end, now + QUIET_SHOW_MS);
-  assert.equal(loadQuietShow(kv), end);
-  saveQuietShow(kv, null);
-  assert.equal(loadQuietShow(kv), 0, "Hide ends it");
-  mem.set("fyr.quietShowUntil", "junk");
-  assert.equal(loadQuietShow(kv), 0);
-  assert.equal(loadQuietShow(null), 0);
+  const noon = new Date(2026, 10, 13, 12, 0).getTime();
+  const six = new Date(2026, 10, 14, 6, 0).getTime();
+  assert.deepEqual(
+    quietLiftChoices(noon, six).map((c) => [c.label, c.when]),
+    [
+      ["30 minutes", "12:30"],
+      ["1 hour", "13:00"],
+      ["3 hours", "15:00"],
+      ["Until the quiet ends", "tomorrow 06:00"],
+    ],
+  );
+  const soon = new Date(2026, 10, 13, 12, 45).getTime();
+  assert.deepEqual(quietLiftChoices(noon, soon).map((c) => c.label), ["30 minutes"], "a quiet that ends sooner offers no longer lift");
+  const far = noon + 3 * 24 * 3600_000;
+  assert.deepEqual(quietLiftChoices(noon, far).map((c) => c.label), ["30 minutes", "1 hour", "3 hours"], "a lift lasts at most a day");
+  const end = new Date(2026, 10, 13, 12, 30).toISOString();
+  assert.equal(liftUntil({ quietLift: end }, noon), Date.parse(end));
+  assert.equal(liftUntil({ quietLift: end }, Date.parse(end)), 0, "ended");
+  assert.equal(liftUntil({}, noon), 0);
+  assert.equal(endWords(new Date(2026, 10, 16, 6, 0).getTime(), noon), "Mon 06:00");
 });
 
 // V0.119: quiet hours save 600 ms after the last change, and at once when the page closes.
@@ -188,8 +196,12 @@ test("quiet now by hand: choices, the line, and the mock joins it with a window"
   assert.equal(nextClock("15:30", noon), new Date(2026, 10, 13, 15, 30).getTime());
   assert.equal(nextClock("08:00", noon), new Date(2026, 10, 14, 8, 0).getTime(), "a time passed today is tomorrow");
   assert.deepEqual(
-    quietNowChoices(noon).map((c) => c.label),
-    ["1 hour", "3 hours", "Until tomorrow 08:00"],
+    quietNowChoices(noon).map((c) => [c.label, c.when]),
+    [
+      ["1 hour", "13:00"],
+      ["3 hours", "15:00"],
+      ["Until tomorrow 08:00", "tomorrow 08:00"],
+    ],
   );
   assert.equal(quietNowChoices(new Date(2026, 10, 13, 2, 0).getTime())[2].label, "Until 08:00", "before 08:00 it is today");
   const three = new Date(2026, 10, 13, 15, 0).toISOString();
