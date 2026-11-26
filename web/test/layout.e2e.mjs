@@ -271,10 +271,11 @@ const SCREENS = [
   { name: "inbox with a quiet project", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "" } },
   // SPEC 0.5 V0.114: the chip alone no longer opens it: the gate (until HH:MM, the 30 s hold) shows, not the thread;
   // after the hold (the unlock in browser storage) the chip shows it; a link (?open=) to its thread shows the gate.
-  { name: "quiet project through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home", "fyr.quietShowUntil": "" } },
-  { name: "quiet project unlocked through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home", "fyr.quietShowUntil": "9999999999999" } },
-  { name: "link to a quiet thread", url: "?mock=rail&quiet=p_home&open=t_dish", storage: { "fyr.projectFilter": "", "fyr.quietShowUntil": "" } },
+  { name: "quiet project through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home" } },
+  { name: "quiet project lifted through the filter", url: "?mock=rail&quiet=p_home&lift=1", storage: { "fyr.projectFilter": "p_home" } },
+  { name: "link to a quiet thread", url: "?mock=rail&quiet=p_home&open=t_dish", storage: { "fyr.projectFilter": "" } },
   { name: "project screen with quiet hours", url: "?mock=rail&project=p_home&quiet=p_home", storage: { "fyr.projectFilter": "" } },
+  { name: "project screen with its quiet lifted", url: "?mock=rail&project=p_home&quiet=p_home&lift=1", storage: { "fyr.projectFilter": "" } },
   // SPEC 0.5 V0.45: the handover sheet from the thread's ⋯; its buttons stay above the bottom inset.
   { name: "handover sheet", url: "?mock=rail&open=t_triage", sheet: "handover" },
   // SPEC V0.119 (amends V0.50): Settings is the nav and four pages, with a provider, Add provider and a project as
@@ -467,8 +468,8 @@ const MEASURE = `(() => {
     innerHeight: window.innerHeight,
     dishwasher: (document.querySelector('.m-app')?.innerText ?? '').includes('Pick a dishwasher'),
     quietNote: document.querySelector('.m-screen .pfc.on .pfq')?.textContent ?? null,
-    quietGate: (() => { const g = document.querySelector('.m-app .qgate'); if (!g) return null; const h = g.querySelector('.qhold'); const r = h?.getBoundingClientRect();
-      return { head: g.querySelector('.qgh')?.textContent ?? '', hold: h?.textContent ?? '', h: r?.height ?? 0, right: g.getBoundingClientRect().right }; })(),
+    quietGate: (() => { const g = document.querySelector('.m-app .qgate'); if (!g) return null; const f = g.querySelector('.qgf'); const b = f?.querySelector('button')?.getBoundingClientRect();
+      return { head: g.querySelector('.qgh')?.textContent ?? '', foot: f?.textContent ?? '', h: b?.height ?? 0, right: g.getBoundingClientRect().right }; })(),
     quietRow: (() => {
       const el = document.querySelector('.pedit .qfld'); if (!el) return null;
       el.scrollIntoView({ block: 'center' });
@@ -480,13 +481,14 @@ const MEASURE = `(() => {
       const days = [...el.querySelectorAll('.qdays button')].map(box);
       const times = [...el.querySelectorAll('.qwin .qtime select')].map(box);
       const others = [...el.querySelectorAll('.qrm, .qtog, .qadd button')].map(box); // .qtog: the All day switch's label, the switch's target
-      // V0.quiet-now: the Quiet now row's choices and its time pick, touch-sized too
-      const nows = [...el.querySelectorAll('.qnow button, .qnow select')].map(box);
+      // V0.quiet-now, V0.quiet-lift: the first row's choices (a tap or a 30 s hold) and its time pick, touch-sized too
+      const nows = [...el.querySelectorAll('.qnow button, .qnow select, .qnow .qli.qhold')].map(box);
       const all = [...days, ...times, ...others, ...nows];
       return { parts, right: Math.max(r.right, ...all.map(d => d.right)), rows: el.querySelectorAll('.qwin').length,
         add: [...el.querySelectorAll('.qadd button')].map(b => b.textContent.replace(/\\s+/g, ' ').trim()),
         line: el.querySelector('.sg-f')?.textContent ?? '', note: el.querySelector('.sg-h .end')?.textContent ?? '', days: days.length, times: times.length,
-        quietNow: [...el.querySelectorAll('.qnow button')].map(b => b.textContent.trim()), small: all.filter(d => d.height < 43.5).length };
+        quietNow: [...el.querySelectorAll('.qnow button')].map(b => b.textContent.trim()), head: el.querySelector('.qnow .sr-t')?.textContent ?? '',
+        lift: [...el.querySelectorAll('.qnow .qli.qhold .qht')].map(b => b.textContent.trim()), small: all.filter(d => d.height < 43.5).length };
     })(),
   };
 })()`;
@@ -663,10 +665,15 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (ctx.startsWith("inbox with a quiet project")) check(!m.dishwasher && !m.quietNote, `${ctx}: the quiet project's thread shows in the inbox (${m.dishwasher}, note ${m.quietNote})`);
   if (ctx.startsWith("quiet project through the filter")) {
     check(!m.dishwasher && /^Quiet until \d\d:\d\d$/.test(m.quietNote ?? ""), `${ctx}: the chip shows the quiet project's thread without the hold (${m.dishwasher}) or no note ("${m.quietNote}")`);
-    check(!!m.quietGate && /^Garden is quiet until \d\d:\d\d\.$/.test(m.quietGate.head) && /Hold here for 30 s/.test(m.quietGate.hold) && m.quietGate.h >= 44 && m.quietGate.right <= m.innerWidth + 0.5, `${ctx}: the gate is missing or wrong ${JSON.stringify(m.quietGate)}`);
+    check(!!m.quietGate && /^Garden is quiet until \d\d:\d\d\.$/.test(m.quietGate.head) && /Lift the quiet on its project page\./.test(m.quietGate.foot) && m.quietGate.h >= 44 && m.quietGate.right <= m.innerWidth + 0.5, `${ctx}: the gate is missing or wrong ${JSON.stringify(m.quietGate)}`);
   }
-  if (ctx.startsWith("quiet project unlocked through the filter")) check(m.dishwasher && !m.quietGate, `${ctx}: after the hold the chip does not show the quiet project's thread (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
-  if (ctx.startsWith("link to a quiet thread")) check(!m.dishwasher && !!m.quietGate && /Hold here for 30 s/.test(m.quietGate.hold), `${ctx}: the link opens the quiet thread without the hold (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
+  if (ctx.startsWith("quiet project lifted through the filter")) check(m.dishwasher && !m.quietGate, `${ctx}: lifted, the chip does not show the quiet project's thread (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
+  if (ctx.startsWith("link to a quiet thread")) check(!m.dishwasher && !!m.quietGate && /project page/.test(m.quietGate.foot), `${ctx}: the link opens the quiet thread without a lift (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
+  if (ctx.startsWith("project screen with its quiet lifted")) {
+    // V0.quiet-lift: lifted, the first row says until when and offers Quiet again
+    const q = m.quietRow;
+    check(!!q && q.head === "Quiet lifted" && q.quietNow.includes("Quiet again") && q.lift.length === 0 && q.small === 0, `${ctx}: the Quiet lifted row is wrong ${JSON.stringify(q && { head: q.head, buttons: q.quietNow, lift: q.lift, small: q.small })}`);
+  }
   if (ctx.startsWith("project screen with quiet hours")) {
     const q = m.quietRow;
     // Decision 0014 addendum: two windows (the mock's daily one and a weekend one), each with its 24-hour times and
@@ -679,8 +686,8 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(q.parts.length === 3, `${ctx}: expected two rows and the add bar, found ${q.parts.length} parts`);
       check(q.right <= m.innerWidth + 0.5, `${ctx}: the Quiet hours row runs ${(q.right - m.innerWidth).toFixed(1)} px past the right edge`);
       check(q.small === 0, `${ctx}: ${q.small} quiet-hours targets are under 44 px`);
-      // V0.quiet-now: the first row starts a quiet stretch by hand
-      check(q.quietNow.length === 4 && q.quietNow[0] === "1 hour" && q.quietNow[1] === "3 hours" && /^Until (tomorrow )?08:00$/.test(q.quietNow[2]) && /^Until \d\d:\d\d$/.test(q.quietNow[3]), `${ctx}: the Quiet now row is wrong ${JSON.stringify(q.quietNow)}`);
+      // V0.quiet-lift: the project is quiet, so the first row lifts it: a list of times, each held 30 s
+      check(q.head === "Lift the quiet" && q.lift[0] === "30 minutes" && q.lift[1] === "1 hour" && q.lift.length >= 2, `${ctx}: the Lift the quiet row is wrong ${JSON.stringify({ head: q.head, lift: q.lift })}`);
     }
   }
   if (ctx.startsWith("inbox filtered")) {
@@ -6305,7 +6312,7 @@ try {
     check((await evaluate(G)).n === 0, `${ctx}: the row stayed after the next thread opened`);
   }
   // A quiet thread: the gate, no row, and the filter stays.
-  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["F7QK-2M9X-AB34-CD56"]', "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
+  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["F7QK-2M9X-AB34-CD56"]', "fyr.projectFilter": null }, "true");
   await settle();
   const c = await evaluate(`({ f: ${F}, g: ${G} })`);
   check(c.f.off === '["F7QK-2M9X-AB34-CD56"]' && c.g.n === 0, `${ctx}: a link to a quiet thread before the hold (${JSON.stringify(c)})`);

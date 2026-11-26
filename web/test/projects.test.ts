@@ -269,5 +269,5 @@ test("V0.121: the store keeps its projects in the owner's order: the snapshot, a
 test("V0.121: hiding quiet projects keeps the order of the rest", () => {
   const now = Date.parse("2026-11-16T22:00:00Z");
   const ps = orderProjects([...ordered.slice(0, 2), { ...ordered[2], quietUntil: "2026-11-17T06:00:00Z" }, ordered[3]], ["p4", "p3", "p2", "p1"]);
-  assert.deepEqual(createProjects(ps, now, 0).map((p) => p.id), ["p4", "p2", "p1"]);
+  assert.deepEqual(createProjects(ps, now).map((p) => p.id), ["p4", "p2", "p1"]);
 });

@@ -5,12 +5,12 @@
 // the projects of a host turned off fall out of it. A value is active when it matches at least one thread in view: in
 // the pinned block or in an unfolded section (a folded section, by default Snoozed and Settled, is not considered).
 // A row shows only with more than one value to choose from, or while one of its values is selected (a project
-// picked, a host off); a selected value stays until the owner changes it. V0.114: a quiet project's threads count
-// only while the unlock runs.
+// picked, a host off); a selected value stays until the owner changes it. V0.114: a quiet project's threads do not
+// count (V0.quiet-lift: a project whose quiet is lifted is not quiet).
 import { shortID, type HostInfo } from "./hosts.ts";
 import { shortHostNames } from "./host-load.ts";
 import { findProject, projectOf } from "./projects.ts";
-import { hideQuiet, quietLocked, reachable } from "./quiet.ts";
+import { hideQuiet, isQuiet, reachable } from "./quiet.ts";
 import { isOpen, sectionOf, type SectionKey } from "./store.ts";
 import type { Project, Thread } from "./types.ts";
 
@@ -109,16 +109,14 @@ interface FilterInput {
   sel: FilterSel;
   open: Open;
   now: number;
-  /** V0.114: the unlock of quiet projects runs until then */
-  showUntil: number;
 }
 
 /** The chips to show, group by group; a group with nothing to show is empty. */
 export function activeFilters(o: FilterInput): { hosts: HostChip[]; projects: ProjectChip[] } {
   const project = liveProject(o.sel, o.projects);
-  // V0.114: quiet threads only while the unlock runs. For the project chips that is enough (a quiet project is picked
-  // through its chip); for the others a quiet thread counts only when its project is picked, as the inbox shows it.
-  const reach = reachable(o.threads, o.now, o.showUntil);
+  // V0.114: no quiet threads (V0.quiet-lift: a lifted project is not quiet). For the project chips that is enough; for
+  // the others a quiet thread counts only when its project is picked, as the inbox shows it.
+  const reach = reachable(o.threads, o.now);
   const shown = hideQuiet(reach, !!project, o.now);
 
   // Row 1 counts every host's threads in view, whatever the project filter: the rows are separate, and row 1 comes first.
@@ -157,7 +155,7 @@ export function activeFilters(o: FilterInput): { hosts: HostChip[]; projects: Pr
   // Projects in the owner's order (the store keeps it, V0.121). A locked quiet project is not offered unless picked.
   const projects: ProjectChip[] = o.projects
     .map((p) => ({ project: p, n: (p.id && perProject.get(p.id)) || 0, selected: !!p.id && p.id === project }))
-    .filter((c) => c.selected || (c.n > 0 && !quietLocked(c.project, o.now, o.showUntil)));
+    .filter((c) => c.selected || (c.n > 0 && !isQuiet(c.project, o.now)));
 
   return { hosts: hosts.length > 1 || hosts.some((h) => !h.on) ? hosts : [], projects: projects.length > 1 || projects.some((c) => c.selected) ? projects : [] };
 }

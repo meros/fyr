@@ -21,7 +21,7 @@ import { useNewThreadForm, type NewThreadFormOptions } from "./new-thread-form.t
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { DialogScrim } from "./motion-ui.tsx";
 import { NewProjectStep } from "./project-picker.tsx";
-import { QuietHold } from "./quiet-ui.tsx";
+import { QuietHidden } from "./quiet-ui.tsx";
 import { useGrow } from "./grow-ui.ts";
 import { isTextTarget } from "./app-util.tsx";
 
@@ -162,7 +162,7 @@ export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddP
               initialQuery={n.listQuery}
               newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: n.startCreating }}
               onPick={(pr) => (n.choose(pr), toPrompt())}
-              extra={<QuietHold {...n.quiet} />}
+              extra={<QuietHidden count={n.quiet.count} />}
             />
           )}
           {n.missing && (

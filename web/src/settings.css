@@ -275,6 +275,17 @@ label.sr{cursor:pointer}
 .qnow .qw-top .sr-b{min-width:0}
 .qnow .chips{margin-top:8px}
 .qnow-at{display:inline-flex;align-items:center;gap:6px}
+/* V0.quiet-lift: Quiet now and Lift the quiet are a list of times, as snooze's: the label, then when it ends */
+.qlist{display:flex;flex-direction:column;margin-top:8px;max-width:440px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.qli{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:36px;padding:0 12px;border:0;border-top:1px solid var(--line);background:var(--raised);color:var(--ink);font:500 13px/18px var(--ui);text-align:left}
+.qli:first-child{border-top:0}
+button.qli{cursor:pointer}
+button.qli:hover:not(:disabled){background:var(--sunken)}
+.qli .qht{color:var(--ink)}
+.qhw{position:relative;color:var(--ink-muted);font-weight:400;white-space:nowrap}
+.qli.qhold{min-height:36px;padding:0 12px;background:var(--raised)}
+.qli.qhold.off{cursor:default;opacity:.5}
+.qli.qnow-at{display:flex;justify-content:flex-start;padding:6px 12px}
 .qtime select{height:30px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);padding:0 6px;font:400 13px/18px var(--ui)}
 .qd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;max-width:360px}
 .qd button{height:30px;border:1px solid var(--line);border-radius:8px;font:500 12px/16px var(--ui);color:var(--ink-muted);text-align:center;padding:0 2px}

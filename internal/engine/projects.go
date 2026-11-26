@@ -24,7 +24,7 @@ func (e *Engine) quietUntil(id string, now time.Time) *time.Time {
 	if p == nil || (len(p.Quiet) == 0 && p.QuietNow == nil) {
 		return nil
 	}
-	if u, ok := core.QuietUntilNow(p.Quiet, p.QuietNow, now.In(time.Local)); ok {
+	if u, ok := core.QuietUntilLifted(p.Quiet, p.QuietNow, p.QuietLift, now.In(time.Local)); ok { // V0.quiet-lift
 		return &u
 	}
 	return nil
@@ -376,7 +376,7 @@ func (e *Engine) applyProject(in core.Input) api.Reply {
 		delete(e.quietSent, id.ID)
 	}
 	var shows []api.Thread
-	if after != nil && (before == nil || before.Name != after.Name || !sameJSON(before.Quiet, after.Quiet) || !sameJSON(before.QuietNow, after.QuietNow)) {
+	if after != nil && (before == nil || before.Name != after.Name || !sameJSON(before.Quiet, after.Quiet) || !sameJSON(before.QuietNow, after.QuietNow) || !sameJSON(before.QuietLift, after.QuietLift)) {
 		for tid, t := range e.threads {
 			if t.ProjectID == after.ID && !staged[tid] {
 				e.bump(tid)

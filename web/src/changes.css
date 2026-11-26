@@ -36,6 +36,7 @@
 .set.phone .qw-top .allday{min-height:44px;font-size:15px}
 .set.phone .qnow .btn{min-height:44px} /* V0.quiet-now: touch size; desktop keeps the 30 px button */
 .set.phone .qnow .qtime select{height:44px}
+.set.phone .qnow .qli{min-height:48px;font-size:15px} /* V0.quiet-lift: touch size; a finger holds a lift for 30 s */
 .set.phone .sr.stack{flex-direction:column;align-items:stretch;gap:6px}
 .set.phone .sr.stack .sr-e{max-width:none;flex:none}
 .set.phone .sr.stack .sr-e select{width:100%}
@@ -192,3 +193,4 @@
 .chst.reached::before{content:"✓ "}
 .chst.failed{color:var(--signal-ink)}
 .chst a{color:inherit;text-decoration:underline}
+.m-app .qgf .btn{min-height:44px} /* V0.quiet-lift: touch size of Project page on the phone gate; desktop keeps the small button */

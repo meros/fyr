@@ -69,7 +69,7 @@ import { shownHereFor } from "./settings-ui.tsx";
 import type { Hidden } from "./hidden.ts";
 import type { ArchiveInfo } from "./archived.ts";
 import { linkingFor } from "./project-linking.tsx";
-import { type QuietUnlock, QuietGate } from "./quiet-ui.tsx";
+import { QuietGate } from "./quiet-ui.tsx";
 import { AgentsStrip } from "./agents-strip.tsx";
 import { PhoneComposer, sendFrom } from "./composer.tsx";
 import { writingIn } from "./drafts.ts";
@@ -112,7 +112,7 @@ interface PhoneOpen {
 interface PhoneSearch {
   query: string;
   setQuery(q: string): void;
-  /** what search may reach, in the list's order: the filters' threads, quiet ones only while the unlock runs (V0.114) */
+  /** what search may reach, in the list's order: the filters' threads, no quiet ones (V0.114) */
   list: Thread[];
   /** the hits the quiet lock leaves out, so the search says why and offers the hold */
   quietHits: number;
@@ -167,9 +167,9 @@ export interface PhoneProps {
   store: View;
   /** slice 2b: each host's profiles by install id; a thread's and a project's are its own host's */
   profiles: HostProfiles;
-  /** the inbox's sections; the search; the one unlock of quiet projects; V0.192: rows is what the list draws (sec,
+  /** the inbox's sections; the search; where a quiet project is lifted (V0.quiet-lift, its page); V0.192: rows is what the list draws (sec,
    *  with the current thread when the filters hide it), guest that row */
-  inbox: { sec: Sections; rows: Sections; guest: Guest | null; search: PhoneSearch; unlock: QuietUnlock };
+  inbox: { sec: Sections; rows: Sections; guest: Guest | null; search: PhoneSearch; openProject(id: string): void };
   now: number;
   /** #41: the same thread commands, undo and toasts as the desktop */
   commands: ThreadCommands;
@@ -230,7 +230,7 @@ export function PhoneApp(p: PhoneProps) {
       {s.name === "thread" && !p.open.thread && p.open.gated && (
         <div class="m-screen">
           <MHeader onBack={p.nav.back} title="Quiet hours" />
-          <QuietGate project={recordOf(p.store.projects, p.open.gated!.projectId)} now={p.now} unlock={p.inbox.unlock} what="thread" />
+          <QuietGate project={recordOf(p.store.projects, p.open.gated!.projectId)} now={p.now} what="thread" onProject={p.inbox.openProject} />
         </div>
       )}
       {s.name === "thread" && !p.open.thread && !p.open.gated && (
@@ -429,7 +429,7 @@ function MInbox(p: PhoneProps) {
           })}
         </div>
       )}
-      {!p.list.selecting && <FilterRow f={p.filters} now={p.now} unlock={p.inbox.unlock} />}
+      {!p.list.selecting && <FilterRow f={p.filters} now={p.now} openProject={p.inbox.openProject} />}
       {p.store.conn === "offline" && (
         <div class="m-cstrip">
           <span class="ell">Reconnecting…</span>
@@ -595,7 +595,7 @@ function MSearch(p: PhoneProps) {
         </form>
       </div>
       <div class="m-list">
-        {quietHits > 0 && <QuietGate now={p.now} unlock={p.inbox.unlock} what="search" />}
+        {quietHits > 0 && <QuietGate now={p.now} what="search" />}
         <AiSearchPanel ai={ai} onOpen={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} />
         {needle && hits.length === 0 && !quietHits && <div class="m-empty">No title or project has “{q.trim()}”.</div>}
         {!needle && <div class="m-empty">Find a thread by its title, project or PR number, or describe it and ask AI.</div>}

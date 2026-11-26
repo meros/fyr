@@ -37,10 +37,9 @@ import { FILTER_KEY, findProject } from "./projects.ts";
 import { HIDDEN_KEY, applyHidden, hiddenCount, decodeHidden, NOTHING_HIDDEN, type Hidden } from "./hidden.ts";
 import { applyArchived, inboxThreads } from "./archived.ts";
 import { HOSTS_OFF_KEY, activeFilters, applyFilters, clickHost, filterEmpty, hostKey, type FilterSel } from "./filters.ts";
-import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
+import { admitThread, hideQuiet, isQuiet, nextQuietEnd, reachable } from "./quiet.ts";
 import { initialEntries, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
-import { useQuietUnlock } from "./quiet-ui.tsx";
 import { useToolDetails } from "./tool-calls-ui.tsx";
 import { useConfirmHost } from "./confirm-ui.tsx";
 import { useMergeHost } from "./merge-ui.tsx";
@@ -174,8 +173,6 @@ export function useAppState() {
   const filterProject = findProject(store.projects, projectFilter);
   const filterId = filterProject?.id ?? projectFilter;
   const filterOn = !!filterProject;
-  // V0.114: one unlock of quiet projects on this device for every path (New thread, the filter, search, the gate).
-  const unlock = useQuietUnlock(store.clockOffset);
   // V0.207: a hidden host or project is no filter value: it would leave a chip behind.
   const filterSel = useMemo<FilterSel>(() => {
     const gone = (key: string) => fullStore.hostList.some((h) => hostKey(h) === key) && !store.hostList.some((h) => hostKey(h) === key);
@@ -203,15 +200,16 @@ export function useAppState() {
   const listThreads = useMemo(() => inboxThreads(steady.threads, fullStore.projects), [steady.threads, fullStore.projects]);
   // V0.134: host AND project.
   const filtered = useMemo(() => applyFilters(listThreads, filterSel, store.projects), [listThreads, store.projects, filterSel]);
-  // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
+  // What search and the filter may reach: no quiet threads (V0.114; V0.46 (4) showed them). V0.quiet-lift: a project
+  // whose quiet is lifted is not quiet.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- quietClock is the timer that re-evaluates the quiet hours against Date.now(); the memo does not read it
-  const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset, unlock.showUntil), [filtered, unlock.showUntil, quietClock, store.clockOffset]);
+  const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset), [filtered, quietClock, store.clockOffset]);
   // V0.ai-search: what AI search reads, in the list's order.
   const searchList = useMemo(() => {
     const sec = sections(searchable);
     return SECTIONS.flatMap((s) => sec[s.key]);
   }, [searchable]);
-  // V0.114: search hits the lock leaves out, so the search says why and offers the hold (desktop).
+  // V0.114: search hits the lock leaves out, so the search says why.
   const quietHits = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return 0;
@@ -221,7 +219,7 @@ export function useAppState() {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     // V0.46: a quiet project's threads leave the inbox and its counts, unless the filter picks it or a search is typed
-    // (and, V0.114, the unlock runs: searchable holds them only then).
+    // (V0.114: searchable holds them only while the quiet is lifted, and then they are not quiet).
     const base = hideQuiet(searchable, filterOn || !!q, Date.now() + store.clockOffset);
     if (!q) return base;
     const out: Record<string, Thread> = {};
@@ -242,8 +240,8 @@ export function useAppState() {
   // fronts.
   /* eslint-disable react-hooks/exhaustive-deps -- quietClock is the timer that re-evaluates the quiet hours against Date.now(); the memo does not read it */
   const filterView = useMemo<FilterView>(() => {
-    const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hostList, sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
-    const locked = !!filterSel.project && chips.projects.some((c) => c.selected && quietLocked(c.project, Date.now() + store.clockOffset, unlock.showUntil));
+    const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hostList, sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset });
+    const locked = !!filterSel.project && chips.projects.some((c) => c.selected && isQuiet(c.project, Date.now() + store.clockOffset));
     return {
       ...chips,
       sel: filterSel,
@@ -253,18 +251,18 @@ export function useAppState() {
       // V0.114: a locked quiet project shows its gate instead.
       empty: locked ? null : filterEmpty(hideQuiet(searchable, filterOn, Date.now() + store.clockOffset), filterSel, sectionOpen),
     };
-  }, [store.threads, store.projects, store.hostList, filterSel, sectionOpen, unlock.showUntil, searchable, filterOn, quietClock, store.clockOffset]);
+  }, [store.threads, store.projects, store.hostList, filterSel, sectionOpen, searchable, filterOn, quietClock, store.clockOffset]);
   /* eslint-enable react-hooks/exhaustive-deps */
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
     for (const s of SECTIONS) l[s.key] = !isOpen(s.key, sectionOpen) ? 0 : expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];
     return l;
   }, [expanded, sectionOpen]);
-  // V0.114: a quiet thread opens only through the hold, whatever path opened it (a link, back and forward, a notice,
+  // V0.114: a quiet thread does not open (V0.quiet-lift: until its quiet is lifted), whatever path opened it (a link, back and forward, a notice,
   // a board card, ?open=, a push tap). The thread already open when its window starts stays open (V0.46 (6)).
   const admittedRef = useRef<string | null>(null);
   const wantId = phone ? (nav.screen.name === "thread" ? nav.screen.id : null) : (view?.id ?? null);
-  const gate = admitThread(admittedRef.current, wantId, wantId ? store.threads[wantId] : undefined, Date.now() + store.clockOffset, unlock.showUntil);
+  const gate = admitThread(admittedRef.current, wantId, wantId ? store.threads[wantId] : undefined, Date.now() + store.clockOffset);
   const gatedRef = useRef(false);
   gatedRef.current = gate.gated;
   admittedRef.current = gate.admitted;
@@ -277,7 +275,7 @@ export function useAppState() {
   // (`rows`), a folded section draws it alone (`guest`). `sec` stays what the filters let through, for every count.
   const current = sel ? listThreads[sel] : undefined;
   // V0.212: not on the phone. The list and the thread are never on screen together there, so the row marks nothing.
-  const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
+  const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
   const rows = useMemo(() => (listed === shown ? sec : sections(listed, queue, arrivals)), [listed, shown, sec, queue, arrivals]);
   // V0.open-row-glides: every row, the open one too, is where the live list has it; the open row glides there
@@ -305,5 +303,5 @@ export function useAppState() {
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
 
-  return { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, setHidden, store, threadsRef, byHost, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, tracker, setTracker, cards, setCards, sectionOpen, setSectionOpen, query, setQuery, help, setHelp, searchRef, expanded, setExpanded, theme, setTheme, tick, setTick, inText, setInText, toolDetailsOn, phone, phoneRef, reopenRef, navGoRef, cmds, toast, nav, setNav, selecting, setSelecting, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason, now, projectFilter, setProjectFilterState, setProjectFilter, setHostsOffState, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, filterId, filterOn, unlock, filtered, searchable, searchList, quietHits, queue, sec, filterView, limits, gate, gatedRef, gatedThread, arrival, setArrival, arrivedHere, hidden, listed, rows, guest, order, walkRows, viewThread, confirmHost, mergeHost };
+  return { api, rawStore, setStore, fullStore, hostOfId, deviceHidden, setHidden, store, threadsRef, byHost, setLastOpen, view, setView, sel, zone, setZone, picked, setPicked, dialog, setDialog, snoozeTargets, setSnoozeTargets, handoverId, setHandoverId, tracker, setTracker, cards, setCards, sectionOpen, setSectionOpen, query, setQuery, help, setHelp, searchRef, expanded, setExpanded, theme, setTheme, tick, setTick, inText, setInText, toolDetailsOn, phone, phoneRef, reopenRef, navGoRef, cmds, toast, nav, setNav, selecting, setSelecting, pushSt, setPushSt, canInstall, setCanInstall, pendingOpen, setPendingOpen, env, pushReason, now, projectFilter, setProjectFilterState, setProjectFilter, setHostsOffState, settingsAt, setSettingsAt, openSettings, pickIds, openPicker, filterId, filterOn, filtered, searchable, searchList, quietHits, queue, sec, filterView, limits, gate, gatedRef, gatedThread, arrival, setArrival, arrivedHere, hidden, listed, rows, guest, order, walkRows, viewThread, confirmHost, mergeHost };
 }

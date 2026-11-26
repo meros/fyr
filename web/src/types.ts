@@ -317,6 +317,8 @@ export interface Project {
   quietUntil?: string;
   /** V0.quiet-now: the end of a quiet stretch the owner started by hand (RFC 3339); a time passed is off */
   quietNow?: string;
+  /** V0.quiet-lift: the end of a lift of the quiet the owner held for (RFC 3339): not quiet until then; a time passed is off */
+  quietLift?: string;
   /** V0.58: only on the stream, `{id, deleted: true}` after project.delete */
   deleted?: boolean;
   /** V0.116: the version of the project's image icon (served at /api/projects/<id>/icon); absent draws the glyph */

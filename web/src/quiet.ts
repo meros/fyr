@@ -145,82 +145,34 @@ export function toggleDay(days: string[] | undefined, day: string): string[] | u
   return out.length === 7 ? undefined : out;
 }
 
-// ---- V0.74: New thread leaves quiet projects out; a 30 s hold shows them for 30 minutes on this device ----
+// ---- V0.74, V0.114: quiet projects stay out of New thread, the filter, search and the paths into a thread ----
+// V0.quiet-lift: the only way in is to lift the quiet on the project's page, on the host, so every device, every
+// host of a linked project and every path follow at once; a lifted project has no quietUntil.
 
-/** How long the owner holds the row, and how long quiet projects then show. The hold is slow on purpose. */
+/** How long the owner holds a lift choice. The hold is slow on purpose. */
 export const QUIET_HOLD_MS = 30_000;
-export const QUIET_SHOW_MS = 30 * 60_000;
-const SHOW_KEY = "fyr.quietShowUntil";
 
-/** The projects New thread offers: quiet ones left out unless showUntil is ahead; `keep` (the picked one, and the one a
- *  restored draft names) stays. */
-export function createProjects(projects: Project[], now: number, showUntil: number, ...keep: (string | undefined)[]): Project[] {
-  if (showUntil > now) return projects;
+/** The projects New thread offers: quiet ones left out; `keep` (the picked one, and the one a restored draft names)
+ *  stays. */
+export function createProjects(projects: Project[], now: number, ...keep: (string | undefined)[]): Project[] {
   return projects.filter((p) => !isQuiet(p, now) || (!!p.id && keep.includes(p.id)));
 }
 
-type KV = Pick<Storage, "getItem" | "setItem" | "removeItem">;
-
-/** The end of the unlock on this device, or 0. */
-export function loadQuietShow(kv: KV | null): number {
-  try {
-    const t = Number(kv?.getItem(SHOW_KEY));
-    return Number.isFinite(t) && t > 0 ? t : 0;
-  } catch {
-    return 0;
-  }
-}
-
-/** from: start an unlock of QUIET_SHOW_MS (returns its end); null: end it (returns 0). */
-export function saveQuietShow(kv: KV | null, from: number | null): number {
-  const end = from === null ? 0 : from + QUIET_SHOW_MS;
-  try {
-    if (end) kv?.setItem(SHOW_KEY, String(end));
-    else kv?.removeItem(SHOW_KEY);
-  } catch {
-    // private window or blocked storage: the unlock holds until the form closes
-  }
-  return end;
-}
-
-// ---- V0.114: every way into a quiet project goes through the same 30 s hold; one unlock for all of them ----
-
-/** Whether x (a thread or a project) is quiet and the device has no unlock running: the paths into it are shut. */
-export function quietLocked(x: { quietUntil?: string } | undefined, now: number, showUntil: number): boolean {
-  return isQuiet(x, now) && !(showUntil > now);
-}
-
-/** The thread the screen may show. A thread opened while its project was not quiet, or while the unlock ran, stays
- *  open when the window starts or the unlock ends (V0.46 (6)): `prev` is that thread. Any other way to a quiet
- *  thread (a link, back and forward, a notice, a board card, ?open=, a push) shows the gate instead. A thread that
- *  is not here yet is not admitted, so the gate decides when it arrives. */
-export function admitThread(prev: string | null, id: string | null, t: { quietUntil?: string } | undefined, now: number, showUntil: number): { admitted: string | null; gated: boolean } {
+/** The thread the screen may show. A thread opened while its project was not quiet stays open when the quiet starts
+ *  (V0.46 (6)): `prev` is that thread. Any other way to a quiet thread (a link, back and forward, a notice, a board
+ *  card, ?open=, a push) shows the gate instead. A thread that is not here yet is not admitted, so the gate decides
+ *  when it arrives. */
+export function admitThread(prev: string | null, id: string | null, t: { quietUntil?: string } | undefined, now: number): { admitted: string | null; gated: boolean } {
   if (!id) return { admitted: null, gated: false };
   if (id === prev) return { admitted: id, gated: false };
   if (!t) return { admitted: null, gated: false };
-  if (quietLocked(t, now, showUntil)) return { admitted: null, gated: true };
+  if (isQuiet(t, now)) return { admitted: null, gated: true };
   return { admitted: id, gated: false };
 }
 
-/** The threads search and the project filter may reach: quiet ones only while the unlock runs. */
-export function reachable(threads: Record<string, Thread>, now: number, showUntil: number): Record<string, Thread> {
-  return hideQuiet(threads, showUntil > now, now);
-}
-
-// The unlock is one value per device (browser storage), shared by New thread, the filter, search and the gate; a
-// change in one place (or another tab) reaches every listener at once.
-const listeners = new Set<(end: number) => void>();
-
-export function subscribeQuietShow(fn: (end: number) => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
-/** Start (from) or end (null) the unlock and tell every listener. */
-export function setQuietShow(kv: KV | null, from: number | null): number {
-  const end = saveQuietShow(kv, from);
-  for (const fn of listeners) fn(end);
-  return end;
+/** The threads search and the project filter may reach: none of a quiet project. */
+export function reachable(threads: Record<string, Thread>, now: number): Record<string, Thread> {
+  return hideQuiet(threads, false, now);
 }
 
 // ---- V0.119: the project page saves quiet hours 600 ms after the last change, and at once when it closes ----
@@ -262,22 +214,55 @@ export function nextClock(hhmm: string, now: number): number {
   return at > now ? at : new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, m ? +m[1] : 0, m ? +m[2] : 0).getTime();
 }
 
+/** "15:30", "tomorrow 06:00" or "Mon 06:00" (past a day): when a choice ends, as the snooze list says it. */
+export function endWords(end: number, now: number): string {
+  const d = new Date(end);
+  const day = end - now > 24 * 3600_000 ? `${WEEK[(d.getDay() + 6) % 7].label} ` : new Date(now).getDate() !== d.getDate() ? "tomorrow " : "";
+  return `${day}${hm(d)}`;
+}
+
+export interface QuietChoice {
+  label: string;
+  end: number;
+  /** when it ends, in words */
+  when: string;
+}
+
 /** V0.quiet-now: the one-tap choices of Quiet now: for an hour, for three, and until the next 08:00. */
-export function quietNowChoices(now: number): { label: string; end: number }[] {
+export function quietNowChoices(now: number): QuietChoice[] {
   const morning = nextClock("08:00", now);
   const sameDay = new Date(morning).getDate() === new Date(now).getDate();
   return [
     { label: "1 hour", end: now + 3600_000 },
     { label: "3 hours", end: now + 3 * 3600_000 },
     { label: sameDay ? "Until 08:00" : "Until tomorrow 08:00", end: morning },
+  ].map((c) => ({ ...c, when: endWords(c.end, now) }));
+}
+
+/** V0.quiet-lift: how far ahead a lift may end (core.MaxQuietLift). */
+export const QUIET_LIFT_MAX_MS = 24 * 3600_000;
+
+/** V0.quiet-lift: the list of times a lift runs for, as snooze offers them: 30 minutes (the old unlock), an hour,
+ *  three, and until the quiet ends when that is further and at most a day ahead. quietEnd: the project's quietUntil. */
+export function quietLiftChoices(now: number, quietEnd: number): QuietChoice[] {
+  const out = [
+    { label: "30 minutes", end: now + 30 * 60_000 },
+    { label: "1 hour", end: now + 3600_000 },
+    { label: "3 hours", end: now + 3 * 3600_000 },
   ];
+  if (quietEnd > now + 3 * 3600_000 && quietEnd - now <= QUIET_LIFT_MAX_MS) out.push({ label: "Until the quiet ends", end: quietEnd });
+  return out.filter((c) => c.end <= quietEnd || c.label === "30 minutes").map((c) => ({ ...c, when: endWords(c.end, now) }));
+}
+
+/** V0.quiet-lift: the end of the lift of the quiet, or 0 when none holds at now. */
+export function liftUntil(p: { quietLift?: string } | undefined, now: number): number {
+  const t = p?.quietLift ? Date.parse(p.quietLift) : NaN;
+  return Number.isFinite(t) && t > now ? t : 0;
 }
 
 /** V0.quiet-now: what the Quiet now row says: "Quiet by hand until 15:30." (the day named past a day), or what it does. */
 export function quietNowLine(p: { quietNow?: string } | undefined, now: number): string {
   const end = manualUntil(p, now);
   if (!end) return "Hide its threads and hold notifications from now, once.";
-  const d = new Date(end);
-  const day = end - now > 24 * 3600_000 ? `${WEEK[(d.getDay() + 6) % 7].label} ` : new Date(now).getDate() !== d.getDate() ? "tomorrow " : "";
-  return `Quiet by hand until ${day}${hm(d)}.`;
+  return `Quiet by hand until ${endWords(end, now)}.`;
 }
