@@ -293,7 +293,7 @@ func (b *Book) Remove(pattern string) bool {
 // are usually just the last thing the thread ran. V0.freeze-fast-class-name:
 // nor is a filter at the end of a pipeline (`| tail -8`, `| cut -c1-100`) or a
 // wrapper left bare; on 20 Nov a learned "cut" held a diagnostic grep as a job.
-var trivial = regexp.MustCompile(`^(?:cd|source|\.|export|set|echo|true|:|unset|pushd|popd|mkdir|rm|cat|ls|git|gh|sleep|wait|tail|head|grep|egrep|fgrep|rg|curl|ssh|cut|sed|awk|wc|sort|uniq|tee|tr|less|more|column|jq|time|timeout|nice|ionice|env)(?:\s|$)`)
+var trivial = regexp.MustCompile(`^(?:cd|source|\.|export|set|echo|true|:|unset|pushd|popd|mkdir|rm|cat|ls|git|gh|sleep|wait|tail|head|grep|egrep|fgrep|rg|curl|ssh|cut|sed|awk|wc|sort|uniq|tee|tr|less|more|column|jq|time|timeout|nice|ionice|env|done|fi|then|do|else|elif|esac|for|while|until|if|case|select|in|function|\{|\})(?:\s|$)`)
 
 // redirect is a redirection among a command's words (`2>&1`, `>log`): from it
 // on the words are not arguments.
@@ -301,9 +301,26 @@ var redirect = regexp.MustCompile(`^\d*[<>]`)
 
 // Trivial says a learned pattern names no work of its own: a filter, a
 // wrapper or one of the trivial commands (V0.freeze-fast-class-name).
+//
+// V0.freeze-controller: a shell keyword (`done`, from a for loop whose body
+// was the heavy part) and a bare interpreter (`python3`, `python3 <<'EOF'`) are
+// trivial too: on 26 Nov this host had learned both, and the gate held other
+// threads' commands as class "done" while the lint runs it was meant for were
+// never a class. A learned pattern that is trivial now is dropped at load.
 func Trivial(pattern string) bool {
-	return trivial.MatchString(strings.TrimSpace(strings.ReplaceAll(pattern, `\`, "")))
+	p := strings.TrimSpace(strings.ReplaceAll(pattern, `\`, ""))
+	if trivial.MatchString(p) {
+		return true
+	}
+	f := strings.Fields(p)
+	if len(f) > 0 && interpreters[f[0]] {
+		return len(f) == 1 || strings.HasPrefix(f[1], "<<") || f[1] == "-c" || f[1] == "-e" || f[1] == "-"
+	}
+	return false
 }
+
+// interpreters are the programs whose name alone says nothing about the work.
+var interpreters = map[string]bool{"python": true, "python3": true, "node": true, "bash": true, "sh": true, "zsh": true, "perl": true, "ruby": true, "deno": true, "bun": true}
 
 // Suggest is the pattern and the kind to learn for a command: the program
 // and the first argument that is not a flag, of the last segment that is not
@@ -338,6 +355,9 @@ func Suggest(cmd string) (pattern, kind string) {
 	if arg != "" {
 		text += " " + arg
 		pat += " " + regexp.QuoteMeta(arg)
+	}
+	if Trivial(pat) {
+		return "", ""
 	}
 	return pat, KindOf(text)
 }
