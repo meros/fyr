@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -272,6 +274,25 @@ func TestForwardRefusals(t *testing.T) {
 		if resp.StatusCode != 403 {
 			t.Errorf("%s: %d, want 403", name, resp.StatusCode)
 		}
+	}
+	// V0.forward-cross-site-open: a page opened from another site or app (the
+	// phone's browser tab a link in the Fyr app opens in) gets the page that
+	// opens it again from this origin; nothing reaches the server. A frame of
+	// another site is still refused.
+	opened := rig.get(t, "/seen", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"})
+	body, _ := io.ReadAll(opened.Body)
+	opened.Body.Close()
+	if opened.StatusCode != 200 || !strings.Contains(string(body), bounceScript) || strings.Contains(string(body), "forwarded") {
+		t.Errorf("a page opened from another app: %d %s", opened.StatusCode, body)
+	}
+	sum := sha256.Sum256([]byte(bounceScript))
+	if csp := opened.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'") || !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("the bounce page's policy: %q", csp)
+	}
+	framed := rig.get(t, "/seen", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "iframe"})
+	framed.Body.Close()
+	if framed.StatusCode != 403 {
+		t.Errorf("a frame of another site: %d, want 403", framed.StatusCode)
 	}
 	if resp := rig.get(t, "/seen", map[string]string{"Fyr-Actor": "x"}); resp.StatusCode != 400 {
 		t.Errorf("Fyr-Actor from a browser: %d", resp.StatusCode)

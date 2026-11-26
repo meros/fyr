@@ -2,6 +2,8 @@ package front
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -338,6 +340,38 @@ func forwardPage(w http.ResponseWriter, code int, title, text string) {
 	fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%s</title><style>body{font:16px/24px system-ui,sans-serif;max-width:32em;margin:15vh auto;padding:0 24px;color:#1f1b16;background:#f7f4ef}@media(prefers-color-scheme:dark){body{color:#eee8e0;background:#191714}}h1{font-size:20px}</style><h1>%s</h1><p>%s</p>`, esc(title), esc(title), esc(text))
 }
 
+// isTopOpen: the browser opens the address as a page in a tab (a GET or HEAD
+// navigation of the top document), not a frame, a script or a post.
+func isTopOpen(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		r.Header.Get("Sec-Fetch-Mode") == "navigate" && r.Header.Get("Sec-Fetch-Dest") == "document"
+}
+
+// bounceScript opens the page again from the forward's own origin, once in ten
+// seconds per tab: that request says same-origin and carries the session
+// cookie, which is SameSite=Strict. A browser that still says cross-site, or
+// keeps no sessionStorage, gets the link to press instead of a loop.
+const bounceScript = `try{var k="fyr-forward-bounce",t=+sessionStorage.getItem(k)||0;if(Date.now()-t>1e4){sessionStorage.setItem(k,""+Date.now());location.replace(location.href)}}catch(e){}`
+
+var bounceCSP = func() string {
+	sum := sha256.Sum256([]byte(bounceScript))
+	return "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}()
+
+// forwardBounce answers a page opened from another site or app (a link in the
+// Fyr app on a phone opens in the browser's own tab, which says cross-site):
+// nothing reaches the thread's server, and the page opens itself again from
+// this origin. The answer names nothing of the server or the thread.
+func forwardBounce(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Content-Security-Policy", bounceCSP)
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opening</title><style>body{font:16px/24px system-ui,sans-serif;max-width:32em;margin:15vh auto;padding:0 24px;color:#1f1b16;background:#f7f4ef}@media(prefers-color-scheme:dark){body{color:#eee8e0;background:#191714}a{color:#9cc3ff}}</style><p>Opening the thread's server. <a href="">Open it</a> if nothing happens.</p><script>%s</script>`, bounceScript)
+}
+
 // forwardAuthed: the browser has a session of this front, as its main port
 // asks (the ports of one name share the cookie). In observe mode a request
 // without one is served, as the front itself serves it.
@@ -369,6 +403,10 @@ func (f *Front) ForwardHandler(port int) http.Handler {
 			return
 		}
 		if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			if isTopOpen(r) {
+				forwardBounce(w)
+				return
+			}
 			http.Error(w, "this request comes from another site", http.StatusForbidden)
 			return
 		}
