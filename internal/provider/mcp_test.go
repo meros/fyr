@@ -152,7 +152,7 @@ func server(m *MCPDTO, name string) (cli.MCPServer, bool) {
 	return cli.MCPServer{}, false
 }
 
-func listed(m *MCPDTO, name, status string) bool {
+func listed(m *MCPDTO, name string, status cli.MCPStatus) bool {
 	s, ok := server(m, name)
 	return !m.Listing && ok && s.Status == status
 }

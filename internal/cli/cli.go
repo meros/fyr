@@ -338,13 +338,16 @@ const (
 	MCPOther     = "other"     // anything else (dynamic, managed)
 )
 
-// MCP statuses, as the CLI's health check found them.
+// MCPStatus is a server's state as the CLI's health check found it.
+type MCPStatus string
+
+// MCP statuses.
 const (
-	MCPConnected = "connected"
-	MCPNeedsAuth = "needs-auth"
-	MCPFailed    = "failed"
-	MCPPending   = "pending" // a project server not approved yet
-	MCPUnknown   = "unknown"
+	MCPConnected MCPStatus = "connected"
+	MCPNeedsAuth MCPStatus = "needs-auth"
+	MCPFailed    MCPStatus = "failed"
+	MCPPending   MCPStatus = "pending" // a project server not approved yet
+	MCPUnknown   MCPStatus = "unknown"
 )
 
 // MCPServer is one server as clients see it: never a header or env value.
@@ -354,9 +357,9 @@ type MCPServer struct {
 	Transport string `json:"transport"` // stdio, http, sse
 	// Target is the URL or the command line, with secret-looking parts
 	// redacted.
-	Target string `json:"target,omitempty"`
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"` // why it failed, redacted
+	Target string    `json:"target,omitempty"`
+	Status MCPStatus `json:"status"`
+	Reason string    `json:"reason,omitempty"` // why it failed, redacted
 	// Headers and Env are the names only, for a server Fyr can read.
 	Headers []string `json:"headers,omitempty"`
 	Env     []string `json:"env,omitempty"`

@@ -31,7 +31,11 @@ const userConfig = `{"numStartups": 3, "mcpServers": {
 
 func TestParseMCPList(t *testing.T) {
 	got := Adapter{}.ParseMCPList([]byte(listOut), []byte(userConfig))
-	type row struct{ name, scope, transport, target, status, reason string }
+	type row struct {
+		name, scope, transport, target string
+		status                         cli.MCPStatus
+		reason                         string
+	}
 	want := []row{
 		{"claude.ai Acme Docs", cli.MCPConnector, "http", "https://mcp.example.com/docs", cli.MCPConnected, ""},
 		{"claude.ai Acme Mail", cli.MCPConnector, "http", "https://mail.example.com/mcp", cli.MCPNeedsAuth, ""},
