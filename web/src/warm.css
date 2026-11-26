@@ -133,9 +133,6 @@
 /* Buttons stand out: a face that falls off a little towards its foot, a contact shadow, and a primary with a lit top */
 .btn:not(.p):not([disabled]),.m-bt:not(.p):not(:disabled),.m-navb,.m-sec .m-sbtn::before{background:var(--face);border-color:rgba(var(--shade),.16);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 60%,transparent),0 1px 1px rgba(var(--shade),.06)}
 .btn:not(.p):not([disabled]):hover{border-color:var(--line-strong)}
-/* V0.toast-undo-face: the toast is dark in light mode, so its Undo takes no white face (a background-image that also hid the pressed well's colour); dark mode's own rule in thread.css still outranks this */
-.toast .btn:not(.p):not([disabled]){background:transparent;border-color:rgba(255,255,255,.3);box-shadow:none}
-.toast .btn:not(.p):not([disabled])[data-pressed]{background:rgba(255,255,255,.14)}
 :is(.btn.p,.m-bt.p,.m-send,.m-bnew):not(:disabled):not([disabled]),.st-bh+.st-mv .btn.p:not([disabled]){background:linear-gradient(to bottom,color-mix(in srgb,var(--on-night) 12%,var(--night)),var(--night));border-color:var(--night);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--on-night) 18%,transparent),0 1px 2px rgba(var(--shade),.3),0 4px 10px -3px rgba(var(--shade),.28)}
 .st-mv .btn.p:not([disabled]){background:var(--face);border-color:rgba(var(--shade),.16);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 60%,transparent),0 1px 1px rgba(var(--shade),.06)}
 /* a disabled primary is a shallow well: it sits in, where a live one stands out */
