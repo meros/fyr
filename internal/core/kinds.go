@@ -445,11 +445,24 @@ func init() {
 		{Name: KindProcessLost, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			msg, _ := in.Args.(string)
 			wasFail := r.T.Failure
-			ProcessLost(r.T, "process", msg, now)
-			if r.T.Failure == nil || r.T.Failure == wasFail {
-				return Result{}, nil
+			var ran []Task
+			for _, k := range r.T.Tasks {
+				if k.Status == TaskRunning {
+					ran = append(ran, k)
+				}
 			}
-			return Result{Events: []Event{{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": msg}}}}}, nil
+			ProcessLost(r.T, "process", msg, now)
+			// V0.idle-exit-ends-tasks: the timeline says which tasks ended
+			// with the process, also when no run did (an idle process killed
+			// while it held background work), so the stop is never silent.
+			var evs []Event
+			for _, k := range ran {
+				evs = append(evs, Event{"task", map[string]any{"kind": "ended", "id": k.ID, "description": k.Description, "status": TaskStopped, "summary": "ended with the agent process"}})
+			}
+			if r.T.Failure != nil && r.T.Failure != wasFail {
+				evs = append(evs, Event{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": msg}}})
+			}
+			return Result{Events: evs}, nil
 		}},
 		{Name: KindUnresponsive, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[UnresponsiveArgs](in)
