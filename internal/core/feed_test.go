@@ -155,6 +155,15 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("declined: %+v", n)
 			}
 		},
+		// V0.run-long-notice-next: a long run's start notice waits for the next delivery.
+		// The queue path (idle, tool call, the result replacing it) is
+		// TestRunRequestLongNoticeWaitsForNext.
+		"result.long": func(t *testing.T) {
+			ns := longRunNotices(Reduced{Events: []Event{{Type: EventActionLong, Data: map[string]any{"action": "run-1", "why": "Build"}}}})
+			if len(ns) != 1 || ns[0].Key != "result:thread:run-1" || !strings.Contains(ns[0].What, "still runs") {
+				t.Fatalf("notice %+v", ns)
+			}
+		},
 		// SPEC 0.5 V0.86: a slot the agent queued for is its own: wake.
 		"slot": func(t *testing.T) {
 			th, res := fstep(t, feedThread(), Input{Source: Observer(ObsHost), Kind: KindSlotGranted, Args: "test"}, ct0)

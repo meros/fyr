@@ -2,7 +2,7 @@
 
 → V0.149 (6). *Amends V0.149 (6): a pressed run request can give the agent two notices, not one.* 
 
-(1) **The start notice.** When the owner presses Run (or Run as root) on a run request, fyrd starts a timer of `LongRunAfter` (10 s). If the script still runs when it fires, fyrd applies the observed input `action.long {on, action}`; its reduce logs the event `action.long` and the agent gets a wake notice: "The owner pressed Run on your run request "<why>"; it has run for over 10 s and still runs. Fyr sends you the exit code and the output when it ends; end your turn or do other work meanwhile." So an agent that ended its turn knows the job is under way, and one that waits on it does not ask again.
+(1) **The start notice.** When the owner presses Run (or Run as root) on a run request, fyrd starts a timer of `LongRunAfter` (10 s). If the script still runs when it fires, fyrd applies the observed input `action.long {on, action}`; its reduce logs the event `action.long` and the agent gets a notice (`Next` since V0.run-long-notice-next: it never starts a turn): "The owner pressed Run on your run request "<why>"; it has run for over 10 s and still runs. Fyr sends you the exit code and the output when it ends; end your turn or do other work meanwhile." So an agent that waits on it in a live turn knows the job is under way and does not ask again.
 
 (2) **A short run says nothing more.** The timer stops when the script ends, before its result is reduced, and `action.long` on a run that is no longer running logs nothing. A run that ends within 10 s gives the agent only its result, as before.
 

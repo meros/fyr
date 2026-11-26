@@ -226,7 +226,7 @@ func TestRunRequestLongNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ns := resultNotices(Reduced{Events: res.Events})
+	ns := longRunNotices(Reduced{Events: res.Events})
 	if len(ns) != 1 || !strings.Contains(ns[0].What, `Run as root on your run request "Build"`) || !strings.Contains(ns[0].What, "still runs") {
 		t.Fatalf("long notice: %+v", ns)
 	}
