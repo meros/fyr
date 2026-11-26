@@ -1,6 +1,6 @@
 // SPEC 0.5 V0.50: Settings → Providers in mock mode. In memory; no key ever leaves this module either.
 import type { CommandReply } from "./types.ts";
-import type { CatalogModel, FoundDTO, ProviderDTO } from "./providers.ts";
+import type { CatalogModel, FoundDTO, MCPServer, ProviderDTO } from "./providers.ts";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CLAUDE_MODELS = [
@@ -75,6 +75,40 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
     { id: "openrouter", name: "OpenRouter", kind: "endpoint", source: "OPENROUTER_API_KEY in fyrd's environment", baseURL: "https://openrouter.ai/api", models: [], quotaKind: "openrouter", keyFrom: "OPENROUTER_API_KEY in fyrd's environment", status: "ready", note: "Add the model ids this endpoint should offer.", imported: false },
     { id: "claude-old", name: "Claude (old)", kind: "claude-account", source: "~/.claude-old", configDir: "~/.claude-old", models: CLAUDE_MODELS, loggedIn: true, status: "ready", imported: false },
   ];
+  // V0.provider-mcp: each Claude provider's MCP servers. The user config's servers are per config file (Claude and
+  // DeepSeek read ~/.claude.json, so they share them and say so); connectors are each account's; one plugin's server.
+  const userServers = new Map<string, MCPServer[]>([
+    ["~/.claude.json", [
+      { name: "tracker", scope: "user", transport: "http", target: "https://tracker.example.com/mcp", status: "connected", headers: ["Authorization"] },
+      { name: "docs-search", scope: "user", transport: "http", target: "https://search.example.com/mcp", status: "needs-auth" },
+      { name: "browser", scope: "user", transport: "stdio", target: "/opt/acme/bin/browser-mcp --headless", status: "connected", env: ["ACME_PROFILE"] },
+      { name: "render", scope: "user", transport: "stdio", target: "uvx render-mcp", status: "failed", reason: 'ENOENT: Executable not found in $PATH: "uvx"' },
+    ]],
+  ]);
+  const connectors = (p: ProviderDTO): MCPServer[] =>
+    p.kind !== "claude-account" ? [] : p.tokenLogin
+      ? [{ name: "claude.ai Acme Mail", scope: "connector", transport: "http", target: "https://mail.example.com/mcp", status: "needs-auth" }]
+      : [{ name: "claude.ai Acme Docs", scope: "connector", transport: "http", target: "https://docs.example.com/mcp", status: "connected" }];
+  const plugin: MCPServer = { name: "plugin:acme:tools", scope: "plugin", transport: "http", target: "https://tools.example.com/mcp", status: "needs-auth" };
+  const signedIn = new Set<string>(); // "config|name" of a server signed in here
+  const configOf = (p: ProviderDTO) => (p.configDir ? `${p.configDir}/.claude.json` : "~/.claude.json");
+  const serversOf = (p: ProviderDTO): MCPServer[] =>
+    [...connectors(p), plugin, ...(userServers.get(configOf(p)) ?? [])].map((x) => (signedIn.has(`${configOf(p)}|${x.name}`) ? { ...x, status: "connected" as const } : { ...x }));
+  for (const p of list) {
+    if (p.cli !== "claude") continue;
+    const shared = list.filter((x) => x !== p && x.cli === "claude" && configOf(x) === configOf(p)).map((x) => x.name);
+    // The main account was listed 3 minutes ago; the others have not been, so their page asks on open.
+    p.mcp = { servers: p.id === "claude" || p.id === "claudeAlt" ? serversOf(p) : [], config: configOf(p), ...(shared.length ? { sharedWith: shared } : {}), ...(p.id === "claude" || p.id === "claudeAlt" ? { checkedAt: ago(3 * 60_000) } : {}) };
+  }
+  const relist = (p: ProviderDTO, after = 1200) => {
+    if (!p.mcp) return;
+    p.mcp = { ...p.mcp, listing: true };
+    setTimeout(() => {
+      if (!p.mcp) return;
+      for (const x of list) if (x.mcp && x.mcp.config === p.mcp.config && x !== p && x.mcp.checkedAt) x.mcp = { ...x.mcp, servers: serversOf(x) };
+      p.mcp = { ...p.mcp, listing: false, servers: serversOf(p), checkedAt: ago(0), error: undefined };
+    }, after);
+  };
   const fail = (error: string): CommandReply => ({ ok: false, error });
   const get = (id: unknown) => list.find((p) => p.id === id);
   const keyed = (p: ProviderDTO) => {
@@ -178,6 +212,71 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
         case "provider.loginCancel": {
           const p = get(a.id);
           if (p?.login) p.login = { ...p.login, state: "cancelled" };
+          return { ok: true };
+        }
+        // V0.provider-mcp: the MCP servers. A list takes a moment, as the real health check does (10-30 s on a host).
+        case "provider.mcpList": {
+          const p = get(a.id);
+          if (!p?.mcp) return fail("no MCP servers here");
+          if (!p.mcp.listing) relist(p);
+          return { ok: true };
+        }
+        case "provider.mcpAdd": {
+          const p = get(a.id);
+          if (!p?.mcp) return fail("no MCP servers here");
+          const name = String(a.name ?? "");
+          const mine = userServers.get(p.mcp.config) ?? [];
+          if (mine.some((x) => x.name === name)) return fail(`MCP server ${name} already exists in user config`);
+          const transport = (a.transport as MCPServer["transport"]) ?? "http";
+          const target = transport === "stdio" ? [String(a.command ?? ""), ...((a.args as string[]) ?? [])].join(" ") : String(a.url ?? "");
+          mine.push({ name, scope: "user", transport, target, status: transport === "stdio" ? "connected" : "needs-auth", ...(a.headers ? { headers: Object.keys(a.headers as object) } : {}), ...(a.env ? { env: Object.keys(a.env as object) } : {}) });
+          userServers.set(p.mcp.config, mine);
+          relist(p);
+          return { ok: true };
+        }
+        case "provider.mcpRemove": {
+          const p = get(a.id);
+          const s = p?.mcp?.servers.find((x) => x.name === a.name);
+          if (!p?.mcp || !s) return fail(`No server ${String(a.name)} in the last list. Check again first.`);
+          if (s.scope === "plugin") return fail("A plugin's server goes away with the plugin: remove or turn off the plugin instead.");
+          if (s.scope === "connector") return fail("A claude.ai connector is removed in claude.ai's connector settings, not here.");
+          userServers.set(p.mcp.config, (userServers.get(p.mcp.config) ?? []).filter((x) => x.name !== s.name));
+          relist(p);
+          return { ok: true };
+        }
+        case "provider.mcpLogin": {
+          const p = get(a.id);
+          if (!p?.mcp) return fail("no MCP servers here");
+          if (p.mcp.login && ["starting", "waiting", "checking"].includes(p.mcp.login.state)) return fail(`A sign-in to ${p.mcp.login.server} is already running; finish or cancel it first`);
+          const login = { kind: "mcp", server: String(a.name), state: "starting", expires: new Date(Date.now() + 10 * 60_000).toISOString() } as NonNullable<ProviderDTO["login"]>;
+          p.mcp = { ...p.mcp, login };
+          setTimeout(() => {
+            if (p.mcp?.login === login) p.mcp = { ...p.mcp, login: { ...login, state: "waiting", url: "https://auth.example.com/authorize?response_type=code&client_id=mock&state=s1" } };
+          }, 800);
+          return { ok: true };
+        }
+        case "provider.mcpLoginCode": {
+          const p = get(a.id);
+          const l = p?.mcp?.login;
+          if (!p?.mcp || !l || l.state !== "waiting") return fail("no login is running; start it again");
+          if (!/^http:\/\/localhost:\d+\/callback\?/.test(String(a.code ?? "").trim())) return fail("That is not the address the browser was sent to (it starts with http://localhost).");
+          signedIn.add(`${p.mcp.config}|${l.server}`);
+          p.mcp = { ...p.mcp, login: { ...l, state: "done" } };
+          relist(p, 300);
+          return { ok: true };
+        }
+        case "provider.mcpLoginCancel": {
+          const p = get(a.id);
+          if (p?.mcp?.login) p.mcp = { ...p.mcp, login: { ...p.mcp.login, state: "cancelled" } };
+          return { ok: true };
+        }
+        case "provider.mcpLogout": {
+          const p = get(a.id);
+          if (!p?.mcp) return fail("no MCP servers here");
+          signedIn.delete(`${p.mcp.config}|${String(a.name)}`);
+          const s = (userServers.get(p.mcp.config) ?? []).find((x) => x.name === a.name);
+          if (s && s.transport !== "stdio") s.status = "needs-auth";
+          relist(p, 300);
           return { ok: true };
         }
         case "provider.delete": {

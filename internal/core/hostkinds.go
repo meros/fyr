@@ -29,7 +29,10 @@ const KindRefreshModels = "provider.refreshModels"
 
 // ProviderKinds are the provider registry's commands (3.16).
 var ProviderKinds = []string{"provider.import", "provider.create", "provider.update", "provider.setKey",
-	"provider.login", "provider.loginCode", "provider.loginCancel", "provider.delete", KindRefreshModels}
+	"provider.login", "provider.loginCode", "provider.loginCancel", "provider.delete", KindRefreshModels,
+	// V0.provider-mcp: the provider's MCP servers.
+	"provider.mcpList", "provider.mcpAdd", "provider.mcpRemove", "provider.mcpLogin", "provider.mcpLoginCode",
+	"provider.mcpLoginCancel", "provider.mcpLogout"}
 
 // The effects of the host kinds; Request carries the command.
 const (

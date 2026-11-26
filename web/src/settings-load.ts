@@ -120,7 +120,8 @@ export function useSettingsData(p: SettingsProps, saved: () => void) {
   }, [online]);
   /* eslint-enable react-hooks/exhaustive-deps */
   // V0.53: while a login runs on a host, follow it there (its link, the code's answer, the end).
-  const logging = hosts.filter((h) => slices[h.name]?.providers?.some((x) => loginActive(x.login))).map((h) => h.name);
+  // V0.provider-mcp: likewise while a provider lists its MCP servers or signs in to one.
+  const logging = hosts.filter((h) => slices[h.name]?.providers?.some((x) => loginActive(x.login) || !!x.mcp?.listing || loginActive(x.mcp?.login))).map((h) => h.name);
   /* eslint-disable react-hooks/exhaustive-deps -- the poll restarts only when the set of hosts with a login running changes (its JSON key); loadProviders is new each render and p.onChanged is read when the poll ends */
   useEffect(() => {
     if (!logging.length) return;

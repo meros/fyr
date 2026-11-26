@@ -239,3 +239,60 @@ test("V0.settings-ia: Add provider names an endpoint by what the owner has, and 
   assert.equal(newProviderId(["a"], after, "B "), "b", "two new: the first of that name");
   assert.equal(newProviderId(["a", "b", "c"], after, "B"), undefined, "none new: the form goes to the list");
 });
+
+// V0.provider-mcp: a provider's MCP section, in words and arguments.
+import { EMPTY_MCP_FORM, mcpAddArgs, mcpCanSignIn, mcpCanSignOut, mcpCheckLine, mcpRemovable, mcpServerLine, mcpSharedLine } from "../src/providers.ts";
+import { createMockProviders } from "../src/mock-providers.ts";
+
+test("MCP: what each server offers", () => {
+  assert.ok(mcpRemovable({ scope: "user" }) && !mcpRemovable({ scope: "plugin" }) && !mcpRemovable({ scope: "connector" }) && !mcpRemovable({ scope: "other" }));
+  assert.ok(mcpCanSignIn({ status: "needs-auth", transport: "http" }) && !mcpCanSignIn({ status: "needs-auth", transport: "stdio" }) && !mcpCanSignIn({ status: "connected", transport: "http" }));
+  assert.ok(mcpCanSignOut({ status: "connected", transport: "sse", scope: "user" }) && !mcpCanSignOut({ status: "connected", transport: "http", scope: "connector" }));
+  const l = mcpServerLine({ name: "tracker", scope: "user", transport: "http", target: "https://tracker.example.com/mcp", status: "failed", reason: "HTTP 405", headers: ["Authorization"] });
+  assert.deepEqual(l, { target: "HTTP · https://tracker.example.com/mcp", more: "User config · headers Authorization · HTTP 405" });
+  assert.match(mcpServerLine({ name: "plugin:acme:tools", scope: "plugin", transport: "http", status: "connected" }).more, /plugin acme/);
+});
+
+test("MCP: the header line and the shared note", () => {
+  const now = Date.parse("2026-11-26T12:00:00Z");
+  assert.equal(mcpCheckLine({ listing: true }, now), "Checking…");
+  assert.equal(mcpCheckLine({}, now), "Not checked yet");
+  assert.equal(mcpCheckLine({ checkedAt: new Date(now - 5 * 60_000).toISOString() }, now), "Checked 5 min ago");
+  assert.equal(mcpSharedLine({ config: "~/.claude.json" }), null);
+  assert.match(mcpSharedLine({ config: "~/.claude.json", sharedWith: ["DeepSeek"] })!, /^Shared with DeepSeek: it reads the same ~\/\.claude\.json/);
+  assert.match(mcpSharedLine({ config: "~/.claude.json", sharedWith: ["A", "B", "C"] })!, /^Shared with A, B and C: they read/);
+});
+
+test("MCP: Add server's arguments", () => {
+  assert.deepEqual(mcpAddArgs("p", { ...EMPTY_MCP_FORM, name: "tracker", url: " https://t.example.com/mcp ", headers: "Authorization: Bearer x\n\nX-Team: a:b" }), {
+    args: { id: "p", name: "tracker", transport: "http", url: "https://t.example.com/mcp", headers: { Authorization: "Bearer x", "X-Team": "a:b" } },
+  });
+  assert.deepEqual(mcpAddArgs("p", { ...EMPTY_MCP_FORM, name: "r", transport: "stdio", command: "uvx", args: "render-mcp\n--port\n0", env: "ACME_KEY=a=b" }), {
+    args: { id: "p", name: "r", transport: "stdio", command: "uvx", args: ["render-mcp", "--port", "0"], env: { ACME_KEY: "a=b" } },
+  });
+  for (const bad of [{ name: "" }, { name: "-x", url: "https://e.com" }, { name: "a", url: "ftp://e.com" }, { name: "a", url: "https://e.com", headers: "no colon" }, { name: "a", transport: "stdio" as const }, { name: "a", transport: "stdio" as const, command: "x", env: "1A=b" }])
+    assert.ok("error" in mcpAddArgs("p", { ...EMPTY_MCP_FORM, ...bad }), JSON.stringify(bad));
+});
+
+test("MCP: the mock lists, adds, signs in and removes like the host", async () => {
+  const m = createMockProviders();
+  const claude = () => m.list().find((p) => p.id === "claude")!;
+  assert.deepEqual(claude().mcp!.sharedWith, ["DeepSeek"], "the default folder's config is DeepSeek's too");
+  assert.equal(m.list().find((p) => p.id === "work")!.mcp!.checkedAt, undefined, "not listed: the page asks");
+  assert.ok(m.command("provider.mcpAdd", { id: "claude", name: "acme", transport: "http", url: "https://acme.example.com/mcp" }).ok);
+  assert.ok(claude().mcp!.listing);
+  await new Promise((r) => setTimeout(r, 1300));
+  assert.equal(claude().mcp!.servers.find((s) => s.name === "acme")?.status, "needs-auth");
+  assert.ok(!m.command("provider.mcpRemove", { id: "claude", name: "plugin:acme:tools" }).ok, "a plugin's server is not removed");
+  assert.ok(m.command("provider.mcpLogin", { id: "claude", name: "acme" }).ok);
+  assert.equal(claude().mcp!.login!.state, "starting");
+  await new Promise((r) => setTimeout(r, 900));
+  assert.equal(claude().mcp!.login!.state, "waiting");
+  assert.ok(!m.command("provider.mcpLoginCode", { id: "claude", code: "nope" }).ok);
+  assert.ok(m.command("provider.mcpLoginCode", { id: "claude", code: "http://localhost:4123/callback?code=c&state=s" }).ok);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(claude().mcp!.servers.find((s) => s.name === "acme")?.status, "connected");
+  assert.ok(m.command("provider.mcpRemove", { id: "claude", name: "acme" }).ok);
+  await new Promise((r) => setTimeout(r, 1300));
+  assert.equal(claude().mcp!.servers.some((s) => s.name === "acme"), false);
+});

@@ -49,6 +49,37 @@ export interface ProviderDTO {
   /** the last check is only Fyr's known list: the CLI named its aliases only (found live 16 Nov) */
   checkNote?: string;
   checking?: boolean;
+  /** V0.provider-mcp: the MCP servers its CLI keeps; absent when its CLI has none Fyr can manage (Antigravity) */
+  mcp?: MCPDTO;
+}
+
+/** V0.provider-mcp: one MCP server as the provider's CLI sees it. Never a header or env value. */
+export interface MCPServer {
+  name: string;
+  scope: "user" | "local" | "project" | "plugin" | "connector" | "other";
+  transport: "stdio" | "http" | "sse";
+  /** the URL or the command line, secrets redacted */
+  target?: string;
+  status: "connected" | "needs-auth" | "failed" | "pending" | "unknown";
+  reason?: string;
+  /** names only */
+  headers?: string[];
+  env?: string[];
+}
+
+/** V0.provider-mcp: a provider's MCP section. */
+export interface MCPDTO {
+  servers: MCPServer[];
+  /** when the last list ended (absent: never this run of the host) */
+  checkedAt?: string;
+  error?: string;
+  listing?: boolean;
+  /** the CLI's user config file the servers are kept in, e.g. ~/.claude.json */
+  config: string;
+  /** the other providers that read the same config */
+  sharedWith?: string[];
+  /** a server's sign-in that runs or just ended */
+  login?: LoginDTO;
 }
 
 /** V0.120: one model the provider reports. `new` already has its 14 days applied. */
@@ -64,8 +95,10 @@ export interface CatalogModel {
 
 /** V0.53: a login Fyr runs with the CLI. */
 export interface LoginDTO {
-  kind: "token" | "folder";
+  kind: "token" | "folder" | "mcp";
   state: "starting" | "waiting" | "checking" | "done" | "failed" | "cancelled" | "timeout";
+  /** V0.provider-mcp: the MCP server a "mcp" sign-in is for */
+  server?: string;
   url?: string;
   message?: string;
   expires: string;
@@ -218,6 +251,7 @@ export function loginButton(p: Pick<ProviderDTO, "canLogin" | "status" | "tokenL
 
 /** V0.53: what the login is doing, in a line. */
 export function loginLine(l: LoginDTO, cli?: string): string {
+  if (l.kind === "mcp") return mcpLoginLine(l);
   const isAgy = cli === "agy";
   switch (l.state) {
     case "starting":
@@ -425,4 +459,128 @@ export function modelsFoot(p: Pick<ProviderDTO, "checkedAt" | "checkError" | "ch
   if (failed) return { text: failed, error: true };
   if (p.checkNote) return { text: p.checkNote, error: false };
   return { text: `${STAR_LINE} Fyr asks the provider for its models when you open this page and once a day.`, error: false };
+}
+
+// ---- V0.provider-mcp: a provider's MCP servers ----
+
+export const MCP_STATUS: Record<MCPServer["status"], string> = {
+  connected: "Connected",
+  "needs-auth": "Needs sign-in",
+  failed: "Failed",
+  pending: "Not approved",
+  unknown: "Unknown",
+};
+
+/** Where a server is configured, and what that means for Remove. */
+export function mcpScopeText(s: Pick<MCPServer, "scope" | "name">): string {
+  switch (s.scope) {
+    case "user":
+      return "User config";
+    case "local":
+      return "This folder's local config";
+    case "project":
+      return "A project's .mcp.json";
+    case "plugin":
+      return `From the plugin ${s.name.split(":")[1] || "it came with"}: it goes with the plugin`;
+    case "connector":
+      return "claude.ai connector of this account: change it in claude.ai";
+    default:
+      return "Not in the user config: Fyr cannot change it";
+  }
+}
+
+/** Fyr can remove a server of a config it changes; a plugin's and a connector's are not its to remove. */
+export function mcpRemovable(s: Pick<MCPServer, "scope">): boolean {
+  return s.scope === "user" || s.scope === "local" || s.scope === "project";
+}
+
+/** Sign in: a server that says it needs it (over HTTP or SSE, or a connector). */
+export function mcpCanSignIn(s: Pick<MCPServer, "status" | "transport">): boolean {
+  return s.status === "needs-auth" && s.transport !== "stdio";
+}
+
+/** Sign out: a connected HTTP or SSE server, not a connector (claude.ai keeps its sign-in). */
+export function mcpCanSignOut(s: Pick<MCPServer, "status" | "transport" | "scope">): boolean {
+  return s.status === "connected" && s.transport !== "stdio" && s.scope !== "connector";
+}
+
+/** The section's header line: listing, when it was listed, or not yet. */
+export function mcpCheckLine(m: Pick<MCPDTO, "listing" | "checkedAt" | "error">, now: number): string {
+  if (m.listing) return "Checking…";
+  if (!m.checkedAt) return "Not checked yet";
+  return `${m.error ? "Last checked" : "Checked"} ${checkedWhen(m.checkedAt, now)}`;
+}
+
+/** The note on a config two providers read: what changes for both, and what does not. */
+export function mcpSharedLine(m: Pick<MCPDTO, "sharedWith" | "config">): string | null {
+  const o = m.sharedWith ?? [];
+  if (!o.length) return null;
+  const names = o.length === 1 ? o[0] : `${o.slice(0, -1).join(", ")} and ${o[o.length - 1]}`;
+  return `Shared with ${names}: ${o.length === 1 ? "it reads" : "they read"} the same ${m.config}, so a server added, removed or signed in to here changes there too. claude.ai connectors are each account's own.`;
+}
+
+/** The line under a server: its transport and URL or command, then where it is configured and why it failed. */
+export function mcpServerLine(s: MCPServer): { target: string; more: string } {
+  const t = s.transport === "stdio" ? "stdio" : s.transport.toUpperCase();
+  const names = [...(s.headers?.length ? [`headers ${s.headers.join(", ")}`] : []), ...(s.env?.length ? [`env ${s.env.join(", ")}`] : [])];
+  return { target: `${t} · ${s.target ?? ""}`.replace(/ · $/, ""), more: [mcpScopeText(s), ...names, ...(s.reason ? [s.reason] : [])].join(" · ") };
+}
+
+export function mcpLoginLine(l: LoginDTO): string {
+  const n = l.server ?? "the server";
+  switch (l.state) {
+    case "starting":
+      return `Starting the sign-in to ${n}…`;
+    case "waiting":
+      return `Open the sign-in page and sign in to ${n}. In a browser on this host it finishes by itself; elsewhere the browser ends on a page that does not load: copy its address (http://localhost…) and paste it here.`;
+    case "checking":
+      return "Checking the address…";
+    case "done":
+      return `Signed in to ${n}. Claude keeps the sign-in in this config.`;
+    case "cancelled":
+      return "Sign-in cancelled.";
+    case "timeout":
+      return l.message || "The sign-in timed out. Start it again.";
+    case "failed":
+      return l.message || "The sign-in did not finish. Start it again.";
+  }
+}
+
+/** The Add server form. Headers are "Name: value" lines, env "NAME=value" lines, args one per line. */
+export interface MCPForm {
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  url: string;
+  command: string;
+  args: string;
+  headers: string;
+  env: string;
+}
+
+export const EMPTY_MCP_FORM: MCPForm = { name: "", transport: "http", url: "", command: "", args: "", headers: "", env: "" };
+
+/** provider.mcpAdd's arguments, or what is wrong with the form. */
+export function mcpAddArgs(id: string, f: MCPForm): { args: Record<string, unknown> } | { error: string } {
+  const name = f.name.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name)) return { error: "A name is letters, digits, '-', '_' or '.', starting with a letter or digit." };
+  const lines = (t: string) => t.split("\n").map((x) => x.trim()).filter(Boolean);
+  if (f.transport === "stdio") {
+    if (!f.command.trim()) return { error: "A stdio server needs a command." };
+    const env: Record<string, string> = {};
+    for (const l of lines(f.env)) {
+      const i = l.indexOf("=");
+      if (i < 1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(l.slice(0, i))) return { error: `Env lines are NAME=value: "${l.slice(0, 40)}"` };
+      env[l.slice(0, i)] = l.slice(i + 1);
+    }
+    return { args: { id, name, transport: "stdio", command: f.command.trim(), args: lines(f.args), ...(Object.keys(env).length ? { env } : {}) } };
+  }
+  const url = f.url.trim();
+  if (!/^https?:\/\/[^\s/]+/.test(url)) return { error: "The URL must be an http(s) address." };
+  const headers: Record<string, string> = {};
+  for (const l of lines(f.headers)) {
+    const i = l.indexOf(":");
+    if (i < 1 || /\s/.test(l.slice(0, i))) return { error: "Header lines are Name: value." };
+    headers[l.slice(0, i)] = l.slice(i + 1).trim();
+  }
+  return { args: { id, name, transport: f.transport, url, ...(Object.keys(headers).length ? { headers } : {}) } };
 }
