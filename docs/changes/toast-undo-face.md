@@ -1,0 +1,3 @@
+# V0.toast-undo-face: the toast's Undo button is readable in light mode
+
+In light mode the desktop toast's Undo showed as a blank white pill. The cause was the raised-button face in `web/src/warm.css` (`.btn:not(.p):not([disabled])`, `background: var(--face)`). That face is a gradient, so it is a background image, and its selector outranks `.toast .btn`. The light `--on-night` text sat on white. The earlier fixes (V0.toast-dark, V0.toast-pressed-colors) set `background-color`, which stays under the image. The toast now clears the face, border and shadow for its own buttons, and gives them their own pressed well, in a rule that outranks the face. The dark-mode rule in `thread.css` still wins in dark mode. The phone's `.m-toast .tb` is not a `.btn` and was not affected.
