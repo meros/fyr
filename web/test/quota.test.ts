@@ -134,3 +134,12 @@ test("V0.quota-reset-wake: wake options enable only fresh windows with a future 
   const tok = quotaWakeOptions({ profile: "tok", kind: "anthropic-oauth", source: "session", windows: [{ name: "5 h", usedPct: 90 }] }, undefined, now);
   assert.match(tok[0].disabledReason ?? "", /token account/i);
 });
+
+test("V0.quota-all-windows: a window that counts one model reads with its span and model", () => {
+  assert.equal(windowName("7 d Opus"), "7 days, Opus");
+  assert.equal(windowName("5 h"), "5 hours");
+  assert.equal(windowName("1 d"), "1 day");
+  const q: Quota = { ...claude, windows: [...claude.windows!, { name: "7 d Opus", usedPct: 92 }] };
+  assert.equal(quotaSummary(q, "Claude"), "Claude 5 h 34 % · 7 d 61 % · 7 d Opus 92 %");
+  assert.equal(busiestFigure(q)?.text, "92 %");
+});
