@@ -2,7 +2,7 @@
 
 import type { HostId } from "./hostid.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, removeChip, type Chip } from "./attach.ts";
+import { addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, pasteMarkers, pastedName, removeChip, type Chip } from "./attach.ts";
 import { useApi } from "./api-context.ts";
 import { DownloadLink, openImages, type ViewerImage } from "./preview-ui.tsx";
 
@@ -73,12 +73,22 @@ export function useAttachments(host?: HostId, o: { initial?: Chip[]; onClose?(ch
     setChips(next);
   };
 
+  /** V0.paste-inline: a file pasted into a text field uploads as a chip, and a [name] marker goes in the text at the
+   *  caret, so the agent reads where in the sentence it was pasted (the marker names the "Attached:" line it gets).
+   *  Only the owner's own paste does this; the paperclip and the pickers add a chip alone, as before. */
   const onPaste = (e: ClipboardEvent) => {
     const files = Array.from(e.clipboardData?.files ?? []);
-    if (files.length) {
-      e.preventDefault();
-      add(files);
-    }
+    if (!files.length) return;
+    e.preventDefault();
+    const taken = new Set(chipsRef.current.map((c) => c.name));
+    const named = files.map((f) => {
+      const name = pastedName(f.name, f.type, taken);
+      taken.add(name);
+      return name === f.name ? f : new File([f], name, { type: f.type });
+    });
+    add(named);
+    const el = e.target;
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) insertAtCaret(el, named.map((f) => f.name));
   };
   const onDrop = (e: DragEvent) => {
     const files = Array.from(e.dataTransfer?.files ?? []);
@@ -91,6 +101,23 @@ export function useAttachments(host?: HostId, o: { initial?: Chip[]; onClose?(ch
     if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
   };
   return { chips, add, remove, clear, put, onPaste, onDrop, onDragOver };
+}
+
+/** Puts the markers at the caret the way typing would: through insertText, so the field's undo takes them back and its
+ *  input handler stores the text; where the browser has no insertText, setRangeText and an input event. */
+function insertAtCaret(el: HTMLTextAreaElement | HTMLInputElement, names: string[]) {
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? start;
+  const s = pasteMarkers(names, el.value.slice(0, start), el.value.slice(end));
+  let done = false;
+  try {
+    done = document.execCommand("insertText", false, s);
+  } catch {
+    done = false;
+  }
+  if (done) return;
+  el.setRangeText(s, start, end, "end");
+  el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 export function ChipStrip({ chips, onRemove }: { chips: Chip[]; onRemove(key: string): void }) {

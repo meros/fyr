@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_BYTES, addChips, chipDone, chipError, chipProgress, downloadUrl, fileLabel, formatSize, removeChip, sendArgs, uploadError } from "../src/attach.ts";
+import { MAX_BYTES, addChips, chipDone, chipError, chipProgress, downloadUrl, fileLabel, pasteMarkers, pastedName, formatSize, removeChip, sendArgs, uploadError } from "../src/attach.ts";
 
 const png = { key: "a", name: "shot.png", size: 2048, type: "image/png", preview: "blob:x" };
 const log = { key: "b", name: "build.log", size: 30_000, type: "text/plain" };
@@ -64,4 +64,21 @@ test("V0.download-assets: a host's attachment is saved with ?download=1; a data 
   assert.equal(downloadUrl("/api/h/H1/attachments/a_1?v=2"), "/api/h/H1/attachments/a_1?v=2&download=1");
   assert.equal(downloadUrl("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA");
   assert.equal(downloadUrl("blob:http://x/1"), "blob:http://x/1");
+});
+
+test("V0.paste-inline: a pasted clipboard image is named image-N, a named file keeps its name", () => {
+  assert.equal(pastedName("image.png", "image/png", new Set()), "image-1.png");
+  assert.equal(pastedName("", "image/jpeg", new Set(["image-1.jpeg"])), "image-2.jpeg");
+  assert.equal(pastedName("image.png", "image/png", new Set(["image-1.png", "image-2.png"])), "image-3.png");
+  assert.equal(pastedName("diagram.png", "image/png", new Set()), "diagram.png");
+  assert.equal(pastedName("diagram.png", "image/png", new Set(["diagram.png"])), "diagram-1.png");
+  assert.equal(pastedName("report.pdf", "application/pdf", new Set()), "report.pdf");
+  assert.equal(pastedName("", "image/svg+xml", new Set()), "image-1.svg");
+});
+
+test("V0.paste-inline: the markers go at the caret with a space where they would touch a word", () => {
+  assert.equal(pasteMarkers(["image-1.png"], "", ""), "[image-1.png]");
+  assert.equal(pasteMarkers(["image-1.png"], "look at", "here"), " [image-1.png] ");
+  assert.equal(pasteMarkers(["image-1.png"], "look at ", " here"), "[image-1.png]");
+  assert.equal(pasteMarkers(["a.png", "b.png"], "x\n", ""), "[a.png] [b.png]");
 });
