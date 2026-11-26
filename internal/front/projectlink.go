@@ -196,6 +196,7 @@ func (f *Front) projectLinkCommand(w http.ResponseWriter, commandID string, args
 				failed, last = append(failed, linkFail{t.host, err.Error()}), err
 				continue
 			}
+			f.noteLink(t.l, t.id, link)
 			stored = append(stored, t.host)
 		}
 		if len(stored) == 0 {
@@ -209,7 +210,9 @@ func (f *Front) projectLinkCommand(w http.ResponseWriter, commandID string, args
 				if slices.Contains(stored, t.host) {
 					if err := f.writeShared(context.Background(), t.l, t.id, link, shared, at, commandID+":shared:"+t.host); err != nil {
 						f.opt.Logf("front: shared values on %s: %v", t.l.name(), err)
+						continue
 					}
+					f.noteShared(t.l, t.id, shared, at)
 				}
 			}
 		} else {
@@ -237,6 +240,7 @@ func (f *Front) projectUnlinkCommand(w http.ResponseWriter, commandID string, ar
 		if err := f.writeLink(context.Background(), t, "", commandID+":"+t.host); err != nil {
 			return refusal(502, err)
 		}
+		f.noteLink(t.l, t.id, "")
 		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"ref": ref}}
 	})
 }
@@ -326,6 +330,35 @@ func (f *Front) noteShared(l *link, id string, vals map[string]any, at time.Time
 			cp[k] = v
 		}
 		cp["sharedAt"] = at.UTC().Format(time.RFC3339Nano)
+		l.projects[i] = cp
+		return
+	}
+}
+
+// noteLink puts the link a host just stored into this front's copy of its
+// project, as noteShared does for the values (V0.shared-edit-after-link): a
+// shared edit that follows at once reaches the member this front just linked,
+// instead of skipping it until the host's next frame carries the link. The
+// event, when it comes, is the same record.
+func (f *Front) noteLink(l *link, id, link string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, p := range l.projects {
+		if pid, _ := p["id"].(string); pid != id {
+			continue
+		}
+		if p["link"] == link || (link == "" && p["link"] == nil) {
+			return
+		}
+		cp := make(map[string]any, len(p)+1)
+		for k, v := range p {
+			cp[k] = v
+		}
+		if link == "" {
+			delete(cp, "link")
+		} else {
+			cp["link"] = link
+		}
 		l.projects[i] = cp
 		return
 	}

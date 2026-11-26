@@ -52,6 +52,20 @@ func frontSees(t *testing.T, front, ref, link string) bool {
 	return false
 }
 
+// copyLink is the link of the project as the front's own copy holds it,
+// which is what its shared edits read (not the host's state it forwards).
+func copyLink(t *testing.T, front, ref string) string {
+	t.Helper()
+	fw := testFront(t, front)
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	tg, _, err := fw.projectAtLocked(ref)
+	if err != nil {
+		return "?" + err.Error()
+	}
+	return tg.linked
+}
+
 func linkOf(h *settingsHost, ref string) string {
 	for _, p := range h.eng.Projects() {
 		if ref[len(ref)-len(p.ID):] == p.ID {
@@ -345,7 +359,13 @@ func TestProjectSharedPriority(t *testing.T) {
 		t.Fatalf("link: %d %v", code, rep)
 	}
 	link, _ := rep["result"].(map[string]any)["link"].(string)
-	eventually(t, "front sees both", func() bool { return frontSees(t, f.URL, onA, link) && frontSees(t, f.URL, onB, link) })
+	// V0.shared-edit-after-link: the front's own copy holds the link as soon
+	// as the link is answered, not a frame later, so the edit below reaches b.
+	for _, ref := range []string{onA, onB} {
+		if got := copyLink(t, f.URL, ref); got != link {
+			t.Fatalf("the front's copy of %s right after the link: %q, want %q", ref, got, link)
+		}
+	}
 	prio := func(h *settingsHost, ref string) string {
 		for _, p := range h.eng.Projects() {
 			if strings.HasSuffix(ref, "/"+p.ID) {
@@ -360,7 +380,7 @@ func TestProjectSharedPriority(t *testing.T) {
 	if code, rep := shared("bad", `"priority":"urgent"`); code != 400 {
 		t.Fatalf("a bad priority: %d %v", code, rep)
 	}
-	if code, rep := shared("hi", `"priority":"high"`); code != 200 {
+	if code, rep := shared("hi", `"priority":"high"`); code != 200 || fmt.Sprint(rep["result"].(map[string]any)["stored"]) != "[TEST-A TEST-B]" {
 		t.Fatalf("high: %d %v", code, rep)
 	}
 	if prio(a, onA) != "high" || prio(b, onB) != "high" {
