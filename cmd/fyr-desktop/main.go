@@ -17,7 +17,6 @@ import "C"
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"log"
 	"os"
@@ -25,7 +24,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/desktop"
@@ -55,26 +53,27 @@ type app struct {
 	nextTok  int
 	started  sync.Once
 	stopFeed context.CancelFunc
+	win      *desktop.Chrome
 }
+
+// chromium is the Chromium the package bundles (flake.nix sets it with -X);
+// without it the app looks for one on PATH.
+var chromium string
 
 var the *app
 
 func main() {
 	log.SetFlags(log.LstdFlags)
-	// V0.desktop-gpu-shm: the page is drawn on the GPU and reaches the window through shared memory, which neither
-	// flickers while the owner types nor paints on the CPU (internal/desktop/renderer.go).
-	for k, v := range desktop.RendererEnv(os.LookupEnv) {
-		os.Setenv(k, v)
-	}
-	// V0.desktop-system-theme: a session that sets GTK_THEME to a dark theme makes WebKitGTK report
-	// prefers-color-scheme: dark whatever the desktop's colour scheme is, so the page stayed dark in light mode. Without
-	// it WebKit follows the desktop's setting (the portal's colour scheme), light or dark.
+	// V0.desktop-system-theme: a session that sets GTK_THEME to a dark theme made the window report
+	// prefers-color-scheme: dark whatever the desktop's colour scheme is. Without it Chromium follows the desktop's
+	// setting (the portal's colour scheme), light or dark.
 	os.Unsetenv("GTK_THEME")
 	home, _ := os.UserHomeDir()
 	data := flag.String("data", filepath.Join(home, ".local", "share", "fyr"), "Fyr's data directory")
 	unit := flag.String("unit", "fyr.service", "fyrd's systemd unit")
 	icon := flag.String("icon", defaultIcon(), "the app's icon (PNG)")
 	background := flag.Bool("background", false, "start in the tray without the window (autostart)")
+	browser := flag.String("chromium", "", "the Chromium that draws the window (default: the bundled one, else one on PATH)")
 	flag.Parse()
 
 	cfg, _ := os.UserConfigDir()
@@ -82,7 +81,6 @@ func main() {
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
 		state = filepath.Join(x, "fyr-desktop")
 	}
-	cache, _ := os.UserCacheDir()
 	the = &app{
 		owner:     desktop.Owner{Socket: auth.SocketPath(*data, auth.OwnerSocket)},
 		svc:       desktop.Service{Unit: *unit},
@@ -94,8 +92,25 @@ func main() {
 	}
 	the.prefs = desktop.LoadPrefs(the.prefsPath)
 	the.origin.Store(the.prefs.Origin)
-	g := the.prefs.Window
-	os.Exit(shellRun(filepath.Join(state, "web"), filepath.Join(cache, "fyr-desktop"), *icon, g.Width, g.Height, g.Maximized, *background))
+	exe := *browser
+	if exe == "" {
+		exe = desktop.FindChromium(chromium)
+	}
+	if exe == "" {
+		log.Fatal("fyr-desktop: no Chromium found; install chromium or pass -chromium")
+	}
+	the.win = &desktop.Chrome{
+		Exec:       exe,
+		Profile:    filepath.Join(state, "chromium"),
+		Size:       the.prefs.Window,
+		Origin:     the.originNow,
+		SignedOut:  the.signedOut,
+		LoadFailed: the.loadFailed,
+		External:   shellOpenURI,
+		Bridge:     the.bridge,
+		Bounds:     the.windowSize,
+	}
+	os.Exit(shellRun(*icon, *background))
 }
 
 // defaultIcon is the icon the package installs next to the binary
@@ -136,10 +151,8 @@ func (a *app) start() {
 		},
 		Show: a.show, Up: a.feedUp}
 	go a.device.Run(ctx)
-	if o := a.originNow(); o != "" {
-		shellLoad(o + "/") // the session it has; a 401 asks for a link
-	} else {
-		go a.signIn()
+	if o := a.originNow(); o == "" {
+		go a.signIn() // the window opens on the first link
 	}
 }
 
@@ -164,7 +177,7 @@ func (a *app) signIn() {
 	if err != nil {
 		log.Printf("fyr-desktop: sign in: %v", err)
 		a.offline.Store(true)
-		shellLoad(offlinePage("Nothing answers on " + a.owner.Socket + "."))
+		a.win.Load(offlinePage("Nothing answers on " + a.owner.Socket + "."))
 		return
 	}
 	if o := desktop.OriginOf(u); o != "" && o != a.originNow() {
@@ -175,7 +188,7 @@ func (a *app) signIn() {
 		a.persist()
 	}
 	a.offline.Store(false)
-	shellLoad(u)
+	a.win.Load(u)
 }
 
 // feedUp: fyrd answers again (a start, a restart, an update). A window that
@@ -185,7 +198,7 @@ func (a *app) feedUp(up bool) {
 	if up && a.offline.Load() {
 		a.offline.Store(false)
 		if o := a.originNow(); o != "" {
-			shellLoad(o + "/")
+			a.win.Load(o + "/")
 		} else {
 			go a.signIn()
 		}
@@ -246,7 +259,7 @@ const (
 func (a *app) menu(item int) {
 	switch item {
 	case menuOpen:
-		shellPresent()
+		a.win.Show("")
 	case menuBrowser:
 		go func() {
 			u, err := a.owner.Once()
@@ -275,44 +288,52 @@ func (a *app) menu(item int) {
 		if a.stopFeed != nil {
 			a.stopFeed()
 		}
-		shellQuit()
+		go func() {
+			a.win.Quit()
+			shellQuit()
+		}()
 	}
 }
 
 //export goStartup
 func goStartup() { the.started.Do(the.start) }
 
-//export goSignedOut
-func goSignedOut() C.int {
-	if !the.signin.Allow(time.Now()) {
-		return 0
+//export goActivate
+func goActivate() { go the.win.Show("") }
+
+//export goActivationToken
+func goActivationToken(token *C.char) { the.win.ActivationToken(C.GoString(token)) }
+
+// signedOut: the window's main page answered 401. It asks the owner socket for
+// a new link, at most once in desktop.Signin's gap; inside it the signed-out
+// page shows.
+func (a *app) signedOut() bool {
+	if !a.signin.Allow(time.Now()) {
+		return false
 	}
-	go the.signIn()
-	return 1
+	go a.signIn()
+	return true
 }
 
-//export goLoadFailed
-func goLoadFailed() {
-	the.offline.Store(true)
+func (a *app) loadFailed() {
+	a.offline.Store(true)
 	// fyrd answers on its socket but not where the window looked: it moved to
 	// another port. A new link carries the new origin.
-	if the.feedOK.Load() && the.signin.Allow(time.Now()) {
-		go the.signIn()
+	if a.feedOK.Load() && a.signin.Allow(time.Now()) {
+		go a.signIn()
 		return
 	}
-	shellLoad(offlinePage("Nothing answers at " + the.originNow() + "."))
+	a.win.Load(offlinePage("Nothing answers at " + a.originNow() + "."))
 }
 
-//export goWindowSize
-func goWindowSize(w, h, maximized C.int) {
-	the.mu.Lock()
-	g := desktop.Geometry{Width: int(w), Height: int(h), Maximized: maximized != 0}
+func (a *app) windowSize(g desktop.Geometry) {
+	a.mu.Lock()
 	if g.Maximized { // keep the size to come back to
-		g.Width, g.Height = the.prefs.Window.Width, the.prefs.Window.Height
+		g.Width, g.Height = a.prefs.Window.Width, a.prefs.Window.Height
 	}
-	the.prefs.Window = g
-	the.mu.Unlock()
-	the.persist()
+	a.prefs.Window = g
+	a.mu.Unlock()
+	a.persist()
 }
 
 //export goMenu
@@ -335,61 +356,23 @@ func goNotifyAction(id C.guint32, action *C.char) {
 	if !ok {
 		return // another app's
 	}
-	shellPresent()
 	if o := the.originNow(); o != "" {
-		shellLoad(o + desktop.OpenPath(ref))
+		go the.win.Show(o + desktop.OpenPath(ref))
+	} else {
+		go the.win.Show("")
 	}
 }
 
 //export goNotifyClosed
 func goNotifyClosed(id C.guint32) { the.notes.Closed(uint32(id)) }
 
-// goBridge answers the page's fyrPush message (web/src/pwa.ts), off the
-// main thread: turning on stores the device on the owner socket.
-//
-//export goBridge
-func goBridge(msg *C.char, reply unsafe.Pointer) {
-	m := []byte(C.GoString(msg))
-	go func() {
-		r, err := the.device.Bridge(m, func(threadID, state string) {
-			for _, id := range the.notes.Stale(threadID, state) {
-				shellCloseNotification(id)
-			}
-		})
-		if err != nil {
-			shellReplyError(reply, err.Error())
-			return
+// bridge answers the page's fyrPush message (web/src/pwa.ts): turning on
+// stores the device on the owner socket. The window answers only Fyr's own
+// page in its main frame.
+func (a *app) bridge(m []byte) (any, error) {
+	return a.device.Bridge(m, func(threadID, state string) {
+		for _, id := range a.notes.Stale(threadID, state) {
+			shellCloseNotification(id)
 		}
-		b, _ := json.Marshal(r)
-		shellReply(reply, string(b))
-	}()
-}
-
-// goIsFyr: the bridge answers only Fyr's own pages.
-//
-//export goIsFyr
-func goIsFyr(uri *C.char) C.int {
-	if o := the.originNow(); o != "" && desktop.OriginOf(C.GoString(uri)) == o {
-		return 1
-	}
-	return 0
-}
-
-//export goExternal
-func goExternal(uri *C.char) C.int {
-	if desktop.External(the.originNow(), C.GoString(uri)) {
-		return 1
-	}
-	return 0
-}
-
-// goWindowLeaves: a window the page asked for goes to the default browser unless its
-// link stays on Fyr (V0.desktop-popup-links).
-//
-//export goWindowLeaves
-func goWindowLeaves(uri *C.char) C.int {
-	if desktop.ChildWindow(the.originNow(), C.GoString(uri)) {
-		return 0
-	}
-	return 1
+	})
 }

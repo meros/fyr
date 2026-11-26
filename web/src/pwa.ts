@@ -27,6 +27,11 @@ function nativePush(): NativeBridge | null {
   return w.webkit?.messageHandlers?.fyrPush ?? null;
 }
 
+/** V0.desktop-chromium: the Linux app's window (its user agent ends in FyrDesktop/linux). */
+export function isDesktopApp(ua: string): boolean {
+  return /\bFyrDesktop\//.test(ua);
+}
+
 export function isNativePush(): boolean {
   return !!nativePush();
 }
@@ -69,7 +74,9 @@ function watchWaiting(reg: ServiceWorkerRegistration) {
 
 /** Register /sw.js; a waiting new worker takes over on the next navigation. */
 export function registerServiceWorker(onOpen: (threadId: string) => void): void {
-  if (nativePush()) return; // decision 0038: the app's window has no worker; the app opens a clicked thread with /?open=
+  // decision 0038: the app's window has no worker; the app opens a clicked thread with /?open=. V0.desktop-chromium: the
+  // Linux app's Chromium window says so in its user agent, which holds from the first request, before its bridge exists.
+  if (nativePush() || isDesktopApp(navigator.userAgent)) return;
   if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
   navigator.serviceWorker.addEventListener("message", (e: MessageEvent) => {
     if (e.data?.type === "open" && typeof e.data.threadId === "string") onOpen(e.data.threadId);

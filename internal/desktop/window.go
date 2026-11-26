@@ -90,8 +90,8 @@ func External(origin, link string) bool {
 // (target=_blank, window.open) gets one in the app: a Fyr page, as a preview
 // does, and the empty, about:, data: and blob: pages a script makes for
 // itself. Every other link goes to the default browser (V0.desktop-popup-links):
-// WebKitGTK reports no navigation decision for such a request, it reaches the
-// shell's create handler directly, so only that handler can send it out.
+// the window closes such a page when Chromium attaches it, or stops its first
+// load off Fyr (V0.desktop-chromium, chrome.go).
 func ChildWindow(origin, link string) bool {
 	u, err := url.Parse(link)
 	if err != nil {

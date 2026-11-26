@@ -83,7 +83,7 @@ On a Linux desktop Fyr can run as its own app instead of a browser tab (decision
 services.fyr.desktop.enable = true;
 ```
 
-It installs `fyr-desktop`, starts it in the tray at login, and lets you pause and resume `fyr.service` from the tray without a password (`install-linux.sh`'s polkit rule does the same). GNOME shows tray items only with the AppIndicator extension; the window and the notifications work without it. Elsewhere, build it with `nix build .#fyr-desktop`, or with `CGO_ENABLED=1 go build ./cmd/fyr-desktop` and the GTK 3, WebKitGTK 4.1 and libayatana-appindicator development packages. fyrd's updates need nothing from the app: it reconnects after each one.
+It installs `fyr-desktop`, starts it in the tray at login, and lets you pause and resume `fyr.service` from the tray without a password (`install-linux.sh`'s polkit rule does the same). GNOME shows tray items only with the AppIndicator extension; the window and the notifications work without it. Elsewhere, build it with `nix build .#fyr-desktop`, or with `CGO_ENABLED=1 go build ./cmd/fyr-desktop` and the GTK 3 and libayatana-appindicator development packages; its window needs Chromium or Chrome on `PATH` (or `-chromium <path>`). fyrd's updates need nothing from the app: it reconnects after each one.
 
 ## The phone
 

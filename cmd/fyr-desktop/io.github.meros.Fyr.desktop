@@ -7,6 +7,6 @@ Exec=fyr-desktop
 Icon=io.github.meros.Fyr
 Terminal=false
 Categories=Development;
-StartupWMClass=io.github.meros.Fyr
+StartupWMClass=chrome-fyr.localhost__-Default
 StartupNotify=true
 X-GNOME-UsesNotifications=true
