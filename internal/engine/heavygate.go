@@ -188,30 +188,66 @@ func (e *Engine) noteGrant(c HeavyCall) {
 	}
 }
 
-// gateHold holds a newly matched heavy command at the gate while the memory
-// guard says memory is short (V0.guard-wake, decision 0036 E1): a command
-// that has not started has no timer running, so holding it costs less than
-// freezing a job that runs. The pool already queues a thread that holds no
-// admission (memory short holds every job); this holds the rest: a thread
-// that already holds one, and a learned command, which never queues. The
-// thread is told when memory has recovered. "" lets the gate go on.
+// gateHold holds a newly matched heavy command while the memory guard says
+// memory is short (V0.guard-wake, decision 0036 E1): a command that has not
+// started has no timer running, so holding it costs less than freezing a job
+// that runs. The pool already queues a thread that holds no admission (memory
+// short holds every job); this holds the rest: a thread that already holds
+// one, and a learned command, which never queues. The thread is told when
+// memory has recovered. "" lets the gate go on.
+//
+// V0.gate-release-paced: after memory recovers the guard releases the held
+// threads one at a time. Until the gate's hold is empty a new command of such
+// a thread waits its turn behind them, and a released thread's next command
+// runs (it is marked as run, which paces the next release).
 func (e *Engine) gateHold(c HeavyCall, soft bool) string {
 	e.mu.Lock()
 	short := e.gs.Short
+	since, released := e.gateReleased[c.Thread]
+	_, waiting := e.gateHeld[c.Thread]
+	draining := len(e.gateHeld) > 0 && !released
 	e.mu.Unlock()
-	if !short {
+	if !short && !draining {
+		if released {
+			e.mu.Lock()
+			delete(e.gateReleased, c.Thread)
+			e.gateRan = e.Now()
+			e.mu.Unlock()
+		}
 		return ""
 	}
 	h, holds := e.Slots.Holding(c.Thread)
-	if !guard.GateHolds(short, holds, h.Priority, soft) {
+	if !guard.GateHolds(true, holds, h.Priority, soft) {
 		return ""
 	}
 	e.mu.Lock()
 	if e.gateHeld == nil {
-		e.gateHeld = map[string]bool{}
+		e.gateHeld = map[string]time.Time{}
 	}
-	e.gateHeld[c.Thread] = true
+	if !waiting {
+		if !released {
+			since = e.Now()
+		}
+		e.gateHeld[c.Thread] = since // a released thread held again keeps its place
+	}
+	delete(e.gateReleased, c.Thread)
+	ahead := 0
+	for th, s := range e.gateHeld {
+		if th != c.Thread && s.Before(e.gateHeld[c.Thread]) {
+			ahead++
+		}
+	}
 	e.mu.Unlock()
+	if !short {
+		e.guardOnce(e.Now(), "gate:"+c.Thread, fmt.Sprintf("held at the gate thread=%s class=%q admitted=%t learned=%t: memory recovered, and the held commands run one at a time (%d ahead)", c.Thread, c.Class, holds, soft, ahead))
+		e.setGateHold(c.Thread, fmt.Sprintf("memory recovered on %s; the held heavy commands run one at a time, and the %s command waits its turn", e.hostName(), c.Class))
+		head := fmt.Sprintf("Heavy job (%s): memory has just recovered on %s, and Fyr lets the heavy commands it held run one at a time, so they do not fill it again (%d ahead). It did not run. Do not work around this.", c.Class, e.hostName(), ahead)
+		e.noteRefused(c) // V0.subagent-admission
+		if c.Subagent {
+			return head + subagentWait("its turn comes", "held")
+		}
+		return head + " Fyr tells you in a [Fyr] message when it is its turn; run the command again then. Do other work meanwhile or end your turn."
+	}
 	e.guardOnce(e.Now(), "gate:"+c.Thread, fmt.Sprintf("held at the gate thread=%s class=%q admitted=%t learned=%t: memory is short; a new heavy command waits before a running one is frozen", c.Thread, c.Class, holds, soft))
 	e.setGateHold(c.Thread, fmt.Sprintf("memory is short on %s; the %s command runs when it recovers", e.hostName(), c.Class))
 	head := fmt.Sprintf("Heavy job (%s): memory is short on %s, so Fyr holds new heavy commands until it recovers instead of pausing ones that run. It did not run. Do not work around this.", c.Class, e.hostName())

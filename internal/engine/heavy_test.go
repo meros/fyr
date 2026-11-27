@@ -193,8 +193,17 @@ func TestGuardWakeTheGateHoldsANewCommandWhileMemoryIsShort(t *testing.T) {
 	free = 0.5
 	*now = now.Add(10 * time.Second)
 	e.Tick() // recovered
-	for _, id := range []string{a, b} {
-		if !told(e, id, "Memory has recovered on this host: run the heavy command Fyr held again.") {
+	// V0.gate-release-paced (#736): one thread at a time, the one held
+	// first; the other's command waits its turn.
+	recovered := "Memory has recovered on this host: run the heavy command Fyr held again."
+	if told(e, b, recovered) {
+		t.Fatal("both held threads were released at once")
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: b, Class: "gradle assemble", ToolUse: "tu6"}); !strings.Contains(r, "one at a time") {
+		t.Fatalf("b's command ran before its turn: %q", r)
+	}
+	for _, id := range []string{a} {
+		if !told(e, id, recovered) {
 			th, _ := e.Thread(id)
 			t.Fatalf("%s not told: %+v", id, th.Feed.Queue)
 		}
@@ -211,5 +220,19 @@ func TestGuardWakeTheGateHoldsANewCommandWhileMemoryIsShort(t *testing.T) {
 	}
 	if r := e.HeavyGate(HeavyCall{Thread: a, Class: "make e2e", ToolUse: "tu5"}); r != "" {
 		t.Fatalf("held after memory recovered: %q", r)
+	}
+	*now = now.Add(30 * time.Second)
+	e.Tick()
+	if told(e, b, recovered) {
+		t.Fatal("b released before a's command settled")
+	}
+	*now = now.Add(time.Minute) // guard.GateSettle after a ran
+	e.Tick()
+	if !told(e, b, recovered) {
+		th, _ := e.Thread(b)
+		t.Fatalf("b not told after a's command settled: %+v", th.Feed.Queue)
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: b, Class: "gradle assemble", ToolUse: "tu7"}); r != "" {
+		t.Fatalf("b held after its release: %q", r)
 	}
 }

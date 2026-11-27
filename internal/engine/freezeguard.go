@@ -33,6 +33,9 @@ func (e *Engine) guardTick(s resource.Snapshot) {
 	}
 	now := e.Now()
 	in := guard.Inputs{Now: now, Policy: e.SlotPolicy, Held: s.Held, Can: can, View: &guardView{e: e}}
+	e.mu.Lock()
+	in.GateHeld, in.GateRan = len(e.gateHeld), e.gateRan // V0.gate-release-paced
+	e.mu.Unlock()
 	if can.Guard {
 		in.Signals = e.SlotSignals()
 		in.Flags = e.flags()
@@ -121,20 +124,48 @@ func (e *Engine) applyGuard(d guard.Decision, now time.Time) guard.Answer {
 		e.mu.Unlock()
 	case guard.KeepKills:
 		e.keepRerunKills(d.Kills)
-	case guard.ClearGate:
-		e.mu.Lock()
-		var ths []string
-		for th := range e.gateHeld {
-			ths = append(ths, th)
+	case guard.ReleaseGate:
+		th := e.releaseGate()
+		if th == "" {
+			return guard.Answer{}
 		}
-		clear(e.gateHeld)
-		e.mu.Unlock()
-		for _, th := range ths {
-			e.setGateHold(th, "") // V0.gate-hold-visible: memory recovered
-		}
-		return guard.Answer{Threads: ths}
+		e.setGateHold(th, "") // V0.gate-hold-visible: its turn came
+		return guard.Answer{Threads: []string{th}}
 	}
 	return guard.Answer{}
+}
+
+// releaseGate takes the next thread off the gate's hold (V0.gate-release-paced):
+// the one of the highest project priority (V0.project-priority), then the one
+// that has waited longest. "" when none is held.
+func (e *Engine) releaseGate() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	next := ""
+	for th, since := range e.gateHeld {
+		if _, ok := e.threads[th]; !ok { // deleted: no agent to run it again
+			delete(e.gateHeld, th)
+			continue
+		}
+		if next == "" {
+			next = th
+			continue
+		}
+		r, nr := e.ProjectRank(th), e.ProjectRank(next)
+		ns := e.gateHeld[next]
+		if r > nr || (r == nr && (since.Before(ns) || (since.Equal(ns) && th < next))) {
+			next = th
+		}
+	}
+	if next == "" {
+		return ""
+	}
+	if e.gateReleased == nil {
+		e.gateReleased = map[string]time.Time{}
+	}
+	e.gateReleased[next] = e.gateHeld[next]
+	delete(e.gateHeld, next)
+	return next
 }
 
 // keepRerunKills writes the rerunnable classes' kills of the last hour to the

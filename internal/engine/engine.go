@@ -192,8 +192,14 @@ type Engine struct {
 	guardPub     atomic.Pointer[resource.Guard]
 	ranks        atomic.Pointer[map[string]int] // V0.project-priority: thread id → its project's rank, the non-zero ones
 	// V0.guard-wake (decision 0036 E1): the threads whose new heavy command
-	// the gate held while memory was short.
-	gateHeld map[string]bool
+	// the gate held while memory was short, each since when it waits.
+	// V0.gate-release-paced: the guard releases them one at a time;
+	// gateReleased are the ones released whose command has not run again
+	// yet (with the time they had waited from), gateRan when the last one
+	// did. All under mu.
+	gateHeld     map[string]time.Time
+	gateReleased map[string]time.Time
+	gateRan      time.Time
 	// V0.subagent-admission: heldBy is the subagent whose heavy command the
 	// gate refused last on a thread (none: the thread's own agent); subWake
 	// is the admission or recovery that waits for that subagent's next tool
