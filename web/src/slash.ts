@@ -55,6 +55,18 @@ export function slashKey(key: string, items: SlashCommand[], index: number): Sla
   return null;
 }
 
+/** V0.new-thread-skills: every command, by name, for the list the Skills button opens (no cap: it scrolls). */
+export function browseCommands(list: SlashCommand[]): SlashCommand[] {
+  return [...list].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The text after a pick from the Skills list: the command first, then what was typed, without a command typed
+ *  before (only the first word runs as one). */
+export function pickInto(text: string, c: SlashCommand): string {
+  const rest = text.replace(/^\/\S*[ \t]*/, "").replace(/^[ \t]+/, "");
+  return pickText(c) + rest;
+}
+
 /** The composer's text after a pick. */
 export function pickText(c: SlashCommand): string {
   return `/${c.name} `;

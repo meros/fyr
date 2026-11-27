@@ -68,6 +68,25 @@ func TestCommandsRoutes(t *testing.T) {
 	if code, out := get("/api/commands?profile=other&cwd=" + url.QueryEscape(dir)); code != 200 || out.Commands == nil || len(out.Commands) != 0 {
 		t.Fatalf("another provider: %d %+v", code, out)
 	}
+	// V0.new-thread-skills: a scratch thread (no folder) and a folder no session
+	// started in list the provider's newest; a provider that never listed any, none.
+	if code, out := get("/api/commands?profile=claude&cwd="); code != 200 || len(out.Commands) != 2 {
+		t.Fatalf("no folder: %d %+v", code, out)
+	}
+	if code, out := get("/api/commands?profile=claude&cwd=" + url.QueryEscape(filepath.Join(dir, "unseen"))); code != 200 || len(out.Commands) != 2 {
+		t.Fatalf("an unseen folder: %d %+v", code, out)
+	}
+	e.SetCommands("t3", "claude", filepath.Join(dir, "b"), []core.Command{{Name: "only-b"}})
+	if code, out := get("/api/commands?profile=claude&cwd="); code != 200 || len(out.Commands) != 1 || out.Commands[0].Name != "only-b" {
+		t.Fatalf("the newest is the last session's: %d %+v", code, out)
+	}
+	e.SetCommands("t4", "claude", filepath.Join(dir, "c"), []core.Command{})
+	if code, out := get("/api/commands?profile=claude&cwd="); code != 200 || len(out.Commands) != 1 {
+		t.Fatalf("an empty list does not replace the newest: %d %+v", code, out)
+	}
+	if code, out := get("/api/commands?profile=claude&cwd=" + url.QueryEscape(filepath.Join(dir, "c"))); code != 200 || len(out.Commands) != 0 {
+		t.Fatalf("a folder that listed none: %d %+v", code, out)
+	}
 	if code, _ := get("/api/threads/nope/commands"); code != 404 {
 		t.Fatalf("unknown thread: %d", code)
 	}

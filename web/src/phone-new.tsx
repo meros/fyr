@@ -5,7 +5,7 @@ import { I } from "./phone-icons.tsx";
 import { useRef, useState } from "preact/hooks";
 import { AgentPill, newThreadAgent } from "./agent-ui.tsx";
 import { ChipStrip, PhonePickers } from "./attach-ui.tsx";
-import { SlashList, useSlash } from "./slash-ui.tsx";
+import { SkillsButton, SlashList, useSlash } from "./slash-ui.tsx";
 import { ProjectIcon, ProjectList } from "./project-ui.tsx";
 import { colorVar } from "./projects.ts";
 import { folderNote, folderValue, LIVE_VIEW_HELP, moreSummary, promptPlaceholder } from "./new-thread.ts";
@@ -93,8 +93,10 @@ export function MNew(p: PhoneProps) {
           onPaste={att.onPaste}
         />
         {/* Four buttons where the desktop has a paperclip and "Paste or drop files": touch has no drop, the clipboard
-            needs a press, and camera and photo library are separate system pickers. */}
+            needs a press, and camera and photo library are separate system pickers. V0.new-thread-skills: Skills as a
+            fifth tile, where the desktop has a small button in its attach row. */}
         <div class="m-capr">
+          <SkillsButton s={slash} big />
           <button class="m-capb" onClick={() => void paste()}>
             {I.paste}
             Paste

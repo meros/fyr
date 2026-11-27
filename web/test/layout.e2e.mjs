@@ -1414,6 +1414,39 @@ try {
 }
 });
 
+// V0.new-thread-skills: on the phone's New thread, the Skills tile opens the list of every command without a `/` typed:
+// inside the screen, rows 44 px tall, the tile 44 px or more; a tap puts `/name ` before what was typed.
+section('V0.new-thread-skills', async (h) => {
+  const { evaluate, settle, tapCenter, openScreen, shot } = h;
+try {
+  await openScreen({ url: "?mock=rail&new", ready: "!!document.querySelector('.m-new .m-capb.skills')" }, 360, 640);
+  await evaluate(`(() => { const el = document.querySelector('.m-new .m-ta'); el.value = 'fix the login bug'; el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); })()`);
+  const tile = await evaluate(`(() => { const b = document.querySelector('.m-new .m-capb.skills').getBoundingClientRect(); return { h: b.height, right: b.right, vw: innerWidth, text: document.querySelector('.m-new .m-capb.skills').textContent }; })()`);
+  check(tile.h >= 44 && tile.right <= tile.vw + 0.5 && /Skills/.test(tile.text), `V0.new-thread-skills: the tile ${JSON.stringify(tile)}`);
+  await tapCenter(".m-new .m-capb.skills", "document.querySelectorAll('.m-new .slash.m .slash-i').length > 8");
+  await settle();
+  await shot("new-thread-skills.png");
+  const r = await evaluate(`(() => {
+    const l = document.querySelector('.m-new .slash.m').getBoundingClientRect();
+    const rows = [...document.querySelectorAll('.m-new .slash.m .slash-i')];
+    return { top: l.top, left: l.left, right: l.right, vw: innerWidth, n: rows.length, focused: document.activeElement?.tagName,
+      minH: Math.min(...rows.map((x) => x.getBoundingClientRect().height)), wide: document.documentElement.scrollWidth > innerWidth,
+      names: rows.map((x) => x.querySelector('.slash-n').textContent) };
+  })()`);
+  check(r.top >= 0 && r.left >= 0 && r.right <= r.vw + 0.5 && !r.wide && r.minH >= 44, `V0.new-thread-skills: the list is out of the screen or its rows small ${JSON.stringify(r)}`);
+  check(r.focused !== "TEXTAREA", `V0.new-thread-skills: the tile focused the prompt (the keyboard would cover the list)`);
+  check(r.names.includes("/review"), `V0.new-thread-skills: the list ${JSON.stringify(r.names)}`);
+  const nth = `.m-new .slash.m .slash-i:nth-child(${r.names.indexOf("/review") + 1})`;
+  await evaluate(`document.querySelector('${nth}').scrollIntoView({ block: 'nearest' })`);
+  await settle();
+  await tapCenter(nth, "document.querySelector('.m-new .m-ta').value === '/review fix the login bug'");
+  const after = await evaluate(`({ list: !!document.querySelector('.m-new .slash.m'), v: document.querySelector('.m-new .m-ta').value })`);
+  check(!after.list && after.v === "/review fix the login bug", `V0.new-thread-skills: after the tap ${JSON.stringify(after)}`);
+} catch (e) {
+  failures.push(`V0.new-thread-skills: ${e.message}`);
+}
+});
+
 // V0.143: an agent that does not respond says so above the composer, since when and why, with Restart; the same
 // line on desktop and phone (one component), the button inside the screen and 44 px tall on the phone.
 for (const [front, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.143 ${front}`, async ({ send, evaluate, navigate, openScreen }) => {

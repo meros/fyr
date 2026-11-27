@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.79: the composer's `/` list: which commands it shows, how its keys move and pick, and what a pick fills.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { argHint, matchCommands, pickText, SLASH_MAX, slashKey, slashOpen, slashQuery, type SlashCommand } from "../src/slash.ts";
+import { argHint, browseCommands, matchCommands, pickInto, pickText, SLASH_MAX, slashKey, slashOpen, slashQuery, type SlashCommand } from "../src/slash.ts";
 
 const list: SlashCommand[] = [
   { name: "compact", description: "Clear the conversation but keep a summary", argumentHint: "<instructions>" },
@@ -70,4 +70,15 @@ test("a pick fills the name and a space; the hint shows until something follows"
   assert.deepEqual(argHint("/review 12", list), null, "an argument follows");
   assert.deepEqual(argHint("/init ", list), null, "no hint to show");
   assert.deepEqual(argHint("/unknown ", list), null);
+});
+
+test("V0.new-thread-skills: the Skills list has every command by name, and a pick goes before what was typed", () => {
+  const all = browseCommands([...list, ...Array.from({ length: 12 }, (_, i) => ({ name: `z${i}` }))]);
+  assert.equal(all.length, list.length + 12, "no cap: the list scrolls");
+  assert.equal(all[0].name, "compact");
+  const review = list[1];
+  assert.equal(pickInto("", review), "/review ");
+  assert.equal(pickInto("fix the login bug", review), "/review fix the login bug");
+  assert.equal(pickInto("/init the repo", review), "/review the repo", "the first word runs as the command: one at most");
+  assert.equal(pickInto("/ini", review), "/review ");
 });

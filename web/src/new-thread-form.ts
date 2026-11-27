@@ -320,8 +320,9 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     making,
     chip: projectChip(cur, making),
     folder,
-    /** V0.79: whose `/` commands the prompt lists: the newest of this provider and folder; none for a new scratch folder */
-    commandSource: folder.cwd && f.profile && here ? { cwd: folder.cwd, profile: f.profile, host: here } : null,
+    /** V0.79: whose `/` commands the prompt lists: the newest of this provider and folder. V0.new-thread-skills: a
+     *  scratch folder (no cwd yet) lists the provider's newest in any folder, as does a folder none was seen in. */
+    commandSource: f.profile && here ? { cwd: folder.cwd ?? "", profile: f.profile, host: here } : null,
     /** the profiles of the host the thread starts on */
     profiles,
     prof,

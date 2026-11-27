@@ -1,11 +1,12 @@
 // SPEC 0.5 V0.79: the `/` list of the composer, desktop, phone and New thread. The hook fetches the agent's
 // commands when the owner types `/` at the start (a thread's own list, else the newest of its provider and
-// folder), and the list renders above the field. The keys and the filter are slash.ts's.
+// folder), and the list renders above the field. The keys and the filter are slash.ts's. V0.new-thread-skills: the
+// Skills button (SkillsButton) opens the same list with every command, for a field where `/` is hard to type.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import type { Api, CommandSource } from "./api.ts";
-import { argHint, matchCommands, pickText, slashKey, slashOpen, slashQuery, type SlashCommand } from "./slash.ts";
+import { argHint, browseCommands, matchCommands, pickInto, slashKey, slashOpen, slashQuery, type SlashCommand } from "./slash.ts";
 
 /** A list stays fresh this long; a session start can change it, so an older one is asked for again. */
 const FRESH_MS = 30_000;
@@ -38,6 +39,12 @@ function load(api: Api, s: CommandSource): Promise<SlashCommand[]> {
 
 interface Slash {
   open: boolean;
+  /** the field has a source: the Skills button shows */
+  available: boolean;
+  /** the Skills button opened the list */
+  browsing: boolean;
+  /** the list was asked for and the provider has none yet */
+  empty: boolean;
   items: SlashCommand[];
   index: number;
   /** the picked command and its argument hint while nothing follows the name */
@@ -46,6 +53,8 @@ interface Slash {
   onKeyDown(e: KeyboardEvent): boolean;
   pick(c: SlashCommand): void;
   hover(i: number): void;
+  /** The Skills button: open the list of every command, or close it. */
+  browse(): void;
 }
 
 /** The `/` list for a field; `source` null turns it off (an answer field, a form without a folder). */
@@ -55,31 +64,42 @@ export function useSlash(source: CommandSource | null, text: string, setText: (t
   const [list, setList] = useState<SlashCommand[]>(() => (key ? (cache.get(key)?.list ?? []) : []));
   const [index, setIndex] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<string | null>(null);
+  const [browsing, setBrowsing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const srcRef = useRef(source);
   srcRef.current = source;
   const typing = source !== null && slashQuery(text) !== null;
 
+  const wanted = source !== null && (typing || browsing);
+
   useEffect(() => {
     setList(key ? (cache.get(key)?.list ?? []) : []);
+    setLoaded(!!key && cache.has(key));
   }, [key]);
   useEffect(() => {
     const s = srcRef.current;
-    if (!typing || !s) return;
+    if (!wanted || !s) return;
     let live = true;
-    void load(api, s).then((l) => live && setList(l));
+    void load(api, s).then((l) => {
+      if (!live) return;
+      setList(l);
+      setLoaded(true);
+    });
     return () => {
       live = false;
     };
-  }, [api, typing, key]);
+  }, [api, wanted, key]);
 
   const q = source ? slashQuery(text) : null;
-  const items = q === null ? [] : matchCommands(list, q);
-  const open = source !== null && slashOpen(text, list, dismissedAt);
-  useEffect(() => setIndex(0), [q]);
+  const typed = source !== null && slashOpen(text, list, dismissedAt);
+  const items = typed && q !== null ? matchCommands(list, q) : browsing && source ? browseCommands(list) : [];
+  const open = typed || (browsing && items.length > 0);
+  useEffect(() => setIndex(0), [q, browsing]);
 
   const pick = (c: SlashCommand) => {
-    setText(pickText(c));
+    setText(pickInto(text, c));
     setDismissedAt(null);
+    setBrowsing(false);
     const el = field?.current;
     if (el) {
       el.focus();
@@ -88,12 +108,22 @@ export function useSlash(source: CommandSource | null, text: string, setText: (t
   };
   return {
     open,
+    available: source !== null,
+    browsing: browsing && source !== null,
+    empty: browsing && source !== null && loaded && list.length === 0,
+    browse: () => setBrowsing((b) => !b),
     items: open ? items : [],
     index: Math.min(index, Math.max(items.length - 1, 0)),
     hint: source ? argHint(text, list) : null,
     hover: setIndex,
     pick,
     onKeyDown(e) {
+      if (!open && browsing && e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setBrowsing(false);
+        return true;
+      }
       if (!open || e.isComposing || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return false;
       const r = slashKey(e.key, items, index);
       if (!r) return false;
@@ -101,7 +131,10 @@ export function useSlash(source: CommandSource | null, text: string, setText: (t
       e.stopPropagation();
       if (r.kind === "move") setIndex(r.index);
       else if (r.kind === "pick") pick(r.command);
-      else setDismissedAt(text);
+      else {
+        setDismissedAt(text);
+        setBrowsing(false);
+      }
       return true;
     },
   };
@@ -122,6 +155,13 @@ export function SlashList({ s, phone }: { s: Slash; phone?: boolean }) {
       </div>
     );
   }
+  if (s.empty) {
+    return (
+      <div class={`slash-hint${phone ? " m" : ""}`} role="status">
+        No skills seen for this agent yet: they show once a thread of it has started.
+      </div>
+    );
+  }
   if (s.hint) {
     return (
       <div class={`slash-hint${phone ? " m" : ""}`}>
@@ -130,4 +170,27 @@ export function SlashList({ s, phone }: { s: Slash; phone?: boolean }) {
     );
   }
   return null;
+}
+
+/** V0.new-thread-skills: opens the list of every command and skill, so picking one needs no `/` (a phone keyboard
+ *  has it on its second page). `big` is the phone's attach-row tile. Absent when the form has no provider yet. */
+export function SkillsButton({ s, big, after }: { s: Slash; big?: boolean; after?(): void }) {
+  if (!s.available) return null;
+  return (
+    <button
+      type="button"
+      class={big ? "m-capb skills" : "btn sm skills"}
+      aria-expanded={s.browsing}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => {
+        s.browse();
+        after?.();
+      }}
+    >
+      <span class="skg" aria-hidden="true">
+        /
+      </span>
+      Skills
+    </button>
+  );
 }
