@@ -25,10 +25,15 @@ func TestEngineApprovalContext(t *testing.T) {
 		t.Fatalf("expected ask by default: %+v", ac)
 	}
 	// thread.create's send is an async effect that writes the owner message to
-	// the log itself; wait for it, or the event it writes lands after the ones
-	// below and the brief is read twice.
-	eventually(t, "the first message is in the log", func() bool {
-		return hasEvent(h.events(tid), "user", `"text":"Run tests"`)
+	// the log itself, with an id. readTurns places a message with an id where
+	// the agent read it (V0.midrun-answer), so if the fake agent's
+	// message.state read landed after the records below, "Run tests" would
+	// move behind them. Wait until the agent has read it and its run is over
+	// (V0.approval-context-flake), so nothing of that run is written later.
+	h.wait(tid, "the first run is done", state(core.Done))
+	eventually(t, "the first message is read", func() bool {
+		evs := h.events(tid)
+		return hasEvent(evs, "user", `"text":"Run tests"`) && hasEvent(evs, "message.state", `"read"`)
 	})
 
 	// Turn on auto-judge for the project.
