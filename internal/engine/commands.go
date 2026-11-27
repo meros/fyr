@@ -17,6 +17,12 @@ import (
 
 func commandsKey(profile, cwd string) string { return "commands:" + profile + ":" + cwd }
 
+// newestKey is the newest list of a provider in any folder (V0.new-thread-skills):
+// what New thread lists for a scratch folder or a folder no session of the
+// provider has started in yet. The user's own skills and the CLI's commands are
+// the same in every folder; only a folder's project skills differ.
+func newestKey(profile string) string { return "commands-newest:" + profile }
+
 // SetCommands keeps a session's commands for its thread and as the newest
 // list of its provider and folder. The agent manager calls it after
 // initialize.
@@ -26,26 +32,38 @@ func (e *Engine) SetCommands(thread, profile, cwd string, cmds []core.Command) {
 	e.cmds[thread] = cmds
 	e.cmdMu.Unlock()
 	b, err := json.Marshal(cmds)
-	if err != nil || cwd == "" {
+	if err != nil {
 		return
 	}
-	k := commandsKey(profile, cwd)
-	if old, _ := e.st.GetKV(k); old == string(b) {
-		return
+	var keys []string
+	if len(cmds) > 0 { // a session that listed nothing tells nothing about the provider's other folders
+		keys = append(keys, newestKey(profile))
 	}
-	if err := e.st.SetKV(k, string(b)); err != nil {
-		log.Printf("commands: %v", err)
+	if cwd != "" {
+		keys = append(keys, commandsKey(profile, cwd))
+	}
+	for _, k := range keys {
+		if old, _ := e.st.GetKV(k); old == string(b) {
+			continue
+		}
+		if err := e.st.SetKV(k, string(b)); err != nil {
+			log.Printf("commands: %v", err)
+		}
 	}
 }
 
-// FolderCommands is the newest list seen for a provider and folder, empty
-// when none was.
+// FolderCommands is the newest list seen for a provider and folder; for no
+// folder (a scratch thread), or a folder none was seen in, the provider's
+// newest in any folder; empty when the provider never started a session.
 func (e *Engine) FolderCommands(profile, cwd string) []core.Command {
 	out := []core.Command{}
-	if cwd == "" {
-		return out
+	raw := ""
+	if cwd != "" {
+		raw, _ = e.st.GetKV(commandsKey(profile, cwd))
 	}
-	raw, _ := e.st.GetKV(commandsKey(profile, cwd))
+	if raw == "" {
+		raw, _ = e.st.GetKV(newestKey(profile))
+	}
 	if raw != "" {
 		json.Unmarshal([]byte(raw), &out)
 	}

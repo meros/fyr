@@ -18,7 +18,7 @@ import { DraftLine, StartNote } from "./new-thread-ui.tsx";
 import { useAsk } from "./confirm-ui.tsx";
 import { I } from "./phone-icons.tsx";
 import { useNewThreadForm, type NewThreadFormOptions } from "./new-thread-form.ts";
-import { SlashList, useSlash } from "./slash-ui.tsx";
+import { SkillsButton, SlashList, useSlash } from "./slash-ui.tsx";
 import { DialogScrim } from "./motion-ui.tsx";
 import { NewProjectStep } from "./project-picker.tsx";
 import { QuietHidden } from "./quiet-ui.tsx";
@@ -134,6 +134,8 @@ export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddP
           <ClipPicker onFiles={att.add} />
           <ChipStrip chips={att.chips} onRemove={att.remove} />
           {!att.chips.length && <span class="srcl atth">Paste or drop files</span>}
+          {/* V0.new-thread-skills: the phone's Skills tile; the focus goes back to the prompt, whose keys move in the list */}
+          <SkillsButton s={slash} after={toPrompt} />
         </div>
         {/* V0.139: the host decides the projects, folders and providers below it */}
         <HostField value={n.host} onPick={n.chooseHost} quiet what="The thread runs there. The projects, folders and providers below are that host's." />
