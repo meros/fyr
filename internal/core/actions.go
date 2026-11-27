@@ -201,7 +201,7 @@ func sendAction(name, label string) *Action {
 					SetView(t, true)
 				}
 				if t.Title == "" {
-					t.Title, t.TitleAuto = TitleFrom(text), TitleAutoFirst // V0.auto-title
+					t.Title, t.TitleAuto = PlaceholderTitle(text), TitleAutoFirst // V0.auto-title, V0.press-thread-title (2)
 				}
 				// V0.42: the engine checked that the project exists.
 				if pid := a.Str("projectId"); pid != "" {

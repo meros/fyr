@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -238,5 +239,24 @@ func TestGoalTitleDoesNotKeepThePlaceholder(t *testing.T) {
 	}
 	if got := h.e.titleContext(id, true, "something else"); !strings.Contains(got, "The thread's current title: order snoozed is earliest deadline first") {
 		t.Fatalf("a made title is not kept: %q", got)
+	}
+}
+
+// V0.press-thread-title (1): the press notice that starts a thread is read
+// as its brief, without Fyr's frame; later [Fyr] notices, a press on the
+// thread among them, are still left out.
+func TestTitleTextReadsTheStartingPress(t *testing.T) {
+	ev := func(typ, text string) store.Event {
+		b, _ := json.Marshal(map[string]any{"text": text})
+		return store.Event{Type: typ, Data: b}
+	}
+	got := titleText([]store.Event{
+		ev("user", core.PressNotice("Start #12 also", "this thread", "Fix the header that overlaps the menu.")),
+		ev("user", core.PressNotice("Retry", "this thread", "Run the tests again.")),
+		ev("user", "[Fyr] CI failed on #13."),
+	})
+	want := "Owner: Start #12 also\nFix the header that overlaps the menu."
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }

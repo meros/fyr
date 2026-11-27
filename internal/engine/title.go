@@ -45,11 +45,17 @@ func clipConversation(s string) string {
 // and the agent's text, without tool calls.
 func titleText(evs []store.Event) string {
 	var b strings.Builder
+	first := true
 	for _, t := range readTurns(evs) {
 		switch t.Kind {
 		case turnUser:
 			s := strings.TrimSpace(t.Text)
-			if strings.HasPrefix(s, "[Fyr]") {
+			if label, prompt, ok := core.PressBrief(s); ok && first {
+				// V0.press-thread-title (1): the press that started the thread
+				// is its brief: the label and the prompt, without Fyr's frame.
+				s = strings.TrimSpace(label + "\n" + prompt)
+			} else if strings.HasPrefix(s, "[Fyr]") {
+				first = false
 				continue // V0.auto-title (5): Fyr's own notices say nothing of the work
 			}
 			// V0.auto-title (5): an attachment is named once, so a message that
@@ -69,6 +75,7 @@ func titleText(evs []store.Event) string {
 			if other {
 				s = strings.TrimSpace(s + " [attached file]")
 			}
+			first = false
 			if s != "" {
 				fmt.Fprintf(&b, "%s: %s\n\n", speaker("Owner", t.From), s)
 			}
@@ -82,6 +89,10 @@ func titleText(evs []store.Event) string {
 	}
 	return strings.TrimSpace(b.String())
 }
+
+// errNoConversation: the thread has nothing to title from yet, so Fyr's
+// goal title stays due (V0.press-thread-title (3)).
+var errNoConversation = errors.New("the thread has no conversation yet")
 
 // makeTitle runs one title call for a thread: one at a time per thread. keep gives the call the current title to keep unless the goal
 // moved (V0.auto-title (2)).
@@ -119,7 +130,7 @@ func (e *Engine) makeTitle(threadID string, keep bool) (string, error) {
 	}
 	conv := titleText(evs)
 	if conv == "" {
-		return "", errors.New("the thread has no conversation yet")
+		return "", errNoConversation
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), titleTimeout)
 	defer cancel()
@@ -135,11 +146,11 @@ func (e *Engine) makeTitle(threadID string, keep bool) (string, error) {
 }
 
 // firstLine is the placeholder title the first message gave the thread
-// (core.TitleFrom), "" when it has no owner's message.
+// (core.PlaceholderTitle), "" when it has no owner's message.
 func firstLine(evs []store.Event) string {
 	for _, t := range readTurns(evs) {
 		if t.Kind == turnUser {
-			return core.TitleFrom(t.Text)
+			return core.PlaceholderTitle(t.Text)
 		}
 	}
 	return ""
@@ -194,6 +205,13 @@ func (e *Engine) autoTitle(threadID, when string) {
 	title, err := e.makeTitle(threadID, when == core.TitleAutoGoal)
 	if err != nil {
 		log.Printf("thread %s: automatic title (%s): %v", threadID, when, err)
+		if errors.Is(err, errNoConversation) && when == core.TitleAutoGoal {
+			// V0.press-thread-title (3): the goal title stays due.
+			made := core.TitleMade{By: core.ByFyr, Auto: when, Error: err.Error(), Again: true}
+			if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsTitle), Kind: core.KindTitleMade, Thread: threadID, Args: made}); err != nil {
+				log.Printf("thread %s: automatic title: %v", threadID, err)
+			}
+		}
 		return
 	}
 	made := core.TitleMade{Title: title, By: core.ByFyr, Auto: when}
