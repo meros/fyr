@@ -2596,15 +2596,16 @@ section('S5 paused', async (h) => {
 });
 
 // V0.195: a thread whose turn ended on a background command that went quiet. On the desktop and at 390 × 844 the row and
-// the line above the composer (one component) name the command, and the line says how long it runs and since when it is quiet.
+// the line above the composer (one component) name the command and, first, that it has made no progress for how long.
 section('V0.195 background wait', async (h) => {
   const { send, evaluate, navigate, waitFor, settle } = h;
   const url = `${origin}/?mock=rail&bgwait=1`;
   const row = "[...document.querySelectorAll('.one')].find((r) => r.textContent.includes('Deploy check'))";
   const read = `(() => { const e = document.querySelector('[data-bg-wait]'); if (!e) return null; const r = e.getBoundingClientRect(); return { text: e.textContent, stuck: e.classList.contains('stuck'), inside: r.left >= 0 && r.right <= innerWidth, seen: r.height > 0 && r.bottom <= innerHeight }; })()`;
   const ok = (r, rowText, who) => {
-    check(rowText && rowText.includes("Background: Wait for both experiments to finish") && rowText.includes("no CPU use since"), `V0.195 ${who}: the row reads ${JSON.stringify(rowText)}`);
-    check(r && /^Background: Wait for both experiments to finish · 35 min · no CPU use since \d\d:\d\d$/.test(r.text) && r.stuck, `V0.195 ${who}: the line is ${JSON.stringify(r)}`);
+    // V0.stall-on-row (1): the stall leads the row's line, so its cut end never hides it.
+    check(rowText && rowText.includes("Waiting on Wait for both experiments to finish: no progress for 12 min"), `V0.195 ${who}: the row reads ${JSON.stringify(rowText)}`);
+    check(r && r.text === "Waiting on Wait for both experiments to finish: no progress for 12 min" && r.stuck, `V0.195 ${who}: the line is ${JSON.stringify(r)}`);
     check(r && r.inside && r.seen, `V0.195 ${who}: the line is outside the screen (${JSON.stringify(r)})`);
   };
   try {

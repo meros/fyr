@@ -46,6 +46,14 @@ func waitReason(t *Thread, n int) string {
 			cmds = append(cmds, k)
 		}
 	}
+	// V0.stall-on-row (1): a wait Fyr found quiet leads, as one that does
+	// not move; the fronts add for how long (the reason stays the same
+	// while the minutes pass, so it is not sent again each minute).
+	for _, k := range cmds {
+		if k.QuietSince != nil && k.mayStall() {
+			return "Waiting on " + k.label() + ": no progress"
+		}
+	}
 	switch {
 	case len(cmds) == 1 && n == 1 && cmds[0].Description != "":
 		return "Running in background: " + cmds[0].Description

@@ -321,7 +321,7 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }
   // V0.chip-in-moving: a working row shows its PR chip too, so the line does not repeat the number.
   const own = threadPrs(t).map((p) => `#${p.number}`);
   const detail = working
-    ? workingLine(t).replace(/ on (#\d+)(?=\W|$)/, (m, n: string) => (own.includes(n) ? "" : m))
+    ? workingLine(t, now).replace(/ on (#\d+)(?=\W|$)/, (m, n: string) => (own.includes(n) ? "" : m))
     : st === "snoozed"
       ? snoozeLine(t, now)
       : "";

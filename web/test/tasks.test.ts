@@ -105,15 +105,25 @@ test("V0.195: a thread waiting for a background command says which, for how long
   assert.equal(workingLine(base), "Running in background: Wait for it");
   assert.equal(taskLine(cmd), "Running");
   assert.equal(agentsSummary([cmd]), "1 background command");
-  const quiet = { ...cmd, quietSince: "2026-11-18T09:19:00Z" };
-  const q = { ...base, tasks: [quiet] } as Thread;
+  // V0.stall-on-row (1): a quiet wait leads with that it does not move, and for how long, so the row's cut end never hides it.
+  const quiet = { ...cmd, quietSince: "2026-11-18T09:01:00Z" };
+  const q = { ...base, tasks: [quiet], attention: { ...base.attention, reason: "Waiting on Wait for it: no progress" } } as Thread;
   const at = clockTime(quiet.quietSince);
-  assert.equal(waitLine(q, now), `Running in background: Wait for it · 35 min · no CPU use since ${at}`);
-  assert.equal(workingLine(q), `Running in background: Wait for it · no CPU use since ${at}`);
-  assert.equal(taskLine(quiet), `No CPU use since ${at}`);
+  assert.equal(waitLine(q, now), "Waiting on Wait for it: no progress for 35 min");
+  assert.equal(workingLine(q, now), "Waiting on Wait for it: no progress for 35 min");
+  assert.equal(workingLine(q, now + 60 * 60_000), "Waiting on Wait for it: no progress for 1 h 35 min");
+  assert.equal(workingLine(q), "Waiting on Wait for it: no progress", "no clock: the host's reason");
+  assert.equal(taskLine(quiet), `No progress since ${at}`);
   assert.equal(waitLine({ ...q, running: true } as Thread, now), "", "a live turn has its own line");
   assert.equal(waitLine({ ...q, tasks: [{ ...cmd, type: "local_agent", background: true }] } as Thread, now), "", "an agent is not a command");
   assert.match(taskEventText({ kind: "quiet", description: "Wait for it", minutes: 5 }), /No CPU use for 5 min while waiting for Wait for it/);
+});
+
+test("V0.stall-on-row (2): a subagent's report that is due, and one that will not come", () => {
+  const a: TaskDTO = { id: "a", description: "Retry lookups", type: "local_agent", background: true, status: "completed", reportDue: "2026-11-18T09:00:00Z" };
+  assert.equal(taskLine(a), "Report due");
+  assert.equal(taskLine({ ...a, reportLost: true }), "Its report will not come");
+  assert.equal(taskEventText({ kind: "reportLost", description: "Retry lookups", minutes: 60 }), "No report from Retry lookups after 60 min: it will not come. The agent was told.");
 });
 
 test("V0.ci-wait-moves: every row in Moving says why it is there", () => {

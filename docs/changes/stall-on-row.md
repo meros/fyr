@@ -1,0 +1,19 @@
+# V0.stall-on-row: a wait that does not move says so on the row, and a subagent's report that will not come is called lost
+
+→ V0.195 (1) and (4), V0.16, 6.2a. Amends V0.195 (1): what the row and the line above the composer say about a quiet wait.
+
+**What was seen.** On one day three of the owner's four "status?" prods came after a wait that had stopped moving while the row still named it as work going on:
+
+- a hand-written wait for a host condition that never came true in 95 min. Fyr found the thread quiet after 5 min and woke the agent (V0.195), but the row went on reading "Running in background: <description>". The quiet note "no CPU use since 12:50" came last, where the row cuts its line, so on a phone and in a narrow list it never showed.
+- a main agent that waited more than 4 h for a subagent's report. The subagent's task ended with the CLI's summary "This agent has not reported yet: it is waiting on its own background work and will deliver its report through SubagentHandback when that finishes". Its background work had ended with the session's run, so no hand-back followed. Fyr kept the task as finished and said nothing.
+- a polling loop that outlived its target by a few minutes. Fyr's 5 min quiet count had not run out when the owner asked. This entry does not change that count.
+
+**Of 33 such "not reported yet" ends between 16 and 26 Nov, 32 were followed within 30 min by the report or by the subagent starting again.** The one that was not is the 4 h wait above.
+
+1. **A quiet wait leads the line.** While a background command that V0.195 (3) found quiet still runs, the Waiting reason is "Waiting on <description>: no progress" (`core.waitReason`), in place of "Running in background: …". The fronts add how long from the quiet mark: "Waiting on <description>: no progress for 35 min" on the row (`workingLine`) and above the composer (`waitLine`). It is the same component and text on desktop and phone. A task's line in the agents strip reads "No progress since 09:19". The reason does not change as the minutes pass, so the host does not send the thread again every minute. The line stays until the command ends or the thread uses CPU again, which clears the mark (V0.195 (3)).
+2. **A report that comes later is a wait.** A task end whose summary opens with "This agent has not reported yet" keeps `reportDue` on the task (the first such end counts). The thread then has the claim `report` (6.2a, 12a): Moving without you, "Waiting for the report of <task>". Another end with a summary (the hand-back) or a new start of the same task clears it.
+3. **Lost after `ReportLostAfter` (1 h) with nothing of the thread running.** The subagent's own background work shows up as tasks of the thread, so while any of them runs Fyr does not count the hour as up. That is twice the longest delay seen in point 2's data. Then the task gets `reportLost`, the timeline gets one line ("No report from <task> after 60 min: it will not come. The agent was told."), and the agent gets one notice, `task.report:<id>`. The row says "No report from <task>: it will not come" until the agent's next turn starts. That turn is its answer, and the task's report state is dropped then.
+4. **Wakes.** The notice is a budgeted wake (V0.95 (3)) and takes the place of the hand-back's wake that never came. So a subagent wakes its agent once, as before: the hand-back or this notice, never both. The quiet wait of point 1 adds no wake: V0.195 (4) still tells the agent once per task.
+5. **The owner.** Both lines are text on the row and above the composer. They do not move the focus, open nothing and leave the composer as it is, so an owner who is typing sees the line change beside the text and nothing else (U26).
+
+Tests: `internal/core/reportlost_test.go`, `internal/core/feed_test.go` (`task.report`), `internal/core/claims_test.go` (`report`), `web/test/tasks.test.ts`, `web/test/layout.e2e.mjs` V0.195.

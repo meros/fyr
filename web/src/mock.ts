@@ -761,7 +761,7 @@ function railFixture(now: number): Fixture {
         activity: waiting ? "" : act,
         subagents: subs,
         tasks: waiting && MOCK_BGWAIT
-          ? [task("dq1", "Wait for both experiments to finish", "running", now, 35.5, { type: "local_bash", background: true, tool: "Bash", quietSince: min(12) })] // 35.5: mid-minute, so the front's clock (the host's, less the reply's delay) reads "35 min", not "34" under load (V0.fix-flakes)
+          ? [task("dq1", "Wait for both experiments to finish", "running", now, 35.5, { type: "local_bash", background: true, tool: "Bash", quietSince: min(12.5) })] // 35.5 and 12.5: mid-minute, so the front's clock (the host's, less the reply's delay) reads "35 min", not "34" under load (V0.fix-flakes)
           : waiting
           ? [
               task("dt1", "Design mobile translation", "running", now, m, { activity: "Running build", toolUses: 14, tokens: 143_218 }),
@@ -770,7 +770,7 @@ function railFixture(now: number): Fixture {
           : id === "t_mapperf"
             ? [task("mt1", "Profile the map render", "running", now, 6, { activity: "Bash yarn vitest src/map --reporter=verbose", toolUses: 21, tokens: 310_000 })]
             : [],
-        attention: { state, section: "working", reason: waiting ? (MOCK_BGWAIT ? "Background: Wait for both experiments to finish" : "2 agents") : "" },
+        attention: { state, section: "working", reason: waiting ? (MOCK_BGWAIT ? "Waiting on Wait for both experiments to finish: no progress" : "2 agents") : "" },
         unavailable: { "thread.retry": "Nothing failed", "thread.markUnseen": "A run is going" },
       }),
     );

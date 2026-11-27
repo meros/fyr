@@ -599,6 +599,10 @@ func NextCheck(t *Thread, v *View, now time.Time) *time.Time {
 	if at := noProgressCheck(t, now); at != nil && (out == nil || at.Before(*out)) {
 		out = at
 	}
+	// V0.stall-on-row (2): a subagent's report due, at its bound.
+	if at := reportCheck(t); at != nil && (out == nil || at.Before(*out)) {
+		out = at
+	}
 	return out
 }
 

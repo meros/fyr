@@ -106,6 +106,15 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("told twice: %+v", th.Feed.Queue)
 			}
 		},
+		// V0.stall-on-row (2): a subagent's report that will not come: a
+		// budgeted wake in place of the hand-back's, once.
+		"task.report": func(t *testing.T) {
+			th := reportLater(t, agentThread(), "a1", ct0)
+			th, res := fstep(t, th, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0.Add(ReportLostAfter))
+			if n := queued(t, th, "task.report:a1"); n.Urgency != Wake || !n.Budget || !wakes(res) {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+		},
 		// V0.stop-ends-background: the owner's Stop also killed a background
 		// agent. Told with the next message (Next, never a wake: the owner
 		// just stopped the agent), once; a task the agent stopped itself

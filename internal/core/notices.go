@@ -61,8 +61,9 @@ var NoticeRules = []NoticeRule{
 	{Name: "upkeep.reminder", Urgency: Next, OnTake: upkeepReminder},
 	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
 	{Name: "slot", Urgency: Wake, OnReduce: slotNotices},
-	{Name: "task.quiet", Urgency: Wake, Budget: true, OnReduce: taskQuietNotices}, // V0.195
-	{Name: "task.stopped", Urgency: Next, OnReduce: taskStopNotices},              // V0.stop-ends-background
+	{Name: "task.quiet", Urgency: Wake, Budget: true, OnReduce: taskQuietNotices},   // V0.195
+	{Name: "task.stopped", Urgency: Next, OnReduce: taskStopNotices},                // V0.stop-ends-background
+	{Name: "task.report", Urgency: Wake, Budget: true, OnReduce: reportLostNotices}, // V0.stall-on-row (2)
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 	{Name: "mergetext", Urgency: Wake, OnReduce: mergeTextNotices},          // V0.settle-merge-fixes (1)
 	{Name: "overload.retry", Urgency: Wake, OnReduce: overloadRetryNotices}, // V0.overload-retry

@@ -556,6 +556,7 @@ func init() {
 				return Result{}, err
 			}
 			TaskObserved(r.T, a.Task, now)
+			reportObserved(r.T, a, now) // V0.stall-on-row (2)
 			return Result{Events: a.Log}, nil
 		}},
 		{Name: KindTaskQuiet, From: observed, Untouched: true, Reduce: reduceTaskQuiet},

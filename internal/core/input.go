@@ -258,6 +258,8 @@ func ReduceIn(env Env, t *Thread, v *View, in Input, now time.Time) (*Thread, *V
 	t.Stopped = stoppedNow(t, now)
 	// V0.no-progress: a live run's silence, before the notices read it.
 	res.Events = append(res.Events, noProgressAfter(before, t, in, now)...)
+	// V0.stall-on-row (2): a subagent's report that will not come.
+	res.Events = append(res.Events, reportLostAfter(t, now)...)
 	// V0.thread-focus: a thread that grows past one topic, told once.
 	res.Events = append(res.Events, splitAfter(before, t)...)
 	// The agent feed (#47): the notice rules project this reduce.

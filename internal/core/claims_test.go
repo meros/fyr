@@ -11,7 +11,7 @@ import (
 // change of where threads stand, so it is made here too.
 func TestClaimOrderIsPinned(t *testing.T) {
 	want := []string{"ask", "handover", "quota", "failure", "unresponsive", "no-progress", "run", "starting", "machine",
-		"delivering", "gate", "frozen", "tasks", "slot", "need", "run-request", "command", "merging", "settle-offer", "ci", "watch", "waking", "rule"}
+		"delivering", "gate", "frozen", "tasks", "report", "slot", "need", "run-request", "command", "merging", "settle-offer", "ci", "watch", "waking", "rule"}
 	if !slices.Equal(ClaimOrder, want) {
 		t.Fatalf("ClaimOrder = %v", ClaimOrder)
 	}
@@ -37,6 +37,9 @@ func claimCases() []claimCase {
 		{ClaimGate, Waiting, WorkingSec, func(x *Thread) { x.GateHold = &GateHold{Why: "memory is short"} }},
 		{ClaimFrozen, Waiting, WorkingSec, func(x *Thread) { x.Frozen = &Frozen{Why: "memory is short", Keys: []string{"work"}} }},
 		{ClaimTasks, Waiting, WorkingSec, func(x *Thread) { x.Tasks = []Task{{ID: "k", Status: TaskRunning}} }},
+		{ClaimReport, Waiting, WorkingSec, func(x *Thread) {
+			x.Tasks = []Task{{ID: "r", Description: "Survey", Type: "local_agent", Status: TaskCompleted, ReportDue: &now}}
+		}},
 		{ClaimSlot, Waiting, WorkingSec, func(x *Thread) { x.SlotQueued = true }},
 		{ClaimNeed, Blocked, NeedsYou, func(x *Thread) {
 			x.Stopped = true
