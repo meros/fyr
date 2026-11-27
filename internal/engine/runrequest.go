@@ -35,16 +35,28 @@ func (e *Engine) runRequestTool(s *mcp.Server) {
 			"timeoutSec": map[string]any{"type": "integer", "description": "The time limit, default 600, at most 3600."},
 			"id":         str("Optional: the same id again replaces that request."),
 			"optional":   map[string]any{"type": "boolean", "description": "Nothing waits on it: a chip under your newest message instead of a card in the owner's dock and Your move, gone when the next turn starts if it did not run."},
+			"alongside":  map[string]any{"type": "boolean", "description": "Keep your earlier cards that the owner has not run yet. Without it this card replaces them, so the owner never runs a command you have moved past. Set it only when the owner must run both."},
 		}, "command", "why"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			req := core.RunRequestArgs{ID: sArg(a, "id"), Command: sArg(a, "command"), Why: sArg(a, "why"), Cwd: sArg(a, "cwd")}
 			req.Root, _ = a["root"].(bool)
 			req.Optional, _ = a["optional"].(bool)
+			req.Alongside, _ = a["alongside"].(bool)
 			if n, ok := a["timeoutSec"].(float64); ok {
 				req.TimeoutSec = int(n)
 			}
-			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindRunRequest, Thread: th, Args: req}); err != nil {
+			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindRunRequest, Thread: th, Args: req})
+			if err != nil {
 				return "", err
+			}
+			// V0.run-card-replaces: say which earlier cards this one replaced.
+			replaced := ""
+			if rep, ok := out.(core.OfferReply); ok && len(rep.Replaced) > 0 {
+				qs := make([]string, len(rep.Replaced))
+				for i, w := range rep.Replaced {
+					qs[i] = fmt.Sprintf("%q", w)
+				}
+				replaced = fmt.Sprintf(" It replaced your earlier cards that the owner had not run (%s): they are gone, so put everything the owner must run now in this one.", strings.Join(qs, ", "))
 			}
 			how := "Run"
 			if req.Root {
@@ -56,7 +68,7 @@ func (e *Engine) runRequestTool(s *mcp.Server) {
 			if req.Optional {
 				return fmt.Sprintf("The owner sees it as a chip under your newest message, with %s, until the next turn starts. If they run it, the exit code and the output arrive as a message starting with [Fyr].", how), nil
 			}
-			return fmt.Sprintf("The owner sees a Run card with %s. When they run it, the exit code and the output arrive as a message starting with [Fyr] (a run that lasts over 10 s also tells you once when it started); if they choose Not now, you hear that too. End your turn or do other work meanwhile.", how), nil
+			return fmt.Sprintf("The owner sees a Run card with %s. When they run it, the exit code and the output arrive as a message starting with [Fyr] (a run that lasts over 10 s also tells you once when it started); if they choose Not now, you hear that too.%s End your turn or do other work meanwhile.", how, replaced), nil
 		}})
 }
 

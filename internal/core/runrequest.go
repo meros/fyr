@@ -55,6 +55,9 @@ type RunRequestArgs struct {
 	TimeoutSec int    `json:"timeoutSec,omitempty"`
 	// Optional: nothing waits on it; a chip, not Your move (V0.next-step-chips).
 	Optional bool `json:"optional,omitempty"`
+	// Alongside keeps the agent's earlier cards that wait on the owner
+	// (V0.run-card-replaces): without it a new card replaces them.
+	Alongside bool `json:"alongside,omitempty"`
 }
 
 // ActionOutputArgs are action.output's: the output so far of a running
@@ -99,8 +102,62 @@ func reduceRunRequest(r Rec, in Input, now time.Time) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return openRunRequest(r.T, a, now)
+	res, err := openRunRequest(r.T, a, now)
+	if err != nil {
+		return Result{}, err
+	}
+	// After the new card is declared, so it never takes an old card's id.
+	newID := ""
+	for _, ev := range res.Events {
+		if d, _ := ev.Data.(map[string]any); ev.Type == EventRunRequested {
+			newID, _ = d["action"].(string)
+		}
+	}
+	replaced := replaceWaiting(r.T, a, newID)
+	if rep, ok := res.Reply.(OfferReply); ok {
+		for _, old := range replaced {
+			rep.Replaced = append(rep.Replaced, old.Why)
+		}
+		res.Reply = rep
+	}
+	// V0.run-card-replaces: each replaced card's place says so; the agent
+	// did it, so it gets no notice beyond the tool's reply.
+	evs := make([]Event, 0, len(replaced)+len(res.Events))
+	for _, old := range replaced {
+		evs = append(evs, Event{"action", map[string]any{"on": OnThread, "action": old.ID, "label": old.Label, "why": old.Why,
+			"command": old.Command, "request": true, "replaced": true, "by": "agent"}})
+	}
+	res.Events = append(evs, res.Events...)
+	return res, nil
 }
+
+// replaceWaiting removes the agent's earlier run requests that wait on the
+// owner and never ran, and returns them (V0.run-card-replaces): a new card
+// that waits on the owner replaces them, so the dock never offers an old
+// command the agent has moved past. An optional request (a chip) and one
+// asked alongside replace nothing; the playbook's own deploy card
+// (V0.playbook-moments) stays.
+func replaceWaiting(t *Thread, a RunRequestArgs, newID string) []ActionSpec {
+	if a.Optional || a.Alongside {
+		return nil
+	}
+	var out []ActionSpec
+	keep := t.Offers[:0:0]
+	for _, o := range t.Offers {
+		if o.ID != newID && o.Request && !o.Optional && !strings.HasPrefix(o.ID, PlaybookDeployPrefix) && lastRunOf(t.Runs, o.ID, OnThread) == nil {
+			out = append(out, o)
+			continue
+		}
+		keep = append(keep, o)
+	}
+	if len(out) > 0 {
+		t.Offers = keep
+	}
+	return out
+}
+
+// PlaybookDeployPrefix starts the id of the playbook's own deploy card.
+const PlaybookDeployPrefix = "deploy-"
 
 // openRunRequest puts a's Run card on the thread: the agent's run_request,
 // or Fyr's own for a stage's deploy command (V0.playbook-moments).

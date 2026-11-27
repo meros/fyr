@@ -117,6 +117,9 @@ type (
 	OfferReply struct {
 		Label, Where string
 		Removed      bool
+		// Replaced: the whys of the earlier cards this run request replaced
+		// (V0.run-card-replaces).
+		Replaced []string
 	}
 	ViewPublishArgs struct {
 		PageID string

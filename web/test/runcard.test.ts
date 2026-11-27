@@ -106,6 +106,8 @@ test("V0.149 (6): the conversation lines of a request: the press, its result, No
   assert.equal(actionEventLine({ request: true, why: "Mount the SD card", ended: true, ok: false, exit: 2 }).line, "“Mount the SD card” failed (exit 2)");
   assert.equal(actionEventLine({ request: true, why: "Mount the SD card", dismissed: true }).line, "You chose Not now for “Mount the SD card”");
   assert.equal(actionEventLine({ request: true, why: "Mount the SD card", dismissed: true, ran: true }).line, "You closed “Mount the SD card”");
+  // V0.run-card-replaces
+  assert.equal(actionEventLine({ request: true, why: "Mount the SD card", replaced: true, by: "agent" }).line, "Replaced by a newer card: “Mount the SD card”");
 });
 
 const asked = (key: string, action: string): Item => ({ kind: "runcard", key, action });
