@@ -463,8 +463,11 @@ func assistantText(data any) string {
 }
 
 // withActor records the actor and front that sent an owner Input on its
-// event, matching command events (V0.run-card-rerun).
+// event, matching command events (V0.run-card-rerun), and its commandId.
 func withActor(ev map[string]any, in Input) map[string]any {
+	if in.CmdID != "" { // V0.run-card-keeps-run (3)
+		ev["commandId"] = in.CmdID
+	}
 	if in.Actor != "" {
 		ev["actor"] = in.Actor
 		if in.Front != "" {

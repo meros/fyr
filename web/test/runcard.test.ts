@@ -173,5 +173,7 @@ test("V0.run-card-rerun: a succeeded Run card asks before running again; fresh a
   assert.equal(await pressRunCard(o, "ok", { host: "desk" }, yes, onRun), true);
   assert.equal(asks, 2);
   assert.equal(sent.length, 3);
-  assert.deepEqual(sent[2], ["action.run", { on: "thread", action: "run-1", digest: "d1" }]);
+  // V0.run-card-keeps-run (2): only the confirmed press says again, so the host runs a succeeded card only after it.
+  assert.deepEqual(sent[2], ["action.run", { on: "thread", action: "run-1", digest: "d1", again: true }]);
+  assert.deepEqual(sent[0], ["action.run", { on: "thread", action: "run-1", digest: "d1" }]);
 });

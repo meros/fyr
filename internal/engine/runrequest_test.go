@@ -247,3 +247,55 @@ func TestRunRequestToolSaysWhatItReplaced(t *testing.T) {
 		t.Fatal("no replaced event in the log")
 	}
 }
+
+// SPEC V0.run-card-keeps-run (3), I7: a press sent again with the same
+// commandId (a retry, a resend) runs its card once, also after the run ended
+// and the double-press window has passed. The press event records the id.
+func TestRunRequestPressOncePerCommandID(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	if out, isErr := callAs(t, h.e, id, "run_request", map[string]any{"command": "false", "why": "Check it"}); isErr {
+		t.Fatalf("request: %s", out)
+	}
+	var mu sync.Mutex
+	runs := 0
+	h.e.LiveScripts = func(ctx context.Context, dir string, a []string, out func(string)) (string, int, error) {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		return "no\n", 1, nil
+	}
+	th, _ := h.e.Thread(id)
+	o := findOffer(th.Offers, "run-1")
+	args := core.Args{"on": "thread", "action": "run-1", "digest": o.Digest}
+	if r := h.cmdID("press-1", "action.run", id, args); !r.OK {
+		t.Fatalf("press: %+v", r)
+	}
+	eventually(t, "the run ended", func() bool {
+		th, _ := h.e.Thread(id)
+		return len(th.Runs) == 1 && !th.Runs[0].Running
+	})
+	h.e.Now = func() time.Time { return time.Now().Add(time.Minute) }
+	for range 3 {
+		if r := h.cmdID("press-1", "action.run", id, args); !r.OK {
+			t.Fatalf("the repeat did not answer the first reply: %+v", r)
+		}
+	}
+	time.Sleep(50 * time.Millisecond) // a second run, if one started, would have begun by now
+	mu.Lock()
+	n := runs
+	mu.Unlock()
+	if th, _ := h.e.Thread(id); n != 1 || len(th.Runs) != 1 {
+		t.Fatalf("one commandId ran %d times; runs %+v", n, th.Runs)
+	}
+	saw := false
+	for _, ev := range h.events(id) {
+		if ev.Type == "action" && strings.Contains(string(ev.Data), `"commandId":"press-1"`) {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatal("the press event has no commandId")
+	}
+}
