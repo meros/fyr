@@ -43,7 +43,7 @@ test("chips name their repo only when the header spans repos", () => {
 });
 
 test("the decoder keeps drawable issues only", () => {
-  const t = thread("t1", "idle", "inbox", { issues: [is(1), { url: 7 } as unknown as Issue, { url: "https://github.com/acme/app/issues/2", number: 2 } as unknown as Issue] } as never);
+  const t = thread("t1", "seen", "seen", { issues: [is(1), { url: 7 } as unknown as Issue, { url: "https://github.com/acme/app/issues/2", number: 2 } as unknown as Issue] } as never);
   assert.deepEqual(
     (t.issues ?? []).map((i) => i.number),
     [1, 2],

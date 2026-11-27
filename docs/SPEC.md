@@ -1258,6 +1258,7 @@ Each session gets Fyr's MCP server (V0.12, 16.2). A tool call becomes an Input w
 | `project_setup {project?, name?, color?, icon?, ownerAsked?}` | `project.setup`; `project.update` with `ownerAsked` | Sets a project's name, colour and icon; owner-set fields are kept unless `ownerAsked` (V0.116, V0.project-icons-on-demand). |
 | `host_setup {icon?, color?}` | none (host setting, 3) | Sets this host's icon and colour where the owner has not set them (V0.208). |
 | `thread_rename {title? \| regenerate?, id?}` | `thread.retitle` | Renames this thread or one it started; `regenerate` writes the title from the conversation with a small model; a name the owner gave is kept (V0.69, V0.title-goal). |
+| `issue_link {issue, unlink?}` | `issue.link` | Links a GitHub issue to this thread (the header shows it beside the PRs), or with `unlink` removes the link; a URL that is not an issue is refused (V0.thread-issues). |
 | `thread_new {cwd, text, title?, model?}` | `thread.create` | Starts a thread with source `agent` and `from` this thread; at most 12 an hour per thread (V0.22, V0.202). |
 | `thread_send {id, text}` | `thread.send` | Sends another thread a message with `from` this thread; field rights apply (5.2); at most 30 an hour per thread (V0.22, V0.71). |
 | `threads {query?, state?}` | read | The owner's other threads (5.11, V0.22). |
