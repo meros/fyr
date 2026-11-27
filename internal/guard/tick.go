@@ -632,6 +632,9 @@ func (t *tick) freezeJob(sig resource.Signals) {
 
 // cycled says thread was thawed MaxThawsPerHour times within ThawWindow
 // (V0.freeze-cycle-cap): it is let run, not frozen a fourth time.
+// V0.thaw-cap-oomd: not near oomd's limit. There oomd kills a whole thread,
+// its agent with it, within its duration (20 s), and a fourth freeze costs a
+// swap-in at most; the cap then yields, and the guard says so once.
 func (t *tick) cycled(thread string) bool {
 	n := 0
 	for _, at := range t.st.Thaws[thread] {
@@ -639,7 +642,14 @@ func (t *tick) cycled(thread string) bool {
 			n++
 		}
 	}
-	return n >= MaxThawsPerHour
+	if n < MaxThawsPerHour {
+		return false
+	}
+	if sig := t.in.Signals.Fresh(t.in.Trig, t.in.Now); sig.NearOomd() {
+		t.once("cap-yields:"+thread, fmt.Sprintf("thread=%s may be frozen again though it was thawed %d times in the last %s: memory stalls near oomd's limit, where oomd kills all of it (%s)", thread, n, ThawWindow, SignalsLine(sig)))
+		return false
+	}
+	return true
 }
 
 // freezeVictim is the job to freeze: of the holds not frozen yet, the one whose

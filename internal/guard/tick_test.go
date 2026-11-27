@@ -3,6 +3,7 @@ package guard
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,6 +348,32 @@ func TestTickDoesNotFreezeAThreadThawedOftenThisHour(t *testing.T) {
 	st = Run(in, State{Thaws: map[string][]time.Time{"c": {t0.Add(-2 * time.Hour), thaws[1], thaws[2]}}}, h.apply)
 	if len(st.Frozen) != 1 || st.Frozen[0].Owner != "c" {
 		t.Fatalf("did not freeze with 2 thaws in the hour: %+v", st.Frozen)
+	}
+}
+
+// V0.thaw-cap-oomd: near oomd's limit the cap yields. oomd kills the whole
+// thread, its agent with it, so a fourth freeze is the lesser cost; it is said
+// in the log.
+func TestTickFreezesAThreadThawedOftenNearOomd(t *testing.T) {
+	v := &fakeView{growth: map[string]uint64{"a": 1e9, "c": 3e9}}
+	sig := critical()
+	sig.OomdLimit, sig.UnitStall = 85, f(78)
+	in := inputs(v, sig, hold("a", time.Hour), hold("c", time.Minute))
+	thaws := []time.Time{t0.Add(-50 * time.Minute), t0.Add(-30 * time.Minute), t0.Add(-10 * time.Minute)}
+	h := &host{ok: true, sig: sig}
+	st := Run(in, State{Thaws: map[string][]time.Time{"c": thaws}}, h.apply)
+	if len(st.Frozen) != 1 || st.Frozen[0].Owner != "c" {
+		t.Fatalf("near oomd's limit, did not freeze the thread thawed %d times: %+v", len(thaws), st.Frozen)
+	}
+	if !slices.ContainsFunc(h.applied, func(d Decision) bool { return d.Kind == Log && strings.Contains(d.Msg, "may be frozen again") }) {
+		t.Fatalf("no log line for the cap that yields: %+v", h.applied)
+	}
+	// Below the margin the cap holds.
+	sig.UnitStall = f(60)
+	h = &host{ok: true, sig: sig}
+	st = Run(inputs(v, sig, hold("a", time.Hour), hold("c", time.Minute)), State{Thaws: map[string][]time.Time{"c": thaws}}, h.apply)
+	if len(st.Frozen) != 0 {
+		t.Fatalf("froze a thread thawed %d times at 60 %% of oomd's 85 %%: %+v", len(thaws), st.Frozen)
 	}
 }
 
