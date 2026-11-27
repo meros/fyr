@@ -140,6 +140,14 @@ export function mockLeftoverCommand(h: HostLoad, action: string, args: Record<st
   return { ok: true, result: { id: l.id, hours } };
 }
 
+/** V0.undeclared-mock-age: the mock's load is one scene, made when the page loads, and each read shows it as of that
+ *  read: the undeclared work's start moves on by the time since (`ms`), so Babysit has run 50 s however long the page
+ *  is open (a full layout run under load reached its card more than ten seconds in, and it read "1 min"). */
+export function ageUndeclared(list: HostLoad[], ms: number): HostLoad[] {
+  const later = (iso: string) => new Date(Date.parse(iso) + ms).toISOString();
+  return list.map((h) => (h.slots?.undeclared?.length ? { ...h, slots: { ...h.slots, undeclared: h.slots.undeclared.map((u) => ({ ...u, since: later(u.since) })) } } : h));
+}
+
 /** V0.164: the mock host's view of undeclared work (mode "" is none): the threads, the shares in the pool, the wait
  *  reason that names it, the thresholds and one command Fyr learned. */
 export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {

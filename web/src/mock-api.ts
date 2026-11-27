@@ -6,7 +6,7 @@ import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { HELD_COMMIT, MOCK_COMMANDS, MOCK_HELD, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab } from "./mock.ts";
 import { mockChanges, mockFilePatch } from "./mock-changes.ts";
 import { mockFileStat, mockFileText, mockFileUrl } from "./mock-files.ts";
-import { mockInvariantCommand, mockLeftoverCommand, mockLoad, mockQueueLoad, mockQuota, mockRerunCommand, mockUndeclaredCommand } from "./mock-load.ts";
+import { ageUndeclared, mockInvariantCommand, mockLeftoverCommand, mockLoad, mockQueueLoad, mockQuota, mockRerunCommand, mockUndeclaredCommand } from "./mock-load.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { withLongValues } from "./mock-long.ts";
 import { decodeHosts } from "./hosts.ts";
@@ -35,6 +35,7 @@ export function createMockApi(scenario: string): Api {
   const offline = q.get("conn") === "offline";
   // V0.137: the load, kept so that a reorder (host.slotOrder) shows on the next read.
   const load: HostLoad[] = q.get("slots") ? mockQueueLoad(q.get("slots")!) : mockLoad();
+  const loadAt = Date.now(); // V0.undeclared-mock-age: each read shows the load as of that read
   // The layout test's hook: a queued thread gets its slot, or its run ends (it leaves the queue); the page sees it on
   // its next read of the load.
   (globalThis as { __fyrSlot?: (owner: string, grant: boolean) => void }).__fyrSlot = (owner, grant) => {
@@ -643,7 +644,7 @@ export function createMockApi(scenario: string): Api {
     },
     async load() {
       // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).
-      const l = JSON.parse(JSON.stringify(load)) as HostLoad[];
+      const l = ageUndeclared(JSON.parse(JSON.stringify(load)) as HostLoad[], Date.now() - loadAt);
       if (!mockHostList().length || !l.length) return l.map((x) => loadOf(x, idOfName(x.host)));
       return [{ ...l[0], host: "desk" }, { ...l[0], host: "lab", cores: 16, load: [1.4, 1.1, 0.9], threads: [], slots: undefined }].map((x) => stampLoad(x as HostLoad, idOfName(x.host)));
     },
