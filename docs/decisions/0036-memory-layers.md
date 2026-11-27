@@ -87,6 +87,7 @@ The swap valve of decision 0032 slice 3 applies: every job limit lifts while the
 - The agent's tool result says it was killed by Fyr to free memory and that it will be admitted again. The gate holds the rerun until the memory guard is green and the class's learned peak fits.
 - The class's learned peak is raised by ×1.2 (VPA) after a kill for overrun.
 - A class killed 3 times in an hour stops being killed for that hour and is frozen instead, with a notice to the owner.
+- *V0.oomd-frozen-work (the owner's choice of 27 Nov): past oomd's limit for 10 s the guard also kills one thread's heavy work of any class, frozen work first, never the agent and never the oldest heavy work, because oomd would end the whole thread within its 20 s. With the agents' swap full, freezing frees nothing.*
 
 ## Not chosen
 
@@ -129,6 +130,7 @@ The amendments in italics above are what the review of 20 Nov and the load simul
 
 1. **How to take the findings forward:** a decision doc (this one), then PRs by slice.
 2. **Kill and rerun:** yes, for classes the owner opts in (F).
+3. **Past oomd's limit (27 Nov):** the guard ends one thread's heavy work of any class before oomd ends the thread, on by default (V0.oomd-frozen-work).
 
 ## Sources
 

@@ -17,7 +17,8 @@ type WorkUnit struct {
 // GuardEvent is one decision: "short" or "recovered" (the host's memory),
 // "freeze" or "thaw" of a thread's undeclared work or of a job it asked for;
 // V0.rerun-classes: "kill" of a rerunnable job, and "capped" when its class
-// was killed too often and is frozen instead for an hour (Class names it).
+// was killed too often and is frozen instead for an hour (Class names it);
+// V0.oomd-frozen-work: "ended", work the guard killed before oomd could.
 type GuardEvent struct {
 	At   time.Time `json:"at"`
 	Kind string    `json:"kind"`

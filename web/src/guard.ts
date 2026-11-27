@@ -8,8 +8,9 @@ export interface GuardEvent {
   at: string;
   /** "short" and "recovered" are the host's memory; "freeze" and "thaw" a thread's work; V0.rerun-classes: "kill" of a
    *  rerunnable job, "capped" when its class was killed 3 times in an hour and is frozen instead; V0.guard-tidy: "kept"
-   *  when frozen work stays frozen past the 10 minute limit because the agents' memory stalls critically */
-  kind: "short" | "recovered" | "freeze" | "thaw" | "kill" | "capped" | "kept";
+   *  when frozen work stays frozen past the 10 minute limit because the agents' memory stalls critically;
+   *  V0.oomd-frozen-work: "ended" when the guard killed a thread's work before systemd-oomd would end the thread */
+  kind: "short" | "recovered" | "freeze" | "thaw" | "kill" | "capped" | "kept" | "ended";
   work?: "undeclared" | "job";
   thread?: string;
   /** the freeze's number in its episode */
@@ -143,7 +144,7 @@ export function guardChart(g: Guard | undefined, now: number, titleOf: (thread: 
       open.set(e.thread, t);
       const l = lane(e.thread);
       if (t >= from) l.marks.push({ x: (t - from) / GUARD_WINDOW, n: e.n ?? 0 });
-    } else if ((e.kind === "thaw" || e.kind === "kill") && e.thread) {
+    } else if ((e.kind === "thaw" || e.kind === "kill" || e.kind === "ended") && e.thread) {
       const a = open.get(e.thread);
       if (a !== undefined) {
         const s = clip(a, t, from, now);
@@ -209,6 +210,7 @@ export function guardLog(g: Guard | undefined, titleOf: (thread: string) => stri
     if (e.kind === "short") text = `Memory became short${room}`;
     else if (e.kind === "recovered") text = `Memory recovered${room}`;
     else if (e.kind === "kill") text = `Killed ${e.work === "job" ? "the job" : "undeclared work"} of ${who} (${e.class ?? "rerunnable"}) to free memory; it runs again when admitted${room}`;
+    else if (e.kind === "ended") text = `Killed ${e.work === "job" ? "the job" : "undeclared work"} of ${who}: memory stalled past oomd's limit, which would have ended the whole thread${room}`;
     else if (e.kind === "capped") text = `Stopped killing ${e.class ?? "a class"} for an hour: killed 3 times; it is frozen instead`;
     else if (e.kind === "kept") text = `Kept ${e.work === "job" ? "the job" : "undeclared work"} of ${who} frozen past 10 minutes: the agents' memory stalls critically`;
     else if (e.kind === "freeze") text = `${e.work === "job" ? "Paused the job of" : "Paused undeclared work of"} ${who}${e.n ? ` (${e.n}/${g.max})` : ""}${room}`;

@@ -46,12 +46,16 @@ const gb = 1e9
 // simParams is the host. Switches select the tree before a fix, so the table
 // can show what the fix changed.
 type simParams struct {
-	Cores       float64
-	Budget      float64 // the agents' memory.high
-	RAM         float64
-	HostBase    float64 // kernel, fyrd, the desktop's floor outside Desktop
-	CLI         float64 // one running agent CLI
-	SwapCap     float64 // the agents' memory.swap.max
+	Cores    float64
+	Budget   float64 // the agents' memory.high
+	RAM      float64
+	HostBase float64 // kernel, fyrd, the desktop's floor outside Desktop
+	CLI      float64 // one running agent CLI
+	SwapCap  float64 // the agents' memory.swap.max
+	// SwapBase: the agents' swap already held by what the scenario does not
+	// model (idle agents' cold pages, older work): 27 Nov's log shows 6.7 GB of
+	// the 10 GB cap in use before the jobs of incident-27nov-swap.
+	SwapBase    float64
 	ReadBack    float64 // bytes a second read back from swap
 	ColdReclaim float64 // bytes a second the kernel moves of frozen (cold) pages to swap under pressure
 	Evict       float64 // bytes a second the kernel takes from one running part over its share
@@ -141,8 +145,10 @@ type simUnit struct {
 	lastReclaim     time.Duration
 	reclaimed       bool
 	hit             bool // its memory.high was hit (V0.job-limits)
+	stuck           bool // over its memory.high with no swap room for the rest: no progress (decision 0032)
 	turns           bool // its thread's parts take turns: undeclared/'s limit is lifted (V0.guard-tidy)
 	abandoned       bool // its agent killed it (Abandon)
+	byFyr           bool // the guard killed it before oomd could (its agent lives on)
 }
 
 func (u *simUnit) live() bool { return u.state == sRunning }
@@ -238,7 +244,7 @@ type simKill struct {
 
 func newSimHost(p simParams) *simHost {
 	return &simHost{p: p, threads: map[string]bool{}, learned: map[string]resource.Learned{}, flags: map[string]*simFlag{},
-		holds: map[string]*simHold{}, oomdOver: -1, nextPID: 1000, cpuSlow: 1}
+		holds: map[string]*simHold{}, oomdOver: -1, nextPID: 1000, cpuSlow: 1, swapUsed: p.SwapBase}
 }
 
 func (h *simHost) add(u *simUnit) {
@@ -444,10 +450,23 @@ func (h *simHost) step() {
 	if runWant > space {
 		phi = max(0, space) / runWant
 	}
-	need := frozenSwap
+	need := h.p.SwapBase + frozenSwap
 	for _, u := range run {
 		u.target = phi * u.allowed
+		u.stuck = false
 		need += (u.ws - u.target) * (1 - u.File)
+	}
+	// A part over its own memory.high whose rest has no swap room makes no
+	// progress (decision 0032: none in 25 s), alone: it is throttled, it does
+	// not take the others' memory. Only what still does not fit is the
+	// slice's livelock.
+	if need > h.p.SwapCap+1e6 {
+		for _, u := range run {
+			if u.allowed < u.ws {
+				u.stuck = true
+				need -= (u.ws - u.allowed) * (1 - u.File)
+			}
+		}
 	}
 	h.livelock = need > h.p.SwapCap+1e6 && len(run) > 0
 	// Pages in: fresh allocations at once, read-back shared.
@@ -498,7 +517,7 @@ func (h *simHost) step() {
 			rate *= 0.25
 			st = max(st, 0.5)
 		}
-		if h.livelock {
+		if h.livelock || u.stuck {
 			rate, st = 0, 1
 		}
 		u.used = rate
@@ -528,7 +547,7 @@ func (h *simHost) step() {
 	}
 	// Memory now.
 	h.agentsRes = h.p.CLI * float64(nCLI)
-	h.swapUsed = 0
+	h.swapUsed = h.p.SwapBase
 	for _, u := range h.units {
 		if u.live() {
 			h.agentsRes += u.res

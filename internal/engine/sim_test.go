@@ -64,7 +64,7 @@ type scenario struct {
 
 type simResult struct {
 	name                           string
-	jobs, done, killed             int
+	jobs, done, killed, ended      int
 	makespan, noFyr, serial        time.Duration
 	noFyrKills                     int
 	freezes, maxCycles             int
@@ -234,6 +234,18 @@ func (r *simRun) newEngine() {
 			}
 			return uint64(f)
 		},
+	}
+	// The guard's kill (V0.rerun-classes's, and V0.oomd-frozen-work's before oomd).
+	e.JobKill = func(o string, undeclared bool) int {
+		kind := kAdmitted
+		if undeclared {
+			kind = kUndeclared
+		}
+		us := h.threadUnits(u2s(o), kind)
+		for _, u := range us {
+			u.state, u.ended, u.res, u.frozen, u.byFyr = sKilled, h.t, 0, false, true
+		}
+		return len(us)
 	}
 	r.e = e
 	for sth, id := range r.ids {
@@ -892,12 +904,16 @@ func scenarios() []scenario {
 		pp := func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb; p.CLI = 0.6 * gb }
 		add(scenario{name: "incident-27nov", idle: 3, params: pp, units: mk(), learned: l,
 			desktop: func(time.Duration) float64 { return 9 * gb }})
+		// The same hour with the swap the host's other agents already held
+		// (6.7 GB of the 10 GB cap at 11:08): the swap fills, and
+		// V0.job-limits's valve lifts the e2e job's and the make check's
+		// limits, as at 11:15:31 and 11:20:15.
+		add(scenario{name: "incident-27nov-swap", idle: 3, params: func(p *simParams) { pp(p); p.SwapBase = 6.5 * gb }, units: mk(), learned: l,
+			desktop: func(time.Duration) float64 { return 9 * gb }})
 	}
 	// V0.sim-fixes fixed the rest of V0.load-sim's list: a violation of
 	// those scenarios now fails the test.
 	known := map[string]map[string]string{
-		"swap-full":      {invOomd: whyFrozenKill},
-		"incident-retry": {invOomd: whyRetryStorm},
 		// The trees before V0.freeze-controller, kept to show what it changed.
 		"concurrent-8-old":  {invWorse: whyOldConcurrency},
 		"concurrent-16-old": {invWorse: whyOldConcurrency},
@@ -911,23 +927,7 @@ func scenarios() []scenario {
 // Why the current code makes the violations the table lists (V0.load-sim).
 // Each is a finding to fix; remove its line when the fix lands.
 const (
-	// V0.freeze-controller: the 26 Nov laptop with the retry the log showed
-	// (a new lint run every 30 s from a thread whose agent retries what timed
-	// out) and the desktop at 9 GB: 31 threads lost to oomd, 6 of 37 jobs done.
-	// The undeclared parts start whatever the guard holds, so freezing cannot
-	// outrun them. Tried and not taken (see docs/changes/freeze-controller.md):
-	// the heaviest thread first, a wait that shrinks with the stall, and
-	// freezing all the heavy work at oomd's limit; each lost more threads to
-	// oomd on ladder-4/6/8 than today's rules.
-	whyRetryStorm = "a thread starts a new heavy part every 30 s and the guard cannot hold what the gate does not see: parts pile up faster than freezes take memory out"
-	// V0.sim-fixes (5): left as a finding of the model. The 2 GB of swap
-	// cannot hold the two parts that run, so the stall reaches oomd's limit
-	// with or without Fyr (no Fyr loses a thread too); the model counts the
-	// kernel's reclaim of the frozen part's cold pages as its pgscan, so oomd
-	// takes the frozen thread. Fyr's own reclaim is already off near the limit
-	// (V0.guard-tidy); how real oomd ranks a frozen cgroup is not measured.
 	whyOldConcurrency = "the tree before V0.freeze-controller counted a thread's runs at once as one need"
-	whyFrozenKill     = "oomd picks the thread whose frozen pages the kernel reclaimed: the model counts that as its pgscan, so the frozen thread is oomd's first choice once the two that run fill the 2 GB of swap"
 )
 
 func cloneUnits(us []*simUnit) []*simUnit {
@@ -969,7 +969,11 @@ func (r *simRun) finish(fyr bool) {
 			r.res.done++
 			end = max(end, u.ended)
 		case sKilled:
-			r.res.killed++
+			if u.byFyr {
+				r.res.ended++
+			} else {
+				r.res.killed++
+			}
 		default:
 			if fyr {
 				r.viol(invStarved, "%s of %s did not finish (state %d, %.0f of %.0f core-s)", u.Name, u.Thread, u.state, u.done, u.Work)
@@ -990,7 +994,7 @@ func (r *simRun) finish(fyr bool) {
 		}
 	}
 	r.res.makespan = end
-	if r.res.done+r.res.killed < r.res.jobs {
+	if r.res.done+r.res.killed+r.res.ended < r.res.jobs {
 		r.res.makespan = -1
 	}
 	r.res.critSecs, r.res.livelockS, r.res.peakSwap = h.critSecs, h.livelockS, h.peakSwap
@@ -1092,8 +1096,8 @@ func TestSimLoad(t *testing.T) {
 			vs = append(vs, k)
 		}
 		sort.Strings(vs)
-		rows = append(rows, fmt.Sprintf("%-20s %3d/%-3d %4d %5s %6s %6s %5d %5d %5s %6d %6d %6.1f  %s",
-			res.name, res.done, res.jobs, res.killed, dur(res.makespan), dur(res.noFyr)+fmt.Sprintf("/%d", res.noFyrKills), dur(res.serial),
+		rows = append(rows, fmt.Sprintf("%-20s %3d/%-3d %4d %3d %5s %6s %6s %5d %5d %5s %6d %6d %6.1f  %s",
+			res.name, res.done, res.jobs, res.killed, res.ended, dur(res.makespan), dur(res.noFyr)+fmt.Sprintf("/%d", res.noFyrKills), dur(res.serial),
 			res.freezes, res.maxCycles, dur(res.maxWait), res.critSecs, res.noFyrCrit, res.peakSwap/gb, strings.Join(vs, ",")))
 		for _, k := range vs {
 			lines := strings.Join(res.viol[k], "\n    ")
@@ -1110,7 +1114,7 @@ func TestSimLoad(t *testing.T) {
 			}
 		}
 	}
-	head := fmt.Sprintf("%-20s %7s %4s %5s %8s %6s %5s %5s %5s %6s %6s %6s  %s", "scenario", "done", "oomd", "fyr", "nofyr/k", "serial", "frz", "cyc", "wait", "crit", "crit0", "swapGB", "violations")
+	head := fmt.Sprintf("%-20s %7s %4s %3s %5s %8s %6s %5s %5s %5s %6s %6s %6s  %s", "scenario", "done", "oomd", "end", "fyr", "nofyr/k", "serial", "frz", "cyc", "wait", "crit", "crit0", "swapGB", "violations")
 	t.Logf("\n%s\n%s", head, strings.Join(rows, "\n"))
 	if failed {
 		t.Log("an unexpected violation: fix it, or add it to known in scenarios() with its reason")

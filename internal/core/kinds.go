@@ -365,8 +365,11 @@ func init() {
 			d := mapArgs(in)
 			_, p := d["paused"].(string)
 			_, k := d["killed"].(string)
+			if _, e := d["ended"].(string); e { // V0.oomd-frozen-work
+				k = true
+			}
 			if !p && !k && d["resumed"] != true && d["waits"] != true && d["retry"] != true {
-				return Result{}, errors.New("slot.pause needs paused, resumed, waits, retry or killed")
+				return Result{}, errors.New("slot.pause needs paused, resumed, waits, retry, killed or ended")
 			}
 			if k || d["resumed"] == true {
 				unfreeze(r.T, FreezeKey(d["work"])) // V0.freeze-visible
