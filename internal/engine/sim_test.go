@@ -48,6 +48,10 @@ const (
 	// V0.thaw-cap-oomd: the agents stalled critically longer with Fyr than
 	// with no Fyr at all (by a tenth and a minute): the guard made it worse.
 	invWorse = "worse-than-none"
+	// V0.gate-release-paced (#736): the gate held a thread's command while
+	// memory was short within 10 min of letting that thread's held command
+	// run: releasing what it held put memory back over the line.
+	invRehold = "rehold"
 )
 
 type scenario struct {
@@ -58,6 +62,7 @@ type scenario struct {
 	learned map[string]resource.Learned
 	desktop func(t time.Duration) float64
 	restart time.Duration // fyrd restarts at this time; 0 never
+	soft    map[string]bool // classes the gate takes as learned commands (HeavySoft): they never queue
 	// expect: the violations the current code makes, with the reason.
 	expect map[string]string
 }
@@ -91,6 +96,7 @@ type simRun struct {
 	allStop time.Duration // since when all live heavy work is frozen, -1 when not
 	lastNow time.Duration
 	ended   map[string]bool
+	let     map[string]time.Duration // thread → when the gate last let a command it had held run
 }
 
 func (r *simRun) viol(kind, format string, a ...any) {
@@ -234,6 +240,9 @@ func (r *simRun) newEngine() {
 			}
 			return uint64(f)
 		},
+	}
+	if r.sc.soft != nil {
+		e.HeavySoft = func(class string) bool { return r.sc.soft[class] }
 	}
 	// The guard's kill (V0.rerun-classes's, and V0.oomd-frozen-work's before oomd).
 	e.JobKill = func(o string, undeclared bool) int {
@@ -408,9 +417,18 @@ func (r *simRun) checkThaw(th string, kind unitKind) {
 func (r *simRun) gate(u *simUnit) {
 	u.lastTry = r.h.t
 	why := r.e.HeavyGate(HeavyCall{Thread: r.ids[u.Thread], Class: u.Class, ToolUse: u.tool, Background: u.Background})
+	if strings.Contains(why, "memory is short on") && u.state != sGated {
+		if at, ok := r.let[u.Thread]; ok && r.h.t-at < 10*time.Minute {
+			r.viol(invRehold, "%s of %s held while memory is short, %s after the gate let the thread's held command run", u.Name, u.Thread, r.h.t-at)
+		}
+	}
 	if why == "" {
 		if u.state == sGated {
 			u.waited = r.h.t - u.gatedAt
+			if r.let == nil {
+				r.let = map[string]time.Duration{}
+			}
+			r.let[u.Thread] = r.h.t
 		}
 		r.h.start(u)
 		return
@@ -910,6 +928,28 @@ func scenarios() []scenario {
 		// limits, as at 11:15:31 and 11:20:15.
 		add(scenario{name: "incident-27nov-swap", idle: 3, params: func(p *simParams) { pp(p); p.SwapBase = 6.5 * gb }, units: mk(), learned: l,
 			desktop: func(time.Duration) float64 { return 9 * gb }})
+	}
+	// 19. V0.gate-release-paced (#736): the desktop takes memory for 4 min
+	// while six threads start a learned check (it never queues; 2.5 GB
+	// learned, 3 GB real), so the gate holds all six; each thread runs its
+	// check again twice later on. When memory recovered the gate let all six
+	// run at once, and memory was short again before their next runs.
+	{
+		s := scenario{name: "recovery-herd", idle: 1, soft: map[string]bool{"yarn check": true},
+			learned: map[string]resource.Learned{"yarn check": learnedClass(2, 2.5, 120)},
+			desktop: func(t time.Duration) float64 {
+				if t >= mn && t < 5*mn {
+					return 21.5 * gb
+				}
+				return 5 * gb
+			}}
+		for i := range 6 {
+			th := fmt.Sprintf("w%d", i)
+			for j, at := range []time.Duration{2 * mn, 9 * mn, 16 * mn} {
+				s.units = append(s.units, unit(th, fmt.Sprintf("yarn check %d", j), "yarn check", kAdmitted, at+time.Duration(i)*5*time.Second, 2, 3, 240))
+			}
+		}
+		add(s)
 	}
 	// V0.sim-fixes fixed the rest of V0.load-sim's list: a violation of
 	// those scenarios now fails the test.

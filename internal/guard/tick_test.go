@@ -74,8 +74,13 @@ func (h *host) apply(d Decision) Answer {
 		return Answer{Signals: h.sig}
 	case ReadGrowth:
 		return Answer{Growth: map[string]uint64{}}
-	case ClearGate:
-		return Answer{Threads: h.gate}
+	case ReleaseGate:
+		if len(h.gate) == 0 {
+			return Answer{}
+		}
+		th := h.gate[0]
+		h.gate = h.gate[1:]
+		return Answer{Threads: []string{th}}
 	}
 	return Answer{}
 }
@@ -197,7 +202,7 @@ func TestTickThawsAtTheLimit(t *testing.T) {
 	if len(st.Frozen) != 0 {
 		t.Fatalf("still frozen %+v", st.Frozen)
 	}
-	want := []Kind{ClearGate, Thawed, Thaw, Notify, ReadSignals}
+	want := []Kind{Thawed, Thaw, Notify, ReadSignals}
 	if got := h.kinds(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("decisions %v want %v", got, want)
 	}
@@ -386,5 +391,63 @@ func TestTickCountsEachThaw(t *testing.T) {
 	st = Run(in, st, (&host{sig: calm()}).apply)
 	if got := st.Thaws["b"]; len(got) != 1 || !got[0].Equal(t0) {
 		t.Fatalf("thaws %+v", st.Thaws)
+	}
+}
+
+// V0.gate-release-paced (#736): when memory recovers the gate's held threads
+// are released one at a time, the next GateSettle after the one before ran,
+// or GateRerunWait after its release when it did not run; none while memory
+// is short or something is frozen.
+func TestTickReleasesTheGateOneThreadAtATime(t *testing.T) {
+	h := &host{sig: calm(), gate: []string{"a", "b", "c", "d"}}
+	tickAt := func(st State, at time.Time, ran time.Time, sig resource.Signals) (State, []string) {
+		in := inputs(&fakeView{}, sig)
+		in.Now, in.GateHeld, in.GateRan = at, len(h.gate), ran
+		n := len(h.applied)
+		st = Run(in, st, h.apply)
+		var told []string
+		for _, d := range h.applied[n:] {
+			if d.Kind == Notify && d.Args["retry"] == true {
+				told = append(told, d.Thread)
+			}
+		}
+		return st, told
+	}
+	st := State{Short: true}
+	st, told := tickAt(st, t0, time.Time{}, critical())
+	if len(told) != 0 {
+		t.Fatalf("released while memory is short: %v", told)
+	}
+	st, told = tickAt(st, t0.Add(10*time.Second), time.Time{}, calm())
+	if !reflect.DeepEqual(told, []string{"a"}) {
+		t.Fatalf("first tick after the recovery released %v, want [a]", told)
+	}
+	ran := t0.Add(15 * time.Second)
+	st, told = tickAt(st, t0.Add(20*time.Second), ran, calm())
+	if len(told) != 0 {
+		t.Fatalf("released %v before a's run settled", told)
+	}
+	st, told = tickAt(st, ran.Add(GateSettle), ran, calm())
+	if !reflect.DeepEqual(told, []string{"b"}) {
+		t.Fatalf("after a's run settled released %v, want [b]", told)
+	}
+	// b never runs its command again: c goes GateRerunWait after b's release.
+	rel := ran.Add(GateSettle)
+	st, told = tickAt(st, rel.Add(GateRerunWait-time.Second), ran, calm())
+	if len(told) != 0 {
+		t.Fatalf("released %v before b's wait ran out", told)
+	}
+	frozen := st
+	frozen.Frozen = []Frozen{{Owner: "x", At: rel, Since: t0.Format(time.RFC3339Nano)}}
+	if _, told = tickAt(frozen, rel.Add(GateRerunWait), ran, calm()); len(told) != 0 {
+		t.Fatalf("released %v while work is frozen", told)
+	}
+	st, told = tickAt(st, rel.Add(GateRerunWait), ran, calm())
+	if !reflect.DeepEqual(told, []string{"c"}) {
+		t.Fatalf("after b's wait released %v, want [c]", told)
+	}
+	h.gate = nil
+	if st, _ = tickAt(st, rel.Add(time.Hour), ran, calm()); !st.GateReleased.IsZero() {
+		t.Fatalf("the release clock outlived the hold: %v", st.GateReleased)
 	}
 }
