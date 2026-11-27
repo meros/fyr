@@ -61,7 +61,8 @@ type servicePeak struct {
 
 // Services follows the threads' services. Match is the service patterns
 // (*heavy.Services, set by the wiring); Cwd a thread's folder, for a compose
-// project named by its directory. Each optional.
+// project named by its directory; Trees and CLIs read each thread's process
+// tree on hosts without cgroups (macOS, Linux without delegation). Each optional.
 type Services struct {
 	Match  func(command string) bool
 	Docker *Docker
@@ -69,6 +70,8 @@ type Services struct {
 	Cwd    func(thread string) string
 	Now    func() time.Time
 	Proc   string
+	Trees  *TreeReader
+	CLIs   func() map[string]int
 
 	mu      sync.Mutex
 	loaded  bool
@@ -271,8 +274,26 @@ type procEntry struct {
 	rss  uint64
 }
 
-// Tick reads each thread's services: from its cgroup with a tree, and the
-// compose projects it started. The sampler's Tick calls it, outside every lock.
+// HoldChecker returns a predicate reporting whether ctl holds any of a
+// thread's running services (decision 0036 (D)): the guard passes over such a
+// thread instead of freezing its service.
+func (s *Services) HoldChecker(ctl Control) func(thread string) bool {
+	return func(thread string) bool {
+		if s == nil || ctl == nil {
+			return false
+		}
+		for _, sv := range s.Of(thread) {
+			if ctl.Holds(thread, sv.PID) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// Tick reads each thread's services: from its cgroup with a tree, from its
+// process tree without one (macOS), and the compose projects it started.
+// The sampler's Tick calls it, outside every lock.
 func (s *Services) Tick(tr *Tree, threads []string) {
 	if s == nil {
 		return
@@ -285,6 +306,22 @@ func (s *Services) Tick(tr *Tree, threads []string) {
 				continue
 			}
 			found[th] = s.read(tr, th)
+		}
+	} else if tr == nil && s.Match != nil && s.Trees != nil && s.CLIs != nil {
+		if clis := s.CLIs(); len(clis) > 0 {
+			if tab, ok := s.Trees.Table(now); ok {
+				kids := tab.kids()
+				for _, th := range threads {
+					if th == "probe" || th == DeployDir {
+						continue
+					}
+					if cli := clis[th]; cli > 0 {
+						if svcs := s.readTree(tab, kids, th, cli); len(svcs) > 0 {
+							found[th] = svcs
+						}
+					}
+				}
+			}
 		}
 	}
 	s.mu.Lock()
@@ -357,8 +394,7 @@ func (s *Services) Tick(tr *Tree, threads []string) {
 	}
 }
 
-// read finds thread's service processes: the topmost process of each
-// subtree whose command is a service, with the subtree's memory.
+// read finds thread's service processes from its cgroup.
 func (s *Services) read(tr *Tree, thread string) []Service {
 	td := tr.threadDir(unsafe.ReplaceAllString(thread, "_")) // its scope, or agents/<thread> (V0.agents-unit)
 	proc := s.proc()
@@ -370,6 +406,36 @@ func (s *Services) read(tr *Tree, thread string) []Service {
 		}
 		table[p] = procEntry{ppid: st.ppid, cmd: readCmdline(proc, p), rss: readRSS(proc, p)}
 	}
+	return s.findServices(thread, table, func(p int) string {
+		cwd, _ := os.Readlink(filepath.Join(proc, strconv.Itoa(p), "cwd"))
+		return cwd
+	})
+}
+
+// readTree finds thread's service processes from the process tree under cli
+// (hosts without cgroups, such as macOS).
+func (s *Services) readTree(tab procTable, kids map[int][]int, thread string, cli int) []Service {
+	if _, ok := tab[cli]; !ok {
+		return nil
+	}
+	table := map[int]procEntry{}
+	for _, p := range under(kids, cli) {
+		if p == cli {
+			continue
+		}
+		r := tab[p]
+		table[p] = procEntry{ppid: r.ppid, cmd: r.args, rss: r.rss}
+	}
+	threadCwd := ""
+	if s.Cwd != nil {
+		threadCwd = s.Cwd(thread)
+	}
+	return s.findServices(thread, table, func(int) string { return threadCwd })
+}
+
+// findServices finds the topmost process of each subtree in table whose
+// command is a service, with the subtree's memory.
+func (s *Services) findServices(thread string, table map[int]procEntry, cwdOf func(pid int) string) []Service {
 	children := map[int][]int{}
 	for p, e := range table {
 		children[e.ppid] = append(children[e.ppid], p)
@@ -385,7 +451,7 @@ func (s *Services) read(tr *Tree, thread string) []Service {
 		}
 		return n
 	}
-	under := func(p int) bool { // an ancestor in the cgroup is a service
+	underSvc := func(p int) bool { // an ancestor in the thread is a service
 		for q, n := table[p].ppid, 0; n < 64; q, n = table[q].ppid, n+1 {
 			e, ok := table[q]
 			if !ok {
@@ -399,15 +465,14 @@ func (s *Services) read(tr *Tree, thread string) []Service {
 	}
 	var out []Service
 	for p, e := range table {
-		if !s.IsService(e.cmd) || under(p) {
+		if !s.IsService(e.cmd) || underSvc(p) {
 			continue
 		}
 		v := Service{Thread: thread, Name: e.cmd, PID: p, Memory: sum(p, 0)}
 		if len(v.Name) > serviceNameMax {
 			v.Name = v.Name[:serviceNameMax]
 		}
-		cwd, _ := os.Readlink(filepath.Join(proc, strconv.Itoa(p), "cwd"))
-		if project, _, _ := ComposeProject(e.cmd, cwd); project != "" {
+		if project, _, _ := ComposeProject(e.cmd, cwdOf(p)); project != "" {
 			v.Project = project
 		}
 		out = append(out, v)

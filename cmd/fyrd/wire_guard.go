@@ -13,7 +13,7 @@ import (
 
 // wireGuard connects the memory guard: the sampler, groups and leftovers to the engine.
 //
-// Needs from earlier steps: book, detector, groups, guardService, heavyCmds, jobs, mgr, n, pool, rerun, sampler, services, stops, svcBook, usettings.
+// Needs from earlier steps: book, detector, groups, heavyCmds, jobs, mgr, n, pool, rerun, sampler, services, stops, svcBook, usettings.
 // Makes: nothing on w (it wires what it made into eng, mgr and the others).
 func (w *wiring) wireGuard() {
 	book := w.book
@@ -22,7 +22,6 @@ func (w *wiring) wireGuard() {
 	detector := w.detector
 	eng := w.eng
 	groups := w.groups
-	guardService := w.guardService
 	heavyCmds := w.heavyCmds
 	hostName := w.hostName
 	jobs := w.jobs
@@ -57,9 +56,10 @@ func (w *wiring) wireGuard() {
 			trees.PS = func() (string, error) { return cgroup.PS(context.Background(), "-A", "-o", cgroup.TreePS) }
 		}
 		sampler.Trees, sampler.CLIs = trees, mgr.CLIs
+		services.Trees, services.CLIs = trees, mgr.CLIs
 		stops.Trees, stops.CLIs = trees, mgr.CLIs
 		stops.ResumeStopped() // what the last fyrd left stopped
-		pm := &cgroup.ProcMechanism{Stops: stops, Sampler: sampler, Detector: detector}
+		pm := &cgroup.ProcMechanism{Stops: stops, Sampler: sampler, Detector: detector, Bashes: groups.Bashes}
 		mech, parts, ctl = pm, pm, stops
 		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: sampler.TreeCPUTime, ThreadFrozen: stops.Frozen}
 	} else {
@@ -101,7 +101,7 @@ func (w *wiring) wireGuard() {
 		SlotEmpty: ctl.JobEmpty, // V0.guard-tidy
 		// V0.guard-wake: the wake rule's memory and the time frozen.
 		SlotMem: sampler.ThreadMemory, FrozenUsec: groups.FrozenUsec,
-		GuardService: guardService, // decision 0036 (D)
+		GuardService: services.HoldChecker(ctl), // decision 0036 (D)
 		// V0.admission-tidy: a heavier second command, and the job's baseline at the grant
 		SlotClassNeed: adm.ClassNeed, SlotBaseline: sampler.Baseline,
 	}

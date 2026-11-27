@@ -565,7 +565,11 @@ func (t *tick) freezeGuard() {
 	if fast && t.in.Can.FlagNow {
 		if a := t.ask(Decision{Kind: FlagNow}); a.Thread != "" {
 			t.flags = a.Flags
-			t.log("guard: flagged thread=%s without the window: the PSI trigger fired %s ago %s", a.Thread, now.Sub(t.in.Trig).Round(time.Second), SignalsLine(sig))
+			why := "the PSI trigger fired"
+			if sig.Provider != "" && sig.Provider != "cgroups" {
+				why = "memory stalled critically"
+			}
+			t.log("guard: flagged thread=%s without the window: %s %s ago %s", a.Thread, why, now.Sub(t.in.Trig).Round(time.Second), SignalsLine(sig))
 			// V0.sim-fixes (3): the early flag is heavy work too, and the
 			// only heavy work that runs is still never frozen whole.
 			if t.freezeUndeclared(sig, admitted, RunningHeavy(t.in.Held, t.flags, st.Frozen)) {

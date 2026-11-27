@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -52,8 +54,9 @@ type ProcStops struct {
 	mu      sync.Mutex
 	frozen  map[string]bool
 	ufrozen map[string]bool
-	needles map[string]string // thread → its newest heavy command's text
-	held    map[string]bool   // the holders at the last Tick
+	needles map[string]string       // thread → its newest heavy command's text
+	held    map[string]bool         // the holders at the last Tick
+	units   map[string]map[int]bool // thread → unit pids pinned while taking turns
 }
 
 func (p *ProcStops) ready() bool {
@@ -161,6 +164,7 @@ func (p *ProcStops) ThawUndeclared(thread string) {
 	p.cont(stopUndeclared + thread)
 	p.mu.Lock()
 	delete(p.ufrozen, thread)
+	delete(p.units, thread)
 	p.mu.Unlock()
 }
 
@@ -197,10 +201,212 @@ func (p *ProcStops) UndeclaredEmpty(thread string) bool {
 	return p.ready() && p.stopGone(stopUndeclared+thread)
 }
 
+// Holds reports whether pid is in thread's job (stopped, or what Freeze would
+// stop) or its stopped undeclared work: decision 0036 (D), the guard passes
+// over a thread whose job holds one of its services.
+func (p *ProcStops) Holds(thread string, pid int) bool {
+	if !p.ready() || pid <= 0 {
+		return false
+	}
+	p.stopMu.Lock()
+	p.loadStopped()
+	held := slices.Contains(p.stopped[stopJob+thread], pid) || slices.Contains(p.stopped[stopUndeclared+thread], pid)
+	p.stopMu.Unlock()
+	if held {
+		return true
+	}
+	p.mu.Lock()
+	needle := bareCommand(p.needles[thread])
+	p.mu.Unlock()
+	if needle == "" {
+		return false
+	}
+	cli := p.CLIs()[thread]
+	if cli <= 0 {
+		return false
+	}
+	t, ok := p.Trees.Table(time.Now())
+	if !ok {
+		return false
+	}
+	return slices.Contains(jobPids(t, t.kids(), cli, needle), pid)
+}
+
+// Units are the parts of thread's undeclared work under roots, in pid order
+// (decision 0032 slice 2 on hosts without cgroups).
+func (p *ProcStops) Units(thread string, roots []Root) []Unit {
+	if !p.ready() || len(roots) == 0 {
+		return nil
+	}
+	cli := p.CLIs()[thread]
+	if cli <= 0 {
+		return nil
+	}
+	t, ok := p.Trees.Table(time.Now())
+	if !ok {
+		return nil
+	}
+	kids := t.kids()
+	f := &family{children: map[int][]int{}, here: map[int]bool{}, rss: map[int]uint64{}, memo: map[int]uint64{}}
+	for _, pid := range under(kids, cli) {
+		if pid == cli {
+			continue
+		}
+		row := t[pid]
+		f.here[pid] = true
+		f.rss[pid] = row.rss
+		f.children[row.ppid] = append(f.children[row.ppid], pid)
+	}
+	for _, c := range f.children {
+		sort.Ints(c)
+	}
+	p.mu.Lock()
+	pinnedSet := map[int]bool{}
+	for pid := range p.units[thread] {
+		pinnedSet[pid] = true
+	}
+	p.mu.Unlock()
+	pinned := func(pid int) bool { return pinnedSet[pid] }
+	var out []Unit
+	for _, r := range roots {
+		if !f.here[r.PID] {
+			continue
+		}
+		for _, pid := range f.split(r.PID, pinned) {
+			out = append(out, Unit{PID: pid, Cmdline: t[pid].args, RSS: f.subtree(pid)})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].PID < out[j].PID })
+	return out
+}
+
+// RotateUndeclared lets the unit with pid active run and stops the others with
+// SIGSTOP, storing the stopped pids before signalling so a restart resumes them.
+// Inactive units are stopped before active is resumed, so two units never run
+// together. False when thread's episode ended (Live false) or nothing is stopped.
+func (p *ProcStops) RotateUndeclared(thread string, units []Unit, active int) bool {
+	if p == nil || len(units) == 0 {
+		return false
+	}
+	p.umu.Lock()
+	defer p.umu.Unlock()
+	if p.Live != nil && !p.Live(thread) {
+		return false
+	}
+	if !p.ready() {
+		return false
+	}
+	cli := p.CLIs()[thread]
+	if cli <= 0 {
+		return false
+	}
+	t, ok := p.Trees.Table(time.Now())
+	if !ok {
+		return false
+	}
+	kids := t.kids()
+	mine := map[int]bool{}
+	for _, pid := range under(kids, cli) {
+		if pid != cli && pid > 1 && pid != os.Getpid() {
+			mine[pid] = true
+		}
+	}
+	wantStop := map[int]bool{}
+	var ordered []int
+	for _, u := range units {
+		if u.PID == active || !mine[u.PID] {
+			continue
+		}
+		for _, pid := range under(kids, u.PID) {
+			if mine[pid] && !wantStop[pid] {
+				wantStop[pid] = true
+				ordered = append(ordered, pid)
+			}
+		}
+	}
+	key := stopUndeclared + thread
+	p.stopMu.Lock()
+	p.loadStopped()
+	was := map[int]bool{}
+	for _, pid := range p.stopped[key] {
+		was[pid] = true
+	}
+	var fresh []int
+	for _, pid := range ordered {
+		if !was[pid] {
+			fresh = append(fresh, pid)
+		}
+	}
+	var resume []int
+	for _, pid := range p.stopped[key] {
+		if !wantStop[pid] {
+			resume = append(resume, pid)
+		}
+	}
+	if len(fresh) > 0 {
+		prev := append([]int(nil), p.stopped[key]...)
+		p.stopped[key] = append(p.stopped[key], fresh...)
+		if err := p.saveStopped(); err != nil {
+			log.Printf("stopped processes: not rotating %s: %v", thread, err)
+			p.stopped[key] = prev
+			p.stopMu.Unlock()
+			return false
+		}
+	}
+	stoppedSet := map[int]bool{}
+	for _, pid := range ordered {
+		if was[pid] {
+			stoppedSet[pid] = true
+		}
+	}
+	for _, pid := range fresh {
+		if p.signal(pid, syscall.SIGSTOP) == nil {
+			stoppedSet[pid] = true
+		}
+	}
+	for _, pid := range resume {
+		p.signal(pid, syscall.SIGCONT)
+	}
+	var kept []int
+	for _, pid := range ordered {
+		if stoppedSet[pid] {
+			kept = append(kept, pid)
+		}
+	}
+	if len(kept) == 0 {
+		delete(p.stopped, key)
+	} else {
+		p.stopped[key] = kept
+	}
+	if err := p.saveStopped(); err != nil {
+		log.Printf("stopped processes: %v", err)
+	}
+	p.stopMu.Unlock()
+	if len(kept) == 0 {
+		return false
+	}
+	pinned := map[int]bool{}
+	for _, u := range units {
+		pinned[u.PID] = true
+	}
+	p.mu.Lock()
+	if p.ufrozen == nil {
+		p.ufrozen = map[string]bool{}
+	}
+	if p.units == nil {
+		p.units = map[string]map[int]bool{}
+	}
+	p.ufrozen[thread] = true
+	p.units[thread] = pinned
+	p.mu.Unlock()
+	return true
+}
+
 // KillJob sends SIGKILL to each process the guard stopped for thread's job
-// (or its undeclared work), and to the whole group of one that leads its own
-// process group (V0.rerun-classes, decision 0036 (F)). The stop is cleared.
-// It returns how many processes it killed; 0 when nothing was there.
+// (or its undeclared work, including the active part if taking turns), and to
+// the whole group of one that leads its own process group (V0.rerun-classes,
+// decision 0036 (F)). The stop is cleared. It returns how many processes it
+// killed; 0 when nothing was there.
 func (p *ProcStops) KillJob(thread string, undeclared bool) int {
 	if !p.ready() {
 		return 0
@@ -215,6 +421,46 @@ func (p *ProcStops) KillJob(thread string, undeclared bool) int {
 	delete(p.stopped, key)
 	p.saveStopped()
 	p.stopMu.Unlock()
+	p.mu.Lock()
+	var unitPIDs []int
+	if undeclared {
+		for pid := range p.units[thread] {
+			unitPIDs = append(unitPIDs, pid)
+		}
+		delete(p.units, thread)
+		delete(p.ufrozen, thread)
+	} else {
+		delete(p.frozen, thread)
+	}
+	p.mu.Unlock()
+	if len(unitPIDs) > 0 {
+		if cli := p.CLIs()[thread]; cli > 0 {
+			if t, ok := p.Trees.Table(time.Now()); ok {
+				kids := t.kids()
+				mine := map[int]bool{}
+				for _, pid := range under(kids, cli) {
+					if pid != cli && pid > 1 && pid != os.Getpid() {
+						mine[pid] = true
+					}
+				}
+				seen := map[int]bool{}
+				for _, pid := range ps {
+					seen[pid] = true
+				}
+				for _, up := range unitPIDs {
+					if !mine[up] {
+						continue
+					}
+					for _, pid := range under(kids, up) {
+						if mine[pid] && !seen[pid] {
+							seen[pid] = true
+							ps = append(ps, pid)
+						}
+					}
+				}
+			}
+		}
+	}
 	n := 0
 	for _, pid := range ps {
 		if pg, err := syscall.Getpgid(pid); err == nil && pg == pid {
@@ -224,13 +470,6 @@ func (p *ProcStops) KillJob(thread string, undeclared bool) int {
 			n++
 		}
 	}
-	p.mu.Lock()
-	if undeclared {
-		delete(p.ufrozen, thread)
-	} else {
-		delete(p.frozen, thread)
-	}
-	p.mu.Unlock()
 	return n
 }
 
@@ -298,16 +537,26 @@ func (p *ProcStops) stop(key, thread string, pick func(t procTable, kids map[int
 		if len(fresh) == 0 {
 			break
 		}
+		base := len(p.stopped[key])
 		p.stopped[key] = append(p.stopped[key], fresh...)
 		if err := p.saveStopped(); err != nil {
 			log.Printf("stopped processes: not stopping %s: %v", thread, err)
-			p.stopped[key] = p.stopped[key][:len(p.stopped[key])-len(fresh)]
+			p.stopped[key] = p.stopped[key][:base]
 			break
 		}
+		var okPIDs []int
 		for _, pid := range fresh {
 			if p.signal(pid, syscall.SIGSTOP) == nil {
 				stopped = true
+				okPIDs = append(okPIDs, pid)
 			}
+		}
+		if len(okPIDs) != len(fresh) {
+			p.stopped[key] = append(p.stopped[key][:base], okPIDs...)
+			if len(p.stopped[key]) == 0 {
+				delete(p.stopped, key)
+			}
+			p.saveStopped()
 		}
 	}
 	return stopped
@@ -373,6 +622,18 @@ func (p *ProcStops) stopGone(key string) bool {
 	return true
 }
 
+// jobPids are the processes under cli whose command line holds needle (already
+// normalized with bareCommand), and their descendants.
+func jobPids(t procTable, kids map[int][]int, cli int, needle string) []int {
+	var out []int
+	for _, pid := range under(kids, cli) {
+		if pid != cli && strings.Contains(bareCommand(t[pid].args), needle) {
+			out = append(out, under(kids, pid)...)
+		}
+	}
+	return out
+}
+
 // stopJobOf stops thread's heavy job: the processes under its CLI whose
 // command line holds the job's command, quoted or not, and their descendants.
 func (p *ProcStops) stopJobOf(thread string) bool {
@@ -383,13 +644,7 @@ func (p *ProcStops) stopJobOf(thread string) bool {
 		return false
 	}
 	return p.stop(stopJob+thread, thread, func(t procTable, kids map[int][]int, cli int) []int {
-		var out []int
-		for _, pid := range under(kids, cli) {
-			if pid != cli && strings.Contains(bareCommand(t[pid].args), needle) {
-				out = append(out, under(kids, pid)...)
-			}
-		}
-		return out
+		return jobPids(t, kids, cli, needle)
 	})
 }
 

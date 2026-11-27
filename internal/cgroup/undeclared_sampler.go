@@ -94,12 +94,12 @@ func (s *Sampler) Roots(f Flag) []Root {
 	if s.CLIs != nil {
 		cli = s.CLIs()[f.Thread]
 	}
+	var svc func(string) bool
+	if s.Services != nil {
+		svc = s.Services.IsService // V0.services-not-jobs
+	}
 	if s.Tree != nil {
-		el := Elders{CLI: cli, Min: minOld}
-		if s.Services != nil {
-			el.Service = s.Services.IsService // V0.services-not-jobs
-		}
-		return ReadRootsWith(s.Tree, s.Proc, f.Thread, f.FirstOver, el)
+		return ReadRootsWith(s.Tree, s.Proc, f.Thread, f.FirstOver, Elders{CLI: cli, Min: minOld, Service: svc})
 	}
 	if s.Trees == nil {
 		return nil
@@ -108,7 +108,7 @@ func (s *Sampler) Roots(f Flag) []Root {
 	if cli <= 0 || !ok {
 		return nil
 	}
-	return t.roots(cli, f.FirstOver.Add(-rootGrace), minOld)
+	return t.rootsWith(cli, f.FirstOver.Add(-rootGrace), minOld, svc)
 }
 
 // Undeclared lists the threads that run heavy work Fyr did not admit, for the

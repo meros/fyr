@@ -55,7 +55,6 @@ type wiring struct {
 	ghView       func() github.MeterView
 	groups       *cgroup.JobGroups
 	stops        *cgroup.ProcStops // V0.guard-finish: nil with the cgroup tree
-	guardService func(th string) bool
 	health       []deploy.Check
 	heavyCmds    *heavy.Matcher
 	jobs         *cgroup.Jobs

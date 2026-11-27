@@ -54,6 +54,9 @@ type ProcMechanism struct {
 	Stops    *ProcStops
 	Sampler  *Sampler
 	Detector *Detector
+	// Bashes returns thread's newest Bash commands (JobGroups.Bashes) so
+	// Units names each part by the command that started it; optional.
+	Bashes func(thread string) []string
 }
 
 // Sample reads the host's signals now.
@@ -154,11 +157,37 @@ func (m *ProcMechanism) RootsMem(thread string) (uint64, bool) {
 	return rootsMem(m.Sampler, m.Detector, thread)
 }
 
-// Units: without the cgroup tree the work is not split into parts.
-func (m *ProcMechanism) Units(string) []resource.WorkUnit { return nil }
+// Units are the parts of thread's flagged work from its process tree, each
+// named by its command.
+func (m *ProcMechanism) Units(thread string) []resource.WorkUnit {
+	f, ok := flagOf(m.Detector, thread)
+	if !ok {
+		return nil
+	}
+	var bashes []string
+	if m.Bashes != nil {
+		bashes = m.Bashes(thread)
+	}
+	var out []resource.WorkUnit
+	for _, u := range m.Stops.Units(thread, m.Sampler.Roots(f)) {
+		out = append(out, resource.WorkUnit{PID: u.PID, RSS: u.RSS, Command: CommandOf(Root{PID: u.PID, Cmdline: u.Cmdline}, bashes)})
+	}
+	return out
+}
 
-// Rotate: without the cgroup tree the parts take no turns.
-func (m *ProcMechanism) Rotate(string, []resource.WorkUnit, int) bool { return false }
+// Rotate lets the part with pid active run and SIGSTOPs the others, and marks
+// the work paused in the detector.
+func (m *ProcMechanism) Rotate(thread string, units []resource.WorkUnit, active int) bool {
+	us := make([]Unit, 0, len(units))
+	for _, u := range units {
+		us = append(us, Unit{PID: u.PID, RSS: u.RSS})
+	}
+	if !m.Stops.RotateUndeclared(thread, us, active) {
+		return false
+	}
+	m.Detector.MarkPaused(thread)
+	return true
+}
 
 // Faults: the process table keeps no read-back counter.
 func (m *ProcMechanism) Faults(string) uint64 { return 0 }

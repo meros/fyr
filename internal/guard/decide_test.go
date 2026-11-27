@@ -46,6 +46,17 @@ func TestMemoryState(t *testing.T) {
 	if !m.agentsCritical || !m.critical || !m.short || m.calm {
 		t.Fatalf("agents' critical stall: %+v", m)
 	}
+	// V0.mac-load-parity: without cgroups (sysctl on macOS, proc on plain Linux),
+	// AgentsStall is absent, so Stall stands in for agentsCritical.
+	mac := memoryState(resource.Signals{Provider: "sysctl", Stall: resource.StallCritical}, resource.Policy{})
+	if !mac.agentsCritical || !mac.critical || !mac.short || mac.calm {
+		t.Fatalf("macOS critical stall: %+v", mac)
+	}
+	// With cgroups, host Stall alone does not make agentsCritical.
+	cg := memoryState(resource.Signals{Provider: "cgroups", Stall: resource.StallCritical}, resource.Policy{})
+	if cg.agentsCritical || !cg.critical || !cg.short {
+		t.Fatalf("cgroups host-only stall: %+v", cg)
+	}
 }
 
 func TestThawWords(t *testing.T) {

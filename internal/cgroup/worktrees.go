@@ -365,7 +365,9 @@ func Cwds(proc string) []string {
 		}
 		return out
 	}
-	b, err := exec.Command("lsof", "-a", "-d", "cwd", "-Fn", "-w").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), PSTimeout)
+	defer cancel()
+	b, err := exec.CommandContext(ctx, "lsof", "-a", "-d", "cwd", "-Fn", "-w").Output()
 	if err != nil && len(b) == 0 {
 		return nil
 	}

@@ -21,11 +21,18 @@ type guardMemory struct {
 }
 
 // memoryState reads sig under policy p (V0.oomd-guard, V0.guard-agents-stall).
+// On a host without cgroups (macOS sysctl, plain Linux proc), AgentsStall is
+// absent because the OS has no per-cgroup stall, so Stall stands in for it (as
+// in AIMD.Step).
 func memoryState(sig resource.Signals, p resource.Policy) guardMemory {
 	critical, _ := sig.Critical()
+	own := sig.AgentsStall
+	if own == "" && sig.Provider != "cgroups" {
+		own = sig.Stall
+	}
 	m := guardMemory{
 		critical:       critical,
-		agentsCritical: sig.AgentsStall == resource.StallCritical,
+		agentsCritical: own == resource.StallCritical,
 		nearOomd:       sig.NearOomd(),
 	}
 	m.short = sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(p)) || critical || m.nearOomd)

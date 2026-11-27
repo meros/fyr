@@ -175,3 +175,43 @@ func TestSvc5TheWaitReasonNamesAService(t *testing.T) {
 		t.Fatalf("%v %q", ok, why)
 	}
 }
+
+// V0.mac-load-parity: when container cgroups are absent (macOS Docker VM),
+// Docker.Memory falls back to docker stats and caches it for dockerEvery.
+func TestSvc6DockerStatsFallbackWithoutHostCgroups(t *testing.T) {
+	now := boot
+	statsCalls := 0
+	d := &Docker{
+		FS:  t.TempDir(), // empty: no host container cgroups
+		Now: func() time.Time { return now },
+		PS:  func() (string, error) { return "aaa\tacme-dev\nbbb\tacme-dev\nccc\tother\n", nil },
+		Stats: func() (string, error) {
+			statsCalls++
+			return "aaa\t1.5GiB / 8GiB\nbbb\t512MiB / 8GiB\nccc\t200MB / 8GB\n", nil
+		},
+	}
+	mem, n := d.Memory("acme-dev")
+	want := uint64(1.5*(1<<30)) + 512*(1<<20)
+	if n != 2 || mem != want {
+		t.Fatalf("Memory(acme-dev) = %d (%d), want %d (2)", mem, n, want)
+	}
+	// Cached within dockerEvery.
+	if mem2, _ := d.Memory("other"); mem2 != 200_000_000 || statsCalls != 1 {
+		t.Fatalf("cached other = %d, statsCalls = %d", mem2, statsCalls)
+	}
+	for in, exp := range map[string]uint64{
+		"512B / 1GiB":    512,
+		"10KiB / 1GiB":   10 << 10,
+		"2.5MiB / 8GiB":  uint64(2.5 * (1 << 20)),
+		"1.25GiB / 8GiB": uint64(1.25 * (1 << 30)),
+		"1TiB / 2TiB":    1 << 40,
+		"500kB / 1GB":    500_000,
+		"250MB / 8GB":    250_000_000,
+		"2GB / 8GB":      2_000_000_000,
+		"bad":            0,
+	} {
+		if got := parseDockerMem(in); got != exp {
+			t.Errorf("parseDockerMem(%q) = %d, want %d", in, got, exp)
+		}
+	}
+}
