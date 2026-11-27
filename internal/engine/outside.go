@@ -76,6 +76,25 @@ func (w PRWatch) Observe(id string, pr core.PR) {
 	w.E.Apply(core.Input{Source: core.Observer(core.ObsGitHub), Kind: core.KindPRObserved, Thread: id, Args: pr})
 }
 
+// Issues are the linked issues the poller reads (V0.thread-issues): the
+// open ones of the threads that are not archived or settled.
+func (w PRWatch) Issues() []github.IssueThread {
+	var out []github.IssueThread
+	for _, t := range w.E.Snapshot() {
+		if t.ArchivedAt != nil {
+			continue
+		}
+		for _, is := range core.WatchedIssues(t.Thread) {
+			out = append(out, github.IssueThread{ID: t.ID, URL: is.URL, Title: is.Title, State: is.State})
+		}
+	}
+	return out
+}
+
+func (w PRWatch) ObserveIssue(id string, is core.Issue) {
+	w.E.Apply(core.Input{Source: core.Observer(core.ObsGitHub), Kind: core.KindIssueObserved, Thread: id, Args: is})
+}
+
 // Deploys are the merge commits whose deployments the poller reads (V0.66).
 func (w PRWatch) Deploys() []github.DeployThread {
 	var out []github.DeployThread

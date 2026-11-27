@@ -18,6 +18,7 @@ const BatchMax = 20
 // prFields are gh pr view's fields of the poll, in GraphQL.
 const prFields = `state mergeable reviewDecision title headRefName headRefOid baseRefName isDraft mergeStateStatus mergedAt
   mergeCommit { oid } autoMergeRequest { enabledAt } labels(first: 20) { nodes { name } } reviewThreads(first: 100) { totalCount nodes { isResolved } }
+  closingIssuesReferences(first: 10) { nodes { url number title state } }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
     __typename ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { workflow { name } } } }
     ... on StatusContext { context state } } } } } } }`
@@ -92,6 +93,10 @@ type batchPR struct {
 			IsResolved bool `json:"isResolved"`
 		} `json:"nodes"`
 	} `json:"reviewThreads"`
+	// V0.thread-issues: the issues the PR closes.
+	ClosingIssues *struct {
+		Nodes []batchIssue `json:"nodes"`
+	} `json:"closingIssuesReferences"`
 	Commits struct {
 		Nodes []struct {
 			Commit struct {
@@ -141,6 +146,9 @@ func (p *batchPR) view() map[string]any {
 			}
 		}
 		v["unresolvedThreads"] = n
+	}
+	if p.ClosingIssues != nil { // V0.thread-issues
+		v["closingIssues"] = p.ClosingIssues.Nodes
 	}
 	if len(p.MergeCommit) == 0 {
 		v["mergeCommit"] = nil

@@ -336,6 +336,25 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			return fmt.Sprintf("The thread is now %q.", t.Title), nil
 		}})
 
+	s.Add(mcp.Tool{Name: "issue_link",
+		Description: "Link a GitHub issue to this Fyr thread, so the owner sees it in the thread's header beside its PRs with its title and state. Link the issue the work is about (the one the owner asked you to fix, or the one you file a follow-up in). Fyr links some by itself: an issue a PR of this thread closes (Closes #N), one you file with gh issue create, and one whose URL the owner wrote. unlink: true removes a link that was wrong.",
+		Schema: obj(map[string]any{"issue": str("The issue's URL: https://github.com/owner/repo/issues/N."),
+			"unlink": map[string]any{"type": "boolean", "description": "Remove the link instead."}}, "issue"),
+		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
+			u, ok := core.CanonicalIssue(sArg(a, "issue"))
+			if !ok {
+				return "", errors.New("issue must be a GitHub issue URL: https://github.com/owner/repo/issues/N")
+			}
+			unlink, _ := a["unlink"].(bool)
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindIssueLink, Thread: self, Args: core.IssueLinkArgs{URL: u, Unlink: unlink}}); err != nil {
+				return "", err
+			}
+			if unlink {
+				return fmt.Sprintf("Unlinked %s.", u), nil
+			}
+			return fmt.Sprintf("Linked %s; the thread's header shows it, and Fyr reads its title and state at the next poll.", u), nil
+		}})
+
 	s.Add(mcp.Tool{Name: "thread_new",
 		Description: "Start a new Fyr thread (a separate agent session) in a folder with a first message, for work that should run on its own. The user sees it in the inbox, marked as started by this thread. At most 12 an hour.",
 		Schema: obj(map[string]any{"cwd": str("The folder to work in (absolute path)."), "text": str("The first message: a full brief."),

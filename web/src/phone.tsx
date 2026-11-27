@@ -34,6 +34,7 @@ import { LeftoverStrip } from "./leftovers-ui.tsx";
 import { InvariantCards } from "./invariants-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { changeChip, headerPrs, settleLine, threadPrs } from "./offers.ts";
+import { issueChip, issuePrefix, issuesNeedRepo, threadIssues } from "./issues.ts";
 import { WakeChip } from "./wake-ui.tsx";
 import { WaitsStrip } from "./waits-ui.tsx";
 import { hasMultipleRepos, pickPr, prChip, shortRepo } from "./pr.ts";
@@ -717,6 +718,19 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
                 <button key={pr.url} type="button" class="m-pjb m-prb" title={l.title} onClick={() => openPr(pr.url)}>
                   <span class={`m-chip prc ${l.cls}${on ? " on" : ""}`}>{repo ? `${repo} ${l.text}` : l.text}</span>
                 </button>
+              );
+            });
+          })()}
+          {/* V0.thread-issues: the desktop header's issue chips, each a 44 px tap target that opens the issue on GitHub. */}
+          {(() => {
+            const issues = threadIssues(t);
+            const need = issuesNeedRepo(issues, openPrs);
+            return issues.map((i) => {
+              const l = issueChip(i, issuePrefix(i, need));
+              return (
+                <a key={i.url} class="m-pjb m-prb" href={i.url} target="_blank" rel="noopener noreferrer" title={l.title}>
+                  <span class={`m-chip prc ${l.cls}`}>{l.text}</span>
+                </a>
               );
             });
           })()}

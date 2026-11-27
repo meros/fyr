@@ -254,6 +254,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			p := pr
 			d.PR = &p
 		}
+		d.Issues = o.IssueURLs // V0.thread-issues
 		m.observe(s.thread, core.KindDigest, d)
 		m.noteRefusals(s, msg) // V0.133: after the message it explains
 	case "result":

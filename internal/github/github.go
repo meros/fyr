@@ -103,7 +103,9 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 		// V0.review-threads: only the batched read has it; gh pr view
 		// cannot read review threads, so its read leaves -1 (not read).
 		UnresolvedThreads int `json:"unresolvedThreads"`
-		Rollup            []struct {
+		// V0.thread-issues: only the batched read has them.
+		ClosingIssues []batchIssue `json:"closingIssues"`
+		Rollup        []struct {
 			Typename   string    `json:"__typename"`
 			Name       string    `json:"name"`
 			Context    string    `json:"context"`
@@ -154,6 +156,11 @@ func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byt
 	for _, l := range v.Labels { // V0.sensitive-pr
 		if core.HasSensitiveLabel([]string{l.Name}) {
 			p.Sensitive = true
+		}
+	}
+	for _, is := range v.ClosingIssues { // V0.thread-issues
+		if x, ok := is.issue(asked); ok {
+			p.Closes = append(p.Closes, x)
 		}
 	}
 	if v.MergeCommit != nil {
@@ -465,6 +472,9 @@ type Poller struct {
 	// deployAt is when each deploy watch was last read (V0.173), by
 	// repo@sha.
 	deployAt map[string]time.Time
+	// issueAt is when each linked issue was last read (V0.thread-issues),
+	// by URL.
+	issueAt map[string]time.Time
 
 	// kick is made once, by whichever of Kick and Run comes first, so a
 	// kick before Run waits for it and no goroutine writes the field
@@ -568,6 +578,9 @@ func (p *Poller) pollAll(ctx context.Context) {
 			ts = ts[len(chunk):]
 			p.pollBatch(ctx, k, chunk)
 		}
+	}
+	if is, ok := p.Src.(IssueSource); ok { // V0.thread-issues
+		p.pollIssues(ctx, is)
 	}
 	if ds, ok := p.Src.(DeploySource); ok {
 		watched := map[string]bool{}

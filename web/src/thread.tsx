@@ -35,6 +35,7 @@ import { ChangeList, useViewAction } from "./offers-ui.tsx";
 import { DockRun, showCard } from "./runcard-ui.tsx";
 import { dockRun, waitingRuns } from "./runcard.ts";
 import { changeChip, headerPrs, prForEffect, settleLine, threadPrs } from "./offers.ts";
+import { issueChip, issuePrefix, issuesNeedRepo, threadIssues } from "./issues.ts";
 import { WakeChip } from "./wake-ui.tsx";
 import { FolderChip } from "./folder-ui.tsx";
 import { WaitsStrip } from "./waits-ui.tsx";
@@ -217,6 +218,19 @@ export function ThreadPane(p: ThreadPaneProps) {
                 onDismiss={isAvailable(t, "thread.dismissPR") && pr.state !== "OPEN" ? () => p.onRun("thread.dismissPR", { pr: pr.url }) : undefined}
               />
             ));
+          })()}
+          {/* V0.thread-issues: the linked issues beside the PRs; a click opens the issue on GitHub. The phone header has the same chips. */}
+          {(() => {
+            const issues = threadIssues(t);
+            const need = issuesNeedRepo(issues, openPrs);
+            return issues.map((i) => {
+              const l = issueChip(i, issuePrefix(i, need));
+              return (
+                <a key={i.url} class={`chip pr issue ${l.cls}`} href={i.url} target="_blank" rel="noopener noreferrer" title={l.title}>
+                  <span>{l.text}</span>
+                </a>
+              );
+            });
           })()}
           {(() => {
             const c = changeChip(t); // V0.59 (8)

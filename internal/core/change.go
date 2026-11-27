@@ -541,6 +541,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	}
 	snap := p
 	snap.Annotations = nil
+	snap.Closes = nil // V0.thread-issues: they live on the thread
 	if snap.UnresolvedThreads < 0 && c.PR != nil {
 		// V0.review-thread-notice: a read that could not see the threads
 		// (gh pr view) keeps the count the last read saw; threads outlive a push.

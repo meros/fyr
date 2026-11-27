@@ -31,6 +31,8 @@ const (
 	KindViewState      = "view.state"
 	KindViewUnchanged  = "view.unchanged"
 	KindPRObserved     = "pr.observed"
+	KindIssueObserved  = "issue.observed" // V0.thread-issues: the poller's read of a linked issue
+	KindIssueLink      = "issue.link"     // V0.thread-issues: the agent's issue_link
 	KindDeployObserved = "deploy.observed"
 	KindSelfDeployed   = "deploy.self" // V0.82
 	KindHostRestarted  = "host.restarted"
@@ -196,7 +198,9 @@ type (
 		Subagents         int
 		PR                *PR
 		PRs               []PR
-		Log               []Event
+		// Issues are the issue URLs gh issue create printed (V0.thread-issues).
+		Issues []string
+		Log    []Event
 		// OpenBash is how many Bash calls run now, any agent's; nil: the
 		// message says nothing of it (V0.no-progress).
 		OpenBash *int
@@ -300,6 +304,7 @@ func init() {
 			p, err := argsOf[PR](in)
 			if err == nil {
 				ChangePRObserved(r.T, p, now) // #32: the PR lives on its change
+				linkIssuesOf(r.T, p, now)     // V0.thread-issues
 			}
 			return Result{}, err
 		}},
@@ -582,6 +587,9 @@ func init() {
 				if p := t.MainPR(); p == nil || p.URL != pr.URL {
 					PRObserved(t, pr, now)
 				}
+			}
+			for _, u := range a.Issues { // V0.thread-issues
+				LinkIssue(t, Issue{URL: u, State: "OPEN", Via: IssueViaCreated}, now)
 			}
 			return Result{Events: a.Log}, nil
 		}},

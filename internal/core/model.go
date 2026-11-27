@@ -65,6 +65,8 @@ type Thread struct {
 	// Changes are the thread's change records (V0.59, decision 0018). A PR
 	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`
+	// Issues are the GitHub issues the thread links (V0.thread-issues).
+	Issues []Issue `json:"issues,omitempty"`
 	// Refs are the host change records the thread shows (#35): observed
 	// branches, one record per repo and branch on the host.
 	Refs []Ref `json:"refs,omitempty"`
@@ -401,6 +403,10 @@ type PR struct {
 	UnresolvedThreads int  `json:"unresolvedThreads,omitempty"`
 	// V0.sensitive-pr: the PR has the GitHub label "sensitive".
 	Sensitive bool `json:"sensitive,omitempty"`
+	// Closes are the issues GitHub says the PR closes, as the poll's
+	// batched read saw them (V0.thread-issues). They move to the thread's
+	// Issues and are not stored on the PR.
+	Closes []Issue `json:"-"`
 }
 
 // PRMissing is the state Fyr observes when GitHub answers that the PR or its

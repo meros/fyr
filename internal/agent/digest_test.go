@@ -212,3 +212,18 @@ func TestTaskBackgroundAndTool(t *testing.T) {
 		t.Fatal("a foreground Bash read as background")
 	}
 }
+
+// V0.thread-issues: an issue URL printed by gh issue create links the issue;
+// gh issue view links nothing.
+func TestDigestIssueFromGhIssueCreate(t *testing.T) {
+	d := newDigest()
+	d.feed(asst(nil, M{"type": "tool_use", "id": "i", "name": "Bash", "input": M{"command": "gh issue create --title x --body y"}}))
+	o := d.feed(result("i", "Creating issue in acme/app\n\nhttps://github.com/acme/app/issues/12\n"))
+	if len(o.IssueURLs) != 1 || o.IssueURLs[0] != "https://github.com/acme/app/issues/12" || o.PRURL != "" {
+		t.Fatalf("issues %v pr %q", o.IssueURLs, o.PRURL)
+	}
+	d.feed(asst(nil, M{"type": "tool_use", "id": "v", "name": "Bash", "input": M{"command": "gh issue view 7"}}))
+	if o := d.feed(result("v", "https://github.com/acme/app/issues/7\n")); len(o.IssueURLs) != 0 {
+		t.Fatalf("gh issue view linked %v", o.IssueURLs)
+	}
+}
