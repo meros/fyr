@@ -135,6 +135,14 @@ func slotNotices(r Reduced) []Notice {
 			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr killed your %s (`%s`) to free memory on this host: the owner marked it rerunnable. Its failure or exit 137 came from that, not from your change. Run the command again: Fyr admits it once memory has recovered and the job fits.", what, class)})
 			continue
 		}
+		if cmd, ok := d["ended"].(string); ok { // V0.oomd-frozen-work
+			what := "heavy job"
+			if d["work"] == true {
+				what = "heavy work"
+			}
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr killed your %s (`%s`): the agents' memory stalled past systemd-oomd's limit, and oomd would have ended this whole thread, you with it, within seconds. Its failure or exit 137 came from that, not from your change. Run it again when you need it: Fyr admits it once memory has recovered and it fits.", what, cmd)})
+			continue
+		}
 		if d["retry"] == true { // V0.guard-wake (decision 0036 E1)
 			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Wake, What: HeldRetryText(str(d["agent"]), str(d["agentType"]))})
 			continue

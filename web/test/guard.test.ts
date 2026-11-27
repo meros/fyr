@@ -102,3 +102,18 @@ test("G11 a host whose guard has done nothing may send events: null; Automation 
   assert.deepEqual(guardLog(calm, title, (iso) => iso), []);
   assert.equal(guardSummary(calm, NOW), "Memory is fine");
 });
+
+// V0.oomd-frozen-work: work the guard killed before systemd-oomd would end its thread reads as such in the history
+// (desktop and phone print this one list), and its lane stops showing it frozen.
+test("G-ended a kill before oomd has its own line and ends the freeze in the chart", () => {
+  const events: GuardEvent[] = [
+    { at: "2026-11-27T11:20:00Z", kind: "freeze", work: "undeclared", thread: "t1", n: 1 },
+    { at: "2026-11-27T11:22:00Z", kind: "ended", work: "undeclared", thread: "t1", headroom: 0 },
+  ];
+  const g = { short: true, max: 8, refreezeSec: 60, events };
+  const lines = guardLog(g, () => "Smoke run", (iso) => iso.slice(11, 16)).map((l) => l.text);
+  assert.equal(lines[0], "Killed undeclared work of Smoke run: memory stalled past oomd's limit, which would have ended the whole thread (0 % free)");
+  const c = guardChart(g, Date.parse("2026-11-27T11:25:00Z"), () => "Smoke run");
+  assert.equal(c.lanes.length, 1);
+  assert.ok(!c.lanes[0].live, "the ended work is not shown as frozen now");
+});

@@ -98,3 +98,10 @@ const (
 	MaxThawsPerHour = 3
 	ThawWindow      = time.Hour
 )
+
+// V0.oomd-frozen-work: OomdEndAfter is how long the agents' stall may stay at
+// or over oomd's limit before the guard ends one thread's heavy work itself.
+// oomd kills after its duration (20 s by default) and takes a whole thread,
+// its agent with it; 10 s leaves the kill time to free memory first. In the
+// load simulation 5 s and 15 s ended as much work and stalled no less.
+const OomdEndAfter = 10 * time.Second

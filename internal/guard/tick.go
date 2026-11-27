@@ -173,6 +173,7 @@ type Can struct {
 	FlagNow    bool
 	Rerun      bool // the owner's rerunnable classes are read
 	Kill       bool // and a job can be killed
+	End        bool // a thread's work can be killed before oomd (V0.oomd-frozen-work)
 	Memory     bool // the signals and the jobs' growth: the memory notice
 }
 
@@ -219,6 +220,9 @@ type State struct {
 	// V0.freeze-cycle-cap: each thread's thaws in the last ThawWindow, jobs
 	// and undeclared work alike.
 	Thaws map[string][]time.Time
+	// V0.oomd-frozen-work: since when the agents' stall is at or over oomd's
+	// limit (zero: it is not).
+	OverOomd time.Time
 }
 
 // clone is s with its own maps and slices, so a tick never writes the
@@ -527,6 +531,9 @@ func (t *tick) freezeGuard() {
 		}
 		t.record(resource.GuardEvent{At: now, Kind: "kept", Work: work, Thread: f.Owner}, sig)
 		t.notify(f.Owner, map[string]any{"waits": true, "work": f.Undeclared})
+	}
+	if t.endBeforeOomd(sig) {
+		return // the next tick sees what the kill freed
 	}
 	switch freezeGate(mem, Stalls(sig), len(thaws)+killed) {
 	case gateQuiet:

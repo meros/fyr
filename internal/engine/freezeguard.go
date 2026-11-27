@@ -25,6 +25,7 @@ func (e *Engine) guardTick(s resource.Snapshot) {
 		FlagNow:    e.UndeclaredFlagNow != nil,
 		Rerun:      e.RerunMatch != nil,
 		Kill:       e.RerunMatch != nil && e.JobKill != nil,
+		End:        e.JobKill != nil,
 		Memory:     e.SlotSignals != nil && e.SlotGrowth != nil,
 	}
 	if !can.Guard && !can.Memory {

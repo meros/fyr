@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // V0.freeze-visible: a job the memory guard froze is the thread's claim,
 // above its running tasks, until the freeze ends.
@@ -55,6 +58,16 @@ func TestFrozenWorkWaits(t *testing.T) {
 	th = reduce(th, Input{Source: Observer(ObsHost), Kind: KindSlotPause, Thread: th.ID, Args: map[string]any{"killed": "yarn smoke", "work": true}})
 	if th.Frozen != nil {
 		t.Fatalf("killed: %+v", th.Frozen)
+	}
+	// V0.oomd-frozen-work: so does the guard's kill before oomd, and the
+	// agent is told what it was and why.
+	th = freeze(idle(), "work")
+	th = reduce(th, Input{Source: Observer(ObsHost), Kind: KindSlotPause, Thread: th.ID, Args: map[string]any{"ended": "yarn check", "work": true}})
+	if th.Frozen != nil {
+		t.Fatalf("ended: %+v", th.Frozen)
+	}
+	if ns := slotNotices(Reduced{Events: []Event{{EventSlot, map[string]any{"ended": "yarn check", "work": true}}}}); len(ns) != 1 || !strings.Contains(ns[0].What, "killed your heavy work (`yarn check`)") || !strings.Contains(ns[0].What, "oomd") {
+		t.Fatalf("notice %+v", ns)
 	}
 
 	// The last task's end ends it: nothing of the thread runs to be frozen.
