@@ -319,3 +319,63 @@ func TestV207CAStopSurvivesARestartAndTheNextStartResumes(t *testing.T) {
 		t.Fatalf("%q", kv.m[stoppedKey])
 	}
 }
+
+// Real processes: RotateUndeclared takes turns between two real child processes
+// via SIGSTOP/SIGCONT without stopping the CLI, and KillJob ends both parts.
+func TestProcStopsRealTurnsAndKill(t *testing.T) {
+	if _, err := exec.LookPath("ps"); err != nil {
+		t.Skip("no ps")
+	}
+	cli := exec.Command("sh", "-c", "sleep 30 & sleep 30 & wait")
+	if err := cli.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { syscall.Kill(cli.Process.Pid, syscall.SIGKILL); cli.Wait() }()
+	reader := &TreeReader{PS: func() (string, error) {
+		b, err := exec.Command("ps", "-A", "-o", TreePS).Output()
+		return string(b), err
+	}}
+	pid := cli.Process.Pid
+	var kids []int
+	for end := time.Now().Add(5 * time.Second); len(kids) < 2 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		tb, ok := reader.Table(time.Now())
+		if !ok {
+			t.Fatal("no process table")
+		}
+		kids = under(tb.kids(), pid)[1:]
+	}
+	if len(kids) < 2 {
+		t.Fatalf("the two workers did not start: %v", kids)
+	}
+	defer func() {
+		for _, p := range kids {
+			syscall.Kill(p, syscall.SIGKILL)
+		}
+	}()
+	a, b := kids[0], kids[1]
+	kv := &memKV{}
+	g := &ProcStops{Trees: reader, CLIs: func() map[string]int { return map[string]int{"t_a": pid} }, KV: kv}
+	units := []Unit{{PID: a}, {PID: b}}
+	stopped := func(s string) bool { return strings.HasPrefix(s, "T") }
+	running := func(s string) bool { return s != "" && !stopped(s) && !strings.HasPrefix(s, "Z") }
+
+	if !g.RotateUndeclared("t_a", units, a) {
+		t.Fatal("first turn did not stop b")
+	}
+	waitState(t, b, stopped, "stopped")
+	waitState(t, a, running, "running")
+	if s := procState(t, pid); stopped(s) {
+		t.Fatalf("the CLI stopped: %q", s)
+	}
+	if !g.RotateUndeclared("t_a", units, b) {
+		t.Fatal("second turn did not stop a")
+	}
+	waitState(t, a, stopped, "stopped")
+	waitState(t, b, running, "running")
+	if n := g.KillJob("t_a", true); n < 2 {
+		t.Fatalf("KillJob killed %d, want at least 2 (both parts)", n)
+	}
+	for _, p := range []int{a, b} {
+		waitState(t, p, func(s string) bool { return s == "" || strings.HasPrefix(s, "Z") }, "exited")
+	}
+}

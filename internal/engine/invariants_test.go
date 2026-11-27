@@ -104,6 +104,13 @@ func TestInvariantThawIntoCriticalNotForGoneOrCeiling(t *testing.T) {
 	if invLines(out, InvThawIntoCritical) != 0 {
 		t.Fatalf("a violation for gone or ceiling:\n%s", out)
 	}
+	// V0.mac-load-parity: on macOS (sysctl, no AgentsStall), host StallCritical counts.
+	macCrit := resource.Signals{Provider: "sysctl", Stall: resource.StallCritical}
+	e.guardRecord(resource.GuardEvent{At: *now, Kind: "thaw", Thread: "t3", Reason: "limit"}, macCrit)
+	e.checkInvariants()
+	if n := invLines(out, InvThawIntoCritical); n != 1 {
+		t.Fatalf("macOS thaw into critical: %d lines:\n%s", n, out)
+	}
 }
 
 func TestInvariantFreezeHeldLong(t *testing.T) {
@@ -175,6 +182,16 @@ func TestInvariantProbeSilent(t *testing.T) {
 	tickFor(e, now, 6*time.Minute)
 	if n := invLines(out, InvProbeSilent); n != 2 || len(invCards(e, InvProbeSilent)) != 1 {
 		t.Fatalf("a second silence: %d lines (want 2), one card while it is open:\n%s", n, out)
+	}
+}
+
+func TestInvariantProbeSilentOnSysctl(t *testing.T) {
+	e, _, now, _, _ := fzEngine(t)
+	e.SlotSignals = func() resource.Signals { return resource.Signals{Provider: "sysctl", CPU: 8, Memory: 16e9} }
+	out := invLog(t, e)
+	tickFor(e, now, InvProbeSilentAfter+time.Minute)
+	if n := invLines(out, InvProbeSilent); n != 1 || !strings.Contains(out.String(), "provider=sysctl") {
+		t.Fatalf("sysctl probe silent: %d lines:\n%s", n, out)
 	}
 }
 

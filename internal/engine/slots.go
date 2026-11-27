@@ -223,7 +223,13 @@ func (e *Engine) GuardNow() {
 	e.mu.Lock()
 	e.guardTrig = e.Now()
 	e.mu.Unlock()
-	e.guardOnce(e.Now(), "psi", "PSI trigger: the agents' memory stall crossed 200 ms in 2 s (critical); the guard runs now")
+	msg := "PSI trigger: the agents' memory stall crossed 200 ms in 2 s (critical); the guard runs now"
+	if e.SlotSignals != nil {
+		if p := e.SlotSignals().Provider; p != "" && p != "cgroups" {
+			msg = "memory stall trigger: memory stalls critically; the guard runs now"
+		}
+	}
+	e.guardOnce(e.Now(), "psi", msg)
 	e.sweepSlots()
 }
 

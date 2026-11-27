@@ -65,6 +65,12 @@ func under(kids map[int][]int, root int) []int {
 // (V0.freeze-old-work; 0 takes none). A detached job left the tree under the
 // CLI and is not seen here.
 func (t procTable) roots(cli int, cut time.Time, minOld uint64) []Root {
+	return t.rootsWith(cli, cut, minOld, nil)
+}
+
+// rootsWith is roots that also skips roots whose subtree holds a service
+// (V0.services-not-jobs, matching ReadRootsWith on hosts with cgroups).
+func (t procTable) rootsWith(cli int, cut time.Time, minOld uint64, service func(string) bool) []Root {
 	if _, ok := t[cli]; !ok {
 		return nil
 	}
@@ -111,6 +117,9 @@ func (t procTable) roots(cli int, cut time.Time, minOld uint64) []Root {
 			continue
 		}
 		out = append(out, Root{PID: p, Cmdline: r.args, RSS: sum(p)})
+	}
+	if service != nil {
+		out = skipServices(out, here, kids, func(p int) string { return t[p].args }, service)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PID < out[j].PID })
 	return out

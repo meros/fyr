@@ -63,7 +63,7 @@ var invTexts = map[string]string{
 	InvThawIntoCritical:  "The guard thawed work while the agents' memory stalled critically (not at the 30 min ceiling, and not because its processes were gone).",
 	InvFreezeHeldLong:    "Work stayed frozen for more than 30 minutes.",
 	InvFreezeCycling:     "One thread was frozen and thawed more than 3 times within an hour.",
-	InvProbeSilent:       "The cgroups provider runs, but the slowdown probe has given no reading for more than 5 minutes.",
+	InvProbeSilent:       "A load provider runs, but the slowdown probe has given no reading for more than 5 minutes.",
 	InvLimitUnderPrior:   "A job's memory.high was written below the prior (the agents' memory budget divided by the slots setting).",
 	InvPSITriggerMissing: "An hour after fyrd started, the scope layout still has no PSI trigger on the agents' memory stall.",
 	InvShortNothingFroze: "Memory has been short and stalling for more than 10 minutes with flagged work the guard may freeze (beside other heavy work, or in two or more parts), and nothing is frozen or held.",
@@ -240,7 +240,11 @@ func (e *Engine) invEvent(ev resource.GuardEvent, sig resource.Signals) {
 	c := &e.inv
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if sig.AgentsStall == resource.StallCritical && ev.Reason != "ceiling" && ev.Reason != "gone" {
+	own := sig.AgentsStall
+	if own == "" && sig.Provider != "cgroups" {
+		own = sig.Stall
+	}
+	if own == resource.StallCritical && ev.Reason != "ceiling" && ev.Reason != "gone" {
 		c.pending = append(c.pending, violation{id: InvThawIntoCritical, evidence: fmt.Sprintf("thread=%s work=%s reason=%s %s", ev.Thread, ev.Work, ev.Reason, guard.SignalsLine(sig))})
 	}
 	if c.thaws == nil {
@@ -307,12 +311,12 @@ func (e *Engine) checkInvariants() {
 			c.pending = append(c.pending, violation{id: InvFreezeHeldLong, evidence: fmt.Sprintf("thread=%s undeclared=%t frozen=%s class=%q %s", f.Owner, f.Undeclared, d.Round(time.Second), f.Class+f.Cmd, guard.SignalsLine(sig))})
 		}
 	}
-	if sig.Provider == "cgroups" && sig.Slowdown == nil {
+	if (sig.Provider == "cgroups" || sig.Provider == "sysctl") && sig.Slowdown == nil {
 		if c.silent.IsZero() {
 			c.silent = now
 		}
 		if d := now.Sub(c.silent); d > InvProbeSilentAfter && first("silent@"+c.silent.Format(time.RFC3339Nano)) {
-			c.pending = append(c.pending, violation{id: InvProbeSilent, evidence: fmt.Sprintf("provider=cgroups no slowdown for %s %s", d.Round(time.Second), guard.SignalsLine(sig))})
+			c.pending = append(c.pending, violation{id: InvProbeSilent, evidence: fmt.Sprintf("provider=%s no slowdown for %s %s", sig.Provider, d.Round(time.Second), guard.SignalsLine(sig))})
 		}
 	} else {
 		c.silent = time.Time{}

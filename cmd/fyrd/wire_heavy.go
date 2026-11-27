@@ -17,7 +17,7 @@ import (
 // wireHeavy makes the heavy-work machinery: the slot pool, the jobs, the services and the sampler.
 //
 // Needs from earlier steps: mgr.
-// Makes: book, detector, groups, guardService, heavyCmds, jobs, n, pool, rerun, sampler, services, stops, svcBook, usettings.
+// Makes: book, detector, groups, heavyCmds, jobs, n, pool, rerun, sampler, services, stops, svcBook, usettings.
 // Order: after wireAgents (w.mgr); wireGuard reads everything it makes.
 func (w *wiring) wireHeavy() {
 	cfg := w.cfg
@@ -99,6 +99,9 @@ func (w *wiring) wireHeavy() {
 		calls.Note(c.Thread, c.Command, now)
 		if class == "" && eng.RerunWaiting(c.Thread) {
 			class = rerun.Match("", c.Command) // a killed undeclared job's rerun is admitted too
+			if text == "" {
+				text = class
+			}
 		}
 		jobs.Saw(c.Thread, class)
 		groups.Seen(c.Thread, text)
@@ -117,16 +120,6 @@ func (w *wiring) wireHeavy() {
 		Rerun: rerun} // V0.rerun-classes
 	if stops != nil {
 		sampler.Control = stops
-	}
-	// Decision 0036 (D), E4: the guard never freezes or kills work that holds
-	// one of its thread's services (a dev stack, `docker compose up`).
-	guardService := func(th string) bool {
-		for _, sv := range services.Of(th) {
-			if groups.Holds(th, sv.PID) {
-				return true
-			}
-		}
-		return false
 	}
 	// V0.guard-tidy: a rotation of a thread no longer flagged does nothing.
 	groups.Live = func(thread string) bool {
@@ -160,7 +153,6 @@ func (w *wiring) wireHeavy() {
 	w.detector = detector
 	w.groups = groups
 	w.stops = stops
-	w.guardService = guardService
 	w.heavyCmds = heavyCmds
 	w.jobs = jobs
 	w.n = n

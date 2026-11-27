@@ -106,9 +106,21 @@ type Elders struct {
 	Service func(cmdline string) bool
 }
 
-// agentShell reports the CLI's wrapper around one Bash command.
+// agentShell reports the CLI's wrapper around one Bash command: Claude's shell
+// snapshot wrapper, or a direct shell `-c`/`-lc` invocation (e.g. agy).
 func agentShell(cmdline string) bool {
-	return strings.Contains(cmdline, "/shell-snapshots/snapshot-")
+	if strings.Contains(cmdline, "/shell-snapshots/snapshot-") {
+		return true
+	}
+	f := strings.Fields(cmdline)
+	if len(f) < 3 {
+		return false
+	}
+	switch filepath.Base(f[0]) {
+	case "sh", "bash", "zsh":
+		return f[1] == "-c" || f[1] == "-lc"
+	}
+	return false
 }
 
 // ReadRoots are the job roots of thread's cgroup for an episode whose first

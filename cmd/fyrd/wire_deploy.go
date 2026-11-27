@@ -281,7 +281,15 @@ func (w *wiring) wireBackground() {
 	guardWake := make(chan struct{}, 1)
 	psiScope := tree.Layout() == cgroup.LayoutScope // V0.load-invariants: psi-trigger-missing
 	eng.PSITrigger(psiScope, false)
-	if err := cgroup.WatchAgentsPressure(ctx, tree, func() {
+	if tree == nil {
+		sampler.OnCritical = func() {
+			select {
+			case guardWake <- struct{}{}:
+			default:
+			}
+		}
+		log.Printf("guard: no cgroup tree; critical memory stalls wake the guard on each %v sample (fallback every %v)", cgroup.ProbeEvery, engineTick)
+	} else if err := cgroup.WatchAgentsPressure(ctx, tree, func() {
 		select {
 		case guardWake <- struct{}{}:
 		default:

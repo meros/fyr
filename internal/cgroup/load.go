@@ -169,6 +169,10 @@ type Sampler struct {
 	ServiceBook ServiceBook
 	// V0.thread-invariants: invariant view fallback when slots are off.
 	Invariants func() *resource.Invariants
+	// OnCritical runs when a host without cgroups (macOS, Linux without
+	// delegation) reads a critical memory stall on Tick, waking the guard
+	// immediately as the PSI trigger does with cgroups. Optional.
+	OnCritical func()
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -180,6 +184,9 @@ type Sampler struct {
 	// refaults: the agents' workingset_refault_file at refaultAt (V0.admission-tidy)
 	refaults  uint64
 	refaultAt time.Time
+	// critNoted / wasCrit: rate-limit OnCritical to entry into StallWorst or once per TriggerFresh.
+	critNoted time.Time
+	wasCrit   bool
 }
 
 // Get returns the load, read now or at most MinGap ago; the slots and the
@@ -286,6 +293,17 @@ func (s *Sampler) Tick() {
 		s.Services.Tick(s.Tree, ids)
 	}
 	s.detect(l)
+	if s.Tree == nil && s.OnCritical != nil {
+		now := s.now()
+		if l.MemoryStall == StallWorst {
+			if !s.wasCrit || now.Sub(s.critNoted) >= resource.TriggerFresh {
+				s.wasCrit, s.critNoted = true, now
+				s.OnCritical()
+			}
+		} else {
+			s.wasCrit = false
+		}
+	}
 	s.Tree.ReclaimCache(s.now())               // V0.cache-reclaim: cache goes before memory.high throttles a task
 	s.Tree.SplitThreads()                      // V0.job-limits: each thread's CLI in its cli/ leaf
 	s.Tree.ShadowThreadBudget(s.threadHolds()) // decision 0032 slice 3, V0.share-shadow: measured, not enforced
@@ -566,11 +584,13 @@ func (s *Sampler) get() Load {
 }
 
 // Control is a host's job control as the sampler and the guard's wiring ask
-// it: whether a thread's work is paused, whether its frozen job or undeclared
-// work has no process left, and the tick that follows the holders.
-// *JobGroups (the cgroup tree) and *ProcStops (the process table) are one each.
+// it: whether a thread's work is paused, whether it holds a given pid, whether
+// its frozen job or undeclared work has no process left, and the tick that
+// follows the holders. *JobGroups (the cgroup tree) and *ProcStops (the
+// process table) are one each.
 type Control interface {
 	Frozen(thread string) bool
+	Holds(thread string, pid int) bool
 	JobEmpty(thread string) bool
 	UndeclaredEmpty(thread string) bool
 	Tick(held []string)
