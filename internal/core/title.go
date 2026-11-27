@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -27,7 +28,47 @@ const (
 	TitleAutoStart = "start"
 	// TitleAutoDone: both were asked (or the goal came first).
 	TitleAutoDone = "done"
+	// TitleAutoAgain: the goal title found no conversation to read; it is
+	// asked again at the end of the next run (V0.press-thread-title (3)).
+	TitleAutoAgain = "again"
 )
+
+// pressPrefix starts the message a press sends its agent (PressNotice).
+const pressPrefix = "[Fyr] The owner pressed "
+
+// PressNotice is the message an agent's press sends: Fyr's frame (what was
+// pressed, on what) and the press's prompt on the lines after it.
+func PressNotice(label, on, prompt string) string {
+	return fmt.Sprintf("%s%q on %s.\n%s", pressPrefix, label, on, prompt)
+}
+
+// PressBrief reads a PressNotice back: the press's label and its prompt,
+// without the frame. ok is false for any other message.
+func PressBrief(text string) (label, prompt string, ok bool) {
+	first, rest, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	q, found := strings.CutPrefix(first, pressPrefix)
+	if !found {
+		return "", "", false
+	}
+	quoted, err := strconv.QuotedPrefix(q)
+	if err != nil {
+		return "", "", false
+	}
+	if label, err = strconv.Unquote(quoted); err != nil {
+		return "", "", false
+	}
+	return strings.TrimSpace(label), strings.TrimSpace(rest), true
+}
+
+// PlaceholderTitle is a thread's title until a model makes one: the first
+// message's line (TitleFrom), or the press's label when a press started
+// the thread (V0.press-thread-title (2)).
+func PlaceholderTitle(text string) string {
+	if label, _, ok := PressBrief(text); ok && label != "" {
+		return TitleFrom(label)
+	}
+	return TitleFrom(text)
+}
 
 // ByFyr is the made title Fyr asked for by itself (V0.auto-title).
 const ByFyr = "fyr"
@@ -49,6 +90,9 @@ type TitleMade struct {
 	Error string `json:"error,omitempty"`
 	// Auto is the moment of an automatic title: TitleAutoStart or TitleAutoGoal.
 	Auto string `json:"auto,omitempty"`
+	// Again: the call failed because the thread had no conversation yet,
+	// so a goal title stays due (V0.press-thread-title (3)).
+	Again bool `json:"again,omitempty"`
 }
 
 func init() {
@@ -71,6 +115,9 @@ func reduceTitleMade(r Rec, in Input, _ time.Time) (Result, error) {
 			why = "the model gave no title"
 		}
 		if x.By == ByFyr {
+			if x.Again && x.Auto == TitleAutoGoal && r.T.TitleBy == "" && r.T.TitleAuto == TitleAutoDone {
+				r.T.TitleAuto = TitleAutoAgain // V0.press-thread-title (3): asked again at the next run's end
+			}
 			return Result{}, nil // V0.auto-title (4): nobody asked, so a failure is quiet; the title stays
 		}
 		return Result{Events: []Event{{"effect.error", map[string]any{"kind": "title", "error": TitleFailed(why)}}}}, nil
@@ -114,6 +161,9 @@ func titleAutoAfter(before, t *Thread, in Input, now time.Time) []Effect {
 	switch {
 	case goal:
 		t.TitleAuto = TitleAutoDone
+		return []Effect{{Kind: EffectTitle, TitleAuto: TitleAutoGoal}}
+	case t.TitleAuto == TitleAutoAgain && in.Kind == KindRunEnded && before.Running && !t.Running:
+		t.TitleAuto = TitleAutoDone // V0.press-thread-title (3)
 		return []Effect{{Kind: EffectTitle, TitleAuto: TitleAutoGoal}}
 	case t.TitleAuto == TitleAutoFirst && in.Kind == KindRunEnded && before.Running && !t.Running,
 		t.TitleAuto == TitleAutoFirst && in.Kind == KindDigest && t.Running && t.RunStartedAt != nil && now.Sub(*t.RunStartedAt) >= StartTitleAfter:

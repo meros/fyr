@@ -682,7 +682,7 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 	case RunFyr:
 		res.Effects = []Effect{{Kind: EffectRun, Allow: true, Press: press, Request: &EffectReq{Action: a.Effect, Args: req}}}
 	case RunAgent:
-		msg := fmt.Sprintf("[Fyr] The owner pressed %q on %s.\n%s", a.Label, title, a.Prompt)
+		msg := PressNotice(a.Label, title, a.Prompt)
 		// V0.71: every press runs until its result lands, so a second
 		// press is "It is running"; a new thread follows this one.
 		if a.In == "new" {
