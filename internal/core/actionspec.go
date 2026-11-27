@@ -283,7 +283,7 @@ func (h Holder) EffectArgs(a ActionSpec) map[string]any {
 // its view is a failure line only; it moves ActivityAt so the owner sees it.
 func (h Holder) Started(a ActionSpec, now time.Time) {
 	h.Runs = append(h.Runs, ActionRun{On: h.On, Action: a.ID, Label: a.Label, By: ByOwner, At: now, Running: true})
-	h.Runs = keepLast(h.Runs, maxRuns)
+	h.Runs = trimRuns(h.Runs, h.Offers)
 	if h.Change != nil {
 		h.Change.UpdatedAt = now
 	}
@@ -658,6 +658,11 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 		// V0.71: a page or a double tap that sends one press twice
 		return Result{}, &Rejection{Code: RejectUnavailable, Reason: "It was just pressed"}
 	}
+	if last := lastRunOf(h.Runs, act.ID, h.On); act.Request && last != nil && !last.Running && last.OK && args["again"] != true {
+		// V0.run-card-keeps-run (2): a succeeded card runs again only after Fyr's
+		// confirmation, which sends again: true (V0.run-card-rerun).
+		return Result{}, &Rejection{Code: RejectUnavailable, Reason: "It already succeeded; press Run again on its card and confirm"}
+	}
 	a, title := *act, "this thread"
 	if h.Change != nil {
 		on, title = h.Change.ID, fmt.Sprintf("the change %q", h.Change.Title)
@@ -704,6 +709,36 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 // PressTwice is how close a second press of one action counts as the same
 // press (V0.71).
 const PressTwice = 2 * time.Second
+
+// trimRuns keeps a holder's newest maxRuns runs, and the newest run of every
+// action it still offers (V0.run-card-keeps-run): a standing card whose run is
+// dropped looks as if it never ran, so it would wait in the dock again with a
+// plain Run, and a running one could be started a second time.
+func trimRuns(runs []ActionRun, offers []ActionSpec) []ActionRun {
+	if len(runs) <= maxRuns {
+		return runs
+	}
+	standing := map[string]bool{}
+	for _, o := range offers {
+		standing[o.ID] = true
+	}
+	keep := make([]bool, len(runs))
+	seen := map[string]bool{}
+	for i := len(runs) - 1; i >= 0; i-- {
+		r := runs[i]
+		if len(runs)-i <= maxRuns || (standing[r.Action] && !seen[r.On+"\x00"+r.Action]) || r.Running {
+			keep[i] = true
+		}
+		seen[r.On+"\x00"+r.Action] = true
+	}
+	out := runs[:0]
+	for i, r := range runs {
+		if keep[i] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
 func lastRunOf(runs []ActionRun, action, on string) *ActionRun {
 	for i := len(runs) - 1; i >= 0; i-- {

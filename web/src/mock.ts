@@ -1414,6 +1414,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const o = offers?.find((x) => x.id === args.action);
       if (!o) return { ok: false, error: `no action ${args.action}` };
       if (o.digest !== args.digest) return { ok: false, error: "The action changed since you saw it; look at it again." };
+      // V0.run-card-keeps-run (2): as on the host, a succeeded run request runs again only after its confirmation.
+      const prev = [...((ch ? ch.runs : on === "view" ? t.live?.runs : t.runs) ?? [])].reverse().find((r) => r.action === o.id);
+      if (o.request && prev && !prev.running && prev.ok && args.again !== true) return { ok: false, error: "It already succeeded; press Run again on its card and confirm" };
       if (o.run === "script" || o.run === "fyr") {
         const at = new Date(clock()).toISOString();
         const run = { action: o.id, label: o.label, by: "owner", at, running: true, ok: false };

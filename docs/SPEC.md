@@ -1070,7 +1070,7 @@ Each field a reducer writes on behalf of a sender names who may write it (decisi
 
 - **Several rows of one field** all apply: a write passes only when every row allows it.
 - **Who may send a kind** is the kind's `from` (5.1): the owner's commands accept only the owner, except `thread.create` and `thread.send`, which another thread's agent sends too (5.12); the agent's tools only the agent; facts only observers and effect results; a Rule's `then` only kinds that accept `rule`.
-- **Built limits.** At most 50 changes per thread (3.13), 12 actions per holder and 10 runs kept (5.13), 20 watches by the agent per thread (7.1), 8 Rule firings per Input (7.3), 50 queued notices (5.14). A thread's agent may start at most 12 threads an hour and send at most 30 messages an hour to other threads (V0.22).
+- **Built limits.** At most 50 changes per thread (3.13), 12 actions per holder and 10 runs kept, beside the last run of each action that stands (5.13, V0.run-card-keeps-run), 20 watches by the agent per thread (7.1), 8 Rule firings per Input (7.3), 50 queued notices (5.14). A thread's agent may start at most 12 threads an hour and send at most 30 messages an hour to other threads (V0.22).
 
 **Post-v1** (several principals and quotas):
 - `coordinator(id)`: an Action only if its valid grant (5.8) allows the Action, every target entity and the host.

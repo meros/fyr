@@ -197,7 +197,8 @@ export function rerunAsk(o: Offer, state: CardState, opts: { host?: string } = {
 }
 
 /** V0.run-card-rerun: press a Run card's run button. A succeeded card asks through Fyr's confirmation first so a stray
- *  click or tap after a layout shift cannot re-run it. Returns true when action.run was sent. */
+ *  click or tap after a layout shift cannot re-run it, and only then sends again: true, without which the host refuses
+ *  to run a succeeded card again (V0.run-card-keeps-run (2)). Returns true when action.run was sent. */
 export async function pressRunCard(
   o: Offer,
   state: CardState,
@@ -207,7 +208,7 @@ export async function pressRunCard(
 ): Promise<boolean> {
   const a = rerunAsk(o, state, opts);
   if (a && !(await ask(a))) return false;
-  onRun("action.run", pressArgs("thread", o));
+  onRun("action.run", a ? { ...pressArgs("thread", o), again: true } : pressArgs("thread", o));
   return true;
 }
 
