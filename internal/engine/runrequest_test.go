@@ -150,7 +150,7 @@ func TestRunRequestLongRunTellsStart(t *testing.T) {
 	id := h.create("x")
 	h.wait(id, "done", state(core.Done))
 	callAs(t, h.e, id, "run_request", map[string]any{"command": "make test", "why": "Run the tests"})
-	callAs(t, h.e, id, "run_request", map[string]any{"command": "ls", "why": "List it"})
+	callAs(t, h.e, id, "run_request", map[string]any{"command": "ls", "why": "List it", "alongside": true})
 	th, _ := h.e.Thread(id)
 	long, short := findOffer(th.Offers, "run-1"), findOffer(th.Offers, "run-2")
 
@@ -225,5 +225,25 @@ func TestActionEventsRecordDeviceThroughEngine(t *testing.T) {
 	}
 	if !hasEvent(h.events(id), "action", `"actor":"device:dev_xyz"`) || !hasEvent(h.events(id), "action", `"front":"FRNT-1111-1111-1111"`) {
 		t.Fatalf("stored action dismiss event missing actor/front: %+v", h.events(id))
+	}
+}
+
+// V0.run-card-replaces: a new card replaces the agent's earlier one that
+// never ran, and the tool's reply names it.
+func TestRunRequestToolSaysWhatItReplaced(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	callAs(t, h.e, id, "run_request", map[string]any{"command": "old", "why": "Create the rule (old script)"})
+	out, isErr := callAs(t, h.e, id, "run_request", map[string]any{"command": "new", "why": "Create the rule (fixed script)"})
+	if isErr || !strings.Contains(out, `replaced your earlier cards that the owner had not run ("Create the rule (old script)")`) {
+		t.Fatalf("reply: %s", out)
+	}
+	th, _ := h.e.Thread(id)
+	if len(th.Offers) != 1 || th.Offers[0].Why != "Create the rule (fixed script)" {
+		t.Fatalf("offers: %+v", th.Offers)
+	}
+	if !hasEvent(h.events(id), "action", `"replaced":true`) {
+		t.Fatal("no replaced event in the log")
 	}
 }

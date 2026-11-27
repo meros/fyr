@@ -39,7 +39,7 @@ func TestRunRequestDeclares(t *testing.T) {
 		t.Fatalf("attention: %+v", a)
 	}
 	// The next one gets the next id; a root one differs in the digest.
-	th2, _, err := runReq(t, th, RunRequestArgs{Command: "nixos-rebuild switch", Why: "Apply the config", Root: true})
+	th2, _, err := runReq(t, th, RunRequestArgs{Command: "nixos-rebuild switch", Why: "Apply the config", Root: true, Alongside: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestRunRequestSameIDIsANewCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, res, err := runReq(t, th, RunRequestArgs{ID: "mount", Command: "false", Why: "second"})
+	th, res, err := runReq(t, th, RunRequestArgs{ID: "mount", Command: "false", Why: "second", Alongside: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,5 +321,56 @@ func TestRunRequestSameIDIsANewCard(t *testing.T) {
 	}
 	if d := res.Events[0].Data.(map[string]any); d["action"] != "mount-2" {
 		t.Fatalf("data: %+v", d)
+	}
+}
+
+// V0.run-card-replaces: a new card replaces the agent's earlier ones that
+// never ran, so the dock never offers a command the agent has moved past.
+// One that ran, an optional chip, the playbook's deploy card and a card
+// asked alongside stay.
+func TestRunRequestReplacesWaitingCards(t *testing.T) {
+	th, _, _ := runReq(t, requestThread(), RunRequestArgs{Command: "old-script", Why: "Create the rule (old)"})
+	th, _, _ = runReq(t, th, RunRequestArgs{Command: "ls", Why: "Ran already", Alongside: true})
+	nt, _, err := pressReq(t, th, KindActionPress, Args{"on": OnThread, "action": "run-2", "digest": th.Offers[1].Digest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	th = nt
+	th.Offers = append(th.Offers, ActionSpec{ID: PlaybookDeployPrefix + "prod", Label: "Run", Run: RunScript, Argv: RunArgv("deploy"), Request: true, Command: "deploy", Why: "Deploy"})
+	th, _, _ = runReq(t, th, RunRequestArgs{Command: "chip", Why: "A chip", Optional: true})
+	if len(th.Offers) != 4 {
+		t.Fatalf("an optional chip replaced a card: %+v", th.Offers)
+	}
+	th, res, err := runReq(t, th, RunRequestArgs{Command: "new-script", Why: "Create the rule (fixed)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, o := range th.Offers {
+		ids = append(ids, o.ID)
+	}
+	if strings.Join(ids, ",") != "run-2,deploy-prod,run-3,run-4" {
+		t.Fatalf("offers: %v", ids)
+	}
+	if p := PendingRequest(th); p == nil || p.ID != "deploy-prod" {
+		t.Fatalf("pending: %+v", p)
+	}
+	if rep, _ := res.Reply.(OfferReply); len(rep.Replaced) != 1 || rep.Replaced[0] != "Create the rule (old)" {
+		t.Fatalf("reply: %+v", res.Reply)
+	}
+	if len(res.Events) != 2 || res.Events[0].Type != "action" || res.Events[1].Type != EventRunRequested {
+		t.Fatalf("events: %+v", res.Events)
+	}
+	if d := res.Events[0].Data.(map[string]any); d["action"] != "run-1" || d["replaced"] != true || d["dismissed"] != nil {
+		t.Fatalf("replaced event: %+v", d)
+	}
+	// The agent replaced it itself: no notice that the owner chose Not now.
+	if ns := resultNotices(Reduced{Events: res.Events}); len(ns) != 0 {
+		t.Fatalf("notices: %+v", ns)
+	}
+	// Asked alongside, the waiting card stays.
+	th, res, _ = runReq(t, th, RunRequestArgs{Command: "other", Why: "Also needed", Alongside: true})
+	if len(th.Offers) != 5 || len(res.Events) != 1 {
+		t.Fatalf("alongside: %+v %+v", th.Offers, res.Events)
 	}
 }

@@ -146,7 +146,7 @@ func reduceStageMoment(r Rec, in Input, now time.Time) (Result, error) {
 		if slices.Contains(c.Staged, MomentRun(a.Stage)) {
 			return Result{}, nil
 		}
-		res, err := openRunRequest(t, RunRequestArgs{ID: "deploy-" + a.Stage, Command: a.Command, Cwd: a.Cwd,
+		res, err := openRunRequest(t, RunRequestArgs{ID: PlaybookDeployPrefix + a.Stage, Command: a.Command, Cwd: a.Cwd,
 			Why: clipWhy(fmt.Sprintf("Deploy %s to %s (the project's playbook)", name, a.Stage))}, now)
 		if err != nil {
 			return Result{}, err

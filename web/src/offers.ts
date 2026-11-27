@@ -338,6 +338,8 @@ export function actionEventLine(d: Record<string, unknown> | undefined): { line:
   if (d?.request) {
     // V0.149 (6): a run request's lines name its why
     const why = String(d.why ?? d.label ?? "the command");
+    // V0.run-card-replaces: the agent's newer card took this one's place before it ran
+    if (d.replaced) return { line: `Replaced by a newer card: “${why}”`, ok: true };
     if (d.dismissed) return { line: d.ran ? `You closed “${why}”` : `You chose Not now for “${why}”`, ok: true };
     if (!d.ended) return { line: `You ran “${why}”${d.root ? " as root" : ""}`, ok: true };
     const ok = !!d.ok;
