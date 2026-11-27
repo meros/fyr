@@ -1,7 +1,7 @@
 // Background work (SPEC 0.5 V0.16): subagents and background tasks of a thread. Pure.
 
 import type { TaskDTO, Thread } from "./types.ts";
-import { clockTime, relTime } from "./format.ts";
+import { clockTime, relTime, span } from "./format.ts";
 
 function ts(s: string | null | undefined): number {
   const n = s ? Date.parse(s) : NaN;
@@ -45,10 +45,13 @@ function runningLabel(running: TaskDTO[]): string {
   return running.length === 1 ? "1 background command" : `${running.length} background tasks`;
 }
 
-/** V0.195: "no CPU use since 09:19" while a background command sits quiet, else "". */
-function quietNote(running: TaskDTO[]): string {
-  const since = running.map((t) => t.quietSince).filter(Boolean).sort()[0];
-  return since ? `no CPU use since ${clockTime(since)}` : "";
+/** V0.stall-on-row (1): "Waiting on <task>: no progress for 35 min" while a background command Fyr found quiet waits,
+ * else "". It leads the line, so the cut end of a row never hides it; without a clock it is the host's reason. */
+function stallLine(running: TaskDTO[], now?: number): string {
+  const quiet = running.filter((t) => isCommand(t) && t.quietSince).sort((a, b) => ts(a.quietSince) - ts(b.quietSince))[0];
+  if (!quiet) return "";
+  const head = `Waiting on ${quiet.description || quiet.id}: no progress`;
+  return now === undefined ? head : `${head} for ${span(now - ts(quiet.quietSince))}`;
 }
 
 /** "143k", "1.2M", "980". */
@@ -71,9 +74,12 @@ export function taskStats(t: TaskDTO): string {
  * CLI's summary of a stopped agent is only its description, which reads as a finished one. */
 export function taskLine(t: TaskDTO): string {
   if (t.status === "running") {
-    if (t.quietSince) return `No CPU use since ${clockTime(t.quietSince)}`;
+    if (t.quietSince) return `No progress since ${clockTime(t.quietSince)}`;
     return t.activity || (t.background ? "Running" : "Starting");
   }
+  // V0.stall-on-row (2): ended, its report still on its way, or lost.
+  if (t.reportLost) return "Its report will not come";
+  if (t.reportDue) return "Report due";
   if (t.status === "completed") return t.summary || t.activity || "Finished";
   const word = t.status === "failed" ? "Failed" : "Stopped";
   const why = t.summary && t.summary !== t.description ? t.summary : "";
@@ -115,13 +121,14 @@ export function agentsSummary(tasks: TaskDTO[] | null | undefined): string {
 }
 
 /** The second part of a Working-section row: waiting reads the reason and the newest activity; working adds "· N agents". */
-export function workingLine(t: Thread): string {
+export function workingLine(t: Thread, now?: number): string {
   const running = groupTasks(t.tasks).running;
   if (t.attention.state === "waiting") {
+    const stall = stallLine(running, now);
+    if (stall) return stall;
     const newest = [...running].sort((a, b) => ts(b.updatedAt) - ts(a.updatedAt))[0];
     const reason = t.attention.reason || runningLabel(running);
-    const more = quietNote(running) || newest?.activity;
-    return more ? `${reason} · ${more}` : reason;
+    return newest?.activity ? `${reason} · ${newest.activity}` : reason;
   }
   // V0.ci-wait-moves: every row in Moving says why it is there; a run with no activity yet says "Working", a start
   // "Starting" (the host's reason), never the project, which the row's first line already names.
@@ -134,6 +141,7 @@ export function taskEventText(d: { kind?: string; description?: string; status?:
   const what = d.description || "agent";
   if (d.kind === "started") return `Agent started: ${what}`;
   if (d.kind === "quiet") return `No CPU use for ${d.minutes ?? 0} min while waiting for ${what}. The agent was asked to check.`;
+  if (d.kind === "reportLost") return `No report from ${what} after ${d.minutes ?? 0} min: it will not come. The agent was told.`;
   const verb = d.status === "failed" ? "failed" : d.status === "stopped" ? "stopped" : "finished";
   return `Agent ${verb}: ${d.summary || what}`;
 }
@@ -153,6 +161,8 @@ export function waitLine(t: Thread, now: number): string {
   const running = groupTasks(t.tasks).running;
   const commands = running.filter(isCommand);
   if (t.running || !commands.length) return "";
+  const stall = stallLine(running, now);
+  if (stall) return stall;
   const started = commands.map((c) => c.startedAt).filter(Boolean).sort()[0];
-  return [t.attention.reason || runningLabel(running), relTime(started, now), quietNote(running)].filter(Boolean).join(" · ");
+  return [t.attention.reason || runningLabel(running), relTime(started, now)].filter(Boolean).join(" · ");
 }

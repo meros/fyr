@@ -120,6 +120,9 @@ export interface TaskDTO {
   /** V0.subagent-timeline: the Task/Agent call that started it */
   toolUseId?: string;
   quietSince?: string;
+  /** V0.stall-on-row (2): the subagent ended saying its report comes later; reportLost: it will not come. */
+  reportDue?: string;
+  reportLost?: boolean;
 }
 
 /** V0.wakeups-via-watch, V0.quota-reset-wake: one armed wake-up on a thread. */

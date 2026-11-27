@@ -290,6 +290,11 @@ type Task struct {
 	// V0.quiet-remote-wait: the command visibly waits on a remote system
 	// (RemoteWait), so its quiet is judged over QuietRemoteAfter.
 	RemoteWait bool `json:"remoteWait,omitempty"`
+	// V0.stall-on-row (2): ReportDue is when a subagent ended saying its
+	// report comes later (the CLI's SubagentHandback); ReportLost: it did
+	// not come within ReportLostAfter and the agent was told.
+	ReportDue  *time.Time `json:"reportDue,omitempty"`
+	ReportLost bool       `json:"reportLost,omitempty"`
 }
 
 // RunningTasks counts the conversation's running tasks.

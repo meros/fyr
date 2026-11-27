@@ -36,6 +36,7 @@ const (
 	ClaimGate         = "gate"
 	ClaimFrozen       = "frozen"
 	ClaimTasks        = "tasks"
+	ClaimReport       = "report"
 	ClaimSlot         = "slot"
 	ClaimNeed         = "need"
 	ClaimRunRequest   = "run-request"
@@ -52,7 +53,7 @@ const (
 // attention. Claims returns them in this order.
 var ClaimOrder = []string{
 	ClaimAsk, ClaimHandover, ClaimQuota, ClaimFailure, ClaimUnresponsive, ClaimNoProgress,
-	ClaimRun, ClaimStarting, ClaimMachine, ClaimDelivering, ClaimGate, ClaimFrozen, ClaimTasks, ClaimSlot,
+	ClaimRun, ClaimStarting, ClaimMachine, ClaimDelivering, ClaimGate, ClaimFrozen, ClaimTasks, ClaimReport, ClaimSlot,
 	ClaimNeed, ClaimRunRequest, ClaimCommand, ClaimMerging, ClaimSettleOffer,
 	ClaimCI, ClaimWatch, ClaimWaking, ClaimRule,
 }
@@ -162,6 +163,10 @@ func claims(t *Thread, now time.Time, on func(repo string) bool, counts func(Rul
 	}
 	if n := t.RunningTasks(); n > 0 {
 		moving(ClaimTasks, Waiting, waitReason(t, n))
+	}
+	if k := reportWait(t); k != nil {
+		// V0.stall-on-row (2): a subagent's report on its way, or lost.
+		moving(ClaimReport, Waiting, reportText(k))
 	}
 	if t.SlotQueued {
 		// V0.slot-queued-waits: the host holds a heavy job until it has room.

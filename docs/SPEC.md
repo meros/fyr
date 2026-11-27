@@ -1410,6 +1410,7 @@ In v0 the residence host lists what a thread waits on as **claims** (`core.Claim
 | 11 | gate | moving | waiting | a heavy command is held at the gate |
 | 11a | frozen | moving | waiting | the memory guard holds some of the thread's work frozen, "Frozen by Fyr: memory is short on host-a; it resumes when memory recovers" (V0.freeze-visible) |
 | 12 | tasks | moving | waiting | a background task or subagent runs |
+| 12a | report | moving | waiting | a subagent ended saying it hands back its report later: "Waiting for the report of <task>", then for one turn "No report from <task>: it will not come" once `ReportLostAfter` (1 h) passed with nothing of the thread running (V0.stall-on-row) |
 | 13 | slot | moving | waiting | a heavy job waits for room on the host |
 | 14 | need | yours | blocked | a change is ready to merge, or stopped on a failure |
 | 15 | run-request | yours | blocked | a command the agent asked the owner to run |

@@ -86,6 +86,14 @@ func TestReportThatComesEndsTheWait(t *testing.T) {
 	if k := findTask(th3, "a1"); k.ReportDue != nil {
 		t.Fatalf("resumed subagent still due: %+v", k)
 	}
+	// Settled: nothing waits for it, nothing is told.
+	sl := *th
+	sl.Tasks = append([]Task(nil), th.Tasks...)
+	sl.Settle.At = &ct0
+	th4, res4 := fstep(t, &sl, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0.Add(ReportLostAfter))
+	if wakes(res4) || findTask(th4, "a1").ReportDue != nil {
+		t.Fatalf("a settled thread waits for a report: %+v", findTask(th4, "a1"))
+	}
 	// Its own background command still runs: no clock, no notice.
 	start := ct0
 	th.Tasks = append(th.Tasks, Task{ID: "b1", Description: "fetch", Type: "local_bash", Status: TaskRunning, Background: true, StartedAt: &start})
