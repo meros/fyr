@@ -2072,7 +2072,7 @@ Row, CompactRow, DecisionRow, Section, AwayStrip, Group, Badge, Panel, Card, Dec
 - **Acknowledgement.** Opening the pane acknowledges the coordinator's failure (`coordinator.acknowledge`).
 
 ### 13.5 Thread view
-- **Header.** Title, state badge, one PR chip per open PR (clicking opens that PR in the PR tab, V0.multi-pr), profile, host chip (only with more than one host), the coordinator that last acted on it, and the Actions Snooze and Settle.
+- **Header.** Title, state badge, one PR chip per open PR (clicking opens that PR in the PR tab, V0.multi-pr), one issue chip per linked issue (clicking opens it on GitHub, V0.thread-issues), profile, host chip (only with more than one host), the coordinator that last acted on it, and the Actions Snooze and Settle.
 - **Tabs.** Conversation · Changes · PR (or `PRs (N)` with more than one non-dismissed PR, V0.multi-pr).
   - **Conversation:** messages, runs with tools and subagents collapsed, a filmstrip per run, `effect.result` lines, and the Decision card docked at the end. The filmstrip shows the image content blocks of the run's `tool_result` messages, from any tool (for example the agent's own Playwright MCP server); the `claude` module stores them as attachments of the run.
   - **Changes:** the branch diff against its base, from checkpoints and git (`git` module). The owner can comment on picked diff lines and send the comments to the agent as one message (V0.diff-line-comments).

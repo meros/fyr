@@ -40,6 +40,8 @@ type digestOut struct {
 	Subagents int // added
 	PRURL     string
 	PRURLs    []string
+	// IssueURLs are the issues gh issue create printed (V0.thread-issues).
+	IssueURLs []string
 	// OpenBash is the count of running Bash calls when this message
 	// changed it, else nil (V0.no-progress).
 	OpenBash *int
@@ -100,6 +102,13 @@ func (d *digest) feed(m map[string]any) digestOut {
 			}
 			ti := d.tools[id]
 			cmd, _ := ti.input["command"].(string)
+			if ti.name == "Bash" && strings.Contains(cmd, "gh issue create") { // V0.thread-issues
+				for _, u := range createdIssues(resultText(b["content"])) {
+					if !containsStr(o.IssueURLs, u) {
+						o.IssueURLs = append(o.IssueURLs, u)
+					}
+				}
+			}
 			if ti.name == "Bash" && strings.Contains(cmd, "gh pr create") {
 				for _, u := range createdPRs(resultText(b["content"])) {
 					o.PRURL = u
@@ -128,6 +137,18 @@ func createdPRs(out string) []string {
 	var urls []string
 	for _, line := range strings.Split(out, "\n") {
 		if u, ok := core.CanonicalPR(strings.TrimSpace(line)); ok && !containsStr(urls, u) {
+			urls = append(urls, u)
+		}
+	}
+	return urls
+}
+
+// createdIssues are the unique issue URLs gh issue create printed on their
+// own lines, in order (V0.thread-issues).
+func createdIssues(out string) []string {
+	var urls []string
+	for _, line := range strings.Split(out, "\n") {
+		if u, ok := core.CanonicalIssue(strings.TrimSpace(line)); ok && !containsStr(urls, u) {
 			urls = append(urls, u)
 		}
 	}

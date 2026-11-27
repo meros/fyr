@@ -290,6 +290,11 @@ func register(a *Action) {
 				if by == ByOwner && (strings.HasPrefix(in.Actor, "device:") || strings.HasPrefix(in.Actor, "local:")) {
 					r.T.LastAsker = in.Actor
 				}
+				if by == ByOwner { // V0.thread-issues: an issue the owner's message gives
+					for _, u := range IssueURLsIn(args.Str("text")) {
+						LinkIssue(r.T, Issue{URL: u, Via: IssueViaOwner}, now)
+					}
+				}
 			}
 			if r.T.Profile == "" {
 				r.T.Profile = "claude"

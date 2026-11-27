@@ -3,7 +3,7 @@
 // check gets its empty value here, and nothing past this point needs `?? ""`.
 import { decodeHosts } from "./hosts.ts";
 import type { HostId } from "./hostid.ts";
-import type { Attention, Change, ChangePhase, Decision, NewProjectDraft, Offer, OfferRun, Project, StateDTO, Thread } from "./types.ts";
+import type { Attention, Change, ChangePhase, Decision, Issue, NewProjectDraft, Offer, OfferRun, Project, StateDTO, Thread } from "./types.ts";
 
 export const str = (v: unknown): string => (typeof v === "string" ? v : "");
 export const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -89,6 +89,10 @@ export function decodeThread(raw: unknown, host: HostId): Thread {
     decisions: arr(t.decisions),
     tasks: arr(t.tasks),
     changes: records(t.changes).map(decodeChange),
+    // V0.thread-issues: an issue the header can draw (a URL and a number), with the fields it sorts by.
+    issues: records(t.issues)
+      .filter((i) => typeof i.url === "string" && typeof i.number === "number")
+      .map((i) => ({ ...i, repo: str(i.repo), at: str(i.at), via: str(i.via) }) as unknown as Issue),
     offers: records(t.offers).map(decodeOffer),
     runs: records(t.runs).map(decodeRun),
     outbox: arr(t.outbox),

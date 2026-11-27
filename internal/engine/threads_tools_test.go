@@ -263,3 +263,28 @@ func TestSettleWhenOnAPinnedThreadSaysItWaits(t *testing.T) {
 		t.Fatal("a pinned thread settled")
 	}
 }
+
+// V0.thread-issues: issue_link links an issue to the agent's own thread
+// and unlinks it; a URL that is not an issue is refused.
+func TestIssueLinkTool(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	a := h.create("work")
+	if text, isErr := callAs(t, h.e, a, "issue_link", map[string]any{"issue": "https://github.com/acme/app/issues/12#issuecomment-3"}); isErr || !strings.Contains(text, "Linked https://github.com/acme/app/issues/12") {
+		t.Fatalf("%q", text)
+	}
+	if th, _ := h.e.Thread(a); len(th.Issues) != 1 || th.Issues[0].Via != core.IssueViaAgent {
+		t.Fatalf("issues %+v", th.Issues)
+	}
+	if got := (PRWatch{E: h.e}).Issues(); len(got) != 1 || got[0].ID != a {
+		t.Fatalf("watched %+v", got)
+	}
+	if _, isErr := callAs(t, h.e, a, "issue_link", map[string]any{"issue": "https://github.com/acme/app/pull/12"}); !isErr {
+		t.Fatal("a PR URL was linked")
+	}
+	if _, isErr := callAs(t, h.e, a, "issue_link", map[string]any{"issue": "https://github.com/acme/app/issues/12", "unlink": true}); isErr {
+		t.Fatal("unlink")
+	}
+	if th, _ := h.e.Thread(a); len(th.Issues) != 0 {
+		t.Fatalf("issues after unlink %+v", th.Issues)
+	}
+}

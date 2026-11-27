@@ -544,6 +544,11 @@ func approvalDetail(tool string, in map[string]any, cwd string) string {
 			return join("Message thread", firstLine(str("text")))
 		case "thread_rename":
 			return join("Rename thread", str("title"))
+		case "issue_link":
+			if b, _ := in["unlink"].(bool); b {
+				return join("Unlink issue", str("issue"))
+			}
+			return join("Link issue", str("issue"))
 		case "keep_process":
 			s := str("why")
 			if s == "" {

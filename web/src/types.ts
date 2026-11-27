@@ -70,6 +70,20 @@ export interface Decision {
   async?: boolean;
 }
 
+/** V0.thread-issues: a GitHub issue a thread links, and how it joined. */
+export interface Issue {
+  url: string;
+  repo: string;
+  number: number;
+  title?: string;
+  /** OPEN or CLOSED; absent until Fyr read it */
+  state?: string;
+  via: "pr" | "created" | "owner" | "agent";
+  /** the thread's PR that closes it (via "pr") */
+  pr?: string;
+  at: string;
+}
+
 export interface PullRequest {
   url: string;
   repo?: string;
@@ -160,6 +174,8 @@ export interface ThreadDTO {
   failure?: Failure | null;
   decisions?: Decision[] | null;
   pr?: PullRequest | null;
+  /** V0.thread-issues: the GitHub issues the thread links */
+  issues?: Issue[];
   /** V0.59: the thread's change records */
   changes?: Change[];
   /** V0.60, #31: the thread's own actions and their last runs; a change and the live view hold their own */
