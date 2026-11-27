@@ -31,7 +31,15 @@ const (
 	// TitleAutoAgain: the goal title found no conversation to read; it is
 	// asked again at the end of the next run (V0.press-thread-title (3)).
 	TitleAutoAgain = "again"
+	// TitleAutoEmpty: the thread started with no message
+	// (V0.empty-thread-start); its first message names it, as
+	// TitleAutoFirst.
+	TitleAutoEmpty = "empty"
 )
+
+// EmptyTitle is the title of a thread started with no message, until its
+// first message names it.
+const EmptyTitle = "New thread"
 
 // pressPrefix starts the message a press sends its agent (PressNotice).
 const pressPrefix = "[Fyr] The owner pressed "

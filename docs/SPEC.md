@@ -1087,7 +1087,7 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 
 | Command | Args | Unavailable when (reason) | Does |
 |---|---|---|---|
-| `thread.create` | cwd, text, attachments?, images?, title?, projectId?, profile?, model?, effort?, view?, parent? | | Makes the thread; files it by hand when `projectId` is given; sends the first message. Without `cwd`, the engine uses the project's folder or makes a scratch folder (V0.42). |
+| `thread.create` | cwd, text?, attachments?, images?, title?, projectId?, profile?, model?, effort?, view?, parent? | | Makes the thread; files it by hand when `projectId` is given; sends the first message. Without `cwd`, the engine uses the project's folder or makes a scratch folder (V0.42). With no text, attachment or image it sends nothing: the thread is made idle, titled "New thread", and its agent starts with the first `thread.send`, whose line names it (V0.empty-thread-start). |
 | `thread.send` | text, attachments?, images?, from? (the surface: `view`, a press in the live view; the old `view-typed` is ignored, V0.128) | archived; a question is open ("Answer the open question first"); a handover runs | Revives the thread (3.4) and sends the message. |
 | `thread.cancelMessage` | messageId | the message was read ("The agent has already read this message") | Withdraws a message the agent has not read; replies after the agent confirmed (V0.33, Await 5.1). |
 | `thread.answer` | decision, answers or allow | nothing to answer | Answers a Decision (5.6). |

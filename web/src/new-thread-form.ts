@@ -5,7 +5,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useAttachments } from "./attach-ui.tsx";
-import { sendArgs, type Chip } from "./attach.ts";
+import type { Chip } from "./attach.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { hostOfflineNote } from "./hosts.ts";
 import { browserStorage } from "./prefs.ts";
@@ -39,6 +39,7 @@ import {
   saveDraft,
   saveRemembered,
   settleForm,
+  startArgs,
   startBlock,
   type FormCtx,
   type NewThreadArgs,
@@ -197,7 +198,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const folder = formFolder(f, ctx);
   const prof = profiles.find((x) => x.id === f.profile);
   const effort = startEffort(prof, f.model, f.effortPick);
-  const plan = sendArgs(f.text, rawAtt.chips);
+  const plan = startArgs(f.text, rawAtt.chips);
   /** the last Discard, for its Undo: gone with the next change */
   const undo = useRef<{ form: NewThreadForm; chips: Chip[] } | null>(null);
   /** Enter was pressed once on a draft nobody touched */
@@ -257,6 +258,8 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     const on = formHost(f, ctx);
     if (block || !on) return void setErr(block || "There is no host to start the thread on.");
     if (by === "enter" && line === "draft" && !enterNote) return void setEnterNote(true);
+    // V0.empty-thread-start: an empty thread starts from the button only; a stray Enter in an empty form makes nothing.
+    if (by === "enter" && plan.empty) return;
     busyRef.current = true;
     setBusy(true);
     setErr(null);
@@ -332,7 +335,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     /** V0.dialogs-review (5, 23): why Start is off ("" when it is not), and the button's words: the one primary button
      *  of the form says that it makes the project too while the New project step is open (11) */
     block,
-    startLabel: making ? "Create project and start" : "Start",
+    startLabel: making ? (plan.ok && plan.empty ? "Create project and start empty" : "Create project and start") : plan.ok && plan.empty ? "Start empty" : "Start",
     /** V0.dialogs-review (3): the line above the prompt. `draft`: the form opened with a draft, and the line says what
      *  it is (new-thread.ts `draftLine`) until the owner changes the form or hides the line. `discarded`: the owner
      *  emptied the form, and can take that back until the next change. */

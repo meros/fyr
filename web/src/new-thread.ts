@@ -10,7 +10,7 @@ import { asObject, parseJson } from "./decode.ts";
 import { asHostId, type HostId } from "./hostid.ts";
 import { findProject, localProject, memberOn, newThreadFolder, projectDefaults, projectRecords, recordOf, startProject } from "./projects.ts";
 import type { Profile, Project } from "./types.ts";
-import type { Chip } from "./attach.ts";
+import { sendArgs, type Chip } from "./attach.ts";
 import { baseName } from "./paths.ts";
 
 /** What thread.create gets. */
@@ -364,6 +364,14 @@ export function folderHint(cur: Project | undefined, folder: { cwd?: string; lab
   if (folder.scratch) return cur ? `${cur.name} has no folder; the thread is filed in it anyway.` : "No project: a new folder just for this thread.";
   if (!cur) return "No project.";
   return cur.folder && cur.folder === folder.cwd ? `${cur.name}'s folder.` : `Filed in ${cur.name}.`;
+}
+
+/** V0.empty-thread-start: what Start sends. A New thread may start with nothing in it: the thread is made idle, and
+ *  its agent starts with the first message. Uploads still waiting or failed hold Start as in a send. */
+export function startArgs(text: string, chips: Chip[]): { ok: true; empty: boolean; args: { text: string; attachments?: string[] } } | { ok: false; reason: string } {
+  const plan = sendArgs(text, chips);
+  if (plan.ok) return { ...plan, empty: false };
+  return plan.reason === "Nothing to send" ? { ok: true, empty: true, args: { text: "" } } : plan;
 }
 
 /** V0.dialogs-review (5, 23): why Start is off, in one short line for the form's foot: nothing to send (or what the

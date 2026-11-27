@@ -100,9 +100,11 @@ func TestScratchThread(t *testing.T) {
 	}
 	lbl := h.cmd("project.create", "", core.Args{"name": "Garden"})
 	pid := lbl.Result.(map[string]any)["id"].(string)
-	r3 := h.cmd("thread.create", "", core.Args{"text": "", "projectId": pid, "attachments": []any{}})
+	// Only the owner turns the live view on: the agent's create is refused
+	// after its scratch folder was made, and the folder goes.
+	r3 := h.e.submit(core.Input{Source: core.FromAgent, From: r.ThreadID, Kind: "thread.create", Args: core.Args{"text": "x", "projectId": pid, "view": true}, CmdID: "agent-view"})
 	if r3.OK {
-		t.Fatal("an empty thread started")
+		t.Fatal("the agent turned the live view on")
 	}
 	if ents, _ := os.ReadDir(h.e.ScratchDir); len(ents) != 2 {
 		t.Fatalf("a failed create left a scratch folder: %d", len(ents))
