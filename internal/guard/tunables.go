@@ -105,3 +105,12 @@ const (
 // its agent with it; 10 s leaves the kill time to free memory first. In the
 // load simulation 5 s and 15 s ended as much work and stalled no less.
 const OomdEndAfter = 10 * time.Second
+
+// V0.gate-release-paced: after memory recovers the gate lets its held
+// commands run one thread at a time. The next goes GateSettle after the one
+// before it ran (a heavy command reaches most of its memory within a minute),
+// or GateRerunWait after its release when its agent did not run it again.
+const (
+	GateSettle    = 60 * time.Second
+	GateRerunWait = 2 * time.Minute
+)

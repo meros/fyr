@@ -61,7 +61,7 @@ type scenario struct {
 	units   []*simUnit
 	learned map[string]resource.Learned
 	desktop func(t time.Duration) float64
-	restart time.Duration // fyrd restarts at this time; 0 never
+	restart time.Duration   // fyrd restarts at this time; 0 never
 	soft    map[string]bool // classes the gate takes as learned commands (HeavySoft): they never queue
 	// expect: the violations the current code makes, with the reason.
 	expect map[string]string
@@ -957,6 +957,10 @@ func scenarios() []scenario {
 		// The trees before V0.freeze-controller, kept to show what it changed.
 		"concurrent-8-old":  {invWorse: whyOldConcurrency},
 		"concurrent-16-old": {invWorse: whyOldConcurrency},
+		// V0.gate-release-paced: one thread starts a new lint every 30 s, and
+		// the agents' stall goes critical again from the work that runs; the
+		// gate never holds more than that one thread, so no release paces it.
+		"incident-retry-class": {invRehold: whyOneThreadRetries},
 	}
 	for i := range out {
 		out[i].expect = known[out[i].name]
@@ -967,7 +971,8 @@ func scenarios() []scenario {
 // Why the current code makes the violations the table lists (V0.load-sim).
 // Each is a finding to fix; remove its line when the fix lands.
 const (
-	whyOldConcurrency = "the tree before V0.freeze-controller counted a thread's runs at once as one need"
+	whyOldConcurrency   = "the tree before V0.freeze-controller counted a thread's runs at once as one need"
+	whyOneThreadRetries = "one thread starts a new run every 30 s into the stall its own runs make; it is the only thread held, so there is no herd"
 )
 
 func cloneUnits(us []*simUnit) []*simUnit {

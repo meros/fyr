@@ -80,9 +80,10 @@ const (
 	// KeepKills keeps Kills, the rerunnable classes' kills of the last hour,
 	// across a restart (V0.survive-update).
 	KeepKills
-	// ClearGate ends the gate's hold on new heavy commands (V0.guard-wake E1).
-	// Ask: Threads, the threads whose commands it held, to be told to retry.
-	ClearGate
+	// ReleaseGate lets the next command the gate held run (V0.guard-wake E1,
+	// V0.gate-release-paced): the oldest held thread's. Ask: Threads, the
+	// thread released (none when nothing is held), to be told to retry.
+	ReleaseGate
 )
 
 // Decision is one thing the guard decides on a tick. Kind says which fields
@@ -190,8 +191,13 @@ type Inputs struct {
 	Held    []resource.Holder
 	Flags   []resource.Undeclared
 	Running []string
-	Can     Can
-	View    View
+	// V0.gate-release-paced: GateHeld is how many threads' heavy commands
+	// the gate holds and has not released yet; GateRan when the last thread
+	// it released ran its command (zero: none has since).
+	GateHeld int
+	GateRan  time.Time
+	Can      Can
+	View     View
 	// Answers are the answers to the tick's asks so far, in order.
 	Answers []Answer
 }
@@ -223,6 +229,9 @@ type State struct {
 	// V0.oomd-frozen-work: since when the agents' stall is at or over oomd's
 	// limit (zero: it is not).
 	OverOomd time.Time
+	// V0.gate-release-paced: when the gate last let a held thread's command
+	// run (zero: nothing is being released).
+	GateReleased time.Time
 }
 
 // clone is s with its own maps and slices, so a tick never writes the
@@ -388,10 +397,6 @@ func (t *tick) freezeGuard() {
 		st.OKSince = now
 	}
 	okSince, lastWake := st.OKSince, st.LastWake
-	var retry []string
-	if !short && wasShort {
-		retry = t.ask(Decision{Kind: ClearGate}).Threads
-	}
 	if newCap {
 		t.log("guard: wake cap agents=%s: the agents' memory when the stall first went critical in this episode %s", resource.GB(float64(capNow)), SignalsLine(sig))
 	}
@@ -402,10 +407,6 @@ func (t *tick) freezeGuard() {
 		}
 		t.record(resource.GuardEvent{At: now, Kind: state}, sig)
 		t.log("guard: memory %s: %s flagged=%d held=%d running=%d frozen=%q", state, SignalsLine(sig), len(t.flags), len(t.in.Held), len(t.in.Running), FrozenOwners(frozen))
-	}
-	slices.Sort(retry)
-	for _, th := range retry { // V0.guard-wake (E1): the commands the gate held
-		t.notify(th, map[string]any{"retry": true})
 	}
 	var keep []Frozen
 	var thaws []thawing
@@ -492,6 +493,7 @@ func (t *tick) freezeGuard() {
 		keep[i] = t.nextTurn(keep[i])
 	}
 	st.Frozen = keep
+	t.releaseGate(sig, short, fine, len(thaws))
 	for _, th := range thaws {
 		st.Thaws[th.f.Owner] = append(slices.DeleteFunc(slices.Clone(st.Thaws[th.f.Owner]), func(at time.Time) bool { return now.Sub(at) >= ThawWindow }), now)
 		if !th.f.Undeclared {
@@ -585,6 +587,36 @@ func (t *tick) freezeGuard() {
 		}
 	}
 	t.freezeJob(sig)
+}
+
+// releaseGate lets the gate's held commands run again one thread at a time
+// (V0.gate-release-paced): the first once memory is fine (the wake rule's
+// test) and nothing thawed on this tick, each next one GateSettle after the
+// one before it ran, or GateRerunWait after it was released when it did not
+// run. Releasing every held thread at the first tick memory was no longer
+// short sent them all at once into the room one of them had, and memory was
+// short again within minutes (#736).
+func (t *tick) releaseGate(sig resource.Signals, short, fine bool, thawed int) {
+	now, st := t.in.Now, &t.st
+	if t.in.GateHeld == 0 {
+		st.GateReleased = time.Time{}
+		return
+	}
+	if short || !fine || thawed > 0 {
+		return
+	}
+	if last := st.GateReleased; !last.IsZero() {
+		ran := t.in.GateRan
+		settled := !ran.Before(last) && now.Sub(ran) >= GateSettle
+		if !settled && now.Sub(last) < GateRerunWait {
+			return
+		}
+	}
+	for _, th := range t.ask(Decision{Kind: ReleaseGate}).Threads {
+		st.GateReleased = now
+		t.log("guard: released the gate's hold on thread=%s, %d still held: memory is fine %s", th, t.in.GateHeld-1, SignalsLine(sig))
+		t.notify(th, map[string]any{"retry": true}) // V0.guard-wake (E1)
+	}
 }
 
 // freezeJob freezes the job that grew most, while two or more run: one job

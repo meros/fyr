@@ -268,7 +268,8 @@ func TestTickKillsARerunnableFreeze(t *testing.T) {
 // order, and the memory notice says nothing.
 func TestTickRetriesTheGateOnRecovery(t *testing.T) {
 	in := inputs(&fakeView{}, calm())
-	h := &host{sig: calm(), gate: []string{"t2", "t1"}}
+	h := &host{sig: calm(), gate: []string{"t1", "t2"}}
+	in.GateHeld = 2
 	st := Run(in, State{Short: true}, h.apply)
 	if st.Short {
 		t.Fatal("still short")
@@ -279,7 +280,7 @@ func TestTickRetriesTheGateOnRecovery(t *testing.T) {
 			told = append(told, d.Thread)
 		}
 	}
-	if !slices.Equal(told, []string{"t1", "t2"}) {
+	if !slices.Equal(told, []string{"t1"}) { // V0.gate-release-paced: one at a time
 		t.Fatalf("retry %v", told)
 	}
 }
@@ -397,7 +398,7 @@ func TestTickCountsEachThaw(t *testing.T) {
 // V0.gate-release-paced (#736): when memory recovers the gate's held threads
 // are released one at a time, the next GateSettle after the one before ran,
 // or GateRerunWait after its release when it did not run; none while memory
-// is short or something is frozen.
+// is short or on a tick that thawed work.
 func TestTickReleasesTheGateOneThreadAtATime(t *testing.T) {
 	h := &host{sig: calm(), gate: []string{"a", "b", "c", "d"}}
 	tickAt := func(st State, at time.Time, ran time.Time, sig resource.Signals) (State, []string) {
@@ -438,9 +439,9 @@ func TestTickReleasesTheGateOneThreadAtATime(t *testing.T) {
 		t.Fatalf("released %v before b's wait ran out", told)
 	}
 	frozen := st
-	frozen.Frozen = []Frozen{{Owner: "x", At: rel, Since: t0.Format(time.RFC3339Nano)}}
+	frozen.Frozen = []Frozen{{Owner: "x", At: rel.Add(GateRerunWait - FreezeMax), Since: t0.Format(time.RFC3339Nano)}}
 	if _, told = tickAt(frozen, rel.Add(GateRerunWait), ran, calm()); len(told) != 0 {
-		t.Fatalf("released %v while work is frozen", told)
+		t.Fatalf("released %v on the tick frozen work thawed", told)
 	}
 	st, told = tickAt(st, rel.Add(GateRerunWait), ran, calm())
 	if !reflect.DeepEqual(told, []string{"c"}) {
