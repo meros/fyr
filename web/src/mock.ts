@@ -1381,6 +1381,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       });
       threads.set(id, nt);
       events[id] = [];
+      // V0.empty-thread-start: nothing in it, the thread waits idle for its first message.
+      const atts = Array.isArray(args.attachments) ? args.attachments : [];
+      if (!String(args.text ?? "").trim() && !atts.length) return { ok: true, threadId: id };
       const mid = deliver(id, String(args.text ?? ""), args, false);
       runFor(id, "Started on it. (mock)");
       return { ok: true, threadId: id, result: { messageId: mid } };

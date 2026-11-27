@@ -131,6 +131,10 @@ func TestThreadSend(t *testing.T) {
 func TestThreadNewAndLimit(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	a := h.create("parent")
+	// V0.empty-thread-start: only the owner starts a thread with nothing in it.
+	if text, isErr := callAs(t, h.e, a, "thread_new", map[string]any{"cwd": h.dir, "text": " ", "title": "Empty"}); !isErr || !strings.Contains(text, "text is required") {
+		t.Fatalf("an agent started an empty thread: %v %q", isErr, text)
+	}
 	text, isErr := callAs(t, h.e, a, "thread_new", map[string]any{"cwd": h.dir, "text": "child work", "title": "Child"})
 	if isErr {
 		t.Fatalf("%q", text)

@@ -637,7 +637,7 @@ func ownerNotices(r Reduced) []Notice {
 	b, a := r.Before, r.After
 	var out []Notice
 	add := func(key, what string) { out = append(out, Notice{About: "thread", Key: "owner:" + key, What: what}) }
-	if a.Title != b.Title {
+	if a.Title != b.Title && b.TitleAuto != TitleAutoEmpty { // a thread started empty is named by its first message, not by the owner
 		add("title", fmt.Sprintf("The owner renamed this thread to %q.", a.Title))
 	}
 	if a.ProjectID != b.ProjectID {

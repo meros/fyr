@@ -183,7 +183,10 @@ func sendAction(name, label string) *Action {
 			text := strings.TrimSpace(a.Str("text"))
 			imgs := images(a)
 			atts := AttachmentIDs(a)
-			if text == "" && len(imgs) == 0 && len(atts) == 0 {
+			// V0.empty-thread-start: a thread may start with no message; it
+			// is made idle, and its agent starts with the first send.
+			empty := text == "" && len(imgs) == 0 && len(atts) == 0
+			if empty && name != "thread.create" {
 				return nil, fmt.Errorf("%w: empty message", ErrBadArgs)
 			}
 			t.QuietMerge = "" // V0.200: whoever wrote wants to hear the answer
@@ -200,13 +203,24 @@ func sendAction(name, label string) *Action {
 				if on, _ := a["view"].(bool); on {
 					SetView(t, true)
 				}
-				if t.Title == "" {
+				switch {
+				case t.Title != "":
+				case empty:
+					t.Title, t.TitleAuto = EmptyTitle, TitleAutoEmpty // named by its first message
+				default:
 					t.Title, t.TitleAuto = PlaceholderTitle(text), TitleAutoFirst // V0.auto-title, V0.press-thread-title (2)
 				}
 				// V0.42: the engine checked that the project exists.
 				if pid := a.Str("projectId"); pid != "" {
 					t.ProjectID, t.ProjectManual = pid, true
 				}
+			}
+			if empty { // only thread.create gets here: nothing to send, no run starts
+				revive(t, v, now)
+				return nil, nil
+			}
+			if t.TitleAuto == TitleAutoEmpty && t.TitleBy == "" {
+				t.Title, t.TitleAuto = PlaceholderTitle(text), TitleAutoFirst // V0.auto-title, from the first message
 			}
 			settled := t.Settle.At != nil
 			revive(t, v, now)

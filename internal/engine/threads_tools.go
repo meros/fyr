@@ -360,6 +360,9 @@ func (e *Engine) threadTools(s *mcp.Server) {
 		Schema: obj(map[string]any{"cwd": str("The folder to work in (absolute path)."), "text": str("The first message: a full brief."),
 			"title": str("A short title."), "model": str("Optional model id.")}, "cwd", "text"),
 		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
+			if strings.TrimSpace(sArg(a, "text")) == "" { // V0.empty-thread-start is the owner's: an agent's thread carries its brief
+				return "", errors.New("text is required: the new thread's first message, a full brief")
+			}
 			if !e.newLimit.allow(self, e.Now()) {
 				return "", errors.New("limit: 12 new threads an hour per thread")
 			}
