@@ -45,6 +45,9 @@ const (
 	invAllFrozen  = "all-frozen"  // live heavy work and none of it ran for 60 s
 	invStarved    = "starved"     // a job had not finished at the horizon
 	invOscillates = "oscillation" // a part was frozen more than 10 times outside turns
+	// V0.thaw-cap-oomd: the agents stalled critically longer with Fyr than
+	// with no Fyr at all (by a tenth and a minute): the guard made it worse.
+	invWorse = "worse-than-none"
 )
 
 type scenario struct {
@@ -860,11 +863,44 @@ func scenarios() []scenario {
 		}
 		add(s)
 	}
+	// 18. V0.thaw-cap-oomd: the 27 Nov laptop. A thread's short commands (a
+	// yarn install, a formatter) are frozen, and its agent kills them while
+	// they are frozen; with one wake that makes three thaws in the hour, so
+	// V0.freeze-cycle-cap let the same thread's smoke run go unfrozen while
+	// the agents' stall neared oomd's limit, beside a check, an e2e run and a
+	// make check of other threads. On the host oomd killed it four times; in
+	// the model the agents stalled critically longer than with no Fyr at all.
+	{
+		mk := func() []*simUnit {
+			chk := unit("check", "yarn check", "", kUndeclared, 2*mn, 3, 3.5, 2400)
+			chk.Ramp = 0.5
+			us := []*simUnit{chk, unit("e2e", "yarn e2e", "yarn e2e", kAdmitted, time.Minute, 3.8, 4.9, 2400),
+				unit("mc", "make check", "make check", kAdmitted, 90*time.Second, 5.8, 2.7, 2400)}
+			for i, at := range []time.Duration{30 * time.Second, 5 * mn, 9 * mn} {
+				u := unit("watch", fmt.Sprintf("yarn install %d", i), "", kUndeclared, at, 3, 4.5, 900)
+				u.Ramp, u.Abandon = 0.05, 150*time.Second
+				us = append(us, u)
+			}
+			for i, at := range []time.Duration{13 * mn, 21 * mn} {
+				u := unit("watch", fmt.Sprintf("yarn smoke --db %d", i), "", kUndeclared, at, 2.5, 7.5, 600)
+				u.Ramp = 0.2
+				us = append(us, u)
+			}
+			return us
+		}
+		l := map[string]resource.Learned{"yarn e2e": learnedClass(3.8, 4.9, 600), "make check": learnedClass(5.8, 2.7, 400)}
+		pp := func(p *simParams) { p.SwapCap = 10 * gb; p.Budget = 12 * gb; p.RAM = 30 * gb; p.CLI = 0.6 * gb }
+		add(scenario{name: "incident-27nov", idle: 3, params: pp, units: mk(), learned: l,
+			desktop: func(time.Duration) float64 { return 9 * gb }})
+	}
 	// V0.sim-fixes fixed the rest of V0.load-sim's list: a violation of
 	// those scenarios now fails the test.
 	known := map[string]map[string]string{
 		"swap-full":      {invOomd: whyFrozenKill},
 		"incident-retry": {invOomd: whyRetryStorm},
+		// The trees before V0.freeze-controller, kept to show what it changed.
+		"concurrent-8-old":  {invWorse: whyOldConcurrency},
+		"concurrent-16-old": {invWorse: whyOldConcurrency},
 	}
 	for i := range out {
 		out[i].expect = known[out[i].name]
@@ -890,7 +926,8 @@ const (
 	// kernel's reclaim of the frozen part's cold pages as its pgscan, so oomd
 	// takes the frozen thread. Fyr's own reclaim is already off near the limit
 	// (V0.guard-tidy); how real oomd ranks a frozen cgroup is not measured.
-	whyFrozenKill = "oomd picks the thread whose frozen pages the kernel reclaimed: the model counts that as its pgscan, so the frozen thread is oomd's first choice once the two that run fill the 2 GB of swap"
+	whyOldConcurrency = "the tree before V0.freeze-controller counted a thread's runs at once as one need"
+	whyFrozenKill     = "oomd picks the thread whose frozen pages the kernel reclaimed: the model counts that as its pgscan, so the frozen thread is oomd's first choice once the two that run fill the 2 GB of swap"
 )
 
 func cloneUnits(us []*simUnit) []*simUnit {
@@ -1027,6 +1064,9 @@ func runScenario(t *testing.T, sc scenario) simResult {
 	without.finish(false)
 	res := with.res
 	res.noFyr, res.noFyrKills, res.noFyrCrit, res.serial = without.res.makespan, without.res.killed, without.h.critSecs, ser
+	if float64(res.critSecs) > 1.1*float64(res.noFyrCrit)+60 {
+		res.viol[invWorse] = append(res.viol[invWorse], fmt.Sprintf("%d s of the agents' critical stall with Fyr, %d s with none", res.critSecs, res.noFyrCrit))
+	}
 	if testing.Verbose() && os.Getenv("FYR_SIM_LOG") == sc.name {
 		io.Copy(os.Stderr, with.logs)
 	}

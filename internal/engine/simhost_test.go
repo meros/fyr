@@ -110,6 +110,10 @@ type simUnit struct {
 	Leak                float64 // bytes a second past Peak while it runs
 	LeakTo              float64
 	Work                float64 // core-seconds; 0 for a service
+	// Abandon: the agent kills the part this long after it started, frozen
+	// or not (its Bash call timed out, or the agent gave up on it); 0 never.
+	// The guard then thaws a freeze whose processes are gone (V0.thaw-cap-oomd).
+	Abandon time.Duration
 
 	pid             int
 	state           unitState
@@ -138,6 +142,7 @@ type simUnit struct {
 	reclaimed       bool
 	hit             bool // its memory.high was hit (V0.job-limits)
 	turns           bool // its thread's parts take turns: undeclared/'s limit is lifted (V0.guard-tidy)
+	abandoned       bool // its agent killed it (Abandon)
 }
 
 func (u *simUnit) live() bool { return u.state == sRunning }
@@ -538,6 +543,9 @@ func (h *simHost) step() {
 		if u.live() && u.Work > 0 && u.done >= u.Work {
 			u.state, u.ended, u.res, u.frozen = sDone, h.t, 0, false
 			h.learn(u)
+		}
+		if u.live() && u.Abandon > 0 && h.t-u.started >= u.Abandon {
+			u.state, u.ended, u.res, u.frozen, u.abandoned = sDone, h.t, 0, false, true
 		}
 	}
 	// Metrics.
