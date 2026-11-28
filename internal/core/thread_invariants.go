@@ -45,7 +45,7 @@ const (
 // CoreThreadInvariantTexts describes each pure thread invariant in one sentence.
 var CoreThreadInvariantTexts = map[string]string{
 	InvThreadArchivedLiveWork:     "An archived thread still has live work, open decisions, a pin, a snooze, or armed rules.",
-	InvThreadSettledContradict:    "A settled thread still has Starting, MachineWait, a pin, a settle offer, a settle rule, a snooze, or an armed watch.",
+	InvThreadSettledContradict:    "A settled thread still has Starting, MachineWait, Handover, a pin, a settle offer, a settle rule, a snooze, or an armed watch.",
 	InvThreadRunStateContradict:   "A thread's live run fields disagree (Running, Starting, RunStartedAt, Activity, Failure, or Stopped).",
 	InvThreadPinContradict:        "A pinned thread is also archived, settled, actively snoozed, or has an unsuspended auto-settle rule.",
 	InvThreadRuleInvalid:          "A thread or view rule has inconsistent suspend state, duplicate id, orphan change, dead timer, unwatchable PR condition, or a stuck one-shot watch.",
@@ -448,6 +448,9 @@ func checkSettledContradiction(t *Thread, v *View) string {
 	}
 	if t.MachineWait != nil {
 		probs = append(probs, "machineWait!=nil")
+	}
+	if t.Handover != nil {
+		probs = append(probs, "handover!=nil")
 	}
 	if t.PinnedAt != nil {
 		probs = append(probs, "pinned=true")

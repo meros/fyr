@@ -631,8 +631,8 @@ func init() {
 			}
 			t.Failure = nil
 			resetAutoResumes(t)
-			if a.FirstMessage && !t.Running && t.Starting == nil {
-				t.Starting = &now
+			if a.FirstMessage {
+				markStarting(t, now)
 			}
 			if a.HostNotice != "" {
 				t.Feed.Enqueue(Notice{About: "thread", Key: "handover.host", Urgency: Next, What: a.HostNotice, At: now})

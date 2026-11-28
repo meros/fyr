@@ -4,7 +4,7 @@
 
 (1) **Pure state and persistence invariants** (`internal/core/thread_invariants.go`, `core.CheckThread`, `core.CheckSerialization`), checked after every `Engine.apply` commit and after `Engine.Load`:
 - `thread-archived-live-work`: an archived thread still has live work (`Running`, `Starting`, `MachineWait`, `Handover`, `RunningTasks`), open decisions, held merge asks, a pin, a snooze, or an armed rule (SPEC L3).
-- `thread-settled-contradiction`: a settled thread still has `Starting`, `MachineWait`, a pin, a settle offer (`SettleAsk`), a settle rule, a snooze, or an armed watch.
+- `thread-settled-contradiction`: a settled thread still has `Starting`, `MachineWait`, `Handover`, a pin, a settle offer (`SettleAsk`), a settle rule, a snooze, or an armed watch.
 - `thread-run-state-contradiction`: a thread's live run fields disagree (`Running` without `RunStartedAt`, `!Running` with `RunStartedAt` or `Activity`, `Running` with `Starting` or `Failure`, `Starting` with `Failure`, or `Stopped` while running or tasks run).
 - `thread-pin-contradiction`: a pinned thread is also archived, settled, actively snoozed, or has an unsuspended auto-settle rule (V0.104, V0.106).
 - `thread-rule-invalid`: a thread or view rule has inconsistent suspend status vs `SuspendedBy` (SPEC I3), suspend reasons that disagree with thread state, duplicate or empty id, orphan `About` or `When.Change` reference, dead `WhenAt`/`WhenQuota`/`WhenIdleFor` timer, an unwatchable PR condition (including compound `All`/`Any`, V0.watch-stale), a stuck armed one-shot watch with `LastValue=true`, or more than one snooze rule on the view.

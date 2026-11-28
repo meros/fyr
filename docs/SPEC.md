@@ -1095,7 +1095,7 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 | `thread.retry` | | the last run did not fail; archived | Revives the thread and asks the agent to continue from where it stopped (V0.6). |
 | `thread.dismiss` | | no failure | Clears the failure. |
 | `thread.dismissPR` | | no PR; the PR is still open | Marks the main change `dismissed` (V0.36). |
-| `thread.settle` | now? | already settled; archived | Settles now (V0.203). A live run is stopped and unread messages are withdrawn. `now: true` (bulk) refuses a pinned or running thread. |
+| `thread.settle` | now? | already settled; archived; a handover runs | Settles now (V0.203). A live run is stopped and unread messages are withdrawn. `now: true` (bulk) refuses a pinned or running thread. |
 | `thread.settleWhenDone` | | already settled; already set; archived; the last run failed; nothing to wait for | Arms the settle Rule on the work being done: no run or task, nothing waiting for the owner, no open PR (V0.203). |
 | `thread.unsettle` | | not settled and no settle Rule | Clears the settle and every settle Rule, the agent's too. |
 | `thread.settleWhenMerged` | | no open PR; already set | Arms the settle Rule on the main change reaching landed (13.1 `m`). |
@@ -1106,7 +1106,7 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 | `thread.setProject` | projectId | | Files the thread by hand; `""` is No project. |
 | `thread.rename` | title | | Renames; `titleBy` becomes owner (V0.69). |
 | `thread.setView` | on | archived | Turns the live view on or off; off drops the view's actions. |
-| `thread.handover` | profile, model?, effort? | a handover runs; a run is live; a question is open; a message is unread | Moves the thread to another provider on the same host (V0.45). Cross-host handover runs through `front.threadHandover` (decision 0039, V0.trans-host-handover): a linked new thread on the target host with copied conversation history and `thread.handedOver` settling the source. |
+| `thread.handover` | profile, model?, effort? | a handover runs; a run is live; a question is open; a message is unread | Revives a settled or snoozed thread and moves it to another provider on the same host (V0.45, V0.handover-revives-settled). Cross-host handover runs through `front.threadHandover` (decision 0039, V0.trans-host-handover): a linked new thread on the target host with copied conversation history and `thread.handedOver` settling the source. |
 | `thread.setModel` | model?, effort? | archived | Changes the model and effort (V0.50). |
 | `thread.changesSeen`, `thread.fileViewed` | head, files; path, blob, viewed | | Stores the Changes tab's look and Viewed marks in the View (V0.65). |
 | `pr.merge`, `pr.rerunFailed` | method? | the effect's guard on the main PR (5.10) | Runs the Fyr effect on the main PR (V0.43). |
@@ -1118,7 +1118,7 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 | From | To | By |
 |---|---|---|
 | active | settled | `thread.settle`; a settle Rule's firing (7.6) |
-| settled | active | `thread.unsettle`; `thread.send` (revive) |
+| settled | active | `thread.unsettle`; `thread.send` (revive); `thread.handover` (revive) |
 | active, settled | archived | `thread.archive` |
 | archived | active | `thread.unarchive` |
 
@@ -1128,7 +1128,7 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 |---|---|---|
 | not snoozed | snoozed | `thread.snooze` (unavailable when settled) |
 | snoozed | snoozed | `thread.snooze` (replaces the Rule) |
-| snoozed | not snoozed | the snooze Rule's firing at its time; `thread.unsnooze`; `thread.send`; `thread.retry`; `thread.settle` when it settles now; `thread.archive` |
+| snoozed | not snoozed | the snooze Rule's firing at its time; `thread.unsnooze`; `thread.send`; `thread.retry`; `thread.handover`; `thread.settle` when it settles now; `thread.archive` |
 
 **Post-v1 commands.** `thread.fork`, `thread.setMode`, `thread.pin`, `thread.unpin`, `entity.move`, `entity.import`, `entity.abortMove`, `entity.finishMove`, `entity.cancelMove`, `decision.open` by an agent, `link.add`, `link.remove`, `rule.create` and `rule.disarm` as commands, `document.create`, `document.get`, `document.send`, `checkout.add`, `coordinator.*`, `policy.set`, `user.presence`, `host.pair`, `host.pairPeer`, `host.revokeDevice`, `host.revokePeer`, `host.rename`, `job.acknowledge`. Their design is in REVIEW-LOG and earlier versions of this section (spec 0.7).
 

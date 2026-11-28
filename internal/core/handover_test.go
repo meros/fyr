@@ -201,3 +201,119 @@ func TestHandoverDoneWithFirstMessageDoesNotSettle(t *testing.T) {
 		t.Fatalf("running=%v settle=%v", after.Running, after.Settle.At)
 	}
 }
+
+// V0.handover-revives-settled: handing over a settled thread revives it so
+// handover.done with FirstMessage: true never leaves Starting set on a settled
+// thread (thread-settled-contradiction / thread-settled-run-started), and a
+// settled thread cannot stay settled while a handover runs.
+func TestHandoverOnSettledThreadRevives(t *testing.T) {
+	now := at(10)
+	th := &Thread{ID: "t1", Profile: "a", Settle: Settle{At: ptr(at(5))}}
+	v := &View{User: Owner, Entity: "t1", SeenAt: at(5)}
+
+	// Owner hands over the settled thread.
+	hoIn := Input{Source: FromOwner, Kind: "thread.handover", Thread: "t1", Args: Args{"profile": "b", "model": "m"}}
+	after, afterV, res, err := Reduce(th, v, hoIn, now)
+	if err != nil {
+		t.Fatalf("thread.handover on settled thread: %v", err)
+	}
+	if after.Settle.At != nil {
+		t.Fatalf("expected thread.handover to clear settle, still set at %v", after.Settle.At)
+	}
+	if after.Handover == nil || after.Handover.To != "b" {
+		t.Fatalf("expected Handover to be set, got %+v", after.Handover)
+	}
+	if vs := CheckTransition(th, v, after, afterV, hoIn, res, now, nil); len(vs) > 0 {
+		t.Fatalf("thread.handover transition violations: %+v", vs)
+	}
+	if vs := CheckThread(after, afterV, now, nil); len(vs) > 0 {
+		t.Fatalf("thread.handover state violations: %+v", vs)
+	}
+
+	// Handover finishes with a first message (rung 2/3).
+	doneIn := Input{Source: Observer(ObsProcess), Kind: KindHandoverDone, Thread: "t1",
+		Args: HandoverDoneArgs{Profile: "b", Model: "m", SessionID: "s2", FirstMessage: true}}
+	after2, afterV2, res2, err := Reduce(after, afterV, doneIn, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("handover.done: %v", err)
+	}
+	if after2.Starting == nil || after2.Settle.At != nil {
+		t.Fatalf("expected active Starting thread after handover.done, starting=%v settle=%v", after2.Starting, after2.Settle.At)
+	}
+	if vs := CheckTransition(after, afterV, after2, afterV2, doneIn, res2, now.Add(time.Second), nil); len(vs) > 0 {
+		t.Fatalf("handover.done transition violations: %+v", vs)
+	}
+	if vs := CheckThread(after2, afterV2, now.Add(time.Second), nil); len(vs) > 0 {
+		t.Fatalf("handover.done state violations: %+v", vs)
+	}
+
+	// Defense in depth: handover.done on an asleep thread never sets Starting.
+	settled := &Thread{ID: "t2", Profile: "a", Settle: Settle{At: ptr(at(5))}}
+	sv := &View{User: Owner, Entity: "t2", SeenAt: at(5)}
+	done2 := Input{Source: Observer(ObsProcess), Kind: KindHandoverDone, Thread: "t2",
+		Args: HandoverDoneArgs{Profile: "b", Model: "m", SessionID: "s2", FirstMessage: true}}
+	sAfter, sAfterV, sRes, err := Reduce(settled, sv, done2, now)
+	if err != nil {
+		t.Fatalf("handover.done on settled thread: %v", err)
+	}
+	if sAfter.Starting != nil {
+		t.Fatalf("handover.done must not set Starting on a settled thread")
+	}
+	if vs := CheckTransition(settled, sv, sAfter, sAfterV, done2, sRes, now, nil); len(vs) > 0 {
+		t.Fatalf("transition violations: %+v", vs)
+	}
+	if vs := CheckThread(sAfter, sAfterV, now, nil); len(vs) > 0 {
+		t.Fatalf("state violations: %+v", vs)
+	}
+}
+
+// V0.handover-revives-settled: neither thread.settle nor a settle Rule may
+// settle a thread while a handover is in progress.
+func TestSettleWaitsForHandover(t *testing.T) {
+	now := at(10)
+	th := withPR(Thread{
+		ID:           "t1",
+		Profile:      "a",
+		Conversation: Conversation{Handover: &Handover{To: "b", At: now}},
+	}, PR{State: "OPEN", Checks: ChecksPass, Head: "aaaaaaa", CheckedAt: ptr(now)})
+	v := &View{User: Owner, Entity: "t1", SeenAt: now}
+
+	if got := Registry["thread.settle"].Available(&th, v, now); got != "Wait for the handover to finish" {
+		t.Fatalf("thread.settle during handover: %q, want %q", got, "Wait for the handover to finish")
+	}
+
+	// Arm "settle when merged", then merge the PR during the handover: the rule
+	// must wait for the handover to end before settling.
+	if !SettleWhenMerged(&th, ByOwner, now) {
+		t.Fatal("SettleWhenMerged failed")
+	}
+	merged := Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Thread: "t1",
+		Args: pr(PR{State: "MERGED", Head: "aaaaaaa", MergedAt: ptr(now.Add(time.Second)), CheckedAt: ptr(now.Add(time.Second))})}
+	after, afterV, res, err := Reduce(&th, v, merged, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("pr.observed: %v", err)
+	}
+	if after.Settle.At != nil {
+		t.Fatalf("settle rule settled thread mid-handover: %+v", after.Settle)
+	}
+	if vs := CheckTransition(&th, v, after, afterV, merged, res, now.Add(time.Second), nil); len(vs) > 0 {
+		t.Fatalf("transition violations: %+v", vs)
+	}
+	if vs := CheckThread(after, afterV, now.Add(time.Second), nil); len(vs) > 0 {
+		t.Fatalf("state violations: %+v", vs)
+	}
+
+	// Once handover completes without a first message (rung 1 resume), the rule settles it.
+	doneIn := Input{Source: Observer(ObsProcess), Kind: KindHandoverDone, Thread: "t1",
+		Args: HandoverDoneArgs{Profile: "b", Model: "m", SessionID: "s2"}}
+	after2, afterV2, _, err := Reduce(after, afterV, doneIn, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("handover.done: %v", err)
+	}
+	if after2.Settle.At == nil {
+		t.Fatal("expected settle rule to fire once handover finished without a first message")
+	}
+	if vs := CheckThread(after2, afterV2, now.Add(2*time.Second), nil); len(vs) > 0 {
+		t.Fatalf("post-settle violations: %+v", vs)
+	}
+}

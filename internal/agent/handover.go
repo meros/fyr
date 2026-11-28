@@ -182,6 +182,9 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		if len(notes) > 0 {
 			data["note"] = strings.Join(notes, "; ")
 		}
+		if cur, ok := m.host.Thread(threadID); !ok || cur.Asleep() {
+			first = ""
+		}
 		m.observe(threadID, core.KindHandoverDone, core.HandoverDoneArgs{Profile: e.Profile, Model: model, SessionID: sid, Effort: e.Effort, Data: data, FirstMessage: first != ""})
 		m.mu.Lock()
 		s := m.sessions[threadID]

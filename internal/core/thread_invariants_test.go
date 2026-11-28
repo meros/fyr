@@ -46,6 +46,10 @@ func TestThreadInvariantsPureStateViolations(t *testing.T) {
 		if !hasViolation(vs, InvThreadSettledContradict) {
 			t.Fatalf("expected %s, got %+v", InvThreadSettledContradict, vs)
 		}
+		thHo := &Thread{ID: "t_ho", Settle: Settle{At: ptr(t0)}, Conversation: Conversation{Handover: &Handover{To: "b", At: t0}}}
+		if vs := CheckThread(thHo, &View{}, now, nil); !hasViolation(vs, InvThreadSettledContradict) {
+			t.Fatalf("expected %s for settled+handover, got %+v", InvThreadSettledContradict, vs)
+		}
 		clean := &Thread{ID: "t2", Settle: Settle{At: ptr(t0)}}
 		if vs := CheckThread(clean, &View{}, now, nil); len(vs) != 0 {
 			t.Fatalf("clean settled thread had violations: %+v", vs)
@@ -639,7 +643,7 @@ func TestThreadInvariantsUnderRandomStateMachine(t *testing.T) {
 					continue
 				}
 				if rng.Intn(2) == 0 {
-					in = Input{Source: Observer(ObsProcess), Kind: KindHandoverDone, Args: HandoverDoneArgs{Profile: th.Handover.To, Model: "m2", SessionID: "s2"}}
+					in = Input{Source: Observer(ObsProcess), Kind: KindHandoverDone, Args: HandoverDoneArgs{Profile: th.Handover.To, Model: "m2", SessionID: "s2", FirstMessage: rng.Intn(2) == 0}}
 				} else {
 					in = Input{Source: Observer(ObsProcess), Kind: KindHandoverFailed, Args: "boom"}
 				}
