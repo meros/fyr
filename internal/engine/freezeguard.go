@@ -142,18 +142,12 @@ func (e *Engine) releaseGate() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	next := ""
-	for th, since := range e.gateHeld {
+	for th := range e.gateHeld {
 		if _, ok := e.threads[th]; !ok { // deleted: no agent to run it again
 			delete(e.gateHeld, th)
 			continue
 		}
-		if next == "" {
-			next = th
-			continue
-		}
-		r, nr := e.ProjectRank(th), e.ProjectRank(next)
-		ns := e.gateHeld[next]
-		if r > nr || (r == nr && (since.Before(ns) || (since.Equal(ns) && th < next))) {
+		if next == "" || e.gateBefore(th, next) {
 			next = th
 		}
 	}
@@ -161,11 +155,34 @@ func (e *Engine) releaseGate() string {
 		return ""
 	}
 	if e.gateReleased == nil {
-		e.gateReleased = map[string]time.Time{}
+		e.gateReleased = map[string]gateTurn{}
 	}
 	e.gateReleased[next] = e.gateHeld[next]
 	delete(e.gateHeld, next)
 	return next
+}
+
+// gateTurn is a held thread's place at the gate: when it was first held, and
+// the order it came in. Two holds can read the same clock (a coarse clock, or
+// two calls between its ticks), and the one held first must still go first,
+// not the one whose random thread id sorts first (V0.gate-order-arrival).
+type gateTurn struct {
+	at  time.Time
+	seq uint64
+}
+
+// gateBefore says whether held thread a is released before held thread b:
+// the higher project priority (V0.project-priority), then the one that has
+// waited longest, then the one held first. Under mu.
+func (e *Engine) gateBefore(a, b string) bool {
+	if ra, rb := e.ProjectRank(a), e.ProjectRank(b); ra != rb {
+		return ra > rb
+	}
+	ta, tb := e.gateHeld[a], e.gateHeld[b]
+	if !ta.at.Equal(tb.at) {
+		return ta.at.Before(tb.at)
+	}
+	return ta.seq < tb.seq
 }
 
 // keepRerunKills writes the rerunnable classes' kills of the last hour to the
