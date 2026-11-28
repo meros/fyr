@@ -1546,6 +1546,51 @@ section("V0.187 message copy", async ({ send, evaluate, waitFor, navigate }) => 
   check(r.under, `V0.187: Copy covers the message ${JSON.stringify(r)}`);
 });
 
+// V0.tooltips: a title shows in Fyr's own tooltip, not the browser's: held back while the pointer rests on it (and put
+// back when it leaves), after a wait the first time and at once for the next, with its key as a key cap, inside the
+// window and clear of its anchor, gone on a press; on keyboard focus too, and Escape closes it. A finger opens none.
+section("V0.tooltips", async ({ send, evaluate, navigate, waitFor, key, tapCenter, openScreen }) => {
+  await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.th [title*=\"(e)\"]') && !!document.querySelector('.th [title=\"Snooze (s)\"]')");
+  const at = (sel) => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.dataset.tipTest = ${JSON.stringify(sel)}; const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  const TIP = `(() => { const t = document.querySelector('.ftip'); const b = t.getBoundingClientRect(); return { on: t.classList.contains('on'), words: t.querySelector('.ftip-t')?.textContent ?? '', keys: [...t.querySelectorAll('kbd')].map((k) => k.textContent), inView: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight, box: [b.left, b.top, b.right, b.bottom] }; })()`;
+  const settle = await at(".th [title*=\"(e)\"]");
+  const snooze = await at(".th [title=\"Snooze (s)\"]");
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: settle.x, y: settle.y });
+  const first = await evaluate(`({ tip: ${TIP}, title: document.querySelector('[data-tip-test*="(e)"]').getAttribute('title') })`);
+  check(!first.tip.on && first.title === null, `V0.tooltips: the first tooltip opened at once, or the browser's title stayed (${JSON.stringify(first)})`);
+  const a = await waitFor(`(() => { const t = ${TIP}; return t.on && t; })()`, { soft: true, what: "the tooltip" });
+  check(!!a && /^Settle now/.test(a.words) && a.keys.join() === "e" && a.inView, `V0.tooltips: the Settle tooltip is wrong (${JSON.stringify(a)})`);
+  const anchorBox = await evaluate(`(() => { const b = document.querySelector('[data-tip-test*="(e)"]').getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; })()`);
+  check(!!a && (a.box[3] <= anchorBox[1] + 0.5 || a.box[1] >= anchorBox[3] - 0.5), `V0.tooltips: the tooltip covers its button (${JSON.stringify({ a, anchorBox })})`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: snooze.x, y: snooze.y });
+  const b = await evaluate(`({ tip: ${TIP}, settleTitle: document.querySelector('[data-tip-test*="(e)"]').getAttribute('title') })`);
+  check(b.tip.on && b.tip.words === "Snooze" && b.tip.keys.join() === "s" && /^Settle now/.test(b.settleTitle ?? ""), `V0.tooltips: the next tooltip did not open at once, or the last title did not come back (${JSON.stringify(b)})`);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: snooze.x, y: snooze.y, button: "left", buttons: 1, clickCount: 1 });
+  const pressed = await evaluate(TIP);
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: snooze.x, y: snooze.y, button: "left", buttons: 0, clickCount: 1 });
+  check(!pressed.on, `V0.tooltips: a press does not close the tooltip (${JSON.stringify(pressed)})`);
+  await key("Escape");
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 640, y: 795 });
+  await waitFor(`!document.querySelector('.ftip.on')`, { soft: true });
+  // keyboard: Tab to the first element with a title; its tooltip opens, Escape closes it
+  await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.th [title]')");
+  let focused = null;
+  for (let i = 0; i < 40 && !focused; i++) {
+    await key("Tab");
+    focused = await evaluate(`document.activeElement?.getAttribute('title') || null`);
+  }
+  const kt = focused ? await waitFor(`(() => { const t = ${TIP}; return t.on && t; })()`, { soft: true }) : null;
+  check(!!kt && kt.on && focused.startsWith(kt.words), `V0.tooltips: keyboard focus shows no tooltip (${JSON.stringify({ focused, kt })})`);
+  await key("Escape");
+  check(!(await evaluate(TIP)).on, "V0.tooltips: Escape does not close the tooltip");
+  // a finger: no tooltip
+  await openScreen({ url: "?mock=rail", ready: "!!document.querySelector('.m-app [title]')" }, 390, 844);
+  await evaluate(`document.querySelector('.m-app [title]').dataset.tipTouch = '1'`);
+  await tapCenter("[data-tip-touch]", "true");
+  await new Promise((r) => setTimeout(r, 700));
+  check(!(await evaluate(TIP)).on, "V0.tooltips: a tap opened a tooltip");
+});
+
 // V0.149, V0.run-cards-in-conversation: a command the agent wants the owner to run is a Run card in the conversation,
 // where the agent asked, and it scrolls with the messages; the same component on the desktop and the phone: the full command wraps (no sideways scroll), a Nix store path is shortened until pressed, the
 // buttons are inside the screen and 44 px tall on the phone; a `! cmd` block in a message is a Copy-only card.

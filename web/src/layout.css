@@ -411,6 +411,30 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .lcpop.pop-click{pointer-events:auto}
 @media (prefers-reduced-motion:no-preference){.lcpop{animation:lcpop-in .12s ease-out}}
 @keyframes lcpop-in{from{opacity:0}to{opacity:1}}
+/* V0.tooltips: the one tooltip (tooltip-ui.ts) for every title: the inverse surface, a nub at the anchor, the key as
+   a key cap. In the top layer (popover) where the browser has it, so it is above an open dialog too. */
+.ftip{position:fixed;inset:auto;margin:0;padding:0;border:0;background:none;overflow:visible;color:var(--on-night);
+  z-index:90;max-width:min(320px,calc(100vw - 16px));pointer-events:none;display:none}
+.ftip.on{display:block} /* never takes a press: a click meant for the button under it still lands there */
+.ftip-in{background:var(--night);border-radius:7px;padding:5px 9px 6px;font:500 12px/16px var(--ui);letter-spacing:.005em;
+  box-shadow:0 4px 14px rgba(20,14,8,.18),0 1px 3px rgba(20,14,8,.14);white-space:pre-line;overflow-wrap:anywhere;
+  display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;row-gap:3px;text-wrap:pretty}
+.ftip-t{min-width:0}
+.ftip-k{display:inline-flex;align-items:center;gap:4px;color:color-mix(in srgb,var(--on-night) 62%,transparent);font-weight:400;white-space:nowrap;margin-left:auto}
+.ftip-k kbd{font:500 10.5px/14px var(--mono);min-width:16px;padding:0 4px;border-radius:4px;background:color-mix(in srgb,var(--on-night) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--on-night) 20%,transparent);color:var(--on-night)}
+.ftip::before{content:"";position:absolute;width:8px;height:8px;background:var(--night);transform:rotate(45deg);border-radius:1px}
+.ftip[data-side=above]::before{bottom:-3px;left:calc(var(--nub,16px) - 4px)}
+.ftip[data-side=below]::before{top:-3px;left:calc(var(--nub,16px) - 4px)}
+.ftip[data-side=right]::before{left:-3px;top:calc(var(--nub,12px) - 4px)}
+@media (prefers-reduced-motion:no-preference){
+  .ftip.on:not([data-instant="1"]){animation:ftip-in .14s cubic-bezier(.2,.8,.2,1)}
+  .ftip.on:not([data-instant="1"])[data-side=above]{--ftip-dy:3px}
+  .ftip.on:not([data-instant="1"])[data-side=below]{--ftip-dy:-3px}
+}
+@keyframes ftip-in{from{opacity:0;translate:var(--ftip-dx,0) var(--ftip-dy,0)}to{opacity:1;translate:0 0}}
+.ftip[data-side=right]{--ftip-dx:-3px}
+@media (forced-colors:active){.ftip-in{border:1px solid CanvasText}}
 .lcpop .lcf{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);font:400 11px/14px var(--ui);color:var(--ink-faint)}
 .rail .rldr:focus-visible{outline:2px solid var(--harbour);outline-offset:2px;border-radius:4px}
 /* V0.next-step-dock: a Run card in the dock above the composer, short; the full card points to it while it waits */
