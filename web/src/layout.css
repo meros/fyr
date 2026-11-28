@@ -387,8 +387,18 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .lcval{color:var(--ink);font-variant-numeric:tabular-nums}
 .lcn{color:var(--ink-faint);font-variant-numeric:tabular-nums}
 .lcsrc{margin:0;font:400 11px/14px var(--ui);color:var(--ink-faint)}
-.lcpop{position:fixed;z-index:60;width:340px;max-width:calc(100vw - 24px);padding:12px 14px;background:var(--raised);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--lift-2);pointer-events:none}
+/* V0.popover-place: the popover. The outer box is placed (card-ui.tsx HoverCard) and carries the nub; the inner one
+   scrolls when the room on its side is short. The nub is a square turned 45°, half outside the edge that faces the anchor. */
+.lcpop{position:fixed;z-index:60;width:340px;max-width:calc(100vw - 16px);background:var(--raised);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--lift-2);pointer-events:none}
+.lcpop-in{padding:12px 14px;overflow-y:auto;overscroll-behavior:contain;border-radius:inherit}
+.lcpop::before{content:"";position:absolute;width:10px;height:10px;background:var(--raised);border:1px solid var(--line-strong);transform:rotate(45deg)}
+.lcpop[data-side=below]::before{top:-6px;left:calc(var(--nub,20px) - 6px);border-right:0;border-bottom:0}
+.lcpop[data-side=above]::before{bottom:-6px;left:calc(var(--nub,20px) - 6px);border-left:0;border-top:0}
+.lcpop[data-side=right]::before{left:-6px;top:calc(var(--nub,20px) - 6px);border-top:0;border-right:0}
+.lcpop[data-side=left]::before{right:-6px;top:calc(var(--nub,20px) - 6px);border-bottom:0;border-left:0}
 .lcpop.pop-click{pointer-events:auto}
+@media (prefers-reduced-motion:no-preference){.lcpop{animation:lcpop-in .12s ease-out}}
+@keyframes lcpop-in{from{opacity:0}to{opacity:1}}
 .lcpop .lcf{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);font:400 11px/14px var(--ui);color:var(--ink-faint)}
 .rail .rldr:focus-visible{outline:2px solid var(--harbour);outline-offset:2px;border-radius:4px}
 /* V0.next-step-dock: a Run card in the dock above the composer, short; the full card points to it while it waits */
