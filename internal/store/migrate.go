@@ -40,6 +40,7 @@ type migration struct {
 // removed while a store may still be below it.
 var migrations = []migration{
 	{"the load passes of V0.98 (7), V0.105 (2), V0.changes-code-only (4) and V0.structure-cost (2)", loadPasses},
+	{"two changes on one PR fold into one (V0.thread-change-pr-twins)", foldPRTwins},
 }
 
 // SchemaVersion is the version Open brings a store to.
@@ -180,6 +181,32 @@ func loadPasses(sqlTx *sql.Tx, now time.Time) error {
 	for _, c := range rs {
 		if core.MigrateRecord(c, now) {
 			if err := tx.PutChange(c); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// foldPRTwins is migration 2: V0.thread-change-pr-twins put its repair in
+// the load passes, which a store already at version 1 never ran again.
+func foldPRTwins(sqlTx *sql.Tx, now time.Time) error {
+	tx := &Tx{tx: sqlTx}
+	var ts []*core.Thread
+	err := rowsOf(sqlTx, `SELECT data FROM threads`, func(d string) error {
+		t := &core.Thread{}
+		if err := json.Unmarshal([]byte(d), t); err != nil {
+			return err
+		}
+		ts = append(ts, t)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, t := range ts {
+		if core.FoldSamePR(t, now) {
+			if err := tx.PutThread(t); err != nil {
 				return err
 			}
 		}

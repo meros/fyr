@@ -238,3 +238,36 @@ func TestOpenNewerStore(t *testing.T) {
 		}
 	}
 }
+
+// V0.pr-twins-migration: a store already at version 1 (migrated before
+// V0.thread-change-pr-twins) holding two changes on one PR heals on the next
+// Open, once.
+func TestOpenFoldsStoredPRTwinsAtVersionOne(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fyr.db")
+	change := func(id string) string {
+		return `{"id":"` + id + `","key":"agent:` + id + `","kind":"code","title":"` + id + `","phase":"review","phaseBy":"agent",
+			"updatedAt":"2026-11-27T09:00:00Z","touchedAt":"2026-11-27T09:00:00Z",
+			"pr":{"url":"https://github.com/acme/app/pull/67","repo":"acme/app","number":67,"state":"OPEN"}}`
+	}
+	writeRaw(t, path, map[string][][2]string{"threads": {{"t_twin", `{"id":"t_twin","title":"Twin","cwd":"/w/app","createdAt":"2026-11-27T09:00:00Z","updatedAt":"2026-11-27T09:00:00Z",
+		"changes":[` + change("a") + `,` + change("b") + `]}`}}}, map[string]string{SchemaKey: "1"})
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := version(t, s); v != SchemaVersion() {
+		t.Fatalf("schema version %d, want %d", v, SchemaVersion())
+	}
+	ts, err := s.Threads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ts) != 1 || len(ts[0].Changes) != 1 {
+		t.Fatalf("twins not folded: %+v", ts)
+	}
+	if v := core.CheckThread(ts[0], nil, time.Now(), nil); slices.ContainsFunc(v, func(x core.Violation) bool {
+		return x.ID == core.InvThreadChangeInvalid && strings.Contains(x.Evidence, "duplicate PR")
+	}) {
+		t.Fatalf("invariant still fires: %+v", v)
+	}
+}
