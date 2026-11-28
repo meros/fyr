@@ -1330,17 +1330,32 @@ for (const [name, w, h, mobile, tabs] of [
       await settle();
     };
     // The marked stop: which one (its place among the stops of its kind), whether it stands in view, and the folds.
+    // The mark is brief (1.6 s, conversation-ui.tsx), shorter than a poll can take on a loaded runner, so the page
+    // records the stop that gains it (watchHit, armed before the press) and the wait reads that record, not the
+    // class, which may already be gone (V0.jump-mark-recorded).
+    const watchHit = () => evaluate(`(() => {
+      window.__cvHitObs?.disconnect();
+      window.__cvHit = null;
+      const gained = (x) => x.nodeType === 1 && x.classList.contains('cv-hit');
+      const o = new MutationObserver((ms) => { for (const m of ms) {
+        if (m.type === 'attributes' && gained(m.target) && !/\\bcv-hit\\b/.test(m.oldValue ?? '')) window.__cvHit = m.target;
+        for (const n of m.addedNodes ?? []) { if (gained(n)) window.__cvHit = n; n.querySelectorAll?.('.cv-hit').forEach((x) => { window.__cvHit = x; }); }
+      } });
+      o.observe(document.querySelector('.convo'), { subtree: true, childList: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+      window.__cvHitObs = o;
+      return true;
+    })()`);
     const landed = (kind) => `(() => {
-      const c = document.querySelector('.convo'), b = c.getBoundingClientRect(), x = document.querySelector('.convo .cv-hit[data-stop=${kind}]');
-      if (!x) return null;
+      const c = document.querySelector('.convo'), b = c.getBoundingClientRect(), x = window.__cvHit;
+      if (!x || !x.isConnected || x.dataset.stop !== '${kind}') return null;
       const r = x.getBoundingClientRect();
       return { at: [...c.querySelectorAll('[data-stop=${kind}]')].indexOf(x), inView: r.top >= b.top - 1 && r.top < b.bottom - 20, folds: c.querySelectorAll('.foldw').length, open: c.querySelectorAll('.foldw.open').length };
     })()`;
     const jumpTo = async (press, kind, at, what) => {
+      await watchHit();
       await press();
-      // The run asks for reduced motion, so the jump is instant.
-      await waitFor(`(() => { const r = ${landed(kind)}; return !!r && r.at === ${at} && r.inView; })()`, { what });
-      const r = await evaluate(landed(kind));
+      // The run asks for reduced motion, so the jump is instant. The wait returns what it saw, in one read.
+      const r = await waitFor(`(() => { const r = ${landed(kind)}; return !!r && r.at === ${at} && r.inView && r; })()`, { what });
       check(r.folds > 0 && r.open === 0, `V0.conversation-jumps ${name}: ${what}: a fold opened ${JSON.stringify(r)}`);
     };
     await top();
