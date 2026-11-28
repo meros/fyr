@@ -236,3 +236,76 @@ func TestGuardWakeTheGateHoldsANewCommandWhileMemoryIsShort(t *testing.T) {
 		t.Fatalf("b held after its release: %q", r)
 	}
 }
+
+// V0.gate-order-arrival: two threads held at the same timestamp keep
+// their arrival order instead of breaking ties by thread id; a released thread
+// held again keeps its earlier place, and ahead counts by the same order.
+func TestGateReleaseBreaksTiedTimestampsByArrivalOrder(t *testing.T) {
+	e, now, a, b := heavyEngine(t, 2)
+	c, d := bareThread(t, e), bareThread(t, e)
+	running(e, c)
+	running(e, d)
+	e.HeavySoft = func(class string) bool { return class == "gradle assemble" }
+	free := 0.5
+	e.SlotPolicy = resource.DefaultPolicy
+	e.SlotSignals = func() resource.Signals {
+		return resource.Signals{Provider: "cgroups", Headroom: &free, Stall: resource.StallOK, CPU: 8, Memory: 16 << 30}
+	}
+	e.SlotFreeze = func(string) bool { return true }
+	e.SlotThaw = func(string) {}
+	guardDeps(t, e)
+
+	// Hold the thread with the lexicographically larger id first at the exact
+	// same clock reading, so id tie-breaking would release the second thread.
+	first, second := a, b
+	if first < second {
+		first, second = second, first
+	}
+	free = 0.04
+	e.Tick()
+	if r := e.HeavyGate(HeavyCall{Thread: first, Class: "gradle assemble", ToolUse: "tu1"}); !strings.Contains(r, "holds new heavy commands") {
+		t.Fatalf("first not held: %q", r)
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: second, Class: "gradle assemble", ToolUse: "tu2"}); !strings.Contains(r, "holds new heavy commands") {
+		t.Fatalf("second not held: %q", r)
+	}
+
+	free = 0.5
+	*now = now.Add(10 * time.Second)
+	e.Tick() // releases first
+	recovered := "Memory has recovered on this host: run the heavy command Fyr held again."
+	if !told(e, first, recovered) || told(e, second, recovered) {
+		t.Fatalf("released in wrong order: first=%v second=%v", told(e, first, recovered), told(e, second, recovered))
+	}
+
+	// Two threads arriving at the same timestamp while draining are ordered by
+	// arrival regardless of their ids, and ahead reflects that order.
+	third, fourth := c, d
+	if third < fourth {
+		third, fourth = fourth, third
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: third, Class: "gradle assemble", ToolUse: "tu3"}); !strings.Contains(r, "(1 ahead)") {
+		t.Fatalf("third thread ahead count wrong: %q", r)
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: fourth, Class: "gradle assemble", ToolUse: "tu4"}); !strings.Contains(r, "(2 ahead)") {
+		t.Fatalf("fourth thread ahead count wrong: %q", r)
+	}
+
+	// If memory goes short again before first runs, first is held again and
+	// keeps its original place ahead of second despite the equal timestamp.
+	free = 0.04
+	*now = now.Add(5 * time.Second)
+	e.Tick()
+	if r := e.HeavyGate(HeavyCall{Thread: first, Class: "gradle assemble", ToolUse: "tu5"}); !strings.Contains(r, "holds new heavy commands") {
+		t.Fatalf("first not re-held: %q", r)
+	}
+	free = 0.5
+	*now = now.Add(guard.GateRerunWait)
+	e.Tick()
+	if told(e, second, recovered) {
+		t.Fatal("re-held first lost its place to second")
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: first, Class: "gradle assemble", ToolUse: "tu6"}); r != "" {
+		t.Fatalf("re-held first was not released first: %q", r)
+	}
+}
