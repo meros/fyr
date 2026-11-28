@@ -23,6 +23,7 @@ import sys
 PROD = re.compile(
     r"(are you (still )?(waiting|stuck|working|done)|what('s| is) (going on|happening|the status)|"
     r"\bstatus\b\??$|is (it|this) (stuck|running|done)|why (did|does|is)n?'?t? .{0,40}(stop|wait|hang|move)|"
+    r"(show|give) me (some )?progress|any progress|how far|"
     r"väntar du|hänger (den|det|du)|vad händer|vad gör du|är du klar|kör (den|du)|status\?)",
     re.I,
 )
@@ -104,7 +105,9 @@ def main():
                 last_user[subj] = (tps, t)
             else:
                 last_user[subj] = (None, t)
-                if PROD.search(text.strip()[:200]):
+                # Only the owner's own short message: a brief from another thread (from) or a long
+                # first message that quotes "status?" as evidence is not a prod.
+                if not d.get("from") and len(text.strip()) <= 300 and PROD.search(text.strip()):
                     prods.append((at, subj, text.strip()[:160]))
         elif typ == "run.started":
             run_start[subj] = (t, d.get("by", ""), last_user.get(subj))
