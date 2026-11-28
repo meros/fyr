@@ -169,7 +169,8 @@
 /* V0.quota-in-thread: the provider quota's one figure in the thread's title bar: quiet, never shortened, 44 px high */
 .m-tr1 .qfig{flex:none;height:44px;padding:0 4px;font:400 12px/16px var(--ui);font-variant-numeric:tabular-nums;color:var(--ink-muted);white-space:nowrap}
 .m-tr1 .qfig.stale{opacity:.7}
-.m-tr1 .qfig small{margin-right:3px;font-size:11px;color:var(--ink-faint);font-weight:400}
+.m-tr1 .qfig{display:inline-flex;align-items:center;max-width:96px}
+.m-tr1 .qfig small{flex:0 1 auto;min-width:0;max-width:44px;margin-right:3px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--ink-faint);font-weight:400}
 /* the quota lines in Details, one under the other */
 .m-qrow{align-items:start;padding:12px 0}
 .m-qrow .m-ql{display:block}
