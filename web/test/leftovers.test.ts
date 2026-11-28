@@ -119,3 +119,38 @@ test("V0.settings-ia: a leftover whose thread is gone says so and offers no Open
     ["of a thread that is gone · its timeout ends it in 10 h", null],
   ]);
 });
+
+test("V0.leftovers-strip-cap: repeated names group with ×N and long lists cap with +M more on the strip and load card", () => {
+  const many: Leftover[] = [];
+  for (let i = 0; i < 196; i++) {
+    many.push({ ...http, id: `${1000 + i}@1`, pid: 1000 + i, name: "dbus-daemon", procs: 1, rss: 2e6, endsAt: new Date(NOW + 25 * 60_000).toISOString() });
+  }
+  for (let i = 0; i < 15; i++) {
+    many.push({ ...http, id: `${2000 + i}@1`, pid: 2000 + i, name: "gnome-keyring-daemon", procs: 1, rss: 1e6, endsAt: new Date(NOW + 25 * 60_000).toISOString() });
+  }
+  assert.equal(stripText(many, NOW), "211 leftover processes: dbus-daemon ×196 (392 MB), gnome-keyring-daemon ×15 · Fyr ends them in 25 min");
+
+  // With more than 3 distinct names on the strip and more than 6 on the host card, the rest collapse into +M more.
+  const distinct: Leftover[] = [
+    chrome,
+    ...many.slice(0, 10), // 10 dbus-daemon (20 MB total)
+    { ...http, id: "3001@1", pid: 3001, name: "a", rss: 50e6 },
+    { ...http, id: "3002@1", pid: 3002, name: "b", rss: 40e6 },
+    { ...http, id: "3003@1", pid: 3003, name: "c", rss: 30e6 },
+    { ...http, id: "3004@1", pid: 3004, name: "d", rss: 25e6 },
+    { ...http, id: "3005@1", pid: 3005, name: "e", rss: 15e6 },
+    { ...http, id: "3006@1", pid: 3006, name: "f", rss: 10e6 },
+  ];
+  assert.equal(stripText(distinct, NOW), "17 leftover processes: chromium (1.9 GB), a, b, +14 more · Fyr ends them in 25 min");
+
+  const card = hostLeftovers(host(distinct))!.card;
+  assert.deepEqual(cardLines({ sections: card.sections }), [
+    "chromium · 9 processes · 1.9 GB",
+    "a · 50 MB",
+    "b · 40 MB",
+    "c · 30 MB",
+    "d · 25 MB",
+    "dbus-daemon ×10 · 20 MB",
+    "+2 more · 25 MB",
+  ]);
+});
