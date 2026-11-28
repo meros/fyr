@@ -232,9 +232,10 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 	case WhenIdleFor:
 		return truth(now.Sub(t.ActivityAt) >= time.Duration(w.Ms)*time.Millisecond)
 	case WhenIdle:
-		// V0.settle-waits-unread-message: a message the agent has not read is a
-		// run about to start, so the thread is not idle yet.
-		return truth(!t.Running && t.Starting == nil && t.Failure == nil && len(t.Outbox) == 0)
+		// V0.settle-waits-unread-message, V0.handover-revives-settled: a
+		// message the agent has not read or a handover in progress is work
+		// about to run, so the thread is not idle yet.
+		return truth(!t.Running && t.Starting == nil && t.Handover == nil && t.Failure == nil && len(t.Outbox) == 0)
 	case WhenWorkOver:
 		return truth(WorkOverAt(t, now))
 	case WhenWorkDone:

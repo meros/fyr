@@ -580,6 +580,9 @@ func init() {
 			if t.Settle.At != nil {
 				return "Already settled"
 			}
+			if t.Handover != nil {
+				return "Wait for the handover to finish"
+			}
 			return notArchived(t, v, now)
 		},
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
@@ -888,6 +891,12 @@ func init() {
 			if p == t.Profile {
 				return nil, fmt.Errorf("%w: the thread already runs on %s", ErrBadArgs, p)
 			}
+			// V0.handover-revives-settled: handing over revives a settled or
+			// snoozed thread (keeping Failure until handover.done so a failed
+			// handover does not lose the failure).
+			t.Settle.At = nil
+			t.SettleAsk = nil
+			Unsnooze(v)
 			t.Handover = &Handover{To: p, Model: a.Str("model"), At: now}
 			v.SeenAt = now
 			e := Effect{Kind: EffectHandover, Profile: p, Model: a.Str("model")}

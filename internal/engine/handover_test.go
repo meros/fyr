@@ -313,3 +313,31 @@ func TestConversationListsAttachments(t *testing.T) {
 		t.Fatalf("attachment path missing from the conversation:\n%s", conv)
 	}
 }
+
+// V0.handover-revives-settled: handing over a settled thread via adopt
+// (FirstMessage: true) revives it cleanly without tripping
+// thread-settled-contradiction or thread-settled-run-started.
+func TestHandoverSettledThreadAdoptNoViolation(t *testing.T) {
+	h := newHandoverHarness(t)
+	th := h.start("remember the word tulip")
+	if r := h.cmd("thread.settle", th.ID, nil); !r.OK {
+		t.Fatalf("settle: %+v", r)
+	}
+	h.wait(th.ID, "settled", state(core.Settled))
+
+	ev := h.handover(th.ID, "x")
+	if ev.Rung != "adopt" {
+		t.Fatalf("event %+v", ev)
+	}
+	got := h.wait(th.ID, "adopt turn", func(t core.Thread, _ core.Attention) bool {
+		return !t.Running && t.Starting == nil && t.RunEnds >= 2
+	})
+	if got.Settle.At != nil || got.Profile != "x" {
+		t.Fatalf("expected active thread on x, settle=%v profile=%q", got.Settle.At, got.Profile)
+	}
+	for _, id := range []string{core.InvThreadSettledContradict, core.InvThreadSettledRunStarted} {
+		if cards := invCards(h.e, id); len(cards) > 0 {
+			t.Fatalf("unexpected %s invariant cards: %+v", id, cards)
+		}
+	}
+}
