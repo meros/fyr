@@ -930,11 +930,19 @@ func (c *Checker) startGHLogin() (GHAuthState, error) {
 	var once sync.Once
 	signalCode := func() { once.Do(func() { close(gotCode) }) }
 
+	// V0.updater-token-only: the last line gh printed goes into a failure's
+	// error, so the card says why ("exit status 1" alone said nothing).
+	var last string
+	scanned := make(chan struct{})
 	go func() {
+		defer close(scanned)
 		sc := bufio.NewScanner(pr)
 		for sc.Scan() {
 			line := sc.Text()
 			c.mu.Lock()
+			if t := strings.TrimSpace(line); t != "" {
+				last = t
+			}
 			if m := ghCodeRe.FindStringSubmatch(line); len(m) == 2 && sess.state.Code == "" {
 				sess.state.Code = m[1]
 				signalCode()
@@ -952,10 +960,14 @@ func (c *Checker) startGHLogin() (GHAuthState, error) {
 	go func() {
 		err := cmd.Wait()
 		pw.Close()
+		<-scanned
 		c.mu.Lock()
 		sess.state.Running = false
 		if err != nil && ctx.Err() == nil {
 			sess.state.Error = err.Error()
+			if last != "" {
+				sess.state.Error += ": " + last
+			}
 		} else if err == nil {
 			sess.state.Done = true
 		}

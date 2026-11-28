@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -33,7 +34,7 @@ func TestFetchWithoutGh(t *testing.T) {
 	g := newFakeGitHub(t, relSHA, priv)
 	r := g.releases()
 	r.Key = base64.StdEncoding.EncodeToString(pub)
-	r.Token = TokenFromEnv() // nothing in the env, no gh: none
+	r.Token = TokenFromEnv("") // no github.env token, no gh: none
 	sha, err := r.Deployable(context.Background())
 	if err != nil || sha != relSHA {
 		t.Fatalf("deployable %q %v", sha, err)
@@ -225,19 +226,30 @@ func TestTokenGoesToTheAPIOnly(t *testing.T) {
 	}
 }
 
-// V0.release-without-gh: the token comes from GH_TOKEN or GITHUB_TOKEN;
-// with neither and no gh, there is none.
+// V0.release-without-gh, V0.updater-token-only: the token comes from
+// GH_TOKEN or GITHUB_TOKEN, which TakeEnvToken takes out of the environment
+// so that gh and the agents never see it; with neither and no gh, none.
 func TestTokenFromEnv(t *testing.T) {
 	noGh(t)
-	if tok := TokenFromEnv()(); tok != "" {
+	if tok := TokenFromEnv("")(); tok != "" {
 		t.Fatalf("token %q with no env and no gh", tok)
 	}
 	t.Setenv("GITHUB_TOKEN", "b")
-	if tok := TokenFromEnv()(); tok != "b" {
+	if tok := TakeEnvToken(); tok != "b" {
 		t.Fatalf("token %q", tok)
 	}
+	t.Setenv("GITHUB_TOKEN", "b")
 	t.Setenv("GH_TOKEN", "a")
-	if tok := TokenFromEnv()(); tok != "a" {
+	tok := TakeEnvToken()
+	if tok != "a" {
 		t.Fatalf("token %q", tok)
+	}
+	for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if _, ok := os.LookupEnv(k); ok {
+			t.Fatalf("%s still in the environment", k)
+		}
+	}
+	if got := TokenFromEnv(tok)(); got != "a" {
+		t.Fatalf("updater token %q", got)
 	}
 }

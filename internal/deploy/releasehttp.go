@@ -302,19 +302,35 @@ func (r *Releases) save(ctx context.Context, u, token, to string) (int, error) {
 	return resp.StatusCode, f.Close()
 }
 
-// TokenFromEnv is the token the updater may send to GitHub's API: GH_TOKEN
-// or GITHUB_TOKEN (github.env), else gh's stored login when gh is on PATH
-// (`gh auth token` reads it locally, no API call), else none: a public
-// release repo is read anonymously. gh's answer is kept for 10 minutes.
-func TokenFromEnv() func() string {
+// TakeEnvToken returns the token github.env put in GH_TOKEN or GITHUB_TOKEN
+// and takes both out of the environment (V0.updater-token-only). The file
+// holds the updater's token, which may only read the release repo; left in
+// the environment, every gh of fyrd and of the agents would use it over gh's
+// own login, Setup would call the host signed in without repo scope, and
+// `gh auth login` refuses to run while GH_TOKEN is set. fyrd calls it once at
+// start, before it starts anything.
+func TakeEnvToken() string {
+	tok := ""
+	for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" && tok == "" {
+			tok = v
+		}
+		os.Unsetenv(k)
+	}
+	return tok
+}
+
+// TokenFromEnv is the token the updater may send to GitHub's API: env, the
+// token TakeEnvToken took from github.env, else gh's stored login when gh is
+// on PATH (`gh auth token` reads it locally, no API call), else none: a
+// public release repo is read anonymously. gh's answer is kept for 10 minutes.
+func TokenFromEnv(env string) func() string {
 	var mu sync.Mutex
 	var tok string
 	var at time.Time
 	return func() string {
-		for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
-			if v := strings.TrimSpace(os.Getenv(k)); v != "" {
-				return v
-			}
+		if env != "" {
+			return env
 		}
 		mu.Lock()
 		defer mu.Unlock()

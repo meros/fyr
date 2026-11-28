@@ -75,7 +75,8 @@ func (w *wiring) wireDeploy() {
 	go ghMeter.Run(ctx, github.Gh)
 	// V0.release-without-gh: releases are read over HTTPS, no gh; a token
 	// (github.env, else gh's login when gh is there) is optional.
-	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Key: cfg.UpdateKey, Channel: cfg.UpdateChannel, Token: deploy.TokenFromEnv(), KV: h.st, HTTP: &http.Client{Timeout: releaseHTTPTimeout}}
+	// V0.updater-token-only: github.env's token is the updater's alone.
+	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Key: cfg.UpdateKey, Channel: cfg.UpdateChannel, Token: deploy.TokenFromEnv(updaterToken), KV: h.st, HTTP: &http.Client{Timeout: releaseHTTPTimeout}}
 	dep.LiveVersion = version
 	// V0.versioned-releases: the channel; a bad one follows main, said once.
 	if _, err := deploy.ParseChannel(cfg.UpdateChannel); err != nil {

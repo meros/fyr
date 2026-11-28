@@ -7,7 +7,7 @@ The [README](../README.md) has the short install for NixOS, macOS, Linux without
 | Path | What |
 |---|---|
 | `~/.config/fyr/config.json` | The daemon's configuration. Fyr reads it again when it changes. Most settings are also in the app (Settings). |
-| `~/.config/fyr/github.env` | Optional `GH_TOKEN=…` (mode 0600). A public release repo needs no token; a private fork does, and a token raises GitHub's API limit. Without it the `gh` login is used when `gh` is installed. |
+| `~/.config/fyr/github.env` | Optional `GH_TOKEN=…` (mode 0600). A public release repo needs no token; a private fork does, and a token raises GitHub's API limit. Without it the `gh` login is used when `gh` is installed. fyrd takes the token out of its environment at start (V0.updater-token-only): gh and the agents never see it and use gh's own login. |
 | `~/.local/share/fyr/` | Data: the database, the builds (`current`, `previous`), logs and the owner socket. |
 | `~/Library/Logs/fyr.log` | The log on macOS. On Linux: `journalctl -u fyr`. |
 | `~/.local/bin/fyr` | Linux without Nix: a link to the launcher, so the `fyr` command is on your PATH. |

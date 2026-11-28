@@ -33,6 +33,9 @@ import (
 	"github.com/meros/fyr/web"
 )
 
+// updaterToken is the token github.env gave fyrd, for the updater only.
+var updaterToken string
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("fyrd ")
@@ -81,6 +84,10 @@ func main() {
 	} else if le.Launcher {
 		log.Printf("launcher: pid %d, runner %q", os.Getppid(), le.Runner)
 	}
+	// V0.updater-token-only: github.env's token is the updater's; take it out
+	// of the environment before anything starts, so gh (Setup, polls, the
+	// agents) uses its own login and `gh auth login` can run.
+	updaterToken = deploy.TakeEnvToken()
 	os.MkdirAll(*data, 0o700)
 	cfg := loadConfig(*cfgPath)
 	// A systemd unit has a minimal PATH; agents need the user's tools: the

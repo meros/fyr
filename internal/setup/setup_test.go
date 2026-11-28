@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCheckAllReadyMac(t *testing.T) {
@@ -291,5 +292,31 @@ func TestPhoneStepPublishesTheForwardPorts(t *testing.T) {
 	c.ForwardTargets, status = nil, `{"Web":{"desk.tail.ts.net:7443":{}}}`
 	if s := phone(); s.Status != OK {
 		t.Fatalf("without forward ports: %+v", s)
+	}
+}
+
+// V0.updater-token-only: a gh login that fails says what gh said, not only
+// its exit status.
+func TestGHLoginFailureSaysWhy(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho 'The value of the GH_TOKEN environment variable is being used for authentication.' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := &Checker{ToolsDir: dir}
+	if _, err := c.startGHLogin(); err != nil {
+		t.Fatal(err)
+	}
+	var st GHAuthState
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		c.mu.Lock()
+		st = c.ghAuth.state
+		c.mu.Unlock()
+		if !st.Running {
+			break
+		}
+	}
+	if st.Running || !strings.Contains(st.Error, "exit status 1: The value of the GH_TOKEN") {
+		t.Fatalf("state %+v", st)
 	}
 }
