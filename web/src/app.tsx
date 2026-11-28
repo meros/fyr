@@ -51,6 +51,7 @@ import { HostMarksContext } from "./host-mark-ui.tsx";
 import { DeployBanner } from "./deploy-ui.tsx";
 import { StallBanner } from "./stall-ui.tsx";
 import { installPress, Pop } from "./motion-ui.tsx";
+import { installTooltips } from "./tooltip-ui.ts";
 import { Boundary } from "./boundary.tsx";
 import { HomeScreen } from "./home-ui.tsx";
 import { ProjectPicker } from "./project-picker.tsx";
@@ -399,6 +400,7 @@ function tgtThread(s: View, zone: Zone, view: { id: string } | null, sel: string
 }
 
 installPress();
+installTooltips();
 render(
   <ApiContext.Provider value={hostApi}>
     <App />
