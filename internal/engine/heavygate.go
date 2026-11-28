@@ -222,18 +222,19 @@ func (e *Engine) gateHold(c HeavyCall, soft bool) string {
 	}
 	e.mu.Lock()
 	if e.gateHeld == nil {
-		e.gateHeld = map[string]time.Time{}
+		e.gateHeld = map[string]gateTurn{}
 	}
 	if !waiting {
 		if !released {
-			since = e.Now()
+			e.gateSeq++
+			since = gateTurn{at: e.Now(), seq: e.gateSeq}
 		}
 		e.gateHeld[c.Thread] = since // a released thread held again keeps its place
 	}
 	delete(e.gateReleased, c.Thread)
 	ahead := 0
-	for th, s := range e.gateHeld {
-		if th != c.Thread && s.Before(e.gateHeld[c.Thread]) {
+	for th := range e.gateHeld {
+		if th != c.Thread && e.gateBefore(th, c.Thread) {
 			ahead++
 		}
 	}

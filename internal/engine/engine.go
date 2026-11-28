@@ -197,9 +197,10 @@ type Engine struct {
 	// gateReleased are the ones released whose command has not run again
 	// yet (with the time they had waited from), gateRan when the last one
 	// did. All under mu.
-	gateHeld     map[string]time.Time
-	gateReleased map[string]time.Time
+	gateHeld     map[string]gateTurn
+	gateReleased map[string]gateTurn
 	gateRan      time.Time
+	gateSeq      uint64 // the last gateTurn.seq given
 	// V0.subagent-admission: heldBy is the subagent whose heavy command the
 	// gate refused last on a thread (none: the thread's own agent); subWake
 	// is the admission or recovery that waits for that subagent's next tool
