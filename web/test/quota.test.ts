@@ -29,9 +29,9 @@ test("only a window at 80 % or more is hot", () => {
   const q: Quota = { ...claude, windows: [{ name: "5 h", usedPct: 79.4 }, { name: "7 d", usedPct: 80 }] };
   assert.deepEqual(quotaParts(q).map((p) => p.hot), [false, true]);
   // V0.quota-in-thread: the phone's header has room for one figure: the busiest window's share
-  assert.deepEqual(busiestFigure(q), { text: "80 %", hot: true });
-  assert.deepEqual(busiestFigure(claude), { text: "61 %", hot: false });
-  assert.deepEqual(busiestFigure({ ...claude, windows: [{ name: "5 h", usedPct: 86 }, { name: "7 d", usedPct: 40 }] }), { text: "86 %", hot: true });
+  assert.deepEqual(busiestFigure(q), { text: "80 %", hot: true, window: "7 d" });
+  assert.deepEqual(busiestFigure(claude), { text: "61 %", hot: false, window: "7 d" });
+  assert.deepEqual(busiestFigure({ ...claude, windows: [{ name: "5 h", usedPct: 86 }, { name: "7 d", usedPct: 40 }] }), { text: "86 %", hot: true, window: "5 h" });
 });
 
 test("money and the balance", () => {

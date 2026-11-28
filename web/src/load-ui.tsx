@@ -158,8 +158,11 @@ export function LoadRail() {
           <div class={`rldr ${railMeter(h).level}`} tabIndex={0} role="img" aria-label={railLabel(h, several)} onMouseEnter={show(h.host)} onMouseLeave={hide} onFocus={show(h.host)} onBlur={hide}>
             <HostMeters h={h} name={several ? short.get(h.host) : undefined} full={h.host} />
           </div>
-          <RailUndeclared h={h} />
-          <RailLeftovers h={h} />
+          {/* V0.tight-cards: the two counts side by side under the meters, one row instead of two stray pills */}
+          <div class="rldx">
+            <RailUndeclared h={h} />
+            <RailLeftovers h={h} />
+          </div>
         </div>
       ))}
       {open && shown && (
@@ -222,9 +225,10 @@ export function LoadSheetBody({ hosts, renderQuotas }: { hosts: StripHost[]; ren
         const c = h.load && loadCard(h.load, { lookup: und.lookup, now: und.now() });
         return (
           <section key={h.name} class={`mls${h.load ? "" : " off"}`} role={several ? "tabpanel" : undefined} data-host={h.name} aria-label={h.name}>
-            <div class="mlsh">
+            {/* V0.tight-cards: with tabs the tab names the host, so the head leaves the name out and the meters take its width */}
+            <div class={`mlsh${several ? " tabbed" : ""}`}>
               <span class="mlsn">
-                <b class="mono ell">{h.name}</b>
+                {!several && <b class="mono ell">{h.name}</b>}
                 {!h.load && <small>{`Offline${h.offline && clockTime(h.offline) ? ` since ${clockTime(h.offline)}` : ""}; no load until it is back`}</small>}
               </span>
               {h.load && <HostMeters h={h.load} />}

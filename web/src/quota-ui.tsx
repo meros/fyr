@@ -282,6 +282,8 @@ export function ThreadQuotaFigure(p: { profile: string; host?: string; name: str
   if (!q || !f) return null;
   return (
     <button type="button" class={`qfig${f.hot ? " hot" : ""}${q.stale ? " stale" : ""}`} aria-label={`Quota: ${quotaSummary(q, p.name)}. Details`} onClick={p.onOpen}>
+      {/* V0.tight-cards: the window the figure counts ("7 d"), so a bare "61 %" in the header is not read as something else */}
+      {f.window && <small>{f.window}</small>}
       {f.text}
     </button>
   );
