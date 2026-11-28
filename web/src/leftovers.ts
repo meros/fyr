@@ -54,10 +54,41 @@ function inText(iso: string, now: number): string {
   return ago(Math.max(60_000, Date.parse(iso) - now));
 }
 
-const heavy = (l: Leftover) => l.rss >= 100e6;
-const named = (l: Leftover) => (heavy(l) ? `${l.name} (${sizeText(l.rss)})` : l.name);
 const plural = (n: number) => `${n} ${n === 1 ? "process" : "processes"}`;
-const byMemory = (a: Leftover, b: Leftover) => b.rss - a.rss || a.pid - b.pid;
+const byMemory = (a: Leftover, b: Leftover) => (b.rss || 0) - (a.rss || 0) || a.pid - b.pid;
+
+interface LeftoverGroup {
+  name: string;
+  count: number;
+  procs: number;
+  rss: number;
+  minPid: number;
+}
+
+/** V0.leftovers-strip-cap: group leftovers by process name (heaviest combined RSS first, then larger count, then pid),
+ *  so repeated daemons read as "dbus-daemon ×196" instead of repeating the name 196 times. */
+function groupByName(items: Leftover[]): LeftoverGroup[] {
+  const map = new Map<string, LeftoverGroup>();
+  for (const l of items) {
+    const procs = l.procs || 0;
+    const rss = l.rss || 0;
+    const g = map.get(l.name);
+    if (g) {
+      g.count += 1;
+      g.procs += procs;
+      g.rss += rss;
+      if (l.pid < g.minPid) g.minPid = l.pid;
+    } else {
+      map.set(l.name, { name: l.name, count: 1, procs, rss, minPid: l.pid });
+    }
+  }
+  return [...map.values()].sort((a, b) => b.rss - a.rss || b.count - a.count || a.minPid - b.minPid);
+}
+
+const namedGroup = (g: LeftoverGroup) => `${g.name}${g.count > 1 ? ` ×${g.count}` : ""}${g.rss >= 100e6 ? ` (${sizeText(g.rss)})` : ""}`;
+
+const MAX_STRIP_GROUPS = 3;
+const MAX_CARD_GROUPS = 6;
 
 /** A thread's leftovers on one host, the heaviest first; null without any. V0.kept-not-leftover: a process the agent
  *  kept (keep_process) is its work, not a leftover, and stays off the strip until the keep expires; Settings →
@@ -79,16 +110,22 @@ function holdText(l: Leftover, now: number, by = false): string {
   return "";
 }
 
-/** The strip on the open thread: "2 leftover processes: chromium (1.9 GB), http.server · Fyr ends them in 25 min". The
- *  soonest end names the whole list's; a keep or a timeout of a single one is named instead. */
+/** The strip on the open thread: "2 leftover processes: chromium (1.9 GB), http.server · Fyr ends them in 25 min".
+ *  V0.leftovers-strip-cap: repeated names group as "name ×N" and at most MAX_STRIP_GROUPS groups are named (+M more
+ *  for the rest), so a burst of leftovers never expands the strip over the conversation. The soonest end names the
+ *  whole list's; a keep or a timeout of a single one is named instead. */
 export function stripText(items: Leftover[], now: number): string {
-  const head = `${items.length} leftover process${items.length === 1 ? "" : "es"}: ${items.map(named).join(", ")}`;
+  const groups = groupByName(items);
+  const shown = groups.slice(0, MAX_STRIP_GROUPS).map(namedGroup);
+  const rest = groups.slice(MAX_STRIP_GROUPS).reduce((s, g) => s + g.count, 0);
+  if (rest > 0) shown.push(`+${rest} more`);
+  const head = `${items.length} leftover process${items.length === 1 ? "" : "es"}: ${shown.join(", ")}`;
   let tail = "";
   if (items.length === 1) {
     const h = holdText(items[0], now);
     tail = h.startsWith("ends") ? `Fyr ${h.replace("ends", "ends it")}` : h;
   } else {
-    const ends = items.map((l) => l.endsAt).filter((x): x is string => !!x && !items.find((l) => l.endsAt === x)?.kept);
+    const ends = items.filter((l) => l.endsAt && !l.kept).map((l) => l.endsAt!);
     if (ends.length) {
       const soon = ends.sort()[0];
       tail = Date.parse(soon) <= now ? "Fyr ends them now" : `Fyr ends them in ${inText(soon, now)}`;
@@ -101,15 +138,28 @@ export function stripText(items: Leftover[], now: number): string {
 export function hostLeftovers(h: HostLoad): { count: number; text: string; card: Card } | null {
   const ls = h.leftovers ?? [];
   if (!ls.length) return null;
-  const mem = ls.reduce((s, l) => s + l.rss, 0);
+  const mem = ls.reduce((s, l) => s + (l.rss || 0), 0);
+  const groups = groupByName(ls);
+  const rows = groups.slice(0, MAX_CARD_GROUPS).map((g) => ({
+    label: "",
+    value: g.count > 1 ? `${g.name} ×${g.count}` : g.name,
+    note: [g.procs > g.count ? `${g.procs} processes` : "", g.rss > 0 ? sizeText(g.rss) : ""].filter(Boolean).join(" · ") || undefined,
+  }));
+  const rest = groups.slice(MAX_CARD_GROUPS);
+  if (rest.length) {
+    const restCount = rest.reduce((s, g) => s + g.count, 0);
+    const restMem = rest.reduce((s, g) => s + g.rss, 0);
+    rows.push({ label: "", value: `+${restCount} more`, note: restMem > 0 ? sizeText(restMem) : undefined });
+  }
   return {
     count: ls.length,
     text: `${ls.length} leftover process${ls.length === 1 ? "" : "es"} · ${sizeText(mem)}`,
-    // V0.hover-cards: the rail's hover card and the phone sheet's text: each process and its memory, heaviest first
+    // V0.hover-cards, V0.leftovers-strip-cap: the rail's hover card and the phone sheet's text, grouped by name and
+    // capped so a burst of leftovers stays inside the viewport
     card: {
       head: "Still running after their thread",
       summary: `${plural(ls.length)} that threads started and left behind, ${sizeText(mem)} in all.`,
-      sections: [{ list: true, rows: [...ls].sort(byMemory).map((l) => ({ label: "", value: l.name, note: [l.procs > 1 ? `${l.procs} processes` : "", l.rss > 0 ? sizeText(l.rss) : ""].filter(Boolean).join(" · ") || undefined })) }],
+      sections: [{ list: true, rows }],
       source: `End or keep them in Settings → Hosts${h.host ? ` → ${h.host}` : ""}.`, // V0.settings-ia: on the host's page
     },
   };

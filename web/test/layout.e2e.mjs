@@ -3047,6 +3047,18 @@ for (const dark of [false, true]) section(`V0.176 desktop${dark ? " dark" : ""}`
       return { railScroll: rail.scrollHeight - rail.clientHeight, midScroll: mid.scrollHeight - mid.clientHeight, btn: b.height > 0 && b.bottom <= innerHeight }; })()`);
     check(rs.railScroll <= 0 && rs.midScroll <= 0 && rs.btn, `${ctx}: the rail scrolls at 1000 px with the count (${JSON.stringify(rs)})`);
     await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    // V0.leftovers-strip-cap: 211 leftovers group by name and cap, so the strip stays compact and the hover card fits inside the window.
+    await navigate(`${origin}/?mock=rail&leftovers=many&open=t_mapperf`, "!!document.querySelector('.th .lftb')");
+    await settle();
+    const sm = await evaluate(`(() => { const e = document.querySelector('.th .lftb'), conv = document.querySelector('.convo'), b = e.getBoundingClientRect(), c = conv.getBoundingClientRect();
+      return { text: e.querySelector('.lftb-b').innerText, h: Math.round(b.height), convH: Math.round(c.height), wide: document.documentElement.scrollWidth > innerWidth }; })()`);
+    check(/^211 leftover processes: chromium \(1\.9 GB\), dbus-daemon ×190 \(380 MB\), http\.server, \+19 more · Fyr ends them in \d+ min$/.test(sm.text) && sm.h <= 64 && sm.convH > 150 && !sm.wide, `${ctx}: many-leftovers strip is wrong (${JSON.stringify(sm)})`);
+    await evaluate(`document.querySelector('.rail .rlft').dispatchEvent(new MouseEvent('mouseenter'))`);
+    await waitFor(`!!document.querySelector('.lcpop')`, { what: "the many-leftovers card" });
+    const lcm = await evaluate(`(() => { const p = document.querySelector('.lcpop'), b = p.getBoundingClientRect();
+      return { rows: [...p.querySelectorAll('.lclist li')].map((x) => x.textContent), inside: b.bottom <= innerHeight && b.top >= 0 }; })()`);
+    check(lcm.rows.length === 7 && lcm.rows[1].startsWith("dbus-daemon ×190") && lcm.rows[6].startsWith("+2 more") && lcm.inside, `${ctx}: many-leftovers hover card is wrong (${JSON.stringify(lcm)})`);
+    await shot(`leftovers-many-${tag}-desktop.png`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }
@@ -3086,6 +3098,12 @@ for (const dark of [false, true]) section(`V0.176 phone${dark ? " dark" : ""}`, 
     check(g.have.every(Boolean) && g.n >= 10 && g.minH >= 44 && g.off.length === 0 && !g.wide, `${ctx}: Settings' leftover groups on the phone (${JSON.stringify(g)})`);
     await evaluate(`document.querySelector('.set.phone section[aria-label="Leftover processes"]').scrollIntoView({ block: 'start' })`);
     await shot(`leftovers-settings-${tag}-phone.png`);
+    // V0.leftovers-strip-cap: 211 leftovers on the phone stay compact, keep buttons >= 44 px and leave the conversation usable.
+    await openScreen({ url: "?mock=rail&leftovers=many&open=t_mapperf", ready: "!!document.querySelector('.m-thread .lftb')" }, W, 844);
+    const sm = await evaluate(`(() => { const e = document.querySelector('.m-thread .lftb'), conv = document.querySelector('.convo'), b = e.getBoundingClientRect(), c = conv.getBoundingClientRect(), bs = [...e.querySelectorAll('.btn')].map((x) => x.getBoundingClientRect());
+      return { text: e.querySelector('.lftb-b').innerText, h: Math.round(b.height), convH: Math.round(c.height), minH: Math.min(...bs.map((x) => x.height)), inside: b.bottom < innerHeight && bs.every((x) => x.bottom <= innerHeight), wide: document.documentElement.scrollWidth > innerWidth }; })()`);
+    check(/^211 leftover processes: chromium \(1\.9 GB\), dbus-daemon ×190 \(380 MB\), http\.server, \+19 more · Fyr ends them in \d+ min$/.test(sm.text) && sm.h <= 140 && sm.convH > 200 && sm.minH >= 44 && sm.inside && !sm.wide, `${ctx}: many-leftovers phone strip is wrong (${JSON.stringify(sm)})`);
+    await shot(`leftovers-many-${tag}-phone.png`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }

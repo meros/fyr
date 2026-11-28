@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -78,16 +79,59 @@ type LeftoverItem struct {
 	RSS  uint64
 }
 
+const maxLeftoverLineGroups = 3
+
 // LeftoverLine is the line: "Fyr ended 2 leftover processes (the thread
-// settled): chromium (1.9 GB), http.server".
+// settled): chromium (1.9 GB), http.server". V0.leftovers-strip-cap: repeated
+// names group as "name ×N" (combined RSS) and at most 3 groups are named
+// (+M more for the rest).
 func LeftoverLine(items []LeftoverItem, why string) string {
-	var names []string
-	for _, x := range items {
-		n := x.Name
-		if x.RSS >= 100<<20 {
-			n += fmt.Sprintf(" (%s)", bytesText(x.RSS))
+	type group struct {
+		name  string
+		count int
+		rss   uint64
+		first int
+	}
+	byName := map[string]*group{}
+	var groups []*group
+	for i, x := range items {
+		if g, ok := byName[x.Name]; ok {
+			g.count++
+			g.rss += x.RSS
+			continue
+		}
+		g := &group{name: x.Name, count: 1, rss: x.RSS, first: i}
+		byName[x.Name] = g
+		groups = append(groups, g)
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		a, b := groups[i], groups[j]
+		if a.rss != b.rss {
+			return a.rss > b.rss
+		}
+		if a.count != b.count {
+			return a.count > b.count
+		}
+		return a.first < b.first
+	})
+	limit := min(len(groups), maxLeftoverLineGroups)
+	names := make([]string, 0, limit+1)
+	for _, g := range groups[:limit] {
+		n := g.name
+		if g.count > 1 {
+			n += fmt.Sprintf(" ×%d", g.count)
+		}
+		if g.rss >= 100<<20 {
+			n += fmt.Sprintf(" (%s)", bytesText(g.rss))
 		}
 		names = append(names, n)
+	}
+	rest := 0
+	for _, g := range groups[limit:] {
+		rest += g.count
+	}
+	if rest > 0 {
+		names = append(names, fmt.Sprintf("+%d more", rest))
 	}
 	what := "a leftover process"
 	if len(items) != 1 {

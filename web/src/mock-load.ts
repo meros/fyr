@@ -99,12 +99,29 @@ export function withGuard(list: HostLoad[], mode: string, now = railNow(Date.now
 }
 
 /** V0.176: ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a port-forward under timeout, a
- *  dev server Babysit PR #4170's agent kept, a test binary in a cgroup of no thread, and two settled threads' worktrees. */
+ *  dev server Babysit PR #4170's agent kept, a test binary in a cgroup of no thread, and two settled threads' worktrees.
+ *  V0.leftovers-strip-cap: ?leftovers=many: Map perf left 211 processes (190 dbus-daemon, 15 gnome-keyring-daemon, a
+ *  Chrome and 5 other tools) to exercise grouping and capping on the thread strip, the rail hover card and the phone sheet. */
 const MOCK_LEFTOVERS = mockParam("leftovers") ?? "";
 export function withLeftovers(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {
   if (!mode) return list;
   const [h, ...rest] = list;
   const ago = (min: number) => new Date(now - min * 60_000).toISOString();
+  if (mode === "many") {
+    const leftovers: Leftover[] = [
+      { id: "41022@100", thread: "t_mapperf", pid: 41022, name: "chromium", command: "/nix/store/x-chromium/bin/chromium --headless", procs: 9, rss: 1.9e9, started: ago(65), seen: ago(60), endsAt: ago(-25) },
+    ];
+    for (let i = 0; i < 190; i++) {
+      leftovers.push({ id: `${42000 + i}@200`, thread: "t_mapperf", pid: 42000 + i, name: "dbus-daemon", command: "dbus-daemon --session", procs: 1, rss: 2e6, started: ago(50), seen: ago(45), endsAt: ago(-25) });
+    }
+    for (let i = 0; i < 15; i++) {
+      leftovers.push({ id: `${43000 + i}@300`, thread: "t_mapperf", pid: 43000 + i, name: "gnome-keyring-daemon", command: "gnome-keyring-daemon --start", procs: 1, rss: 1e6, started: ago(50), seen: ago(45), endsAt: ago(-25) });
+    }
+    for (const [i, [name, rss]] of ([["http.server", 21e6], ["vite", 18e6], ["esbuild", 14e6], ["node", 10e6], ["python3", 8e6]] as const).entries()) {
+      leftovers.push({ id: `${44000 + i}@400`, thread: "t_mapperf", pid: 44000 + i, name, command: name, procs: 1, rss, started: ago(40), seen: ago(35), endsAt: ago(-25) });
+    }
+    return [{ ...h, leftovers }, ...rest];
+  }
   const leftovers: Leftover[] = [
     { id: "41022@100", thread: "t_mapperf", pid: 41022, name: "chromium", command: "/nix/store/x-chromium/bin/chromium --headless --user-data-dir=/tmp/fyr-layout-a1", procs: 9, rss: 1.9e9, started: ago(65), seen: ago(60), endsAt: ago(-25) },
     { id: "41090@101", thread: "t_mapperf", pid: 41090, name: "http.server", command: "python3 -m http.server 8000", procs: 1, rss: 21e6, started: ago(60), seen: ago(58), endsAt: ago(-27) },

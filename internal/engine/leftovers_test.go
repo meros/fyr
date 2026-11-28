@@ -30,6 +30,28 @@ func TestV176TheEndedLineIsOnTheThreadAndANoticeNotAWake(t *testing.T) {
 	if got := LeftoverLine([]LeftoverItem{{Name: "kubectl port-forward"}}, "idle 30 min after the run ended"); got != "Fyr ended a leftover process (idle 30 min after the run ended): kubectl port-forward" {
 		t.Fatal(got)
 	}
+	// V0.leftovers-strip-cap: repeated names group with ×N and more than 3 groups cap with +M more.
+	var burst []LeftoverItem
+	for range 196 {
+		burst = append(burst, LeftoverItem{Name: "dbus-daemon", RSS: 2 << 20})
+	}
+	for range 15 {
+		burst = append(burst, LeftoverItem{Name: "gnome-keyring-daemon", RSS: 1 << 20})
+	}
+	if got, want := LeftoverLine(burst, "the thread settled"), "Fyr ended 211 leftover processes (the thread settled): dbus-daemon ×196 (392 MB), gnome-keyring-daemon ×15"; got != want {
+		t.Fatalf("burst: got %q want %q", got, want)
+	}
+	many := []LeftoverItem{
+		{Name: "chromium", RSS: 2 << 30},
+		{Name: "a", RSS: 40 << 20},
+		{Name: "b", RSS: 30 << 20},
+		{Name: "c", RSS: 20 << 20},
+		{Name: "d", RSS: 10 << 20},
+		{Name: "d", RSS: 10 << 20},
+	}
+	if got, want := LeftoverLine(many, "the thread settled"), "Fyr ended 6 leftover processes (the thread settled): chromium (2.0 GB), a, b, +3 more"; got != want {
+		t.Fatalf("many: got %q want %q", got, want)
+	}
 }
 
 func TestV176TheOwnersCommandsReachTheHostAndAreTheOwnersOnly(t *testing.T) {
