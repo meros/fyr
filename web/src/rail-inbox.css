@@ -106,9 +106,10 @@
 .one .ic{justify-self:center;grid-row:1;margin-top:1px}
 .one .t{font:500 13px/18px var(--ui)}
 .one .hd{--tlh:18px}
-.one .m{grid-column:2/4;display:flex;align-items:center;gap:4px 8px;min-width:0}
+.one .m{grid-column:2/4;display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0}
 .one .m:not(:has(.cl)):has(> i:empty){display:none}
-.one .m i{flex:1 1 0;min-width:0;font:400 12px/16px var(--ui);font-style:normal}
+.one .m i{flex:1 1 180px;min-width:0;font:400 12px/16px var(--ui);font-style:normal}
+/* V0.tight-cards: a wide chip (a wake time) no longer cuts the line to "acme/ops · Clau…": under 180 px of text the chips wrap to their own line, right-aligned */
 .one .m i:empty{display:none}
 .one .cl{display:flex;gap:4px;flex:none;margin-left:auto;align-items:center;font:400 12px/16px var(--ui)}
 .one .cl{gap:4px 8px}.one .cl .tcpu{font:400 12px/16px var(--ui);font-variant-numeric:tabular-nums}.one .cl .tcpu.hot{font-weight:600} /* V0.row-calm: the CPU reading sits with the chips, tabular like the age (V0.warm-polish), muted unless hot */

@@ -7051,9 +7051,11 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.quota-in-thread phon
     await openScreen({ url: "?mock=rail&hosts=2&open=t_mapperf", ready: "!!document.querySelector('.m-tr1 .qfig')" }, w, ht);
     const r = await evaluate(`(() => {
       const row = document.querySelector('.m-tr1').getBoundingClientRect(), c = document.querySelector('.m-tr1 .qfig'), b = c.getBoundingClientRect(), more = c.nextElementSibling.getBoundingClientRect();
-      return { text: c.textContent, inside: b.left >= row.left && b.right <= row.right + 0.5 && b.width > 0 && b.top >= row.top && b.bottom <= row.bottom, cut: c.scrollWidth > c.clientWidth + 1 || b.right > more.left + 0.5, h: Math.round(b.height), chips: Math.round(document.querySelector('.m-chips').getBoundingClientRect().height), wide: document.documentElement.scrollWidth > innerWidth };
+      return { text: [...c.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(''), win: c.querySelector('small')?.textContent ?? '', inside: b.left >= row.left && b.right <= row.right + 0.5 && b.width > 0 && b.top >= row.top && b.bottom <= row.bottom, cut: c.scrollWidth > c.clientWidth + 1 || b.right > more.left + 0.5, h: Math.round(b.height), chips: Math.round(document.querySelector('.m-chips').getBoundingClientRect().height), wide: document.documentElement.scrollWidth > innerWidth };
     })()`);
     check(/^\d+ %$/.test(r.text), `${ctx}: the title bar's figure is not the busiest window's share ("${r.text}")`);
+    // V0.tight-cards: the figure names the window it counts
+    check(r.win === "7 d", `${ctx}: the title bar's figure does not name its window ("${r.win}")`);
     check(r.inside && !r.cut && r.h >= 44 && r.chips === 44 && !r.wide, `${ctx}: the figure is cut, under 44 px or outside the title bar (${JSON.stringify(r)})`);
     await tapCenter(".m-tr1 .qfig", "!!document.querySelector('.m-sheet .m-qrow')");
     // V0.hover-cards: the desktop chip's hover card, as text in Details (no hover on a phone)

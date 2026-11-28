@@ -142,6 +142,9 @@
 
 /* the rail's host: the meter and the button under it are one block; the button is outside the ring's role=img */
 .rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
+.rail .rldx{display:flex;flex-wrap:wrap;justify-content:center;gap:2px;max-width:66px}
+.rail .rldx>*{min-width:0;padding:0 4px}
+.rail .rldx:empty{display:none}
 /* V0.157: Settings → Sign-in (decision 0030 3.4), desktop and phone from the same rows. */
 .set .qrimg { display: block; margin: 8px auto; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
 .set .linkout { width: 100%; box-sizing: border-box; }
@@ -157,7 +160,7 @@
 .hm{display:flex;flex-direction:column;gap:2px;width:64px;min-width:0;--lv:var(--calm)}
 .hm.warm{--lv:var(--beam-mark)}
 .hm.hot{--lv:var(--signal-ink)}
-.hmn{display:flex;align-items:center;gap:3px;min-width:0;font:500 9.5px/11px var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hmn{display:flex;align-items:center;gap:4px;min-width:0;font:500 9.5px/11px var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hostc .hmark{margin-left:-3px}
 .hmr{display:grid;grid-template-columns:17px minmax(8px,1fr) auto;align-items:center;column-gap:3px;font:400 9px/11px var(--ui);color:var(--ink-faint);cursor:default;font-variant-numeric:tabular-nums}
 .hmb{display:flex;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
@@ -345,8 +348,11 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .st-tip{position:absolute;top:6px;transform:translateX(-50%);max-width:240px;padding:4px 8px;background:var(--raised);border:1px solid var(--line-strong);border-radius:6px;font-size:12px;color:var(--ink-muted);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .st-tip b{color:var(--ink)}
 .st-tip .ell{max-width:224px}
-.st-sys{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 36px;border-top:1px solid var(--line);background:var(--surface);color:var(--ink-muted);font-size:12px}
-.st-host .hm{width:120px}
+.st-sys{flex:none;display:flex;flex-direction:column;gap:6px;padding:10px 36px;border-top:1px solid var(--line);background:var(--surface);color:var(--ink-muted);font-size:12px}
+.st-sysr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 20px;min-width:0}
+.st-sysr.st-hosts{align-items:flex-start;gap:8px 24px}
+.st-sysr.st-meta2{color:var(--ink-faint);font-size:11px}
+.st-host .hm{width:132px}
 .st-q{min-width:0}
 .st-ver{min-width:0;font-variant-numeric:tabular-nums}
 .st-keys{display:flex;gap:10px;margin-left:auto;color:var(--ink-faint);font-size:11px}
@@ -358,7 +364,12 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .home.phone .st-tiles{grid-template-columns:1fr}
 .home.phone .st-nums{grid-template-columns:repeat(2,minmax(0,1fr))}
 .home.phone .st-ev{min-height:44px;align-items:center}
-.home.phone .st-sys{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+.home.phone .st-sys{padding:12px 16px calc(12px + env(safe-area-inset-bottom));gap:8px}
+/* the phone: the hosts in an even grid so a one-meter host lines up with a two-meter one */
+.home.phone .st-hosts{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px 16px}
+.home.phone .st-host .hm{width:auto}
+.home.phone .st-qs{gap:2px 14px}
+.home.phone .st-meta2{gap:2px 14px}
 .m-status .m-nbody{padding:0;gap:0}
 
 /* ---- V0.load-card: a host's load as a card (LoadCardView, web/src/load-ui.tsx): the rail's hover card on desktop,

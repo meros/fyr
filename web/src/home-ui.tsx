@@ -312,7 +312,9 @@ function MoveRow({ m, p }: { m: HomeMove; p: HomeProps }) {
       <button class="st-mvt" onClick={() => p.onOpen(t.id)}>
         <span class="st-tt ell">
           <ProjectIcon project={projectOf(t, p.projects)} name={t.project} size={14} />
-          {t.title}
+          {/* the title in its own box: text-overflow does not reach a flex item's bare text, so a long title was cut
+              without its ellipsis */}
+          <span class="ell">{t.title}</span>
         </span>
         <small class="ell">
           <b>{m.state}</b>
@@ -333,7 +335,7 @@ function RunTile({ t, p }: { t: Thread; p: HomeProps }) {
     <button class={`st-tile${t.running ? " on" : ""}`} onClick={() => p.onOpen(t.id)}>
       <span class="st-tt ell">
         <ProjectIcon project={projectOf(t, p.projects)} name={t.project} size={14} />
-        {t.title}
+        <span class="ell">{t.title}</span>
       </span>
       <span class="st-line ell">
         {t.running && <i class="st-dot" aria-hidden="true" />}
@@ -357,30 +359,44 @@ function SystemStrip({ hosts, profiles, keys }: { hosts: HostInfo[]; profiles: H
   // One host is not named, as on the rail (V0.140).
   const several = strip.length > 1;
   return (
+    // Three rows, each its own kind (V0.tight-cards): the hosts' meters side by side and top-aligned, the quotas, then
+    // the versions and keys. One wrapping line mixed them and a quota could land under a host's second meter.
     <footer class="st-sys" aria-label="Hosts and quotas">
-      {strip.map((h) => (
-        <span class="st-host">
-          <HostMeters h={h.load} offline={!h.load} name={several ? h.name : undefined} full={h.name} />
-        </span>
-      ))}
-      {quotas.map((q) => (
-        <span class="st-q">
-          <QuotaLine q={q} name={profilesOf(q, profiles).find((x) => x.id === q.profile)?.name ?? q.profile} bare={false} />
-        </span>
-      ))}
-      {versions.map((v) => (
-        <span class="st-ver" key={v}>
-          {v}
-        </span>
-      ))}
-      {keys && keys.length > 0 && (
-        <span class="st-keys">
-          {keys.map(([k, l]) => (
-            <span>
-              <kbd>{k}</kbd> {l}
+      {strip.length > 0 && (
+        <div class="st-sysr st-hosts">
+          {strip.map((h) => (
+            <span class="st-host">
+              <HostMeters h={h.load} offline={!h.load} name={several ? h.name : undefined} full={h.name} />
             </span>
           ))}
-        </span>
+        </div>
+      )}
+      {quotas.length > 0 && (
+        <div class="st-sysr st-qs">
+          {quotas.map((q) => (
+            <span class="st-q">
+              <QuotaLine q={q} name={profilesOf(q, profiles).find((x) => x.id === q.profile)?.name ?? q.profile} bare={false} />
+            </span>
+          ))}
+        </div>
+      )}
+      {(versions.length > 0 || (keys && keys.length > 0)) && (
+        <div class="st-sysr st-meta2">
+          {versions.map((v) => (
+            <span class="st-ver" key={v}>
+              {v}
+            </span>
+          ))}
+          {keys && keys.length > 0 && (
+            <span class="st-keys">
+              {keys.map(([k, l]) => (
+                <span>
+                  <kbd>{k}</kbd> {l}
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
       )}
     </footer>
   );

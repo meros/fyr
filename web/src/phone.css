@@ -50,7 +50,9 @@
 .m-seg .c{display:flex;align-items:center;gap:4px;max-width:100%}
 .m-seg .n{font:500 15px/20px var(--ui);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
 .m-seg.att .n{background:var(--beam);color:var(--on-beam);border-radius:10px;padding:0 5px}
-.m-seg .l{font:500 12px/14px var(--ui)}
+.m-seg .l{font:500 12px/14px var(--ui);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* seven sections in 360 px left 2 px between "Waiting", "Snoozed" and "Settled": the labels read as one word */
+@media (max-width:400px){.m-seg .l{font-size:11px;letter-spacing:-.01em}}
 .m-seg.on{color:var(--ink);--knock:var(--raised)}
 .m-cstrip,.m-iosrow{flex:none;display:flex;align-items:center;min-height:44px;padding:0 4px 0 16px;font:400 14px/20px var(--ui);background:var(--harbour-wash);min-width:0}
 .m-cstrip{background:var(--sunken)}
@@ -167,6 +169,8 @@
 /* V0.quota-in-thread: the provider quota's one figure in the thread's title bar: quiet, never shortened, 44 px high */
 .m-tr1 .qfig{flex:none;height:44px;padding:0 4px;font:400 12px/16px var(--ui);font-variant-numeric:tabular-nums;color:var(--ink-muted);white-space:nowrap}
 .m-tr1 .qfig.stale{opacity:.7}
+.m-tr1 .qfig{display:inline-flex;align-items:center;max-width:96px}
+.m-tr1 .qfig small{flex:0 1 auto;min-width:0;max-width:44px;margin-right:3px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--ink-faint);font-weight:400}
 /* the quota lines in Details, one under the other */
 .m-qrow{align-items:start;padding:12px 0}
 .m-qrow .m-ql{display:block}
@@ -509,11 +513,18 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 
 /* V0.167: the strip's hosts are the rail's two meters (HostMeters); the sheet's are wider and larger (touch reading). */
 .m-load .mlh{display:flex;align-items:center}
+/* hosts with one meter and with two start at the same top, so their names line up */
+.m-load{align-items:flex-start;padding-top:6px}
+.m-load .mlmore{align-self:center}
 .m-load .mlh .hm{width:62px}
 .m-lsheet .mlsk{margin:0;font:400 12px/17px var(--ui);color:var(--ink-faint)}
 .m-lsheet .mlsh .hm{width:150px;gap:3px}
 .m-lsheet .mlsh .hmr{grid-template-columns:24px minmax(20px,1fr) auto;font-size:12px;line-height:16px;column-gap:6px}
 .m-lsheet .mlsh .hmb{height:6px;border-radius:3px}
+.m-lsheet .mlsh.tabbed{grid-template-columns:minmax(0,1fr)}
+.m-lsheet .mlsh.tabbed .mlsn:empty{display:none}
+.m-lsheet .mlsh.tabbed .hm{width:100%;gap:6px}
+.m-lsheet .mlsh.tabbed .hmr{grid-template-columns:32px minmax(40px,1fr) 64px;font-size:13px;line-height:18px}
 
 /* V0.210: a touch target; the desktop keeps the small button, which a pointer can hit. */
 /* V0.load-card: the card in the sheet reads at phone size (no hover on a phone; the rail shows it as a hover card). */

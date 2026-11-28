@@ -75,11 +75,11 @@ export function quotaSummary(q: Quota, name: string): string {
 
 /** V0.quota-in-thread: one short figure, for a place with room for one (the phone's header): the busiest window's
  *  share ("61 %"), else the balance ("¥12.40 left"). null without data. */
-export function busiestFigure(q: Quota): QuotaPart | null {
+export function busiestFigure(q: Quota): (QuotaPart & { window?: string }) | null {
   const ws = q.windows ?? [];
   if (!ws.length) return quotaParts(q)[0] ?? null;
-  const top = Math.max(...ws.map((w) => w.usedPct));
-  return { text: pctText(top), hot: top >= HOT };
+  const w = ws.reduce((a, b) => (b.usedPct > a.usedPct ? b : a));
+  return { text: pctText(w.usedPct), hot: w.usedPct >= HOT, window: w.name };
 }
 
 /** "5 h" → "5 hours", "7 d" → "7 days", "7 d Opus" → "7 days, Opus" (a window that counts one model, V0.quota-all-windows);
