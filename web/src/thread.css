@@ -33,6 +33,12 @@
 .fldact{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}
 .fldfail{font:400 12px/16px var(--ui);color:var(--signal-ink)}
 .fldpop.phone .fldcopy{height:44px;padding:0 16px;font-size:15px} /* the phone's button is a finger's size */
+/* V0.popover-place: the phone's folder card is a bottom sheet: the page's gutter, the phone's text size, the path
+   selectable (the app is not, elsewhere) for when Copy fails, and Copy path the sheet's width */
+.fldsheet .fldpop{padding:4px 16px 0}
+.fldsheet .lcsec dt,.fldsheet .lcsec dd{font-size:13px;line-height:19px}
+.fldsheet .lcval{user-select:text;-webkit-user-select:text;-webkit-touch-callout:default}
+.fldsheet .fldcopy{flex:1 1 100%;justify-content:center}
 .chip.pr{border:0;height:24px;border-radius:12px;padding:0 9px;max-width:100%;flex:0 1 auto;display:inline-flex;cursor:pointer}
 .chip.pr:hover{background:var(--select)}
 .chip.pr.on{box-shadow:inset 0 0 0 1px var(--line-strong)}

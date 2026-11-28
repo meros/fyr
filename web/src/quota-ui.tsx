@@ -9,7 +9,7 @@ import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
 import { hasData, quotaCard, quotaFor, quotaParts, quotaSummary, quotaWakeOptions, busiestFigure, type Quota } from "./quota.ts";
 import type { Card } from "./card.ts";
-import { CardView, HoverCard, useHover } from "./card-ui.tsx";
+import { CardView, HoverCard, useHover, usePopoverDismiss, type AnchorAt } from "./card-ui.tsx";
 
 const POLL_MS = 60_000;
 
@@ -114,7 +114,7 @@ export function QuotaLine(p: { q: Quota; name: string; color?: string; /** V0.11
 }
 
 /** The quota's hover card, under the line or chip it belongs to. */
-function QuotaHover({ c, at }: { c: Card; at: DOMRect }) {
+function QuotaHover({ c, at }: { c: Card; at: AnchorAt }) {
   return (
     <HoverCard at={at} place="below">
       <CardView c={c} />
@@ -196,60 +196,39 @@ export function ThreadQuotaChip(p: {
 }) {
   const q = quotaFor(useQuotas(), p.profile, p.host);
   const hv = useHover();
-  const [openAt, setOpenAt] = useState<DOMRect | null>(null);
+  const [open, setOpen] = useState(false);
   const chipRef = useRef<HTMLSpanElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!openAt) return;
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (chipRef.current?.contains(target) || popRef.current?.contains(target)) return;
-      setOpenAt(null);
-    };
-    // V0.dialogs-review (21): Esc closes the popover and nothing else. Heard first (capture) and stopped, so the
-    // app's Esc under it (interrupt the run, close the thread) does not act on the same key.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      e.preventDefault();
-      setOpenAt(null);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [openAt]);
+  usePopoverDismiss(open, [chipRef, popRef], () => setOpen(false));
   if (!q || !(hasData(q) || q.error)) return null;
   const parts = quotaParts(q);
   const canOpen = !!p.onWake && !!q.windows?.length;
   const toggle = () => {
     if (!canOpen || !chipRef.current) return;
     hv.close();
-    setOpenAt((prev) => (prev ? null : chipRef.current!.getBoundingClientRect()));
+    setOpen((o) => !o);
   };
   return (
     <span
       ref={chipRef}
       class={`chip m qchip${q.stale ? " stale" : ""}${canOpen ? " click" : ""}`}
       role={canOpen ? "button" : undefined}
-      aria-expanded={canOpen ? !!openAt : undefined}
+      aria-expanded={canOpen ? open : undefined}
       tabIndex={0}
       aria-label={`Quota: ${quotaSummary(q, p.name)}`}
       {...hv.bind}
       onClick={canOpen ? toggle : undefined}
       onKeyDown={canOpen ? (e: KeyboardEvent) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle()) : undefined}
     >
-      {openAt ? (
-        <HoverCard at={openAt} place="below" interactive popRef={popRef}>
+      {open ? (
+        <HoverCard at={() => chipRef.current?.getBoundingClientRect() ?? null} place="below" interactive popRef={popRef} onGone={() => setOpen(false)}>
           <CardView c={quotaCard(q, p.name, Date.now())} />
           <QuotaWakeActions
             q={q}
             wakes={p.wakes}
             wakeDisabled={p.wakeDisabled}
-            onWake={(w) => (p.onWake!(w), setOpenAt(null))}
-            onCancelWake={(r) => (p.onCancelWake?.(r), setOpenAt(null))}
+            onWake={(w) => (p.onWake!(w), setOpen(false))}
+            onCancelWake={(r) => (p.onCancelWake?.(r), setOpen(false))}
           />
         </HoverCard>
       ) : (

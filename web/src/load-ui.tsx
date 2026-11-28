@@ -144,12 +144,13 @@ function LoadCardView({ c, head }: { c: LoadCard; head?: boolean }) {
 export function LoadRail() {
   const list = useLoad();
   const und = useUnd();
-  const [open, setOpen] = useState<{ host: string; at: DOMRect } | null>(null);
+  const [open, setOpen] = useState<{ host: string; el: HTMLElement } | null>(null);
   if (!list.length) return null;
   const several = list.length > 1;
   const short = shortHostNames(list.map((h) => h.host));
   const shown = open && list.find((h) => h.host === open.host);
-  const show = (host: string) => (e: Event) => setOpen({ host, at: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+  // V0.popover-place: the card follows the meter (a getter, not the box it had when it opened)
+  const show = (host: string) => (e: Event) => setOpen({ host, el: e.currentTarget as HTMLElement });
   const hide = () => setOpen(null);
   return (
     <div class="rld">
@@ -163,7 +164,7 @@ export function LoadRail() {
         </div>
       ))}
       {open && shown && (
-        <HoverCard at={open.at}>
+        <HoverCard at={() => (open.el.isConnected ? open.el.getBoundingClientRect() : null)} onGone={hide}>
           <LoadCardView c={loadCard(shown, { lookup: und.lookup, now: und.now() })} head />
           <p class="lcf">{METERS_LEGEND}</p>
         </HoverCard>
