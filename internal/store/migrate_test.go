@@ -265,7 +265,9 @@ func TestOpenFoldsStoredPRTwinsAtVersionOne(t *testing.T) {
 	if len(ts) != 1 || len(ts[0].Changes) != 1 {
 		t.Fatalf("twins not folded: %+v", ts)
 	}
-	if v := core.CheckThread(ts[0], nil, time.Now(), nil); slices.ContainsFunc(v, func(x core.Violation) bool { return x.ID == core.InvThreadChangeInvalid && strings.Contains(x.Evidence, "duplicate PR") }) {
+	if v := core.CheckThread(ts[0], nil, time.Now(), nil); slices.ContainsFunc(v, func(x core.Violation) bool {
+		return x.ID == core.InvThreadChangeInvalid && strings.Contains(x.Evidence, "duplicate PR")
+	}) {
 		t.Fatalf("invariant still fires: %+v", v)
 	}
 }
